@@ -194,12 +194,11 @@ export default class Settings {
         })
 
         this.bot.command(['restart', 'reset'], async (ctx) => {
-            if (utils.isAdmin(ctx)) {
+            if (await utils.isAdmin(ctx)) {
                 let holonId = utils.getholonId(ctx)
                 let holonName = await utils.getChatName(ctx, holonId)
 
                 console.log(`\n=== Starting reset for holon ${holonId} ===`);
-                console.log('(Relay deletions will be processed asynchronously)');
 
                 const lenses = [
                     'shopping', 'quests', 'offers', 'users', 'tags',
@@ -207,14 +206,26 @@ export default class Settings {
                     'roles', 'settings', 'library', 'deposits', 'appreciations'
                 ];
 
-                // Delete all data from each lens
+                // Per-lens timeout so a stuck deleteAll can't deadlock the whole reset.
+                const withTimeout = (p, ms, label) => Promise.race([
+                    p,
+                    new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout after ${ms}ms`)), ms)),
+                ]).then(v => ({ ok: true, v }), e => ({ ok: false, err: e.message, label }));
+
                 let deletedCount = 0;
                 for (const lens of lenses) {
-                    try {
-                        await this.db.deleteAll(holonId.toString(), lens);
+                    const t0 = Date.now();
+                    const result = await withTimeout(
+                        this.db.deleteAll(holonId.toString(), lens),
+                        8000,
+                        lens,
+                    );
+                    const dur = Date.now() - t0;
+                    if (result.ok) {
+                        console.log(`[reset] ${lens} cleared in ${dur}ms`);
                         deletedCount++;
-                    } catch (e) {
-                        console.log(`[reset] Error deleting ${lens}:`, e.message);
+                    } else {
+                        console.log(`[reset] ${lens} FAILED after ${dur}ms: ${result.err}`);
                     }
                 }
 
