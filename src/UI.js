@@ -923,10 +923,13 @@ class UI {
     let imageDataUrl = null;
     if (quest.picture) {
       try {
-        imageDataUrl = quest.picture;
-
-        // If it's a Telegram file_id, download and convert to base64
-        if (quest.picture.startsWith('AgAC') || quest.picture.startsWith('BAAL') || quest.picture.includes('file_id')) {
+        // Telegram photo file_ids vary by DC/version (AgAC, AgAD, AAMC,
+        // BAAL, ...). Treat anything that isn't already an http(s) or
+        // data: URL as a file_id and resolve it via getFileLink — the
+        // browser can't render a raw file_id in <img src>.
+        if (/^https?:\/\//i.test(quest.picture) || quest.picture.startsWith('data:')) {
+          imageDataUrl = quest.picture;
+        } else {
           const fileUrl = await this.bot.telegram.getFileLink(quest.picture);
           const response = await fetch(fileUrl.href);
           const arrayBuffer = await response.arrayBuffer();
@@ -936,7 +939,7 @@ class UI {
           imageDataUrl = `data:${mimeType};base64,${base64}`;
         }
       } catch (error) {
-        console.log('Failed to convert quest image:', error);
+        console.log('Failed to convert quest image:', error?.message || error, 'picture prefix:', String(quest.picture).slice(0, 16));
         imageDataUrl = null;
       }
     }
@@ -1160,10 +1163,11 @@ class UI {
   // Helper function to convert picture file_id to HTML with embedded base64
   async getSimplePictureHtml(picture) {
     try {
-      let imageDataUrl = picture;
-
-      // If it's a Telegram file_id, download and convert to base64
-      if (picture.startsWith('AgAC') || picture.startsWith('BAAL') || picture.includes('file_id')) {
+      let imageDataUrl;
+      if (/^https?:\/\//i.test(picture) || picture.startsWith('data:')) {
+        imageDataUrl = picture;
+      } else {
+        // Telegram file_id — resolve to a fetchable URL and inline as base64.
         const fileUrl = await this.bot.telegram.getFileLink(picture);
         const response = await fetch(fileUrl.href);
         const arrayBuffer = await response.arrayBuffer();
@@ -1175,7 +1179,7 @@ class UI {
 
       return `<div class="simple-picture"><img src="${imageDataUrl}" alt="Quest image" class="simple-quest-image" /></div>`;
     } catch (error) {
-      console.log('Failed to convert simple quest image:', error);
+      console.log('Failed to convert simple quest image:', error?.message || error, 'picture prefix:', String(picture).slice(0, 16));
       return '';
     }
   }

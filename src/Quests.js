@@ -301,7 +301,20 @@ export default class Quests {
         
         const sender = ctx.message.from;
         const title = text.split(' ').slice(1).join(' ');
-        const picture = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null;
+        // Accept photos and image documents (webp/png/etc. uploaded as files
+        // arrive in ctx.message.document with an image/* mime_type, not in
+        // ctx.message.photo).
+        let picture = null;
+        if (ctx.message.photo) {
+            picture = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        } else if (ctx.message.document?.mime_type?.startsWith('image/')) {
+            picture = ctx.message.document.file_id;
+        }
+        // Documents can't be sent back through replyWithPhoto reliably (Telegram
+        // rejects with type-mismatch). Track which API to use for the initial
+        // reply; the generated card later embeds via getFileLink so it works
+        // for either source.
+        const pictureIsDocument = !ctx.message.photo && !!picture;
         
         if (!title) {
             return ctx.reply(i18next.t('usage', { type, lng: language }));
@@ -363,7 +376,10 @@ export default class Quests {
 
         if (showAsImage && this.ui?.getQuestImage) {
             // Image mode: show temporary message, will be replaced by generated image (with embedded picture if any)
-            if (picture) {
+            // Skip the photo preview when the source is a document — sendPhoto
+            // rejects document file_ids — and let the generated card carry the
+            // image instead.
+            if (picture && !pictureIsDocument) {
                 nctx = await ctx.replyWithPhoto(picture, {
                     caption: createPaddedCaption("📝 " + quest.title),
                     parse_mode: 'Markdown',
@@ -373,7 +389,7 @@ export default class Quests {
                 nctx = await ctx.reply("📝 " + quest.title,
                                       this.markup(quest, language));
             }
-        } else if (picture) {
+        } else if (picture && !pictureIsDocument) {
             // Text mode with picture: show original photo with quest text as caption
             const caption = await this.createMessage(quest, language);
             nctx = await ctx.replyWithPhoto(picture, {
