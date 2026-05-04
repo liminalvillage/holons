@@ -193,6 +193,94 @@ export default class Settings {
 
         })
 
+        // TEMPORARY one-shot: legacy quests (pre-2025-09-17) stored
+        // photo[0].file_id (thumbnail) instead of photo[length-1] (full size).
+        // For each quest in the target holon, forward its Telegram message
+        // back to the same chat to read the full photo array, match by
+        // file_unique_id (re-used across all sizes of the same photo) so we
+        // don't latch onto a card-screenshot if the message was replaced via
+        // editMessageMedia, then upgrade quest.picture to the largest size.
+        this.bot.command('backfillpics', async (ctx) => {
+            if (!await utils.isAdmin(ctx)) {
+                return ctx.reply('Only a chat admin can perform this action');
+            }
+            const holonId = utils.getholonId(ctx);
+            const TARGET = '-1002964866719';
+            if (holonId.toString() !== TARGET) {
+                return ctx.reply(`Temporary one-shot — only runs in ${TARGET}`);
+            }
+
+            const holonDB = await this.db.forHolon(holonId);
+            const quests = await holonDB.getAll(holonId, 'quests') || [];
+            const candidates = quests.filter(q =>
+                q && q.picture &&
+                (typeof q.id === 'number' || /^\d+$/.test(String(q.id)))
+            );
+
+            await ctx.reply(`Backfill starting on ${candidates.length} candidate quest(s). This may take a few minutes…`);
+
+            let upgraded = 0, unchanged = 0, replaced = 0, failed = 0;
+
+            for (const quest of candidates) {
+                const messageId = Number(quest.id);
+                try {
+                    let originalUid;
+                    try {
+                        const f = await this.bot.telegram.getFile(quest.picture);
+                        originalUid = f && f.file_unique_id;
+                    } catch {}
+                    if (!originalUid) { failed++; continue; }
+
+                    let fwd;
+                    try {
+                        fwd = await this.bot.telegram.forwardMessage(
+                            holonId, holonId, messageId,
+                            { disable_notification: true },
+                        );
+                    } catch (e) {
+                        // MESSAGE_ID_INVALID, message deleted, etc.
+                        failed++;
+                        continue;
+                    }
+
+                    try {
+                        const sizes = (fwd && fwd.photo) || [];
+                        const matching = sizes.filter(p => p.file_unique_id === originalUid);
+                        if (matching.length === 0) {
+                            // Original photo no longer in the message — likely
+                            // replaced by a generated card. Can't recover.
+                            replaced++;
+                        } else {
+                            const largest = matching[matching.length - 1].file_id;
+                            if (largest !== quest.picture) {
+                                quest.picture = largest;
+                                await holonDB.put(holonId, 'quests', quest);
+                                upgraded++;
+                            } else {
+                                unchanged++;
+                            }
+                        }
+                    } finally {
+                        this.bot.telegram.deleteMessage(holonId, fwd.message_id).catch(() => {});
+                    }
+
+                    // Telegram throttles forwards in groups; ~1.5s/quest is safe.
+                    await new Promise(r => setTimeout(r, 1500));
+                } catch (e) {
+                    failed++;
+                    console.log(`[backfillpics] quest ${quest.id} failed: ${e && e.message || e}`);
+                }
+            }
+
+            ctx.reply(
+                `Backfill complete (${candidates.length} candidates):\n` +
+                `• ${upgraded} upgraded to full size\n` +
+                `• ${unchanged} already full size\n` +
+                `• ${replaced} skipped (original photo no longer in message)\n` +
+                `• ${failed} failed`
+            );
+        });
+
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (await utils.isAdmin(ctx)) {
                 let holonId = utils.getholonId(ctx)
