@@ -51,7 +51,7 @@
 		if (!HOLOSPHERE_PRIVATE_KEY) return null;
 
 		try {
-			const environmentName = import.meta.env.VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
+			const environmentName = import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug";
 
 			// Create a temporary HoloSphere instance to check mappings
 			const tempHolosphere = new HoloSphere({

@@ -30,9 +30,9 @@
 	$: holosphere = $holosphereStore;
 
 	let environmentName: string =
-		import.meta.env.VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
+		import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug";
 
-	console.log(import.meta.env.VITE_LOCAL_MODE)
+	console.log("Vite mode:", import.meta.env.MODE)
 	console.log("Environment:", environmentName)
 
 	// GC interval reference
@@ -420,7 +420,9 @@
 		// endpoints are idempotent — first call creates the message in the home
 		// holon and stores its message_id in activeHolograms; subsequent calls
 		// edit it. No-op if VITE_BOT_API_URL isn't configured.
-		const botApiUrl = import.meta.env.VITE_BOT_API_URL;
+		// In debug mode, default to a local bot at http://localhost:8080.
+		const botApiUrl = import.meta.env.VITE_BOT_API_URL
+			|| (import.meta.env.MODE !== 'production' ? 'http://localhost:8080' : undefined);
 		if (botApiUrl) {
 			const REFRESH_LENSES: Record<string, string> = {
 				quests: 'quest',
