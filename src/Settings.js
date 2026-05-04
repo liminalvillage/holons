@@ -256,6 +256,37 @@ export default class Settings {
                                 quest.picture = largest;
                                 await holonDB.put(holonId, 'quests', quest);
                                 upgraded++;
+
+                                // Push the new picture into Telegram. The DB
+                                // alone won't change the displayed message —
+                                // we have to editMessageMedia (text mode) or
+                                // re-render the card (image mode).
+                                if (this.quests) {
+                                    try {
+                                        const language = (await this.quests.getLanguage(holonId).catch(() => 'en')) || 'en';
+                                        const markupConfig = this.quests.markup(quest, language);
+                                        const fakeCtx = { telegram: this.bot.telegram };
+
+                                        if (this.quests.shouldShowQuestsAsImages()) {
+                                            await this.quests.regenerateQuestImageBackground(
+                                                fakeCtx, quest, holonId.toString(), messageId, markupConfig
+                                            );
+                                        } else {
+                                            const caption = await this.quests.createMessage(quest, language);
+                                            await this.bot.telegram.editMessageMedia(
+                                                holonId, messageId, null,
+                                                {
+                                                    type: 'photo',
+                                                    media: largest,
+                                                    caption: this.quests.truncateCaption(caption),
+                                                },
+                                                markupConfig,
+                                            );
+                                        }
+                                    } catch (refreshErr) {
+                                        console.log(`[backfillpics] refresh failed for ${quest.id}: ${refreshErr && refreshErr.message || refreshErr}`);
+                                    }
+                                }
                             } else {
                                 unchanged++;
                             }
