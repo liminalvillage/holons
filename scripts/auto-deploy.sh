@@ -2,10 +2,15 @@
 set -euo pipefail
 
 REPO_DIR="/root/HolonsBot"
-PM2_BIN="/root/.nvm/versions/node/v22.14.0/bin/pm2"
-NPM_BIN="/root/.nvm/versions/node/v22.14.0/bin/npm"
-PM2_TARGET="0"
+NODE_BIN_DIR="/root/.nvm/versions/node/v22.14.0/bin"
+PM2_TARGET="HolonsBot"
 LOG="/var/log/holonsbot-autodeploy.log"
+LOCK="/var/lock/holonsbot-autodeploy.lock"
+
+export PATH="$NODE_BIN_DIR:$PATH"
+
+exec 9>"$LOCK"
+flock -n 9 || exit 0
 
 cd "$REPO_DIR"
 
@@ -20,6 +25,6 @@ fi
 
 echo "[$(date -Is)] update detected: $LOCAL -> $REMOTE" >> "$LOG"
 git pull --ff-only >> "$LOG" 2>&1
-"$NPM_BIN" install >> "$LOG" 2>&1
-"$PM2_BIN" restart "$PM2_TARGET" >> "$LOG" 2>&1
+npm install >> "$LOG" 2>&1
+pm2 restart "$PM2_TARGET" >> "$LOG" 2>&1
 echo "[$(date -Is)] restart complete" >> "$LOG"
