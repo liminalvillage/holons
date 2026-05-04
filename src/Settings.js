@@ -212,18 +212,34 @@ export default class Settings {
                     new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout after ${ms}ms`)), ms)),
                 ]).then(v => ({ ok: true, v }), e => ({ ok: false, err: e.message, label }));
 
+                // holosphere.deleteAll bails as "success" with zero deletions
+                // when Gun's cache is cold (dataPath.once() fires with null —
+                // see node_modules/holosphere/content.js:962). Enumerate via
+                // getAll, which retries on cold cache, then issue per-item
+                // deletes so put(null) actually fires for every item and the
+                // count reflects what was deleted.
                 let deletedCount = 0;
                 for (const lens of lenses) {
                     const t0 = Date.now();
                     const result = await withTimeout(
-                        this.db.deleteAll(holonId.toString(), lens),
-                        8000,
+                        (async () => {
+                            const items = await this.db.getAll(holonId.toString(), lens) || [];
+                            const targets = items.filter(it => it && it.id != null);
+                            const outcomes = await Promise.allSettled(
+                                targets.map(it => this.db.delete(holonId.toString(), lens, it.id))
+                            );
+                            const ok = outcomes.filter(r => r.status === 'fulfilled').length;
+                            const failed = outcomes.length - ok;
+                            return { ok, failed, total: targets.length };
+                        })(),
+                        15000,
                         lens,
                     );
                     const dur = Date.now() - t0;
                     if (result.ok) {
-                        console.log(`[reset] ${lens} cleared in ${dur}ms`);
-                        deletedCount++;
+                        const { ok, failed, total } = result.v;
+                        console.log(`[reset] ${lens}: ${ok}/${total} cleared in ${dur}ms${failed ? ` (${failed} failed)` : ''}`);
+                        deletedCount += ok;
                     } else {
                         console.log(`[reset] ${lens} FAILED after ${dur}ms: ${result.err}`);
                     }
