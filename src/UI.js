@@ -1800,6 +1800,21 @@ class UI {
         console.warn('Element wait timeout, proceeding anyway');
       }
 
+      try {
+        await page.evaluate(() => Promise.all(
+          Array.from(document.images).map(img =>
+            img.complete && img.naturalWidth > 0
+              ? Promise.resolve()
+              : (img.decode ? img.decode().catch(() => {}) : new Promise(res => {
+                  img.addEventListener('load', res, { once: true });
+                  img.addEventListener('error', res, { once: true });
+                }))
+          )
+        ));
+      } catch {
+        // best-effort: proceed even if some images fail to decode
+      }
+
       const screenshotOptions = {
         path: pathToSave,
         type: 'png',
