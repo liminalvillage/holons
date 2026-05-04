@@ -526,14 +526,14 @@ class Server {
               res.setHeader('Content-Type', this.getImageContentType(sanitizedPath));
               res.sendFile(sanitizedPath);
             } else {
-              res.sendFile(this.defaultImagePath);
+              this.sendDefaultImage(res);
             }
           } else {
-            res.sendFile(this.defaultImagePath);
+            this.sendDefaultImage(res);
           }
         } catch (error) {
           console.error('Error in getimage endpoint:', error);
-          res.sendFile(this.defaultImagePath);
+          this.sendDefaultImage(res);
         }
       });
 
@@ -1003,6 +1003,18 @@ class Server {
   isImageFile(extension) {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tga'];
     return imageExtensions.includes(extension.toLowerCase());
+  }
+
+  // Used as the fallback for /getimage when the requested file_id resolves
+  // to a non-image, an invalid id, or anything else that fails. The default
+  // image is optional — if it isn't on disk, return 404 instead of letting
+  // res.sendFile throw ENOENT into the global error handler.
+  sendDefaultImage(res) {
+    if (this.defaultImagePath && fs.existsSync(this.defaultImagePath)) {
+      res.sendFile(this.defaultImagePath);
+    } else {
+      res.status(404).json({ error: 'Image not found' });
+    }
   }
 
   generateImageFileName(fileId, size, format, originalExtension) {
