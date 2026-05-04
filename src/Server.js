@@ -126,7 +126,7 @@ class Server {
     // CORS — required so browsers can preflight POST /refresh/* from harvest.
     // In debug, allow any origin; in production, restrict via CORS_ORIGIN.
     app.use(cors({
-      origin: isDebug ? true : (process.env.CORS_ORIGIN || false),
+      origin: isDebug ? true : (process.env.CORS_ORIGIN || 'https://dashboard.holons.io'),
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }));
