@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -120,6 +121,16 @@ class Server {
   }
 
   setupSecurityMiddleware(app) {
+    const isDebug = process.env.NODE_ENV === 'development';
+
+    // CORS — required so browsers can preflight POST /refresh/* from harvest.
+    // In debug, allow any origin; in production, restrict via CORS_ORIGIN.
+    app.use(cors({
+      origin: isDebug ? true : (process.env.CORS_ORIGIN || false),
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    }));
+
     // Start periodic cleanup of rate limiting cache to prevent memory leaks
     this.startRateLimitCleanup();
 
@@ -605,7 +616,7 @@ class Server {
 
     const language = (await settings?.getLanguage(holon).catch(() => null)) || 'en';
     const holonDB = await quests.getHolonDB(holon);
-    const quest = await holonDB.get(holon, 'quests', questId);
+    let quest = await holonDB.get(holon, 'quests', questId);
     if (!quest) {
       log.info(`refresh: quest ${questId} not found in holon ${holon}`);
       return;
@@ -624,7 +635,31 @@ class Server {
       return;
     }
     const fakeCtx = { telegram: this.bot.telegram };
+    const updatedMessages = new Set();
     await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);
+    updatedMessages.add(`${holon}_${messageId}`);
+
+    // Bootstrap Telegram messages for federated holons that don't have one
+    // yet — mirrors step 4 of Quests.handleQuestUpdate. Reads
+    // _meta.activeHolograms (HoloSphere propagation) and sends new messages
+    // to any numeric chat ID without one, pushing them into
+    // quest.activeHolograms.
+    await quests.handleFederatedMessages(fakeCtx, quest, language).catch((err) => {
+      log.warn(`refresh: handleFederatedMessages failed for quest ${questId} in ${holon}: ${err?.message || err}`);
+    });
+
+    // Re-read so we pick up any entries handleFederatedMessages just added
+    // (it mutates a re-fetched copy and persists with autoPropagate:false).
+    quest = (await holonDB.get(holon, 'quests', questId)) || quest;
+
+    // Fan out to every Telegram copy tracked in quest.activeHolograms (home
+    // main + personal holograms + federated). updatedMessages dedupes the
+    // home main we already edited above.
+    const hologramsToUpdate = quest.activeHolograms || [];
+    log.info(`refresh: quest ${questId} in ${holon} → main + ${hologramsToUpdate.length} holograms (already edited: ${updatedMessages.size})`);
+    if (hologramsToUpdate.length > 0) {
+      await quests.updateHolograms(fakeCtx, quest, language, markupConfig, hologramsToUpdate, updatedMessages);
+    }
   }
 
   async refreshEventMessage(holon, eventId) {
@@ -645,7 +680,14 @@ class Server {
       return;
     }
     const fakeCtx = { telegram: this.bot.telegram };
+    const updatedMessages = new Set();
     await events.updateEventMessage(fakeCtx, event, holon, messageId, language, markupConfig);
+    updatedMessages.add(`${holon}_${messageId}`);
+    // Fan out to federated copies tracked in _meta.activeHolograms (HoloSphere propagation).
+    const metaHolograms = event._meta?.activeHolograms || [];
+    if (metaHolograms.length > 0) {
+      await events.updateHologramsFromMeta(fakeCtx, event, language, markupConfig, metaHolograms, updatedMessages);
+    }
   }
 
   async refreshExpenseMessage(holon, expenseId) {

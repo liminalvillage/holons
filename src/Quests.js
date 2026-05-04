@@ -1359,9 +1359,12 @@ export default class Quests {
     }
 
     queueImageUpdate(ctx, quest, holonId, messageId, markupConfig) {
-        const key = `${Quests.getQuestHolon(quest)}_${quest.id}`;
+        // Key per Telegram message — quests with N holograms have N distinct
+        // (holonId, messageId) targets. Keying by quest alone collapses them
+        // to one entry and only the last-queued image gets edited.
+        const key = `${holonId}_${messageId}`;
         this.imageUpdateQueue.set(key, { ctx, quest, holonId, messageId, markupConfig });
-        
+
         if (this.imageUpdateTimer) clearTimeout(this.imageUpdateTimer);
         this.imageUpdateTimer = setTimeout(() => this.processBatchedImageUpdates(), 500);
     }
@@ -1392,7 +1395,11 @@ export default class Quests {
                     caption: createPaddedCaption('')
                 }, markupConfig);
             }
-        } catch {}
+        } catch (err) {
+            if (!/message is not modified/i.test(err?.message || '')) {
+                log.warn(`regenerateQuestImageBackground failed for ${holonId}/${messageId}: ${err?.message || err}`);
+            }
+        }
     }
 
     // Remaining method implementations (add as needed)
