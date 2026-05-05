@@ -145,7 +145,7 @@
 	}
 
 	// Available lenses for federation (same as Federation component)
-	const AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
+	const AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring', 'library', 'roles', 'checklists'];
 
 	function getLensIcon(lens: string): string {
 		const icons: Record<string, string> = {
@@ -156,7 +156,10 @@
 			'announcements': '📢',
 			'users': '👥',
 			'shopping': '🛒',
-			'recurring': '🔄'
+			'recurring': '🔄',
+			'library': '📚',
+			'roles': '🎭',
+			'checklists': '✅'
 		};
 		return icons[lens] || '📦';
 	}

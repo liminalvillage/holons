@@ -236,6 +236,7 @@
       {#each columnItems as column (column.id)}
         <KanbanColumn
           {column}
+          {holonID}
           cards={cardsByColumn[column.id] || []}
           onCardClick={handleCardClick}
           onCardsReorder={handleCardsReorder}

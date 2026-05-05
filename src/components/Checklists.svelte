@@ -8,7 +8,7 @@
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
-    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -157,6 +157,12 @@
     });
 
     // Watch for page ID changes with debouncing
+    let lastChecklistsFedFlag = filters.showFederated;
+    $: if (connectionReady && holonID && holosphere && filters.showFederated !== lastChecklistsFedFlag) {
+        lastChecklistsFedFlag = filters.showFederated;
+        fetchData();
+    }
+
     let pageUpdateTimeout: NodeJS.Timeout;
     $: {
         const newId = $page.params.id;
@@ -199,15 +205,37 @@
                 return Promise.race([promise, timeoutPromise]);
             };
 
-            // Fetch checklists, roles, and quests in parallel
+            // Fetch checklists, roles, and quests in parallel — federated when toggle is on
+            const checklistsPromise = filters.showFederated
+                ? holosphere.getFederated(holonID, "checklists", {
+                    includeLocal: true,
+                    includeFederated: true,
+                    resolveReferences: true,
+                    aggregate: false
+                })
+                : holosphere.getAll(holonID, "checklists");
+
             const [checklistsResult, rolesResult, questsResult] = await Promise.all([
-                fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
+                fetchWithTimeout(checklistsPromise, 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
                 holosphere.getAll(holonID, "quests")
             ]);
-            
-            // Process results safely - store all checklists
-            const checklistsData = checklistsResult || {};
+
+            // Process results safely - store all checklists.
+            // getFederated returns an array; getAll may return array or keyed object.
+            let checklistsData: any = checklistsResult || {};
+            if (Array.isArray(checklistsData)) {
+                const keyed: Record<string, any> = {};
+                checklistsData.forEach((item: any, idx: number) => {
+                    if (!item || item._deleted) return;
+                    const key = item.key || item.id || `fed_${idx}`;
+                    const processed: any = { ...item };
+                    if (item._federation) processed._federation = item._federation;
+                    if (item._hologram) processed._hologram = item._hologram;
+                    keyed[key] = processed;
+                });
+                checklistsData = keyed;
+            }
             allChecklists = checklistsData;
             roles = rolesResult || {};
             quests = questsResult || {};
@@ -792,7 +820,7 @@
 
                                             <!-- Main Content -->
                                             <div class="flex-1 min-w-0">
-                                                <div class="flex items-center gap-2 mb-1">
+                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
                                                     <h3 class="text-base font-bold text-white truncate">
                                                         {getChecklistDisplayTitle(checklist)}
                                                     </h3>
@@ -809,6 +837,31 @@
                                                     {/if}
                                                     {#if checklist.questId}
                                                         <span class="px-2 py-1 bg-purple-600 text-white text-xs rounded-full">Task</span>
+                                                    {/if}
+                                                    {#if (checklist as any)._hologram?.isHologram && (checklist as any)._hologram?.soul}
+                                                        {@const holoOrigin = extractHolonIdFromSoul((checklist as any)._hologram.soul)}
+                                                        {@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+                                                        <button
+                                                            type="button"
+                                                            class="cl-src-pill cl-src-pill--hologram"
+                                                            title="Navigate to source: {holoName}"
+                                                            on:click|stopPropagation={() => (checklist as any)._hologram && goto(buildHologramLink((checklist as any)._hologram))}
+                                                            aria-label="Navigate to source: {holoName}"
+                                                        >
+                                                            ⟐ {holoName}
+                                                        </button>
+                                                    {:else if (checklist as any)._federation?.origin && (checklist as any)._federation.origin !== holonID}
+                                                        {@const fedOrigin = (checklist as any)._federation.origin}
+                                                        {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+                                                        <button
+                                                            type="button"
+                                                            class="cl-src-pill cl-src-pill--federation"
+                                                            title="Navigate to source holon: {fedName}"
+                                                            on:click|stopPropagation={() => goto(`/${fedOrigin}/checklists`)}
+                                                            aria-label="Navigate to source holon: {fedName}"
+                                                        >
+                                                            ⟐ {fedName}
+                                                        </button>
                                                     {/if}
                                                 </div>
                                                 <p class="text-sm text-gray-400">
@@ -968,3 +1021,37 @@
     on:import={handleImport}
     on:close={() => (showImportModal = false)}
 />
+
+
+<style>
+    .cl-src-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.65rem;
+        font-weight: 500;
+        border: none;
+        border-radius: 9999px;
+        cursor: pointer;
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: background-color 150ms ease;
+    }
+    .cl-src-pill--hologram {
+        background: rgba(0, 191, 255, 0.18);
+        color: #00BFFF;
+    }
+    .cl-src-pill--hologram:hover {
+        background: rgba(0, 191, 255, 0.32);
+    }
+    .cl-src-pill--federation {
+        background: rgba(168, 85, 247, 0.18);
+        color: #a855f7;
+    }
+    .cl-src-pill--federation:hover {
+        background: rgba(168, 85, 247, 0.32);
+    }
+</style>

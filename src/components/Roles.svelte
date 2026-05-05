@@ -17,7 +17,8 @@
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import GenericImportModal from "./shared/GenericImportModal.svelte";
 	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
-	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+	import { goto } from '$app/navigation';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -150,9 +151,16 @@
 			return;
 		}
 
-		// Fetch initial roles
+		// Fetch initial roles (federated when toggle is on)
 		try {
-			let initialRolesData = await holosphere.getAll(holonIdToLoad, "roles");
+			let initialRolesData = filters.showFederated
+				? await holosphere.getFederated(holonIdToLoad, "roles", {
+					includeLocal: true,
+					includeFederated: true,
+					resolveReferences: true,
+					aggregate: false
+				})
+				: await holosphere.getAll(holonIdToLoad, "roles");
 			console.log(`[Roles.svelte] Initial roles data:`, initialRolesData);
 			
 			// Log detailed role information to see what's actually stored
@@ -434,6 +442,12 @@
 		resolveName(activeHolonId);
 	}
 
+	let lastRolesFedFlag = filters.showFederated;
+	$: if (activeHolonId && holosphere && filters.showFederated !== lastRolesFedFlag) {
+		lastRolesFedFlag = filters.showFederated;
+		loadAndSubscribeData(activeHolonId);
+	}
+
 	// Format time for display
 	/**
 	 * @param {string | number | Date} dateTime
@@ -608,6 +622,31 @@
 									<div class="flex-1 min-w-0">
 										<h3 class="text-lg font-bold text-white mb-1 line-clamp-2">
 											{role.title}
+											{#if (role as any)._hologram?.isHologram && (role as any)._hologram?.soul}
+												{@const holoOrigin = extractHolonIdFromSoul((role as any)._hologram.soul)}
+												{@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+												<button
+													type="button"
+													class="src-pill src-pill--hologram"
+													title="Navigate to source: {holoName}"
+													on:click|stopPropagation={() => (role as any)._hologram && goto(buildHologramLink((role as any)._hologram))}
+													aria-label="Navigate to source: {holoName}"
+												>
+													⟐ {holoName}
+												</button>
+											{:else if (role as any)._federation?.origin && (role as any)._federation.origin !== activeHolonId}
+												{@const fedOrigin = (role as any)._federation.origin}
+												{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+												<button
+													type="button"
+													class="src-pill src-pill--federation"
+													title="Navigate to source holon: {fedName}"
+													on:click|stopPropagation={() => goto(`/${fedOrigin}/roles`)}
+													aria-label="Navigate to source holon: {fedName}"
+												>
+													⟐ {fedName}
+												</button>
+											{/if}
 										</h3>
 										{#if role.description}
 											<p class="text-sm text-white/80 line-clamp-2">
@@ -879,5 +918,38 @@
 
 	.gap-6 {
 		gap: 1.5rem;
+	}
+
+	.src-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		margin-left: 0.5rem;
+		padding: 0.1rem 0.4rem;
+		font-size: 0.65rem;
+		font-weight: 500;
+		border: none;
+		border-radius: 9999px;
+		cursor: pointer;
+		vertical-align: middle;
+		max-width: 60%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		transition: background-color 150ms ease;
+	}
+	.src-pill--hologram {
+		background: rgba(0, 191, 255, 0.18);
+		color: #00BFFF;
+	}
+	.src-pill--hologram:hover {
+		background: rgba(0, 191, 255, 0.32);
+	}
+	.src-pill--federation {
+		background: rgba(168, 85, 247, 0.18);
+		color: #a855f7;
+	}
+	.src-pill--federation:hover {
+		background: rgba(168, 85, 247, 0.32);
 	}
 </style>

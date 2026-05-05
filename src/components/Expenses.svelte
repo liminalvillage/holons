@@ -10,6 +10,8 @@
 	import GenericImportModal from "./shared/GenericImportModal.svelte";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
+	import { goto } from '$app/navigation';
+	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 
 	interface Expense {
 		id: string;
@@ -20,6 +22,8 @@
 		splitWith: string[];
 		date: string;
 		picture?: string;
+		_hologram?: { isHologram?: boolean; soul?: string; sourceHolon?: string };
+		_federation?: { origin?: string; sourceLens?: string };
 	}
 
 	interface User {
@@ -78,8 +82,17 @@
 
 		try {
 			// Fetch all data in parallel first
+			const expensesPromise = filters.showFederated
+				? holosphere.getFederated(holonID, "expenses", {
+					includeLocal: true,
+					includeFederated: true,
+					resolveReferences: true,
+					aggregate: false
+				})
+				: holosphere.getAll(holonID, "expenses");
+
 			const [expensesData, usersData, settingsData] = await Promise.allSettled([
-				holosphere.getAll(holonID, "expenses"),
+				expensesPromise,
 				holosphere.getAll(holonID, "users"),
 				holosphere.get(holonID, "settings", holonID)
 			]);
@@ -89,8 +102,14 @@
 				const data = expensesData.value;
 				expenses = {};
 				if (Array.isArray(data)) {
-					data.forEach((item: any) => {
-						if (item?.id) expenses[item.id] = item;
+					data.forEach((item: any, idx: number) => {
+						if (item?.id) {
+							const key = item.key || item.id || `fed_${idx}`;
+							const processed: any = { ...item };
+							if (item._federation) processed._federation = item._federation;
+							if (item._hologram) processed._hologram = item._hologram;
+							expenses[key] = processed;
+						}
 					});
 				} else if (typeof data === 'object') {
 					Object.entries(data).forEach(([key, value]: [string, any]) => {
@@ -263,6 +282,12 @@
 		checkConnection();
 		return () => cleanupSubscriptions();
 	});
+
+	let lastExpensesFedFlag = filters.showFederated;
+	$: if (connectionReady && isValidId(holonID) && filters.showFederated !== lastExpensesFedFlag) {
+		lastExpensesFedFlag = filters.showFederated;
+		fetchData();
+	}
 
 	let pageUpdateTimeout: NodeJS.Timeout;
 	$: {
@@ -464,7 +489,34 @@
 								/>
 							{/if}
 							<div class="expense-info">
-								<h4>{expense.description}</h4>
+								<h4>
+									{expense.description}
+									{#if expense._hologram?.isHologram && expense._hologram.soul}
+										{@const holoOrigin = extractHolonIdFromSoul(expense._hologram.soul)}
+										{@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+										<button
+											type="button"
+											class="src-pill src-pill--hologram"
+											title="Navigate to source: {holoName}"
+											onclick={(e) => { e.stopPropagation(); if (expense._hologram) goto(buildHologramLink(expense._hologram)); }}
+											aria-label="Navigate to source: {holoName}"
+										>
+											⟐ {holoName}
+										</button>
+									{:else if expense._federation?.origin && expense._federation.origin !== holonID}
+										{@const fedOrigin = expense._federation.origin}
+										{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+										<button
+											type="button"
+											class="src-pill src-pill--federation"
+											title="Navigate to source holon: {fedName}"
+											onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/expenses`); }}
+											aria-label="Navigate to source holon: {fedName}"
+										>
+											⟐ {fedName}
+										</button>
+									{/if}
+								</h4>
 								<p class="paid-by">Paid by {users.find(u => String(u.id) === String(expense.paidBy))?.first_name || expense.paidBy}</p>
 								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => String(u.id) === String(id))?.first_name || id).join(', ')}</p>
 							</div>
@@ -895,5 +947,38 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
+	}
+
+	.src-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2rem;
+		margin-left: 0.5rem;
+		padding: 0.1rem 0.4rem;
+		font-size: 0.65rem;
+		font-weight: 500;
+		border: none;
+		border-radius: 9999px;
+		cursor: pointer;
+		vertical-align: middle;
+		max-width: 60%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		transition: background-color 150ms ease;
+	}
+	.src-pill--hologram {
+		background: rgba(0, 191, 255, 0.18);
+		color: #00BFFF;
+	}
+	.src-pill--hologram:hover {
+		background: rgba(0, 191, 255, 0.32);
+	}
+	.src-pill--federation {
+		background: rgba(168, 85, 247, 0.18);
+		color: #a855f7;
+	}
+	.src-pill--federation:hover {
+		background: rgba(168, 85, 247, 0.32);
 	}
 </style>

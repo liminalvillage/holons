@@ -87,6 +87,12 @@
 			sourceHolon: string;
 			localOverrides?: string[];
 		};
+		_federation?: {
+			origin?: string;
+			sourceLens?: string;
+			propagatedAt?: number;
+			originalId?: string;
+		};
 		_deleted?: boolean;
 	}
 
@@ -862,6 +868,10 @@
 		questsToProcess.forEach(([_, quest]) => {
 			if (quest._hologram?.isHologram && quest._hologram.soul) {
 				resolveHologramSource(quest._hologram.soul);
+			}
+			const fedOrigin = quest._federation?.origin;
+			if (fedOrigin && fedOrigin !== holonID) {
+				resolveName(fedOrigin);
 			}
 		});
 	}
@@ -2007,6 +2017,31 @@
 															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
 														</svg>
 														{getHologramSource(quest._hologram.soul)}
+														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+														</svg>
+													</span>
+												{:else if quest._federation?.origin && quest._federation.origin !== holonID}
+													{@const fedOrigin = quest._federation.origin}
+													{@const fedName = resolvedName(fedOrigin, $nameMap)}
+													<span
+														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
+														title="Navigate to source holon: {fedName}"
+														onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/tasks`); }}
+														onkeydown={(e) => {
+															e.stopPropagation();
+															if (e.key === 'Enter' || e.key === ' ') {
+																goto(`/${fedOrigin}/tasks`);
+															}
+														}}
+														tabindex="0"
+														role="button"
+														aria-label="Navigate to source holon: {fedName}"
+													>
+														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+														</svg>
+														{fedName}
 														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
 														</svg>

@@ -92,8 +92,9 @@ export interface FlowMetrics {
 
 // Available lens types based on the original system
 export const AVAILABLE_LENSES = [
-  'quests', 'offers', 'tags', 'expenses', 
-  'announcements', 'users', 'shopping', 'recurring'
+  'quests', 'offers', 'tags', 'expenses',
+  'announcements', 'users', 'shopping', 'recurring',
+  'library', 'roles', 'checklists'
 ] as const;
 
 export type LensType = typeof AVAILABLE_LENSES[number];
@@ -416,15 +417,18 @@ export class FlowSettings {
   private getLensDescription(lens: LensType): string {
     const descriptions: Record<LensType, string> = {
       quests: 'Share and manage quests across holons',
-      offers: 'Exchange offers and opportunities', 
+      offers: 'Exchange offers and opportunities',
       tags: 'Shared tagging and categorization',
       expenses: 'Expense tracking and reimbursements',
       announcements: 'Important notifications and updates',
       users: 'User directory and member management',
       shopping: 'Marketplace and commerce features',
-      recurring: 'Recurring tasks and schedules'
+      recurring: 'Recurring tasks and schedules',
+      library: 'Shared items, tools and books for borrowing',
+      roles: 'Role assignments and rotations',
+      checklists: 'Reusable checklist templates'
     };
-    
+
     return descriptions[lens] || '';
   }
 

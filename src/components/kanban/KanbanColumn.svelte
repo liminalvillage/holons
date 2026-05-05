@@ -35,6 +35,7 @@
   interface Props {
     column: KanbanColumn;
     cards: CardItem[];
+    holonID: string;
     onCardClick: (key: string, quest: Quest) => void;
     onCardsReorder: (columnId: string, cards: CardItem[]) => void;
     onColumnEdit: (column: KanbanColumn) => void;
@@ -44,6 +45,7 @@
   let {
     column,
     cards,
+    holonID,
     onCardClick,
     onCardsReorder,
     onColumnEdit,
@@ -150,6 +152,7 @@
       <KanbanCard
         quest={item.quest}
         questKey={item.key}
+        {holonID}
         onclick={() => onCardClick(item.key, item.quest)}
       />
     {/each}

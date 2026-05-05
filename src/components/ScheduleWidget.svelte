@@ -1,6 +1,7 @@
 <script lang="ts">
 
 	import { onMount, getContext, createEventDispatcher } from "svelte";
+	import { goto } from "$app/navigation";
 	import { ID } from "../dashboard/store";
 
 	import { formatDate, formatTime } from "../utils/date";
@@ -8,6 +9,7 @@
 	import type { HoloSphere } from "holosphere";
 	import type { Quest } from '../types/Quest';
 	import { Calendar } from 'svelte-feathers';
+	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	
 
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -267,7 +269,7 @@
 
 			{#each quests as [key, quest]}
 				{#if quest && quest.when && isToday(quest)}
-					<button 
+					<button
 						type="button"
 						id={key}
 						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"
@@ -287,6 +289,37 @@
 								<span class="block text-gray-300">@{participant.username}</span>
 							{/each}
 						</span>
+						{#if quest._hologram?.isHologram}
+							{@const holoOrigin = extractHolonIdFromSoul(quest._hologram.soul)}
+							{@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+							<span
+								class="source-badge"
+								title="Navigate to source: {holoName}"
+								on:click|stopPropagation={() => quest._hologram && goto(buildHologramLink(quest._hologram))}
+								on:keydown|stopPropagation={(e) => { if ((e.key === 'Enter' || e.key === ' ') && quest._hologram) goto(buildHologramLink(quest._hologram)); }}
+								role="button"
+								tabindex="0"
+								aria-label="Navigate to source: {holoName}"
+							>
+								<svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+								{holoName}
+							</span>
+						{:else if quest._federation?.origin && quest._federation.origin !== holonID}
+							{@const fedOrigin = quest._federation.origin}
+							{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+							<span
+								class="source-badge"
+								title="Navigate to source holon: {fedName}"
+								on:click|stopPropagation={() => goto(`/${fedOrigin}/calendar`)}
+								on:keydown|stopPropagation={(e) => { if (e.key === 'Enter' || e.key === ' ') goto(`/${fedOrigin}/calendar`); }}
+								role="button"
+								tabindex="0"
+								aria-label="Navigate to source holon: {fedName}"
+							>
+								<svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+								{fedName}
+							</span>
+						{/if}
 					</button>
 				{/if}
 			{/each}
@@ -549,5 +582,26 @@
 		&.stage-saturn {
 			background-color: #26c6da;
 		}
+	}
+
+	.source-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		margin-top: 0.25rem;
+		padding: 0.125rem 0.375rem;
+		font-size: 0.625rem;
+		font-weight: 500;
+		background: rgba(59, 130, 246, 0.2);
+		color: #1e40af;
+		border-radius: 9999px;
+		cursor: pointer;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.source-badge:hover {
+		background: rgba(59, 130, 246, 0.3);
 	}
 </style>

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { formatDate } from '../../utils/date';
+  import { goto } from '$app/navigation';
+  import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 
   interface Quest {
     id: string;
@@ -20,15 +22,20 @@
       soul: string;
       sourceHolon: string;
     };
+    _federation?: {
+      origin?: string;
+      sourceLens?: string;
+    };
   }
 
   interface Props {
     quest: Quest;
     questKey: string;
+    holonID?: string;
     onclick?: () => void;
   }
 
-  let { quest, questKey, onclick }: Props = $props();
+  let { quest, questKey, holonID = '', onclick }: Props = $props();
 
   function getColorFromCategory(category: string | undefined, type: string = 'task') {
     if (!category) {
@@ -83,9 +90,31 @@
   <div class="card-header">
     <h4 class="card-title">{quest.title}</h4>
     {#if quest._hologram?.isHologram}
-      <svg class="hologram-icon" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-      </svg>
+      {@const holoOrigin = extractHolonIdFromSoul(quest._hologram.soul)}
+      {@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+      <button
+        type="button"
+        class="source-pill source-pill--hologram"
+        title="Navigate to source: {holoName}"
+        onclick={(e) => { e.stopPropagation(); if (quest._hologram) goto(buildHologramLink(quest._hologram)); }}
+        aria-label="Navigate to source: {holoName}"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        {holoName}
+      </button>
+    {:else if quest._federation?.origin && quest._federation.origin !== holonID}
+      {@const fedOrigin = quest._federation.origin}
+      {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+      <button
+        type="button"
+        class="source-pill source-pill--federation"
+        title="Navigate to source holon: {fedName}"
+        onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/tasks`); }}
+        aria-label="Navigate to source holon: {fedName}"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        {fedName}
+      </button>
     {/if}
   </div>
 
@@ -177,11 +206,36 @@
     flex: 1;
   }
 
-  .hologram-icon {
-    width: 14px;
-    height: 14px;
-    color: #00BFFF;
+  .source-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.6rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 9999px;
+    cursor: pointer;
     flex-shrink: 0;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background-color 150ms ease;
+  }
+  .source-pill--hologram {
+    background: rgba(0, 191, 255, 0.15);
+    color: #00BFFF;
+  }
+  .source-pill--hologram:hover {
+    background: rgba(0, 191, 255, 0.3);
+  }
+  .source-pill--federation {
+    background: rgba(168, 85, 247, 0.18);
+    color: #a855f7;
+  }
+  .source-pill--federation:hover {
+    background: rgba(168, 85, 247, 0.32);
   }
 
   .card-description {

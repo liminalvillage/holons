@@ -52,7 +52,7 @@
 	let isInitiatingFederation: boolean = false;
 
 	// Lens configuration for federation (same as Federation component)
-	const availableLenses = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
+	const availableLenses = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring', 'library', 'roles', 'checklists'];
 	let selectedLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 
 

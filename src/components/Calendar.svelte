@@ -10,7 +10,8 @@
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import TaskModal from './TaskModal.svelte';
-    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { goto } from '$app/navigation';
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
@@ -2339,6 +2340,37 @@
                                 title={task.title || 'Untitled'}
                                 style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}"
                             >
+                                {#if task._hologram?.isHologram}
+                                    {@const holoOrigin = extractHolonIdFromSoul(task._hologram.soul)}
+                                    {@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+                                    <span
+                                        class="cal-source-badge"
+                                        title="Navigate to source: {holoName}"
+                                        onclick={(e) => { e.stopPropagation(); if (task._hologram) goto(buildHologramLink(task._hologram)); }}
+                                        onkeydown={(e) => { e.stopPropagation(); if ((e.key === 'Enter' || e.key === ' ') && task._hologram) goto(buildHologramLink(task._hologram)); }}
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="Navigate to source: {holoName}"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                        {holoName}
+                                    </span>
+                                {:else if task._federation?.origin && task._federation.origin !== $ID}
+                                    {@const fedOrigin = task._federation.origin}
+                                    {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+                                    <span
+                                        class="cal-source-badge"
+                                        title="Navigate to source holon: {fedName}"
+                                        onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/calendar`); }}
+                                        onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === ' ') goto(`/${fedOrigin}/calendar`); }}
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="Navigate to source holon: {fedName}"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                        {fedName}
+                                    </span>
+                                {/if}
                                 <div class="font-bold truncate leading-tight">
                                     {#if totalColumns > 2 && task.title.length > 15}
                                         {task.title.substring(0, 12)}...
@@ -2506,6 +2538,37 @@
                             <div class="text-xs mt-1">
                                 🙋‍♂️ {task.participants.length}
                             </div>
+                        {/if}
+                        {#if task._hologram?.isHologram}
+                            {@const holoOrigin = extractHolonIdFromSoul(task._hologram.soul)}
+                            {@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
+                            <span
+                                class="cal-source-badge"
+                                title="Navigate to source: {holoName}"
+                                onclick={(e) => { e.stopPropagation(); if (task._hologram) goto(buildHologramLink(task._hologram)); }}
+                                onkeydown={(e) => { e.stopPropagation(); if ((e.key === 'Enter' || e.key === ' ') && task._hologram) goto(buildHologramLink(task._hologram)); }}
+                                role="button"
+                                tabindex="0"
+                                aria-label="Navigate to source: {holoName}"
+                            >
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                {holoName}
+                            </span>
+                        {:else if task._federation?.origin && task._federation.origin !== $ID}
+                            {@const fedOrigin = task._federation.origin}
+                            {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+                            <span
+                                class="cal-source-badge"
+                                title="Navigate to source holon: {fedName}"
+                                onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/calendar`); }}
+                                onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === ' ') goto(`/${fedOrigin}/calendar`); }}
+                                role="button"
+                                tabindex="0"
+                                aria-label="Navigate to source holon: {fedName}"
+                            >
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                {fedName}
+                            </span>
                         {/if}
                         <div
                             class="absolute left-0 right-0 bottom-0 h-2 cursor-ns-resize touch-none hover:bg-white/40"
@@ -2777,4 +2840,25 @@
     .leading-tight {
         line-height: 1.1;
     }
-</style> 
+
+    .cal-source-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        margin-top: 0.2rem;
+        padding: 0.1rem 0.35rem;
+        font-size: 0.6rem;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.25);
+        color: #fff;
+        border-radius: 9999px;
+        cursor: pointer;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .cal-source-badge:hover {
+        background: rgba(255, 255, 255, 0.4);
+    }
+</style>

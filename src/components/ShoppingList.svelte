@@ -18,6 +18,7 @@
         text: string;
         checked: boolean;
         _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
+        _federation?: { origin?: string; sourceLens?: string };
         [key: string]: any;
     }
 
@@ -67,47 +68,84 @@
         store = {};
 
         try {
-            const initialData = await holosphere.getAll(holonID, "shopping");
-
-            const newStore: Record<string, ShoppingItem> = {};
-            if (Array.isArray(initialData)) {
-                initialData.forEach((item: any) => {
-                    if (item && item.id && !item._deleted) {
-                        newStore[item.id] = item;
-                    }
-                });
-            } else if (typeof initialData === 'object' && initialData !== null) {
-                Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                    if (item && item.id && !item._deleted) {
-                        newStore[key] = item;
-                    }
-                });
-            }
-            store = newStore;
-
-            const subscription = await holosphere.subscribe(
-                holonID,
-                "shopping",
-                (newItem: ShoppingItem | null, key?: string) => {
-                    if (!key) return;
-                    if (newItem && newItem.id && !newItem._deleted) {
-                        store[key] = newItem;
-                        store = store;
-                    } else {
-                        delete store[key];
-                        store = store;
-                    }
-                }
-            );
-
-            if (typeof subscription === 'function') {
-                unsubscribeFn = subscription;
-            } else if (subscription && typeof subscription === 'object' && 'unsubscribe' in subscription) {
-                unsubscribeFn = (subscription as any).unsubscribe;
+            if (filters.showFederated) {
+                await fetchFederatedShopping();
+            } else {
+                await fetchLocalShopping();
             }
         } catch (error) {
             console.error('Error fetching shopping list:', error);
         }
+    }
+
+    async function fetchLocalShopping() {
+        const initialData = await holosphere.getAll(holonID, "shopping");
+
+        const newStore: Record<string, ShoppingItem> = {};
+        if (Array.isArray(initialData)) {
+            initialData.forEach((item: any) => {
+                if (item && item.id && !item._deleted) {
+                    newStore[item.id] = item;
+                }
+            });
+        } else if (typeof initialData === 'object' && initialData !== null) {
+            Object.entries(initialData).forEach(([key, item]: [string, any]) => {
+                if (item && item.id && !item._deleted) {
+                    newStore[key] = item;
+                }
+            });
+        }
+        store = newStore;
+
+        const subscription = await holosphere.subscribe(
+            holonID,
+            "shopping",
+            (newItem: ShoppingItem | null, key?: string) => {
+                if (!key) return;
+                if (newItem && newItem.id && !newItem._deleted) {
+                    store[key] = newItem;
+                    store = store;
+                } else {
+                    delete store[key];
+                    store = store;
+                }
+            }
+        );
+
+        if (typeof subscription === 'function') {
+            unsubscribeFn = subscription;
+        } else if (subscription && typeof subscription === 'object' && 'unsubscribe' in subscription) {
+            unsubscribeFn = (subscription as any).unsubscribe;
+        }
+    }
+
+    async function fetchFederatedShopping() {
+        const federatedData = await holosphere.getFederated(holonID, "shopping", {
+            includeLocal: true,
+            includeFederated: true,
+            resolveReferences: true,
+            aggregate: false
+        });
+
+        const newStore: Record<string, ShoppingItem> = {};
+        if (Array.isArray(federatedData)) {
+            federatedData.forEach((item: any, index: number) => {
+                if (item && item.id && !item._deleted) {
+                    const key = item.key || item.id || `fed_${index}`;
+                    const processed: any = { ...item, id: item.id };
+                    if (item._federation) processed._federation = item._federation;
+                    if (item._hologram) processed._hologram = item._hologram;
+                    newStore[key] = processed;
+                }
+            });
+        }
+        store = newStore;
+    }
+
+    let lastShoppingFedFlag = filters.showFederated;
+    $: if (holonID && holosphere && filters.showFederated !== lastShoppingFedFlag) {
+        lastShoppingFedFlag = filters.showFederated;
+        fetchData();
     }
 
     onMount(() => {
@@ -233,6 +271,22 @@
         return $nameMap[holonId] ?? holonId.slice(0, 8);
     }
 
+    function hologramHolonId(item: ShoppingItem): string {
+        const soul = item._hologram?.soul;
+        if (soul) {
+            const id = extractHolonIdFromSoul(soul);
+            if (id) return id;
+        }
+        return item._hologram?.sourceHolon ?? '';
+    }
+
+    function federationSource(item: ShoppingItem): string {
+        const origin = item._federation?.origin;
+        if (!origin) return '';
+        resolveName(origin);
+        return resolvedName(origin, $nameMap);
+    }
+
     let showImportModal = false;
 
     async function handleImport(event: CustomEvent<any[]>) {
@@ -320,11 +374,16 @@
             <!-- Shopping Items -->
             <div class="space-y-3 mt-4">
                 {#each visibleItems as item (item.id)}
+                    {@const isHolo = item._hologram?.isHologram === true}
+                    {@const fedOrigin = !isHolo && item._federation?.origin && item._federation.origin !== holonID ? item._federation.origin : ''}
+                    {@const holoId = isHolo ? hologramHolonId(item) : ''}
                     <ItemCard
                         clickable
                         completed={item.checked}
-                        isHologram={item._hologram?.isHologram === true}
-                        sourceHolon={hologramSource(item)}
+                        isHologram={isHolo}
+                        isFederated={!isHolo && !!fedOrigin}
+                        sourceHolon={isHolo ? hologramSource(item) : (fedOrigin ? federationSource(item) : '')}
+                        sourceHref={isHolo && holoId ? `/${holoId}/shopping` : (fedOrigin ? `/${fedOrigin}/shopping` : '')}
                         on:click={() => toggleItemStatus(item)}
                     >
                         <div class="flex items-center justify-between gap-3 w-full">

@@ -22,7 +22,8 @@
 
     const ALL_LENSES = [
         'quests', 'offers', 'tags', 'expenses',
-        'announcements', 'users', 'shopping', 'recurring'
+        'announcements', 'users', 'shopping', 'recurring',
+        'library', 'roles', 'checklists'
     ];
 
     const LENS_ICONS: Record<string, string> = {
@@ -33,7 +34,10 @@
         announcements: '📢',
         users: '👥',
         shopping: '🛒',
-        recurring: '🔄'
+        recurring: '🔄',
+        library: '📚',
+        roles: '🎭',
+        checklists: '✅'
     };
 
     function lensIcon(lens: string): string {

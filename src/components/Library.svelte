@@ -3,7 +3,8 @@
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
-    import { awaitName, resolveHologramSource, nameMap } from "$lib/stores/nameResolver";
+    import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
+    import { goto } from "$app/navigation";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
@@ -56,6 +57,12 @@
             soul: string;
             sourceHolon: string;
             localOverrides?: string[];
+        };
+        _federation?: {
+            origin?: string;
+            sourceLens?: string;
+            propagatedAt?: number;
+            originalId?: string;
         };
     }
 
@@ -325,38 +332,77 @@
         }
 
         try {
-            const initialData = await holosphere.getAll(holonID, "library");
-
-            const newStore: Record<string, LibraryItem> = {};
-            if (typeof initialData === 'object' && initialData !== null) {
-                Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                    if (item && item.id && !item._deleted && item.hologram !== true) {
-                        newStore[key] = item as LibraryItem;
-                    }
-                });
-            }
-            store = newStore;
-
-            await preResolveHologramNames(Object.values(store));
-
-            const off = holosphere.subscribe(holonID, "library", (newItem: any, key?: string) => {
-                if (newItem && key && !newItem._deleted && newItem.hologram !== true) {
-                    store = { ...store, [key]: newItem as LibraryItem };
-                    if (newItem._hologram?.isHologram) {
-                        preResolveHologramNames([newItem]);
-                    }
-                } else if (!newItem && key) {
-                    const { [key]: _, ...rest } = store;
-                    store = rest;
-                }
-            });
-
-            if (typeof off === 'function') {
-                libraryItemsUnsubscribe = off as unknown as () => void;
+            if (filters.showFederated) {
+                await fetchFederatedLibrary();
+            } else {
+                await fetchLocalLibrary();
             }
         } catch (error) {
             console.error('Error fetching library:', error);
         }
+    }
+
+    async function fetchLocalLibrary() {
+        const initialData = await holosphere.getAll(holonID, "library");
+
+        const newStore: Record<string, LibraryItem> = {};
+        if (typeof initialData === 'object' && initialData !== null) {
+            Object.entries(initialData).forEach(([key, item]: [string, any]) => {
+                if (item && item.id && !item._deleted && item.hologram !== true) {
+                    newStore[key] = item as LibraryItem;
+                }
+            });
+        }
+        store = newStore;
+
+        await preResolveHologramNames(Object.values(store));
+
+        const off = holosphere.subscribe(holonID, "library", (newItem: any, key?: string) => {
+            if (newItem && key && !newItem._deleted && newItem.hologram !== true) {
+                store = { ...store, [key]: newItem as LibraryItem };
+                if (newItem._hologram?.isHologram) {
+                    preResolveHologramNames([newItem]);
+                }
+            } else if (!newItem && key) {
+                const { [key]: _, ...rest } = store;
+                store = rest;
+            }
+        });
+
+        if (typeof off === 'function') {
+            libraryItemsUnsubscribe = off as unknown as () => void;
+        }
+    }
+
+    async function fetchFederatedLibrary() {
+        const federatedData = await holosphere.getFederated(holonID, "library", {
+            includeLocal: true,
+            includeFederated: true,
+            resolveReferences: true,
+            aggregate: false
+        });
+
+        const newStore: Record<string, LibraryItem> = {};
+        if (Array.isArray(federatedData)) {
+            federatedData.forEach((item: any, index: number) => {
+                if (item && item.id && !item._deleted && item.hologram !== true) {
+                    const key = item.key || item.id || `fed_${index}`;
+                    const processed: any = { ...item, id: item.id };
+                    if (item._federation) processed._federation = item._federation;
+                    if (item._hologram) processed._hologram = item._hologram;
+                    newStore[key] = processed as LibraryItem;
+                }
+            });
+        }
+        store = newStore;
+
+        await preResolveHologramNames(Object.values(store));
+    }
+
+    let lastLibraryFedFlag = filters.showFederated;
+    $: if (holonID && holosphere && filters.showFederated !== lastLibraryFedFlag) {
+        lastLibraryFedFlag = filters.showFederated;
+        fetchData();
     }
 
     onMount(() => {
@@ -995,9 +1041,27 @@
                                                 {getTypeDisplayName(item.type)}
                                             </span>
                                             {#if item._hologram?.isHologram}
-                                                <span class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300">
+                                                <button
+                                                    type="button"
+                                                    class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
+                                                    title="Navigate to source: {getHologramSource(item._hologram.soul)}"
+                                                    on:click|stopPropagation={() => item._hologram && goto(buildHologramLink(item._hologram))}
+                                                    aria-label="Navigate to source: {getHologramSource(item._hologram.soul)}"
+                                                >
                                                     🔮 {getHologramSource(item._hologram.soul)}
-                                                </span>
+                                                </button>
+                                            {:else if item._federation?.origin && item._federation.origin !== holonID}
+                                                {@const fedOrigin = item._federation.origin}
+                                                {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+                                                <button
+                                                    type="button"
+                                                    class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors"
+                                                    title="Navigate to source holon: {fedName}"
+                                                    on:click|stopPropagation={() => goto(`/${fedOrigin}/library`)}
+                                                    aria-label="Navigate to source holon: {fedName}"
+                                                >
+                                                    🌐 {fedName}
+                                                </button>
                                             {/if}
                                         </div>
                                         <div class="text-sm text-gray-400">

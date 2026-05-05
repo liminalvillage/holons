@@ -7,7 +7,7 @@
     import Modal from './shared/Modal.svelte';
     import ItemCard from './shared/ItemCard.svelte';
     import GenericImportModal from './shared/GenericImportModal.svelte';
-    import { nameMap, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { nameMap, resolveHologramSource, extractHolonIdFromSoul, resolveName, resolvedName } from '$lib/stores/nameResolver';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
     interface Proposal {
@@ -20,6 +20,7 @@
         date: number;
         creator: string;
         _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
+        _federation?: { origin?: string; sourceLens?: string };
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -79,27 +80,65 @@
 
         proposals = {};
 
-        if (holosphere && holonIdToSubscribe) {
-            holosphere.subscribe(
-                holonIdToSubscribe,
-                "quests",
-                (newItem: Proposal | null, key?: string) => {
-                    if (!key) return;
+        if (!holosphere || !holonIdToSubscribe) return;
 
-                    if (newItem && newItem.type === "proposal") {
-                        proposals[key] = newItem;
-                        proposals = proposals;
-                    } else if (!newItem && proposals[key]) {
-                        delete proposals[key];
-                        proposals = proposals;
-                    }
-                }
-            ).then(subscription => {
-                unsubscribeFromProposals = subscription.unsubscribe;
-            }).catch(error => {
-                console.error("Failed to subscribe to proposals:", error);
-            });
+        if (filters.showFederated) {
+            fetchFederatedProposals(holonIdToSubscribe);
+            return;
         }
+
+        holosphere.subscribe(
+            holonIdToSubscribe,
+            "quests",
+            (newItem: Proposal | null, key?: string) => {
+                if (!key) return;
+
+                if (newItem && newItem.type === "proposal") {
+                    proposals[key] = newItem;
+                    proposals = proposals;
+                } else if (!newItem && proposals[key]) {
+                    delete proposals[key];
+                    proposals = proposals;
+                }
+            }
+        ).then(subscription => {
+            unsubscribeFromProposals = subscription.unsubscribe;
+        }).catch(error => {
+            console.error("Failed to subscribe to proposals:", error);
+        });
+    }
+
+    async function fetchFederatedProposals(holonIdToFetch: string): Promise<void> {
+        try {
+            const federatedData = await holosphere.getFederated(holonIdToFetch, "quests", {
+                includeLocal: true,
+                includeFederated: true,
+                resolveReferences: true,
+                aggregate: false
+            });
+
+            const newStore: Record<string, Proposal> = {};
+            if (Array.isArray(federatedData)) {
+                federatedData.forEach((item: any, index: number) => {
+                    if (item && item.type === "proposal" && item.id) {
+                        const key = item.key || item.id || `fed_${index}`;
+                        const processed: any = { ...item };
+                        if (item._federation) processed._federation = item._federation;
+                        if (item._hologram) processed._hologram = item._hologram;
+                        newStore[key] = processed as Proposal;
+                    }
+                });
+            }
+            proposals = newStore;
+        } catch (error) {
+            console.error("Failed to fetch federated proposals:", error);
+        }
+    }
+
+    let lastProposalsFedFlag = filters.showFederated;
+    $: if (currentHolonID && holosphere && filters.showFederated !== lastProposalsFedFlag) {
+        lastProposalsFedFlag = filters.showFederated;
+        subscribeToProposals(currentHolonID);
     }
 
     function addProposal(title: string, description: string): void {
@@ -194,6 +233,22 @@
         if (!holonId) return '';
         return $nameMap[holonId] ?? holonId.slice(0, 8);
     }
+
+    function hologramHolonId(p: Proposal): string {
+        const soul = p._hologram?.soul;
+        if (soul) {
+            const id = extractHolonIdFromSoul(soul);
+            if (id) return id;
+        }
+        return p._hologram?.sourceHolon ?? '';
+    }
+
+    function federationSource(p: Proposal): string {
+        const origin = p._federation?.origin;
+        if (!origin) return '';
+        resolveName(origin);
+        return resolvedName(origin, $nameMap);
+    }
 </script>
 
 <div class="w-full bg-gray-800 py-6 px-6 rounded-3xl">
@@ -221,9 +276,14 @@
 
     <div class="space-y-3 mt-6">
         {#each sortedProposals as proposal (proposal.id)}
+            {@const isHolo = proposal._hologram?.isHologram === true}
+            {@const fedOrigin = !isHolo && proposal._federation?.origin && proposal._federation.origin !== currentHolonID ? proposal._federation.origin : ''}
+            {@const holoId = isHolo ? hologramHolonId(proposal) : ''}
             <ItemCard
-                isHologram={proposal._hologram?.isHologram === true}
-                sourceHolon={hologramSource(proposal)}
+                isHologram={isHolo}
+                isFederated={!isHolo && !!fedOrigin}
+                sourceHolon={isHolo ? hologramSource(proposal) : (fedOrigin ? federationSource(proposal) : '')}
+                sourceHref={isHolo && holoId ? `/${holoId}/proposals` : (fedOrigin ? `/${fedOrigin}/proposals` : '')}
             >
                 <div class="flex justify-between items-start mb-2 gap-3">
                     <h3 class="text-lg font-semibold text-white flex-1 min-w-0">{proposal.title}</h3>

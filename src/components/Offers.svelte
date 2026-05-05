@@ -1037,13 +1037,23 @@
 														</svg>
 													</button>
 												{/if}
-													{#if offer._federation?.origin && offer._federation.origin !== holonID}
-														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
-															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-																<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+													{#if offer._federation?.origin && offer._federation.origin !== holonID && !offer._hologram?.isHologram}
+														{@const fedOrigin = offer._federation.origin}
+														{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
+														<button
+															class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0 hover:bg-purple-500/30 transition-colors"
+															title="Navigate to source holon: {fedName}"
+															on:click|stopPropagation={() => goto(`/${fedOrigin}/offers`)}
+															aria-label="Navigate to source holon: {fedName}"
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
 															</svg>
-															{offer._federation.origin}
-														</span>
+															{fedName}
+															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+															</svg>
+														</button>
 													{/if}
 													{#if offer._userSpecific}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
@@ -1293,13 +1303,23 @@
 														</svg>
 													</button>
 												{/if}
-													{#if need._federation?.origin && need._federation.origin !== holonID}
-														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
-															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-																<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+													{#if need._federation?.origin && need._federation.origin !== holonID && !need._hologram?.isHologram}
+														{@const needFedOrigin = need._federation.origin}
+														{@const needFedName = (resolveName(needFedOrigin), resolvedName(needFedOrigin, $nameMap))}
+														<button
+															class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0 hover:bg-purple-500/30 transition-colors"
+															title="Navigate to source holon: {needFedName}"
+															on:click|stopPropagation={() => goto(`/${needFedOrigin}/offers`)}
+															aria-label="Navigate to source holon: {needFedName}"
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
 															</svg>
-															{need._federation.origin}
-														</span>
+															{needFedName}
+															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+															</svg>
+														</button>
 													{/if}
 													{#if need._userSpecific}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
