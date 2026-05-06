@@ -1,2 +1,35 @@
-// Placeholder. Populated by Phase B unit `core/scoring`.
-export {};
+/**
+ * @holons/core/scoring — shared contribution-scoring logic.
+ *
+ * One source of truth for value equations, REA aggregation, and per-user
+ * score computation. Used by all UIs (web, telegram, text, ai) so that
+ * "compute user score" is consistent everywhere.
+ */
+
+export {
+  DEFAULT_EQUATION,
+  getCachedEquation,
+  loadEquation,
+  preloadEquation,
+  subscribeToEquationChanges,
+  type ScoreEquation,
+} from './equation.js';
+
+export {
+  REAAggregator,
+  toAggregates,
+  type REAEventStoreLike,
+  type UserAggregates,
+} from './aggregator.js';
+
+export {
+  calculateAllUserScores,
+  calculatePercentageShare,
+  calculateScoreFromUserData,
+  calculateTaskCompletionScores,
+  calculateUserScore,
+  getActionScore,
+  getScoreBreakdown,
+  type ActionScore,
+  type ScoreBreakdown,
+} from './score.js';
