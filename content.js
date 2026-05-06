@@ -1,6 +1,65 @@
 // holo_content.js
 
 /**
+ * Recursively sanitizes a value for storage in GunDB.
+ *
+ * Drops keys whose values would corrupt the graph or round-trip incorrectly:
+ *   - undefined, NaN, Infinity, -Infinity (JSON.stringify silently turns
+ *     these into nothing or "null", which is how malformed payloads like
+ *     `"initiated":,` end up in the graph and surface later as per-character
+ *     parse warnings).
+ *   - functions, symbols, bigints (not JSON-representable).
+ * Preserves null (legitimate Gun tombstone / explicit empty value).
+ * Guards against circular references.
+ *
+ * Logs one warning per dropped path so the caller can fix the producer.
+ */
+function sanitizeForStorage(value, path = '', seen = new WeakSet(), warnings = []) {
+    if (value === null) return null;
+    const t = typeof value;
+
+    if (t === 'number') {
+        if (!Number.isFinite(value)) {
+            warnings.push(`${path || '<root>'}: ${value} (non-finite number)`);
+            return undefined;
+        }
+        return value;
+    }
+    if (t === 'string' || t === 'boolean') return value;
+    if (t === 'undefined' || t === 'function' || t === 'symbol' || t === 'bigint') {
+        warnings.push(`${path || '<root>'}: ${t}`);
+        return undefined;
+    }
+
+    if (t === 'object') {
+        if (seen.has(value)) {
+            warnings.push(`${path || '<root>'}: circular reference`);
+            return undefined;
+        }
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            const out = [];
+            for (let i = 0; i < value.length; i++) {
+                const cleaned = sanitizeForStorage(value[i], `${path}[${i}]`, seen, warnings);
+                out.push(cleaned === undefined ? null : cleaned);
+            }
+            return out;
+        }
+
+        const out = {};
+        for (const k of Object.keys(value)) {
+            const cleaned = sanitizeForStorage(value[k], path ? `${path}.${k}` : k, seen, warnings);
+            if (cleaned !== undefined) out[k] = cleaned;
+        }
+        return out;
+    }
+
+    warnings.push(`${path || '<root>'}: unsupported type ${t}`);
+    return undefined;
+}
+
+/**
  * Stores content in the specified holon and lens.
  * If the target path already contains a hologram, the put operation will be
  * redirected to store the new data at the location specified in the existing
@@ -142,15 +201,21 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
         return new Promise((resolve, reject) => {
             try {
-                // Create a copy of data, stripping read-side envelopes that
-                // must never be persisted (they're attached at resolution time).
-                let dataToStore = { ...data };
-                if (dataToStore._meta !== undefined) {
-                    delete dataToStore._meta;
+                // Sanitize before serialization so undefined/NaN/Infinity etc.
+                // can never produce a malformed payload like `"initiated":,`
+                // (which is what causes per-character parse warnings on read).
+                const sanitizeWarnings = [];
+                let dataToStore = sanitizeForStorage(data, '', new WeakSet(), sanitizeWarnings) || {};
+                if (sanitizeWarnings.length > 0) {
+                    console.warn(
+                        `holosphere.put: sanitized ${sanitizeWarnings.length} field(s) at ${targetHolon}/${targetLens}/${targetKey} (id=${data.id}):`,
+                        sanitizeWarnings
+                    );
                 }
-                if (dataToStore._hologram !== undefined) {
-                    delete dataToStore._hologram;
-                }
+                // Strip read-side envelopes that must never be persisted
+                // (they're attached at resolution time).
+                if (dataToStore._meta !== undefined) delete dataToStore._meta;
+                if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
                 const payload = JSON.stringify(dataToStore); // The data being stored
 
                 const putCallback = async (ack) => {

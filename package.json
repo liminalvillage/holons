@@ -1,6 +1,6 @@
 {
   "name": "holosphere",
-  "version": "1.3.0-alpha3",
+  "version": "1.3.0-alpha4",
   "description": "Holonic Geospatial Communication Infrastructure",
   "main": "holosphere.js",
   "module": "holosphere.js",
