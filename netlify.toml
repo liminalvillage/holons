@@ -1,9 +1,9 @@
 [build]
-  # Directory to change to before starting a build
-  base = "."
-  # Directory that contains the deploy-ready HTML files and assets
+  # Build from the web app subdirectory inside the monorepo.
+  base = "apps/web"
+  # publish is resolved relative to base, so this is apps/web/build
   publish = "build"
-  # Default build command
+  # Default build command — invokes the web app's Vite build
   command = "npm run build"
 
 [build.environment]

@@ -1,0 +1,25 @@
+{
+  "name": "@holons/text-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-agnostic text/CLI renderer for Holons. Calls into @holons/core.",
+  "bin": {
+    "holons": "./dist/cli.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node ./dist/cli.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@holons/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}

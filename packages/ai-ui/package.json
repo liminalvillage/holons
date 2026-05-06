@@ -1,0 +1,26 @@
+{
+  "name": "@holons/ai-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Natural-language interpreter for Holons via Claude tool-use. Calls into @holons/core.",
+  "bin": {
+    "holons-ai": "./dist/cli.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node ./dist/cli.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@holons/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}
