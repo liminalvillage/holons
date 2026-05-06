@@ -5,8 +5,33 @@
   "type": "module",
   "description": "Shared domain logic for Holons UIs (web, telegram, text, ai). UI-agnostic.",
   "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./settings": {
+      "types": "./dist/settings/index.d.ts",
+      "import": "./dist/settings/index.js",
+      "default": "./dist/settings/index.js"
+    },
+    "./scoring": {
+      "types": "./dist/scoring/index.d.ts",
+      "import": "./dist/scoring/index.js",
+      "default": "./dist/scoring/index.js"
+    },
+    "./*": {
+      "types": "./dist/*/index.d.ts",
+      "import": "./dist/*/index.js",
+      "default": "./dist/*/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "settings": ["./dist/settings/index.d.ts"],
+      "scoring": ["./dist/scoring/index.d.ts"],
+      "*": ["./dist/*/index.d.ts"]
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -7,6 +7,10 @@ import fs from 'fs';
 import * as utils from './utilities.js'
 import { Scenes, Markup } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
+// Shared settings persistence layer. Routing storage through @holons/core
+// keeps the bot, web app, and any future surface in sync — settings written
+// from one client are visible everywhere with no shape drift in the loader.
+import { loadSettings as coreLoadSettings, saveSettings as coreSaveSettings } from '@holons/core/settings';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -387,7 +391,7 @@ export default class Settings {
 
                 console.log(`=== Reset complete, deleted ${deletedCount} items ===\n`);
 
-                await this.db.put(holonId.toString(), 'settings', await this.getDefaultSettings(holonId, holonName))
+                await coreSaveSettings(this.db, holonId, await this.getDefaultSettings(holonId, holonName))
                 ctx.reply(`Holon reset complete! ${deletedCount} items deleted.`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -2085,7 +2089,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId)
         settings.language = language
-        await this.db.put(holonId.toString(), 'settings', settings)
+        await coreSaveSettings(this.db, holonId, settings)
         await i18next.changeLanguage(language); // Ensure i18next instance is updated
         ctx.reply('Language changed to ' + language)
     }
@@ -2126,7 +2130,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(holonId)
         settings.theme = theme
-        await this.db.put(holonId.toString(), 'settings', settings)
+        await coreSaveSettings(this.db, holonId, settings)
         ctx.reply('Theme changed to ' + theme)
     }
 
@@ -2145,7 +2149,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId)
         settings.level = level
-        await this.db.put(holonId.toString(), 'settings', settings)
+        await coreSaveSettings(this.db, holonId, settings)
         ctx.reply('Level changed to ' + level)
 
     }
@@ -2159,7 +2163,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(holonId)
         settings.admin = admin
-        await this.db.put(holonId.toString(), 'settings', settings)
+        await coreSaveSettings(this.db, holonId, settings)
         ctx.reply('Admin changed to ' + admin)
     }
 
@@ -2332,11 +2336,14 @@ export default class Settings {
             return cached.settings;
         }
 
-        let settings = await this.db.get(holonId.toString(), 'settings', holonId)
+        // Route reads through @holons/core/settings so the bot and web app
+        // share a single persistence path; default-bootstrap stays here
+        // because it depends on Telegram chat metadata.
+        let settings = await coreLoadSettings(this.db, holonId)
         if (!settings || settings == '') {
             let holonName = await utils.getChatName(this.bot, holonId)
             settings = this.getDefaultSettings(holonId, holonName)
-            await this.db.put(holonId.toString(), 'settings', settings)
+            await coreSaveSettings(this.db, holonId, settings)
         } else {
             // Ensure all required fields exist by merging with default settings
             const defaultSettings = this.getDefaultSettings(holonId, settings.name || 'unknown')
@@ -2394,7 +2401,9 @@ export default class Settings {
             console.error('[setSettings] ERROR: settings.id is missing!');
             return;
         }
-        await this.db.put(settings.id, 'settings', settings);
+        // Route writes through @holons/core/settings so any new surface
+        // (web, AI, text) sees the same persistence semantics.
+        await coreSaveSettings(this.db, settings.id, settings);
 
         // Invalidate local cache - delete both numeric and string keys to handle type mismatches
         const holonId = settings.id;
@@ -2438,7 +2447,7 @@ export default class Settings {
     async setValueEquation(holonId, equation) {
         let settings = await this.getSettings(holonId)
         settings.valueEquation = equation
-        await this.db.put(holonId.toString(), 'settings', settings)
+        await coreSaveSettings(this.db, holonId, settings)
     }
 
     async getValueEquation(holonId) {
@@ -4023,14 +4032,11 @@ export default class Settings {
             }
         }
 
-        try {
-            // Try to get the holon's settings to find its name
-            const settings = await this.db.get(lookupHolonId, 'settings', lookupHolonId);
-            if (settings && settings.name && settings.name !== 'unknown') {
-                return settings.name;
-            }
-        } catch (error) {
-            // Settings not found, continue to fallback
+        // Try to get the holon's settings to find its name. coreLoadSettings
+        // already swallows holosphere errors and returns null, so no try/catch.
+        const settings = await coreLoadSettings(this.db, lookupHolonId);
+        if (settings && settings.name && settings.name !== 'unknown') {
+            return settings.name;
         }
 
         // Try to get Telegram chat name if ctx is provided
