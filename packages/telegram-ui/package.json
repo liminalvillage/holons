@@ -1,15 +1,16 @@
 {
-  "name": "HolonsBot",
+  "name": "@holons/telegram-ui",
   "version": "2.0.0",
-  "description": "Stigmergic Tool for Computer Aided Communities",
-  "main": "HolonsBot.js",
+  "description": "Telegram UI for Holons. Calls into @holons/core for business logic.",
+  "main": "src/HolonsBot.js",
   "type": "module",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "start": "node HolonsBot.js",
+    "start": "node src/HolonsBot.js",
     "dev": "nodemon --delay 5 src/HolonsBot.js",
+    "typecheck": "echo 'JS package — TS migration handled by Phase B unit tg-ui/core-bootstrap'",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -20,6 +21,7 @@
   "author": "Roberto Valenti",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@holons/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.7.8",
     "compression": "^1.8.1",
