@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Hexamap</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="Hexamap" name="description" />
+    <meta content="Hexamap" name="Roberto Valenti" />
+    <!-- App favicon -->
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/h3-js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js?1"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: relative;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #222222);
+            font-size: 16px;
+            margin: 0;
+            padding: 0;
+            color-scheme: var(--tg-color-scheme);
+        }
+
+        a {
+            color: var(--tg-theme-link-color, #2678b6);
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            font-size: 14px;
+            margin: 15px 0;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--tg-theme-button-color, #50a8eb);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            cursor: pointer;
+        }
+
+        button[disabled] {
+            opacity: 0.6;
+            cursor: auto;
+            pointer-events: none;
+        }
+
+        button.close_btn {
+            /*position: fixed;*/
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: 0;
+            margin: 0;
+            padding: 16px 20px;
+            text-transform: uppercase;
+        }
+
+        section {
+            padding: 15px 15px 65px;
+            text-align: center;
+        }
+
+        p {
+            margin: 40px 0 15px;
+        }
+
+        ul {
+            text-align: left;
+        }
+
+        li {
+            color: var(--tg-theme-hint-color, #a8a8a8);
+        }
+
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 7px;
+        }
+
+        pre {
+            background: rgba(0, 0, 0, .07);
+            border-radius: 4px;
+            padding: 4px;
+            margin: 7px 0;
+            word-break: break-all;
+            word-break: break-word;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+
+        .dark pre {
+            background: rgba(255, 255, 255, .15);
+        }
+
+        .hint {
+            font-size: .8em;
+            color: var(--tg-theme-hint-color, #a8a8a8);
+        }
+
+        .ok {
+            color: green;
+        }
+
+        .err {
+            color: red;
+        }
+
+        #fixed_wrap {
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: 0;
+            transform: translateY(100vh);
+        }
+
+        .viewport_border,
+        .viewport_stable_border {
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: 0;
+            height: var(--tg-viewport-height, 100vh);
+            pointer-events: none;
+        }
+
+        .viewport_stable_border {
+            height: var(--tg-viewport-stable-height, 100vh);
+        }
+
+        .viewport_border:before,
+        .viewport_stable_border:before {
+            content: attr(text);
+            display: inline-block;
+            position: absolute;
+            background: gray;
+            right: 0;
+            top: 0;
+            font-size: 7px;
+            padding: 2px 4px;
+            vertical-align: top;
+        }
+
+        .viewport_stable_border:before {
+            background: green;
+            left: 0;
+            right: auto;
+        }
+
+        .viewport_border:after,
+        .viewport_stable_border:after {
+            content: '';
+            display: block;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            border: 2px dashed gray;
+        }
+
+        .viewport_stable_border:after {
+            border-color: green;
+        }
+
+        small {
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <script type="application/javascript">
+        Telegram.WebApp.ready();
+
+        const initData = Telegram.WebApp.initData || '';
+        const initDataUnsafe = Telegram.WebApp.initDataUnsafe || {};
+
+        Telegram.WebApp.MainButton
+            .setText('CLOSE WEBVIEW')
+            .show()
+            .onClick(function () { webviewClose(); });
+
+        function sendHex(hex) {
+            Telegram.WebApp.sendData(hex);
+        }
+
+    </script>
+
+
+    <div id="map" style="width: 100%; height: 100vh;"></div>
+
+    <script>
+        let hexagonData = {};
+        mapboxgl.accessToken = 'pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ';
+        config = ({
+            lng: 13.7496496,
+            lat: 42.8917571,
+            zoom: 0
+        })
+        // let map = new mapboxgl.Map({
+        //     container: "map",
+        //     center: [config.lng, config.lat],
+        //     zoom: (config.zoom + 2),
+        //     style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        //     projection:'globe'
+        // });
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            center: [config.lng, config.lat],
+            zoom: (config.zoom + 2),
+            style: 'mapbox://styles/mapbox/satellite-streets-v12',
+            projection: 'globe'
+        });
+
+        map.on('style.load', () => {
+            map.setFog({
+                color: 'rgb(186, 210, 235)', // Lower atmosphere
+                'high-color': 'rgb(36, 92, 223)', // Upper atmosphere
+                'horizon-blend': 0.02, // Atmosphere thickness (default 0.2 at low zooms)
+                'space-color': 'rgb(11, 11, 25)', // Background color
+                'star-intensity': 0.6 // Background star brightness (default 0.35 at low zoooms )
+            });
+        });
+
+
+        map.on('load', function () {
+            renderHexes(map);
+            ["zoomend", "dragend", "resize","move"].forEach(event => {
+                map.on(event, () => renderHexes(map));
+            });
+
+            map.addSource('h3-hex-areas', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            map.addLayer({
+                id: 'highlighted-hex',
+                type: 'fill',
+                source: 'h3-hex-areas',
+                paint: {
+                    'fill-color': 'red',
+                    'fill-opacity': 0.6,
+                    'fill-outline-color': 'rgba(255, 0, 0, 1)'
+                }
+            });
+
+            // map.addLayer({
+            //     'id': '3d-hexagons',
+            //     'type': 'fill-extrusion',
+            //     //'source': 'h3-hex-areas', // Your hexagon data source
+            //     'paint': {
+            //         // Use an expression to set the fill-extrusion-height based on the lookup table
+            //         'fill-extrusion-height': [
+            //             "get", ["to-string", ["get", "id"]], ["literal", hexagonData]
+            //         ],
+            //         // Set the fill-extrusion-color similarly
+            //         'fill-extrusion-color': [
+            //             "get", ["to-string", ["get", "id"]], ["literal", hexagonData]
+            //         ],
+            //         'fill-extrusion-opacity': 0.6
+            //     }
+            // });
+
+        });
+
+        map.addControl(
+            new mapboxgl.GeolocateControl({
+                positionOptions: {
+                    enableHighAccuracy: true
+                },
+                // When active the map will receive updates to the device's location as it changes.
+                trackUserLocation: true,
+                // Draw an arrow next to the location dot to indicate which direction the device is heading.
+                showUserHeading: true
+            })
+        );
+
+        map.on('click', (e) => {
+            const clickedHex = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
+            new mapboxgl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(clickedHex)
+                .addTo(map);
+
+            highlightHexagon(map, clickedHex);
+            sendHex(clickedHex)
+            //highlightNearbyHexagons(map, clickedHex);
+
+        });
+
+
+
+        // Assuming you have an array of hexagon IDs
+        function highlightNearbyHexagons(map, hex) {
+            const kRing = h3.gridDisk(hex, 1);
+            // Reduce hexagon list to a map with random values
+            let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
+            console.log(hexagons)
+            kRing.forEach(hexID => {
+                hexagonData[hexID] = {
+                    height: Math.random() * 6500, // maxHeight is the maximum height you want
+                    color: getRandomColor() // A function to generate random colors
+                };
+            });
+            // Get the hexagon boundaries
+            // const hexBoundaries = kRing.map(hexagon => h3.cellToBoundary(hexagon, true));
+
+            // // Update the source data with the new hexagon to highlight.
+            // map.getSource('h3-hex-areas').setData({
+            //     type: 'FeatureCollection',
+            //     features: hexBoundaries.map((hexBoundary, index) => ({
+            //         type: 'Feature',
+            //         properties: {
+            //             id: kRing[index],
+            //             height: Math.random() * 1000,
+            //             color: getRandomColor()
+            //         },
+            //         geometry: {
+            //             type: 'Polygon',
+            //             coordinates: [hexBoundary]  // Close the polygon by adding the first point again
+            //         }
+            //     }))
+            // });
+        }
+
+        function getRandomColor() {
+            var letters = '0123456789ABCDEF';
+            var color = '#';
+            for (var i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+
+        function highlightHexagon(map, hex) {
+
+            const kRing = h3.gridDisk(hex, 3);
+            // Reduce hexagon list to a map with random values
+            let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
+
+            // Get the hexagon boundaries
+
+            const hexBoundary = h3.cellToBoundary(hex, true);
+
+            let coordinates = [];
+            for (let i = 0; i < hexBoundary.length; i++) {
+                coordinates.push([hexBoundary[i][0], hexBoundary[i][1]]);
+            }
+
+            const hexGeoJson = {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                    type: 'Polygon',
+                    coordinates: [coordinates]  // Close the polygon by adding the first point again
+                }
+            };
+
+            // Update the source data with the new hexagon to highlight.
+            map.getSource('h3-hex-areas').setData({
+                type: 'FeatureCollection',
+                features: [hexGeoJson]
+            });
+        }
+        function getResolution(zoom) {
+            const zoomToRes = [
+                [3.0, 0],
+                [4.4, 1],
+                [5.7, 2],
+                [7.1, 3],
+                [8.4, 4],
+                [9.8, 5],
+                [11.4, 6],
+                [12.7, 7],
+                [14.1, 8],
+                [15.5, 9],
+                [16.8, 10],
+                [18.2, 11],
+                [19.5, 12],
+                [21.1, 13],
+                [21.9, 14]
+            ];
+
+            for (let [z, res] of zoomToRes) {
+                if (zoom <= z) return res;
+            }
+            return 15;
+        }
+
+
+        function renderHexes(map) {
+            const latitudeMax = 90;
+            const latitudeMin = -latitudeMax;
+            const longitudeMax = 180;
+            const longitudeMin = -longitudeMax;
+
+            const extraFillArea = 0.5;
+            const blueColor = '#ffffff';//'#0080ff';
+            const borderLayerName = 'hex-layer-border';
+            const hexSourceName = 'hex-source';
+
+            var currentZoom = map.getZoom();
+            var h3res = getResolution(currentZoom);
+            console.log("Resolution: " + JSON.stringify(h3res));
+
+            const iw = window.innerWidth;
+            const ih = window.innerHeight;
+            const cUL = map.unproject([0, 0]).toArray(); // Upper left
+            const cLR = map.unproject([iw, ih]).toArray(); // Lower right
+            const x1 = Math.min(cUL[0], cLR[0]);
+            const x2 = Math.max(cUL[0], cLR[0]);
+            const y1 = Math.min(cUL[1], cLR[1]);
+            const y2 = Math.max(cUL[1], cLR[1]);
+            const dh = x2 - x1;
+            const dv = y2 - y1;
+            console.log(`REAL Coordinates x1:${x1} x2:${x2} y1:${y1} y2:${y2} dh:${dh} dv:${dv}`);
+
+            let x1withBuffer = x1 - dh * extraFillArea;
+            let x2withBuffer = x2 + dh * extraFillArea;
+            let y1withBuffer = y1 - dv * extraFillArea;
+            let y2withBuffer = y2 + dv * extraFillArea;
+            let fullX = x1withBuffer < longitudeMin || x2withBuffer > longitudeMax;
+
+            x1withBuffer = Math.max(x1withBuffer, longitudeMin);
+            x2withBuffer = Math.min(x2withBuffer, longitudeMax);
+            y1withBuffer = Math.max(y1withBuffer, latitudeMin);
+            y2withBuffer = Math.min(y2withBuffer, latitudeMax);
+            console.log(`BUFF Coordinates x1:${x1withBuffer} x2:${x2withBuffer} y1:${y1withBuffer} y2:${y2withBuffer} fullView:${fullX}`);
+
+            let coordinates = [];
+            if (fullX) {
+                coordinates.push([
+                    [latitudeMin, longitudeMin],
+                    [latitudeMin, 0],
+                    [latitudeMax, 0],
+                    [latitudeMax, longitudeMin]
+                ]);
+
+                coordinates.push([
+                    [latitudeMin, 0],
+                    [latitudeMin, longitudeMax],
+                    [latitudeMax, longitudeMax],
+                    [latitudeMax, 0]
+                ]);
+            } else {
+                const xIncrement = 180;
+                let lowerX = x1withBuffer;
+                while (lowerX < longitudeMax && lowerX < x2withBuffer) {
+                    let upperX = Math.min(lowerX + xIncrement, x2withBuffer, 180);
+                    coordinates.push([[
+                        [y2withBuffer, lowerX],
+                        [y2withBuffer, upperX],
+                        [y1withBuffer, upperX],
+                        [y1withBuffer, lowerX]
+                    ]]);
+                    console.log(`PUSH Coordinates x1:${lowerX} x2:${upperX} y1:${y1withBuffer} y2:${y2withBuffer}`);
+                    lowerX += xIncrement;
+                }
+            }
+
+            var shapes = [].concat(...coordinates.map(e => { return h3.polygonToCells(e, h3res); }));
+            var innershapes = [].concat(...coordinates.map(e => { return h3.polygonToCells(e, h3res + 1); }));
+            var hexBoundaries = [];
+            var pentaBoundaries = [];
+            var innerBoundaries = [];
+
+            for (var i = 0; i < shapes.length; i++) {
+                let h = h3.cellToBoundary(shapes[i], true);
+                if (h.find((e) => e[0] < -128) !== undefined) {
+                    h = h.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                }
+
+                if (h3.isPentagon(shapes[i])) {
+                    pentaBoundaries.push(h);
+                } else {
+                    hexBoundaries.push(h);
+                }
+            }
+            for (var i = 0; i < innershapes.length; i++) {
+                let h = h3.cellToBoundary(innershapes[i], true);
+                if (h.find((e) => e[0] < -128) !== undefined) {
+                    h = h.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                }
+                innerBoundaries.push(h);
+            }
+
+            console.log(`currentZoom: ${currentZoom}, resolution: ${h3res}, shapes: ${hexBoundaries.length}`);
+
+
+
+            var featureCollection = {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": { 'color': 'gray' },
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": innerBoundaries
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": { 'color': 'white' },
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": hexBoundaries
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": { 'color': 'gray' },
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": pentaBoundaries
+                        }
+                    }
+
+                ]
+            };
+
+            const hexSource = map.getSource(hexSourceName);
+            if (hexSource !== undefined) {
+                (hexSource).setData(featureCollection);
+            } else {
+                var hexGeoJson = {
+                    type: 'geojson',
+                    data: featureCollection,
+                };
+                map.addSource(hexSourceName, hexGeoJson);
+                map.addLayer({
+                    'id': borderLayerName,
+                    'source': hexSourceName,
+                    'type': 'line',
+                    'layout': {},
+                    'paint': {
+                        'line-color': ['get', 'color'],
+                        'line-width': 2
+                    }
+                });
+            }
+        }
+
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Quest Schema",
+  "description": "Schema for quest/task objects in HolonsBot",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the quest"
+    },
+    "version": {
+      "type": "string",
+      "description": "Version of the quest schema",
+      "default": "0.1"
+    },
+    "chat": {
+      "type": ["string", "number"],
+      "description": "Holon ID where the quest belongs"
+    },
+    "message_thread_id": {
+      "type": ["number", "null"],
+      "description": "Message thread ID for topic messages"
+    },
+    "initiator": {
+      "type": "string",
+      "description": "Username of the quest initiator"
+    },
+    "title": {
+      "type": "string",
+      "description": "Title of the quest"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the quest",
+      "default": ""
+    },
+    "picture": {
+      "type": "string",
+      "description": "URL or path to quest image",
+      "default": ""
+    },
+    "document": {
+      "type": "string",
+      "description": "Associated document path or URL",
+      "default": ""
+    },
+    "type": {
+      "type": "string",
+      "description": "Type of quest",
+      "enum": ["task", "event", "proposal", "request", "offer", "any"]
+    },
+    "status": {
+      "type": "string",
+      "description": "Current status of the quest",
+      "enum": ["ongoing", "completed", "cancelled", "scheduled"],
+      "default": "ongoing"
+    },
+    "date": {
+      "type": "number",
+      "description": "Creation timestamp"
+    },
+    "where": {
+      "type": "object",
+      "description": "Location coordinates",
+      "properties": {
+        "latitude": {
+          "type": "string",
+          "default": ""
+        },
+        "longitude": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "required": ["latitude", "longitude"]
+    },
+    "when": {
+      "type": "string",
+      "description": "When the quest is scheduled",
+      "default": ""
+    },
+    "until": {
+      "type": "string",
+      "description": "End time/date of quest",
+      "default": ""
+    },
+    "completed": {
+      "type": "string",
+      "description": "Completion timestamp or note",
+      "default": ""
+    },
+    "participants": {
+      "type": "array",
+      "description": "List of participant usernames or IDs",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "appreciation": {
+      "type": "array",
+      "description": "Appreciation/feedback from participants",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "stoppers": {
+      "type": "array",
+      "description": "Obstacles or blockers",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "Quest dependencies",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "frequency": {
+      "type": ["string", "null"],
+      "description": "Recurring frequency pattern"
+    },
+    "recurringTaskId": {
+      "type": ["string", "null"],
+      "description": "ID for recurring task reference"
+    },
+    "timeTracking": {
+      "type": "object",
+      "description": "Time tracking data",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "checklistId": {
+      "type": ["string", "null"],
+      "description": "Associated checklist ID"
+    },
+    "reminderId": {
+      "type": ["string", "null"],
+      "description": "Associated reminder ID"
+    },
+    "activeHolograms": {
+      "type": "array",
+      "description": "Active hologram references",
+      "items": {
+        "type": "object"
+      },
+      "default": []
+    },
+    "category": {
+      "type": "string",
+      "description": "Quest category"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "chat",
+    "initiator",
+    "title",
+    "type",
+    "status",
+    "date",
+    "participants",
+    "appreciation",
+    "stoppers",
+    "dependencies",
+    "where",
+    "when",
+    "until",
+    "completed"
+  ],
+  "additionalProperties": false
+}

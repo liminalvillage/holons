@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tag Schema",
+  "description": "Schema for tag objects in HolonsBot",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the tag"
+    },
+    "name": {
+      "type": "string",
+      "description": "Tag name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Tag description"
+    },
+    "color": {
+      "type": "string",
+      "description": "Tag color (hex code)",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "icon": {
+      "type": "string",
+      "description": "Tag icon/emoji"
+    },
+    "category": {
+      "type": "string",
+      "description": "Tag category"
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation timestamp",
+      "format": "date-time"
+    },
+    "creator": {
+      "type": "string",
+      "description": "Username of tag creator"
+    },
+    "usageCount": {
+      "type": "number",
+      "description": "Number of times tag has been used",
+      "minimum": 0,
+      "default": 0
+    },
+    "aliases": {
+      "type": "array",
+      "description": "Alternative names for the tag",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "relatedTags": {
+      "type": "array",
+      "description": "Related tag IDs",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "additionalProperties": false
+}

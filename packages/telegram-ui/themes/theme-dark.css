@@ -1,0 +1,1229 @@
+/* ==========================================================================
+   HolonsBot Theme — Dark
+   Mirrors the Harvest design system (../harvest/src/styles/theme.css).
+   ========================================================================== */
+
+:root {
+    /* Backgrounds */
+    --color-bg-primary: #111827;       /* gray-900 */
+    --color-bg-secondary: #1f2937;     /* gray-800 */
+    --color-bg-tertiary: #374151;      /* gray-700 */
+    --color-bg-elevated: #1f2937;
+
+    /* Accent (indigo) */
+    --color-accent: #4f46e5;           /* indigo-600 */
+    --color-accent-hover: #4338ca;     /* indigo-700 */
+    --color-accent-light: #6366f1;     /* indigo-500 */
+    --color-accent-subtle: rgba(79, 70, 229, 0.1);
+
+    /* Text */
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #d1d5db;   /* gray-300 */
+    --color-text-muted: #9ca3af;       /* gray-400 */
+    --color-text-disabled: #4b5563;    /* gray-600 */
+
+    /* Borders */
+    --color-border: #374151;           /* gray-700 */
+    --color-border-light: #4b5563;     /* gray-600 */
+
+    /* Status */
+    --color-success: #10b981;          /* emerald-500 */
+    --color-success-bg: rgba(16, 185, 129, 0.15);
+    --color-warning: #f59e0b;          /* amber-500 */
+    --color-warning-bg: rgba(245, 158, 11, 0.15);
+    --color-error: #ef4444;            /* red-500 */
+    --color-error-bg: rgba(239, 68, 68, 0.15);
+    --color-info: #3b82f6;             /* blue-500 */
+    --color-info-bg: rgba(59, 130, 246, 0.15);
+
+    /* Page surface gradient */
+    --color-surface-gradient: linear-gradient(135deg, #0b1220 0%, #111827 50%, #1f2937 100%);
+
+    /* DataTable variables (kept for legacy compatibility) */
+    --primary-color: var(--color-text-primary);
+    --secondary-color: var(--color-bg-tertiary);
+    --highlight-color: var(--color-accent);
+
+    --dt-status-available-color: var(--color-success);
+    --dt-status-away-color: var(--color-warning);
+    --dt-status-offline-color: var(--color-text-muted);
+
+    --dt-padding: 12px;
+    --dt-padding-s: 6px;
+    --dt-padding-xs: 2px;
+    --dt-border-radius: 6px;
+
+    --dt-background-color-container: var(--color-bg-secondary);
+    --dt-border-color: var(--color-border);
+    --dt-bg-color: var(--color-accent);
+    --dt-text-color: var(--color-text-primary);
+    --dt-bg-active-button: var(--color-accent);
+    --dt-text-color-button: var(--color-text-secondary);
+    --dt-text-color-active-button: var(--color-text-primary);
+    --dt-hover-cell-color: var(--color-bg-tertiary);
+    --dt-even-row-color: var(--color-bg-tertiary);
+    --dt-focus-color: var(--color-accent);
+    --dt-input-background-color: var(--color-bg-primary);
+    --dt-input-color: var(--color-text-primary);
+}
+
+body {
+    background: var(--color-surface-gradient);
+    color: var(--color-text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+/* ==========================================================================
+   Status Table
+   ========================================================================== */
+.status-table-container {
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--color-bg-secondary);
+    border-radius: 16px;
+    padding: 0;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    overflow: visible;
+    border: 1px solid var(--color-border);
+}
+
+.status-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--color-bg-secondary);
+    border-radius: 16px;
+    overflow: visible;
+    table-layout: fixed;
+    border: none;
+}
+
+.status-table thead {
+    background: var(--color-bg-tertiary);
+}
+
+.status-table th {
+    padding: 10px 8px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--color-text-primary);
+    border: none;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-table th:first-child {
+    border-top-left-radius: 16px;
+}
+
+.status-table th:last-child {
+    border-top-right-radius: 16px;
+}
+
+.status-table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: 16px;
+}
+
+.status-table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: 16px;
+}
+
+.status-table tbody tr {
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+}
+
+.status-table tbody tr:hover {
+    background: var(--color-bg-tertiary);
+}
+
+.status-table td {
+    padding: 8px 6px;
+    border: none;
+    color: var(--color-text-primary);
+    font-size: 13px;
+    vertical-align: middle;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+}
+
+.status-table .rank-cell { text-align: center; width: 8%; }
+.status-table .name-cell { width: 25%; text-align: left; }
+.status-table .stat-cell { text-align: center; width: 8%; }
+.status-table .score-cell { text-align: center; width: 10%; }
+.status-table .currency-cell { text-align: center; width: 8%; }
+
+.status-table .user-avatar {
+    border: 2px solid var(--color-accent-light);
+    background: var(--color-bg-tertiary);
+}
+
+.status-table .user-name {
+    color: var(--color-text-primary);
+    font-weight: 700;
+    font-size: 14px;
+    display: block;
+    line-height: 1.2;
+}
+
+.status-table .user-handle {
+    color: var(--color-text-muted);
+    font-size: 10px;
+    display: block;
+    margin-top: 2px;
+}
+
+.status-table .stat-value {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.status-table .score-value {
+    color: var(--color-accent-light);
+    font-weight: 700;
+    font-size: 14px;
+}
+
+/* ==========================================================================
+   Modern Table
+   ========================================================================== */
+.modern-table-container {
+    max-width: 400px;
+    margin: 0 auto;
+    background: var(--color-bg-secondary);
+    border-radius: 20px;
+    padding: 15px;
+    box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--color-border);
+}
+
+.table-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.table-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 10px 0;
+    background: linear-gradient(135deg, var(--color-accent-light), var(--color-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.table-subtitle {
+    font-size: 16px;
+    color: var(--color-text-muted);
+    font-weight: 400;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    border-radius: 20px;
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.modern-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--color-bg-primary);
+    border-radius: 20px;
+    overflow: visible;
+}
+
+.modern-table thead {
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.modern-table th {
+    padding: 20px 15px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-primary);
+    border: none;
+    position: relative;
+}
+
+.modern-table tbody tr {
+    border-bottom: 1px solid var(--color-border);
+    transition: all 0.3s ease;
+    background: var(--color-bg-secondary);
+}
+
+.modern-table tbody tr:hover {
+    background: var(--color-accent-subtle);
+    transform: scale(1.01);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.modern-table tbody tr.top-performer {
+    background: var(--color-warning-bg);
+    border-left: 4px solid var(--color-warning);
+}
+
+.modern-table td {
+    padding: 12px 15px;
+    border: none;
+    color: var(--color-text-primary);
+    font-size: 14px;
+    vertical-align: middle;
+}
+
+.modern-table .rank-cell,
+.modern-table .stat-cell,
+.modern-table .score-cell {
+    text-align: center;
+    width: 80px;
+}
+
+.modern-table .name-cell { min-width: 200px; }
+
+/* Rank Cell */
+.rank-cell .rank-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rank-icon {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* Name Cell */
+.name-cell .user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.user-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--color-accent);
+    flex-shrink: 0;
+    background: linear-gradient(135deg, var(--color-accent-light), var(--color-accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.user-name {
+    font-weight: 800;
+    font-size: 24px;
+    color: var(--color-text-primary);
+    line-height: 1.2;
+}
+
+.user-handle {
+    font-size: 12px;
+    color: var(--color-accent-light);
+    font-weight: 400;
+}
+
+/* Stat Cell */
+.stat-cell .stat-container,
+.stat-cell .participant-info,
+.stat-cell .appreciation-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.stat-number,
+.participant-count,
+.appreciation-count {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 2px;
+}
+
+.stat-label {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.participant-icon,
+.appreciation-icon {
+    font-size: 16px;
+    margin-bottom: 5px;
+}
+
+/* Score Cell */
+.score-cell .score-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background: var(--color-warning-bg);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.score-value,
+.score-number {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--color-warning);
+}
+
+.score-number { margin-bottom: 2px; }
+
+.score-label {
+    font-size: 11px;
+    color: var(--color-warning);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.9;
+}
+
+/* Quest Table cells */
+.quest-id-cell .quest-id-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-icon {
+    font-size: 16px;
+}
+
+.quest-id {
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-weight: 600;
+    color: var(--color-text-muted);
+}
+
+.quest-title-cell .quest-title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.4;
+}
+
+.initiator-cell .initiator-name {
+    color: var(--color-accent-light);
+    font-weight: 500;
+}
+
+.provenance-cell .provenance-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.provenance-icon {
+    font-size: 16px;
+}
+
+.provenance-text {
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+/* Request / Offer Cells */
+.person-cell .person-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.person-icon {
+    font-size: 18px;
+}
+
+.person-name {
+    color: var(--color-accent-light);
+    font-weight: 600;
+}
+
+.request-cell .request-info,
+.offer-cell .offer-info {
+    padding: 8px 0;
+}
+
+.request-title,
+.offer-title {
+    color: var(--color-text-primary);
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.request-row:hover,
+.offer-row:hover {
+    background: var(--color-accent-subtle);
+}
+
+.requests-table .request-row {
+    border-left: 3px solid var(--color-accent);
+}
+
+.offers-table .offer-row {
+    border-left: 3px solid var(--color-accent-light);
+}
+
+/* Legacy table styles for compatibility */
+thead,
+tfoot {
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+}
+
+tbody {
+    background-color: var(--color-bg-secondary);
+}
+
+caption {
+    padding: 10px;
+    caption-side: bottom;
+}
+
+table {
+    border-collapse: collapse;
+    border: none;
+    letter-spacing: 1px;
+    font-family: sans-serif;
+    font-size: .8rem;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+td,
+th {
+    border: none;
+    padding: 5px 10px;
+}
+
+td {
+    text-align: center;
+}
+
+ul {
+    list-style-type: none;
+    padding: 0;
+    text-align: left;
+}
+
+.material-icons {
+    font-size: 16px;
+}
+
+/* DataTable component */
+.datatable-container {
+    font-family: sans-serif;
+    background-color: var(--dt-background-color-container);
+    border-radius: 20px;
+    color: var(--dt-text-color);
+    max-width: 1140px;
+    min-width: 950px;
+    margin: 0 auto;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.datatable-container .header-tools {
+    border-bottom: solid 1px var(--dt-border-color);
+    padding: var(--dt-padding);
+    padding-left: 0;
+    display: flex;
+    align-items: baseline;
+}
+
+.datatable-container .header-tools .search { width: 30%; }
+
+.datatable-container .header-tools .search .search-input {
+    width: 100%;
+    height: calc(1.5em + 0.75rem + 2px);
+    padding: 0.375rem 0.75rem;
+    background-color: var(--dt-input-background-color);
+    display: block;
+    box-sizing: border-box;
+    border-radius: var(--dt-border-radius);
+    border: solid 1px var(--dt-border-color);
+    color: var(--dt-input-color);
+}
+
+.datatable-container .header-tools .tools { width: 70%; }
+
+.datatable-container .header-tools .tools ul {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: start;
+    align-items: baseline;
+}
+
+.datatable-container .header-tools .tools ul li {
+    display: inline-block;
+    margin: 0 var(--dt-padding-xs);
+    align-items: baseline;
+}
+
+.datatable-container .footer-tools {
+    padding: var(--dt-padding);
+    display: flex;
+    align-items: baseline;
+}
+
+.datatable-container .footer-tools .list-items { width: 50%; }
+
+.datatable-container .footer-tools .pages {
+    margin-left: auto;
+    margin-right: 0;
+    width: 50%;
+}
+
+.datatable-container .footer-tools .pages ul {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+}
+
+.datatable-container .footer-tools .pages ul li {
+    display: inline-block;
+    margin: 0 var(--dt-padding-xs);
+}
+
+.datatable-container .footer-tools .pages ul li button,
+.datatable-container .header-tools .tools ul li button {
+    color: var(--dt-text-color-button);
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: var(--dt-border-radius);
+    background: transparent;
+    cursor: pointer;
+}
+
+.datatable-container .footer-tools .pages ul li button:hover,
+.datatable-container .header-tools .tools ul li button:hover {
+    background: var(--dt-bg-active-button);
+    color: var(--dt-text-color-active-button);
+}
+
+.datatable-container .footer-tools .pages ul li span.active {
+    background-color: var(--dt-bg-color);
+    border-radius: var(--dt-border-radius);
+}
+
+.datatable-container .footer-tools .pages ul li button,
+.datatable-container .footer-tools .pages ul li span,
+.datatable-container .header-tools .tools ul li button {
+    padding: var(--dt-padding-s) var(--dt-padding);
+}
+
+.datatable-container .datatable {
+    border-collapse: collapse;
+    width: 100%;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.datatable-container .datatable,
+.datatable-container .datatable th,
+.datatable-container .datatable td {
+    padding: var(--dt-padding) var(--dt-padding);
+}
+
+.datatable-container .datatable th {
+    font-weight: bolder;
+    text-align: left;
+    border-bottom: solid 1px var(--dt-border-color);
+}
+
+.datatable-container .datatable td {
+    border-bottom: solid 1px var(--dt-border-color);
+}
+
+.datatable-container .datatable tbody tr:nth-child(even) {
+    background-color: var(--dt-even-row-color);
+}
+
+.datatable-container .datatable tbody tr:hover {
+    background-color: var(--dt-hover-cell-color);
+}
+
+.datatable-container .datatable tbody tr .available::after,
+.datatable-container .datatable tbody tr .away::after,
+.datatable-container .datatable tbody tr .offline::after {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.datatable-container .datatable tbody tr .available::after {
+    content: "Online";
+    color: var(--dt-status-available-color);
+}
+
+.datatable-container .datatable tbody tr .away::after {
+    content: "Away";
+    color: var(--dt-status-away-color);
+}
+
+.datatable-container .datatable tbody tr .offline::after {
+    content: "Offline";
+    color: var(--dt-status-offline-color);
+}
+
+.datatable-container .datatable tbody tr .available::before,
+.datatable-container .datatable tbody tr .away::before,
+.datatable-container .datatable tbody tr .offline::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 10px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+.datatable-container .datatable tbody tr .available::before {
+    background-color: var(--dt-status-available-color);
+}
+
+.datatable-container .datatable tbody tr .away::before {
+    background-color: var(--dt-status-away-color);
+}
+
+.datatable-container .datatable tbody tr .offline::before {
+    background-color: var(--dt-status-offline-color);
+}
+
+/* ==========================================================================
+   Bulletin Board Items
+   ========================================================================== */
+.items-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 300px;
+}
+
+.item-tag {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent-light);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--color-accent);
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.wants-container .item-tag {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    border-color: var(--color-warning);
+}
+
+.offers-container .item-tag {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.no-items {
+    color: var(--color-text-muted);
+    font-style: italic;
+    font-size: 14px;
+}
+
+/* ==========================================================================
+   Quest List - Card Design
+   ========================================================================== */
+.quest-list-container {
+    max-width: 600px;
+    width: 100%;
+    margin: 0 auto;
+    background: var(--color-bg-primary);
+    border-radius: 12px;
+    overflow: visible;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--color-border);
+}
+
+.quest-list-header {
+    background: var(--color-bg-secondary);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.quest-list-header .header-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.quest-list-header .header-stats {
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
+.quest-list-wrapper {
+    background: var(--color-bg-primary);
+}
+
+.quest-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: transparent;
+}
+
+.quest-card-row {
+    padding: 0 !important;
+    border: none !important;
+}
+
+.quest-card-item {
+    background: var(--color-bg-secondary);
+    margin: 8px 16px;
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    transition: all 0.2s ease;
+}
+
+.quest-card-item:hover {
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-border-light);
+}
+
+.quest-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.quest-status-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+    color: var(--color-text-primary);
+}
+
+.quest-status-badge.ongoing {
+    background: linear-gradient(135deg, var(--color-accent-light), var(--color-accent));
+}
+
+.quest-status-badge.completed {
+    background: linear-gradient(135deg, var(--color-success), #047857);
+}
+
+.quest-status-badge.scheduled {
+    background: linear-gradient(135deg, var(--color-info), #1d4ed8);
+}
+
+.quest-title-main {
+    flex: 1;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.3;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+.quest-stats-mini {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.quest-stats-mini .stat-item {
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 24px;
+    text-align: center;
+    border: 1px solid var(--color-border-light);
+}
+
+.quest-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--color-text-muted);
+}
+
+.quest-initiator {
+    font-weight: 500;
+    color: var(--color-accent-light);
+}
+
+.quest-id-small {
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+/* ==========================================================================
+   Quest Card (questimage) — harvest panel pattern
+   Mirrors .panel from ../harvest/src/styles/components.css:
+   bg-secondary surface, 1px solid border, radius-lg (8px), divider rows.
+   ========================================================================== */
+.quest-card-container {
+    max-width: 600px;
+    width: 100%;
+    margin: 5px auto;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;                 /* harvest --radius-lg */
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5),
+                0 8px 10px -6px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.quest-card {
+    width: 100%;
+    background: var(--color-bg-secondary);
+    padding: 0;
+    margin: 0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Body row (panel__body-style divider rows) */
+.quest-section {
+    padding: 12px 16px;                 /* harvest spacing-3 spacing-4 */
+    margin: 0;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+}
+
+.quest-section:last-of-type {
+    border-bottom: none;
+}
+
+.quest-picture {
+    text-align: center;
+    margin: 0;
+    padding: 16px;
+    background: var(--color-bg-primary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.quest-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 6px;                 /* harvest --radius-md */
+    object-fit: cover;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--color-border);
+}
+
+/* Side-by-side layout */
+.quest-content-with-image {
+    display: flex;
+    gap: 0;
+    min-height: 200px;
+}
+
+.quest-info-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-right: 0;
+}
+
+.quest-image-side {
+    flex: 0 0 40%;
+    background: var(--color-bg-primary);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid var(--color-border);
+}
+
+.quest-side-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.quest-section.alert {
+    background: var(--color-error-bg);
+    border-left: 3px solid var(--color-error);
+}
+
+/* Header band — matches harvest .panel__header */
+.quest-header {
+    background: var(--color-bg-secondary);
+    padding: 12px 16px;
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Type pill — harvest .btn--primary / accent style */
+.quest-type {
+    background: var(--color-accent);
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 6px;                 /* harvest --radius-md */
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+    line-height: 1.25;
+}
+
+/* Status pill — harvest secondary chip */
+.quest-status {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    line-height: 1.25;
+}
+
+.quest-initiator-name {
+    color: var(--color-text-muted);
+    font-size: 13px;
+    font-weight: 400;
+    margin: 0;
+    flex: 1;
+    text-align: center;
+}
+
+/* Title — harvest font-size-2xl, in the body, no border */
+.quest-title {
+    font-size: 24px;                    /* harvest --font-size-2xl */
+    font-weight: 700;                   /* harvest --font-weight-bold */
+    color: var(--color-text-primary);
+    line-height: 1.25;                  /* harvest --line-height-tight */
+    margin: 0;
+    padding: 16px 16px 12px 16px;
+    text-align: left;
+    width: 100%;
+    letter-spacing: -0.01em;
+    display: block;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    box-sizing: border-box;
+}
+
+/* Section label — small icon column, harvest text-muted */
+.section-label {
+    font-weight: 500;
+    color: var(--color-text-muted);
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+    width: 24px;
+    min-width: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.section-content {
+    color: var(--color-text-secondary);
+    font-size: 14px;                    /* harvest --font-size-sm */
+    line-height: 1.5;                   /* harvest --line-height-normal */
+    margin: 0;
+    flex: 1;
+    padding: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    min-width: 0;
+}
+
+/* Participants section — subtle accent, no heavy green box */
+.quest-section .section-content.participants {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    color: var(--color-text-primary);
+    font-weight: 500;
+    margin-left: 0;
+    box-shadow: none;
+}
+
+/* Participant chip — harvest pill */
+.participant-name {
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-accent-subtle);
+    padding: 2px 10px;
+    border-radius: 9999px;              /* harvest --radius-full */
+    margin: 2px 6px 2px 0;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--color-accent);
+    color: var(--color-text-primary);
+    box-shadow: none;
+    line-height: 1.4;
+}
+
+/* Footer — matches harvest .panel__footer */
+.quest-footer {
+    background: var(--color-bg-primary);
+    padding: 12px 16px;
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+}
+
+.quest-id {
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    margin: 0;
+}
+
+.quest-date {
+    color: var(--color-text-muted);
+    font-size: 12px;
+    font-weight: 400;
+    margin: 0;
+}
+
+/* Status-based color coding */
+.quest-card-container.ongoing {
+    border-left: 4px solid var(--color-warning);
+}
+
+.quest-card-container.ongoing.has-participants {
+    border-left: 4px solid var(--color-success);
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.4),
+        0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.quest-card-container.completed {
+    border-left: 4px solid var(--color-text-muted);
+    opacity: 0.85;
+}
+
+.quest-card-container.scheduled {
+    border-left: 4px solid var(--color-info);
+}
+
+.quest-card-container.stopped {
+    border-left: 4px solid var(--color-error);
+}
+
+/* Hologram styling */
+.quest-card-container.hologram.completed {
+    opacity: 1 !important;
+}
+
+.quest-card-item.hologram {
+    opacity: 0.85;
+    border: 2px solid #00BFFF !important;
+    box-shadow:
+        0 0 20px rgba(0, 191, 255, 0.4),
+        inset 0 0 20px rgba(0, 191, 255, 0.1);
+    box-sizing: border-box;
+}
+
+.hologram-badge {
+    background: linear-gradient(135deg, var(--color-info), #1d4ed8) !important;
+    color: var(--color-text-primary) !important;
+    padding: 4px 8px;
+    margin: 8px 15px 10px 15px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 500;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+    border: 1px solid var(--color-info) !important;
+    position: relative;
+    overflow: hidden;
+    display: block;
+    width: auto;
+    max-width: calc(100% - 30px);
+    box-sizing: border-box;
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Expense Schema",
+  "description": "Schema for expense objects in HolonsBot",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": ["string", "number"],
+      "description": "Unique identifier for the expense (usually message ID)"
+    },
+    "date": {
+      "type": "number",
+      "description": "Creation timestamp"
+    },
+    "amount": {
+      "type": "number",
+      "description": "Amount of the expense",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "description": "Currency code or name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of the expense"
+    },
+    "paidBy": {
+      "type": ["string", "number"],
+      "description": "User ID or username of who paid"
+    },
+    "splitWith": {
+      "type": "array",
+      "description": "List of user IDs who share this expense",
+      "items": {
+        "type": ["string", "number"]
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "id",
+    "date",
+    "amount",
+    "currency",
+    "description",
+    "paidBy",
+    "splitWith"
+  ],
+  "additionalProperties": false
+}

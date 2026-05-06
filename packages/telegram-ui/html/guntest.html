@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Page with Gun.js</title>
+    <script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1239/gun.js"></script>
+</head>
+<body>
+    <h1>Gun.js Test Page</h1>
+    <div id="content">
+        <!-- Content updated by Gun.js will go here -->
+    </div>
+
+    <script>
+        // Initialize Gun with specified peers
+        var gun = Gun({ peers: ['https://59.src.eco/gun'] , axe:false});
+
+        // Reference to a specific path in your Gun instance
+        var items =  gun.get('801ffffffffffff').get('gibberish')
+        items.map().once(function(data,key) {
+            console.log("Data received:", data,key);
+            document.getElementById('content').textContent += JSON.stringify(data, null, 2);
+        });
+
+        // Add data to the Gun instance
+        //items.set({ content: "My html content", done: false });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Announcement Schema",
+  "description": "Schema for announcement objects in HolonsBot",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": ["string", "number"],
+      "description": "Unique identifier (usually message ID)"
+    },
+    "user": {
+      "type": "object",
+      "description": "User who made the announcement",
+      "properties": {
+        "id": {
+          "type": "number",
+          "description": "User ID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username"
+        },
+        "first_name": {
+          "type": "string",
+          "description": "First name"
+        },
+        "last_name": {
+          "type": "string",
+          "description": "Last name"
+        }
+      },
+      "required": ["id"]
+    },
+    "date": {
+      "type": "string",
+      "description": "Creation date",
+      "format": "date-time"
+    },
+    "content": {
+      "type": "string",
+      "description": "Announcement content"
+    },
+    "chat": {
+      "type": ["string", "number"],
+      "description": "Holon ID where announcement was made"
+    },
+    "federated": {
+      "type": "boolean",
+      "description": "Whether announcement was federated",
+      "default": false
+    },
+    "federatedTo": {
+      "type": "array",
+      "description": "List of chat IDs where announcement was federated",
+      "items": {
+        "type": ["string", "number"]
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "id",
+    "user",
+    "date",
+    "content",
+    "chat"
+  ],
+  "additionalProperties": false
+}

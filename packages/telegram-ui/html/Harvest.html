@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+
+    <meta charset="utf-8" />
+    <title>Harvest</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="Premium Multipurpose Admin & Dashboard Template" name="description" />
+    <meta content="Themesbrand" name="author" />
+    <!-- App favicon -->
+    <link rel="shortcut icon" href="assets/images/favicon.ico">
+
+    <!-- dragula css -->
+    <link href="assets/libs/dragula/dragula.min.css" rel="stylesheet" type="text/css" />
+
+    <!-- Bootstrap Css -->
+    <link href="assets/css/bootstrap.min.css" id="bootstrap-style" rel="stylesheet" type="text/css" />
+    <!-- Icons Css -->
+    <link href="assets/css/icons.min.css" rel="stylesheet" type="text/css" />
+    <!-- App Css-->
+    <link href="assets/css/app.min.css" id="app-style" rel="stylesheet" type="text/css" />
+
+    <script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>
+
+    <script src="https://unpkg.com/mapbox-gl@2.9.1/dist/mapbox-gl.js"></script>
+    <link href="https://unpkg.com/mapbox-gl@2.9.1/dist/mapbox-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/h3-js@3.7.2/dist/h3-js.umd.js"></script>
+
+</head>
+
+<body data-layout="detached" data-topbar="colored" data-sidebar-size="small" data-bs-theme="dark">
+
+
+
+    <!-- <body data-layout="horizontal" data-topbar="dark"> -->
+
+    <div class="container-fluid">
+        <!-- Begin page -->
+        <div id="layout-wrapper">
+
+            <header id="page-topbar">
+                <div class="navbar-header">
+                    <div class="container-fluid">
+                        <div class="float-end">
+
+                            <div class="dropdown d-inline-block d-lg-none ms-2">
+                                <button type="button" class="btn header-item noti-icon waves-effect"
+                                    id="page-header-search-dropdown" data-bs-toggle="dropdown" aria-haspopup="true"
+                                    aria-expanded="false">
+                                    <i class="mdi mdi-magnify"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end p-0"
+                                    aria-labelledby="page-header-search-dropdown">
+
+                                    <form class="p-3">
+                                        <div class="m-0">
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" placeholder="Search ..."
+                                                    aria-label="Recipient's username">
+                                                <div class="input-group-append">
+                                                    <button class="btn btn-primary" type="submit"><i
+                                                            class="mdi mdi-magnify"></i></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <div class="dropdown d-none d-sm-inline-block">
+                                <button type="button" class="btn header-item waves-effect" data-bs-toggle="dropdown"
+                                    aria-haspopup="true" aria-expanded="false">
+                                    <img class="" src="assets/images/flags/us.jpg" alt="Header Language" height="16">
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end">
+
+                                    <!-- item-->
+                                    <a href="javascript:void(0);" class="dropdown-item notify-item">
+                                        <img src="assets/images/flags/spain.jpg" alt="user-image" class="me-1"
+                                            height="12"> <span class="align-middle">Spanish</span>
+                                    </a>
+
+                                    <!-- item-->
+                                    <a href="javascript:void(0);" class="dropdown-item notify-item">
+                                        <img src="assets/images/flags/germany.jpg" alt="user-image" class="me-1"
+                                            height="12"> <span class="align-middle">German</span>
+                                    </a>
+
+                                    <!-- item-->
+                                    <a href="javascript:void(0);" class="dropdown-item notify-item">
+                                        <img src="assets/images/flags/italy.jpg" alt="user-image" class="me-1"
+                                            height="12"> <span class="align-middle">Italian</span>
+                                    </a>
+
+                                    <!-- item-->
+                                    <a href="javascript:void(0);" class="dropdown-item notify-item">
+                                        <img src="assets/images/flags/russia.jpg" alt="user-image" class="me-1"
+                                            height="12"> <span class="align-middle">Russian</span>
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div class="dropdown d-none d-lg-inline-block ms-1">
+                                <button type="button" class="btn header-item noti-icon waves-effect"
+                                    data-toggle="fullscreen">
+                                    <i class="mdi mdi-fullscreen"></i>
+                                </button>
+                            </div>
+
+                            <div class="dropdown d-inline-block">
+                                <button type="button" class="btn header-item noti-icon waves-effect"
+                                    id="page-header-notifications-dropdown" data-bs-toggle="dropdown"
+                                    aria-haspopup="true" aria-expanded="false">
+                                    <i class="mdi mdi-bell-outline"></i>
+                                    <span class="badge rounded-pill bg-danger ">3</span>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-lg dropdown-menu-end p-0"
+                                    aria-labelledby="page-header-notifications-dropdown">
+                                    <div class="p-3">
+                                        <div class="row align-items-center">
+                                            <div class="col">
+                                                <h6 class="m-0"> Notifications </h6>
+                                            </div>
+                                            <div class="col-auto">
+                                                <a href="#!" class="small"> View All</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div data-simplebar style="max-height: 230px;">
+                                        <a href="" class="text-reset notification-item">
+                                            <div class="d-flex align-items-start">
+                                                <div class="avatar-xs me-3">
+                                                    <span class="avatar-title bg-primary rounded-circle font-size-16">
+                                                        <i class="bx bx-cart"></i>
+                                                    </span>
+                                                </div>
+                                                <div class="flex-1">
+                                                    <h6 class="mt-0 mb-1">Your order is placed</h6>
+                                                    <div class="font-size-12 text-muted">
+                                                        <p class="mb-1">If several languages coalesce the grammar</p>
+                                                        <p class="mb-0"><i class="mdi mdi-clock-outline"></i> 3 min ago
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </a>
+                                        <a href="" class="text-reset notification-item">
+                                            <div class="d-flex align-items-start">
+                                                <img src="assets/images/users/avatar-3.jpg"
+                                                    class="me-3 rounded-circle avatar-xs" alt="user-pic">
+                                                <div class="flex-1">
+                                                    <h6 class="mt-0 mb-1">James Lemire</h6>
+                                                    <div class="font-size-12 text-muted">
+                                                        <p class="mb-1">It will seem like simplified English.</p>
+                                                        <p class="mb-0"><i class="mdi mdi-clock-outline"></i> 1 hours
+                                                            ago</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </a>
+                                        <a href="" class="text-reset notification-item">
+                                            <div class="d-flex align-items-start">
+                                                <div class="avatar-xs me-3">
+                                                    <span class="avatar-title bg-success rounded-circle font-size-16">
+                                                        <i class="bx bx-badge-check"></i>
+                                                    </span>
+                                                </div>
+                                                <div class="flex-1">
+                                                    <h6 class="mt-0 mb-1">Your item is shipped</h6>
+                                                    <div class="font-size-12 text-muted">
+                                                        <p class="mb-1">If several languages coalesce the grammar</p>
+                                                        <p class="mb-0"><i class="mdi mdi-clock-outline"></i> 3 min ago
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </a>
+
+                                        <a href="" class="text-reset notification-item">
+                                            <div class="d-flex align-items-start">
+                                                <img src="assets/images/users/avatar-4.jpg"
+                                                    class="me-3 rounded-circle avatar-xs" alt="user-pic">
+                                                <div class="flex-1">
+                                                    <h6 class="mt-0 mb-1">Salena Layfield</h6>
+                                                    <div class="font-size-12 text-muted">
+                                                        <p class="mb-1">As a skeptical Cambridge friend of mine
+                                                            occidental.</p>
+                                                        <p class="mb-0"><i class="mdi mdi-clock-outline"></i> 1 hours
+                                                            ago</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </a>
+                                    </div>
+                                    <div class="p-2 border-top d-grid">
+                                        <a class="btn btn-sm btn-link font-size-14 " href="javascript:void(0)">
+                                            <i class="mdi mdi-arrow-right-circle me-1"></i> View More..
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dropdown d-inline-block">
+                                <button type="button" class="btn header-item waves-effect"
+                                    id="page-header-user-dropdown" data-bs-toggle="dropdown" aria-haspopup="true"
+                                    aria-expanded="false">
+                                    <img class="rounded-circle header-profile-user"
+                                        src="assets/images/users/liminal.png" alt="Header Avatar">
+                                    <span class="d-none d-xl-inline-block ms-1">Liminal Village</span>
+                                    <i class="mdi mdi-chevron-down d-none d-xl-inline-block"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end">
+                                    <!-- item-->
+                                    <a class="dropdown-item" href="#"><i
+                                            class="bx bx-user font-size-16 align-middle me-1"></i>
+                                        Profile</a>
+                                    <a class="dropdown-item" href="#"><i
+                                            class="bx bx-wallet font-size-16 align-middle me-1"></i> My
+                                        Wallet</a>
+                                    <a class="dropdown-item d-block" href="#"><span
+                                            class="badge bg-success float-end">11</span><i
+                                            class="bx bx-wrench font-size-16 align-middle me-1"></i> Settings</a>
+                                    <a class="dropdown-item" href="#"><i
+                                            class="bx bx-lock-open font-size-16 align-middle me-1"></i>
+                                        Lock screen</a>
+                                    <div class="dropdown-divider"></div>
+                                    <a class="dropdown-item text-danger" href="#"><i
+                                            class="bx bx-power-off font-size-16 align-middle me-1 text-danger"></i>
+                                        Logout</a>
+                                </div>
+                            </div>
+
+                            <div class="dropdown d-inline-block">
+                                <button type="button" class="btn header-item noti-icon right-bar-toggle waves-effect"
+                                    data-bs-toggle="offcanvas" data-bs-target="#offcanvasExample"
+                                    aria-controls="offcanvasExample">
+                                    <i class="mdi mdi-settings-outline"></i>
+                                </button>
+                            </div>
+
+                        </div>
+                        <div>
+                            <!-- LOGO -->
+                            <div class="navbar-brand-box">
+                                <!-- <a href="index.html" class="logo logo-dark">
+                                <span class="logo-sm">
+                                    <img src="assets/images/logo-sm.png" alt="" height="20">
+                                </span>
+                                <span class="logo-lg">
+                                    <img src="assets/images/logo-dark.png" alt="" height="17">
+                                </span>
+                            </a>
+
+                            <a href="index.html" class="logo logo-light">
+                                <span class="logo-sm">
+                                    <img src="assets/images/logo-sm.png" alt="" height="20">
+                                </span>
+                                <span class="logo-lg">
+                                    <img src="assets/images/logo-light.png" alt="" height="19">
+                                </span>
+                            </a> -->
+                            </div>
+
+                            <button type="button"
+                                class="btn btn-sm px-3 font-size-16 header-item toggle-btn waves-effect"
+                                id="vertical-menu-btn">
+                                <i class="fa fa-fw fa-bars"></i>
+                            </button>
+
+                            <!-- App Search-->
+                            <form class="app-search d-none d-lg-inline-block">
+                                <div class="position-relative">
+                                    <input type="text" class="form-control" placeholder="Search...">
+                                    <span class="bx bx-search-alt"></span>
+                                </div>
+                            </form>
+
+                            <div class="dropdown dropdown-mega d-none d-lg-inline-block ms-2">
+                                <button type="button" class="btn header-item waves-effect" data-bs-toggle="dropdown"
+                                    aria-haspopup="false" aria-expanded="false">
+                                    Mega Menu
+                                    <i class="mdi mdi-chevron-down"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-megamenu">
+                                    <div class="row">
+                                        <div class="col-sm-6">
+
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <h5 class="font-size-14 mt-0">UI Components</h5>
+                                                    <ul class="list-unstyled megamenu-list text-muted">
+                                                        <li>
+                                                            <a href="javascript:void(0);">Lightbox</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Range Slider</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Sweet Alert</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Rating</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Forms</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Tables</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Charts</a>
+                                                        </li>
+                                                    </ul>
+                                                </div>
+
+                                                <div class="col-md-4">
+                                                    <h5 class="font-size-14 mt-0">Applications</h5>
+                                                    <ul class="list-unstyled megamenu-list">
+                                                        <li>
+                                                            <a href="javascript:void(0);">Ecommerce</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Calendar</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Email</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Projects</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Tasks</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Contacts</a>
+                                                        </li>
+                                                    </ul>
+                                                </div>
+
+                                                <div class="col-md-4">
+                                                    <h5 class="font-size-14 mt-0">Extra Pages</h5>
+                                                    <ul class="list-unstyled megamenu-list">
+                                                        <li>
+                                                            <a href="javascript:void(0);">Light Sidebar</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Compact Sidebar</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Horizontal layout</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Maintenance</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Coming Soon</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">Timeline</a>
+                                                        </li>
+                                                        <li>
+                                                            <a href="javascript:void(0);">FAQs</a>
+                                                        </li>
+
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <div class="row">
+                                                <div class="col-sm-6">
+                                                    <h5 class="font-size-14 mt-0">Components</h5>
+                                                    <div class="px-lg-2">
+                                                        <div class="row g-0">
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/github.png"
+                                                                        alt="Github">
+                                                                    <span>GitHub</span>
+                                                                </a>
+                                                            </div>
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/bitbucket.png"
+                                                                        alt="bitbucket">
+                                                                    <span>Bitbucket</span>
+                                                                </a>
+                                                            </div>
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/dribbble.png"
+                                                                        alt="dribbble">
+                                                                    <span>Dribbble</span>
+                                                                </a>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="row g-0">
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/dropbox.png"
+                                                                        alt="dropbox">
+                                                                    <span>Dropbox</span>
+                                                                </a>
+                                                            </div>
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/mail_chimp.png"
+                                                                        alt="mail_chimp">
+                                                                    <span>Mail Chimp</span>
+                                                                </a>
+                                                            </div>
+                                                            <div class="col">
+                                                                <a class="dropdown-icon-item" href="#">
+                                                                    <img src="assets/images/brands/slack.png"
+                                                                        alt="slack">
+                                                                    <span>Slack</span>
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="col-sm-6">
+                                                    <div>
+                                                        <div class="card text-white mb-0 overflow-hidden text-white-50"
+                                                            style="background-image: url('assets/images/megamenu-img.png');background-size: cover;">
+                                                            <div class="card-img-overlay"></div>
+                                                            <div class="card-body">
+                                                                <div class="row">
+                                                                    <div class="col-xl-6">
+                                                                        <h4 class="text-white mb-3">Sale</h4>
+
+                                                                        <h5 class="text-white-50">Up to <span
+                                                                                class="font-size-24 text-white">50
+                                                                                %</span> Off</h5>
+                                                                        <p>At vero eos accusamus et iusto odio.</p>
+                                                                        <div class="mb-4">
+                                                                            <a href="#"
+                                                                                class="btn btn-success btn-sm">View
+                                                                                more</a>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </header> <!-- ========== Left Sidebar Start ========== -->
+            <div class="vertical-menu">
+
+                <div class="h-100">
+
+                    <div class="user-wid text-center py-4">
+                        <div class="user-img">
+                            <img src="assets/images/users/liminal.png" alt="" class="avatar-md mx-auto rounded-circle">
+                        </div>
+
+                        <div class="mt-3">
+
+                            <a href="#" class="text-body fw-medium font-size-16">Liminal Village</a>
+                            <p class="text-muted mt-1 mb-0 font-size-13">Eco-tech Hub</p>
+
+                        </div>
+                    </div>
+
+                    <!--- Sidemenu -->
+                    <div id="sidebar-menu">
+                        <!-- Left Menu Start -->
+                        <ul class="metismenu list-unstyled" id="side-menu">
+                            <li class="menu-title">Menu</li>
+
+                            <li>
+                                <a href="javascript: void(0);" class="waves-effect">
+                                    <i class="mdi mdi-airplay"></i><span
+                                        class="badge rounded-pill bg-info float-end">2</span>
+                                    <span>Dashboard</span>
+                                </a>
+                                <ul class="sub-menu" aria-expanded="false">
+                                    <li><a href="index.html">Dashboard 1</a></li>
+                                    <li><a href="index-2.html">Dashboard 2</a></li>
+                                </ul>
+                            </li>
+
+
+                            <li>
+                                <a href="calendar.html" class=" waves-effect">
+                                    <i class="mdi mdi-calendar-text"></i>
+                                    <span>Calendar</span>
+                                </a>
+                            </li>
+
+
+
+                            <li>
+                                <a href="javascript: void(0);" class="has-arrow waves-effect">
+                                    <i class="mdi mdi-calendar-check"></i>
+                                    <span>Tasks</span>
+                                </a>
+                                <ul class="sub-menu" aria-expanded="false">
+                                    <li><a href="tasks-list.html">Task List</a></li>
+                                    <li><a href="tasks-kanban.html">Kanban Board</a></li>
+                                    <li><a href="tasks-create.html">Create Task</a></li>
+                                </ul>
+                            </li>
+
+
+
+                            <li>
+                                <a href="javascript: void(0);" class="has-arrow waves-effect">
+                                    <i class="mdi mdi-chart-donut"></i>
+                                    <span>Charts</span>
+                                </a>
+                                <ul class="sub-menu" aria-expanded="false">
+                                    <li><a href="charts-apex.html">Apex charts</a></li>
+                                    <li><a href="charts-chartjs.html">Chartjs Chart</a></li>
+                                    <li><a href="charts-flot.html">Flot Chart</a></li>
+                                    <li><a href="charts-knob.html">Jquery Knob Chart</a></li>
+                                    <li><a href="charts-sparkline.html">Sparkline Chart</a></li>
+                                </ul>
+                            </li>
+
+
+
+                            <li>
+                                <a href="javascript: void(0);" class="has-arrow waves-effect">
+                                    <i class="mdi mdi-map-marker-outline"></i>
+                                    <span>Maps</span>
+                                </a>
+                                <ul class="sub-menu" aria-expanded="false">
+                                    <li><a href="maps-google.html">Google Maps</a></li>
+                                    <li><a href="maps-vector.html">Vector Maps</a></li>
+                                </ul>
+                            </li>
+
+                            <li>
+                                <a href="javascript: void(0);" class="has-arrow waves-effect">
+                                    <i class="mdi mdi-file-tree"></i>
+                                    <span>Multi Level</span>
+                                </a>
+                                <ul class="sub-menu" aria-expanded="true">
+                                    <li><a href="javascript: void(0);">Level 1.1</a></li>
+                                    <li><a href="javascript: void(0);" class="has-arrow">Level 1.2</a>
+                                        <ul class="sub-menu" aria-expanded="true">
+                                            <li><a href="javascript: void(0);">Level 2.1</a></li>
+                                            <li><a href="javascript: void(0);">Level 2.2</a></li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </li>
+
+                        </ul>
+                    </div>
+                    <!-- Sidebar -->
+                </div>
+            </div>
+            <!-- Left Sidebar End -->
+
+            <!-- ============================================================== -->
+            <!-- Start right Content here -->
+            <!-- ============================================================== -->
+            <div class="main-content">
+
+                <div class="page-content">
+
+                    <!-- start page title -->
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="page-title-box d-flex align-items-center justify-content-between">
+                                <h4 class="page-title mb-0 font-size-18">Harvest Board</h4>
+                                <div class="page-title-right">
+                                    <ol class="breadcrumb m-0">
+                                        <li class="breadcrumb-item"><a href="javascript: void(0);">Pages</a></li>
+                                        <li class="breadcrumb-item active">Harvest Board</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- end page title -->
+                    <div class="row">
+                        <div id="map" style="width: 100%; height: 100vh;"></div>
+
+                        <script>
+                            mapboxgl.accessToken = 'pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ';
+                            config = ({
+                                lng: 13.7496496,
+                                lat: 42.8917571,
+                                zoom: 0
+                            })
+                            let map = new mapboxgl.Map({
+                                container: "map",
+                                center: [config.lng, config.lat],
+                                zoom: (config.zoom + 2),
+                                style: 'mapbox://styles/mapbox/satellite-streets-v12',
+                                projection: { name: 'globe' }
+                            });
+
+                            map.on('load', function () {
+                                renderHexes(map);
+                                ['zoomend', 'dragend', 'resize'].forEach(event => {
+                                    map.on(event, () => renderHexes(map));
+                                });
+
+                                map.addSource('h3-hex-areas', {
+                                    type: 'geojson',
+                                    data: {
+                                        type: 'FeatureCollection',
+                                        features: []
+                                    }
+                                });
+
+                                map.addLayer({
+                                    id: 'highlighted-hex',
+                                    type: 'fill',
+                                    source: 'h3-hex-areas',
+                                    paint: {
+                                        'fill-color': 'red',
+                                        'fill-opacity': 0.6,
+                                        'fill-outline-color': 'rgba(255, 0, 0, 1)'
+                                    }
+                                });
+
+                            });
+
+                            map.addControl(
+                                new mapboxgl.GeolocateControl({
+                                    positionOptions: {
+                                        enableHighAccuracy: true
+                                    },
+                                    // When active the map will receive updates to the device's location as it changes.
+                                    trackUserLocation: true,
+                                    // Draw an arrow next to the location dot to indicate which direction the device is heading.
+                                    showUserHeading: true
+                                })
+                            );
+
+                            map.on('click', (e) => {
+                                const clickedHex = h3.geoToH3(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
+                                new mapboxgl.Popup()
+                                    .setLngLat(e.lngLat)
+                                    .setHTML(clickedHex)
+                                    .addTo(map);
+
+                                highlightHexagon(map, clickedHex);
+                            });
+
+
+                            function highlightHexagon(map, hex) {
+
+                                const kRing = h3.kRing(hex, 3);
+                                // Reduce hexagon list to a map with random values
+                                let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
+
+                                // Get the hexagon boundaries
+
+                                const hexBoundary = h3.h3ToGeoBoundary(hex, true);
+
+                                let coordinates = [];
+                                for (let i = 0; i < hexBoundary.length; i++) {
+                                    coordinates.push([hexBoundary[i][1], hexBoundary[i][0]]);
+                                }
+
+                                // if (hexBoundary.find((e) => e[0] < -128) !== undefined) {
+                                //     hexBoundary = hexBoundary.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                                //     }
+                                const hexGeoJson = {
+                                    type: 'Feature',
+                                    properties: {},
+                                    geometry: {
+                                        type: 'Polygon',
+                                        coordinates: [coordinates]  // Close the polygon by adding the first point again
+                                    }
+                                };
+
+                                // Update the source data with the new hexagon to highlight.
+                                map.getSource('h3-hex-areas').setData({
+                                    type: 'FeatureCollection',
+                                    features: [hexGeoJson]
+                                });
+                            }
+                            function getResolution(zoom) {
+                                const zoomToRes = [
+                                    [3.0, 0],
+                                    [4.4, 1],
+                                    [5.7, 2],
+                                    [7.1, 3],
+                                    [8.4, 4],
+                                    [9.8, 5],
+                                    [11.4, 6],
+                                    [12.7, 7],
+                                    [14.1, 8],
+                                    [15.5, 9],
+                                    [16.8, 10],
+                                    [18.2, 11],
+                                    [19.5, 12],
+                                    [21.1, 13],
+                                    [21.9, 14]
+                                ];
+
+                                for (let [z, res] of zoomToRes) {
+                                    if (zoom <= z) return res;
+                                }
+                                return 15;
+                            }
+
+
+                            function renderHexes(map) {
+                                const latitudeMax = 90;
+                                const latitudeMin = -latitudeMax;
+                                const longitudeMax = 180;
+                                const longitudeMin = -longitudeMax;
+
+                                const extraFillArea = 0.5;
+                                const blueColor = '#ffffff';//'#0080ff';
+                                const borderLayerName = 'hex-layer-border';
+                                const hexSourceName = 'hex-source';
+
+                                var currentZoom = map.getZoom();
+                                var h3res = getResolution(currentZoom);
+                                console.log("Resolution: " + JSON.stringify(h3res));
+
+                                const iw = window.innerWidth;
+                                const ih = window.innerHeight;
+                                const cUL = map.unproject([0, 0]).toArray(); // Upper left
+                                const cLR = map.unproject([iw, ih]).toArray(); // Lower right
+                                const x1 = Math.min(cUL[0], cLR[0]);
+                                const x2 = Math.max(cUL[0], cLR[0]);
+                                const y1 = Math.min(cUL[1], cLR[1]);
+                                const y2 = Math.max(cUL[1], cLR[1]);
+                                const dh = x2 - x1;
+                                const dv = y2 - y1;
+                                console.log(`REAL Coordinates x1:${x1} x2:${x2} y1:${y1} y2:${y2} dh:${dh} dv:${dv}`);
+
+                                let x1withBuffer = x1 - dh * extraFillArea;
+                                let x2withBuffer = x2 + dh * extraFillArea;
+                                let y1withBuffer = y1 - dv * extraFillArea;
+                                let y2withBuffer = y2 + dv * extraFillArea;
+                                let fullX = x1withBuffer < longitudeMin || x2withBuffer > longitudeMax;
+
+                                x1withBuffer = Math.max(x1withBuffer, longitudeMin);
+                                x2withBuffer = Math.min(x2withBuffer, longitudeMax);
+                                y1withBuffer = Math.max(y1withBuffer, latitudeMin);
+                                y2withBuffer = Math.min(y2withBuffer, latitudeMax);
+                                console.log(`BUFF Coordinates x1:${x1withBuffer} x2:${x2withBuffer} y1:${y1withBuffer} y2:${y2withBuffer} fullView:${fullX}`);
+
+                                let coordinates = [];
+                                if (fullX) {
+                                    coordinates.push([
+                                        [latitudeMin, longitudeMin],
+                                        [latitudeMin, 0],
+                                        [latitudeMax, 0],
+                                        [latitudeMax, longitudeMin]
+                                    ]);
+
+                                    coordinates.push([
+                                        [latitudeMin, 0],
+                                        [latitudeMin, longitudeMax],
+                                        [latitudeMax, longitudeMax],
+                                        [latitudeMax, 0]
+                                    ]);
+                                } else {
+                                    const xIncrement = 180;
+                                    let lowerX = x1withBuffer;
+                                    while (lowerX < longitudeMax && lowerX < x2withBuffer) {
+                                        let upperX = Math.min(lowerX + xIncrement, x2withBuffer, 180);
+                                        coordinates.push([[
+                                            [y2withBuffer, lowerX],
+                                            [y2withBuffer, upperX],
+                                            [y1withBuffer, upperX],
+                                            [y1withBuffer, lowerX]
+                                        ]]);
+                                        console.log(`PUSH Coordinates x1:${lowerX} x2:${upperX} y1:${y1withBuffer} y2:${y2withBuffer}`);
+                                        lowerX += xIncrement;
+                                    }
+                                }
+
+                                var shapes = [].concat(...coordinates.map(e => { return h3.polyfill(e, h3res); }));
+                                var innershapes = [].concat(...coordinates.map(e => { return h3.polyfill(e, h3res + 1); }));
+                                var hexBoundaries = [];
+                                var pentaBoundaries = [];
+                                var innerBoundaries = [];
+
+                                for (var i = 0; i < shapes.length; i++) {
+                                    let h = h3.h3ToGeoBoundary(shapes[i], true);
+                                    if (h.find((e) => e[0] < -128) !== undefined) {
+                                        h = h.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                                    }
+
+                                    if (h3.h3IsPentagon(shapes[i])) {
+                                        pentaBoundaries.push(h);
+                                    } else {
+                                        hexBoundaries.push(h);
+                                    }
+                                }
+                                for (var i = 0; i < innershapes.length; i++) {
+                                    let h = h3.h3ToGeoBoundary(innershapes[i], true);
+                                    if (h.find((e) => e[0] < -128) !== undefined) {
+                                        h = h.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                                    }
+                                    innerBoundaries.push(h);
+                                }
+
+                                console.log(`currentZoom: ${currentZoom}, resolution: ${h3res}, shapes: ${hexBoundaries.length}`);
+
+
+
+                                var featureCollection = {
+                                    "type": "FeatureCollection",
+                                    "features": [
+                                        {
+                                            "type": "Feature",
+                                            "properties": { 'color': 'gray' },
+                                            "geometry": {
+                                                "type": "Polygon",
+                                                "coordinates": innerBoundaries
+                                            }
+                                        },
+                                        {
+                                            "type": "Feature",
+                                            "properties": { 'color': 'white' },
+                                            "geometry": {
+                                                "type": "Polygon",
+                                                "coordinates": hexBoundaries
+                                            }
+                                        },
+                                        {
+                                            "type": "Feature",
+                                            "properties": { 'color': 'gray' },
+                                            "geometry": {
+                                                "type": "Polygon",
+                                                "coordinates": pentaBoundaries
+                                            }
+                                        }
+
+                                    ]
+                                };
+
+                                const hexSource = map.getSource(hexSourceName);
+                                if (hexSource !== undefined) {
+                                    (hexSource).setData(featureCollection);
+                                } else {
+                                    var hexGeoJson = {
+                                        type: 'geojson',
+                                        data: featureCollection,
+                                    };
+                                    map.addSource(hexSourceName, hexGeoJson);
+                                    map.addLayer({
+                                        'id': borderLayerName,
+                                        'source': hexSourceName,
+                                        'type': 'line',
+                                        'layout': {},
+                                        'paint': {
+                                            'line-color': ['get', 'color'],
+                                            'line-width': 2
+                                        }
+                                    });
+                                }
+                            }
+
+                        </script>
+                    </div>
+                    <div class="row">
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="dropdown float-end">
+                                        <a href="#" class="dropdown-toggle arrow-none" data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                            <i class="mdi mdi-dots-vertical m-0 text-muted h5"></i>
+                                        </a>
+                                        <div class="dropdown-menu dropdown-menu-end">
+                                            <a class="dropdown-item" href="#">Edit</a>
+                                            <a class="dropdown-item" href="#">Delete</a>
+                                        </div>
+                                    </div>
+                                    <!-- end dropdown -->
+
+                                    <h4 class="card-title mb-4">Upcoming</h4>
+                                    <div id="upcoming-task" class="pb-1 task-list">
+                                        <script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1239/gun.js"></script>
+                                        <script>
+                                            gun = Gun({ peers: ['https://59.src.eco/gun'], axe:false });
+                                            var quests = gun.get('WeQuestDebug').get('235114395/quests')
+                                            ul = document.getElementById('upcoming-task');
+
+                                            quests.map().on((data, id) => {
+                                                console.log(data)
+                                                var li = $('#' + id)
+                                                if (!li.get(0)) {
+                                                    li = $('<div class="card task-box">').attr('id', id).appendTo(ul)
+                                                }
+                                                if (data) {
+                                                    object = JSON.parse(data)
+                                                    if (object.status == 'ongoing') {
+                                                        html = `
+                                                            <div class="card-body">
+                                                                <div class="float-end ms-2">
+                                                                    <span
+                                                                        class="badge rounded-pill bg-secondary-subtle text-secondary  font-size-12">Waiting</span>
+                                                                </div>
+                                                                <div>
+                                                                    <h5 class="font-size-15"><a href="javascript: void(0);"
+                                                                            class="text-reset">${object.title}</a></h5>
+                                                                    <p class="text-muted mb-4">${object.when ? Date(object.when).toLocaleString() : ''}</p>
+                                                                </div>
+                                                                <div class="team float-start">
+                                                                    <p class="mb-0 text-muted">Participants</p>
+                                                                    ${object.participants.map(u => '@' + u.username).join(', ')}
+                                                                    <a href="javascript: void(0);" class="team-member d-inline-block">
+                                                                        <img src="assets/images/users/liminal.png"
+                                                                            class="rounded-circle avatar-xs m-1" alt="">
+                                                                    </a>
+
+                                                                    <a href="javascript: void(0);" class="team-member d-inline-block">
+                                                                        <div class="avatar-xs">
+                                                                            <span
+                                                                                class="avatar-title rounded-circle bg-soft-primary text-primary">
+                                                                                3 +
+                                                                            </span>
+                                                                        </div>
+                                                                    </a>
+                                                                </div>
+
+                                                                <div class="text-end">
+                                                                    <h5 class="font-size-15 mb-1">${object.appreciation.length} </h5>
+                                                                    <p class="mb-0 text-muted">Appreciation</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>`
+                                                        li.html(html);
+                                                    } else
+                                                        li.remove()  // remove completed quests
+                                                }
+                                                else { // remove deleted items
+                                                    li.remove()
+                                                }
+                                            });
+                                        </script>
+
+                                    </div>
+
+                                    <div class="text-center">
+                                        <a href="javascript: void(0);"
+                                            class="btn btn-primary w-100 waves-effect waves-light"><i
+                                                class="mdi mdi-plus me-1"></i> Add New</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- end col -->
+
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="dropdown float-end">
+                                        <a href="#" class="dropdown-toggle arrow-none" data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                            <i class="mdi mdi-dots-vertical m-0 text-muted h5"></i>
+                                        </a>
+                                        <div class="dropdown-menu dropdown-menu-end">
+                                            <a class="dropdown-item" href="#">Edit</a>
+                                            <a class="dropdown-item" href="#">Delete</a>
+                                        </div>
+                                    </div>
+                                    <!-- end dropdown -->
+
+                                    <h4 class="card-title mb-4">In Progress</h4>
+                                    <div id="inprogress-task" class="pb-1 task-list">
+
+
+
+
+
+
+
+                                    </div>
+
+                                    <div class="text-center">
+                                        <a href="javascript: void(0);"
+                                            class="btn btn-primary w-100 waves-effect waves-light"><i
+                                                class="mdi mdi-plus me-1"></i> Add New</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- end col -->
+
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="dropdown float-end">
+                                        <a href="#" class="dropdown-toggle arrow-none" data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                            <i class="mdi mdi-dots-vertical m-0 text-muted h5"></i>
+                                        </a>
+                                        <div class="dropdown-menu dropdown-menu-end">
+                                            <a class="dropdown-item" href="#">Edit</a>
+                                            <a class="dropdown-item" href="#">Delete</a>
+                                        </div>
+                                    </div>
+                                    <!-- end dropdown -->
+
+                                    <h4 class="card-title mb-4">Completed</h4>
+                                    <div id="complete-task" class="pb-1 task-list">
+
+
+                                    </div>
+
+                                    <div class="text-center">
+                                        <a href="javascript: void(0);"
+                                            class="btn btn-primary w-100 waves-effect waves-light"><i
+                                                class="mdi mdi-plus me-1"></i> Add New</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- end col -->
+                    </div>
+
+                    <!-- end row -->
+
+                </div>
+                <!-- End Page-content -->
+
+                <footer class="footer">
+                    <div class="container-fluid">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <script>document.write(new Date().getFullYear())</script> © Qovex.
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="text-sm-end d-none d-sm-block">
+                                    Design & Develop by Themesbrand
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </footer>
+            </div>
+            <!-- end main content-->
+
+        </div>
+        <!-- END layout-wrapper -->
+
+    </div>
+    <!-- end container-fluid -->
+
+
+
+    </div>
+
+
+    <!-- /Right-bar -->
+
+    <!-- Right bar overlay-->
+    <div class="rightbar-overlay"></div>
+
+    <!-- JAVASCRIPT -->
+    <!-- JAVASCRIPT -->
+    <script src="assets/libs/jquery/jquery.min.js"></script>
+    <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/libs/metismenu/metisMenu.min.js"></script>
+    <script src="assets/libs/simplebar/simplebar.min.js"></script>
+    <script src="assets/libs/node-waves/waves.min.js"></script>
+    <script src="assets/libs/jquery-sparkline/jquery.sparkline.min.js"></script>
+
+    <!-- dragula plugins -->
+    <script src="assets/libs/dragula/dragula.min.js"></script>
+
+    <script src="assets/js/pages/task-kanban.init.js"></script>
+
+    <!-- App js -->
+    ƒ
+    <script src="assets/js/app.js"></script>
+
+</body>
+
+</html>

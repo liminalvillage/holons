@@ -1,0 +1,32 @@
+{
+  "title": "Geolocation Coordinates",
+  "description": "The geo-coordinates (latitude & longitude) of the primary location of the entity or item",
+  "type": "object",
+  "properties": {
+    "lat": {
+      "$ref": "../fields/latitude.json"
+    },
+    "lon": {
+      "$ref": "../fields/longitude.json"
+    }
+  },
+  "required": [
+    "lat",
+    "lon"
+  ],
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "geolocation",
+      "version": "0.0.1"
+    },
+    "context": [
+      "https://schema.org/latitude",
+      "https://schema.org/longitude",
+      "https://schema.org/GeoCoordinates"
+    ]
+  }
+}

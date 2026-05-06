@@ -1,0 +1,20 @@
+{
+  "title": "RSS Feed",
+  "description": "The URL for the entity's RSS feed (e.g., yoursite.org/rss or yoursite.org/feed) starting with http:// or https://",
+  "type": "string",
+  "maxLength": 2000,
+  "pattern": "^https?://.*",
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "rss",
+      "version": "0.0.1"
+    },
+    "context": [
+      "https://en.wikipedia.org/wiki/RSS"
+    ]
+  }
+}

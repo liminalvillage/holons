@@ -1,0 +1,20 @@
+{
+  "title": "Primary URL",
+  "description": "The primary URL of the entity or item (i.e., its unique, canonical and definitive website address)",
+  "type": "string",
+  "maxLength": 2000,
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "primary_url",
+      "version": "0.0.1"
+    },
+    "context": [
+      "https://schema.org/url"
+    ],
+    "purpose": "The primary URL is used to uniquely identify the entity or item, and is usually represented as a website address or specific web page that is well-known to be linked to the entity. It can be used to link to the entity or item from other entities or items."
+  }
+}

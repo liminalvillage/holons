@@ -1,0 +1,804 @@
+{
+  "questions": [
+    {
+      "questionID": "1",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Governance",
+          "questionDescription": "Do you prefer centralized leadership for direction and efficiency, a hybrid approach balancing central authority with collective input, or decentralized models fostering inclusivity and diverse perspectives?",
+          "options": [
+            {
+              "optionShortText": "Centralized",
+              "optionLongText": "I prefer clear, centralized leadership and decision-making, as it provides direction and efficiency.",
+              "optionValue": "Centralized"
+            },
+            {
+              "optionShortText": "    Hybrid Governance",
+              "optionLongText": "I value a balance where there's a central authority, but also room for collective input and decentralized decision-making.",
+              "optionValue": "HybridGovernance"
+            },
+            {
+              "optionShortText": "    Decentralized",
+              "optionLongText": "I thrive in environments where decisions are made collectively or through a decentralized process, fostering inclusivity and diverse perspectives.",
+              "optionValue": "Decentralized"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "2",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Work Structure",
+          "questionDescription": "Do you work best with clear roles and structured contributions, appreciate some structure but also the freedom for spontaneous and creative contribution, or thrive in environments allowing freeform innovation without rigid structures?",
+          "options": [
+            {
+              "optionShortText": "Structured",
+              "optionLongText": "I work best with clear roles and structured contributions, where expectations and roles are well-defined.",
+              "optionValue": "Structured"
+            },
+            {
+              "optionShortText": "    Flexible Structuring",
+              "optionLongText": "I appreciate having some structure but also the freedom to contribute spontaneously and creatively.",
+              "optionValue": "FlexibleStructuring"
+            },
+            {
+              "optionShortText": "    Freeform",
+              "optionLongText": "I am most productive when I can contribute freely, without rigid structures, and can innovate as I go.",
+              "optionValue": "Freeform"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "3",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Focus Scope",
+          "questionDescription": "Is your focus primarily on local, community-based impacts, a blend of local insights with global perspectives (glocal), or broad, international impact and outreach (global)?",
+          "options": [
+            {
+              "optionShortText": "Local",
+              "optionLongText": "My focus is primarily on local, community-based impacts, where the immediate surroundings and community needs are central.",
+              "optionValue": "Local"
+            },
+            {
+              "optionShortText": "    Glocal Integration",
+              "optionLongText": "I believe in blending local insights with global perspectives, balancing community needs with broader global challenges.",
+              "optionValue": "GlocalIntegration"
+            },
+            {
+              "optionShortText": "    Global",
+              "optionLongText": "I am drawn to projects with a global scope, aiming for broad, international impact and outreach.",
+              "optionValue": "Global"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "4",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Approach to Change",
+          "questionDescription": "Are you motivated by innovative ideas and new approaches, value innovative approaches that respect and incorporate traditional wisdom, or find comfort in traditional methods and established practices?",
+          "options": [
+            {
+              "optionShortText": "Innovation",
+              "optionLongText": "I am motivated by innovative ideas and new approaches, constantly seeking to challenge and change the status quo.",
+              "optionValue": "Innovation"
+            },
+            {
+              "optionShortText": "    Evolutionary Tradition",
+              "optionLongText": "I value innovative approaches that also respect and incorporate traditional wisdom and methods.",
+              "optionValue": "EvolutionaryTradition"
+            },
+            {
+              "optionShortText": "    Tradition",
+              "optionLongText": "My comfort lies in traditional methods and established practices, valuing continuity and time-tested approaches.",
+              "optionValue": "Tradition"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "5",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Motivational Driver",
+          "questionDescription": "Do you focus on financial goals and profitability, aim for financial sustainability with a purpose beyond profit, or prioritize a social, environmental, or humanitarian mission over financial gains?",
+          "options": [
+            {
+              "optionShortText": "Profit-driven",
+              "optionLongText": "I am focused on financial goals and believe that profitability is a key indicator of success.",
+              "optionValue": "Profitdriven"
+            },
+            {
+              "optionShortText": "    Sustainable Profitability",
+              "optionLongText": "I aim for financial sustainability but also prioritize a purpose beyond just making a profit.",
+              "optionValue": "SustainableProfitability"
+            },
+            {
+              "optionShortText": "    Purpose-driven",
+              "optionLongText": "My main driver is the social, environmental, or humanitarian mission of the project, rather than financial gains.",
+              "optionValue": "Purposedriven"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "6",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Achievement Orientation",
+          "questionDescription": "Do you prioritize personal achievements and recognition, value individual efforts contributing to collective goals, or focus on the success of the group or project as a whole?",
+          "options": [
+            {
+              "optionShortText": "Individual",
+              "optionLongText": "I prioritize personal achievements and recognition in my work, focusing on individual goals and accomplishments.",
+              "optionValue": "Individual"
+            },
+            {
+              "optionShortText": "    Collaborative Achievement",
+              "optionLongText": "I value individual efforts but within the context of contributing to collective goals and success.",
+              "optionValue": "CollaborativeAchievement"
+            },
+            {
+              "optionShortText": "    Collective",
+              "optionLongText": "My focus is on the success of the group or project as a whole, rather than individual recognition.",
+              "optionValue": "Collective"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "7",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Impact Perspective",
+          "questionDescription": "Are you geared towards achieving immediate, short-term results, strive for a balance between immediate results and long-term effects, or plan for long-term, sustainable impact?",
+          "options": [
+            {
+              "optionShortText": "Short-term",
+              "optionLongText": "I am geared towards achieving immediate, short-term results, with a focus on quick wins and tangible outcomes.",
+              "optionValue": "Shortterm"
+            },
+            {
+              "optionShortText": "    Balanced Impact Strategy",
+              "optionLongText": "I strive for a balance, achieving immediate results while also considering long-term sustainability and effects.",
+              "optionValue": "BalancedImpactStrategy"
+            },
+            {
+              "optionShortText": "    Long-term",
+              "optionLongText": "My approach is to plan for and work towards long-term, sustainable impact, even if it means slower immediate gains.",
+              "optionValue": "Longterm"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "8",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Working Style",
+          "questionDescription": "Do you work best independently valuing autonomy, appreciate a mix of individual autonomy and collaborative efforts, or thrive in a collaborative environment where teamwork is key?",
+          "options": [
+            {
+              "optionShortText": "Autonomy",
+              "optionLongText": "I work best independently, valuing autonomy and the ability to make decisions and work on my own.",
+              "optionValue": "Autonomy"
+            },
+            {
+              "optionShortText": "    Empowered Collaboration",
+              "optionLongText": "I appreciate a mix of individual autonomy and collaborative efforts, where personal strengths enhance teamwork.",
+              "optionValue": "EmpoweredCollaboration"
+            },
+            {
+              "optionShortText": "    Collaboration",
+              "optionLongText": "I thrive in a collaborative environment, where teamwork and joint efforts are key to success.",
+              "optionValue": "Collaboration"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "9",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Risk Attitude",
+          "questionDescription": "Are you inclined to take risks and experiment, support taking sensible risks with strategic planning, or prefer following risk-averse approaches for safety and stability?",
+          "options": [
+            {
+              "optionShortText": "Risk-taking",
+              "optionLongText": "I am inclined to take risks and experiment, believing that it's essential for innovation and growth.",
+              "optionValue": "Risktaking"
+            },
+            {
+              "optionShortText": "    Calculated Risk Management",
+              "optionLongText": "I support taking sensible risks, but always with a level of caution and strategic planning.",
+              "optionValue": "CalculatedRiskManagement"
+            },
+            {
+              "optionShortText": "    Risk-averse",
+              "optionLongText": "I prefer to follow risk-averse approaches, prioritizing safety and stability over potential but uncertain gains.",
+              "optionValue": "Riskaverse"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "10",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Solution Preference",
+          "questionDescription": "Are you drawn to projects heavily utilizing technology, believe in integrating technological advancements with natural processes, or prioritize natural methods and solutions?",
+          "options": [
+            {
+              "optionShortText": "Technology",
+              "optionLongText": "I am drawn to projects that heavily utilize technology, believing in its power to solve complex problems.",
+              "optionValue": "Technology"
+            },
+            {
+              "optionShortText": "    Tech-nature Synergy",
+              "optionLongText": "I believe in integrating technological advancements with natural processes for optimal solutions.",
+              "optionValue": "TechnatureSynergy"
+            },
+            {
+              "optionShortText": "    Nature",
+              "optionLongText": "My preference is for projects that prioritize natural methods and solutions, minimizing reliance on technology.",
+              "optionValue": "Nature"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "11",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Project Driving Force",
+          "questionDescription": "Do you value expert-driven projects with specialized knowledge, leverage expert knowledge while ensuring community needs are central, or are motivated by community-driven projects with community inputs as primary drivers?",
+          "options": [
+            {
+              "optionShortText": "Expert",
+              "optionLongText": "I value expert-driven projects, where decisions and direction come from those with specialized knowledge in the field.",
+              "optionValue": "Expert"
+            },
+            {
+              "optionShortText": "    Community-Informed Expertise",
+              "optionLongText": "I believe in leveraging expert knowledge while ensuring community needs and inputs are central.",
+              "optionValue": "CommunityInformedExpertise"
+            },
+            {
+              "optionShortText": "    Community",
+              "optionLongText": "I am motivated by community-driven projects, where the needs and inputs of the community are the primary drivers.",
+              "optionValue": "Community"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "12",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Leadership Style",
+          "questionDescription": "Do you appreciate a top-down approach in leadership, value leadership that incorporates feedback from all levels, or believe in a bottom-up approach with grassroots-level ideas and decisions?",
+          "options": [
+            {
+              "optionShortText": "Top-down",
+              "optionLongText": "I appreciate a top-down approach in leadership, where direction and decisions come from the top.",
+              "optionValue": "Topdown"
+            },
+            {
+              "optionShortText": "    Integrated Leadership",
+              "optionLongText": "I value leadership that provides direction but also incorporates feedback and involvement from all levels.",
+              "optionValue": "IntegratedLeadership"
+            },
+            {
+              "optionShortText": "    Bottom-up",
+              "optionLongText": "My belief is in a bottom-up approach, where ideas and decisions originate from grassroots levels and all team members.",
+              "optionValue": "Bottomup"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "13",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Goal Setting",
+          "questionDescription": "Do you focus on measurable, quantitative goals, aim for goals that include both measurable targets and qualitative outcomes, or prioritize qualitative outcomes like community wellbeing over quantitative metrics?",
+          "options": [
+            {
+              "optionShortText": "Quantitative",
+              "optionLongText": "I focus on measurable, quantitative goals, where success is defined by numbers and tangible outcomes.",
+              "optionValue": "Quantitative"
+            },
+            {
+              "optionShortText": "    Comprehensive Goal Setting",
+              "optionLongText": "I aim for goals that include both measurable targets and qualitative, experiential outcomes.",
+              "optionValue": "ComprehensiveGoalSetting"
+            },
+            {
+              "optionShortText": "    Qualitative",
+              "optionLongText": "I prioritize qualitative outcomes, like community wellbeing and personal experiences, over quantitative metrics.",
+              "optionValue": "Qualitative"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "14",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Geographic Focus",
+          "questionDescription": "Is your focus on urban environments and city life challenges, addressing needs and leveraging strengths of both urban and rural areas, or inclined towards projects with a rural focus?",
+          "options": [
+            {
+              "optionShortText": "Urban",
+              "optionLongText": "My focus is on urban environments and addressing the specific challenges and dynamics of city life.",
+              "optionValue": "Urban"
+            },
+            {
+              "optionShortText": "    Cross-Geographic Integration",
+              "optionLongText": "I believe in addressing the needs and leveraging the strengths of both urban and rural areas.",
+              "optionValue": "CrossGeographicIntegration"
+            },
+            {
+              "optionShortText": "    Rural",
+              "optionLongText": "I am inclined towards projects with a rural focus, addressing the unique challenges and opportunities in rural communities.",
+              "optionValue": "Rural"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "15",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Technology Use",
+          "questionDescription": "Are you enthusiastic about high-tech solutions for complex challenges, prefer using technology appropriately high or low-tech depending on context, or favor simpler, low-tech approaches for accessibility and ease of use?",
+          "options": [
+            {
+              "optionShortText": "High-tech",
+              "optionLongText": "I am enthusiastic about high-tech solutions, using advanced technology to address complex challenges.",
+              "optionValue": "Hightech"
+            },
+            {
+              "optionShortText": "    Appropriate Technology Use",
+              "optionLongText": "I prefer using technology that is appropriately high-tech or low-tech depending on the specific context.",
+              "optionValue": "AppropriateTechnologyUse"
+            },
+            {
+              "optionShortText": "    Low-tech",
+              "optionLongText": "My preference is for simpler, low-tech approaches, valuing accessibility and ease of use over technological complexity.",
+              "optionValue": "Lowtech"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "16",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Planning Style",
+          "questionDescription": "Do you prefer meticulously planned projects, value well-thought-out plans that are flexible to adapt, or allow strategies to evolve based on ongoing developments?",
+          "options": [
+            {
+              "optionShortText": "Planned",
+              "optionLongText": "I prefer meticulously planned projects, where every step is thought out and organized in advance.",
+              "optionValue": "Planned"
+            },
+            {
+              "optionShortText": "    Adaptive Planning",
+              "optionLongText": "I value well-thought-out plans that are also flexible enough to adapt as situations change.",
+              "optionValue": "AdaptivePlanning"
+            },
+            {
+              "optionShortText": "    Emergent",
+              "optionLongText": "My approach is more emergent, allowing strategies to evolve and adapt based on ongoing developments and feedback.",
+              "optionValue": "Emergent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "17",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Project Approach",
+          "questionDescription": "Do you lean towards projects based on proprietary, closed-source methods, use open-source where beneficial but maintain proprietary elements, or prefer open-source projects for accessibility and community involvement?",
+          "options": [
+            {
+              "optionShortText": "Closed",
+              "optionLongText": "I lean towards projects based on proprietary, closed-source methods, valuing the control and uniqueness it offers.",
+              "optionValue": "Closed"
+            },
+            {
+              "optionShortText": "    Selective Openness",
+              "optionLongText": "I believe in using open-source where beneficial but maintaining some proprietary elements for strategic reasons.",
+              "optionValue": "SelectiveOpenness"
+            },
+            {
+              "optionShortText": "    Open-Source",
+              "optionLongText": "My preference is for open-source projects, valuing the accessibility, collaboration, and community involvement it fosters.",
+              "optionValue": "OpenSource"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "18",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Resource Usage",
+          "questionDescription": "Are you comfortable with projects requiring significant resources, aim for a balance in resource usage for efficiency, or focus on projects designed for efficiency and sustainability?",
+          "options": [
+            {
+              "optionShortText": "Resource-intensive",
+              "optionLongText": "I am comfortable with projects that require significant resources, believing in their necessity for impactful results.",
+              "optionValue": "Resourceintensive"
+            },
+            {
+              "optionShortText": "    Resource Optimization",
+              "optionLongText": "I aim for a balance, using resources intensively where needed but always striving for efficiency.",
+              "optionValue": "ResourceOptimization"
+            },
+            {
+              "optionShortText": "    Resource-efficient",
+              "optionLongText": "My focus is on projects designed for efficiency, minimizing resource use and prioritizing sustainability.",
+              "optionValue": "Resourceefficient"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "19",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Working Environment",
+          "questionDescription": "Do you thrive in competitive environments, value an environment where competition and cooperation coexist, or prefer a cooperative, non-competitive environment?",
+          "options": [
+            {
+              "optionShortText": "Competitive",
+              "optionLongText": "I thrive in competitive environments, where individual excellence is recognized and rewarded.",
+              "optionValue": "Competitive"
+            },
+            {
+              "optionShortText": "    Coopetition",
+              "optionLongText": "I value an environment where competition and cooperation coexist, promoting both individual and collective success.",
+              "optionValue": "Coopetition"
+            },
+            {
+              "optionShortText": "    Cooperative",
+              "optionLongText": "I prefer a cooperative, non-competitive environment, where collaboration and mutual support are key.",
+              "optionValue": "Cooperative"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "20",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Expertise Area",
+          "questionDescription": "Do you excel in specialized areas focusing deeply on a specific field, believe in specializing while incorporating interdisciplinary knowledge, or have a more generalized approach covering a wide range of skills?",
+          "options": [
+            {
+              "optionShortText": "Specialized",
+              "optionLongText": "I excel in specialized areas, focusing deeply on a specific field or skill set.",
+              "optionValue": "Specialized"
+            },
+            {
+              "optionShortText": "    Interdisciplinary Specialization",
+              "optionLongText": "I believe in specializing while also incorporating broad, interdisciplinary knowledge.",
+              "optionValue": "InterdisciplinarySpecialization"
+            },
+            {
+              "optionShortText": "    Generalized",
+              "optionLongText": "My approach is more generalized, encompassing a wide range of skills and knowledge areas.",
+              "optionValue": "Generalized"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "21",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Motivation Source",
+          "questionDescription": "Are you driven by internal motivations and personal values, motivated by a mix of internal satisfaction and external rewards, or find motivation from external factors like recognition and rewards?",
+          "options": [
+            {
+              "optionShortText": "Internal",
+              "optionLongText": "I am driven by internal motivations and personal values, finding satisfaction in the work itself.",
+              "optionValue": "Internal"
+            },
+            {
+              "optionShortText": "    Intrinsic-Extrinsic Synergy",
+              "optionLongText": "I am motivated by a mix of internal satisfaction and external rewards and recognition.",
+              "optionValue": "IntrinsicExtrinsicSynergy"
+            },
+            {
+              "optionShortText": "    External",
+              "optionLongText": "My motivation comes from external factors like recognition, rewards, and external validation.",
+              "optionValue": "External"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "22",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Organizational Structure",
+          "questionDescription": "Do you prefer a static, unchanging structure, value a stable structure with dynamic changes as needed, or thrive in dynamic, constantly evolving environments?",
+          "options": [
+            {
+              "optionShortText": "Static",
+              "optionLongText": "I prefer a static, unchanging structure, valuing consistency and predictability in the work environment.",
+              "optionValue": "Static"
+            },
+            {
+              "optionShortText": "    Stable Flexibility",
+              "optionLongText": "I value a fundamentally stable structure that allows for dynamic changes and adaptations as needed.",
+              "optionValue": "StableFlexibility"
+            },
+            {
+              "optionShortText": "    Dynamic",
+              "optionLongText": "I thrive in dynamic, constantly evolving environments, where change and adaptation are the norms.",
+              "optionValue": "Dynamic"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "23",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Operational Realm",
+          "questionDescription": "Are you most effective in the physical realm with tangible materials and in-person interactions, appreciate a blend of physical and digital aspects, or prefer predominantly digital spaces?",
+          "options": [
+            {
+              "optionShortText": "Physical",
+              "optionLongText": "I am most effective in the physical realm, working with tangible materials and in-person interactions.",
+              "optionValue": "Physical"
+            },
+            {
+              "optionShortText": "    Physical-Digital Convergence",
+              "optionLongText": "I appreciate a blend of physical and digital aspects, leveraging the strengths of both.",
+              "optionValue": "PhysicalDigitalConvergence"
+            },
+            {
+              "optionShortText": "    Digital",
+              "optionLongText": "My preference is for",
+              "optionValue": "Digital"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "24",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Experience Preference",
+          "questionDescription": "Do you thrive best in tangible, real-world settings, find value in both physical and digital realms, or are most comfortable and effective in digital spaces?",
+          "options": [
+            {
+              "optionShortText": "Physical",
+              "optionLongText": "I thrive best in tangible, real-world settings and interactions. Purely digital environments may feel disconnected or less engaging to me.\u2028(Integrated) I find value in both physical and digital realms, appreciating the unique benefits each brings to my experience and interactions.\u2028(Digital) I am most comfortable and effective in digital spaces, where I can engage, learn, and work remotely and flexibly.",
+              "optionValue": "Physical"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "25",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Financial Orientation",
+          "questionDescription": "Are you driven by missions and values rather than financial gain, believe in balancing financial sustainability with social/environmental goals, or motivated by systems that reward financial success?",
+          "options": [
+            {
+              "optionShortText": "Non-Profit",
+              "optionLongText": "I am driven by missions and values rather than financial gain. For me, the success of a project is measured by its social or environmental impact.\u2028(Value-Based) I believe in a balance where financial sustainability supports and enhances social and environmental goals.\u2028(Profit Sharing) I see financial profitability as a crucial aspect of a project, and I am motivated by systems that reward financial success.",
+              "optionValue": "NonProfit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "26",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 3,
+      "languages": {
+        "EN": {
+          "questionTopic": "Cultural Perspective",
+          "questionDescription": "Do you strongly value maintaining traditional cultures, appreciate the importance of cultural heritage with natural evolution, or excited by the dynamic evolution of culture with new ideas?",
+          "options": [
+            {
+              "optionShortText": "Cultural Preservation",
+              "optionLongText": "I strongly value maintaining and honoring traditional cultures and practices, seeing them as vital to our identity.\u2028(Dynamic) I appreciate the importance of cultural heritage but also believe in the natural evolution and blending of cultures.\u2028(Cultural Evolution) I am excited by the dynamic evolution of culture, where new ideas and influences can be freely integrated.",
+              "optionValue": "CulturalPreservation"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "27",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Independence Level",
+          "questionDescription": "Do you value independence and managing things on your own, appreciate independence but understand the importance of support systems, or believe in the strength of collaborative efforts and interconnectedness?",
+          "options": [
+            {
+              "optionShortText": "Self-sufficiency",
+              "optionLongText": "I value independence and the ability to manage things on my own, finding strength in self-reliance.\u2028(Balanced) While I appreciate independence, I also understand the importance of connections and support systems.\u2028(Interdependence) I believe in the strength of collaborative efforts and the interconnectedness of individuals and communities.",
+              "optionValue": "Selfsufficiency"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "28",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Participation Style",
+          "questionDescription": "Do you feel more comfortable in environments with specific criteria for participation, value inclusivity with some level of selection, or are energized in open and inclusive settings?",
+          "options": [
+            {
+              "optionShortText": "Exclusive",
+              "optionLongText": "I feel more comfortable in environments where participation is based on specific criteria or standards.\u2028(Selective) I value inclusivity but also understand the need for some level of selection to maintain focus and coherence.\u2028(Inclusive) I am most energized in settings that are open and inclusive, valuing diverse perspectives and backgrounds.",
+              "optionValue": "Exclusive"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "29",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Structure Preference",
+          "questionDescription": "Do you operate best in structured environments with formal processes, appreciate structure with flexibility, or feel most comfortable and productive in informal settings?",
+          "options": [
+            {
+              "optionShortText": "Formal",
+              "optionLongText": "I operate best in structured environments with clear rules and formal processes.\u2028(Adaptive) I appreciate structure but also value the ability to adapt and be flexible as situations change.\u2028(Informal) Informal and casual settings are where I feel most comfortable and productive.",
+              "optionValue": "Formal"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "questionID": "30",
+      "enablingAnswers": [],
+      "questionType": "scale",
+      "numberOfOptions": 1,
+      "languages": {
+        "EN": {
+          "questionTopic": "Approach to Challenges",
+          "questionDescription": "Do you tend to respond to situations as they arise, aim to be proactive but flexible to react to challenges, or prefer to plan ahead and take initiative?",
+          "options": [
+            {
+              "optionShortText": "Reactive",
+              "optionLongText": "I tend to respond to situations as they arise, adapting my approach based on current circumstances.\u2028(Responsive) I aim to be proactive but also flexible enough to react and adjust to unexpected challenges.\u2028(Proactive) I prefer to plan ahead and take initiative, anticipating potential issues before they occur.",
+              "optionValue": "Reactive"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+[{
+    "questionID": "1",
+    "questionTopic": "Governance",
+    "questionDescription": "Do you prefer centralized leadership for direction and efficiency, a hybrid approach balancing central authority with collective input, or decentralized models fostering inclusivity and diverse perspectives?"
+},
+{
+    "questionID": "2",
+    "questionTopic": "Work Structure",
+    "questionDescription": "Do you work best with clear roles and structured contributions, appreciate some structure but also the freedom for spontaneous and creative contribution, or thrive in environments allowing freeform innovation without rigid structures?"
+},
+{
+    "questionID": "3",
+    "questionTopic": "Focus Scope",
+    "questionDescription": "Is your focus primarily on local, community-based impacts, a blend of local insights with global perspectives (glocal), or broad, international impact and outreach (global)?"
+},
+{
+    "questionID": "4",
+    "questionTopic": "Approach to Change",
+    "questionDescription": "Are you motivated by innovative ideas and new approaches, value innovative approaches that respect and incorporate traditional wisdom, or find comfort in traditional methods and established practices?"
+},
+{
+    "questionID": "5",
+    "questionTopic": "Motivational Driver",
+    "questionDescription": "Do you focus on financial goals and profitability, aim for financial sustainability with a purpose beyond profit, or prioritize a social, environmental, or humanitarian mission over financial gains?"
+},
+{
+    "questionID": "6",
+    "questionTopic": "Achievement Orientation",
+    "questionDescription": "Do you prioritize personal achievements and recognition, value individual efforts contributing to collective goals, or focus on the success of the group or project as a whole?"
+},
+{
+    "questionID": "7",
+    "questionTopic": "Impact Perspective",
+    "questionDescription": "Are you geared towards achieving immediate, short-term results, strive for a balance between immediate results and long-term effects, or plan for long-term, sustainable impact?"
+},
+{
+    "questionID": "8",
+    "questionTopic": "Working Style",
+    "questionDescription": "Do you work best independently valuing autonomy, appreciate a mix of individual autonomy and collaborative efforts, or thrive in a collaborative environment where teamwork is key?"
+},
+{
+    "questionID": "9",
+    "questionTopic": "Risk Attitude",
+    "questionDescription": "Are you inclined to take risks and experiment, support taking sensible risks with strategic planning, or prefer following risk-averse approaches for safety and stability?"
+},
+{
+    "questionID": "10",
+    "questionTopic": "Solution Preference",
+    "questionDescription": "Are you drawn to projects heavily utilizing technology, believe in integrating technological advancements with natural processes, or prioritize natural methods and solutions?"
+},
+{
+    "questionID": "11",
+    "questionTopic": "Project Driving Force",
+    "questionDescription": "Do you value expert-driven projects with specialized knowledge, leverage expert knowledge while ensuring community needs are central, or are motivated by community-driven projects with community inputs as primary drivers?"
+},
+{
+    "questionID": "12",
+    "questionTopic": "Leadership Style",
+    "questionDescription": "Do you appreciate a top-down approach in leadership, value leadership that incorporates feedback from all levels, or believe in a bottom-up approach with grassroots-level ideas and decisions?"
+},
+{
+    "questionID": "13",
+    "questionTopic": "Goal Setting",
+    "questionDescription": "Do you focus on measurable, quantitative goals, aim for goals that include both measurable targets and qualitative outcomes, or prioritize qualitative outcomes like community wellbeing over quantitative metrics?"
+},
+{
+    "questionID": "14",
+    "questionTopic": "Geographic Focus",
+    "questionDescription": "Is your focus on urban environments and city life challenges, addressing needs and leveraging strengths of both urban and rural areas, or inclined towards projects with a rural focus?"
+},
+{
+    "questionID": "15",
+    "questionTopic": "Technology Use",
+    "questionDescription": "Are you enthusiastic about high-tech solutions for complex challenges, prefer using technology appropriately high or low-tech depending on context, or favor simpler, low-tech approaches for accessibility and ease of use?"
+},
+{
+    "questionID": "16",
+    "questionTopic": "Planning Style",
+    "questionDescription": "Do you prefer meticulously planned projects, value well-thought-out plans that are flexible to adapt, or allow strategies to evolve based on ongoing developments?"
+},
+{
+    "questionID": "17",
+    "questionTopic": "Project Approach",
+    "questionDescription": "Do you lean towards projects based on proprietary, closed-source methods, use open-source where beneficial but maintain proprietary elements, or prefer open-source projects for accessibility and community involvement?"
+},
+{
+    "questionID": "18",
+    "questionTopic": "Resource Usage",
+    "questionDescription": "Are you comfortable with projects requiring significant resources, aim for a balance in resource usage for efficiency, or focus on projects designed for efficiency and sustainability?"
+},
+{
+    "questionID": "19",
+    "questionTopic": "Working Environment",
+    "questionDescription": "Do you thrive in competitive environments, value an environment where competition and cooperation coexist, or prefer a cooperative, non-competitive environment?"
+},
+{
+    "questionID": "20",
+    "questionTopic": "Expertise Area",
+    "questionDescription": "Do you excel in specialized areas focusing deeply on a specific field, believe in specializing while incorporating interdisciplinary knowledge, or have a more generalized approach covering a wide range of skills?"
+},
+{
+    "questionID": "21",
+    "questionTopic": "Motivation Source",
+    "questionDescription": "Are you driven by internal motivations and personal values, motivated by a mix of internal satisfaction and external rewards, or find motivation from external factors like recognition and rewards?"
+},
+{
+    "questionID": "22",
+    "questionTopic": "Organizational Structure",
+    "questionDescription": "Do you prefer a static, unchanging structure, value a stable structure with dynamic changes as needed, or thrive in dynamic, constantly evolving environments?"
+},
+{
+    "questionID": "23",
+    "questionTopic": "Operational Realm",
+    "questionDescription": "Are you most effective in the physical realm with tangible materials and in-person interactions, appreciate a blend of physical and digital aspects, or prefer predominantly digital spaces?"
+},
+{
+    "questionID": "24",
+    "questionTopic": "Experience Preference",
+    "questionDescription": "Do you thrive best in tangible, real-world settings, find value in both physical and digital realms, or are most comfortable and effective in digital spaces?"
+},
+{
+    "questionID": "25",
+    "questionTopic": "Financial Orientation",
+    "questionDescription": "Are you driven by missions and values rather than financial gain, believe in balancing financial sustainability with social/environmental goals, or motivated by systems that reward financial success?"
+},
+{
+    "questionID": "26",
+    "questionTopic": "Cultural Perspective",
+    "questionDescription": "Do you strongly value maintaining traditional cultures, appreciate the importance of cultural heritage with natural evolution, or excited by the dynamic evolution of culture with new ideas?"
+},
+{
+    "questionID": "27",
+    "questionTopic": "Independence Level",
+    "questionDescription": "Do you value independence and managing things on your own, appreciate independence but understand the importance of support systems, or believe in the strength of collaborative efforts and interconnectedness?"
+},
+{
+    "questionID": "28",
+    "questionTopic": "Participation Style",
+    "questionDescription": "Do you feel more comfortable in environments with specific criteria for participation, value inclusivity with some level of selection, or are energized in open and inclusive settings?"
+},
+{
+    "questionID": "29",
+    "questionTopic": "Structure Preference",
+    "questionDescription": "Do you operate best in structured environments with formal processes, appreciate structure with flexibility, or feel most comfortable and productive in informal settings?"
+},
+{
+    "questionID": "30",
+    "questionTopic": "Approach to Challenges",
+    "questionDescription": "Do you tend to respond to situations as they arise, aim to be proactive but flexible to react to challenges, or prefer to plan ahead and take initiative?"
+}]

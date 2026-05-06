@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offers/Wants Form</title>
+<script>
+  function generateJSON(event) {
+    event.preventDefault(); // Prevent form from submitting in the traditional way
+    const form = event.target;
+
+    // Gather form data
+    const data = {
+      exchange_type: form.exchange_type.value,
+      item_type: form.item_type.value,
+      transaction_type: Array.from(form.transaction_type.options).filter(option => option.selected).map(option => option.value),
+      tags: form.tags.value.split(',').map(s => s.trim()),
+      title: form.title.value,
+      description: form.description.value,
+      image: form.image.value,
+      details_url: form.details_url.value,
+      geolocation: {
+        lat: parseFloat(form.lat.value),
+        lon: parseFloat(form.lon.value)
+      },
+      geographic_scope: form.geographic_scope.value,
+      contact_details: {
+        email: form.email.value,
+        contact_form: form.contact_form.value
+      },
+      expires_at: parseInt(form.expires_at.value, 10)
+    };
+
+    // Output the JSON to the console or handle as needed
+    console.log(JSON.stringify(data, null, 2));
+  }
+</script>
+</head>
+<body>
+
+<form onsubmit="generateJSON(event)">
+  <label>Exchange Type:
+    <select name="exchange_type" required>
+      <option value="offer">Offer - I have something to lend, lease, sell or donate</option>
+      <option value="want">Want - I want to borrow, rent, buy or receive something</option>
+    </select>
+  </label><br>
+  <label>Item Type:
+    <select name="item_type" required>
+      <option value="good">Good - a tangible or intangible item to be delivered</option>
+      <option value="service">Service - a service to be performed</option>
+    </select>
+  </label><br>
+  <label>Transaction Type (Ctrl+click for multiple):
+    <select multiple name="transaction_type" required>
+      <option value="borrow-lend">Borrow/Lend</option>
+      <option value="rent-lease">Rent/Lease</option>
+      <option value="buy-sell">Buy/Sell</option>
+      <option value="receive-donate">Receive/Donate</option>
+    </select>
+  </label><br>
+  <label>Tags (comma-separated):<input type="text" name="tags" required></label><br>
+  <label>Title:<input type="text" name="title" required></label><br>
+  <label>Description:<textarea name="description" required></textarea></label><br>
+  <label>Image URL:<input type="url" name="image" pattern="^https?://.*"></label><br>
+  <label>Item Details URL:<input type="url" name="details_url" pattern="^https?://.*"></label><br>
+  <label>Latitude:<input type="number" name="lat" min="-90" max="90" step="any" required></label><br>
+  <label>Longitude:<input type="number" name="lon" min="-180" max="180" step="any" required></label><br>
+  <label>Geographic Scope:
+    <select name="geographic_scope" required>
+      <option value="local">Local</option>
+      <option value="regional">Regional</option>
+      <option value="national">National</option>
+      <option value="international">International</option>
+    </select>
+  </label><br>
+  <label>Email Address:<input type="email" name="email" required></label><br>
+  <label>Contact Form URL:<input type="url" name="contact_form" pattern="^https?://.*"></label><br>
+  <label>Expires At (Unix Timestamp):<input type="number" name="expires_at" required></label><br>
+  <button type="submit">Generate JSON</button>
+</form>
+
+</body>
+</html>

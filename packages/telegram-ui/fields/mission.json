@@ -1,0 +1,19 @@
+{
+  "title": "Mission Statement",
+  "description": "A short statement of why the entity exists and its goals",
+  "type": "string",
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "mission",
+      "version": "0.0.1"
+    },
+    "context": [
+      "https://en.wikipedia.org/wiki/Mission_statement"
+    ],
+    "purpose": ":The mission describes the purpose of the entity: what kind of product or service it provides (for profit or not), its primary customers or market, and its geographical region of operation."
+  }
+}
