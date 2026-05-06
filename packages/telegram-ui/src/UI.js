@@ -9,41 +9,12 @@ import fs from 'fs';
 import { Markup } from 'telegraf';
 import { getDisplayName, getAvatarUrl, getHolonName, createPaddedCaption, getQuestHolon } from './utilities.js';
 import QRCode from 'qrcode';
+import { colorFromCategory } from '@holons/core/categories';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 let browser = null;
 let browserAvailable = false;
-
-// Pastel card background derived deterministically from a category string.
-// Mirrors harvest's getColorFromCategory in src/components/Tasks.svelte so
-// cards rendered by the bot match harvest's palette for the same categories.
-function colorFromCategory(category, type = 'task', dark = false) {
-  if (!category) {
-    if (dark) {
-      if (type === 'event') return 'hsl(280, 25%, 22%)';
-      if (type === 'quest') return 'hsl(200, 25%, 22%)';
-      return '#1f2937';
-    }
-    if (type === 'event') return 'hsl(280, 70%, 88%)';
-    if (type === 'quest') return 'hsl(200, 70%, 88%)';
-    return '#E5E7EB';
-  }
-  let hash = 0;
-  for (let i = 0; i < category.length; i++) {
-    hash = (hash << 5) - hash + category.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const hue = Math.abs(hash % 360);
-  if (dark) {
-    if (type === 'event') return `hsl(${hue}, 30%, 24%)`;
-    if (type === 'quest') return `hsl(${hue}, 28%, 24%)`;
-    return `hsl(${hue}, 25%, 22%)`;
-  }
-  if (type === 'event') return `hsl(${hue}, 85%, 82%)`;
-  if (type === 'quest') return `hsl(${hue}, 75%, 84%)`;
-  return `hsl(${hue}, 70%, 86%)`;
-}
 
 function escapeHtml(s) {
   if (s === null || s === undefined) return '';

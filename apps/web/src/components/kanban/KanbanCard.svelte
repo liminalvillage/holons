@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatDate } from '../../utils/date';
   import SourceBadge from '../shared/SourceBadge.svelte';
+  import { getColorFromCategory } from '@holons/core/categories';
 
   interface Quest {
     id: string;
@@ -35,26 +36,6 @@
   }
 
   let { quest, questKey, holonID = '', onclick }: Props = $props();
-
-  function getColorFromCategory(category: string | undefined, type: string = 'task') {
-    if (!category) {
-      switch (type) {
-        case 'event':
-          return "hsl(280, 70%, 85%)";
-        case 'quest':
-          return "hsl(200, 70%, 85%)";
-        default:
-          return "#E5E7EB";
-      }
-    }
-    let hash = 0;
-    for (let i = 0; i < category.length; i++) {
-      hash = (hash << 5) - hash + category.charCodeAt(i);
-      hash = hash & hash;
-    }
-    const hue = Math.abs(hash % 360);
-    return `hsl(${hue}, 70%, 85%)`;
-  }
 
   function isOverdue(when: string | undefined): boolean {
     if (!when) return false;

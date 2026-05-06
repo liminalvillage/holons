@@ -6,6 +6,7 @@
     import DrawingTools from './DrawingTools.svelte';
     import { buildHologramLink, nameMap, resolveName, resolvedName } from '$lib/stores/nameResolver';
     import SourceBadge from './shared/SourceBadge.svelte';
+    import { getColorFromCategory } from '@holons/core/categories';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -1106,39 +1107,6 @@
             hologramPositions.clear();
         };
     });
-
-    // Add the getColorFromCategory function to match Tasks component
-    function getColorFromCategory(category: string | undefined, type: string = 'task') {
-        if (!category) {
-            // Default colors based on type
-            switch (type) {
-                case 'event':
-                    return "hsl(280, 70%, 85%)"; // Purple for events
-                case 'quest':
-                    return "hsl(200, 70%, 85%)"; // Blue for quests
-                default:
-                    return "#E5E7EB"; // Gray for tasks
-            }
-        }
-
-        // For items with categories, generate color but adjust based on type
-        let hash = 0;
-        for (let i = 0; i < category.length; i++) {
-            hash = (hash << 5) - hash + category.charCodeAt(i);
-            hash = hash & hash;
-        }
-
-        const hue = Math.abs(hash % 360);
-        // Adjust saturation and lightness based on type
-        switch (type) {
-            case 'event':
-                return `hsl(${hue}, 85%, 80%)`; // More saturated for events
-            case 'quest':
-                return `hsl(${hue}, 75%, 82%)`; // Slightly saturated for quests
-            default:
-                return `hsl(${hue}, 70%, 85%)`; // Original for tasks
-        }
-    }
 
     // -------- Move drawings logic --------
     let isMobile = false;

@@ -11,6 +11,7 @@
 	import CanvasView from "./CanvasView.svelte";
 	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import DisplayName from './shared/DisplayName.svelte';
+	import { getColorFromCategory } from '@holons/core/categories';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -42,23 +43,6 @@
 				showCompleted.toString()
 			);
 		}
-	}
-
-	// Add this function near the top of the <script> section, after the imports
-	function getColorFromCategory(category) {
-		if (!category) return "#E5E7EB"; // Light gray (gray-200) for items without category
-
-		// Simple string hash function
-		let hash = 0;
-		for (let i = 0; i < category.length; i++) {
-			hash = (hash << 5) - hash + category.charCodeAt(i);
-			hash = hash & hash;
-		}
-
-		// Generate HSL color with consistent saturation and lightness
-		// Using hash to generate hue (0-360)
-		const hue = Math.abs(hash % 360);
-		return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
 	}
 
 	// Add these new variables

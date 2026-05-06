@@ -12,6 +12,7 @@
     import { goto } from '$app/navigation';
     import { Plus, X } from 'svelte-feathers';
     import * as h3 from "h3-js";
+    import { getColorFromCategory } from '@holons/core/categories';
     const dispatch = createEventDispatcher();
 
     // Update schema options to use imported schemas
@@ -328,22 +329,6 @@
         } finally {
             isSubmitting = false;
         }
-    }
-
-    // Add color function from Tasks component
-    function getColorFromCategory(category: string | undefined): string {
-        if (!category) return "#E5E7EB"; // Light gray (gray-200) for items without category
-
-        // Simple string hash function
-        let hash = 0;
-        for (let i = 0; i < category.length; i++) {
-            hash = (hash << 5) - hash + category.charCodeAt(i);
-            hash = hash & hash;
-        }
-
-        // Generate HSL color with consistent saturation and lightness
-        const hue = Math.abs(hash % 360);
-        return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
     }
 
     function getSchemaForLens(lens: string): Record<string, any> | null {
