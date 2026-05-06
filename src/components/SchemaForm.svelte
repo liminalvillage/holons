@@ -1,5 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
+    // @ts-ignore - Fix for h3-js module error
+    import * as h3 from 'h3-js';
     
     export let schema: string;
     export let schemaDefinition: Record<string, any> | null = null;
@@ -104,16 +106,31 @@
         return {};
     }
 
-    let formData: Record<string, any> = { ...initialData };
     let currentSchema = getSchemaDefinition(schema);
-    
+
+    // Build time-field defaults, then assign formData ONCE.
+    // Mutating formData[key] mid-init triggers Svelte's $$invalidate while the {#each ... as [fieldName, field]}
+    // block is being constructed, throwing "ReferenceError: field is not defined" and wedging the page.
+    const _timeDefaults: Record<string, string> = {};
+    for (const fieldName of Object.keys(currentSchema)) {
+        if (isTimeField(fieldName)) {
+            _timeDefaults[fieldName] = new Date().toISOString().slice(0, 16);
+        }
+    }
+    let formData: Record<string, any> = { ..._timeDefaults, ...initialData };
+
     // Add prop for hexId
     export let hexId: string | null = null;
 
     function getGeolocationFromHexId(): { lat: number; lon: number } | null {
         if (!hexId) return null;
-        const [lat, lon] = hexId.split(',').map(Number);
-        return { lat, lon };
+        try {
+            if (!h3.isValidCell(hexId)) return null;
+            const [lat, lon] = h3.cellToLatLng(hexId);
+            return { lat, lon };
+        } catch {
+            return null;
+        }
     }
 
     function handleTagInput(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
@@ -220,17 +237,9 @@
         }
     }
 
-    // Initialize time fields with current datetime
-    $: {
-        Object.keys(currentSchema).forEach(fieldName => {
-            if (isTimeField(fieldName) && !formData[fieldName]) {
-                formData[fieldName] = new Date().toISOString().slice(0, 16);
-            }
-        });
-    }
-
     // Add viewOnly prop
     export let viewOnly = false;
+    export let isSubmitting = false;
 </script>
 
 <form on:submit|preventDefault={handleSubmit} class="space-y-4">
@@ -392,9 +401,10 @@
     {#if !viewOnly}
         <button
             type="submit"
-            class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition-colors"
+            disabled={isSubmitting}
+            class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-            Submit
+            {isSubmitting ? 'Saving…' : 'Submit'}
         </button>
     {/if}
 </form>

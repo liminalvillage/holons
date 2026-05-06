@@ -83,6 +83,9 @@
     // Add loading state indicator
     let isLoading = false;
 
+    // Guard against double-submit while a put is in flight
+    let isSubmitting = false;
+
     // Add statistics
     let stats: Record<string, HexagonStats> | null = null;
 
@@ -305,6 +308,8 @@
     }
 
     async function handleFormSubmit(event: CustomEvent) {
+        if (isSubmitting) return;
+
         const newFormData = event.detail;
 
         if (!currentId) {
@@ -312,23 +317,16 @@
             return;
         }
 
+        isSubmitting = true;
         try {
-            const updatedContent = { ...newFormData };
-
-            // Use non-blocking promise approach
-            holosphere.put(currentId, selectedLens, updatedContent)
-                .then(() => {
-                    showForm = false;
-                    formData = {};
-
-                    // Refresh the data
-                    fetchData(currentId, selectedLens);
-                })
-                .catch(error => {
-                    console.error('Failed to store entry:', error);
-                });
+            await holosphere.put(currentId, selectedLens, { ...newFormData });
+            showForm = false;
+            formData = {};
+            fetchData(currentId, selectedLens);
         } catch (error) {
-            console.error('Error preparing to store entry:', error);
+            console.error('Failed to store entry:', error);
+        } finally {
+            isSubmitting = false;
         }
     }
 
@@ -549,9 +547,10 @@
                             <SchemaForm
                                 schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''}
                                 schemaDefinition={getSchemaForLens(selectedLens)}
-                                ID={currentId}
+                                hexId={currentId}
                                 initialData={viewingItem || formData}
                                 viewOnly={!!viewingItem}
+                                isSubmitting={isSubmitting}
                                 on:submit={handleFormSubmit}
                             />
                         {/if}
