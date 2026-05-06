@@ -20,3 +20,5 @@ holosphere.db/*
 /node_modules
 holosphere/
 logs/*
+dist/
+*.tsbuildinfo
