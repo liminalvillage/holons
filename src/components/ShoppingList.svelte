@@ -3,7 +3,7 @@
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
-    import { nameMap, resolvedName, resolveName, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import Modal from "./shared/Modal.svelte";
@@ -15,10 +15,27 @@
     import { showFederated, showHolograms } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
 
+    // Storage layout matches HolonsBot: a single container document under the
+    // `checklists` collection with id `shopping`, holding all items in `items[]`.
+    const SHOPPING_KEY = 'shopping';
+    const CHECKLISTS_COLLECTION = 'checklists';
+
     interface ShoppingItem {
-        id: string;
+        id: string | number;
         text: string;
         checked: boolean;
+        createdBy?: number;
+        _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
+        _federation?: { origin?: string; sourceLens?: string };
+        [key: string]: any;
+    }
+
+    interface ShoppingChecklist {
+        id: string;
+        type: string;
+        title: string;
+        items: ShoppingItem[];
+        createdAt: number;
         _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
         _federation?: { origin?: string; sourceLens?: string };
         [key: string]: any;
@@ -27,22 +44,51 @@
     const holosphere = getContext("holosphere") as HoloSphere;
 
     let holonID: string = '';
-    let store: Record<string, ShoppingItem> = {};
+    let localList: ShoppingChecklist | null = null;
+    let federatedItems: ShoppingItem[] = [];
     let unsubscribeFn: (() => void) | undefined;
 
-    // Per-feature filters (search). Federation/hologram toggles are global —
-    // see $lib/stores/lensFilters.
     let filters = loadFilters('shopping', {
         searchQuery: '',
     });
     $: saveFilters('shopping', filters);
 
-    $: shoppingItems = Object.entries(store)
-        .filter(([_, item]) => item && item.id && !item._deleted)
-        .map(([key, item]) => ({ ...item, _key: key }));
+    function emptyChecklist(): ShoppingChecklist {
+        return {
+            id: SHOPPING_KEY,
+            type: 'shopping',
+            title: 'Shopping List',
+            items: [],
+            createdAt: Date.now()
+        };
+    }
 
-    // Toolbar filters: hide holograms when toggled off; hide federated items when
-    // the federated toggle is off (federated items carry the hologram marker).
+    function normalizeChecklist(data: any): ShoppingChecklist | null {
+        if (!data || data._deleted) return null;
+        return {
+            id: SHOPPING_KEY,
+            type: data.type ?? 'shopping',
+            title: data.title ?? 'Shopping List',
+            items: Array.isArray(data.items)
+                ? data.items.filter((i: any) => i && i.id != null && !i._deleted)
+                : [],
+            createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+            _hologram: data._hologram,
+            _federation: data._federation
+        };
+    }
+
+    function isShoppingDoc(doc: any, key?: string): boolean {
+        if (!doc) return false;
+        if (key === SHOPPING_KEY) return true;
+        return doc.id === SHOPPING_KEY || doc.type === 'shopping';
+    }
+
+    $: localItems = (localList?.items ?? []).map(item => ({ ...item, _key: String(item.id) }));
+    $: shoppingItems = $showFederated
+        ? [...localItems, ...federatedItems.map(item => ({ ...item, _key: `fed:${item._federation?.origin ?? ''}:${item.id}` }))]
+        : localItems;
+
     $: visibleItems = shoppingItems.filter((item) => {
         const isHologram = item._hologram?.isHologram === true;
         if (!$showHolograms && isHologram) return false;
@@ -66,13 +112,13 @@
             unsubscribeFn = undefined;
         }
 
-        store = {};
+        localList = null;
+        federatedItems = [];
 
         try {
+            await fetchLocalShopping();
             if ($showFederated) {
                 await fetchFederatedShopping();
-            } else {
-                await fetchLocalShopping();
             }
         } catch (error) {
             console.error('Error fetching shopping list:', error);
@@ -80,36 +126,25 @@
     }
 
     async function fetchLocalShopping() {
-        const initialData = await holosphere.getAll(holonID, "shopping");
+        const data = await holosphere.get(holonID, CHECKLISTS_COLLECTION, SHOPPING_KEY);
+        localList = normalizeChecklist(data);
 
-        // Always key by `item.id` so the subscribe callback below can't
-        // land the same item under a second key (which is what makes new
-        // items briefly appear twice until a reload re-runs getAll).
-        const newStore: Record<string, ShoppingItem> = {};
-        const items = Array.isArray(initialData)
-            ? initialData
-            : (initialData && typeof initialData === 'object'
-                ? Object.values(initialData)
-                : []);
-        items.forEach((item: any) => {
-            if (item && item.id && !item._deleted) {
-                newStore[item.id] = item;
-            }
-        });
-        store = newStore;
-
+        // Subscribe to the checklists collection; pluck out shopping updates only.
+        // The bot writes the whole container on every mutation, so a single
+        // callback per write is enough to refresh the list.
         const subscription = await holosphere.subscribe(
             holonID,
-            "shopping",
-            (newItem: ShoppingItem | null, key?: string) => {
-                const storeKey = newItem?.id || key;
-                if (!storeKey) return;
-                if (newItem && newItem.id && !newItem._deleted) {
-                    store[storeKey] = newItem;
-                    store = store;
-                } else {
-                    delete store[storeKey];
-                    store = store;
+            CHECKLISTS_COLLECTION,
+            (doc: any, key?: string) => {
+                if (!isShoppingDoc(doc, key) && key !== SHOPPING_KEY) return;
+                if (!doc || doc._deleted) {
+                    if (key === SHOPPING_KEY || (doc && doc.id === SHOPPING_KEY)) {
+                        localList = null;
+                    }
+                    return;
+                }
+                if (isShoppingDoc(doc, key)) {
+                    localList = normalizeChecklist(doc);
                 }
             }
         );
@@ -122,26 +157,28 @@
     }
 
     async function fetchFederatedShopping() {
-        const federatedData = await holosphere.getFederated(holonID, "shopping", {
-            includeLocal: true,
+        const federatedData = await holosphere.getFederated(holonID, CHECKLISTS_COLLECTION, {
+            includeLocal: false,
             includeFederated: true,
             resolveReferences: true,
             aggregate: false
         });
 
-        const newStore: Record<string, ShoppingItem> = {};
+        const items: ShoppingItem[] = [];
         if (Array.isArray(federatedData)) {
-            federatedData.forEach((item: any, index: number) => {
-                if (item && item.id && !item._deleted) {
-                    const key = item.key || item.id || `fed_${index}`;
-                    const processed: any = { ...item, id: item.id };
-                    if (item._federation) processed._federation = item._federation;
-                    if (item._hologram) processed._hologram = item._hologram;
-                    newStore[key] = processed;
+            for (const doc of federatedData) {
+                if (!isShoppingDoc(doc)) continue;
+                const docItems = Array.isArray(doc.items) ? doc.items : [];
+                for (const item of docItems) {
+                    if (!item || item.id == null || item._deleted) continue;
+                    const tagged: ShoppingItem = { ...item };
+                    if (doc._federation) tagged._federation = doc._federation;
+                    if (doc._hologram) tagged._hologram = doc._hologram;
+                    items.push(tagged);
                 }
-            });
+            }
         }
-        store = newStore;
+        federatedItems = items;
     }
 
     let lastShoppingFedFlag = $showFederated;
@@ -169,19 +206,44 @@
         }
     }
 
+    function isLocalItem(item: ShoppingItem): boolean {
+        if (item._hologram?.isHologram) return false;
+        const origin = item._federation?.origin;
+        if (origin && origin !== holonID) return false;
+        return true;
+    }
+
+    function ensureLocalList(): ShoppingChecklist {
+        if (!localList) localList = emptyChecklist();
+        return localList;
+    }
+
+    async function saveLocalList(): Promise<void> {
+        if (!localList) return;
+        await holosphere.put(holonID, CHECKLISTS_COLLECTION, localList);
+    }
+
+    function handleWriteError(error: any, fallbackMessage: string): void {
+        if (error?.name === 'AuthorizationError') {
+            notifyWriteDenied('Unable to save - no write permission for this holon');
+        } else {
+            console.error(fallbackMessage, error);
+        }
+    }
+
     async function toggleItemStatus(item: ShoppingItem & { _key: string }): Promise<void> {
         if (!holonID) return;
+        if (!isLocalItem(item)) return;
 
         try {
-            const updated = { ...item, checked: !item.checked };
-            delete (updated as any)._key;
-            await holosphere.put(holonID, "shopping", updated);
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to toggle item:", error);
-            }
+            const list = ensureLocalList();
+            const target = list.items.find(i => String(i.id) === String(item.id));
+            if (!target) return;
+            target.checked = !target.checked;
+            await saveLocalList();
+            localList = { ...list, items: [...list.items] };
+        } catch (error) {
+            handleWriteError(error, 'Failed to toggle item:');
         }
     }
 
@@ -194,99 +256,59 @@
         if (!inputText.trim() || !holonID) return;
 
         try {
-            const newItem: ShoppingItem = {
+            const list = ensureLocalList();
+            list.items.push({
                 id: Date.now().toString(),
                 text: inputText.trim(),
                 checked: false
-            };
-
-            await holosphere.put(holonID, "shopping", newItem);
+            });
+            await saveLocalList();
+            localList = { ...list, items: [...list.items] };
             showAddModal = false;
             inputText = "";
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to add item:", error);
-            }
+        } catch (error) {
+            handleWriteError(error, 'Failed to add item:');
         }
     }
 
     async function removeItem(item: ShoppingItem & { _key: string }): Promise<void> {
         if (!holonID) return;
+        if (!isLocalItem(item)) return;
 
         try {
-            await holosphere.delete(holonID, "shopping", item.id);
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to remove item:", error);
-            }
+            const list = ensureLocalList();
+            list.items = list.items.filter(i => String(i.id) !== String(item.id));
+            await saveLocalList();
+            localList = { ...list };
+        } catch (error) {
+            handleWriteError(error, 'Failed to remove item:');
         }
     }
 
     async function removeChecked(): Promise<void> {
-        if (!holonID) return;
-        const checked = shoppingItems.filter(item => item.checked);
-        if (checked.length === 0) return;
+        if (!holonID || !localList) return;
+        if (!localList.items.some(i => i.checked)) return;
 
         try {
-            for (const item of checked) {
-                await holosphere.delete(holonID, "shopping", item.id);
-            }
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to remove checked items:", error);
-            }
+            localList.items = localList.items.filter(i => !i.checked);
+            await saveLocalList();
+            localList = { ...localList };
+        } catch (error) {
+            handleWriteError(error, 'Failed to remove checked items:');
         }
     }
 
     async function clearAll(): Promise<void> {
-        if (!holonID) return;
-        const checked = shoppingItems.filter(item => item.checked);
-        if (checked.length === 0) return;
+        if (!holonID || !localList) return;
+        if (!localList.items.some(i => i.checked)) return;
 
         try {
-            for (const item of checked) {
-                const updated = { ...item, checked: false };
-                delete (updated as any)._key;
-                await holosphere.put(holonID, "shopping", updated);
-            }
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to clear checklist:", error);
-            }
+            localList.items = localList.items.map(i => i.checked ? { ...i, checked: false } : i);
+            await saveLocalList();
+            localList = { ...localList };
+        } catch (error) {
+            handleWriteError(error, 'Failed to clear checklist:');
         }
-    }
-
-    function hologramSource(item: ShoppingItem): string {
-        const soul = item._hologram?.soul;
-        if (!soul) return item._hologram?.sourceHolon ?? '';
-        resolveHologramSource(soul);
-        const holonId = extractHolonIdFromSoul(soul);
-        if (!holonId) return '';
-        return $nameMap[holonId] ?? holonId.slice(0, 8);
-    }
-
-    function hologramHolonId(item: ShoppingItem): string {
-        const soul = item._hologram?.soul;
-        if (soul) {
-            const id = extractHolonIdFromSoul(soul);
-            if (id) return id;
-        }
-        return item._hologram?.sourceHolon ?? '';
-    }
-
-    function federationSource(item: ShoppingItem): string {
-        const origin = item._federation?.origin;
-        if (!origin) return '';
-        resolveName(origin);
-        return resolvedName(origin, $nameMap);
     }
 
     let showImportModal = false;
@@ -295,24 +317,22 @@
         if (!holonID) return;
         const items = event.detail;
         try {
+            const list = ensureLocalList();
             for (let i = 0; i < items.length; i++) {
                 const raw = items[i] ?? {};
                 const text = String(raw.text ?? raw.title ?? raw.name ?? raw.description ?? '').trim();
                 if (!text) continue;
-                const newItem: ShoppingItem = {
+                list.items.push({
                     id: raw.id ?? `${Date.now()}-${i}`,
                     text,
                     checked: Boolean(raw.checked) || false
-                };
-                await holosphere.put(holonID, "shopping", newItem);
+                });
             }
+            await saveLocalList();
+            localList = { ...list, items: [...list.items] };
             showImportModal = false;
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-            } else {
-                console.error("Failed to import shopping items:", error);
-            }
+        } catch (error) {
+            handleWriteError(error, 'Failed to import shopping items:');
         }
     }
 </script>
