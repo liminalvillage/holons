@@ -7,6 +7,35 @@ import * as h3 from 'h3-js';
 import { attachHologramMeta } from './hologram.js';
 
 /**
+ * Look up a holon's display name from its `settings` lens.
+ *
+ * Returns the `name` field of the holon's settings document, or null if
+ * settings are missing or unnamed. Callers should fall back to the bare
+ * holon id when this returns null.
+ *
+ * @param {HoloSphere} holosphere
+ * @param {string} space - holon id
+ * @returns {Promise<string|null>}
+ */
+async function getHolonName(holosphere, space) {
+    if (!holosphere || !space) return null;
+    try {
+        const settings = await holosphere.get(space, 'settings', space);
+        if (!settings) return null;
+        if (Array.isArray(settings)) {
+            const found = settings.find(s => s && typeof s.name === 'string' && s.name.trim() !== '');
+            return found ? found.name : null;
+        }
+        if (typeof settings.name === 'string' && settings.name.trim() !== '') {
+            return settings.name;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Creates a directional federation relationship between two spaces.
  *
  * Directions are stated from spaceId1's perspective:
@@ -149,7 +178,18 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
     const subscriptions = [];
     let lastNotificationTime = {};
     
+    // Cache partner display names once at setup. Each callback firing for
+    // a given partner uses the same name without re-reading settings.
+    const partnerNames = new Map();
+
     if (fedInfo.inbound && fedInfo.inbound.length > 0) {
+        await Promise.all(
+            fedInfo.inbound.map(async space => {
+                const name = await getHolonName(holosphere, space);
+                partnerNames.set(space, name);
+            })
+        );
+
         for (const federatedSpace of fedInfo.inbound) {
             // For each lens specified (or all if '*')
             for (const lens of lenses) {
@@ -158,27 +198,34 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
                         try {
                             // Skip if data is missing or not from federated space
                             if (!data || !data.id) return;
-                            
+
                             // Apply throttling if configured
                             const now = Date.now();
                             const key = `${federatedSpace}_${lens}_${data.id}`;
-                            
+
                             if (throttle > 0) {
-                                if (lastNotificationTime[key] && 
+                                if (lastNotificationTime[key] &&
                                     (now - lastNotificationTime[key]) < throttle) {
                                     return; // Skip this notification (throttled)
                                 }
                                 lastNotificationTime[key] = now;
                             }
-                            
-                            // Add federation metadata if not present
-                            if (!data.federation) {
-                                data.federation = {
+
+                            // Add federation metadata if not present.
+                            // Use the canonical `_federation` envelope so it
+                            // matches what propagate() and getFederated()
+                            // produce, and what consumers (UI badges, etc.)
+                            // already check for.
+                            if (!data._federation) {
+                                const partnerName = partnerNames.get(federatedSpace);
+                                data._federation = {
                                     origin: federatedSpace,
-                                    timestamp: now
+                                    sourceLens: lens,
+                                    timestamp: now,
+                                    ...(partnerName ? { originName: partnerName } : {})
                                 };
                             }
-                            
+
                             // Execute callback with the data
                             await callback(data, federatedSpace, lens);
                         } catch (error) {
@@ -476,10 +523,37 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         spacesToQuery = spacesToQuery.concat(federatedSpaces);
     }
 
+    // Resolve display names for federated partner spaces in parallel, so
+    // every tagged item can carry the holon's name. Compute once per call.
+    const remoteSpaces = spacesToQuery.filter(s => s !== holon);
+    const spaceNames = new Map();
+    await Promise.all(
+        remoteSpaces.map(async space => {
+            const name = await getHolonName(holosphere, space);
+            spaceNames.set(space, name);
+        })
+    );
+
+    // Tag items pulled from a federated partner with the space they came
+    // from (and its resolved display name, if any). Local items are left
+    // untouched so consumers can distinguish own vs. external by absence
+    // or presence of `_federation`.
+    const tagWithSource = (item, space) => {
+        if (!item || space === holon) return item;
+        const originName = spaceNames.get(space);
+        const fed = {
+            ...(item._federation || {}),
+            origin: space,
+            sourceLens: lens
+        };
+        if (originName) fed.originName = originName;
+        return { ...item, _federation: fed };
+    };
+
     // Fetch data from all relevant spaces
     for (const currentSpace of spacesToQuery) {
         if (queryIds && Array.isArray(queryIds)) {
-            // --- Fetch specific IDs using holosphere.get --- 
+            // --- Fetch specific IDs using holosphere.get ---
             console.log(`Fetching specific IDs from ${currentSpace}: ${queryIds.join(', ')}`);
             for (const itemId of queryIds) {
                 if (fetchedItems.has(itemId)) continue; // Skip if already fetched
@@ -487,7 +561,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                     holosphere.get(currentSpace, lens, itemId)
                         .then(item => {
                             if (item) {
-                                fetchedItems.set(itemId, item);
+                                fetchedItems.set(itemId, tagWithSource(item, currentSpace));
                             }
                         })
                         .catch(err => console.warn(`Error fetching item ${itemId} from ${currentSpace}: ${err.message}`))
@@ -504,7 +578,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                     .then(items => {
                         for (const item of items) {
                             if (item && item[idField] && !fetchedItems.has(item[idField])) {
-                                fetchedItems.set(item[idField], item);
+                                fetchedItems.set(item[idField], tagWithSource(item, currentSpace));
                             }
                         }
                     })
@@ -554,7 +628,26 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                         if (originalData) {
                             // Replace the reference with the resolved data, attaching
                             // the canonical _hologram envelope (single source of truth).
-                            result[i] = attachHologramMeta(originalData, item.soul);
+                            const withMeta = attachHologramMeta(originalData, item.soul);
+                            // Stamp the source holon's display name so consumers
+                            // don't need a second round-trip to render it. Use
+                            // the per-call cache when possible to avoid duplicate
+                            // settings reads across many holograms from the same
+                            // source.
+                            if (withMeta._hologram?.sourceHolon) {
+                                let sourceHolonName = spaceNames.get(withMeta._hologram.sourceHolon);
+                                if (sourceHolonName === undefined) {
+                                    sourceHolonName = await getHolonName(holosphere, withMeta._hologram.sourceHolon);
+                                    spaceNames.set(withMeta._hologram.sourceHolon, sourceHolonName);
+                                }
+                                if (sourceHolonName) {
+                                    withMeta._hologram = {
+                                        ...withMeta._hologram,
+                                        sourceHolonName
+                                    };
+                                }
+                            }
+                            result[i] = withMeta;
                         } else {
                             // Original data not found — keep the id so callers can
                             // identify the broken reference, and surface the error.
@@ -732,6 +825,11 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                     // Check if data is already a hologram
                     const isAlreadyHologram = holosphere.isHologram(data);
 
+                    // Resolve our own holon's name once so every propagated
+                    // payload carries it. Falls back to undefined (the field
+                    // is omitted) so consumers can use the bare holon id.
+                    const ownName = await getHolonName(holosphere, holon);
+
                     // For each target space, propagate the data
                     const propagatePromises = spaces.map(async (targetSpace) => {
                         try {
@@ -740,7 +838,8 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 origin: holon,       // The space from which this data is being propagated
                                 sourceLens: lens,    // The lens from which this data is being propagated
                                 propagatedAt: Date.now(),
-                                originalId: data.id
+                                originalId: data.id,
+                                ...(ownName ? { originName: ownName } : {})
                             };
 
                             if (useHolograms && !isAlreadyHologram) {
@@ -847,7 +946,11 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                         
                         // Check if data is already a hologram (reuse from federation section)
                         const isAlreadyHologram = holosphere.isHologram(data);
-                        
+
+                        // Resolve our own holon's name once for parent propagation
+                        // (same as the federation block above).
+                        const ownNameParent = await getHolonName(holosphere, holon);
+
                         // Propagate to each parent hexagon
                         const parentPropagatePromises = parentHexagons.map(async (parentHexagon) => {
                             try {
@@ -858,7 +961,8 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                     propagatedAt: Date.now(),
                                     originalId: data.id,
                                     propagationType: 'parent', // Indicate this is parent propagation
-                                    parentLevel: holonResolution - h3.getResolution(parentHexagon) // How many levels up
+                                    parentLevel: holonResolution - h3.getResolution(parentHexagon), // How many levels up
+                                    ...(ownNameParent ? { originName: ownNameParent } : {})
                                 };
 
                                 if (useHolograms && !isAlreadyHologram) {
