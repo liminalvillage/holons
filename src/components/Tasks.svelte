@@ -40,6 +40,8 @@
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
+	import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+	import SourceBadge from "./shared/SourceBadge.svelte";
 
 	// State for quick completion
 	let showCompleterModal = $state(false);
@@ -193,11 +195,10 @@
 	// Initialize with safe defaults
 	let viewMode: 'list' | 'canvas' | 'kanban' = $state('list');
 	let showCompleted = $state(false);
-	let showHolograms = $state(true);
 	let sortedQuests: [string, Quest][] = [];
 
-	// Federated tasks toggle
-	let includeFederatedTasks = $state(false);
+	// Federation/hologram toggles are centralized in $lib/stores/lensFilters
+	// so the same choice carries across every lens view.
 	let loadingFederated = $state(false);
 	// filteredQuests is now defined as a $derived value below
 
@@ -377,7 +378,7 @@
 			}
 
 			// Filter holograms if showHolograms is false
-			if (!showHolograms && quest._hologram?.isHologram) {
+			if (!$showHolograms && quest._hologram?.isHologram) {
 				return false;
 			}
 
@@ -1344,20 +1345,28 @@
 		}
 	}
 
-	// Handle federated toggle change. Accepts an optional boolean event payload
-	// from FeatureToolbar; falls back to flipping the flag for legacy callers.
+	// Handle federated toggle change. Updates the shared store so the choice
+	// carries across every lens view; the reactive watcher below kicks off
+	// the appropriate fetch.
 	async function handleFederatedToggle(eventOrUndefined?: CustomEvent<boolean> | undefined) {
 		if (eventOrUndefined && typeof eventOrUndefined === 'object' && 'detail' in eventOrUndefined) {
-			includeFederatedTasks = eventOrUndefined.detail;
+			showFederated.set(eventOrUndefined.detail);
 		} else {
-			includeFederatedTasks = !includeFederatedTasks;
-		}
-		if (includeFederatedTasks) {
-			await fetchFederatedTasks();
-		} else {
-			await fetchData();
+			showFederated.update(v => !v);
 		}
 	}
+
+	let lastTasksFedFlag = $showFederated;
+	$effect(() => {
+		// Re-fetch only when the user actually flips the toggle. Initial
+		// load is handled by the page-params effect below.
+		if ($showFederated !== lastTasksFedFlag) {
+			lastTasksFedFlag = $showFederated;
+			if (!holosphere || !holonID) return;
+			if ($showFederated) fetchFederatedTasks();
+			else fetchData();
+		}
+	});
 
 	// Add fetchData function with retry logic
 	async function fetchData(retryCount = 0) {
@@ -1558,10 +1567,6 @@
 				viewMode = storedViewMode as 'list' | 'canvas' | 'kanban';
 			}
 			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
-			if (storedShowHolograms !== null) {
-				showHolograms = storedShowHolograms === "true";
-			}
 		} catch (error) {
 			console.error('Error loading preferences:', error);
 		}
@@ -1578,7 +1583,7 @@
 
 		// Listen for federation changes (e.g. holon removed from federation)
 		const handleFederationChanged = () => {
-			if (includeFederatedTasks) {
+			if ($showFederated) {
 				fetchFederatedTasks();
 			} else {
 				fetchData();
@@ -1616,7 +1621,9 @@
 			ID.set(holonID);
 			connectionReady = true;
 			isLoading = true;
-			fetchData();
+			lastTasksFedFlag = $showFederated;
+			if ($showFederated) fetchFederatedTasks();
+			else fetchData();
 			// Resolve holon name reactively
 			resolveName(holonID);
 			// Preload settings + users for TaskModal (instant cache hit when modal opens)
@@ -1629,12 +1636,7 @@
 		}
 	});
 
-	// Save showHolograms preference to localStorage
-	$effect(() => {
-		if (typeof localStorage !== 'undefined') {
-			localStorage.setItem("taskShowHolograms", showHolograms.toString());
-		}
-	});
+	// (showHolograms now lives in the shared lensFilters store, persisted there)
 
 	// Save viewMode preference to localStorage
 	$effect(() => {
@@ -1767,6 +1769,8 @@
 	<!-- TitleBar -->
 	<TitleBar
 		{holonName}
+		holonId={holonID}
+		showLensFilters
 		title={filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
 		icon={filterType === 'event' ? CalendarIcon : CheckSquare}
 	/>
@@ -1811,10 +1815,7 @@
 						{ value: 'kanban', icon: Columns, label: 'Kanban view' },
 						{ value: 'canvas', icon: Grid, label: 'Canvas view' },
 					]}
-					showFederated={includeFederatedTasks}
-					on:federatedChange={handleFederatedToggle}
 					federatedLoading={loadingFederated}
-					bind:showHolograms={showHolograms}
 				>
 					<svelte:fragment slot="filters">
 						<select bind:value={selectedCategory} class="filter-select" aria-label="Filter by category">
@@ -1858,7 +1859,7 @@
 				</FeatureToolbar>
 
 				<!-- Federated Status Indicator -->
-				{#if includeFederatedTasks}
+				{#if $showFederated}
 					<div class="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
 						<div class="flex items-center gap-2 text-blue-300">
 							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -1992,61 +1993,7 @@
 														{quest.category}
 													</span>
 												{/if}
-												{#if quest._hologram?.isHologram}
-													<span
-														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
-														title="Navigate to source task: {getHologramSource(quest._hologram.soul)}"
-														onclick={(e) => { e.stopPropagation();
-															if (quest._hologram) {
-																goto(buildHologramLink(quest._hologram));
-															}
-														}}
-														onkeydown={(e) => {
-															e.stopPropagation();
-															if (e.key === 'Enter' || e.key === ' ') {
-																if (quest._hologram) {
-																	goto(buildHologramLink(quest._hologram));
-																}
-															}
-														}}
-														tabindex="0"
-														role="button"
-														aria-label="Navigate to source task: {getHologramSource(quest._hologram.soul)}"
-													>
-														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-														</svg>
-														{getHologramSource(quest._hologram.soul)}
-														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-														</svg>
-													</span>
-												{:else if quest._federation?.origin && quest._federation.origin !== holonID}
-													{@const fedOrigin = quest._federation.origin}
-													{@const fedName = resolvedName(fedOrigin, $nameMap)}
-													<span
-														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
-														title="Navigate to source holon: {fedName}"
-														onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/tasks`); }}
-														onkeydown={(e) => {
-															e.stopPropagation();
-															if (e.key === 'Enter' || e.key === ' ') {
-																goto(`/${fedOrigin}/tasks`);
-															}
-														}}
-														tabindex="0"
-														role="button"
-														aria-label="Navigate to source holon: {fedName}"
-													>
-														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-														</svg>
-														{fedName}
-														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-														</svg>
-													</span>
-												{/if}
+												<SourceBadge item={quest} currentHolonId={holonID} lensRoute="tasks" />
 											</div>
 
 											{#if quest.description}

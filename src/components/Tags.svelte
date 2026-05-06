@@ -174,7 +174,7 @@
 
 <div class="space-y-4">
 	<!-- TitleBar -->
-	<TitleBar {holonName} title="Knowledge Base">
+	<TitleBar {holonName} holonId={holonID} title="Knowledge Base">
 		<div slot="actions" class="flex items-center gap-3">
 			<button
 				class="p-2 rounded-lg transition-colors {viewMode === 'list' ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}"

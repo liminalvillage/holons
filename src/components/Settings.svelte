@@ -311,7 +311,7 @@
 <div class="space-y-4 min-h-0 pb-8">
 
 <!-- TitleBar -->
-<TitleBar {holonName} title="Settings" />
+<TitleBar {holonName} {holonId} title="Settings" />
 
 	<!-- Loading/Error/Notification UI -->
 	{#if loading}

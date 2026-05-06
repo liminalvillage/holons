@@ -711,7 +711,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Status Rankings" />
+    <TitleBar {holonName} holonId={holonID} title="Status Rankings" />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

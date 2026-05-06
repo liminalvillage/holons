@@ -5,6 +5,7 @@
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul, buildHologramLink, resolveName } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
+    import SourceBadge from './shared/SourceBadge.svelte';
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
     import {
@@ -1213,33 +1214,7 @@
                             {quest.category}
                         </span>
                     {/if}
-                    {#if quest._hologram?.isHologram}
-                        <button
-                            class="flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs hover:bg-blue-500/30 transition-colors"
-                            on:click={navigateToHologramSource}
-                            title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
-                            type="button"
-                        >
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                            </svg>
-                            Hologram
-                        </button>
-                    {:else if quest._federation?.origin && quest._federation.origin !== holonId}
-                        {@const fedOrigin = quest._federation.origin}
-                        {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-                        <button
-                            class="flex items-center gap-1 px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs hover:bg-purple-500/30 transition-colors"
-                            on:click={() => goto(`/${fedOrigin}/tasks`)}
-                            title="Navigate to source holon: {fedName}"
-                            type="button"
-                        >
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                            </svg>
-                            {fedName}
-                        </button>
-                    {/if}
+                    <SourceBadge item={quest} currentHolonId={holonId} lensRoute="tasks" />
                             </div>
     </div>
 </div>

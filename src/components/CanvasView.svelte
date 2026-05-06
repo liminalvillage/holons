@@ -5,6 +5,7 @@
     import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
     import { buildHologramLink, nameMap, resolveName, resolvedName } from '$lib/stores/nameResolver';
+    import SourceBadge from './shared/SourceBadge.svelte';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -1473,41 +1474,7 @@
                                             Created: {formatDate(card.quest.created)}
                                         </div>
                                     {/if}
-                                    {#if card.quest._hologram?.isHologram}
-                                        <button
-                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors"
-                                            title="Navigate to source task"
-                                            on:click|stopPropagation={() => {
-                                                if (card.quest._hologram) {
-                                                    goto(buildHologramLink(card.quest._hologram));
-                                                }
-                                            }}
-                                        >
-                                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                            </svg>
-                                            🔮
-                                            <svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                            </svg>
-                                        </button>
-                                    {:else if card.quest._federation?.origin && card.quest._federation.origin !== holonID}
-                                        {@const fedOrigin = card.quest._federation.origin}
-                                        {@const fedName = ($nameMap[fedOrigin] || (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap)))}
-                                        <button
-                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors"
-                                            title="Navigate to source holon: {fedName}"
-                                            on:click|stopPropagation={() => goto(`/${fedOrigin}/tasks`)}
-                                        >
-                                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                            </svg>
-                                            {fedName}
-                                            <svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                            </svg>
-                                        </button>
-                                    {/if}
+                                    <SourceBadge item={card.quest} currentHolonId={holonID} lensRoute="tasks" />
                                     {#if card.quest.type === 'recurring' || card.quest.status === 'recurring' || card.quest.status === 'repeating'}
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500 bg-opacity-30 text-purple-800 flex-shrink-0">
                                             🔄

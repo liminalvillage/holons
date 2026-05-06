@@ -1,13 +1,23 @@
 <script lang="ts">
 	import { createEventDispatcher, type ComponentType } from 'svelte';
 	import { ArrowLeftIcon as ArrowLeft } from 'svelte-feather-icons';
+	import { Globe, Eye } from 'svelte-feathers';
+	import ToggleChip from './ToggleChip.svelte';
+	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
 
 	// Props
 	export let title: string = '';
 	export let holonName: string = '';
+	/** Optional holon id; surfaced as a tooltip on the holon name so the
+	 *  breadcrumb stays clean (`HolonName / Tasks`) but the id is still
+	 *  one hover away. */
+	export let holonId: string | null | undefined = '';
 	export let showBack: boolean = false;
 	export let compact: boolean = false;
 	export let icon: ComponentType | null = null;
+	/** Lens views opt in to render the global federation/hologram toggles.
+	 *  Pages that don't fetch lens data (Settings, DB, etc.) leave it false. */
+	export let showLensFilters: boolean = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -18,6 +28,10 @@
 			window.history.back();
 		}
 	}
+
+	// Tooltip on the holon name surfaces the full id without cluttering
+	// the breadcrumb. Falls back to just the name if no id was supplied.
+	$: holonNameTitle = holonName && holonId ? `${holonName} (${holonId})` : holonName;
 </script>
 
 <header class="title-bar" class:title-bar--compact={compact}>
@@ -34,7 +48,7 @@
 			</span>
 		{/if}
 		{#if holonName}
-			<span class="title-bar__holon-name">{holonName}</span>
+			<span class="title-bar__holon-name" title={holonNameTitle}>{holonName}</span>
 		{/if}
 		{#if holonName && title}
 			<span class="title-bar__separator">/</span>
@@ -45,6 +59,20 @@
 	</div>
 
 	<div class="title-bar__actions">
+		{#if showLensFilters}
+			<ToggleChip
+				checked={$showHolograms}
+				label="Holograms"
+				icon={Eye}
+				on:change={(e) => showHolograms.set(e.detail)}
+			/>
+			<ToggleChip
+				checked={$showFederated}
+				label="Federated"
+				icon={Globe}
+				on:change={(e) => showFederated.set(e.detail)}
+			/>
+		{/if}
 		<slot name="actions" />
 	</div>
 </header>
@@ -129,8 +157,17 @@
 	.title-bar__actions {
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-2, 0.5rem);
+		gap: var(--spacing-1, 0.25rem);
 		margin-left: auto;
+		flex-shrink: 0;
+	}
+
+	/* Compact toggle chips inside the title bar so two of them plus the
+	   breadcrumb fit on a single line. The global .toggle-chip has wider
+	   padding for stand-alone use; tighten it here. */
+	.title-bar__actions :global(.toggle-chip) {
+		padding: 0.25rem 0.5rem;
+		gap: 0.3rem;
 	}
 
 	/* Responsive adjustments */
@@ -138,11 +175,29 @@
 		.title-bar {
 			height: var(--titlebar-height-compact, 32px);
 			padding: 0 var(--spacing-3, 0.75rem);
+			gap: var(--spacing-2, 0.5rem);
 		}
 
 		.title-bar__holon-name,
 		.title-bar__page-title {
 			font-size: var(--font-size-xs, 0.75rem);
+		}
+
+		/* Drop the labels: the icon + dot color carry the meaning, and the
+		   tooltip-style title attribute on the chip provides the full text
+		   on hover. Saves ~9rem horizontally for two chips. */
+		.title-bar__actions :global(.toggle-chip__label) {
+			display: none;
+		}
+
+		.title-bar__actions :global(.toggle-chip) {
+			padding: 0.25rem 0.45rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.title-bar__actions {
+			gap: 0.2rem;
 		}
 	}
 </style>

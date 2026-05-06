@@ -19,6 +19,8 @@
 	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
 	import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import { goto } from '$app/navigation';
+	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+	import SourceBadge from './shared/SourceBadge.svelte';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -38,12 +40,10 @@
 	$: holonName = resolvedName(activeHolonId, $nameMap, null, 'Roles');
 	let statsCollapsed = false; // For mobile stats toggle
 
-	// Shared toolbar state (same keys as other features). view values:
-	//   'list' = list view, 'grid' = card grid, 'week' = week schedule view.
+	// Per-feature filters (search + view). Federation/hologram toggles are
+	// global — see $lib/stores/lensFilters.
 	let filters = loadFilters('roles', {
 		searchQuery: '',
-		showFederated: false,
-		showHolograms: true,
 		viewMode: 'grid' as 'list' | 'grid' | 'week',
 	});
 	$: saveFilters('roles', filters);
@@ -77,11 +77,11 @@
 	$: roles = Object.entries(store || {});
 	$: visibleRoles = (() => {
 		const q = filters.searchQuery.trim().toLowerCase();
-		if (!q && filters.showHolograms && filters.showFederated) return roles;
+		if (!q && $showHolograms && $showFederated) return roles;
 		return roles.filter(([, role]) => {
 			const isHologram = (role as any)?._hologram?.isHologram === true;
-			if (!filters.showHolograms && isHologram) return false;
-			if (!filters.showFederated && isHologram) return false;
+			if (!$showHolograms && isHologram) return false;
+			if (!$showFederated && isHologram) return false;
 			if (!q) return true;
 			const title = (role as any)?.title ?? '';
 			const description = (role as any)?.description ?? '';
@@ -153,7 +153,7 @@
 
 		// Fetch initial roles (federated when toggle is on)
 		try {
-			let initialRolesData = filters.showFederated
+			let initialRolesData = $showFederated
 				? await holosphere.getFederated(holonIdToLoad, "roles", {
 					includeLocal: true,
 					includeFederated: true,
@@ -442,9 +442,9 @@
 		resolveName(activeHolonId);
 	}
 
-	let lastRolesFedFlag = filters.showFederated;
-	$: if (activeHolonId && holosphere && filters.showFederated !== lastRolesFedFlag) {
-		lastRolesFedFlag = filters.showFederated;
+	let lastRolesFedFlag = $showFederated;
+	$: if (activeHolonId && holosphere && $showFederated !== lastRolesFedFlag) {
+		lastRolesFedFlag = $showFederated;
 		loadAndSubscribeData(activeHolonId);
 	}
 
@@ -546,7 +546,7 @@
 </script>
 
 <div class="space-y-4">
-	<TitleBar {holonName} title="Roles" icon={Users} />
+	<TitleBar {holonName} holonId={activeHolonId} showLensFilters title="Roles" icon={Users} />
 
 	<div class="w-full bg-gray-800 p-4 sm:p-6 rounded-2xl">
 		<!-- Stats Bar -->
@@ -576,8 +576,6 @@
 			searchPlaceholder="Search roles…"
 			bind:viewMode={filters.viewMode}
 			viewModes={ROLE_VIEW_MODES}
-			bind:showFederated={filters.showFederated}
-			bind:showHolograms={filters.showHolograms}
 		/>
 
 		{#if viewMode === 'week'}
@@ -622,31 +620,7 @@
 									<div class="flex-1 min-w-0">
 										<h3 class="text-lg font-bold text-white mb-1 line-clamp-2">
 											{role.title}
-											{#if (role as any)._hologram?.isHologram && (role as any)._hologram?.soul}
-												{@const holoOrigin = extractHolonIdFromSoul((role as any)._hologram.soul)}
-												{@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
-												<button
-													type="button"
-													class="src-pill src-pill--hologram"
-													title="Navigate to source: {holoName}"
-													on:click|stopPropagation={() => (role as any)._hologram && goto(buildHologramLink((role as any)._hologram))}
-													aria-label="Navigate to source: {holoName}"
-												>
-													⟐ {holoName}
-												</button>
-											{:else if (role as any)._federation?.origin && (role as any)._federation.origin !== activeHolonId}
-												{@const fedOrigin = (role as any)._federation.origin}
-												{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-												<button
-													type="button"
-													class="src-pill src-pill--federation"
-													title="Navigate to source holon: {fedName}"
-													on:click|stopPropagation={() => goto(`/${fedOrigin}/roles`)}
-													aria-label="Navigate to source holon: {fedName}"
-												>
-													⟐ {fedName}
-												</button>
-											{/if}
+											<SourceBadge item={role} currentHolonId={activeHolonId} lensRoute="roles" />
 										</h3>
 										{#if role.description}
 											<p class="text-sm text-white/80 line-clamp-2">
@@ -920,36 +894,4 @@
 		gap: 1.5rem;
 	}
 
-	.src-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
-		margin-left: 0.5rem;
-		padding: 0.1rem 0.4rem;
-		font-size: 0.65rem;
-		font-weight: 500;
-		border: none;
-		border-radius: 9999px;
-		cursor: pointer;
-		vertical-align: middle;
-		max-width: 60%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		transition: background-color 150ms ease;
-	}
-	.src-pill--hologram {
-		background: rgba(0, 191, 255, 0.18);
-		color: #00BFFF;
-	}
-	.src-pill--hologram:hover {
-		background: rgba(0, 191, 255, 0.32);
-	}
-	.src-pill--federation {
-		background: rgba(168, 85, 247, 0.18);
-		color: #a855f7;
-	}
-	.src-pill--federation:hover {
-		background: rgba(168, 85, 247, 0.32);
-	}
 </style>

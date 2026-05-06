@@ -7,11 +7,15 @@
 	import { resolveImage } from "../utils/imageServer";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import TitleBar from "./shared/TitleBar.svelte";
+	import { CreditCard } from 'svelte-feathers';
 	import GenericImportModal from "./shared/GenericImportModal.svelte";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { goto } from '$app/navigation';
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+	import SourceBadge from './shared/SourceBadge.svelte';
 
 	interface Expense {
 		id: string;
@@ -46,12 +50,10 @@
 	let isLoading = true;
 	let connectionReady = false;
 
-	// Shared toolbar state — search + federated + hologram toggles mirror the
-	// other features; the currency dropdown still lives in the filters slot.
+	// Per-feature filters (search). Federation/hologram toggles are global —
+	// see $lib/stores/lensFilters.
 	let filters = loadFilters('expenses', {
 		searchQuery: '',
-		showFederated: false,
-		showHolograms: true,
 	});
 	$: saveFilters('expenses', filters);
 
@@ -82,7 +84,7 @@
 
 		try {
 			// Fetch all data in parallel first
-			const expensesPromise = filters.showFederated
+			const expensesPromise = $showFederated
 				? holosphere.getFederated(holonID, "expenses", {
 					includeLocal: true,
 					includeFederated: true,
@@ -233,8 +235,8 @@
 		.filter(e => e.currency === selectedCurrency)
 		.filter((e: any) => {
 			const isHologram = e?._hologram?.isHologram === true;
-			if (!filters.showHolograms && isHologram) return false;
-			if (!filters.showFederated && isHologram) return false;
+			if (!$showHolograms && isHologram) return false;
+			if (!$showFederated && isHologram) return false;
 			const q = filters.searchQuery.trim().toLowerCase();
 			if (!q) return true;
 			return `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q);
@@ -242,6 +244,50 @@
 		.sort((a, b) => parseInt(b.date) - parseInt(a.date));
 
 	$: noCurrenciesAvailable = !isLoading && availableCurrencies.length === 0;
+
+	// Sentinel value used by the currency dropdown's "Add new…" option.
+	const ADD_CURRENCY_SENTINEL = '__add_currency__';
+
+	async function persistCurrencyToSettings(newCode: string): Promise<void> {
+		if (!holosphere || !holonID) return;
+		try {
+			const current = (await holosphere.get(holonID, 'settings', holonID)) || {};
+			const existing: string[] = Array.isArray((current as any).currencies)
+				? (current as any).currencies.filter((c: unknown) => typeof c === 'string')
+				: [];
+			if (existing.includes(newCode)) return;
+			await holosphere.put(holonID, 'settings', {
+				...(current as any),
+				id: holonID,
+				currencies: [...existing, newCode]
+			});
+		} catch (err: any) {
+			if (err?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save currency — no write permission for this holon');
+			} else {
+				console.warn('Failed to persist currency to settings:', err);
+			}
+		}
+	}
+
+	async function handleCurrencyChange() {
+		if (selectedCurrency !== ADD_CURRENCY_SENTINEL) return;
+
+		const previous = availableCurrencies[0] || 'USD';
+		const raw = typeof window !== 'undefined' ? window.prompt('New currency code (e.g., euro, yen, btc):') : null;
+		const cleaned = (raw ?? '').trim().toLowerCase();
+
+		if (!cleaned) {
+			selectedCurrency = previous;
+			return;
+		}
+
+		if (!availableCurrencies.includes(cleaned)) {
+			availableCurrencies = [...availableCurrencies, cleaned];
+			await persistCurrencyToSettings(cleaned);
+		}
+		selectedCurrency = cleaned;
+	}
 
 	onMount(() => {
 		const urlId = $page.params.id;
@@ -283,9 +329,9 @@
 		return () => cleanupSubscriptions();
 	});
 
-	let lastExpensesFedFlag = filters.showFederated;
-	$: if (connectionReady && isValidId(holonID) && filters.showFederated !== lastExpensesFedFlag) {
-		lastExpensesFedFlag = filters.showFederated;
+	let lastExpensesFedFlag = $showFederated;
+	$: if (connectionReady && isValidId(holonID) && $showFederated !== lastExpensesFedFlag) {
+		lastExpensesFedFlag = $showFederated;
 		fetchData();
 	}
 
@@ -376,33 +422,17 @@
 	}
 </script>
 
-<div class="expenses-container">
-	<div class="header">
-		<h2>Expenses</h2>
-	</div>
+<div class="space-y-4">
+	<TitleBar
+		holonName={resolvedName(holonID, $nameMap, null, 'Expenses')}
+		holonId={holonID}
+		showLensFilters
+		title="Expenses"
+		icon={CreditCard}
+	/>
 
-	<FeatureToolbar
-		onAdd={openAddExpense}
-		addLabel="Add Expense"
-		onImport={() => (showImportModal = true)}
-		importLabel="Import"
-		bind:searchQuery={filters.searchQuery}
-		searchPlaceholder="Search expenses…"
-		bind:showFederated={filters.showFederated}
-		bind:showHolograms={filters.showHolograms}
-	>
-		<svelte:fragment slot="filters">
-			{#if availableCurrencies.length > 1}
-				<select bind:value={selectedCurrency} class="filter-select" aria-label="Currency">
-					{#each availableCurrencies as currency}
-						<option value={currency}>{currency.toUpperCase()}</option>
-					{/each}
-				</select>
-			{/if}
-		</svelte:fragment>
-	</FeatureToolbar>
-
-	<!-- Stats Bar -->
+	<div class="expenses-container">
+	<!-- Stats Bar (sits above the toolbar like every other lens) -->
 	{#if selectedCurrency && users.length > 0}
 		<div class="stats-bar mb-4">
 			<div class="stats-bar__item">
@@ -421,6 +451,30 @@
 			</div>
 		</div>
 	{/if}
+
+	<FeatureToolbar
+		onAdd={openAddExpense}
+		addLabel="Add Expense"
+		onImport={() => (showImportModal = true)}
+		importLabel="Import"
+		bind:searchQuery={filters.searchQuery}
+		searchPlaceholder="Search expenses…"
+	>
+		<svelte:fragment slot="filters">
+			<select
+				bind:value={selectedCurrency}
+				onchange={handleCurrencyChange}
+				class="filter-select"
+				aria-label="Currency"
+			>
+				{#each availableCurrencies as currency}
+					<option value={currency}>{currency.toUpperCase()}</option>
+				{/each}
+				<option disabled value="__sep__">──────────</option>
+				<option value={ADD_CURRENCY_SENTINEL}>+ Add new…</option>
+			</select>
+		</svelte:fragment>
+	</FeatureToolbar>
 
 	{#if isLoading}
 		<div class="loading">
@@ -491,31 +545,7 @@
 							<div class="expense-info">
 								<h4>
 									{expense.description}
-									{#if expense._hologram?.isHologram && expense._hologram.soul}
-										{@const holoOrigin = extractHolonIdFromSoul(expense._hologram.soul)}
-										{@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
-										<button
-											type="button"
-											class="src-pill src-pill--hologram"
-											title="Navigate to source: {holoName}"
-											onclick={(e) => { e.stopPropagation(); if (expense._hologram) goto(buildHologramLink(expense._hologram)); }}
-											aria-label="Navigate to source: {holoName}"
-										>
-											⟐ {holoName}
-										</button>
-									{:else if expense._federation?.origin && expense._federation.origin !== holonID}
-										{@const fedOrigin = expense._federation.origin}
-										{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-										<button
-											type="button"
-											class="src-pill src-pill--federation"
-											title="Navigate to source holon: {fedName}"
-											onclick={(e) => { e.stopPropagation(); goto(`/${fedOrigin}/expenses`); }}
-											aria-label="Navigate to source holon: {fedName}"
-										>
-											⟐ {fedName}
-										</button>
-									{/if}
+									<SourceBadge item={expense} currentHolonId={holonID} lensRoute="expenses" />
 								</h4>
 								<p class="paid-by">Paid by {users.find(u => String(u.id) === String(expense.paidBy))?.first_name || expense.paidBy}</p>
 								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => String(u.id) === String(id))?.first_name || id).join(', ')}</p>
@@ -530,6 +560,7 @@
 			</div>
 		{/if}
 	{/if}
+	</div>
 </div>
 
 <!-- Add Expense Modal -->
@@ -949,36 +980,4 @@
 		gap: 0.75rem;
 	}
 
-	.src-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
-		margin-left: 0.5rem;
-		padding: 0.1rem 0.4rem;
-		font-size: 0.65rem;
-		font-weight: 500;
-		border: none;
-		border-radius: 9999px;
-		cursor: pointer;
-		vertical-align: middle;
-		max-width: 60%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		transition: background-color 150ms ease;
-	}
-	.src-pill--hologram {
-		background: rgba(0, 191, 255, 0.18);
-		color: #00BFFF;
-	}
-	.src-pill--hologram:hover {
-		background: rgba(0, 191, 255, 0.32);
-	}
-	.src-pill--federation {
-		background: rgba(168, 85, 247, 0.18);
-		color: #a855f7;
-	}
-	.src-pill--federation:hover {
-		background: rgba(168, 85, 247, 0.32);
-	}
 </style>

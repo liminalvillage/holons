@@ -14,6 +14,8 @@
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
+	import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -43,23 +45,20 @@
 	let holonID: string | null = null;
 	$: holonName = resolvedName(holonID, $nameMap, null, 'Offers & Requests');
 
-	// Shared toolbar state (same field keys as other features). `showFederated`
-	// supersedes the legacy `includeFederatedOffers` flag while keeping the
-	// same meaning: when on, also pull in items from federated partners.
+	// Per-feature filters (search). The federation/hologram toggles are
+	// global — see $lib/stores/lensFilters.
 	let filters = loadFilters('offers', {
 		searchQueryOffers: '',
 		searchQueryRequests: '',
-		showFederated: false,
-		showHolograms: true,
 	});
 	$: saveFilters('offers', filters);
-	$: includeFederatedOffers = filters.showFederated;
+	$: includeFederatedOffers = $showFederated;
 	let loadingFederated = false;
 
 	function matchesVisibility(item: any): boolean {
 		const isHologram = item?._hologram?.isHologram === true;
-		if (!filters.showHolograms && isHologram) return false;
-		if (!filters.showFederated && isHologram) return false;
+		if (!$showHolograms && isHologram) return false;
+		if (!$showFederated && isHologram) return false;
 		return true;
 	}
 
@@ -314,49 +313,54 @@
 					// Use federated data retrieval
 					await fetchFederatedOffersAndNeeds();
 				} else {
-					// First, load initial data with getAll (subscription only gets updates, not existing data)
+					// First, load initial data with getAll (subscription only gets updates, not existing data).
+					// Always key by `item.id` so the subscribe callback below can't
+					// land the same item under a second key.
 					try {
 						const initialData = await holosphere.getAll(holonID, "quests");
-						if (Array.isArray(initialData)) {
-							initialData.forEach((item) => {
-								if (item && item.id) {
-									const key = item.id;
-									store[key] = { ...item, key };
-								}
-							});
-						} else if (typeof initialData === 'object' && initialData !== null) {
-							Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-								if (item && item.id) {
-									store[key] = { ...item, key };
-								}
-							});
-						}
+						const items = Array.isArray(initialData)
+							? initialData
+							: (initialData && typeof initialData === 'object'
+								? Object.values(initialData)
+								: []);
+						items.forEach((item: any) => {
+							if (item && item.id) {
+								store[item.id] = { ...item, key: item.id };
+							}
+						});
 						store = store; // Trigger reactivity
 					} catch (error) {
 						console.error('Error loading initial offers data:', error);
 					}
 
-					// Then set up subscription for live updates
+					// Then set up subscription for live updates.
+					// Canonicalise on `newItem.id` so the subscribe callback
+					// and getAll above always land on the same store slot —
+					// otherwise a stale gun key produces a duplicate entry.
 					const subscribedHolonId = holonID;
-					questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
+					const subscription = await holosphere.subscribe(holonID, "quests", (newItem, key) => {
 						try {
 							if (holonID !== subscribedHolonId) {
 								return; // Ignore updates from old holon subscription
 							}
+							const storeKey = newItem?.id || key;
+							if (!storeKey) return;
 							if (newItem) {
-								const parsedItem = newItem;
-								parsedItem.key = key; // Add the key to the parsed item object
-								store[key] = parsedItem;
+								const parsedItem = { ...newItem, key: storeKey };
+								store[storeKey] = parsedItem;
 							} else {
-								// A key may contain a null value (if data has been deleted/set to null)
-								// if so, we remove the item from the store
-								delete store[key];
+								delete store[storeKey];
 							}
 							store = store; // Trigger reactivity
 						} catch (error) {
 							// Silently handle subscription item processing errors
 						}
 					});
+					if (subscription && typeof (subscription as any).unsubscribe === 'function') {
+						questSubscriptionOff = (subscription as any).unsubscribe;
+					} else if (typeof subscription === 'function') {
+						questSubscriptionOff = subscription as any;
+					}
 				}
 			}
 		} catch (error) {
@@ -600,9 +604,9 @@
 		await subscribeToOffersAndNeeds();
 	}
 	// Kick off re-subscription when the federation toggle flips.
-	let lastFederatedFlag = filters.showFederated;
-	$: if (filters.showFederated !== lastFederatedFlag) {
-		lastFederatedFlag = filters.showFederated;
+	let lastFederatedFlag = $showFederated;
+	$: if ($showFederated !== lastFederatedFlag) {
+		lastFederatedFlag = $showFederated;
 		handleFederatedToggle();
 	}
 
@@ -917,12 +921,10 @@
 
 <div class="space-y-4">
 	<!-- TitleBar -->
-	<TitleBar {holonName} title="Offers & Requests" icon={Gift} />
+	<TitleBar {holonName} holonId={holonID} showLensFilters title="Offers & Requests" icon={Gift} />
 
 	<FeatureToolbar
 		onAdd={null}
-		bind:showFederated={filters.showFederated}
-		bind:showHolograms={filters.showHolograms}
 		federatedLoading={loadingFederated}
 	/>
 
@@ -1017,44 +1019,7 @@
 													<h3 class="text-base font-bold text-gray-800 truncate">
 														{offer.title}
 													</h3>
-													{#if offer._hologram?.isHologram}
-													<button
-														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors"
-														title="Navigate to source holon: {getHologramSourceDisplay(offer._hologram.soul)}"
-														on:click|stopPropagation={() => {
-															const sourceHolon = offer._hologram?.sourceHolon;
-															if (sourceHolon) {
-																goto(`/${sourceHolon}/offers`);
-															}
-														}}
-													>
-														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-														</svg>
-														{getHologramSourceDisplay(offer._hologram.soul)}
-														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-														</svg>
-													</button>
-												{/if}
-													{#if offer._federation?.origin && offer._federation.origin !== holonID && !offer._hologram?.isHologram}
-														{@const fedOrigin = offer._federation.origin}
-														{@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-														<button
-															class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0 hover:bg-purple-500/30 transition-colors"
-															title="Navigate to source holon: {fedName}"
-															on:click|stopPropagation={() => goto(`/${fedOrigin}/offers`)}
-															aria-label="Navigate to source holon: {fedName}"
-														>
-															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-															</svg>
-															{fedName}
-															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-															</svg>
-														</button>
-													{/if}
+													<SourceBadge item={offer} currentHolonId={holonID} lensRoute="offers" />
 													{#if offer._userSpecific}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1283,44 +1248,7 @@
 													<h3 class="text-base font-bold text-gray-800 truncate">
 														{need.title}
 													</h3>
-													{#if need._hologram?.isHologram}
-													<button
-														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors"
-														title="Navigate to source holon: {getHologramSourceDisplay(need._hologram.soul)}"
-														on:click|stopPropagation={() => {
-															const sourceHolon = need._hologram?.sourceHolon;
-															if (sourceHolon) {
-																goto(`/${sourceHolon}/offers`);
-															}
-														}}
-													>
-														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-														</svg>
-														{getHologramSourceDisplay(need._hologram.soul)}
-														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-														</svg>
-													</button>
-												{/if}
-													{#if need._federation?.origin && need._federation.origin !== holonID && !need._hologram?.isHologram}
-														{@const needFedOrigin = need._federation.origin}
-														{@const needFedName = (resolveName(needFedOrigin), resolvedName(needFedOrigin, $nameMap))}
-														<button
-															class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0 hover:bg-purple-500/30 transition-colors"
-															title="Navigate to source holon: {needFedName}"
-															on:click|stopPropagation={() => goto(`/${needFedOrigin}/offers`)}
-															aria-label="Navigate to source holon: {needFedName}"
-														>
-															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-															</svg>
-															{needFedName}
-															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-															</svg>
-														</button>
-													{/if}
+													<SourceBadge item={need} currentHolonId={holonID} lensRoute="offers" />
 													{#if need._userSpecific}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

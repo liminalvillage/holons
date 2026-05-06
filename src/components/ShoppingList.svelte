@@ -12,6 +12,8 @@
     import { ShoppingCart, Trash2, RefreshCw } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
+    import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+    import SourceBadge from "./shared/SourceBadge.svelte";
 
     interface ShoppingItem {
         id: string;
@@ -28,11 +30,10 @@
     let store: Record<string, ShoppingItem> = {};
     let unsubscribeFn: (() => void) | undefined;
 
-    // Persisted toolbar state — shared across features via the same keys.
+    // Per-feature filters (search). Federation/hologram toggles are global —
+    // see $lib/stores/lensFilters.
     let filters = loadFilters('shopping', {
         searchQuery: '',
-        showFederated: false,
-        showHolograms: true,
     });
     $: saveFilters('shopping', filters);
 
@@ -44,8 +45,8 @@
     // the federated toggle is off (federated items carry the hologram marker).
     $: visibleItems = shoppingItems.filter((item) => {
         const isHologram = item._hologram?.isHologram === true;
-        if (!filters.showHolograms && isHologram) return false;
-        if (!filters.showFederated && isHologram) return false;
+        if (!$showHolograms && isHologram) return false;
+        if (!$showFederated && isHologram) return false;
         const q = filters.searchQuery.trim().toLowerCase();
         if (q && !(item.text ?? '').toLowerCase().includes(q)) return false;
         return true;
@@ -68,7 +69,7 @@
         store = {};
 
         try {
-            if (filters.showFederated) {
+            if ($showFederated) {
                 await fetchFederatedShopping();
             } else {
                 await fetchLocalShopping();
@@ -81,32 +82,33 @@
     async function fetchLocalShopping() {
         const initialData = await holosphere.getAll(holonID, "shopping");
 
+        // Always key by `item.id` so the subscribe callback below can't
+        // land the same item under a second key (which is what makes new
+        // items briefly appear twice until a reload re-runs getAll).
         const newStore: Record<string, ShoppingItem> = {};
-        if (Array.isArray(initialData)) {
-            initialData.forEach((item: any) => {
-                if (item && item.id && !item._deleted) {
-                    newStore[item.id] = item;
-                }
-            });
-        } else if (typeof initialData === 'object' && initialData !== null) {
-            Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                if (item && item.id && !item._deleted) {
-                    newStore[key] = item;
-                }
-            });
-        }
+        const items = Array.isArray(initialData)
+            ? initialData
+            : (initialData && typeof initialData === 'object'
+                ? Object.values(initialData)
+                : []);
+        items.forEach((item: any) => {
+            if (item && item.id && !item._deleted) {
+                newStore[item.id] = item;
+            }
+        });
         store = newStore;
 
         const subscription = await holosphere.subscribe(
             holonID,
             "shopping",
             (newItem: ShoppingItem | null, key?: string) => {
-                if (!key) return;
+                const storeKey = newItem?.id || key;
+                if (!storeKey) return;
                 if (newItem && newItem.id && !newItem._deleted) {
-                    store[key] = newItem;
+                    store[storeKey] = newItem;
                     store = store;
                 } else {
-                    delete store[key];
+                    delete store[storeKey];
                     store = store;
                 }
             }
@@ -142,9 +144,9 @@
         store = newStore;
     }
 
-    let lastShoppingFedFlag = filters.showFederated;
-    $: if (holonID && holosphere && filters.showFederated !== lastShoppingFedFlag) {
-        lastShoppingFedFlag = filters.showFederated;
+    let lastShoppingFedFlag = $showFederated;
+    $: if (holonID && holosphere && $showFederated !== lastShoppingFedFlag) {
+        lastShoppingFedFlag = $showFederated;
         fetchData();
     }
 
@@ -316,7 +318,7 @@
 </script>
 
 <div class="space-y-4">
-    <TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} title="Shopping List" icon={ShoppingCart} />
+    <TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} holonId={holonID} showLensFilters title="Shopping List" icon={ShoppingCart} />
 
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
         <div class="p-8">
@@ -346,8 +348,6 @@
                 importLabel="Import"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search items…"
-                bind:showFederated={filters.showFederated}
-                bind:showHolograms={filters.showHolograms}
             >
                 <svelte:fragment slot="actions">
                     <button
@@ -374,16 +374,9 @@
             <!-- Shopping Items -->
             <div class="space-y-3 mt-4">
                 {#each visibleItems as item (item.id)}
-                    {@const isHolo = item._hologram?.isHologram === true}
-                    {@const fedOrigin = !isHolo && item._federation?.origin && item._federation.origin !== holonID ? item._federation.origin : ''}
-                    {@const holoId = isHolo ? hologramHolonId(item) : ''}
                     <ItemCard
                         clickable
                         completed={item.checked}
-                        isHologram={isHolo}
-                        isFederated={!isHolo && !!fedOrigin}
-                        sourceHolon={isHolo ? hologramSource(item) : (fedOrigin ? federationSource(item) : '')}
-                        sourceHref={isHolo && holoId ? `/${holoId}/shopping` : (fedOrigin ? `/${fedOrigin}/shopping` : '')}
                         on:click={() => toggleItemStatus(item)}
                     >
                         <div class="flex items-center justify-between gap-3 w-full">
@@ -399,6 +392,7 @@
                                 >
                                     {item.text}
                                 </h3>
+                                <SourceBadge {item} currentHolonId={holonID} lensRoute="shopping" />
                             </div>
                             <div class="flex items-center gap-3 flex-shrink-0">
                                 <input

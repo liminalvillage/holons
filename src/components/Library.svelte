@@ -5,6 +5,8 @@
     import type { HoloSphere } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
     import { goto } from "$app/navigation";
+    import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+    import SourceBadge from "./shared/SourceBadge.svelte";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
@@ -78,8 +80,8 @@
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
         const isHologram = item._hologram?.isHologram === true;
-        if (!filters.showHolograms && isHologram) return false;
-        if (!filters.showFederated && isHologram) return false;
+        if (!$showHolograms && isHologram) return false;
+        if (!$showFederated && isHologram) return false;
 
         const q = filters.searchQuery.trim().toLowerCase();
         if (q) {
@@ -161,17 +163,13 @@
 
     let showInput = false;
     let libraryView: 'list' | 'calendar' = 'list';
-    // Shared filter state across features; legacy `libraryShowHolograms`
-    // localStorage key is migrated from in onMount below.
+    // Per-feature filters (search + active tab). The federation/hologram
+    // toggles are global — see $lib/stores/lensFilters.
     let filters = loadFilters('library', {
         searchQuery: '',
-        showFederated: false,
-        showHolograms: true,
         activeFilter: 'all' as 'all' | 'available' | 'borrowed' | 'mine',
     });
     $: saveFilters('library', filters);
-    // Legacy aliases used throughout the template; kept to minimise diff.
-    $: showHolograms = filters.showHolograms;
     $: activeFilter = filters.activeFilter;
     let libraryItemsUnsubscribe: (() => void) | undefined;
     let hologramSourceNames = new Map<string, string>();
@@ -332,7 +330,7 @@
         }
 
         try {
-            if (filters.showFederated) {
+            if ($showFederated) {
                 await fetchFederatedLibrary();
             } else {
                 await fetchLocalLibrary();
@@ -399,19 +397,14 @@
         await preResolveHologramNames(Object.values(store));
     }
 
-    let lastLibraryFedFlag = filters.showFederated;
-    $: if (holonID && holosphere && filters.showFederated !== lastLibraryFedFlag) {
-        lastLibraryFedFlag = filters.showFederated;
+    let lastLibraryFedFlag = $showFederated;
+    $: if (holonID && holosphere && $showFederated !== lastLibraryFedFlag) {
+        lastLibraryFedFlag = $showFederated;
         fetchData();
     }
 
     onMount(() => {
         try {
-            // One-time migration of the legacy flag into the new filter bag.
-            const storedShowHolograms = localStorage.getItem("libraryShowHolograms");
-            if (storedShowHolograms !== null) {
-                filters.showHolograms = storedShowHolograms === "true";
-            }
             currentUserId = localStorage.getItem("userId") || "";
             currentUsername = localStorage.getItem("username") || "";
         } catch (error) {
@@ -436,11 +429,6 @@
                 holonName = name || 'Library';
             });
         }
-    }
-
-    // Keep the legacy key in sync while downstream consumers still read it.
-    $: if (typeof localStorage !== 'undefined') {
-        localStorage.setItem("libraryShowHolograms", filters.showHolograms.toString());
     }
 
     function getHologramSource(hologramSoul: string | undefined): string {
@@ -915,7 +903,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Library" icon={Package} />
+    <TitleBar {holonName} holonId={holonID} showLensFilters title="Library" icon={Package} />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
@@ -950,8 +938,6 @@
                 importLabel="Import"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search library…"
-                bind:showFederated={filters.showFederated}
-                bind:showHolograms={filters.showHolograms}
                 viewMode={libraryView}
                 viewModes={[
                     { value: 'list', label: 'List', icon: List },
@@ -1040,29 +1026,7 @@
                                             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-600/50 text-gray-300">
                                                 {getTypeDisplayName(item.type)}
                                             </span>
-                                            {#if item._hologram?.isHologram}
-                                                <button
-                                                    type="button"
-                                                    class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition-colors"
-                                                    title="Navigate to source: {getHologramSource(item._hologram.soul)}"
-                                                    on:click|stopPropagation={() => item._hologram && goto(buildHologramLink(item._hologram))}
-                                                    aria-label="Navigate to source: {getHologramSource(item._hologram.soul)}"
-                                                >
-                                                    🔮 {getHologramSource(item._hologram.soul)}
-                                                </button>
-                                            {:else if item._federation?.origin && item._federation.origin !== holonID}
-                                                {@const fedOrigin = item._federation.origin}
-                                                {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-                                                <button
-                                                    type="button"
-                                                    class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-colors"
-                                                    title="Navigate to source holon: {fedName}"
-                                                    on:click|stopPropagation={() => goto(`/${fedOrigin}/library`)}
-                                                    aria-label="Navigate to source holon: {fedName}"
-                                                >
-                                                    🌐 {fedName}
-                                                </button>
-                                            {/if}
+                                            <SourceBadge {item} currentHolonId={holonID} lensRoute="library" />
                                         </div>
                                         <div class="text-sm text-gray-400">
                                             {#if !booked}

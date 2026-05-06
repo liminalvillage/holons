@@ -9,6 +9,8 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+    import SourceBadge from './shared/SourceBadge.svelte';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -42,11 +44,10 @@
     let quests: Record<string, any> = {};
     let allChecklists: Record<string, Checklist> = {};
 
-    // Shared toolbar state — activeFilter maps to the existing tab values.
+    // Per-feature filters (search + active tab). Federation/hologram toggles
+    // are global — see $lib/stores/lensFilters.
     let filters = loadFilters('checklists', {
         searchQuery: '',
-        showFederated: false,
-        showHolograms: true,
         activeFilter: 'all' as 'all' | 'standalone' | 'roles' | 'quests',
     });
     $: saveFilters('checklists', filters);
@@ -65,8 +66,8 @@
 
         entries = entries.filter(([_, checklist]) => {
             const isHologram = (checklist as any)?._hologram?.isHologram === true;
-            if (!filters.showHolograms && isHologram) return false;
-            if (!filters.showFederated && isHologram) return false;
+            if (!$showHolograms && isHologram) return false;
+            if (!$showFederated && isHologram) return false;
             return true;
         });
 
@@ -157,9 +158,9 @@
     });
 
     // Watch for page ID changes with debouncing
-    let lastChecklistsFedFlag = filters.showFederated;
-    $: if (connectionReady && holonID && holosphere && filters.showFederated !== lastChecklistsFedFlag) {
-        lastChecklistsFedFlag = filters.showFederated;
+    let lastChecklistsFedFlag = $showFederated;
+    $: if (connectionReady && holonID && holosphere && $showFederated !== lastChecklistsFedFlag) {
+        lastChecklistsFedFlag = $showFederated;
         fetchData();
     }
 
@@ -206,7 +207,7 @@
             };
 
             // Fetch checklists, roles, and quests in parallel — federated when toggle is on
-            const checklistsPromise = filters.showFederated
+            const checklistsPromise = $showFederated
                 ? holosphere.getFederated(holonID, "checklists", {
                     includeLocal: true,
                     includeFederated: true,
@@ -571,6 +572,8 @@
         <!-- TitleBar -->
         <TitleBar
             {holonName}
+            holonId={holonID}
+            showLensFilters
             title={selectedChecklist && checklists[selectedChecklist] ? getChecklistDisplayTitle(checklists[selectedChecklist]) : 'Checklists'}
             icon={CheckSquare}
         />
@@ -747,8 +750,6 @@
                         importLabel="Import"
                         bind:searchQuery={filters.searchQuery}
                         searchPlaceholder="Search checklists…"
-                        bind:showFederated={filters.showFederated}
-                        bind:showHolograms={filters.showHolograms}
                     >
                         <svelte:fragment slot="filters">
                             <div class="filter-tabs">
@@ -838,31 +839,7 @@
                                                     {#if checklist.questId}
                                                         <span class="px-2 py-1 bg-purple-600 text-white text-xs rounded-full">Task</span>
                                                     {/if}
-                                                    {#if (checklist as any)._hologram?.isHologram && (checklist as any)._hologram?.soul}
-                                                        {@const holoOrigin = extractHolonIdFromSoul((checklist as any)._hologram.soul)}
-                                                        {@const holoName = holoOrigin ? (resolveName(holoOrigin), resolvedName(holoOrigin, $nameMap)) : 'External'}
-                                                        <button
-                                                            type="button"
-                                                            class="cl-src-pill cl-src-pill--hologram"
-                                                            title="Navigate to source: {holoName}"
-                                                            on:click|stopPropagation={() => (checklist as any)._hologram && goto(buildHologramLink((checklist as any)._hologram))}
-                                                            aria-label="Navigate to source: {holoName}"
-                                                        >
-                                                            ⟐ {holoName}
-                                                        </button>
-                                                    {:else if (checklist as any)._federation?.origin && (checklist as any)._federation.origin !== holonID}
-                                                        {@const fedOrigin = (checklist as any)._federation.origin}
-                                                        {@const fedName = (resolveName(fedOrigin), resolvedName(fedOrigin, $nameMap))}
-                                                        <button
-                                                            type="button"
-                                                            class="cl-src-pill cl-src-pill--federation"
-                                                            title="Navigate to source holon: {fedName}"
-                                                            on:click|stopPropagation={() => goto(`/${fedOrigin}/checklists`)}
-                                                            aria-label="Navigate to source holon: {fedName}"
-                                                        >
-                                                            ⟐ {fedName}
-                                                        </button>
-                                                    {/if}
+                                                    <SourceBadge item={checklist} currentHolonId={holonID} lensRoute="checklists" />
                                                 </div>
                                                 <p class="text-sm text-gray-400">
                                                     {#if isShoppingChecklist(key)}
@@ -1023,35 +1000,3 @@
 />
 
 
-<style>
-    .cl-src-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.2rem;
-        padding: 0.1rem 0.4rem;
-        font-size: 0.65rem;
-        font-weight: 500;
-        border: none;
-        border-radius: 9999px;
-        cursor: pointer;
-        max-width: 60%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        transition: background-color 150ms ease;
-    }
-    .cl-src-pill--hologram {
-        background: rgba(0, 191, 255, 0.18);
-        color: #00BFFF;
-    }
-    .cl-src-pill--hologram:hover {
-        background: rgba(0, 191, 255, 0.32);
-    }
-    .cl-src-pill--federation {
-        background: rgba(168, 85, 247, 0.18);
-        color: #a855f7;
-    }
-    .cl-src-pill--federation:hover {
-        background: rgba(168, 85, 247, 0.32);
-    }
-</style>

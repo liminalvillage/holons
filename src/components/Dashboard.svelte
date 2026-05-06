@@ -241,7 +241,7 @@
 </script>
 
 <!-- Title Bar -->
-<TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} title="Statistics" icon={Grid} />
+<TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} holonId={holonID} title="Statistics" icon={Grid} />
 
 {#if isLoading}
 	<div class="loading">

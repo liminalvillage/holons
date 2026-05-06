@@ -16,7 +16,13 @@
 	}
 </script>
 
-<label class="toggle-chip" class:toggle-chip--disabled={disabled} class:toggle-chip--loading={loading}>
+<label
+	class="toggle-chip"
+	class:toggle-chip--disabled={disabled}
+	class:toggle-chip--loading={loading}
+	title={label}
+	aria-label={label}
+>
 	<input
 		type="checkbox"
 		class="sr-only"

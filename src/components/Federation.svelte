@@ -332,7 +332,7 @@
     }, new Set<string>()).size;
 </script>
 
-<TitleBar title="Federation" holonName={holonName} />
+<TitleBar title="Federation" holonName={holonName} holonId={currentHolonId} />
 
 <div class="federation-page">
     <FeatureToolbar

@@ -641,7 +641,7 @@
 
 <div class="space-y-4">
 	<!-- TitleBar -->
-	<TitleBar {holonName} title="Database Explorer">
+	<TitleBar {holonName} holonId={holonID} title="Database Explorer">
 		<div slot="actions" class="flex items-center gap-2">
 			<!-- Mode Toggle -->
 			<div class="mode-toggle">

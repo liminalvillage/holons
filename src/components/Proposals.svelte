@@ -9,6 +9,10 @@
     import GenericImportModal from './shared/GenericImportModal.svelte';
     import { nameMap, resolveHologramSource, extractHolonIdFromSoul, resolveName, resolvedName } from '$lib/stores/nameResolver';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
+    import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+    import SourceBadge from './shared/SourceBadge.svelte';
+    import TitleBar from './shared/TitleBar.svelte';
+    import { CheckSquare } from 'svelte-feathers';
 
     interface Proposal {
         id: string;
@@ -29,11 +33,10 @@
     let proposals: Record<string, Proposal> = {};
     let unsubscribeFromProposals: (() => void) | null = null;
 
-    // Shared toolbar state — same field names/keys as other features.
+    // Per-feature filters (search). Federation/hologram toggles are global —
+    // see $lib/stores/lensFilters.
     let filters = loadFilters('proposals', {
         searchQuery: '',
-        showFederated: false,
-        showHolograms: true,
     });
     $: saveFilters('proposals', filters);
 
@@ -41,8 +44,8 @@
         .filter(p => p.type === "proposal")
         .filter((p) => {
             const isHologram = p._hologram?.isHologram === true;
-            if (!filters.showHolograms && isHologram) return false;
-            if (!filters.showFederated && isHologram) return false;
+            if (!$showHolograms && isHologram) return false;
+            if (!$showFederated && isHologram) return false;
             const q = filters.searchQuery.trim().toLowerCase();
             if (q && !`${p.title} ${p.description}`.toLowerCase().includes(q)) return false;
             return true;
@@ -82,7 +85,7 @@
 
         if (!holosphere || !holonIdToSubscribe) return;
 
-        if (filters.showFederated) {
+        if ($showFederated) {
             fetchFederatedProposals(holonIdToSubscribe);
             return;
         }
@@ -135,9 +138,9 @@
         }
     }
 
-    let lastProposalsFedFlag = filters.showFederated;
-    $: if (currentHolonID && holosphere && filters.showFederated !== lastProposalsFedFlag) {
-        lastProposalsFedFlag = filters.showFederated;
+    let lastProposalsFedFlag = $showFederated;
+    $: if (currentHolonID && holosphere && $showFederated !== lastProposalsFedFlag) {
+        lastProposalsFedFlag = $showFederated;
         subscribeToProposals(currentHolonID);
     }
 
@@ -252,9 +255,13 @@
 </script>
 
 <div class="w-full bg-gray-800 py-6 px-6 rounded-3xl">
-    <div class="flex justify-between text-white items-center mb-4">
-        <p class="text-2xl font-bold">Proposals</p>
-    </div>
+    <TitleBar
+        holonName={resolvedName(currentHolonID ?? undefined, $nameMap, null, 'Proposals')}
+        holonId={currentHolonID}
+        showLensFilters
+        title="Proposals"
+        icon={CheckSquare}
+    />
 
     <FeatureToolbar
         onAdd={() => (showAddDialog = true)}
@@ -263,8 +270,6 @@
         importLabel="Import"
         bind:searchQuery={filters.searchQuery}
         searchPlaceholder="Search proposals…"
-        bind:showFederated={filters.showFederated}
-        bind:showHolograms={filters.showHolograms}
     />
 
     <div class="mt-4">
@@ -276,17 +281,12 @@
 
     <div class="space-y-3 mt-6">
         {#each sortedProposals as proposal (proposal.id)}
-            {@const isHolo = proposal._hologram?.isHologram === true}
-            {@const fedOrigin = !isHolo && proposal._federation?.origin && proposal._federation.origin !== currentHolonID ? proposal._federation.origin : ''}
-            {@const holoId = isHolo ? hologramHolonId(proposal) : ''}
-            <ItemCard
-                isHologram={isHolo}
-                isFederated={!isHolo && !!fedOrigin}
-                sourceHolon={isHolo ? hologramSource(proposal) : (fedOrigin ? federationSource(proposal) : '')}
-                sourceHref={isHolo && holoId ? `/${holoId}/proposals` : (fedOrigin ? `/${fedOrigin}/proposals` : '')}
-            >
+            <ItemCard>
                 <div class="flex justify-between items-start mb-2 gap-3">
-                    <h3 class="text-lg font-semibold text-white flex-1 min-w-0">{proposal.title}</h3>
+                    <h3 class="text-lg font-semibold text-white flex-1 min-w-0">
+                        {proposal.title}
+                        <SourceBadge item={proposal} currentHolonId={currentHolonID} lensRoute="proposals" />
+                    </h3>
                     <div class="flex gap-2 flex-shrink-0">
                         <button
                             on:click|stopPropagation={() => toggleBlock(proposal.id)}
