@@ -1,23 +1,35 @@
 /**
  * @fileoverview Community library system for item lending and borrowing.
+ *
+ * This module is now a thin Telegraf adapter on top of `@holons/core/library`.
+ * All persistence, validation, and accounting logic lives in core; this file
+ * owns the bot UX (commands, inline keyboards, calendar pickers, photo flow).
+ *
  * @module src/Library
  */
 
 import { Markup } from 'telegraf';
+import {
+    LIBRARY_TYPES,
+    addItem as coreAddItem,
+    borrowItem as coreBorrowItem,
+    createLibraryItem as coreCreateLibraryItem,
+    detectItemType as coreDetectItemType,
+    filterItems as coreFilterItems,
+    getItemDisplayTitle as coreGetItemDisplayTitle,
+    getItemIcon as coreGetItemIcon,
+    getLibraryStats as coreGetLibraryStats,
+    getTypeDisplayName as coreGetTypeDisplayName,
+    listItems as coreListItems,
+    recordBorrowAccounting,
+    recordReturnAccounting,
+    removeItem as coreRemoveItem,
+    returnItem as coreReturnItem,
+    setItemValue as coreSetItemValue
+} from '@holons/core/library';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
-
-/**
- * Standard library item types supported by the system.
- * @constant {Object.<string, string>}
- */
-const LIBRARY_TYPES = {
-    TOOL: 'tool',
-    BOOK: 'book',
-    EQUIPMENT: 'equipment',
-    OTHER: 'other'
-};
 
 /**
  * Number of items to display per page in the library.
@@ -42,7 +54,7 @@ const ITEMS_PER_PAGE = 15;
  *
  * @example
  * const library = new Library(bot, db);
- * // Use /additem hammer 5 to add an item worth 5 credits
+ * // Use /libadd hammer 5 to add an item worth 5 credits
  * // Use /borrow hammer to borrow an item
  */
 class Library {
@@ -63,7 +75,8 @@ class Library {
             start_date: new Date() // Can't select past dates
         });
 
-        // Initialize REA components
+        // Initialize REA components (still owned by the bot — passed to core
+        // accounting helpers when recording borrows/returns)
         this.eventStore = new REAEventStore(db);
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);
@@ -115,63 +128,29 @@ class Library {
     }
 
     // Helper method to create a standardized library item
+    // (delegates to @holons/core/library for the canonical shape)
     createLibraryItem(id, type, options = {}) {
-        return {
-            id: id,
-            type: type || LIBRARY_TYPES.OTHER,
-            borrowed: false,
-            createdBy: options.createdBy,
-            createdByUsername: options.createdByUsername,
-            borrower: null,
-            category: options.category || 'Uncategorized',
-            description: options.description || '',
-            value: options.value || 0,
-            created: new Date()
-        };
+        return coreCreateLibraryItem(id, type, options);
     }
 
     // Helper method to get item icon based on type
     getItemIcon(item) {
-        if (typeof item === 'string') {
-            return '📦';
-        }
-        switch (item.type) {
-            case LIBRARY_TYPES.TOOL: return '🔧';
-            case LIBRARY_TYPES.BOOK: return '📚';
-            case LIBRARY_TYPES.EQUIPMENT: return '⚙️';
-            case LIBRARY_TYPES.OTHER:
-            default: return '📦';
-        }
+        return coreGetItemIcon(item);
     }
 
     // Helper method to get item display title
     getItemDisplayTitle(item) {
-        if (typeof item === 'string') return item;
-        return item.id;
+        return coreGetItemDisplayTitle(item);
     }
 
     // Helper method to get type display name
     getTypeDisplayName(type) {
-        switch (type) {
-            case LIBRARY_TYPES.TOOL: return 'tool';
-            case LIBRARY_TYPES.BOOK: return 'book';
-            case LIBRARY_TYPES.EQUIPMENT: return 'equipment';
-            case LIBRARY_TYPES.OTHER:
-            default: return 'item';
-        }
+        return coreGetTypeDisplayName(type);
     }
 
     // Helper to detect item type from name
     detectItemType(itemName) {
-        const name = itemName.toLowerCase();
-        const toolKeywords = ['hammer', 'drill', 'saw', 'screwdriver', 'wrench', 'pliers', 'shovel', 'rake', 'axe', 'knife'];
-        const bookKeywords = ['book', 'manual', 'guide', 'novel', 'textbook'];
-        const equipmentKeywords = ['camera', 'projector', 'speaker', 'tent', 'bicycle', 'ladder'];
-
-        if (toolKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.TOOL;
-        if (bookKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.BOOK;
-        if (equipmentKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.EQUIPMENT;
-        return LIBRARY_TYPES.OTHER;
+        return coreDetectItemType(itemName);
     }
 
     async addItem(ctx) {
@@ -182,22 +161,21 @@ class Library {
             ctx.reply('Please specify an item to add. eg: /libadd hammer 10 tools');
             return;
         }
-        if (await this.db.get(holonId.toString(), 'library', item)) {
+
+        const result = await coreAddItem(this.db, holonId, item, {
+            createdBy: ctx.from.id,
+            createdByUsername: ctx.from.username,
+            category,
+            value: parseInt(value) || 0
+        });
+
+        if (!result.ok) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
-        const itemValue = parseInt(value) || 0;
-        const itemType = this.detectItemType(item);
-        const libraryItem = this.createLibraryItem(item, itemType, {
-            createdBy: ctx.from.id,
-            createdByUsername: ctx.from.username,
-            category: category,
-            value: itemValue
-        });
-
-        await this.db.put(holonId.toString(), 'library', libraryItem);
-        const icon = this.getItemIcon(libraryItem);
+        const icon = this.getItemIcon(result.item);
+        const itemValue = result.item.value;
         ctx.reply(`${icon} Added ${item} to the library${itemValue > 0 ? ` (value: ${itemValue})` : ''}.`);
     }
 
@@ -208,7 +186,7 @@ class Library {
             ctx.reply('Please specify an item to remove. eg: /libremove hammer');
             return;
         }
-        await this.db.delete(holonId.toString(), 'library', item);
+        await coreRemoveItem(this.db, holonId, item);
         ctx.reply(`Removed ${item} from the library.`);
     }
 
@@ -398,18 +376,15 @@ class Library {
             return;
         }
 
-        const { itemName, username, firstName, lastName } = pendingBorrow;
+        const { itemName, username, firstName } = pendingBorrow;
         const returnDate = new Date(dateStr);
 
-        // Create initials from first name and last name
-        const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : '';
-        const lastInitial = lastName ? lastName.charAt(0).toUpperCase() : '';
-        const initials = firstInitial + lastInitial || (username ? username.charAt(0).toUpperCase() : '?');
-
         try {
-            // Re-check item is still available
-            const freshItem = await this.db.get(holonId.toString(), 'library', itemName);
-            if (!freshItem || freshItem.borrowed) {
+            // Borrow + record accounting through @holons/core/library so the
+            // canonical shape (borrower, borrowerInitials, returnBy, expenses,
+            // REA events) stays consistent across UIs.
+            const result = await coreBorrowItem(this.db, holonId, itemName, ctx.from, returnDate);
+            if (!result.ok) {
                 await ctx.answerCbQuery('Item is no longer available.').catch(() => {});
                 this.pendingBorrows.delete(pendingKey);
                 this.borrowLocks.delete(pendingKey);
@@ -417,46 +392,13 @@ class Library {
                 return;
             }
 
-            // Check if it's the owner borrowing
-            const isOwner = freshItem.createdBy === ctx.from.id;
-
-            // Create expense entry for borrowed item (if has value and not owner)
-            if (!isOwner && freshItem.value > 0) {
-                try {
-                    const expense = {
-                        id: Date.now(),
-                        date: Date.now(),
-                        amount: freshItem.value,
-                        currency: 'credits',
-                        description: `Borrowed: ${itemName}`,
-                        paidBy: freshItem.createdBy,
-                        splitWith: [ctx.from.id],
-                        itemId: itemName,
-                        type: 'borrow'
-                    };
-                    await this.db.put(holonId.toString(), 'expenses', expense);
-
-                    const events = this.eventFactory.itemBorrowed(
-                        holonId,
-                        ctx.from,
-                        freshItem,
-                        freshItem.value,
-                        0
-                    );
-                    await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-                } catch (error) {
-                    console.error('Error creating borrow expense/events:', error);
-                }
-            }
-
-            // Update item with borrow info including return date and initials
-            freshItem.borrowed = true;
-            freshItem.borrower = username;
-            freshItem.borrowerId = ctx.from.id;
-            freshItem.borrowerInitials = initials;
-            freshItem.borrowedAt = new Date();
-            freshItem.returnBy = returnDate;
-            await this.db.put(holonId.toString(), 'library', freshItem);
+            const freshItem = result.item;
+            await recordBorrowAccounting(
+                { db: this.db, eventStore: this.eventStore, eventFactory: this.eventFactory },
+                holonId,
+                ctx.from,
+                freshItem
+            );
 
             await ctx.answerCbQuery(`Borrowed until ${dateStr}`).catch(() => {});
 
@@ -467,7 +409,7 @@ class Library {
 
             // Build confirmation message with credit info if applicable
             let confirmMsg = `${icon} ${firstName || username} borrowed ${itemName}\n📅 Return by: ${dateStr}`;
-            if (!isOwner && freshItem.value > 0) {
+            if (!result.isOwner && freshItem.value > 0) {
                 confirmMsg += `\n💳 ${freshItem.value}● charged`;
             }
             confirmMsg += '\n\n📦 Library:';
@@ -506,21 +448,17 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId.toString(), 'library', item);
-        if (!currentItem) {
-            ctx.reply(`${item} is not in the library.`);
+        const result = await coreSetItemValue(this.db, holonId, item, parseInt(value) || 0, ctx.from.id);
+        if (!result.ok) {
+            if (result.reason === 'not_found') {
+                ctx.reply(`${item} is not in the library.`);
+            } else if (result.reason === 'forbidden') {
+                ctx.reply(`Only the owner can change the value for ${item}.`);
+            }
             return;
         }
-
-        if (currentItem.createdBy !== ctx.from.id) {
-            ctx.reply(`Only the owner can change the value for ${item}.`);
-            return;
-        }
-
-        currentItem.value = parseInt(value) || 0;
-        await this.db.put(holonId.toString(), 'library', currentItem);
-        const icon = this.getItemIcon(currentItem);
-        ctx.reply(`${icon} Updated ${item} value to ${currentItem.value}.`);
+        const icon = this.getItemIcon(result.item);
+        ctx.reply(`${icon} Updated ${item} value to ${result.item.value}.`);
     }
 
     async returnItem(ctx, fromKeyboard = false) {
@@ -538,76 +476,45 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId.toString(), 'library', item);
-        if (!currentItem) {
-            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
-            else ctx.reply(`${item} is not in the library.`);
-            return;
-        }
-        if (!currentItem.borrowed) {
-            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not borrowed.`).catch(() => {});
-            else ctx.reply(`${item} is not borrowed.`);
-            return;
-        }
-
-        // Check by borrowerId (more reliable) or fall back to username
-        const isBorrower = currentItem.borrowerId === ctx.from.id ||
-                          currentItem.borrower === ctx.from.username;
-        if (!isBorrower) {
-            if (fromKeyboard) await ctx.answerCbQuery(`Only ${currentItem.borrower} can return this item.`).catch(() => {});
-            else ctx.reply(`Only ${currentItem.borrower} can return this item.`);
-            return;
-        }
-
-        // Check if it's the owner returning (owner doesn't pay/get refunded)
-        const isOwner = currentItem.createdBy === ctx.from.id;
-
-        // Create reverse expense entry to cancel the borrow charge
-        if (!isOwner && currentItem.value > 0) {
-            try {
-                const refundExpense = {
-                    id: Date.now(),
-                    date: Date.now(),
-                    amount: currentItem.value,
-                    currency: 'credits',
-                    description: `Returned: ${item}`,
-                    paidBy: ctx.from.id,
-                    splitWith: [currentItem.createdBy],
-                    itemId: item,
-                    type: 'return'
-                };
-                await this.db.put(holonId.toString(), 'expenses', refundExpense);
-            } catch (error) {
-                console.error('Error creating return expense:', error);
+        const result = await coreReturnItem(this.db, holonId, item, ctx.from);
+        if (!result.ok) {
+            if (result.reason === 'not_found') {
+                if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
+                else ctx.reply(`${item} is not in the library.`);
+                return;
             }
+            if (result.reason === 'not_borrowed') {
+                if (fromKeyboard) await ctx.answerCbQuery(`${item} is not borrowed.`).catch(() => {});
+                else ctx.reply(`${item} is not borrowed.`);
+                return;
+            }
+            if (result.reason === 'forbidden') {
+                const borrower = result.item?.borrower || 'the borrower';
+                if (fromKeyboard) await ctx.answerCbQuery(`Only ${borrower} can return this item.`).catch(() => {});
+                else ctx.reply(`Only ${borrower} can return this item.`);
+                return;
+            }
+            return;
         }
 
-        // Create REA events for the return transaction
-        try {
-            const events = this.eventFactory.itemReturned(
-                holonId,
-                ctx.from,
-                currentItem,
-                currentItem.value || 0
-            );
-            await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-        } catch (error) {
-            console.error('Error creating REA events for return:', error);
-        }
+        // returnItem preserves value/createdBy on the returned snapshot, so the
+        // accounting helpers still see the borrow context they need.
+        await recordReturnAccounting(
+            { db: this.db, eventStore: this.eventStore, eventFactory: this.eventFactory },
+            holonId,
+            ctx.from,
+            result.item
+        );
 
-        currentItem.borrowed = false;
-        currentItem.borrower = null;
-        currentItem.borrowerId = null;
-        currentItem.returnedAt = new Date();
-        await this.db.put(holonId.toString(), 'library', currentItem);
+        const value = result.item.value || 0;
 
         if (fromKeyboard) {
-            const refundMsg = (!isOwner && currentItem.value > 0) ? ` (${currentItem.value}● refunded)` : '';
+            const refundMsg = (!result.isOwner && value > 0) ? ` (${value}● refunded)` : '';
             await ctx.answerCbQuery(`Returned${refundMsg}`).catch(() => {});
             await this.showLibrary(ctx);
         } else {
-            const icon = this.getItemIcon(currentItem);
-            const refundMsg = (!isOwner && currentItem.value > 0) ? `\n💳 ${currentItem.value}● refunded` : '';
+            const icon = this.getItemIcon(result.item);
+            const refundMsg = (!result.isOwner && value > 0) ? `\n💳 ${value}● refunded` : '';
             ctx.reply(`${icon} You returned ${item}.${refundMsg}`);
         }
     }
@@ -702,7 +609,7 @@ class Library {
             return;
         }
 
-        await this.db.delete(holonId.toString(), 'library', itemId);
+        await coreRemoveItem(this.db, holonId, itemId);
         await ctx.answerCbQuery(`Deleted ${itemId}`).catch(() => {});
         await this.showLibrary(ctx);
     }
@@ -713,8 +620,7 @@ class Library {
         const page = options.page || 0;
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
-        let list = await this.db.getAll(holonId.toString(), 'library');
-        list.sort((a, b) => a.id.localeCompare(b.id));
+        let list = await coreListItems(this.db, holonId);
 
         if (list.length === 0 && !removeMode) {
             await ctx.reply('📦 The library is empty.\n\nUse /libadd to add items or send a photo to add items from a picture.',
@@ -844,7 +750,7 @@ class Library {
         ctx.answerCbQuery(`Removed ${itemId}`).catch(() => {});
 
         // Delete and refresh
-        await this.db.delete(holonId.toString(), 'library', itemId);
+        await coreRemoveItem(this.db, holonId, itemId);
         await this.showLibrary(ctx, { removeMode: true });
     }
 
@@ -998,20 +904,12 @@ class Library {
             const itemName = typeof item === 'string' ? item : item.name;
             const itemValue = typeof item === 'object' && item.value ? item.value : 0;
 
-            // Check if item already exists
-            if (await this.db.get(holonId.toString(), 'library', itemName)) {
-                continue;
-            }
-
-            const itemType = this.detectItemType(itemName);
-            const libraryItem = this.createLibraryItem(itemName, itemType, {
+            const result = await coreAddItem(this.db, holonId, itemName, {
                 createdBy: ctx.from.id,
                 createdByUsername: ctx.from.username,
                 value: itemValue
             });
-
-            await this.db.put(holonId.toString(), 'library', libraryItem);
-            added++;
+            if (result.ok) added++;
         }
 
         this.pendingPhotoItems.delete(holonId);
@@ -1039,29 +937,24 @@ class Library {
 
     async getLibraryItems(ctx) {
         let holonId = ctx.chat.id;
-        let list = await this.db.getAll(holonId.toString(), 'library');
-        list.sort((a, b) => a.id.localeCompare(b.id));
-        return list;
+        return await coreListItems(this.db, holonId);
     }
 
     async searchItems(ctx) {
         const searchTerm = ctx.message.text.split('/search ')[1].toLowerCase();
-        let list = await this.getLibraryItems(ctx);
-        
-        const results = list.filter(item => 
-            item.id.toLowerCase().includes(searchTerm) || 
-            item.category.toLowerCase().includes(searchTerm)
-        );
+        const list = await this.getLibraryItems(ctx);
+        const results = coreFilterItems(list, searchTerm);
 
         if (results.length === 0) {
             ctx.reply('No items found matching your search.');
             return;
         }
-        
+
         ctx.reply('Search results:', this.getLibraryKeyboard(results));
     }
 
     async rateItem(ctx) {
+        const holonId = ctx.chat.id;
         const [_, item, rating, ...reviewWords] = ctx.message.text.split(/\s+/);
         const review = reviewWords.join(' ');
         const numRating = parseInt(rating);
@@ -1090,6 +983,7 @@ class Library {
     }
 
     async reportIssue(ctx) {
+        const holonId = ctx.chat.id;
         const [_, item, ...issueWords] = ctx.message.text.split(/\s+/);
         const issue = issueWords.join(' ');
 
@@ -1112,24 +1006,18 @@ class Library {
     }
 
     async showStats(ctx) {
-        let list = await this.getLibraryItems(ctx);
-
-        // Count items by type
-        const byType = {};
-        list.forEach(item => {
-            const type = item.type || LIBRARY_TYPES.OTHER;
-            byType[type] = (byType[type] || 0) + 1;
-        });
+        const list = await this.getLibraryItems(ctx);
+        const stats = coreGetLibraryStats(list);
 
         // Format stats message
         const statsMessage = `📊 Library Statistics
 
-📦 Total Items: ${list.length}
-🔄 Currently Borrowed: ${list.filter(i => i.borrowed).length}
-✅ Available: ${list.filter(i => !i.borrowed).length}
+📦 Total Items: ${stats.total}
+🔄 Currently Borrowed: ${stats.borrowed}
+✅ Available: ${stats.available}
 
 By Type:
-${Object.entries(byType).map(([type, count]) => {
+${Object.entries(stats.byType).map(([type, count]) => {
     const icon = this.getItemIcon({ type });
     return `${icon} ${this.getTypeDisplayName(type)}: ${count}`;
 }).join('\n')}`;
