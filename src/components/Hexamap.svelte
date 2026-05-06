@@ -15,7 +15,12 @@
   let hexagonData = {};
 
   onMount(() => {
-    mapboxgl.accessToken = 'pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ';
+    const accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
+    if (!accessToken) {
+      console.error('[Hexamap] VITE_MAPBOX_TOKEN is not set');
+      return;
+    }
+    mapboxgl.accessToken = accessToken;
 
     map = new mapboxgl.Map({
       container: mapContainer,

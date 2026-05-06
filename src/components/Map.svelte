@@ -683,10 +683,9 @@
 			return;
 		}
 
-		// Validate Mapbox access token
-		const accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		const accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 		if (!accessToken || accessToken.length < 50) {
-			console.error('[Map] Invalid Mapbox access token');
+			console.error('[Map] VITE_MAPBOX_TOKEN is missing or invalid');
 			return;
 		}
 		
