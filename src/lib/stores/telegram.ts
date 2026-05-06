@@ -86,6 +86,20 @@ const initialState: TelegramAuthState = {
 	error: null
 };
 
+// Dev-only fallback: when running outside a real Telegram WebApp / widget
+// context, auto-populate from env so the dashboard always has a Telegram
+// identity to work with. Only active in non-production builds.
+function devTelegramUser(): TelegramUser | null {
+	const isProd = import.meta.env.MODE === 'production';
+	if (isProd) return null;
+	const idRaw = import.meta.env.VITE_DEV_TELEGRAM_USER_ID;
+	const name = import.meta.env.VITE_DEV_TELEGRAM_USER_NAME;
+	if (!idRaw || !name) return null;
+	const id = Number(idRaw);
+	if (!Number.isFinite(id)) return null;
+	return { id, first_name: String(name) };
+}
+
 // Create the store
 function createTelegramStore() {
 	const { subscribe, set, update } = writable<TelegramAuthState>(initialState);
@@ -130,6 +144,23 @@ function createTelegramStore() {
 				// Check if we're actually inside Telegram WebApp (initData is non-empty)
 				// The SDK loads on regular web too, but initData is empty outside Telegram
 				const isActuallyInTelegram = Boolean(telegram && telegram.initData && telegram.initData.length > 0);
+
+				// Dev fallback takes precedence over stale stored users so dev
+				// runs always pick up the configured VITE_DEV_TELEGRAM_USER_ID.
+				const devUser = devTelegramUser();
+				if (devUser) {
+					localStorage.setItem('telegram_user', JSON.stringify(devUser));
+					update((state) => ({
+						...state,
+						isAuthenticated: true,
+						user: devUser,
+						isTelegramWebApp: isActuallyInTelegram,
+						isLoading: false,
+						error: null
+					}));
+					console.log('Dev Telegram user:', devUser);
+					return;
+				}
 
 				// Check if we have a stored user from previous login
 				const storedUser = localStorage.getItem('telegram_user');

@@ -163,51 +163,50 @@
 			const isGenuinelyNewUser = !!pendingNameForThisUser && !existingSettings;
 			const isFirstTimeUser = !existingSettings || !existingNameValid;
 
-			// Skip write operations in telegram-mapped mode (read-only access with service key)
-			if (!isTelegramMappedSession) {
-				if (isGenuinelyNewUser) {
-					// Genuinely new user (Create flow) — write settings and HNS
-					console.log('Genuinely new user - creating personal holon:', holonName);
-					await holosphere.put(userPublicKey, 'settings', {
-						id: userPublicKey,
-						name: holonName,
-						purpose: 'Personal holon',
+			// Telegram-mapped is the primary identity flow now, so it writes
+			// settings/HNS/mappings just like a Nostr session. A new user is
+			// either one that arrived via the Create flow (pendingName set) or
+			// a fresh telegram user with no settings yet.
+			const isFreshTelegramUser = isTelegramMappedSession && !!pendingTelegramUserId && !existingSettings;
+			if (isGenuinelyNewUser || isFreshTelegramUser) {
+				console.log('New user - creating personal holon:', holonName);
+				await holosphere.put(userPublicKey, 'settings', {
+					id: userPublicKey,
+					name: holonName,
+					purpose: 'Personal holon',
+					createdAt: Date.now(),
+					createdBy: userPublicKey
+				});
+
+				try {
+					await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
+					console.log('Registered holon name in HNS:', holonName);
+				} catch (error) {
+					console.warn('Failed to register holon name in HNS:', error);
+				}
+			} else if (nameSource === 'fallback') {
+				// Returning user with slow relay AND no HNS — do NOT overwrite with "My Holon"
+				console.log('Returning user with unresolved name, skipping destructive write of fallback:', holonName);
+			} else if (nameSource === 'settings' || nameSource === 'hns') {
+				// Returning user with name resolved from settings or HNS — no write needed
+				console.log('Returning user with existing name, skipping HNS registration');
+			}
+
+			// Store/update Telegram mapping if this came from Telegram
+			// Always update to handle cases where user creates new identity or restores different key
+			if (pendingTelegramUserId) {
+				try {
+					await holosphere.writeGlobal('telegram_mappings', {
+						id: String(pendingTelegramUserId),
+						publicKey: userPublicKey,
+						holonName: holonName,
 						createdAt: Date.now(),
-						createdBy: userPublicKey
+						updatedAt: Date.now()
 					});
-
-					try {
-						await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
-						console.log('Registered holon name in HNS:', holonName);
-					} catch (error) {
-						console.warn('Failed to register holon name in HNS:', error);
-					}
-				} else if (nameSource === 'fallback') {
-					// Returning user with slow relay AND no HNS — do NOT overwrite with "My Holon"
-					console.log('Returning user with unresolved name, skipping destructive write of fallback:', holonName);
-				} else if (nameSource === 'settings' || nameSource === 'hns') {
-					// Returning user with name resolved from settings or HNS — no write needed
-					console.log('Returning user with existing name, skipping HNS registration');
+					console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
+				} catch (err) {
+					console.error('Failed to store Telegram mapping:', err);
 				}
-
-				// Store/update Telegram mapping if this came from Telegram
-				// Always update to handle cases where user creates new identity or restores different key
-				if (pendingTelegramUserId) {
-					try {
-						await holosphere.writeGlobal('telegram_mappings', {
-							id: String(pendingTelegramUserId),
-							publicKey: userPublicKey,
-							holonName: holonName,
-							createdAt: Date.now(),
-							updatedAt: Date.now()
-						});
-						console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
-					} catch (err) {
-						console.error('Failed to store Telegram mapping:', err);
-					}
-				}
-			} else {
-				console.log('Telegram-mapped session: skipping write operations (read-only mode)');
 			}
 
 			// Populate the reactive name store so all components see it immediately
@@ -451,28 +450,22 @@
 		// Set up global federation DM subscription
 		setupFederationDMSubscription(privateKey);
 
-		// Initialize the user's personal holon with their public key as ID
-		// But skip if on certain routes like /global
-		// Also skip for telegram-mapped sessions (read-only)
-		if (!isTelegramMappedSession) {
-			if (browser) {
-				const currentPath = window.location.pathname;
-				console.log('Current path on init:', currentPath);
-				if (!currentPath.startsWith('/global') &&
-				    !currentPath.startsWith('/federated') &&
-				    !currentPath.startsWith('/navigator') &&
-				    !currentPath.startsWith('/sdgs')) {
-					console.log('Calling initializeUserHolon...');
-					await initializeUserHolon(privateKey);
-				} else {
-					console.log('Skipping initializeUserHolon for protected route:', currentPath);
-				}
-			} else {
+		// Initialize the user's personal holon with their telegram-id (or pubkey)
+		// as the namespace. Skipped only on protected/standalone routes.
+		if (browser) {
+			const currentPath = window.location.pathname;
+			console.log('Current path on init:', currentPath);
+			if (!currentPath.startsWith('/global') &&
+			    !currentPath.startsWith('/federated') &&
+			    !currentPath.startsWith('/navigator') &&
+			    !currentPath.startsWith('/sdgs')) {
+				console.log('Calling initializeUserHolon...');
 				await initializeUserHolon(privateKey);
+			} else {
+				console.log('Skipping initializeUserHolon for protected route:', currentPath);
 			}
-
 		} else {
-			console.log('Telegram-mapped session: skipping auto-initialization');
+			await initializeUserHolon(privateKey);
 		}
 
 		// Periodically check for garbage collection opportunities

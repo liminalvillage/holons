@@ -122,12 +122,16 @@
 		// Check if we have a saved private key
 		const state = nostrStore.getState();
 
-		if (state.privateKey) {
-			// Returning user - key exists, proceed to app
-			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
-		} else if (telegramUser) {
-			// Telegram user (Mini App) - auto-login seamlessly
+		// Telegram is now the primary identity. A telegram user (Mini App,
+		// stored from previous widget login, or dev fallback) takes precedence
+		// over any stored Nostr key so the dashboard always operates under the
+		// telegram-id namespace. Nostr stays available as a legacy fallback.
+		if (telegramUser) {
 			await handleTelegramUser(telegramUser);
+		} else if (state.privateKey) {
+			// Returning Nostr user - legacy fallback for keys persisted before
+			// the telegram-only flow.
+			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
 		} else {
 			// No key, no telegram - show welcome screen (widget loads via reactive block)
 			setTimeout(() => {
@@ -160,30 +164,24 @@
 				});
 			}, 300);
 		} else {
-			console.log('Telegram: New user, auto-generating identity for', user.first_name);
-			try {
-				const name = user.username
-					? `@${user.username}'s Holon`
-					: `${user.first_name}'s Holon`;
-
-				const result = await nostrStore.generateKey();
-				if (result) {
-					isProcessing = false;
-					dispatch('authenticated', {
-						publicKey: result.publicKey,
-						holonName: name,
-						telegramUserId: user.id,
-						mode: 'private'
-					});
-				} else {
-					isProcessing = false;
-					view = 'welcome';
-				}
-			} catch (err) {
-				console.error('Telegram auto-create failed:', err);
-				isProcessing = false;
-				view = 'welcome';
-			}
+			// New telegram user — use the telegram id as both the home holon
+			// id and the publicKey hint. No Nostr keypair is generated; the
+			// session will be telegram-mapped (signed with the service key)
+			// and the layout will write settings + the telegram_mappings entry
+			// on first run so future visits resolve via existingTelegramMapping.
+			console.log('Telegram: New user, registering telegram-mapped identity for', user.first_name);
+			const name = user.username
+				? `@${user.username}'s Holon`
+				: `${user.first_name}'s Holon`;
+			isProcessing = false;
+			setTimeout(() => {
+				dispatch('authenticated', {
+					publicKey: String(user.id),
+					holonName: name,
+					telegramUserId: user.id,
+					mode: 'telegram-mapped'
+				});
+			}, 300);
 		}
 	}
 
