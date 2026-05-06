@@ -6,6 +6,7 @@
     import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul, buildHologramLink, resolveName } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import SourceBadge from './shared/SourceBadge.svelte';
+    import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
     import {
@@ -959,169 +960,12 @@
         window.dispatchEvent(event);
     }
 
-    // Add publish functionality
-    let isPublishing = false;
-    let publishStatus = '';
-
-    async function publishToFederatedChats() {
-        if (!holosphere || !holonId || !questId) {
-            console.error("Cannot publish: missing holosphere, holonId, or questId");
-            return;
-        }
-
-        isPublishing = true;
-        publishStatus = 'Checking federation...';
-
-        try {
-            // Get settings to check for hex configuration
-            let settingsHex: string | null = null;
-            try {
-                const settingsResult = await holosphere.get(holonId, 'settings', holonId);
-                const settings = settingsResult;
-                if (settings && settings.hex) {
-                    settingsHex = settings.hex;
-                    console.log('[TaskModal] Found settings hex:', settingsHex);
-                }
-            } catch (e) {
-                console.log('[TaskModal] No settings hex found:', e);
-            }
-
-            // First check if there are any federated chats available
-            // Federation relationships are stored on the home holon, not on federated partner holons
-            const federationSourceId = $nostrPublicKey || holonId;
-            const fedInfo = await holosphere.getFederation(federationSourceId);
-            console.log('[TaskModal] Federation info:', {
-                hasFederated: !!(fedInfo?.federated?.length),
-                federatedCount: fedInfo?.federated?.length || 0,
-                outboundCount: fedInfo?.outbound?.length || 0,
-                federated: fedInfo?.federated
-            });
-
-            // Check if we have federated holons
-            // Use federated array (all partners) since propagate() uses federated || outbound
-            const hasFederatedHolons = fedInfo && fedInfo.federated && fedInfo.federated.length > 0;
-
-            // If we have neither federation nor settings hex, show error
-            if (!hasFederatedHolons && !settingsHex) {
-                publishStatus = 'No federated holons found. Please set up federation or configure a hex in settings.';
-                setTimeout(() => {
-                    publishStatus = '';
-                }, 5000);
-                return;
-            }
-
-            publishStatus = 'Publishing...';
-
-            // Create a hologram for the quest to propagate
-            // Use the full quest data instead of just the ID reference
-            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
-
-            // Determine if this is an H3 holon by checking if it's a valid H3 cell
-            let isH3Holon = false;
-            try {
-                // Use holosphere's isValidH3 method (type assertion needed as types aren't available)
-                isH3Holon = (holosphere as any).isValidH3(holonId);
-            } catch (e) {
-                // If check fails, assume it's not H3
-                isH3Holon = false;
-            }
-
-            let totalPublished = 0;
-            const publishErrors: string[] = [];
-
-            // First, publish to settings hex if configured
-            if (settingsHex) {
-                try {
-                    console.log('[TaskModal] Publishing to settings hex:', settingsHex);
-                    await holosphere.put(settingsHex, 'quests', hologram);
-                    totalPublished++;
-                    console.log('[TaskModal] Successfully published to settings hex');
-                } catch (error: any) {
-                    if (error?.name === 'AuthorizationError') {
-                        notifyWriteDenied('Unable to publish - no write permission for target holon');
-                    } else {
-                        console.error('[TaskModal] Failed to publish to settings hex:', error);
-                    }
-                    publishErrors.push(`Settings hex: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-            }
-
-            // Then use federation propagation to publish to federated spaces
-            // Only enable parent propagation for H3-based holons
-            if (hasFederatedHolons) {
-                const propagationResult = await holosphere.propagate(holonId, 'quests', hologram, {
-                    useHolograms: true,
-                    propagateToParents: isH3Holon,  // Only propagate to parents if this is an H3 holon
-                    maxParentLevels: isH3Holon ? 1 : 0  // Only propagate to immediate parent (1 level up) for H3 holons
-                });
-
-                console.log('[TaskModal] Propagation result:', propagationResult);
-
-                totalPublished += (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
-
-                // Collect any propagation errors
-                if (propagationResult.failed > 0) {
-                    if (propagationResult.messages && Array.isArray(propagationResult.messages)) {
-                        publishErrors.push(...propagationResult.messages);
-                    }
-                    if (propagationResult.parentPropagation?.messages && propagationResult.parentPropagation.messages.length > 0) {
-                        publishErrors.push(...propagationResult.parentPropagation.messages);
-                    }
-                }
-            }
-
-            if (totalPublished > 0) {
-                const locations = settingsHex && hasFederatedHolons
-                    ? `${totalPublished} location(s) (settings hex + federation)`
-                    : settingsHex
-                        ? `settings hex`
-                        : `${totalPublished} federated holon(s)`;
-                // Add warning if there were partial errors
-                if (publishErrors.length > 0) {
-                    publishStatus = `Published to ${locations} (with some errors)`;
-                    console.warn('[TaskModal] Publish errors:', publishErrors);
-                } else {
-                    publishStatus = `Published to ${locations}`;
-                }
-
-                // Update the quest to show it's been published
-                await updateQuest({
-                    published: true,
-                    publishedAt: new Date().toISOString(),
-                    publishedTo: totalPublished
-                });
-
-                // Show success message briefly
-                setTimeout(() => {
-                    publishStatus = '';
-                }, 3000);
-            } else {
-                // All publish attempts failed
-                let errorMessage = 'Failed to publish to all targets';
-
-                if (publishErrors.length > 0) {
-                    errorMessage = publishErrors.join('; ');
-                }
-
-                console.error('[TaskModal] Publishing failed:', errorMessage);
-                publishStatus = `Failed to publish: ${errorMessage}`;
-
-                // Show error message briefly
-                setTimeout(() => {
-                    publishStatus = '';
-                }, 5000);
-            }
-        } catch (error) {
-            console.error("[TaskModal.svelte] Error publishing quest:", error);
-            publishStatus = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-
-            // Show error message briefly
-            setTimeout(() => {
-                publishStatus = '';
-            }, 5000);
-        } finally {
-            isPublishing = false;
-        }
+    async function handlePublished(outcome: { publishedTo: number }) {
+        await updateQuest({
+            published: true,
+            publishedAt: new Date().toISOString(),
+            publishedTo: outcome.publishedTo
+        });
     }
 </script>
 
@@ -1638,24 +1482,12 @@
                     </button>
 
                     <div class="flex gap-2">
-                    <button
-                            class="px-4 py-2 bg-purple-500/10 text-purple-400 rounded hover:bg-purple-500/20 border border-purple-500/30 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        on:click={publishToFederatedChats}
-                        disabled={isPublishing}
-                        type="button"
-                        title="Publish this task as a hologram to all federated holons"
-                    >
-                        {#if isPublishing}
-                            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                            </svg>
-                        {:else}
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
-                            </svg>
-                        {/if}
-                        Publish to Federation
-                    </button>
+                    <PublishToFederationButton
+                        {holonId}
+                        lens="quests"
+                        item={quest}
+                        onPublished={handlePublished}
+                    />
                     <button
                             class="px-4 py-2 {(isOccurrenceView ? isOccurrenceCompleted : quest.status === 'completed')
                                 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
@@ -1672,12 +1504,6 @@
                     </button>
                     </div>
                 </div>
-
-                {#if publishStatus}
-                    <div class="mt-2 px-3 py-2 rounded text-sm {publishStatus.includes('Published') ? 'bg-green-500/10 text-green-400 border border-green-500/30' : publishStatus.includes('Failed') || publishStatus.includes('Error') ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'}">
-                        {publishStatus}
-                    </div>
-                {/if}
             </div>
         </div>
     </div>
