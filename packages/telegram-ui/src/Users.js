@@ -1,11 +1,25 @@
 /**
  * @fileoverview User management for HolonsBot holons.
+ *
+ * Telegraf command bindings + REA orchestration. All profile / values / needs
+ * / membership data operations are delegated to `@holons/core/users` so the
+ * web UI and bot share the same persistence semantics.
+ *
  * @module src/Users
  */
 import { t } from "i18next";
 import * as utils from './utilities.js';
 import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
+import {
+  getUserProfile as coreGetUserProfile,
+  ensureUserProfile as coreEnsureUserProfile,
+  getUsers as coreGetUsers,
+  addUserValues,
+  addUserNeeds,
+  joinHolon as coreJoinHolon,
+  leaveHolon as coreLeaveHolon,
+} from '@holons/core/users';
 
 /**
  * User management class for handling holon members and their contributions.
@@ -62,11 +76,10 @@ class Users {
   }
 
   async join(ctx) {
-    let userinfo = await this.getUserInfo(ctx.message.from, ctx.message.chat.id)
-    if (userinfo.username == undefined) {
+    const { hasUsername } = await coreJoinHolon(this.db, ctx.message.from, ctx.message.chat.id);
+    if (!hasUsername) {
       ctx.reply('Please set a username in your telegram settings to join the group.');
-    }
-    else {
+    } else {
       ctx.reply('🎉 Welcome ' + ctx.message.from.first_name + '! 🎉');
     }
   }
@@ -74,42 +87,28 @@ class Users {
   async leave(ctx) {
     const holonId = ctx.message.chat.id;
     const user = ctx.message.from;
-    await this.db.delete(holonId, 'users', user.id)
+    await coreLeaveHolon(this.db, user.id, holonId);
     ctx.reply('Goodbye ' + user.first_name + '!');
   }
 
 
   async addValue(ctx) {
-    const holonId = ctx.message.chat.id;
-    const user = ctx.message.from;
     const values = utils.parseList(ctx.message.text);
-    if (!values) {
+    if (!values?.length) {
       ctx.reply('Please specify a value or list of values to add. eg: /value freedom, non-violence');
       return;
     }
-
-    let userinfo = await this.getUserProfile(user, holonId)
-    if (!userinfo.values) userinfo.values = []
-    userinfo.values = Array.from(new Set(userinfo.values.concat(values)))
-
-    await this.db.put(holonId, 'users', userinfo)
+    await addUserValues(this.db, ctx.message.from, ctx.message.chat.id, values);
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
   async addNeed(ctx) {
-    const holonId = ctx.message.chat.id;
-    const user = ctx.message.from;
     const needs = utils.parseList(ctx.message.text);
-    if (!needs) {
+    if (!needs?.length) {
       ctx.reply('Please specify a need or comma separated list of needs to add. eg: /need hugs, massages');
       return;
     }
-
-    let userinfo = await this.getUserProfile(user, holonId)
-    if (!userinfo.needs) userinfo.needs = []
-    userinfo.needs = Array.from(new Set(userinfo.needs.concat(needs)))
-
-    await this.db.put(holonId, 'users', userinfo)
+    await addUserNeeds(this.db, ctx.message.from, ctx.message.chat.id, needs);
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
@@ -117,7 +116,7 @@ class Users {
 
   async listUsersActions(ctx) {
     const holonId = ctx.message.chat.id;
-    let users = await this.db.getAll(holonId, 'users')
+    const users = await coreGetUsers(this.db, holonId);
 
     let message = ''
     for (let i = 0; i < users.length; i++) {
@@ -269,56 +268,28 @@ class Users {
   }
 
   async getUsers(holonId) {
-    return await this.db.getAll(holonId, 'users')
+    return coreGetUsers(this.db, holonId);
   }
 
   /**
-   * Get user profile (without computed aggregates)
-   * Use this for profile data updates
+   * Get user profile (without computed aggregates).
+   * Thin wrapper over `@holons/core/users`.
    * @param {Object} user - User object
    * @param {string} holonId - Holon context
    * @returns {Promise<Object>} User profile
    */
   async getUserProfile(user, holonId) {
-    if (user?.is_bot) {
-      return null;
-    }
-    if (!holonId) return null;
-
-    // Ensure holonId is a string (required by holosphere)
-    const holonIdStr = String(holonId);
-
-    let userinfo = await this.db.get(holonIdStr, 'users', user.id)
-    if (!userinfo || userinfo == '') {
-      userinfo = {
-        id: user.id,
-        version: '0.3',  // REA version
-        username: user.username ? user.username : user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        // Profile data only - no action counts (computed from events)
-        values: [],
-        needs: [],
-        participated: {}
-      }
-      await this.db.put(holonIdStr, 'users', userinfo)
-    }
-    return userinfo
+    return coreGetUserProfile(this.db, user, holonId);
   }
 
   /**
-   * Ensure user profile exists
+   * Ensure user profile exists.
+   * Thin wrapper over `@holons/core/users`.
    * @param {Object} user - User object
    * @param {string} holonId - Holon context
    */
   async ensureUserProfile(user, holonId) {
-    if (user?.is_bot) return;
-    if (!holonId) return;
-
-    let userinfo = await this.db.get(holonId, 'users', user.id)
-    if (!userinfo || userinfo == '') {
-      await this.getUserProfile(user, holonId);
-    }
+    return coreEnsureUserProfile(this.db, user, holonId);
   }
 
   /**
