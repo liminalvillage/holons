@@ -7,9 +7,6 @@
     "checkJs": false,
     "noEmit": false,
     "emitDeclarationOnly": false,
-    // Declarations cannot be safely emitted while most of the package is still
-    // JS — the inferred Telegraf types from JS modules are not portable.
-    // Re-enable once handler modules (units 17-19) are migrated to TS.
     "declaration": false,
     "declarationMap": false,
     "types": ["node"]

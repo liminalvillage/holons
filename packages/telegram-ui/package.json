@@ -57,7 +57,7 @@
     "winston": "^3.17.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.10.10",
     "clean-jsdoc-theme": "^4.3.0",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",

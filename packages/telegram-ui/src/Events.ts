@@ -1,3 +1,15 @@
+// @ts-nocheck
+//
+// Telegram bot UI for events. Migrated from Events.js as part of Phase B
+// `tg-ui/quests-events`. Domain logic (Quest type + persistence helper) is
+// imported from `@holons/core/tasks`; events share the `quests` family of
+// types since they're a quest subtype in the bot data model. Telegraf
+// scenes, keyboards and command handlers stay in this file — they're the
+// bot UI layer, not domain logic.
+//
+// `@ts-nocheck` matches the wholesale-migration approach used for
+// Quests.ts; piecewise typing is a follow-up.
+
 /**
  * @fileoverview Event Management System for HolonsBot.
  * @module src/Events
@@ -6,6 +18,7 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import { getholonId, getMessageId, capitalize, getDisplayName, createPaddedCaption } from './utilities.js';
 import { log } from '../utils/logger.js';
+import { saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -265,8 +278,13 @@ export default class Events {
             event.holon = ctx.platform === 'discord' ? nctx.channel.id : nctx.chat.id;
         }
 
-        // Save event to its own lens
-        await this.db.put(holonId.toString(), 'events', event);
+        // Persist via @holons/core/tasks so the bot/web/text UIs share one
+        // persistence path. Events live in the `events` lens, not `quests`,
+        // so route through a thin lens-rewriting adapter.
+        const eventsLensAdapter = {
+            put: (h: string, _lens: string, v: unknown) => this.db.put(h, 'events', v),
+        };
+        await saveTasksToHolon(eventsLensAdapter, holonId.toString(), [event as CoreQuest]);
 
         // Update buttons and pin message
         const eventHolon = Events.getEventHolon(event);

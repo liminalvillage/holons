@@ -1,13 +1,24 @@
+// @ts-nocheck
+//
+// Telegram bot UI for quests. Migrated from Quests.js as part of Phase B
+// `tg-ui/quests-events`. Domain logic (Quest type + persistence helper) is
+// imported from `@holons/core/tasks` so the schema/save behavior stays in
+// sync with `apps/web` and any future text/AI UIs. The Telegraf scenes,
+// keyboards and command handlers below stay in this file — they're the
+// bot UI layer, not domain logic.
+//
+// `@ts-nocheck` is applied because this file is a 3000+ line legacy module
+// migrated wholesale; piecewise typing belongs to a follow-up unit. The
+// file is now part of the TS pipeline so future tightening can land file
+// by file.
+
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import { getholonId, getMessageId, capitalize, getDisplayName, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
-// Shared task data layer — see packages/core/src/tasks for canonical Quest
-// shape and create/save primitives. The Telegram UI layers its own ids and
-// transient state on top of `createTaskRecord`'s return value.
-import { createTaskRecord, saveTaskToHolon } from '@holons/core/tasks';
+import { createTaskRecord, saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -401,10 +412,11 @@ export default class Quests {
             appname: holonDB.appname,
             title: quest.title,
         });
-        // Route persistence through @holons/core/tasks so the bot and the web
-        // app share identical save semantics (logs+swallow, count of successes).
-        const putOk = await saveTaskToHolon(holonDB, holonId, quest);
-        console.log('[QUEST_PERSIST_DEBUG] put.result', { ok: putOk });
+        // Persist via @holons/core/tasks so the bot, web and any future UIs
+        // share one persistence path. saveTasksToHolon returns the count of
+        // successful saves (best-effort; logs failures internally).
+        const saved = await saveTasksToHolon(holonDB, holonId.toString(), [quest as CoreQuest]);
+        console.log('[QUEST_PERSIST_DEBUG] put.result', { saved });
         // Immediate read-back to verify what's in the graph right after write
         try {
             const verify = await holonDB.getAll(holonId.toString(), 'quests');
