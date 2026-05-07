@@ -59,6 +59,25 @@
     let dragOverDate: Date | null = null;
     let dragOverTime: number | null = null; // Hour of day (0-23)
 
+    // Touch drag (HTML5 drag/drop is broken on mobile — we hand-roll it via
+    // pointer events when pointerType === 'touch'). Long-press initiates the
+    // drag so vertical scrolling within the unscheduled list still works.
+    const TOUCH_DRAG_HOLD_MS = 350;
+    const TOUCH_DRAG_CANCEL_PX = 8;
+    let touchDrag: {
+        key: string;
+        task: any;
+        pointerId: number;
+        startX: number;
+        startY: number;
+        lastX: number;
+        lastY: number;
+        ghostEl: HTMLElement | null;
+        started: boolean;
+        timerId: number | null;
+        sourceEl: HTMLElement;
+    } | null = null;
+
     // Unassigned panel width (persisted across sessions)
     const PANEL_WIDTH_KEY = 'calendar_unassigned_width';
     const PANEL_OPEN_KEY = 'calendar_unassigned_open';
@@ -365,6 +384,9 @@
         if (unsubscribe && typeof unsubscribe === 'function') {
             unsubscribe();
         }
+
+        // Tear down any in-flight touch drag (ghost element + body styles).
+        if (touchDrag) cancelTouchDrag();
     });
 
     // Function to reload data when view changes
@@ -1058,7 +1080,10 @@
 
     async function handleDrop(event: DragEvent, date: Date, hour?: number) {
         event.preventDefault();
-        
+        await performDrop(date, hour);
+    }
+
+    async function performDrop(date: Date, hour?: number) {
         if (!draggedTask || !$ID) {
             draggedTask = null;
             dragOverDate = null;
@@ -1069,7 +1094,7 @@
         try {
             // Calculate new date and time
             const newDate = new Date(date);
-            
+
             // If hour is specified (week/day view), set specific time
             if (hour !== undefined) {
                 newDate.setHours(hour, 0, 0, 0);
@@ -1111,7 +1136,7 @@
 
             // Update in holosphere
             await holosphere.put($ID, 'quests', updatedTask);
-            
+
             console.log('Task moved successfully:', {
                 task: draggedTask.task.title,
                 from: draggedTask.task.when,
@@ -1131,6 +1156,184 @@
             dragOverDate = null;
             dragOverTime = null;
         }
+    }
+
+    // --- Touch drag handlers (long-press to start) ---
+    function onTaskTouchPointerDown(e: PointerEvent, key: string, task: any) {
+        if (e.pointerType !== 'touch') return;
+        if (readOnly) return;
+
+        if (touchDrag) cancelTouchDrag();
+
+        const sourceEl = e.currentTarget as HTMLElement;
+        const originalKey = resolveOriginalKey(key, task);
+        const originalTask = tasks[originalKey] ?? task;
+
+        const td: NonNullable<typeof touchDrag> = {
+            key: originalKey,
+            task: originalTask,
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            lastX: e.clientX,
+            lastY: e.clientY,
+            ghostEl: null,
+            started: false,
+            timerId: null,
+            sourceEl,
+        };
+        td.timerId = window.setTimeout(() => {
+            if (touchDrag !== td || td.started) return;
+            beginTouchDrag(td);
+        }, TOUCH_DRAG_HOLD_MS);
+        touchDrag = td;
+    }
+
+    function beginTouchDrag(td: NonNullable<typeof touchDrag>) {
+        td.started = true;
+        draggedTask = { key: td.key, task: td.task };
+        try { td.sourceEl.setPointerCapture(td.pointerId); } catch {}
+
+        const ghost = document.createElement('div');
+        ghost.style.cssText = [
+            'position:fixed',
+            `left:${td.lastX}px`,
+            `top:${td.lastY}px`,
+            'transform:translate(-50%,-50%)',
+            'pointer-events:none',
+            'z-index:9999',
+            'padding:6px 10px',
+            'border-radius:6px',
+            'background:rgb(79,70,229)',
+            'color:white',
+            'font-size:12px',
+            'font-weight:600',
+            'box-shadow:0 4px 12px rgba(0,0,0,0.35)',
+            'max-width:200px',
+            'white-space:nowrap',
+            'overflow:hidden',
+            'text-overflow:ellipsis',
+            'opacity:0.95',
+        ].join(';');
+        ghost.textContent = td.task.title || 'Untitled';
+        document.body.appendChild(ghost);
+        td.ghostEl = ghost;
+
+        document.body.style.userSelect = 'none';
+        document.body.style.touchAction = 'none';
+        try { (navigator as any).vibrate?.(20); } catch {}
+    }
+
+    function onTaskTouchPointerMove(e: PointerEvent) {
+        if (!touchDrag || e.pointerId !== touchDrag.pointerId) return;
+        touchDrag.lastX = e.clientX;
+        touchDrag.lastY = e.clientY;
+
+        if (!touchDrag.started) {
+            // Pre-drag: any meaningful movement = user is scrolling, cancel
+            const dx = e.clientX - touchDrag.startX;
+            const dy = e.clientY - touchDrag.startY;
+            if (Math.hypot(dx, dy) > TOUCH_DRAG_CANCEL_PX) {
+                cancelTouchDrag();
+            }
+            return;
+        }
+
+        // Drag in progress — block scroll, follow finger, hit-test drop targets.
+        e.preventDefault();
+        if (touchDrag.ghostEl) {
+            touchDrag.ghostEl.style.left = e.clientX + 'px';
+            touchDrag.ghostEl.style.top = e.clientY + 'px';
+        }
+        const target = elementUnderPoint(e.clientX, e.clientY);
+        if (target) {
+            const dateStr = target.getAttribute('data-drop-date');
+            const hourStr = target.getAttribute('data-drop-hour');
+            if (dateStr) {
+                dragOverDate = new Date(dateStr);
+                dragOverTime = hourStr !== null && hourStr !== '' ? Number(hourStr) : null;
+            }
+        } else {
+            dragOverDate = null;
+            dragOverTime = null;
+        }
+    }
+
+    async function onTaskTouchPointerUp(e: PointerEvent) {
+        if (!touchDrag || e.pointerId !== touchDrag.pointerId) return;
+        if (!touchDrag.started) {
+            // Tap (not a drag) — let click fire normally.
+            cancelTouchDrag();
+            return;
+        }
+        const target = elementUnderPoint(e.clientX, e.clientY);
+        const td = touchDrag;
+        // Tear down visual state before await so the user sees immediate feedback.
+        cleanupTouchDragVisual(td);
+        touchDrag = null;
+        // Suppress the synthetic click that would otherwise fire on the source
+        // element after pointerup and re-open the task modal.
+        suppressNextClick();
+        if (target) {
+            const dateStr = target.getAttribute('data-drop-date');
+            const hourStr = target.getAttribute('data-drop-hour');
+            if (dateStr) {
+                const date = new Date(dateStr);
+                const hour = hourStr !== null && hourStr !== '' ? Number(hourStr) : undefined;
+                await performDrop(date, hour);
+                return;
+            }
+        }
+        draggedTask = null;
+        dragOverDate = null;
+        dragOverTime = null;
+    }
+
+    function suppressNextClick() {
+        const swallow = (ev: MouseEvent) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            (ev as any).stopImmediatePropagation?.();
+        };
+        document.addEventListener('click', swallow, { capture: true, once: true });
+        // Safety net: drop the listener if no click arrives.
+        window.setTimeout(() => {
+            document.removeEventListener('click', swallow, true);
+        }, 500);
+    }
+
+    function onTaskTouchPointerCancel(e: PointerEvent) {
+        if (!touchDrag || e.pointerId !== touchDrag.pointerId) return;
+        cancelTouchDrag();
+    }
+
+    function elementUnderPoint(x: number, y: number): HTMLElement | null {
+        // Hide the ghost so it doesn't intercept the hit test.
+        const ghost = touchDrag?.ghostEl;
+        const prev = ghost?.style.display;
+        if (ghost) ghost.style.display = 'none';
+        const el = document.elementFromPoint(x, y) as HTMLElement | null;
+        if (ghost) ghost.style.display = prev ?? '';
+        return el?.closest('[data-drop-date]') as HTMLElement | null;
+    }
+
+    function cleanupTouchDragVisual(td: NonNullable<typeof touchDrag>) {
+        if (td.timerId != null) clearTimeout(td.timerId);
+        if (td.ghostEl) td.ghostEl.remove();
+        if (td.started) {
+            try { td.sourceEl.releasePointerCapture(td.pointerId); } catch {}
+        }
+        document.body.style.userSelect = '';
+        document.body.style.touchAction = '';
+    }
+
+    function cancelTouchDrag() {
+        if (!touchDrag) return;
+        cleanupTouchDragVisual(touchDrag);
+        touchDrag = null;
+        draggedTask = null;
+        dragOverDate = null;
+        dragOverTime = null;
     }
 
     // Add this helper function to calculate grid positions
@@ -2142,11 +2345,16 @@
             <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
                 {#each unassignedTasks as task (task.key)}
                     <div
-                        class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors"
+                        class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors select-none"
                         class:opacity-50={draggedTask?.key === task.key}
+                        style="-webkit-touch-callout:none;"
                         draggable="true"
                         ondragstart={(e) => handleDragStart(e, task.key, task)}
                         ondragend={handleDragEnd}
+                        onpointerdown={(e) => onTaskTouchPointerDown(e, task.key, task)}
+                        onpointermove={onTaskTouchPointerMove}
+                        onpointerup={onTaskTouchPointerUp}
+                        onpointercancel={onTaskTouchPointerCancel}
                         onclick={() => handleTaskClick(task.key, task)}
                         onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
                         role="button"
@@ -2198,13 +2406,14 @@
             {#each monthData as date}
                 {@const dateEvents = getDayEvents(date)}
                 {@const stays = getStaysForDay(date)}
-                <button 
+                <button
                     class="p-2 min-h-[100px] text-left bg-gray-800 relative group transition-colors hover:bg-gray-700"
                     class:opacity-50={!isCurrentMonth(date)}
                     class:ring-2={isSelected(date)}
                     class:ring-white={isSelected(date)}
                     class:bg-indigo-900={dragOverDate?.toDateString() === date.toDateString()}
                     class:bg-opacity-50={dragOverDate?.toDateString() === date.toDateString()}
+                    data-drop-date={date.toISOString()}
                     onclick={() => handleDateClick(date)}
                     ondragover={(e) => handleDragOver(e, date)}
                     ondragleave={handleDragLeave}
@@ -2241,12 +2450,16 @@
                             {#if event.id && tasks[event.id]}
                                 <!-- This is a task, make it draggable -->
                                 <div
-                                    class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move"
+                                    class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move select-none"
                                     class:opacity-50={draggedTask?.key === event.id}
-                                    style="background-color: {event.color || '#4B5563'}"
+                                    style="background-color: {event.color || '#4B5563'}; -webkit-touch-callout:none;"
                                     draggable="true"
                                     ondragstart={(e) => handleDragStart(e, event.id, event)}
                                     ondragend={handleDragEnd}
+                                    onpointerdown={(e) => onTaskTouchPointerDown(e, event.id, event)}
+                                    onpointermove={onTaskTouchPointerMove}
+                                    onpointerup={onTaskTouchPointerUp}
+                                    onpointercancel={onTaskTouchPointerCancel}
                                     role="listitem"
                                     aria-label="Drag task: {event.title}"
                                 >
@@ -2295,6 +2508,8 @@
                                     class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                                     class:bg-indigo-100={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
                                     class:bg-opacity-10={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
+                                    data-drop-date={date.toISOString()}
+                                    data-drop-hour={hour}
                                     ondragover={(e) => handleDragOver(e, date, hour)}
                                     ondragleave={handleDragLeave}
                                     ondrop={(e) => handleDrop(e, date, hour)}
@@ -2319,7 +2534,7 @@
                             {@const endHour = (overrideEnd ?? (task.ends ? new Date(task.ends) : null))?.getHours() ?? startHour + 1}
                             {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
                             <div
-                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
+                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden select-none"
                                 class:opacity-50={draggedTask?.key === key}
                                 class:ring-2={resizingEvent?.key === key}
                                 class:ring-white={resizingEvent?.key === key}
@@ -2330,12 +2545,16 @@
                                 draggable="true"
                                 ondragstart={(e) => handleDragStart(e, key, task)}
                                 ondragend={handleDragEnd}
+                                onpointerdown={(e) => onTaskTouchPointerDown(e, key, task)}
+                                onpointermove={onTaskTouchPointerMove}
+                                onpointerup={onTaskTouchPointerUp}
+                                onpointercancel={onTaskTouchPointerCancel}
                                 onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
                                 onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
                                 title={task.title || 'Untitled'}
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none;"
                             >
                                 <SourceBadge item={task} currentHolonId={$ID} lensRoute="calendar" />
                                 <div class="font-bold truncate leading-tight">
@@ -2443,10 +2662,12 @@
                 <div class="divide-y divide-gray-700">
                     {#each Array(18) as _, i}
                         {@const hour = i + 6}
-                        <div 
+                        <div
                             class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                             class:bg-indigo-100={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
                             class:bg-opacity-10={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
+                            data-drop-date={currentDate.toISOString()}
+                            data-drop-hour={hour}
                             onclick={() => {
                                 const eventDate = new Date(currentDate);
                                 eventDate.setHours(hour);
@@ -2480,19 +2701,23 @@
                     {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                     {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns} + 2px))` : '0.25rem'}
                     <div
-                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
+                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden select-none"
                         class:opacity-50={draggedTask?.key === key}
                         class:ring-2={resizingEvent?.key === key}
                         class:ring-white={resizingEvent?.key === key}
                         draggable="true"
                         ondragstart={(e) => handleDragStart(e, key, task)}
                         ondragend={handleDragEnd}
+                        onpointerdown={(e) => onTaskTouchPointerDown(e, key, task)}
+                        onpointermove={onTaskTouchPointerMove}
+                        onpointerup={onTaskTouchPointerUp}
+                        onpointercancel={onTaskTouchPointerCancel}
                         onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
                         onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
                         title={task.title || 'Untitled'}
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none;"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
