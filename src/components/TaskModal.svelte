@@ -472,6 +472,7 @@
                         // Create expense entry for the time logged, using chatID for splitWith
                         try {
                             const messageID = `${questId}_time_${userID}_${Date.now()}`; // Unique ID for this expense
+                            const nowMs = Date.now();
                             await holosphere.put(holonId, "expenses", {
                                 id: messageID,
                                 chatID: holonId,
@@ -481,7 +482,10 @@
                                 description: quest.title,
                                 paidBy: userID,
                                 splitWith: [holonId], // Split with the current holon (chatID)
-                                timestamp: new Date().toISOString(),
+                                // `date` (epoch ms) matches holonsbot's expense shape;
+                                // `timestamp` (ISO) is what harvest already writes.
+                                date: nowMs,
+                                timestamp: new Date(nowMs).toISOString(),
                                 fromTimeTracking: true, // Flag to identify expenses from time tracking
                                 questId: questId
                             });

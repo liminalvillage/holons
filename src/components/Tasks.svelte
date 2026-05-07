@@ -1160,6 +1160,7 @@
 					if (hoursNum > 0) {
 						try {
 							const messageID = `${key}_time_${userID}_${Date.now()}`;
+							const nowMs = Date.now();
 							await holosphere.put(holonID, 'expenses', {
 								id: messageID,
 								chatID: holonID,
@@ -1169,7 +1170,10 @@
 								description: quest.title,
 								paidBy: userID,
 								splitWith: [holonID],
-								timestamp: new Date().toISOString(),
+								// `date` (epoch ms) matches holonsbot's expense shape;
+								// `timestamp` (ISO) is what harvest already writes.
+								date: nowMs,
+								timestamp: new Date(nowMs).toISOString(),
 								fromTimeTracking: true,
 								questId: key
 							});

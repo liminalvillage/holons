@@ -28,6 +28,18 @@ export function expenseCurrency(e: Expense): string {
     return normalizeCurrency((e?.currency || e?.unit || '') as string);
 }
 
+/**
+ * Normalize `splitWith` to an array. Holonsbot's hour-tracking call site
+ * (Quests.js:619 — `addExpense(..., userID, holonId)`) passes the scalar
+ * `holonId` instead of `[holonId]`; without this shim those entries don't
+ * contribute to anyone's balance because the inner loop runs zero times.
+ */
+function splitWithArray(raw: unknown): Array<string | number> {
+    if (Array.isArray(raw)) return raw as Array<string | number>;
+    if (raw === null || raw === undefined || raw === '') return [];
+    return [raw as string | number];
+}
+
 export function calculateCurrencyBalance(
     userId: string | number,
     currency: string,
@@ -46,7 +58,7 @@ export function calculateCurrencyBalance(
     Object.values(expenses).forEach(expense => {
         if (!expense) return;
         if (expenseCurrency(expense) !== normalizedCurrency) return;
-        const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+        const splitWithList = splitWithArray((expense as any).splitWith);
         const amountPerPerson = expense.amount / (splitWithList.length || 1);
         const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
 
@@ -79,7 +91,7 @@ export function calculateCreditMatrix(
     Object.values(expenses).forEach(expense => {
         if (!expense) return;
         if (expenseCurrency(expense) !== normalizedCurrency) return;
-        const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+        const splitWithList = splitWithArray((expense as any).splitWith);
         const amountPerPerson = expense.amount / (splitWithList.length || 1);
         const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
 
