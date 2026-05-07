@@ -13,19 +13,13 @@
     import SourceBadge from './shared/SourceBadge.svelte';
     import TitleBar from './shared/TitleBar.svelte';
     import { CheckSquare } from 'svelte-feathers';
-
-    interface Proposal {
-        id: string;
-        type: string;
-        title: string;
-        description: string;
-        participants: string[];
-        stoppers: string[];
-        date: number;
-        creator: string;
-        _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-        _federation?: { origin?: string; sourceLens?: string };
-    }
+    import {
+        PROPOSAL_LENS,
+        createAndSaveProposal,
+        agree as coreAgree,
+        block as coreBlock,
+        type Proposal,
+    } from '@holons/core/council';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -92,7 +86,7 @@
 
         holosphere.subscribe(
             holonIdToSubscribe,
-            "quests",
+            PROPOSAL_LENS,
             (newItem: Proposal | null, key?: string) => {
                 if (!key) return;
 
@@ -113,7 +107,7 @@
 
     async function fetchFederatedProposals(holonIdToFetch: string): Promise<void> {
         try {
-            const federatedData = await holosphere.getFederated(holonIdToFetch, "quests", {
+            const federatedData = await holosphere.getFederated(holonIdToFetch, PROPOSAL_LENS, {
                 includeLocal: true,
                 includeFederated: true,
                 resolveReferences: true,
@@ -144,60 +138,25 @@
         subscribeToProposals(currentHolonID);
     }
 
+    // Thin facades over @holons/core/council. The holosphere instance
+    // satisfies the ProposalStore shape (put / get / subscribe / delete).
     function addProposal(title: string, description: string): void {
         if (!currentHolonID) return;
-        const newProposal: Proposal = {
-            id: crypto.randomUUID(),
-            type: "proposal",
+        void createAndSaveProposal(holosphere as any, currentHolonID, {
             title,
             description,
-            participants: [],
-            stoppers: [],
-            date: Math.floor(Date.now() / 1000),
-            creator: "Dashboard User",
-        };
-        holosphere.put(currentHolonID, "quests", newProposal);
+            creator: 'Dashboard User',
+        });
     }
 
     function toggleBlock(proposalId: string): void {
         if (!currentHolonID) return;
-        const proposal = proposals[proposalId];
-        if (!proposal) return;
-
-        const userId = "current-user";
-        const updatedProposal = { ...proposal };
-
-        if (!updatedProposal.stoppers) updatedProposal.stoppers = [];
-
-        if (updatedProposal.stoppers.includes(userId)) {
-            updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
-        } else {
-            updatedProposal.stoppers = [...updatedProposal.stoppers, userId];
-            updatedProposal.participants = updatedProposal.participants?.filter(id => id !== userId) || [];
-        }
-
-        holosphere.put(currentHolonID, "quests", updatedProposal);
+        void coreBlock(holosphere as any, currentHolonID, proposalId, 'current-user');
     }
 
     function toggleAgree(proposalId: string): void {
         if (!currentHolonID) return;
-        const proposal = proposals[proposalId];
-        if (!proposal) return;
-
-        const userId = "current-user";
-        const updatedProposal = { ...proposal };
-        const participants = updatedProposal.participants || [];
-
-        if (participants.includes(userId)) {
-            updatedProposal.participants = participants.filter(id => id !== userId);
-        } else {
-            updatedProposal.participants = [...participants, userId];
-            if (updatedProposal.stoppers) {
-                updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
-            }
-        }
-
-        holosphere.put(currentHolonID, "quests", updatedProposal);
+        void coreAgree(holosphere as any, currentHolonID, proposalId, 'current-user');
     }
 
     let showAddDialog = false;
