@@ -6,6 +6,11 @@
   "description": "Shared domain logic for Holons UIs (web, telegram, text, ai). UI-agnostic.",
   "exports": {
     ".": "./src/index.ts",
+    "./expenses": {
+      "types": "./dist/expenses/index.d.ts",
+      "import": "./dist/expenses/index.js",
+      "default": "./dist/expenses/index.js"
+    },
     "./*": "./src/*/index.ts"
   },
   "scripts": {
