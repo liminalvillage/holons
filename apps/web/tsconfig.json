@@ -11,7 +11,7 @@
 		"sourceMap": true,
 		"strict": true,
 		"verbatimModuleSyntax": false,
-		"moduleResolution": "node",
+		"moduleResolution": "bundler",
 		"module": "esnext",
 		"target": "esnext",
 		"isolatedModules": true,
