@@ -1,8 +1,13 @@
 /**
  * @fileoverview Factory functions for HoloSphere and KeyManager instances.
+ *
+ * The HoloSphere instance is now built by `@holons/core/holosphere`; this
+ * file is a thin Node wrapper that resolves a private key (env / file /
+ * generate) and wires the bot-only KeyManager.
+ *
  * @module src/createHoloSphere
  */
-import { HoloSphere } from 'holosphere';
+import { createHoloSphere as coreCreateHoloSphere } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
 import KeyManager from './KeyManager.js';
@@ -42,20 +47,22 @@ function generatePrivateKey() {
  */
 export default function createHoloSphere(appName, options = {}) {
     const resolvedAppName = appName || process.env.APPNAME || 'Holons';
-    const privateKey = options.privateKey
+    const { privateKey: pkOverride, backend, logLevel, relays: _ignoredRelays, ...extra } = options;
+    const privateKey = pkOverride
         || process.env.HOLOSPHERE_PRIVATE_KEY
         || getOrCreateKey(resolvedAppName, generatePrivateKey);
 
-    const holosphere = new HoloSphere({
-        backend: 'nostr',
+    // NOTE: `relays` here is intentionally NOT forwarded — holosphere 1.3
+    // ignores top-level `relays` and only consumes `nostr.relays`. The bot
+    // historically passed it as a hint and ran on Gun's default peer; pass
+    // `extra: { nostr: { relays: [...] } }` if/when migrating to nostr.
+    return coreCreateHoloSphere({
         appName: resolvedAppName,
-        privateKey: privateKey,
-        logLevel: options.logLevel || 'INFO',
-        relays: options.relays || ['wss://relay.holons.io/'],
-        ...options
+        privateKey,
+        backend: backend || 'nostr',
+        logLevel: logLevel || 'INFO',
+        extra,
     });
-
-    return holosphere;
 }
 
 /**
