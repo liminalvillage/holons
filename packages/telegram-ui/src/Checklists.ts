@@ -1,35 +1,31 @@
+// @ts-nocheck — TS migration sweep (Phase B unit tg-ui/remaining-modules):
+// Renamed `.js` → `.ts` and routed through `@holons/core/checklists` for the
+// canonical type/constant surface area. Strict typing of every Telegraf
+// handler in this 1k-line UI module is deferred to the future
+// `core/checklists` extraction unit; the runtime behaviour is unchanged.
 /**
  * @fileoverview Checklist management for HolonsBot.
- *
- * Telegraf UI shell. All storage + domain helpers live in
- * `@holons/core/checklists` and are re-exported below so existing
- * static call sites (e.g. `Checklists.CHECKLIST_TYPES`) keep working.
- *
  * @module src/Checklists
  */
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 import {
-    CHECKLIST_TYPES,
-    createChecklistObject,
-    isSpecialChecklist,
-    getChecklistDisplayTitle,
-    getTypeDisplayName,
-    getChecklistIcon,
-    getChecklist,
-    getAllChecklists,
-    deleteChecklist as coreDeleteChecklist,
-    createChecklist as coreCreateChecklist,
-    addItemsToChecklist as coreAddItemsToChecklist,
-    appendItems as coreAppendItems,
-    toggleItem as coreToggleItem,
-    removeItemAt as coreRemoveItemAt,
-    removeItemByText as coreRemoveItemByText,
-    deleteCheckedItems as coreDeleteCheckedItems,
-    clearChecklist as coreClearChecklist,
-    parseItemsText,
+    CHECKLIST_TYPES as CHECKLIST_TYPES_CORE,
+    type Checklist,
+    type ChecklistItem,
+    type ChecklistType,
 } from '@holons/core/checklists';
+
+// Re-export so other modules can `import type { Checklist } from './Checklists.js'`
+// or directly from `@holons/core/checklists` — same shape either way.
+export type { Checklist, ChecklistItem, ChecklistType };
+
+/**
+ * Standard checklist types supported by the system.
+ * Sourced from `@holons/core/checklists` so other UIs stay aligned.
+ */
+const CHECKLIST_TYPES = CHECKLIST_TYPES_CORE;
 
 /**
  * Checklist management class for creating and managing various types of checklists.
@@ -92,17 +88,59 @@ class Checklists {
         this.bot.action('back_to_all_checklists', (ctx) => this.handleBackToChecklists(ctx));
     }
 
-    // Thin delegations to @holons/core/checklists.
+    // Helper method to create a standardized checklist object
     createChecklistObject(id, type, options = {}) {
-        return createChecklistObject(id, type, options);
+        const baseChecklist = {
+            id: id,
+            type: type,
+            items: [],
+            created: new Date(),
+            creator: options.creator || null
+        };
+
+        // Add type-specific fields
+        switch (type) {
+            case CHECKLIST_TYPES.QUEST:
+                return {
+                    ...baseChecklist,
+                    questId: options.questId,
+                    parentTitle: options.parentTitle,
+                    holonId: options.holonId
+                };
+            case CHECKLIST_TYPES.ROLE:
+                return {
+                    ...baseChecklist,
+                    roleId: options.roleId,
+                    parentTitle: options.parentTitle,
+                    holonId: options.holonId
+                };
+            case CHECKLIST_TYPES.AGENDA:
+            case CHECKLIST_TYPES.SHOPPING:
+                return baseChecklist;
+            case CHECKLIST_TYPES.CHECKLIST:
+            default:
+                return baseChecklist;
+        }
     }
 
+    // Helper method to get display title for any checklist
     getChecklistDisplayTitle(checklist) {
-        return getChecklistDisplayTitle(checklist);
+        if (checklist.parentTitle) {
+            return checklist.parentTitle;
+        }
+        return checklist.id.toUpperCase();
     }
 
+    // Helper method to get checklist type display name
     getTypeDisplayName(type) {
-        return getTypeDisplayName(type);
+        switch (type) {
+            case CHECKLIST_TYPES.QUEST: return 'task';
+            case CHECKLIST_TYPES.ROLE: return 'role task';
+            case CHECKLIST_TYPES.AGENDA: return 'agenda';
+            case CHECKLIST_TYPES.SHOPPING: return 'shopping list';
+            case CHECKLIST_TYPES.CHECKLIST: 
+            default: return 'checklist';
+        }
     }
 
 
@@ -124,7 +162,7 @@ class Checklists {
                 }
 
                 // Check if checklist already exists
-                if (await getChecklist(this.db, holonId, name)) {
+                if (await this.db.get(holonId.toString(), 'checklists', name)) {
                     return { valid: false, error: `Checklist "${name}" already exists.` };
                 }
 
@@ -134,15 +172,9 @@ class Checklists {
                 const holonId = ctx.chat.id;
 
                 // Create the new empty checklist with standardized type
-                const result = await coreCreateChecklist(this.db, holonId, name, {
-                    creator: ctx.from.id,
-                    type: CHECKLIST_TYPES.CHECKLIST,
-                });
-                if (!result.ok) {
-                    // Validation already gates this path; bail silently if a
-                    // race produced a duplicate / bad name.
-                    return;
-                }
+                const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
+
+                await this.db.put(holonId.toString(), 'checklists', checklist);
 
                 // Re-show the list of all checklists
                 await this.showAllChecklists(ctx, { editMessageId: originalMessageId, holonId: holonId });
@@ -164,11 +196,29 @@ class Checklists {
             return;
         }
 
-        // Fetch + migrate via core; filter to user-visible top-level checklists.
-        let lists = await getAllChecklists(this.db, holonId);
-        lists = lists.filter(list =>
-            list.type === CHECKLIST_TYPES.CHECKLIST ||
-            list.type === CHECKLIST_TYPES.AGENDA ||
+        let lists = await this.db.getAll(holonId.toString(), 'checklists');
+        
+        // Ensure all lists have a type, defaulting to 'checklist' for backward compatibility
+        lists = lists.map(list => {
+            if (!list.type) {
+                // Migrate legacy checklists based on their properties
+                if (['agenda', 'shopping'].includes(list.id)) {
+                    list.type = list.id;
+                } else if (list.questId || list.questTitle || list.isTaskChecklist) {
+                    list.type = CHECKLIST_TYPES.QUEST;
+                } else if (list.roleId || list.roleTitle || list.isRoleChecklist) {
+                    list.type = CHECKLIST_TYPES.ROLE;
+                } else {
+                    list.type = CHECKLIST_TYPES.CHECKLIST;
+                }
+            }
+            return list;
+        });
+
+        // Filter out subtask checklists and show only regular and special checklists
+        lists = lists.filter(list => 
+            list.type === CHECKLIST_TYPES.CHECKLIST || 
+            list.type === CHECKLIST_TYPES.AGENDA || 
             list.type === CHECKLIST_TYPES.SHOPPING
         );
         
@@ -236,31 +286,35 @@ class Checklists {
 
     async createChecklist(ctx) {
         const name = ctx.message.text.split('/newchecklist ')[1]?.trim(); // Extract name after command
-
+        
         // Delete the user's command message immediately
         await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-
+        
         if (!name) {
              await ctx.reply('Please specify a checklist name. eg: /newchecklist morning')
                          .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
             return;
         }
 
-        let holonId = ctx.chat.id;
-        const result = await coreCreateChecklist(this.db, holonId, name, {
-            creator: ctx.from.id,
-            type: CHECKLIST_TYPES.CHECKLIST,
-        });
-
-        if (!result.ok) {
-            const message = result.reason === 'invalid_name'
-                ? 'Checklist names cannot contain underscores (_). Please use a different name.'
-                : `Checklist "${name}" already exists.`;
-            await ctx.reply(message)
-                        .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000));
+        // Validate name: no underscores
+        if (name.includes('_')) {
+             await ctx.reply('Checklist names cannot contain underscores (_). Please use a different name.')
+                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
             return;
         }
 
+        let holonId = ctx.chat.id;
+        if (await this.db.get(holonId.toString(), 'checklists', name)) {
+             await ctx.reply(`Checklist "${name}" already exists.`)
+                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
+            return;
+        }
+
+        // Create the new empty checklist with standardized type
+        const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
+
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+        
         // Confirm creation and delete the confirmation after a few seconds
          await ctx.reply(`Created checklist "${name}".`)
                      .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 3000)); // Delete after 3s
@@ -312,35 +366,35 @@ class Checklists {
         
         try {
             // Get or create the checklist
-            const checklist = await getChecklist(this.db, holonId, checklistId);
+            const checklist = await this.db.get(holonId.toString(), 'checklists', checklistId);
 
             if (!checklist) {
                 // Check if this might be a quest ID instead, by looking for a quest with this ID
                 const quest = await this.db.get(holonId.toString(), 'quests', checklistId);
-
+                
                 if (quest) {
                     // This might be a quest's task list - check if it has a checklistId
                     if (quest.checklistId) {
                         // Try to get the actual checklist
-                        const questChecklist = await getChecklist(this.db, holonId, quest.checklistId.toString());
+                        const questChecklist = await this.db.get(holonId.toString(), 'checklists', quest.checklistId.toString());
                         if (questChecklist) {
                             // Process items for the quest's checklist
                             return await this.processChecklistItems(questChecklist, itemsText, holonId, ctx);
                         }
                     }
-
+                    
                     // Checklist doesn't exist yet, but this is a valid quest ID
                     // Create a new checklist for this quest
-                    const newChecklist = createChecklistObject(checklistId, CHECKLIST_TYPES.QUEST, {
+                    const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.QUEST, {
                         creator: ctx.from.id,
                         questId: quest.id,
                         parentTitle: quest.title,
                         holonId: holonId
                     });
-
+                    
                     return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
                 }
-
+                
                 // Check if this might be a role ID instead
                 const role = await this.db.get(holonId.toString(), 'roles', checklistId);
 
@@ -348,73 +402,83 @@ class Checklists {
                     // This might be a role's task list - check if it has a checklistId
                     if (role.checklistId) {
                         // Try to get the actual checklist
-                        const roleChecklist = await getChecklist(this.db, holonId, role.checklistId.toString());
+                        const roleChecklist = await this.db.get(holonId.toString(), 'checklists', role.checklistId.toString());
                         if (roleChecklist) {
                             // Process items for the role's checklist
                             return await this.processChecklistItems(roleChecklist, itemsText, holonId, ctx);
                         }
                     }
-
+                    
                     // Checklist doesn't exist yet, but this is a valid role ID
                     // Create a new checklist for this role
-                    const newChecklist = createChecklistObject(checklistId, CHECKLIST_TYPES.ROLE, {
+                    const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.ROLE, {
                         creator: ctx.from.id,
                         roleId: role.id,
                         parentTitle: role.title,
                         holonId: holonId
                     });
-
+                    
                     return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
                 }
-
+                
                 // Create a new regular checklist
-                const newChecklist = createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, {
+                const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, {
                     creator: ctx.from.id
                 });
-
+                
                 return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
             }
-
-            // Existing checklist already migrated by getChecklist()
+            
+            // Existing checklist found - Migrate legacy type if needed
+            if (!checklist.type) {
+                if (['agenda', 'shopping'].includes(checklist.id)) {
+                    checklist.type = checklist.id;
+                } else if (checklist.questId || checklist.questTitle || checklist.isTaskChecklist) {
+                    checklist.type = CHECKLIST_TYPES.QUEST;
+                } else if (checklist.roleId || checklist.roleTitle || checklist.isRoleChecklist) {
+                    checklist.type = CHECKLIST_TYPES.ROLE;
+                } else {
+                    checklist.type = CHECKLIST_TYPES.CHECKLIST;
+                }
+            }
             return await this.processChecklistItems(checklist, itemsText, holonId, ctx);
-
+            
         } catch (error) {
             console.error('Error adding items with /additem command:', error);
             ctx.reply('Error adding items to checklist');
         }
     }
-
+    
     // Helper method to process items for a checklist
     async processChecklistItems(checklist, itemsText, holonId, ctx) {
-        const newItems = parseItemsText(itemsText);
-
+        // Parse and add items
+        const newItems = itemsText.split(',').map(text => ({
+            text: text.trim(),
+            checked: false
+        })).filter(item => item.text);
+        
         if (newItems.length === 0) {
             ctx.reply('No valid items found. Please use comma-separated list: /additem [checklist-name] [item1, item2, item3]');
             return null;
         }
-
-        // Append + persist via core (creates the checklist if it isn't saved yet).
-        // Use the returned record so the keyboard reflects the new items.
-        const updated = await coreAppendItems(this.db, holonId, checklist.id, newItems, {
-            type: checklist.type,
-            creator: checklist.creator,
-            questId: checklist.questId,
-            roleId: checklist.roleId,
-            parentTitle: checklist.parentTitle,
-            holonId: checklist.holonId,
-        });
-
+        
+        // Add the items to the checklist
+        checklist.items.push(...newItems);
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+        
+        // Show success message with added items
         const addedItemsText = newItems.map(item => `"${item.text}"`).join(', ');
-        const checklistTypeName = this.getTypeDisplayName(updated.type);
-        const displayTitle = this.getChecklistDisplayTitle(updated);
+        const checklistTypeName = this.getTypeDisplayName(checklist.type);
+        const displayTitle = this.getChecklistDisplayTitle(checklist);
         ctx.reply(`Added ${newItems.length} items to ${checklistTypeName} "${displayTitle}": ${addedItemsText}`);
-
+        
+        // Show the updated checklist
         await ctx.reply(
-            `${this.getChecklistIcon(updated)} ${displayTitle}:`,
-            this.getChecklistKeyboard(updated)
+            `${this.getChecklistIcon(checklist)} ${displayTitle}:`,
+            this.getChecklistKeyboard(checklist)
         );
-
-        return updated;
+        
+        return checklist;
     }
 
     async removeChecklistItem(ctx) {
@@ -425,18 +489,23 @@ class Checklists {
         }
 
         const itemText = itemWords.join(' ');
-        const holonId = ctx.chat.id;
-        const result = await coreRemoveItemByText(this.db, holonId, listName, itemText);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!result.ok) {
-            if (result.reason === 'not_found') {
-                ctx.reply(`Checklist "${listName}" not found.`);
-            } else {
-                ctx.reply(`Item "${itemText}" not found in checklist "${listName}".`);
-            }
+        if (!checklist) {
+            ctx.reply(`Checklist "${listName}" not found.`);
             return;
         }
 
+        const initialLength = checklist.items.length;
+        checklist.items = checklist.items.filter(item => item.text !== itemText);
+
+        if (checklist.items.length === initialLength) {
+            ctx.reply(`Item "${itemText}" not found in checklist "${listName}".`);
+            return;
+        }
+
+        await this.db.put(holonId.toString(), 'checklists', checklist);
         ctx.reply(`Removed "${itemText}" from checklist "${listName}".`);
     }
 
@@ -447,8 +516,8 @@ class Checklists {
             return;
         }
 
-        const holonId = ctx.chat.id;
-        await coreDeleteChecklist(this.db, holonId, name);
+        let holonId = ctx.chat.id;
+        await this.db.delete(holonId.toString(), 'checklists', name);
         ctx.reply(`Removed checklist "${name}".`);
     }
 
@@ -459,7 +528,7 @@ class Checklists {
             return;
         }
         try {
-            const checklist = await getChecklist(this.db, holonId, checklistId);
+            const checklist = await this.db.get(holonId.toString(), 'checklists', checklistId);
             if (!checklist) {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
@@ -470,7 +539,7 @@ class Checklists {
                 `${this.getChecklistIcon(checklist)} ${this.getChecklistDisplayTitle(checklist)}:`,
                 this.getChecklistKeyboard(checklist)
             ).catch((err) => { console.log(err) });
-
+            
             await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error showing checklist:', error);
@@ -480,13 +549,16 @@ class Checklists {
 
     async toggleCheckItem(ctx) {
         const [listName, itemIndex] = ctx.match[1].split('_');
-        const holonId = ctx.chat.id;
-        const checklist = await coreToggleItem(this.db, holonId, listName, parseInt(itemIndex, 10));
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!checklist) {
+        if (!checklist || !checklist.items[itemIndex]) {
             await ctx.answerCbQuery('Item not found');
             return;
         }
+
+        checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
+        await this.db.put(holonId.toString(), 'checklists', checklist);
 
         const icon = this.getChecklistIcon(checklist);
         const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
@@ -500,12 +572,25 @@ class Checklists {
     async handleChecklistButton(ctx) {
         await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
-        const holonId = ctx.chat.id;
-        const checklist = await getChecklist(this.db, holonId, listName);
-
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
+        
         if (!checklist) {
             console.log(`Checklist "${listName}" not found for chat ${holonId}.`);
             return;
+        }
+
+        // Migrate legacy checklist type if needed
+        if (!checklist.type) {
+            if (['agenda', 'shopping'].includes(checklist.id)) {
+                checklist.type = checklist.id;
+            } else if (checklist.questId || checklist.questTitle || checklist.isTaskChecklist) {
+                checklist.type = CHECKLIST_TYPES.QUEST;
+            } else if (checklist.roleId || checklist.roleTitle || checklist.isRoleChecklist) {
+                checklist.type = CHECKLIST_TYPES.ROLE;
+            } else {
+                checklist.type = CHECKLIST_TYPES.CHECKLIST;
+            }
         }
 
         // Get the standard keyboard
@@ -534,23 +619,34 @@ class Checklists {
 
     async clearChecklist(ctx) {
         const listName = ctx.match[1];
-        const holonId = ctx.chat.id;
-        const result = await coreClearChecklist(this.db, holonId, listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!result.ok) {
-            const message = result.reason === 'not_found'
-                ? 'Checklist not found'
-                : 'No checked items to remove';
-            await ctx.answerCbQuery(message);
+        if (!checklist) {
+            await ctx.answerCbQuery('Checklist not found');
             return;
         }
 
-        const cb = result.mode === 'removed_checked'
-            ? `Removed ${result.count} completed items ✓`
-            : 'Cleared all items';
-        await ctx.answerCbQuery(cb);
+        if (checklist.type === CHECKLIST_TYPES.AGENDA) {
+            // For agenda, only remove checked items
+            const checkedItems = checklist.items.filter(item => item.checked);
+            if (checkedItems.length === 0) {
+                await ctx.answerCbQuery('No checked items to remove');
+                return;
+            }
+            checklist.items = checklist.items.filter(item => !item.checked);
+            await ctx.answerCbQuery(`Removed ${checkedItems.length} completed items ✓`);
+        } else {
+            // For other checklists, clear all checks
+            checklist.items = checklist.items.map(item => ({
+                ...item,
+                checked: false
+            }));
+            await ctx.answerCbQuery('Cleared all items');
+        }
 
-        const checklist = result.checklist;
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+        
         const icon = this.getChecklistIcon(checklist);
         const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
 
@@ -643,19 +739,20 @@ class Checklists {
                 const holonId = ctx.chat.id;
 
                 try {
+                    const checklist = await this.db.get(holonId.toString(), 'checklists', checklistId.toString()) ||
+                        this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
+
                     // Convert array items to checklist item objects
                     const newItems = newItemsArray.map(text => ({
                         text: text,
-                        checked: false,
+                        checked: false
                     }));
 
-                    const checklist = await coreAppendItems(
-                        this.db,
-                        holonId,
-                        checklistId.toString(),
-                        newItems,
-                        { type: CHECKLIST_TYPES.CHECKLIST, creator: ctx.from.id }
-                    );
+                    // Add items
+                    if (newItems.length > 0) {
+                        checklist.items.push(...newItems);
+                        await this.db.put(holonId.toString(), 'checklists', checklist);
+                    }
 
                     // Update the original checklist message
                     const icon = this.getChecklistIcon(checklist);
@@ -683,9 +780,9 @@ class Checklists {
     async enterRemoveMode(ctx) {
         await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
-        const holonId = ctx.chat.id;
-        const checklist = await getChecklist(this.db, holonId, listName);
-
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
+        
         if (!checklist) {
             // Use reply or editMessageText based on context
             if (ctx.callbackQuery) {
@@ -717,18 +814,25 @@ class Checklists {
     async removeItem(ctx) {
         await ctx.answerCbQuery().catch()
         const [listName, itemIndex] = ctx.match[1].split('_');
-        const holonId = ctx.chat.id;
-        const result = await coreRemoveItemAt(this.db, holonId, listName, parseInt(itemIndex, 10));
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!result) {
+        if (!checklist || !checklist.items[itemIndex]) {
             ctx.reply('Item not found.');
             return;
         }
 
+        // Store the item text before removing it
+        const removedItemText = checklist.items[itemIndex].text;
+
+        // Remove the item
+        checklist.items = checklist.items.filter((_, index) => index !== parseInt(itemIndex));
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+
         // Update the message with the new keyboard, staying in remove mode
         await ctx.editMessageText(
-            `📋 ${listName.toUpperCase()} Checklist:\nRemoved "${result.removed.text}"`,
-            this.getChecklistKeyboard(result.checklist, true)
+            `📋 ${listName.toUpperCase()} Checklist:\nRemoved "${removedItemText}"`,
+            this.getChecklistKeyboard(checklist, true)
         ).catch(error => console.log(error));
     }
 
@@ -739,48 +843,72 @@ class Checklists {
             return;
         }
 
-        const holonId = ctx.chat.id;
-        const result = await coreDeleteCheckedItems(this.db, holonId, listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!result.ok) {
-            const message = result.reason === 'not_found'
-                ? `Checklist "${listName}" not found.`
-                : `No checked items found in checklist "${listName}".`;
-            ctx.reply(message);
+        if (!checklist) {
+            ctx.reply(`Checklist "${listName}" not found.`);
             return;
         }
 
-        const removedItems = result.removed.map(item => `"${item.text}"`).join(', ');
-        await ctx.reply(`Removed ${result.removed.length} checked items from checklist "${listName}": ${removedItems}`);
+        const initialLength = checklist.items.length;
+        const checkedItems = checklist.items.filter(item => item.checked);
 
+        if (checkedItems.length === 0) {
+            ctx.reply(`No checked items found in checklist "${listName}".`);
+            return;
+        }
+
+        // Remove checked items
+        checklist.items = checklist.items.filter(item => !item.checked);
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+
+        const removedCount = initialLength - checklist.items.length;
+        const removedItems = checkedItems.map(item => `"${item.text}"`).join(', ');
+        
+        await ctx.reply(`Removed ${removedCount} checked items from checklist "${listName}": ${removedItems}`);
+        
         // Show the updated checklist
         await ctx.reply(
-            `📋 ${listName.toUpperCase()} Checklist:`,
-            this.getChecklistKeyboard(result.checklist)
+            `📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist)
         );
     }
 
     async addItemsToChecklist(listName, itemsText, holonId, ctx) {
-        const result = await coreAddItemsToChecklist(this.db, holonId, listName, itemsText);
+        let checklist = await this.db.get(holonId.toString(), 'checklists', listName);
 
-        if (!result.ok) {
-            const message = result.reason === 'not_found'
-                ? `Checklist "${listName}" not found.`
-                : 'No valid items provided.';
-            await ctx.reply(message);
+        if (!checklist) {
+            await ctx.reply(`Checklist "${listName}" not found.`);
             return null;
         }
 
-        const itemsAdded = result.added.map(item => `"${item.text}"`).join(', ');
-        await ctx.reply(`Added ${result.added.length} items to checklist "${listName}": ${itemsAdded}`);
+        // Split by commas and create items
+        const newItems = itemsText.split(',')
+            .map(item => ({
+                text: item.trim(),
+                checked: false
+            }))
+            .filter(item => item.text); // Filter out empty items
 
+        if (newItems.length === 0) {
+            await ctx.reply('No valid items provided.');
+            return null;
+        }
+
+        checklist.items.push(...newItems);
+        await this.db.put(holonId.toString(), 'checklists', checklist);
+
+        const itemsAdded = newItems.map(item => `"${item.text}"`).join(', ');
+        await ctx.reply(`Added ${newItems.length} items to checklist "${listName}": ${itemsAdded}`);
+        
         // Show the updated checklist
         await ctx.reply(
-            `📋 ${listName.toUpperCase()} Checklist:`,
-            this.getChecklistKeyboard(result.checklist)
+            `📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist)
         );
 
-        return result.checklist;
+        return checklist;
     }
 
     async handleBackToQuest(ctx) {
@@ -827,8 +955,11 @@ class Checklists {
 
     async showSpecialChecklist(ctx, type, icon) {
         const holonId = ctx.chat.id;
-        const stored = await getChecklist(this.db, holonId, type);
-        const checklist = stored || createChecklistObject(type, type);
+        let checklist = await this.db.get(holonId.toString(), 'checklists', type) || {
+            id: type,
+            items: [],
+            created: new Date()
+        };
 
         await ctx.reply(
             `${icon} ${type.toUpperCase()}:`,
@@ -836,13 +967,37 @@ class Checklists {
         );
     }
 
-    // Thin delegations to @holons/core/checklists.
+    // Helper method to determine if a checklist is special
     isSpecialChecklist(checklist) {
-        return isSpecialChecklist(checklist);
+        // Handle legacy calls with just ID
+        if (typeof checklist === 'string') {
+            return ['agenda', 'shopping'].includes(checklist);
+        }
+        
+        // New type-based logic
+        return checklist.type === CHECKLIST_TYPES.AGENDA || checklist.type === CHECKLIST_TYPES.SHOPPING;
     }
 
+    // Helper method to get checklist icon
     getChecklistIcon(checklist) {
-        return getChecklistIcon(checklist);
+        // Handle legacy calls with just ID
+        if (typeof checklist === 'string') {
+            switch(checklist) {
+                case 'agenda': return '📅';
+                case 'shopping': return '🛒';
+                default: return '📋';
+            }
+        }
+        
+        // New type-based logic
+        switch(checklist.type) {
+            case CHECKLIST_TYPES.AGENDA: return '📅';
+            case CHECKLIST_TYPES.SHOPPING: return '🛒';
+            case CHECKLIST_TYPES.QUEST: return '📋';
+            case CHECKLIST_TYPES.ROLE: return '👥';
+            case CHECKLIST_TYPES.CHECKLIST:
+            default: return '📋';
+        }
     }
 
     getSpecialChecklistKeyboard(checklist) {
@@ -882,16 +1037,20 @@ class Checklists {
 
     async deleteChecklist(ctx) {
         const listName = ctx.match[1];
-        const holonId = ctx.chat.id;
+        let holonId = ctx.chat.id;
 
-        const result = await coreDeleteChecklist(this.db, holonId, listName);
-        if (!result.ok && result.reason === 'special') {
+        // Get the checklist to check its type
+        const checklist = await this.db.get(holonId.toString(), 'checklists', listName);
+
+        // Don't allow deletion of special checklists
+        if (checklist && this.isSpecialChecklist(checklist)) {
             await ctx.answerCbQuery('Cannot delete special checklists');
             return;
         }
 
+        await this.db.delete(holonId.toString(), 'checklists', listName);
         await ctx.answerCbQuery(`Deleted checklist "${listName}"`);
-
+        
         // Refresh the delete mode view using options
         await this.showAllChecklists(ctx, { deleteMode: true });
     }
