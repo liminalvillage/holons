@@ -476,7 +476,8 @@
                                 id: messageID,
                                 chatID: holonId,
                                 amount: hoursAsNumber, // Total hours logged
-                                unit: 'hour',
+                                // 'hour' is just another currency in the ledger.
+                                currency: 'hour',
                                 description: quest.title,
                                 paidBy: userID,
                                 splitWith: [holonId], // Split with the current holon (chatID)

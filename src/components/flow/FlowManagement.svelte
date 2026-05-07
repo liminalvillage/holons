@@ -368,10 +368,15 @@
     }
   }
 
-  // Use shared scoring service (same calculation as Holonsbot)
+  // Use shared scoring service (same calculation as Holonsbot).
+  // Hours used to be a top-level equation weight; it now lives under
+  // equation.currencies.hour. Until Flow ingests the expense ledger we
+  // approximate the hour balance from user.hours so the score keeps the
+  // same shape as before.
   function calculateUserScore(user: HolosphereUser): number {
     const aggregates = toAggregates(user);
-    return calculateScore(aggregates, equation);
+    const currencyBalances = { hour: user.hours || 0 };
+    return calculateScore(aggregates, equation, currencyBalances);
   }
 
   function calculateInteriorMembers() {
@@ -386,6 +391,7 @@
         completed: user.completed?.length || 0,
         sent: user.sent || 0,
         received: user.received || 0,
+        // Mirrors equation.currencies.hour weighting; kept here for the UI tooltip.
         hours: user.hours || 0,
         collaboration: user.collaboration || 0,
         wants: user.wants?.length || 0,

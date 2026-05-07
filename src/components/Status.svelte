@@ -7,7 +7,8 @@
     import { ethers } from 'ethers';
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
-    import { calculateCurrencyBalance } from "../utils/expenseCalculations";
+    import { calculateCurrencyBalance, expenseCurrency } from "../utils/expenseCalculations";
+    import { migrateEquation, type ScoreEquation } from "$lib/scoring/ContributionScoring";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
@@ -26,17 +27,7 @@
         offers: string[];
     }
 
-    interface Equation {
-        initiated: number;
-        completed: number;
-        sent: number;
-        received: number;
-        hours: number;
-        collaboration: number;
-        wants: number;
-        offers: number;
-        currencies: Record<string, number>;
-    }
+    type Equation = ScoreEquation;
 
     interface Expense {
         id: string;
@@ -67,21 +58,23 @@
     let contractSharesLoaded = false;
 
     // Initialize equation with default values
-    let equation: Equation = {
+    let equation: Equation = migrateEquation({
         initiated: 1,
         completed: 1,
         sent: 1,
         received: 1,
-        hours: 1,
         collaboration: 1,
         wants: 1,
         offers: 1,
-        currencies: {}
-    };
+        currencies: { hour: 1 }
+    });
 
     // Add state for editing
     let isEditingEquation = false;
-    let editingEquation: Equation = { ...equation };
+    let editingEquation: Equation = { ...equation, currencies: { ...equation.currencies } };
+
+    // Score breakdown popover state
+    let breakdownUserId: string | null = null;
 
     // Add currency state
     let showAddCurrencyModal = false;
@@ -101,14 +94,16 @@
         try {
             const settings = await holosphere.getAll(holonID, 'settings');
             const currentSettings = settings && settings[0] ? settings[0] : {};
-            
+
+            // Always save the migrated shape (no top-level `hours` field).
+            const cleanEquation = migrateEquation(editingEquation);
             const updatedSettings = {
                 ...currentSettings,
-                valueEquation: editingEquation
+                valueEquation: cleanEquation
             };
-            
+
             await holosphere.put(holonID, 'settings', updatedSettings);
-            equation = { ...editingEquation };
+            equation = cleanEquation;
             isEditingEquation = false;
             console.log('Value equation updated successfully');
         } catch (error) {
@@ -118,13 +113,14 @@
 
     // Function to cancel editing
     function cancelEditing() {
-        editingEquation = { ...equation };
+        editingEquation = { ...equation, currencies: { ...equation.currencies } };
         isEditingEquation = false;
     }
 
     // Function to adjust value with arrows
     function adjustValue(metric: keyof Equation, delta: number) {
-        const newValue = Math.max(0, (editingEquation[metric] || 0) + delta);
+        const current = (editingEquation as any)[metric] || 0;
+        const newValue = Math.max(0, current + delta);
         editingEquation = { ...editingEquation, [metric]: newValue };
     }
 
@@ -132,7 +128,10 @@
     function adjustCurrencyWeight(currency: string, delta: number) {
         const currentWeight = editingEquation.currencies[currency] || 0;
         const newWeight = Math.max(0, currentWeight + delta);
-        editingEquation.currencies = { ...editingEquation.currencies, [currency]: newWeight };
+        editingEquation = {
+            ...editingEquation,
+            currencies: { ...editingEquation.currencies, [currency]: newWeight }
+        };
     }
 
     // Function to add a new currency
@@ -170,12 +169,14 @@
             // Update local state with unique currencies
             availableCurrencies = [...new Set([...availableCurrencies, ...currenciesToAdd])];
 
-            // Initialize weights for new currencies
+            // Initialize weights for new currencies (immutable update so the
+            // equation editor re-renders the new currency cards).
+            const newWeights = { ...equation.currencies };
             currenciesToAdd.forEach(currency => {
-                if (!equation.currencies[currency]) {
-                    equation.currencies[currency] = 0;
-                }
+                if (!(currency in newWeights)) newWeights[currency] = 0;
             });
+            equation = { ...equation, currencies: newWeights };
+            editingEquation = { ...editingEquation, currencies: { ...newWeights } };
 
             newCurrencyInput = '';
             showAddCurrencyModal = false;
@@ -298,18 +299,24 @@
     async function loadEquation() {
         try {
             const settings = await holosphere.getAll(holonID, 'settings');
-
-            if (settings && settings[0]?.valueEquation && typeof settings[0].valueEquation === 'object') {
-                equation = {
-                    ...equation, // Keep defaults as fallback
-                    ...settings[0].valueEquation  // Override with stored values
-                };
+            const stored = settings && settings[0]?.valueEquation;
+            if (stored && typeof stored === 'object') {
+                equation = migrateEquation(stored);
+                // If the stored shape was the legacy one with a top-level
+                // `hours` field, persist the migrated form so we don't keep
+                // re-running this on every load. Best-effort; ignore failures.
+                if (typeof (stored as any).hours === 'number') {
+                    holosphere.put(holonID, 'settings', {
+                        ...(settings[0] || {}),
+                        valueEquation: equation
+                    }).catch((e: any) => console.warn('[Status] Could not persist migrated equation:', e?.message));
+                }
+            } else {
+                equation = migrateEquation(undefined);
             }
-            // Always mark as loaded (using defaults if no settings found)
             valueEquationLoaded = true;
         } catch (error) {
             console.error('Error loading equation settings:', error);
-            // Mark as loaded even on error to avoid blocking UI
             valueEquationLoaded = true;
         }
     }
@@ -347,43 +354,86 @@
         }
     }
 
+    // Settings.currencies is the single source of truth for the currency
+    // list. We do NOT derive currencies from expenses anymore — instead we
+    // auto-merge any orphan currencies found in expenses into settings on
+    // first observation (best-effort; silent if write is denied).
+    let settingsAutoMerged = false;
+    let currentSettingsSnapshot: any = null;
+
     async function subscribeToSettings() {
         if (!holosphere || !holonID) return;
 
         try {
-            // Reset and use only subscription like Expenses.svelte does
             availableCurrencies = [];
-            
-            // Set up subscription - no getAll() needed
-            holosphere.subscribe(holonID, "settings", (settingsData: any, key?: string) => {
-                let newCurrencies: string[] = [];
-                if (settingsData && Array.isArray(settingsData.currencies)) {
-                    newCurrencies = settingsData.currencies.filter((c: unknown) => typeof c === 'string');
-                } else {
-                    // Fallback: derive currencies from existing expenses if available
-                    if (Object.keys(expenseStore).length > 0) {
-                        newCurrencies = [...new Set(Object.values(expenseStore)
-                            .map(e => e?.currency)
-                            .filter(c => c && typeof c === 'string' && c !== ''))] as string[];
-                    } else {
-                        newCurrencies = [];
-                    }
-                }
-                
-                // Only update if currencies actually changed
-                const currenciesChanged = JSON.stringify(newCurrencies.sort()) !== JSON.stringify(availableCurrencies.sort());
-                if (currenciesChanged) {
-                    availableCurrencies = [...newCurrencies]; // Force reactivity with new array
-                }
-                
+            holosphere.subscribe(holonID, "settings", (settingsData: any) => {
+                currentSettingsSnapshot = settingsData ?? {};
+                const stored: string[] = Array.isArray(settingsData?.currencies)
+                    ? settingsData.currencies.filter((c: unknown) => typeof c === 'string')
+                    : [];
+                applyCurrencyList(stored);
                 currenciesLoaded = true;
+                maybeAutoMergeOrphanCurrencies();
             });
-            
-            currenciesLoaded = true; // Mark as loaded
+            currenciesLoaded = true;
         } catch (error) {
             console.error('Error subscribing to settings:', error);
             availableCurrencies = [];
-            currenciesLoaded = true; // Mark as loaded even on error to avoid blocking
+            currenciesLoaded = true;
+        }
+    }
+
+    // Apply a settings-derived currency list, augmenting it with 'hour'
+    // whenever any time-tracking expenses exist (so the hour balance shows
+    // up in the table even before an admin adds it to settings).
+    function applyCurrencyList(stored: string[]) {
+        const set = new Set(stored.map(c => c.toLowerCase()));
+        if (hasHourExpenses()) set.add('hour');
+        const next = [...set];
+        const changed = JSON.stringify(next.sort()) !== JSON.stringify([...availableCurrencies].sort());
+        if (changed) availableCurrencies = next;
+    }
+
+    function hasHourExpenses(): boolean {
+        for (const e of Object.values(expenseStore)) {
+            if (expenseCurrency(e as any) === 'hour') return true;
+        }
+        return false;
+    }
+
+    // If expenses contain currencies that aren't in settings.currencies,
+    // merge them once (best-effort write — anyone without permission will
+    // just see the union, no harm).
+    async function maybeAutoMergeOrphanCurrencies() {
+        if (settingsAutoMerged) return;
+        if (!currenciesLoaded || !expensesLoaded) return;
+        if (!currentSettingsSnapshot) return;
+
+        const stored: string[] = Array.isArray(currentSettingsSnapshot.currencies)
+            ? currentSettingsSnapshot.currencies.filter((c: unknown) => typeof c === 'string')
+            : [];
+        const inExpenses = new Set(
+            Object.values(expenseStore)
+                .map(e => expenseCurrency(e as any))
+                .filter(c => c && c !== '')
+        );
+        const orphans = [...inExpenses].filter(c => !stored.map(s => s.toLowerCase()).includes(c));
+        if (orphans.length === 0) {
+            settingsAutoMerged = true;
+            return;
+        }
+
+        settingsAutoMerged = true;
+        try {
+            const merged = [...new Set([...stored, ...orphans])];
+            await holosphere.put(holonID, 'settings', {
+                ...currentSettingsSnapshot,
+                id: holonID,
+                currencies: merged
+            });
+            console.log('[Status] Auto-merged orphan currencies into settings:', orphans);
+        } catch (e: any) {
+            console.warn('[Status] Could not auto-merge currencies (likely no write permission):', e?.message);
         }
     }
 
@@ -391,13 +441,9 @@
         if (!holosphere || !holonID) return;
 
         try {
-            // Reset and use only subscription like Expenses.svelte does
             expenseStore = {};
-            
-            // Set up subscription - no getAll() needed
             holosphere.subscribe(holonID, "expenses", (newExpense: any, key?: string) => {
                 if (!key) return;
-                
                 if (newExpense) {
                     try {
                         const parsedExpense = typeof newExpense === 'string' ? JSON.parse(newExpense) : newExpense;
@@ -408,27 +454,21 @@
                 } else {
                     delete expenseStore[key];
                 }
-                
-                expenseStore = { ...expenseStore }; // Trigger reactivity
-                
-                // Update currencies if not loaded from settings
-                if (!currenciesLoaded || (currenciesLoaded && availableCurrencies.length === 0)) {
-                    const newCurrencies = [...new Set(Object.values(expenseStore)
-                        .map(e => e?.currency)
-                        .filter(c => c && typeof c === 'string' && c !== ''))] as string[];
-                    
-                    const currenciesChanged = JSON.stringify(newCurrencies.sort()) !== JSON.stringify(availableCurrencies.sort());
-                    if (currenciesChanged) {
-                        availableCurrencies = [...newCurrencies];
-                    }
-                }
+                expenseStore = { ...expenseStore };
+
+                // Re-apply the currency list now that hour-detection state may
+                // have changed, and try the orphan-merge again.
+                const stored = Array.isArray(currentSettingsSnapshot?.currencies)
+                    ? currentSettingsSnapshot.currencies.filter((c: unknown) => typeof c === 'string')
+                    : [];
+                applyCurrencyList(stored as string[]);
+                maybeAutoMergeOrphanCurrencies();
             });
-            
-            expensesLoaded = true; // Mark as loaded
+            expensesLoaded = true;
         } catch (error) {
             console.error('Error subscribing to expenses:', error);
             expenseStore = {};
-            expensesLoaded = true; // Mark as loaded even on error
+            expensesLoaded = true;
         }
     }
 
@@ -548,69 +588,71 @@
         subscribeToUsers();
     }
 
-    function calculateScore(user: User): number {
-        let score = 0;
+    type BreakdownLine = { label: string; count: number; weight: number; points: number };
 
-        // Only include metrics with values > 0
-        // Use safe property access with fallback to default values
-        if (equation.initiated > 0) {
-            const initiated = user.initiated || [];
-            score += (Array.isArray(initiated) ? initiated.length : 0) * equation.initiated;
+    // Per-user score breakdown — used both for the score itself and for the
+    // popover that explains "why is the score that?".
+    function getBreakdown(user: User, userKey: string): { lines: BreakdownLine[]; total: number } {
+        const userId = user.id || userKey;
+        const lines: BreakdownLine[] = [];
+        const initiatedCount = Array.isArray(user.initiated) ? user.initiated.length : 0;
+        const completedCount = Array.isArray(user.completed) ? user.completed.length : 0;
+        const wantsCount = Array.isArray(user.wants) ? user.wants.length : 0;
+        const offersCount = Array.isArray(user.offers) ? user.offers.length : 0;
+        const sentCount = user.sent || 0;
+        const receivedCount = user.received || 0;
+        const collaborationCount = user.collaboration || 0;
+
+        const flat: Array<[string, number, number]> = [
+            ['Tasks initiated', initiatedCount, equation.initiated],
+            ['Tasks completed', completedCount, equation.completed],
+            ['Appreciations sent', sentCount, equation.sent],
+            ['Appreciations received', receivedCount, equation.received],
+            ['Collaboration events', collaborationCount, equation.collaboration],
+            ['Wants', wantsCount, equation.wants],
+            ['Offers', offersCount, equation.offers],
+        ];
+        for (const [label, count, weight] of flat) {
+            if (!weight || !count) continue;
+            lines.push({ label, count, weight, points: count * weight });
         }
-        if (equation.completed > 0) {
-            const completed = user.completed || [];
-            score += (Array.isArray(completed) ? completed.length : 0) * equation.completed;
+
+        for (const currency of availableCurrencies) {
+            const weight = equation.currencies?.[currency] || 0;
+            if (!weight) continue;
+            const balance = getCurrencyBalance(userId, currency);
+            if (!balance) continue;
+            lines.push({
+                label: `${currency.toUpperCase()} balance`,
+                count: balance,
+                weight,
+                points: balance * weight
+            });
         }
-        if (equation.sent > 0) {
-            score += (user.sent || 0) * equation.sent;
-        }
-        if (equation.received > 0) {
-            score += (user.received || 0) * equation.received;
-        }
-        if (equation.hours > 0) {
-            score += (user.hours || 0) * equation.hours;
-        }
-        if (equation.collaboration > 0) {
-            score += (user.collaboration || 0) * equation.collaboration;
-        }
-        if (equation.wants > 0) {
-            const wants = user.wants || [];
-            score += (Array.isArray(wants) ? wants.length : 0) * equation.wants;
-        }
-        if (equation.offers > 0) {
-            const offers = user.offers || [];
-            score += (Array.isArray(offers) ? offers.length : 0) * equation.offers;
-        }
-        
-        // Add currency balances if their weights are > 0
-        if (equation.currencies && availableCurrencies) {
-            for (const currency of availableCurrencies) {
-                const currencyWeight = equation.currencies[currency] || 0;
-                if (currencyWeight > 0) {
-                    const balance = getCurrencyBalance(user.id || Object.keys(store).find(key => store[key] === user) || '', currency);
-                    score += balance * currencyWeight;
-                }
-            }
-        }
-        
-        return score;
+
+        const total = lines.reduce((s, l) => s + l.points, 0);
+        return { lines, total };
+    }
+
+    function calculateScore(user: User, userKey: string): number {
+        return getBreakdown(user, userKey).total;
     }
 
     // Force recomputation when equation changes
     $: equationChanged = JSON.stringify(equation);
     
-    $: sortedUsers = Object.entries(store).sort(([, a], [, b]) => {
+    $: sortedUsers = Object.entries(store).sort(([keyA, a], [keyB, b]) => {
         // Force dependency on equation changes
         equationChanged;
-        return calculateScore(b) - calculateScore(a);
+        return calculateScore(b, keyB) - calculateScore(a, keyA);
     });
 
-    $: maxScore = sortedUsers.length > 0 ? calculateScore(sortedUsers[0][1]) : 0;
-    $: totalScore = sortedUsers.reduce((sum, [, user]) => sum + calculateScore(user), 0);
+    $: maxScore = sortedUsers.length > 0 ? calculateScore(sortedUsers[0][1], sortedUsers[0][0]) : 0;
+    $: totalScore = sortedUsers.reduce((sum, [key, user]) => sum + calculateScore(user, key), 0);
 
     // Prepare data for the 3D pie chart
     $: pieChartData = sortedUsers.map(([userId, user]) => {
-        const score = calculateScore(user);
+        const score = calculateScore(user, userId);
         const percentage = totalScore > 0 ? (score / totalScore) * 100 : 0;
 
         // Build the breakdown object
@@ -619,7 +661,6 @@
             completed: (user.completed && Array.isArray(user.completed)) ? user.completed.length : 0,
             sent: user.sent || 0,
             received: user.received || 0,
-            hours: user.hours || 0,
             collaboration: user.collaboration || 0,
             wants: (user.wants && Array.isArray(user.wants)) ? user.wants.length : 0,
             offers: (user.offers && Array.isArray(user.offers)) ? user.offers.length : 0,
@@ -733,7 +774,7 @@
                     </div>
                     <div class="stats-bar__divider"></div>
                     <div class="stats-bar__item stats-bar__item--success">
-                        <span class="stats-bar__value">{sortedUsers.filter(([, user]) => calculateScore(user) > 0).length}</span>
+                        <span class="stats-bar__value">{sortedUsers.filter(([key, user]) => calculateScore(user, key) > 0).length}</span>
                         <span class="stats-bar__label">Active</span>
                     </div>
                     <div class="stats-bar__divider"></div>
@@ -776,7 +817,7 @@
                             </thead>
                             <tbody>
                                 {#each sortedUsers as [userId, user], index}
-                                    {@const score = calculateScore(user)}
+                                    {@const score = calculateScore(user, userId)}
                                     {@const percentage = calculatePercentage(score)}
                                     <tr class="border-b border-gray-600/50 hover:bg-gray-600/20 transition-all duration-200">
                                         <td class="p-2 text-center">
@@ -847,7 +888,12 @@
                                             </td>
                                         {/each}
                                         <td class="p-2 text-center">
-                                            <span class="font-bold text-sm text-white">{score.toFixed(1)}</span>
+                                            <button
+                                                type="button"
+                                                class="font-bold text-sm text-white hover:text-blue-400 transition-colors underline-offset-2 hover:underline"
+                                                title="Show score breakdown"
+                                                onclick={(e) => { e.stopPropagation(); breakdownUserId = breakdownUserId === userId ? null : userId; }}
+                                            >{score.toFixed(1)}</button>
                                         </td>
                                         <td class="p-2">
                                             <div class="flex items-center gap-2">
@@ -876,6 +922,34 @@
                                     </tr>
                                 {/each}
                             </tbody>
+                            {#if sortedUsers.length > 0 && availableCurrencies.length > 0}
+                                {@const totals = availableCurrencies.map(c => ({
+                                    currency: c,
+                                    total: sortedUsers.reduce((sum, [k, u]) => sum + getCurrencyBalance(u.id || k, c), 0)
+                                }))}
+                                <tfoot>
+                                    <tr class="bg-gray-600/40 border-t-2 border-gray-500">
+                                        <td class="p-2"></td>
+                                        <td class="p-2 text-right text-xs font-semibold text-gray-300">
+                                            Currency totals
+                                        </td>
+                                        <td class="p-2"></td>
+                                        <td class="p-2"></td>
+                                        <td class="p-2"></td>
+                                        <td class="p-2"></td>
+                                        {#each totals as { currency, total }}
+                                            <td class="p-2 text-center">
+                                                <span class="text-xs font-semibold {Math.abs(total) < 0.005 ? 'text-gray-400' : 'text-amber-300'}" title={Math.abs(total) < 0.005 ? 'Ledger is balanced' : 'Sum of balances should be 0 for an internally consistent ledger'}>
+                                                    {formatCurrencyAmount(total, currency)}
+                                                </span>
+                                            </td>
+                                        {/each}
+                                        <td class="p-2"></td>
+                                        <td class="p-2"></td>
+                                        <td class="p-2"></td>
+                                    </tr>
+                                </tfoot>
+                            {/if}
                         </table>
                     </div>
                 </div>
@@ -1183,49 +1257,6 @@
                     <div class="mt-6">
                         <h4 class="text-sm font-medium text-gray-400 mb-3">Additional Metrics</h4>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <!-- Hours -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.hours > 0 ? '' : 'opacity-50'}">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.hours > 0 ? 'text-gray-300' : 'text-gray-400'}">Hours</span>
-                                    <span class="text-xs {equation.hours > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
-                                </div>
-                                {#if isEditingEquation}
-                                    <div class="flex items-center gap-2">
-                                        <button 
-                                            onclick={() => adjustValue('hours', -1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Decrease hours weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
-                                            </svg>
-                                        </button>
-                                        <input 
-                                            type="number" 
-                                            bind:value={editingEquation.hours}
-                                            min="0"
-                                            step="0.1"
-                                            class="w-16 text-center bg-gray-700 text-yellow-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-yellow-400 focus:outline-none"
-                                        />
-                                        <button 
-                                            onclick={() => adjustValue('hours', 1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Increase hours weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                {:else}
-                                    <div class="text-2xl font-bold {equation.hours > 0 ? 'text-yellow-400' : 'text-gray-500'}">{equation.hours}</div>
-                                {/if}
-                                <div class="text-xs {equation.hours > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per hour</div>
-                                {#if equation.hours === 0}
-                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
-                                {/if}
-                            </div>
-
                             <!-- Collaboration -->
                             <div class="bg-gray-600/50 rounded-xl p-4 {equation.collaboration > 0 ? '' : 'opacity-50'}">
                                 <div class="flex items-center justify-between mb-2">
@@ -1452,6 +1483,73 @@
         userData={store[selectedUserId]}
         on:close={closeUserModal}
     />
+{/if}
+
+<!-- Score breakdown popover — explains exactly how a user's score is built. -->
+{#if breakdownUserId && store[breakdownUserId]}
+    {@const u = store[breakdownUserId]}
+    {@const bd = getBreakdown(u, breakdownUserId)}
+    <div
+        class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        onclick={(e) => { if (e.target === e.currentTarget) breakdownUserId = null; }}
+        onkeydown={(e) => e.key === 'Escape' && (breakdownUserId = null)}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+    >
+        <div
+            class="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="dialog"
+            tabindex="-1"
+        >
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white">
+                    Score breakdown — {resolvedName(u.id || breakdownUserId, $nameMap, u)}
+                </h3>
+                <button
+                    type="button"
+                    onclick={() => breakdownUserId = null}
+                    class="text-gray-400 hover:text-white p-2"
+                    aria-label="Close"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            {#if bd.lines.length === 0}
+                <p class="text-gray-400 text-sm">No scoring contributions yet. Either the user has no aggregates, or every applicable weight is set to 0 in the value equation.</p>
+            {:else}
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-gray-400 text-xs">
+                            <th class="text-left py-1 font-medium">Component</th>
+                            <th class="text-right py-1 font-medium">Count</th>
+                            <th class="text-right py-1 font-medium">×&nbsp;Weight</th>
+                            <th class="text-right py-1 font-medium">=&nbsp;Points</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each bd.lines as line}
+                            <tr class="border-t border-gray-700">
+                                <td class="py-1.5 text-gray-200">{line.label}</td>
+                                <td class="py-1.5 text-right text-gray-300">{line.count.toFixed(2).replace(/\.00$/, '')}</td>
+                                <td class="py-1.5 text-right text-gray-300">×&nbsp;{line.weight}</td>
+                                <td class="py-1.5 text-right font-mono text-emerald-300">{line.points.toFixed(2)}</td>
+                            </tr>
+                        {/each}
+                        <tr class="border-t-2 border-gray-500">
+                            <td class="py-2 font-semibold text-white" colspan="3">Total</td>
+                            <td class="py-2 text-right font-bold text-white">{bd.total.toFixed(2)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="text-xs text-gray-500 mt-3">Editing the value equation below the table updates this breakdown immediately.</p>
+            {/if}
+        </div>
+    </div>
 {/if}
 
 <style>

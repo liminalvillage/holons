@@ -1,7 +1,9 @@
 interface Expense {
     id: string;
     amount: number;
-    currency: string;
+    currency?: string;
+    /** Legacy field used by time-tracking ("hour"). Treated as currency when set. */
+    unit?: string;
     description: string;
     paidBy: string;
     splitWith: string[];
@@ -13,6 +15,19 @@ interface User {
     first_name: string;
 }
 
+export function normalizeCurrency(c: string): string {
+    return (c || '').toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+}
+
+/**
+ * Returns the canonical currency code for an expense, preferring the
+ * `currency` field and falling back to the legacy `unit` field used by
+ * time-tracking entries (currency: 'hour').
+ */
+export function expenseCurrency(e: Expense): string {
+    return normalizeCurrency((e?.currency || e?.unit || '') as string);
+}
+
 export function calculateCurrencyBalance(
     userId: string | number,
     currency: string,
@@ -21,40 +36,33 @@ export function calculateCurrencyBalance(
 ): number {
     if (!currency || !userId || users.length === 0) return 0;
 
-    // Normalize currency exactly like Expenses.svelte does
-    const normalizedCurrency = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+    const normalizedCurrency = normalizeCurrency(currency);
 
-    // Find the user index - use string comparison for consistency
     const userIndex = users.findIndex(user => String(user.id) === String(userId));
     if (userIndex === -1) return 0;
 
-    // Create credit matrix using the exact same logic as Expenses.svelte
     const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
 
     Object.values(expenses).forEach(expense => {
-        // Add null check for expense.currency before calling toLowerCase()
-        if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
-            const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
-            const amountPerPerson = expense.amount / (splitWithList.length || 1);
-            const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
+        if (!expense) return;
+        if (expenseCurrency(expense) !== normalizedCurrency) return;
+        const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+        const amountPerPerson = expense.amount / (splitWithList.length || 1);
+        const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
 
-            if (payerIndex === -1) return; // Skip if payer not found
+        if (payerIndex === -1) return;
 
-            splitWithList.forEach(memberId => {
-                const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
-                if (memberIndex === -1) return; // Skip if member not found
+        splitWithList.forEach(memberId => {
+            const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
+            if (memberIndex === -1) return;
 
-                if (payerIndex !== memberIndex) {
-                    // Different people: payer is owed, member owes
-                    creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                    creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-                }
-                // If payerIndex === memberIndex, they paid for themselves, so no credit/debt
-            });
-        }
+            if (payerIndex !== memberIndex) {
+                creditMatrix[payerIndex][memberIndex] += amountPerPerson;
+                creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
+            }
+        });
     });
 
-    // Calculate balance by summing the user's row in the credit matrix
     return creditMatrix[userIndex].reduce((sum, val) => sum + val, 0);
 }
 
@@ -65,28 +73,28 @@ export function calculateCreditMatrix(
 ): number[][] {
     if (!currency || users.length === 0) return [];
 
-    const normalizedCurrency = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+    const normalizedCurrency = normalizeCurrency(currency);
     const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
 
     Object.values(expenses).forEach(expense => {
-        if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
-            const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
-            const amountPerPerson = expense.amount / (splitWithList.length || 1);
-            const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
+        if (!expense) return;
+        if (expenseCurrency(expense) !== normalizedCurrency) return;
+        const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+        const amountPerPerson = expense.amount / (splitWithList.length || 1);
+        const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
 
-            if (payerIndex === -1) return;
+        if (payerIndex === -1) return;
 
-            splitWithList.forEach(memberId => {
-                const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
-                if (memberIndex === -1) return;
+        splitWithList.forEach(memberId => {
+            const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
+            if (memberIndex === -1) return;
 
-                if (payerIndex !== memberIndex) {
-                    creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                    creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-                }
-            });
-        }
+            if (payerIndex !== memberIndex) {
+                creditMatrix[payerIndex][memberIndex] += amountPerPerson;
+                creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
+            }
+        });
     });
 
     return creditMatrix;
-} 
+}

@@ -3,7 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
-	import { calculateCreditMatrix } from "../utils/expenseCalculations";
+	import { calculateCreditMatrix, expenseCurrency } from "../utils/expenseCalculations";
 	import { resolveImage } from "../utils/imageServer";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
@@ -135,13 +135,14 @@
 				}
 			}
 
-			// Process settings for currencies
-			if (settingsData.status === 'fulfilled' && settingsData.value?.currencies) {
-				availableCurrencies = settingsData.value.currencies.filter((c: unknown) => typeof c === 'string');
-			} else {
-				// Derive from expenses
-				deriveCurrenciesFromExpenses();
-			}
+			// settings.currencies is the source of truth. Auto-merge any orphan
+			// currencies found in expenses (legacy data, foreign holons, etc.)
+			// into settings on first observation, best-effort.
+			const stored: string[] = settingsData.status === 'fulfilled' && Array.isArray(settingsData.value?.currencies)
+				? settingsData.value.currencies.filter((c: unknown) => typeof c === 'string')
+				: [];
+			availableCurrencies = [...stored];
+			await maybeAutoMergeOrphanCurrencies(settingsData.status === 'fulfilled' ? (settingsData.value || {}) : {});
 
 			// Set up subscriptions for real-time updates (don't await)
 			setupSubscriptions();
@@ -166,7 +167,6 @@
 				delete expenses[key];
 			}
 			expenses = { ...expenses };
-			deriveCurrenciesFromExpenses();
 		});
 
 		// Users subscription
@@ -188,14 +188,30 @@
 		});
 	}
 
-	function deriveCurrenciesFromExpenses() {
-		const derived = [...new Set(
+	async function maybeAutoMergeOrphanCurrencies(currentSettings: any) {
+		const stored: string[] = Array.isArray(currentSettings?.currencies)
+			? currentSettings.currencies.filter((c: unknown) => typeof c === 'string')
+			: [];
+		const inExpenses = new Set(
 			Object.values(expenses)
-				.map(e => e?.currency)
-				.filter((c): c is string => typeof c === 'string' && c !== '')
-		)];
-		if (derived.length > 0 && availableCurrencies.length === 0) {
-			availableCurrencies = derived;
+				.map(e => expenseCurrency(e as any))
+				.filter(c => c && c !== '')
+		);
+		const orphans = [...inExpenses].filter(c => !stored.map(s => s.toLowerCase()).includes(c));
+		if (orphans.length === 0) return;
+		const merged = [...new Set([...stored, ...orphans])];
+		try {
+			await holosphere.put(holonID, 'settings', {
+				...(currentSettings || {}),
+				id: holonID,
+				currencies: merged
+			});
+			availableCurrencies = merged;
+		} catch (e: any) {
+			// No write permission — fall back to displaying the union locally
+			// so this user can still operate, but settings stays as-is.
+			availableCurrencies = merged;
+			console.warn('[Expenses] Could not auto-merge currencies into settings (likely no write permission):', e?.message);
 		}
 	}
 

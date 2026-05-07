@@ -28,7 +28,6 @@
         completed: any[];
         collaboration: any[];
         hours: number;
-        money: number;
         voice: number;
     }
 
@@ -218,18 +217,15 @@
                             </div>
                         {/if}
 
-                        <!-- Financial Overview -->
+                        <!-- Voice / governance signals -->
                         <div class="bg-gray-700 rounded-xl p-6">
-                            <h3 class="text-xl font-semibold text-white mb-4">Financial</h3>
+                            <h3 class="text-xl font-semibold text-white mb-4">Voice</h3>
                             <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-300">Money</span>
-                                    <span class="text-green-400 font-semibold">${user.money || 0}</span>
-                                </div>
                                 <div class="flex justify-between items-center">
                                     <span class="text-gray-300">Voice Credits</span>
                                     <span class="text-blue-400 font-semibold">{user.voice || 0}</span>
                                 </div>
+                                <p class="text-xs text-gray-500">Currency balances live in the Status table — see the score breakdown there.</p>
                             </div>
                         </div>
                     </div>
