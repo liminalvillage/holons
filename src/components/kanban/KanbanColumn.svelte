@@ -56,18 +56,26 @@
   let showMenu = $state(false);
   let isEditing = $state(false);
   let editName = $state(column.name);
+  // Don't let an external `cards` update (holosphere subscription echo,
+  // showCompleted toggle, sibling reorder, etc.) reset our local items
+  // while svelte-dnd-action is still mutating them — the drag will snap
+  // back or duplicate the moving card.
+  let isDragging = $state(false);
 
   const flipDurationMs = 200;
 
   $effect(() => {
+    if (isDragging) return;
     items = cards.map(c => ({ ...c }));
   });
 
   function handleDndConsider(e: CustomEvent) {
+    isDragging = true;
     items = e.detail.items;
   }
 
   function handleDndFinalize(e: CustomEvent) {
+    isDragging = false;
     items = e.detail.items;
     onCardsReorder(column.id, items);
   }
@@ -113,7 +121,7 @@
     <div class="column-actions">
       <button
         class="menu-btn"
-        onclick={() => showMenu = !showMenu}
+        onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }}
         aria-label="Column menu"
       >
         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

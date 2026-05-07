@@ -87,7 +87,7 @@
     // Sort cards within each column by orderIndex
     Object.keys(groups).forEach(colId => {
       groups[colId].sort((a, b) =>
-        (a.quest.kanbanOrderIndex ?? 999) - (b.quest.kanbanOrderIndex ?? 999)
+        (a.quest.kanbanOrderIndex ?? Number.MAX_SAFE_INTEGER) - (b.quest.kanbanOrderIndex ?? Number.MAX_SAFE_INTEGER)
       );
     });
 
@@ -96,8 +96,12 @@
 
   // Column items for drag reordering
   let columnItems = $state<Array<KanbanColumnType & { id: string }>>([]);
+  // Same protection as KanbanColumn — if `columns` updates mid-drag (e.g.,
+  // saveKanbanConfig echoes back), don't clobber the live drag list.
+  let isDraggingColumns = $state(false);
 
   $effect(() => {
+    if (isDraggingColumns) return;
     columnItems = columns.map(c => ({ ...c }));
   });
 
@@ -141,27 +145,37 @@
   }
 
   async function handleCardsReorder(columnId: string, cards: CardItem[]) {
-    // Update kanbanColumnId and kanbanOrderIndex for each card
+    // Only write the cards whose column or order actually changed, and
+    // run the writes in parallel — a cross-column drop fires this for
+    // both source and destination columns, so naive sequential writes
+    // multiply network round-trips fast.
+    const writes: Promise<unknown>[] = [];
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
-      const updatedQuest = {
-        ...card.quest,
-        kanbanColumnId: columnId,
-        kanbanOrderIndex: i
-      };
-      try {
-        await holosphere.put(holonID, 'quests', updatedQuest);
-      } catch (error) {
-        console.error('Error updating quest position:', error);
-      }
+      if (card.quest.kanbanColumnId === columnId && card.quest.kanbanOrderIndex === i) continue;
+      writes.push(
+        holosphere.put(holonID, 'quests', {
+          ...card.quest,
+          kanbanColumnId: columnId,
+          kanbanOrderIndex: i
+        })
+      );
+    }
+    if (writes.length === 0) return;
+    try {
+      await Promise.all(writes);
+    } catch (error) {
+      console.error('Error updating quest position:', error);
     }
   }
 
   function handleColumnDndConsider(e: CustomEvent) {
+    isDraggingColumns = true;
     columnItems = e.detail.items;
   }
 
   async function handleColumnDndFinalize(e: CustomEvent) {
+    isDraggingColumns = false;
     columnItems = e.detail.items;
     columns = columnItems.map((c, i) => ({ ...c, orderIndex: i }));
     await saveKanbanConfig();
@@ -178,20 +192,24 @@
       return;
     }
 
-    // Move cards from deleted column to default column
+    // Move cards from the deleted column to the default column, appending
+    // them to the end with fresh order indices so they don't collide with
+    // existing cards' positions.
     const defaultColumn = columns.find(c => c.isDefault && c.id !== columnId) || columns.find(c => c.id !== columnId);
     if (defaultColumn) {
       const cardsToMove = cardsByColumn[columnId] || [];
-      for (const card of cardsToMove) {
-        const updatedQuest = {
+      const startIndex = (cardsByColumn[defaultColumn.id] || []).length;
+      const writes = cardsToMove.map((card, i) =>
+        holosphere.put(holonID, 'quests', {
           ...card.quest,
-          kanbanColumnId: defaultColumn.id
-        };
-        try {
-          await holosphere.put(holonID, 'quests', updatedQuest);
-        } catch (error) {
-          console.error('Error moving quest:', error);
-        }
+          kanbanColumnId: defaultColumn.id,
+          kanbanOrderIndex: startIndex + i
+        })
+      );
+      try {
+        await Promise.all(writes);
+      } catch (error) {
+        console.error('Error moving quest:', error);
       }
     }
 
