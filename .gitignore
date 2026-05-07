@@ -1,7 +1,10 @@
 .DS_Store
 node_modules
-/build
-/.svelte-kit
+build/
+.svelte-kit/
+.netlify/
+dist/
+*.tsbuildinfo
 /package
 .env
 .env.*
@@ -14,7 +17,6 @@ yarn-error.log
 radata*
 radata/*
 holosphere.db/*
-.netlify/*
 docs/api/*
 .superpowers/
 .claude/
