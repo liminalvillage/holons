@@ -1,0 +1,324 @@
+/**
+ * @fileoverview Telegram UI for shopping lists.
+ *
+ * Domain logic (CRUD on the per-holon shopping checklist) is delegated to
+ * `@holons/core/shopping`. This module is responsible only for Telegram
+ * commands, scenes, and rendering inline keyboards.
+ *
+ * @module src/Shopping
+ */
+
+import { Markup, Telegraf } from 'telegraf';
+import * as utils from './utilities.js';
+
+// NOTE: `@holons/core/shopping` is being extracted in parallel by Phase B
+// Unit 5. Until it lands the import will fail to resolve. The structural
+// delegation below is intentional so that swap-in is a single-line change.
+// @ts-expect-error -- target import; module appears once Unit 5 lands.
+import type { ShoppingService as CoreShoppingService } from '@holons/core/shopping';
+
+// ----------------------------------------------------------------------------
+// Local types
+// ----------------------------------------------------------------------------
+
+interface DB {
+  get: (
+    holonId: string,
+    bucket: string,
+    id: string,
+  ) => Promise<unknown>;
+  put: (
+    holonId: string,
+    bucket: string,
+    value: unknown,
+  ) => Promise<unknown>;
+}
+
+interface Settings {
+  getLanguage: (holonId: string | number) => Promise<string>;
+}
+
+interface ShoppingItem {
+  id: number;
+  text: string;
+  checked: boolean;
+  createdBy?: number;
+}
+
+interface ShoppingList {
+  id: 'shopping';
+  type: 'shopping';
+  title: string;
+  items: ShoppingItem[];
+  createdAt: number;
+}
+
+/**
+ * Interface mirroring `@holons/core/shopping`. The implementation is inline
+ * in `LocalShoppingService` until Unit 5 lands the canonical core module.
+ */
+interface ShoppingServiceLike {
+  getList(holonId: string): Promise<ShoppingList | null>;
+  addItems(
+    holonId: string,
+    items: string[],
+    createdBy?: number,
+  ): Promise<ShoppingList>;
+  toggleItem(holonId: string, itemId: string | number): Promise<ShoppingList | null>;
+  removeChecked(holonId: string): Promise<{ list: ShoppingList; removed: number }>;
+}
+
+// ----------------------------------------------------------------------------
+// Local implementation of the core shopping service.
+// ----------------------------------------------------------------------------
+
+class LocalShoppingService implements ShoppingServiceLike {
+  private db: DB;
+  constructor(db: DB) {
+    this.db = db;
+  }
+
+  async getList(holonId: string): Promise<ShoppingList | null> {
+    const list = (await this.db.get(holonId, 'checklists', 'shopping')) as
+      | ShoppingList
+      | null
+      | undefined;
+    return list ?? null;
+  }
+
+  private newEmptyList(): ShoppingList {
+    return {
+      id: 'shopping',
+      type: 'shopping',
+      title: 'Shopping List',
+      items: [],
+      createdAt: Date.now(),
+    };
+  }
+
+  async addItems(holonId: string, items: string[], createdBy?: number) {
+    let list = await this.getList(holonId);
+    if (!list) list = this.newEmptyList();
+
+    const newItems: ShoppingItem[] = items.map((text) => ({
+      id: Date.now() + Math.random(),
+      text,
+      checked: false,
+      createdBy,
+    }));
+    list.items.push(...newItems);
+    await this.db.put(holonId, 'checklists', list);
+    return list;
+  }
+
+  async toggleItem(holonId: string, itemId: string | number) {
+    const list = await this.getList(holonId);
+    if (!list || !list.items) return null;
+    const item = list.items.find((i) => i.id == itemId);
+    if (!item) return null;
+    item.checked = !item.checked;
+    await this.db.put(holonId, 'checklists', list);
+    return list;
+  }
+
+  async removeChecked(holonId: string) {
+    const list = (await this.getList(holonId)) ?? this.newEmptyList();
+    const before = list.items.length;
+    list.items = list.items.filter((item) => !item.checked);
+    const removed = before - list.items.length;
+    await this.db.put(holonId, 'checklists', list);
+    return { list, removed };
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Telegraf adapter: ctx in, replies out.
+// ----------------------------------------------------------------------------
+
+interface AnyCtx {
+  chat?: { id: number | string };
+  match?: RegExpMatchArray;
+  from?: { id: number };
+  message?: { text: string };
+  scene?: { enter: (name: string, state?: unknown) => unknown };
+  reply: (text: string, extra?: unknown) => Promise<unknown>;
+  editMessageText: (text: string, extra?: unknown) => Promise<unknown>;
+  answerCbQuery?: () => Promise<unknown>;
+}
+
+class Shopping {
+  bot: Telegraf;
+  db: DB;
+  settings: Settings;
+  /** Domain service. Type matches the future `@holons/core/shopping` API. */
+  service: ShoppingServiceLike;
+
+  constructor(bot: Telegraf, db: DB, settings: Settings) {
+    this.bot = bot;
+    this.db = db;
+    this.settings = settings;
+    this.service = new LocalShoppingService(db);
+
+    this.bot.command(['buy', 'comprare', 'compra', 'bring'], (ctx) =>
+      this.buy(ctx as unknown as AnyCtx),
+    );
+    this.bot.command(['shopping', 'shop', 'spesa', 'lista', 'listaspesa'], (ctx) =>
+      this.shopping(ctx as unknown as AnyCtx),
+    );
+    this.bot.action(/toggle_shopping_(.+)/, (ctx) =>
+      this.toggle(ctx as unknown as AnyCtx),
+    );
+    this.bot.action('done_shopping', (ctx) =>
+      this.done(ctx as unknown as AnyCtx),
+    );
+    this.bot.action('add_shopping_item', (ctx) =>
+      this.addItem(ctx as unknown as AnyCtx),
+    );
+  }
+
+  async buy(ctx: AnyCtx) {
+    const holonId = String(ctx.chat!.id);
+    const language = await this.settings.getLanguage(holonId);
+    const items = utils.parseList(ctx.message!.text);
+
+    if (!items || items.length === 0) {
+      // No items provided, use InputScene to collect them.
+      return ctx.scene!.enter('input_scene', {
+        promptText: utils.i18next.t('shoppingprompt', { lng: language }),
+        inputType: 'array',
+        allowEmpty: false,
+        onComplete: async (cbCtx: AnyCtx, collected: string[]) => {
+          const cbHolonId = String(cbCtx.chat!.id);
+          const cbLanguage = await this.settings.getLanguage(cbHolonId);
+          await this.service.addItems(cbHolonId, collected, cbCtx.from?.id);
+          await cbCtx.reply(
+            utils.i18next.t('shoppingadded', {
+              items: collected.join(', '),
+              lng: cbLanguage,
+            }),
+          );
+        },
+      });
+    }
+
+    await this.service.addItems(holonId, items, ctx.from?.id);
+    await ctx.reply(
+      utils.i18next.t('shoppingadded', {
+        items: items.join(', '),
+        lng: language,
+      }),
+    );
+  }
+
+  async shopping(ctx: AnyCtx) {
+    const holonId = String(ctx.chat!.id);
+    const language = await this.settings.getLanguage(holonId);
+    const list = await this.service.getList(holonId);
+
+    if (!list || !list.items || list.items.length === 0) {
+      await ctx.reply(utils.i18next.t('shoppingempty', { lng: language }));
+      return;
+    }
+
+    await ctx
+      .reply(
+        utils.i18next.t('shoppinglist', { lng: language }),
+        this.getShoppingListKeyboard(list.items, language),
+      )
+      .catch((error: unknown) => {
+        console.log(error);
+      });
+  }
+
+  async toggle(ctx: AnyCtx) {
+    const holonId = String(ctx.chat!.id);
+    const language = await this.settings.getLanguage(holonId);
+    const itemId = ctx.match![1];
+
+    const updated = await this.service.toggleItem(holonId, itemId);
+    if (!updated) return;
+
+    await ctx
+      .editMessageText(
+        utils.i18next.t('shoppinglist', { lng: language }),
+        this.getShoppingListKeyboard(updated.items, language),
+      )
+      .catch((error: unknown) => {
+        console.log(error);
+      });
+  }
+
+  async done(ctx: AnyCtx) {
+    const holonId = String(ctx.chat!.id);
+    const language = await this.settings.getLanguage(holonId);
+
+    const { list } = await this.service.removeChecked(holonId);
+    await ctx
+      .editMessageText(
+        utils.i18next.t('shoppingcompleted', {
+          remaining: list.items.length,
+          lng: language,
+        }),
+      )
+      .catch((error: unknown) => {
+        console.log(error);
+      });
+  }
+
+  async addItem(ctx: AnyCtx) {
+    await ctx.answerCbQuery?.().catch(() => {});
+    const holonId = String(ctx.chat!.id);
+    const language = await this.settings.getLanguage(holonId);
+
+    return ctx.scene!.enter('input_scene', {
+      promptText: utils.i18next.t('shoppingprompt', { lng: language }),
+      inputType: 'array',
+      allowEmpty: false,
+      onComplete: async (cbCtx: AnyCtx, collected: string[]) => {
+        const cbHolonId = String(cbCtx.chat!.id);
+        const cbLanguage = await this.settings.getLanguage(cbHolonId);
+        const updated = await this.service.addItems(
+          cbHolonId,
+          collected,
+          cbCtx.from?.id,
+        );
+        await cbCtx.reply(
+          utils.i18next.t('shoppingadded', {
+            items: collected.join(', '),
+            lng: cbLanguage,
+          }),
+        );
+        await cbCtx.reply(
+          utils.i18next.t('shoppinglist', { lng: cbLanguage }),
+          this.getShoppingListKeyboard(updated.items, cbLanguage),
+        );
+      },
+    });
+  }
+
+  getShoppingListKeyboard(items: ShoppingItem[], language: string): any {
+    const mu: any[][] = [];
+    items.forEach((item) => {
+      mu.push([
+        Markup.button.callback(
+          (item.checked ? '✅ ' : '☑️ ') + item.text,
+          `toggle_shopping_${item.id}`,
+        ),
+      ]);
+    });
+    mu.push([
+      Markup.button.callback(
+        utils.i18next.t('shoppingadd', { lng: language }),
+        'add_shopping_item',
+      ),
+      Markup.button.callback(
+        utils.i18next.t('shoppingclear', { lng: language }),
+        'done_shopping',
+      ),
+    ]);
+    return Markup.inlineKeyboard(mu);
+  }
+}
+
+export default Shopping;
+export type { ShoppingServiceLike, CoreShoppingService };
