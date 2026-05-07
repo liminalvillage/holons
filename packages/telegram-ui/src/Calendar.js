@@ -1,6 +1,10 @@
 /**
  * @fileoverview Calendar and time selection for HolonsBot.
  * @module src/Calendar
+ *
+ * RSVP storage and iCal generation are routed through `@holons/core/calendar`
+ * so the web and bot share one calendar/RSVP/iCal layer. Telegraf-specific
+ * scheduling UI (date/time inline keyboards) stays here.
  */
 import { readFile } from 'fs/promises';
 import { createRequire } from "module";
@@ -10,6 +14,28 @@ const lang = JSON.parse(
     )
 );
 import dayjs from 'dayjs';
+import {
+    generateICalFeed,
+    toggleRSVP,
+    isAttending,
+    buildRSVPList,
+    countAttendees,
+    rsvpDisplayName,
+} from '@holons/core/calendar';
+
+/**
+ * Shared calendar helpers exposed for other bot modules (e.g. RSVP.js,
+ * Events.js). Routes RSVP toggling, participant listing, and iCal
+ * export through `@holons/core/calendar` so the bot and web stay in sync.
+ */
+export const CalendarCore = {
+    generateICalFeed,
+    toggleRSVP,
+    isAttending,
+    buildRSVPList,
+    countAttendees,
+    rsvpDisplayName,
+};
 
 /**
  * Calendar class for date and time selection in Telegram inline keyboards.
