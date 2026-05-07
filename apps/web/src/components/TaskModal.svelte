@@ -241,11 +241,6 @@
     let usersLoading = true;
     let pendingUserUpdates = new Set<string>(); // Track pending updates for optimistic UI
 
-    // Completion modal state
-    let showCompletionModal = false;
-    let completionSelectedUsers = new Set<string>(); // Track selected user IDs for completion
-    $: completionSelectedUserIds = completionSelectedUsers; // Reactive for template
-
     // Optimistic toggle for snappy UI
     async function toggleUserParticipation(userKey: string, user: User) {
         if (pendingUserUpdates.has(userKey)) return; // Prevent double-clicks
@@ -344,21 +339,15 @@
     // Reactive Set of participant IDs for Svelte template reactivity
     $: participantIds = new Set((quest.participants || []).map((p: any) => p.id));
 
-    // Open completion modal and initialize with current participants
-    function openCompletionModal() {
-        // Occurrence-only view: toggle this occurrence without touching the series status.
+    // Toggle completion. For recurring occurrences, only this occurrence is
+    // toggled; otherwise we flip the series status using the participants
+    // already on the quest (no extra participant-picker step).
+    function handleCompleteClick() {
         if (isOccurrenceView) {
             toggleOccurrenceCompleted();
             return;
         }
-        // If already completed, just toggle back to ongoing
-        if (quest.status === "completed") {
-            completeQuest();
-            return;
-        }
-        // Initialize with current participants
-        completionSelectedUsers = new Set((quest.participants || []).map((p: any) => p.id));
-        showCompletionModal = true;
+        completeQuest();
     }
 
     async function toggleOccurrenceCompleted() {
@@ -374,51 +363,15 @@
         }
     }
 
-    // Toggle user selection in completion modal
-    function toggleCompletionUser(userId: string) {
-        const newSet = new Set(completionSelectedUsers);
-        if (newSet.has(userId)) {
-            newSet.delete(userId);
-        } else {
-            newSet.add(userId);
-        }
-        completionSelectedUsers = newSet; // Trigger reactivity with new Set
-    }
-
     async function completeQuest() {
         const newStatus =
             quest.status === "completed" ? "ongoing" : "completed";
 
         if (newStatus === "completed") {
-            // Get selected participants from completion modal (or current participants if modal not used)
-            const selectedParticipantIds = showCompletionModal
-                ? Array.from(completionSelectedUsers)
-                : (quest.participants || []).map((p: any) => p.id);
-
-            // Build the participants array from selected user IDs
-            const selectedParticipants = selectedParticipantIds
-                .map(id => {
-                    // First check if already in quest.participants
-                    const existing = (quest.participants || []).find((p: any) => p.id === id);
-                    if (existing) return existing;
-                    // Otherwise find in userStore
-                    const user = Object.values(userStore).find(u => u.id === id);
-                    if (user) {
-                        return {
-                            id: user.id,
-                            firstName: user.first_name,
-                            lastName: user.last_name,
-                            username: user.username
-                        };
-                    }
-                    return null;
-                })
-                .filter(Boolean);
-
-            // Update quest participants to match selection
-            if (showCompletionModal) {
-                await updateQuest({ participants: selectedParticipants });
-            }
+            // Use the participants already on the quest — adding/removing
+            // participants happens in the participants section above.
+            const selectedParticipants = (quest.participants || []) as any[];
+            const selectedParticipantIds = selectedParticipants.map((p: any) => p.id);
 
             // Calculate scores using the same computation as Holonsbot
             const completionScores = calculateTaskCompletionScores(
@@ -543,7 +496,6 @@
             }
 
             await updateQuest({ status: newStatus, completed_at: new Date().toISOString() });
-            showCompletionModal = false;
             dispatch("taskCompleted", { questId });
             dispatch("close");
         } else {
@@ -1492,7 +1444,7 @@
                             class="px-4 py-2 {(isOccurrenceView ? isOccurrenceCompleted : quest.status === 'completed')
                                 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
                                 : 'bg-green-500/10 text-green-400 border-green-500/30'} rounded border hover:bg-opacity-20 transition-colors text-sm font-medium"
-                        on:click={openCompletionModal}
+                        on:click={handleCompleteClick}
                         type="button"
                         title={isOccurrenceView ? 'Completes only this occurrence of the recurring series' : undefined}
                     >
@@ -1509,103 +1461,3 @@
     </div>
 </div>
 
-<!-- Completion Modal -->
-{#if showCompletionModal}
-    <div
-        class="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4"
-        on:click|self={() => showCompletionModal = false}
-        on:keydown={(e) => e.key === "Escape" && (showCompletionModal = false)}
-        role="presentation"
-        transition:fade
-    >
-        <div
-            class="bg-gray-800 rounded-xl max-w-md w-full shadow-2xl border border-gray-700"
-            transition:scale={{ duration: 200, start: 0.95 }}
-            role="dialog"
-            aria-modal="true"
-            tabindex="0"
-            on:click|stopPropagation
-            on:keydown|stopPropagation
-        >
-            <!-- Header -->
-            <div class="p-4 border-b border-gray-700">
-                <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                    <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Complete Task
-                </h3>
-                <p class="text-sm text-gray-400 mt-1">Select who completed this task</p>
-            </div>
-
-            <!-- User Selection -->
-            <div class="p-4 max-h-64 overflow-y-auto">
-                {#if Object.keys(userStore).length === 0}
-                    <p class="text-gray-500 text-sm text-center py-4">No users available</p>
-                {:else}
-                    <div class="space-y-1">
-                        {#each Object.entries(userStore) as [userId, user] (user.id)}
-                            {@const isSelected = completionSelectedUserIds.has(user.id)}
-                            <button
-                                class="w-full flex items-center gap-3 p-2.5 rounded-lg text-sm transition-all touch-manipulation {isSelected ? 'bg-green-500/20 border border-green-500/40' : 'bg-gray-700 hover:bg-gray-600 border border-transparent'}"
-                                on:click={() => toggleCompletionUser(user.id)}
-                                type="button"
-                            >
-                                <div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-green-500 border-green-500' : 'border-gray-500'}">
-                                    {#if isSelected}
-                                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
-                                        </svg>
-                                    {/if}
-                                </div>
-                                <img
-                                    src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
-                                    alt={resolvedName(user.id, $nameMap, user)}
-                                    class="w-7 h-7 rounded-full"
-                                    loading="lazy"
-                                />
-                                <span class="text-gray-200 font-medium">
-                                    <DisplayName id={user.id} {user} />
-                                </span>
-                            </button>
-                        {/each}
-                    </div>
-                {/if}
-            </div>
-
-            <!-- Footer -->
-            <div class="p-4 border-t border-gray-700 flex justify-between gap-2">
-                <button
-                    class="px-3 py-2 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 border border-red-500/30 transition-colors text-sm flex items-center gap-2"
-                    on:click={() => { showCompletionModal = false; deleteQuest(); }}
-                    type="button"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                    Delete
-                </button>
-
-                <div class="flex gap-2">
-                    <button
-                        class="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors text-sm"
-                        on:click={() => showCompletionModal = false}
-                        type="button"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm font-medium flex items-center gap-2"
-                        on:click={completeQuest}
-                        type="button"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                        Complete ({completionSelectedUserIds.size})
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-{/if}
