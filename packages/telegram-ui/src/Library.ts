@@ -7,17 +7,52 @@ import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
+import { LIBRARY_TYPES as LIBRARY_TYPES_CORE, type LibraryItem } from '@holons/core/library';
 
-/**
- * Standard library item types supported by the system.
- * @constant {Object.<string, string>}
- */
-const LIBRARY_TYPES = {
-    TOOL: 'tool',
-    BOOK: 'book',
-    EQUIPMENT: 'equipment',
-    OTHER: 'other'
-};
+// Re-export LIBRARY_TYPES so existing imports `from './Library.js'` keep working
+// while also making it sourceable from `@holons/core/library`.
+const LIBRARY_TYPES = LIBRARY_TYPES_CORE;
+export { LIBRARY_TYPES };
+export type { LibraryItem };
+
+// --- Local structural types (UI-only; bot/db are duck-typed) ---
+type AnyCtx = any;
+type CommandHandler = (ctx: AnyCtx) => any | Promise<any>;
+type ActionHandler = (ctx: AnyCtx) => any | Promise<any>;
+interface BotLike {
+    command(name: string, handler: CommandHandler): unknown;
+    action(matcher: string | RegExp, handler: ActionHandler): unknown;
+}
+interface DbLike {
+    get(holonId: string, lens: string, id: string): Promise<any>;
+    getAll(holonId: string, lens: string): Promise<any[]>;
+    put(holonId: string, lens: string, value: any): Promise<unknown>;
+    delete(holonId: string, lens: string, id: string): Promise<unknown>;
+}
+
+interface PendingPhotoState {
+    waiting: boolean;
+    items: Array<string | { name: string; value?: number }>;
+    selected: Set<number>;
+}
+
+interface PendingBorrow {
+    userId: number | string;
+    username: string | undefined;
+    firstName: string;
+    lastName: string;
+    item: any;
+    itemName: string;
+    fromKeyboard: boolean;
+}
+
+interface CreateLibraryItemOptions {
+    createdBy?: number | string;
+    createdByUsername?: string;
+    category?: string;
+    description?: string;
+    value?: number;
+}
 
 /**
  * Number of items to display per page in the library.
@@ -46,7 +81,18 @@ const ITEMS_PER_PAGE = 15;
  * // Use /borrow hammer to borrow an item
  */
 class Library {
-    constructor(bot, db) {
+    bot: BotLike;
+    db: DbLike;
+    expensesInstance: any | null;
+    pendingPhotoItems: Map<number | string, PendingPhotoState>;
+    borrowLocks: Set<string>;
+    pendingBorrows: Map<string, PendingBorrow>;
+    calendar: any;
+    eventStore: any;
+    eventFactory: typeof REAEventFactory;
+    aggregator: any;
+
+    constructor(bot: BotLike, db: DbLike) {
         this.bot = bot;
         this.db = db;
         this.expensesInstance = null;
@@ -54,14 +100,17 @@ class Library {
         this.borrowLocks = new Set(); // Prevent concurrent borrows of the same item
         this.pendingBorrows = new Map(); // Store pending borrows waiting for date selection: key=holonId:itemId, value={userId, username, item, fromKeyboard}
 
-        // Initialize Calendar for date selection (date only, no time)
-        this.calendar = new Calendar(bot, {
+        // Initialize Calendar for date selection (date only, no time).
+        // `start_date` is supported by the JS implementation but not surfaced
+        // in its declared options shape — cast to `any` to keep the TS view
+        // honest without changing runtime behaviour.
+        this.calendar = new Calendar(bot as any, {
             date_format: 'YYYY-MM-DD',
             time_selector_mod: false,
             language: 'en',
             bot_api: 'telegraf',
-            start_date: new Date() // Can't select past dates
-        });
+            start_date: new Date(), // Can't select past dates
+        } as any);
 
         // Initialize REA components
         this.eventStore = new REAEventStore(db);
@@ -110,15 +159,15 @@ class Library {
     }
 
     // Set expenses instance for integration
-    setExpensesInstance(expensesInstance) {
+    setExpensesInstance(expensesInstance: any): void {
         this.expensesInstance = expensesInstance;
     }
 
     // Helper method to create a standardized library item
-    createLibraryItem(id, type, options = {}) {
+    createLibraryItem(id: string, type: string | undefined, options: CreateLibraryItemOptions = {}): LibraryItem {
         return {
             id: id,
-            type: type || LIBRARY_TYPES.OTHER,
+            type: (type as LibraryItem['type']) || LIBRARY_TYPES.OTHER,
             borrowed: false,
             createdBy: options.createdBy,
             createdByUsername: options.createdByUsername,
@@ -126,12 +175,12 @@ class Library {
             category: options.category || 'Uncategorized',
             description: options.description || '',
             value: options.value || 0,
-            created: new Date()
+            created: new Date(),
         };
     }
 
     // Helper method to get item icon based on type
-    getItemIcon(item) {
+    getItemIcon(item: string | { type?: string }): string {
         if (typeof item === 'string') {
             return '📦';
         }
@@ -145,13 +194,13 @@ class Library {
     }
 
     // Helper method to get item display title
-    getItemDisplayTitle(item) {
+    getItemDisplayTitle(item: string | { id: string }): string {
         if (typeof item === 'string') return item;
         return item.id;
     }
 
     // Helper method to get type display name
-    getTypeDisplayName(type) {
+    getTypeDisplayName(type: string | undefined): string {
         switch (type) {
             case LIBRARY_TYPES.TOOL: return 'tool';
             case LIBRARY_TYPES.BOOK: return 'book';
@@ -162,7 +211,7 @@ class Library {
     }
 
     // Helper to detect item type from name
-    detectItemType(itemName) {
+    detectItemType(itemName: string): string {
         const name = itemName.toLowerCase();
         const toolKeywords = ['hammer', 'drill', 'saw', 'screwdriver', 'wrench', 'pliers', 'shovel', 'rake', 'axe', 'knife'];
         const bookKeywords = ['book', 'manual', 'guide', 'novel', 'textbook'];
@@ -174,7 +223,7 @@ class Library {
         return LIBRARY_TYPES.OTHER;
     }
 
-    async addItem(ctx) {
+    async addItem(ctx: any) {
         let holonId = ctx.chat.id;
         const [_, item, value, ...categoryWords] = ctx.message.text.split(/\s+/);
         const category = categoryWords.join(' ') || 'Uncategorized';
@@ -201,7 +250,7 @@ class Library {
         ctx.reply(`${icon} Added ${item} to the library${itemValue > 0 ? ` (value: ${itemValue})` : ''}.`);
     }
 
-    async removeItem(ctx) {
+    async removeItem(ctx: any) {
         let holonId = ctx.chat.id;
         const item = ctx.message.text.split('/libremove ')[1];
         if (!item) {
@@ -212,7 +261,7 @@ class Library {
         ctx.reply(`Removed ${item} from the library.`);
     }
 
-    async borrowItem(ctx, fromKeyboard = false) {
+    async borrowItem(ctx: any, fromKeyboard: boolean = false) {
         let holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
         let item;
         if (fromKeyboard) {
@@ -273,7 +322,7 @@ class Library {
             await ctx.editMessageText(
                 `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
                 { reply_markup: calendarKeyboard }
-            ).catch((error) => { console.log(error) });
+            ).catch((error: unknown) => { console.log(error) });
         } else {
             await ctx.reply(
                 `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
@@ -283,7 +332,9 @@ class Library {
     }
 
     // Create calendar keyboard with library-specific callback prefixes
-    createLibraryCalendarKeyboard(date) {
+    // `_item` is accepted for call-site compatibility — the JS keyboard is
+    // global to the holon and doesn't need the item id baked into the cells.
+    createLibraryCalendarKeyboard(date: Date | number | string, _item?: string) {
         const displayDate = new Date(date);
         displayDate.setDate(1);
         displayDate.setHours(0, 0, 0, 0);
@@ -297,7 +348,8 @@ class Library {
         const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-        const keyboard = { inline_keyboard: [] };
+        type KbButton = { text: string; callback_data: string };
+        const keyboard: { inline_keyboard: KbButton[][] } = { inline_keyboard: [] };
 
         // Header row: << < Month Year > >>
         keyboard.inline_keyboard.push([
@@ -318,7 +370,7 @@ class Library {
         // Build day rows
         let dayNum = 1;
         for (let week = 0; week < 6 && dayNum <= daysInMonth; week++) {
-            const row = [];
+            const row: KbButton[] = [];
             for (let dow = 0; dow < 7; dow++) {
                 if ((week === 0 && dow < firstDayOfWeek) || dayNum > daysInMonth) {
                     row.push({ text: ' ', callback_data: ' ' });
@@ -349,7 +401,7 @@ class Library {
     }
 
     // Handle calendar navigation
-    async handleCalendarNavigation(ctx) {
+    async handleCalendarNavigation(ctx: any) {
         await ctx.answerCbQuery().catch(() => {});
 
         // Format: lb_m_YYYY-MM_action
@@ -375,16 +427,16 @@ class Library {
         }
 
         const calendarKeyboard = this.createLibraryCalendarKeyboard(date);
-        await ctx.editMessageReplyMarkup(calendarKeyboard).catch((error) => { console.log(error) });
+        await ctx.editMessageReplyMarkup(calendarKeyboard).catch((error: unknown) => { console.log(error) });
     }
 
     // Handle date selection and complete the borrow
-    async handleBorrowDateSelected(ctx, dateStr) {
+    async handleBorrowDateSelected(ctx: any, dateStr: string) {
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
         // Find the pending borrow for this user in this chat
-        let pendingKey = null;
-        let pendingBorrow = null;
+        let pendingKey: string | null = null;
+        let pendingBorrow: PendingBorrow | null = null;
         for (const [key, value] of this.pendingBorrows.entries()) {
             if (key.startsWith(`${holonId}:`) && value.userId === ctx.from.id) {
                 pendingKey = key;
@@ -393,10 +445,12 @@ class Library {
             }
         }
 
-        if (!pendingBorrow) {
+        if (!pendingBorrow || !pendingKey) {
             await ctx.answerCbQuery('No pending borrow found. Please try again.').catch(() => {});
             return;
         }
+        // Narrow for the rest of the body — the null-check above guarantees both.
+        const lockKey: string = pendingKey;
 
         const { itemName, username, firstName, lastName } = pendingBorrow;
         const returnDate = new Date(dateStr);
@@ -411,8 +465,8 @@ class Library {
             const freshItem = await this.db.get(holonId.toString(), 'library', itemName);
             if (!freshItem || freshItem.borrowed) {
                 await ctx.answerCbQuery('Item is no longer available.').catch(() => {});
-                this.pendingBorrows.delete(pendingKey);
-                this.borrowLocks.delete(pendingKey);
+                this.pendingBorrows.delete(lockKey);
+                this.borrowLocks.delete(lockKey);
                 await this.showLibrary(ctx);
                 return;
             }
@@ -482,7 +536,7 @@ class Library {
     }
 
     // Cancel pending borrow
-    async cancelPendingBorrow(ctx) {
+    async cancelPendingBorrow(ctx: any) {
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
         // Find and remove the pending borrow for this user
@@ -498,7 +552,7 @@ class Library {
         await this.showLibrary(ctx);
     }
 
-    async setItemValue(ctx) {
+    async setItemValue(ctx: any) {
         let holonId = ctx.chat.id;
         const [_, item, value] = ctx.message.text.split(/\s+/);
         if (!item || !value) {
@@ -523,7 +577,7 @@ class Library {
         ctx.reply(`${icon} Updated ${item} value to ${currentItem.value}.`);
     }
 
-    async returnItem(ctx, fromKeyboard = false) {
+    async returnItem(ctx: any, fromKeyboard: boolean = false) {
         let holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
         let item;
         if (fromKeyboard) {
@@ -613,7 +667,7 @@ class Library {
     }
 
     // Show borrowed item details
-    async showBorrowedItemDetails(ctx) {
+    async showBorrowedItemDetails(ctx: any) {
         const itemId = ctx.match[1];
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
@@ -686,7 +740,7 @@ class Library {
     }
 
     // Delete item from details view (owner only)
-    async deleteItemFromDetails(ctx) {
+    async deleteItemFromDetails(ctx: any) {
         const itemId = ctx.match[1];
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
@@ -708,7 +762,7 @@ class Library {
     }
 
     // Show library with new interface
-    async showLibrary(ctx, options = {}) {
+    async showLibrary(ctx: any, options: { removeMode?: boolean; page?: number } = {}) {
         const removeMode = options.removeMode || false;
         const page = options.page || 0;
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
@@ -735,13 +789,13 @@ class Library {
         if (ctx.callbackQuery) {
             await ctx.answerCbQuery().catch(() => {});
             await ctx.editMessageText(headerText, keyboard)
-                .catch((error) => { console.log(error) });
+                .catch((error: unknown) => { console.log(error) });
         } else {
             await ctx.reply(headerText, keyboard);
         }
     }
 
-    getLibraryKeyboard(list, removeMode = false, page = 0) {
+    getLibraryKeyboard(list: any[], removeMode: boolean = false, page: number = 0) {
         let buttons = [];
 
         // Calculate pagination
@@ -824,19 +878,19 @@ class Library {
     }
 
     // Enter remove mode
-    async enterRemoveMode(ctx) {
+    async enterRemoveMode(ctx: any) {
         await ctx.answerCbQuery().catch(() => {});
         await this.showLibrary(ctx, { removeMode: true });
     }
 
     // Exit remove mode
-    async exitRemoveMode(ctx) {
+    async exitRemoveMode(ctx: any) {
         await ctx.answerCbQuery().catch(() => {});
         await this.showLibrary(ctx, { removeMode: false });
     }
 
     // Remove item from keyboard action
-    async removeItemFromKeyboard(ctx) {
+    async removeItemFromKeyboard(ctx: any) {
         const itemId = ctx.match[1];
         const holonId = ctx.chat.id;
 
@@ -849,7 +903,7 @@ class Library {
     }
 
     // Prompt for photo upload
-    async promptPhotoUpload(ctx) {
+    async promptPhotoUpload(ctx: any) {
         await ctx.answerCbQuery().catch(() => {});
         const holonId = ctx.chat.id;
 
@@ -864,7 +918,7 @@ class Library {
     }
 
     // Handle photo upload (to be called from bot's photo handler)
-    async handlePhotoUpload(ctx) {
+    async handlePhotoUpload(ctx: any) {
         const holonId = ctx.chat.id;
         const pending = this.pendingPhotoItems.get(holonId);
 
@@ -934,7 +988,7 @@ class Library {
     }
 
     // Get keyboard for photo items selection
-    getPhotoItemsKeyboard(holonId) {
+    getPhotoItemsKeyboard(holonId: number | string) {
         const pending = this.pendingPhotoItems.get(holonId);
         if (!pending) return Markup.inlineKeyboard([]);
 
@@ -957,7 +1011,7 @@ class Library {
     }
 
     // Toggle photo item selection
-    async togglePhotoItem(ctx) {
+    async togglePhotoItem(ctx: any) {
         const index = parseInt(ctx.match[1]);
         const holonId = ctx.chat.id;
         const pending = this.pendingPhotoItems.get(holonId);
@@ -978,11 +1032,11 @@ class Library {
         await ctx.editMessageText(
             `📦 Found ${pending.items.length} items (${pending.selected.size} selected). Toggle to select which to add:`,
             this.getPhotoItemsKeyboard(holonId)
-        ).catch((error) => { console.log(error) });
+        ).catch((error: unknown) => { console.log(error) });
     }
 
     // Confirm and add photo items
-    async confirmPhotoItems(ctx) {
+    async confirmPhotoItems(ctx: any) {
         const holonId = ctx.chat.id;
         const pending = this.pendingPhotoItems.get(holonId);
 
@@ -1021,7 +1075,7 @@ class Library {
     }
 
     // Cancel photo items
-    async cancelPhotoItems(ctx) {
+    async cancelPhotoItems(ctx: any) {
         const holonId = ctx.chat.id;
         this.pendingPhotoItems.delete(holonId);
 
@@ -1030,21 +1084,21 @@ class Library {
     }
 
     // Prompt for manual add
-    async promptManualAdd(ctx) {
+    async promptManualAdd(ctx: any) {
         await ctx.answerCbQuery().catch(() => {});
 
         // Simple prompt - ask user to use command
         await ctx.reply('To add an item manually, use the command:\n\n/libadd <name> [value] [category]\n\nExample: /libadd hammer 10 tools');
     }
 
-    async getLibraryItems(ctx) {
+    async getLibraryItems(ctx: any) {
         let holonId = ctx.chat.id;
         let list = await this.db.getAll(holonId.toString(), 'library');
         list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
 
-    async searchItems(ctx) {
+    async searchItems(ctx: any) {
         const searchTerm = ctx.message.text.split('/search ')[1].toLowerCase();
         let list = await this.getLibraryItems(ctx);
         
@@ -1061,7 +1115,9 @@ class Library {
         ctx.reply('Search results:', this.getLibraryKeyboard(results));
     }
 
-    async rateItem(ctx) {
+    async rateItem(ctx: any) {
+        // Legacy JS used a free `holonId` that threw at runtime; resolve from ctx.
+        const holonId = ctx.chat?.id ?? ctx.callbackQuery?.message?.chat?.id;
         const [_, item, rating, ...reviewWords] = ctx.message.text.split(/\s+/);
         const review = reviewWords.join(' ');
         const numRating = parseInt(rating);
@@ -1089,7 +1145,8 @@ class Library {
         ctx.reply(`Thank you for rating ${item}!`);
     }
 
-    async reportIssue(ctx) {
+    async reportIssue(ctx: any) {
+        const holonId = ctx.chat?.id ?? ctx.callbackQuery?.message?.chat?.id;
         const [_, item, ...issueWords] = ctx.message.text.split(/\s+/);
         const issue = issueWords.join(' ');
 
@@ -1111,12 +1168,12 @@ class Library {
         ctx.reply(`Issue reported for ${item}. The owner will be notified.`);
     }
 
-    async showStats(ctx) {
+    async showStats(ctx: any) {
         let list = await this.getLibraryItems(ctx);
 
         // Count items by type
-        const byType = {};
-        list.forEach(item => {
+        const byType: Record<string, number> = {};
+        list.forEach((item: any) => {
             const type = item.type || LIBRARY_TYPES.OTHER;
             byType[type] = (byType[type] || 0) + 1;
         });
@@ -1138,11 +1195,10 @@ ${Object.entries(byType).map(([type, count]) => {
     }
 
     // Check if library is waiting for a photo (for external photo handler)
-    isWaitingForPhoto(holonId) {
+    isWaitingForPhoto(holonId: number | string) {
         const pending = this.pendingPhotoItems.get(holonId);
         return pending && pending.waiting;
     }
 }
 
 export default Library;
-export { LIBRARY_TYPES };

@@ -8,8 +8,28 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
+import type { ExpenseRecord, ExpenseCurrency } from '@holons/core/expenses';
+
+// Re-export from core so callers can `import type { ExpenseRecord } from './Expenses.js'`
+// or directly from `@holons/core/expenses` — same shape either way.
+export type { ExpenseRecord, ExpenseCurrency };
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
+
+// --- Local structural types (UI-only; bot/db are duck-typed) ---
+type AnyCtx = any;
+type CommandHandler = (ctx: AnyCtx) => any | Promise<any>;
+type ActionHandler = (ctx: AnyCtx) => any | Promise<any>;
+interface BotLike {
+    command(name: string | string[], handler: CommandHandler): unknown;
+    action(matcher: string | RegExp, handler: ActionHandler): unknown;
+}
+interface DbLike {
+    get(holonId: string, lens: string, id: string): Promise<any>;
+    getAll(holonId: string, lens: string): Promise<any[]>;
+    put(holonId: string, lens: string, value: any): Promise<unknown>;
+    delete(holonId: string, lens: string, id: string): Promise<unknown>;
+}
 
 /**
  * Expense tracking and splitting class for managing shared expenses within holons.
@@ -31,15 +51,18 @@ const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.ho
  * // Expense commands are now available: /expense, /spent, /ledger, etc.
  */
 export default class Expenses {
+    bot: BotLike;
+    db: DbLike;
+    ui: any;
+    settings: any;
+    eventStore: any;
+    eventFactory: typeof REAEventFactory;
+    aggregator: any;
+
     /**
      * Creates a new Expenses instance and registers expense commands.
-     * @constructor
-     * @param {Telegraf} bot - The Telegraf bot instance
-     * @param {DB} db - The database instance
-     * @param {UI} ui - The UI module instance
-     * @param {Settings} settings - The settings module instance
      */
-    constructor(bot, db, ui, settings) {
+    constructor(bot: BotLike, db: DbLike, ui: any, settings: any) {
         this.bot = bot;
         this.db = db;
         this.ui = ui;
@@ -49,11 +72,11 @@ export default class Expenses {
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);
 
-        bot.command(['expense', 'spent', 'speso'], async (ctx) => { this.spent(ctx) });
-        bot.command(['remove'], async (ctx) => { this.removeFromSplit(ctx) });
-        bot.command(['add'], async (ctx) => { this.addToSplit(ctx) });
-        bot.command(['ledger'], async (ctx) => { this.ledger(ctx) });
-        bot.action(/split:(.+)/, async (ctx) => {
+        bot.command(['expense', 'spent', 'speso'], async (ctx: any) => { this.spent(ctx) });
+        bot.command(['remove'], async (ctx: any) => { this.removeFromSplit(ctx) });
+        bot.command(['add'], async (ctx: any) => { this.addToSplit(ctx) });
+        bot.command(['ledger'], async (ctx: any) => { this.ledger(ctx) });
+        bot.action(/split:(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx) 
             const messageId = utils.getMessageId(ctx)
             const userID = utils.getUserId(ctx);
@@ -63,13 +86,13 @@ export default class Expenses {
             if (result) {
                 ctx.telegram.editMessageText(holonId, messageId, null, await this.createMessage(holonId,result), Markup.inlineKeyboard([
                     [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${result.id}` }]
-                ])).catch(err => console.log(err));
+                ])).catch((err: unknown) => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
         });
 
-        bot.action(/splitall:(.+)/, async (ctx) => {
+        bot.action(/splitall:(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx);
             const messageId = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
@@ -79,14 +102,14 @@ export default class Expenses {
                 let message = await this.createMessage(holonId,result);
                 ctx.telegram.editMessageText(holonId, messageId, null, message, Markup.inlineKeyboard([
                     [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${result.id}` }]
-                ])).catch(err => console.log(err));
+                ])).catch((err: unknown) => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
         });
 
         // New action for showing participant selection interface
-        bot.action(/select_participants:(.+)/, async (ctx) => {
+        bot.action(/select_participants:(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx);
             const messageId = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
@@ -94,7 +117,7 @@ export default class Expenses {
         });
 
         // New action for toggling individual participants
-        bot.action(/toggle_participant:(.+)_(.+)/, async (ctx) => {
+        bot.action(/toggle_participant:(.+)_(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx);
             const messageId = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
@@ -103,7 +126,7 @@ export default class Expenses {
         });
 
         // New action for going back to expense view from participant selection
-        bot.action(/back_to_expense:(.+)/, async (ctx) => {
+        bot.action(/back_to_expense:(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx);
             const messageId = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
@@ -111,14 +134,14 @@ export default class Expenses {
         });
 
         // New action for selecting all participants
-        bot.action(/select_all_participants:(.+)/, async (ctx) => {
+        bot.action(/select_all_participants:(.+)/, async (ctx: any) => {
             const holonId = utils.getholonId(ctx);
             const messageId = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
             await this.selectAllParticipants(ctx, holonId, messageId, expenseID);
         });
 
-        bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx) => {
+        bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx: any) => {
             const holonId = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1)[0];
             const language = await this.settings.getLanguage(holonId)
@@ -169,7 +192,7 @@ export default class Expenses {
                 }
             }
             
-            this.ui.getCreditTable(creditMatrix, userNames, holonId).then((path) => {
+            this.ui.getCreditTable(creditMatrix, userNames, holonId).then((path: string) => {
                 console.log(`✅ Credit table image generated: ${path}`);
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) }, {
                     caption: createPaddedCaption(''),
@@ -177,13 +200,13 @@ export default class Expenses {
                         Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
                           `${DASHBOARD_ADDRESS}/${holonId}/expenses`)
                       ])
-                }).catch(err => console.log(err));
+                }).catch((err: unknown) => console.log(err));
             });
         });
 
     }
     // show all transactions in the ledger
-    async ledger(ctx) {
+    async ledger(ctx: any) {
         const holonId = ctx.chat.id;
         const expenses = await this.db.getAll(holonId.toString(), 'expenses');
         const language = await this.settings.getLanguage(holonId)
@@ -198,15 +221,15 @@ export default class Expenses {
         //split message if too long
         if (message.length > 4096) {
             const messages = message.match(/[\s\S]{1,4096}/g) || [];
-            messages.forEach(msg => ctx.reply(msg).catch(err => console.log(err)));
+            messages.forEach(msg => ctx.reply(msg).catch((err: unknown) => console.log(err)));
         } else {
-            ctx.reply(message).catch(err => console.log(err));
+            ctx.reply(message).catch((err: unknown) => console.log(err));
         }
 
     }
 
 
-    async spent(ctx) {
+    async spent(ctx: any) {
         const holonId = ctx.chat.id;
         const messageId = ctx.message.message_id;
         const args = ctx.message.text.split(' ').slice(1);
@@ -250,7 +273,7 @@ export default class Expenses {
         }
     };
 
-    async addExpense(messageId, holonId, amount, currency, description, paidBy, splitWith, picture = null) {
+    async addExpense(messageId: number | null, holonId: number | string, amount: number, currency: string, description: string, paidBy: number | string, splitWith: Array<number | string>, picture: string | null = null) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
         if (isNaN(amount) || amount <= 0 ) { // Currency validation moved to 'spent'
             return false;
@@ -284,8 +307,8 @@ export default class Expenses {
 
         // Create REA events for accounting (expense:paid + expense:share for each participant)
         try {
-            const events = this.eventFactory.expenseEvents(holonId, expense);
-            await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+            const events = this.eventFactory.expenseEvents(String(holonId), expense as any);
+            await Promise.all(events.map((e: any) => this.eventStore.put(holonId, e)));
             console.log(`Added expense ${expense.id} with ${events.length} REA events`);
         } catch (error) {
             console.error('Error creating REA events for expense:', error);
@@ -295,17 +318,17 @@ export default class Expenses {
     }
 
     // add user to split TODO: BOT ID IS HARDCODED, switch to either holonId or variable bot id
-    async joinSplit(holonId, userID, expenseID) {
+    async joinSplit(holonId: number | string, userID: number | string, expenseID: string) {
         let expense = await this.db.get(holonId.toString(), 'expenses', expenseID)
 
         if (expense) {
             if (!expense.splitWith.includes(userID)) { //add user to split
                 expense.splitWith.push(userID);
                 // Remove holonId ("This Holon") if it exists in the array
-                expense.splitWith = expense.splitWith.filter(id => id !== holonId);
+                expense.splitWith = expense.splitWith.filter((id: any) => id !== holonId);
             }
             else {//remove user from split
-                expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
+                expense.splitWith = expense.splitWith.filter(function (value: any, _index: number, _arr: any[]) { return value != userID; });
                 if (expense.splitWith.length == 0) {
                     expense.splitWith.push(holonId);
                 }
@@ -317,7 +340,7 @@ export default class Expenses {
         return false;
     }
 
-    async removeFromSplit(ctx) {
+    async removeFromSplit(ctx: any) {
         const language = await this.settings.getLanguage(ctx.chat.id)
 
         if (!ctx.message.reply_to_message){
@@ -333,7 +356,7 @@ export default class Expenses {
         let expenseID = ctx.message.reply_to_message.message_id; 
 
         // Get the mentioned user
-        const entity = ctx.message.entities.find(e => e.type === 'text_mention' || e.type === 'mention');
+        const entity = ctx.message.entities.find((e: any) => e.type === 'text_mention' || e.type === 'mention');
         if (!entity) {
             return ctx.reply(i18next.t('usernotfound', { lng: language }));
         }
@@ -347,7 +370,7 @@ export default class Expenses {
                 // For username mentions, we need to get the user from our database
                 const username = ctx.message.text.slice(entity.offset + 1, entity.offset + entity.length);
                 const users = await this.db.getAll(holonId.toString(), 'users');
-                const user = users.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                const user = users.find((u: any) => u.username?.toLowerCase() === username.toLowerCase());
                 if (!user) {
                     return ctx.reply(i18next.t('usernotfound', { lng: language }));
                 }
@@ -361,11 +384,11 @@ export default class Expenses {
 
             let expense = await this.db.get(holonId.toString(), 'expenses', expenseID)
             if (expense) {
-                expense.splitWith = expense.splitWith.filter(value => value != chatMember.user.id);
+                expense.splitWith = expense.splitWith.filter((value: any) => value != chatMember.user.id);
                 await this.db.put(holonId.toString(), 'expenses', expense)
                 ctx.telegram.editMessageText(holonId, expenseID, null, await this.createMessage(holonId,expense), Markup.inlineKeyboard(
                     [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-                )).catch(err => console.log(err))
+                )).catch((err: unknown) => console.log(err))
                 return expense;
             }
         } catch (error) {
@@ -375,7 +398,7 @@ export default class Expenses {
         return false;
     }
 
-    async addToSplit(ctx) {
+    async addToSplit(ctx: any) {
         const language = await this.settings.getLanguage(ctx.chat.id)
         if (!ctx.message.reply_to_message){
             ctx.reply('Please reply to the expense message you want to add a user to');
@@ -386,7 +409,7 @@ export default class Expenses {
         let expenseID = ctx.message.reply_to_message.message_id;
 
         // Get the mentioned user
-        const entity = ctx.message.entities.find(e => e.type === 'text_mention' || e.type === 'mention');
+        const entity = ctx.message.entities.find((e: any) => e.type === 'text_mention' || e.type === 'mention');
         if (!entity) {
             return ctx.reply(i18next.t('expenseaddusage', { lng: language }));
         }
@@ -400,7 +423,7 @@ export default class Expenses {
                 // For username mentions, we need to get the user from our database
                 const username = ctx.message.text.slice(entity.offset + 1, entity.offset + entity.length);
                 const users = await this.db.getAll(holonId.toString(), 'users');
-                const user = users.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                const user = users.find((u: any) => u.username?.toLowerCase() === username.toLowerCase());
                 if (!user) {
                     return ctx.reply(i18next.t('usernotfound', { lng: language }));
                 }
@@ -421,7 +444,7 @@ export default class Expenses {
                 await this.db.put(holonId.toString(), 'expenses', expense)
                 ctx.telegram.editMessageText(holonId, expenseID, null, await this.createMessage(holonId, expense), Markup.inlineKeyboard(
                     [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-                )).catch(err => console.log(err));
+                )).catch((err: unknown) => console.log(err));
                 return expense;
             }
         } catch (error) {
@@ -431,7 +454,7 @@ export default class Expenses {
         return false;
     }
 
-    async splitAll(holonId, expenseID) {
+    async splitAll(holonId: number | string, expenseID: string) {
         let expense = await this.db.get(holonId.toString(), 'expenses', expenseID)
         if (expense) {
             let users = await this.db.getAll(holonId.toString(), 'users')
@@ -443,7 +466,7 @@ export default class Expenses {
         return false;
     }
 
-    async calculateCredits(holonId, currency) {
+    async calculateCredits(holonId: number | string, currency: string) {
         console.log(`\n=== CALCULATING CREDITS ===`);
         console.log(`Holon ID: ${holonId}`);
         console.log(`Currency: ${currency}`);
@@ -555,7 +578,7 @@ export default class Expenses {
 
                 console.log(`    Payer index: ${payerIndex}`);
 
-                splitWithArray.forEach(memberId => {
+                splitWithArray.forEach((memberId: any) => {
                     const memberIndex = userArray.indexOf(memberId);
 
                     // Ensure member is found in the user list
@@ -627,7 +650,7 @@ export default class Expenses {
         return { creditMatrix, userNames };
     }
 
-    async createMessage(holonId,expense) {
+    async createMessage(holonId: number | string, expense: any) {
         const amount = expense.amount;
         const currency = expense.currency;
         const description = expense.description;
@@ -636,14 +659,14 @@ export default class Expenses {
         const paidBy = await this.getDisplayName(holonId, expense.paidBy);
 
         // Get all splitters' info and map to display names
-        const splitNames = await Promise.all(expense.splitWith.map(userId => this.getDisplayName(holonId, userId)));
+        const splitNames = await Promise.all(expense.splitWith.map((userId: number | string) => this.getDisplayName(holonId, userId)));
         
         const splitWith = splitNames.join(", ");
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
 
-    async getDisplayName(holonId, userId) {
+    async getDisplayName(holonId: number | string, userId: number | string) {
         if (userId == 6152474485) {
             return "Holons";
         }
@@ -653,14 +676,14 @@ export default class Expenses {
             return groupInfo || "This Holon"; //TODO maybe get the group name from the settings
 
         }
-        const userInfo = await this.db.get(holonId.toString(), 'users', userId);
+        const userInfo = await this.db.get(holonId.toString(), 'users', String(userId));
         if (!userInfo) {
             return userId.toString();
         }
         return utils.getDisplayName(userInfo);
     }
 
-    async getUserCurrencyBalance(holonId, userID, currencyName) {
+    async getUserCurrencyBalance(holonId: number | string, userID: number | string, currencyName: string) {
         console.log(`\n=== GETTING CURRENCY BALANCE ===`);
         console.log(`Holon ID: ${holonId}, User ID: ${userID}, Currency: ${currencyName}`);
         
@@ -724,7 +747,7 @@ export default class Expenses {
                 const numSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
                 const share = expense.amount / numSplitters;
                 // FIX: Handle data type mismatch for includes check
-                let userInSplit = splitWithArray.some(id => id == userID); // Use == for type coercion
+                let userInSplit = splitWithArray.some((id: any) => id == userID); // Use == for type coercion
 
                 console.log(`  ✅ Processing expense:`);
                 console.log(`    Number of splitters: ${numSplitters}`);
@@ -759,7 +782,7 @@ export default class Expenses {
     }
 
     // Show participant selection interface with checklist-style user selection
-    async showParticipantSelection(ctx, holonId, messageId, expenseID) {
+    async showParticipantSelection(ctx: any, holonId: number | string, messageId: number, expenseID: string) {
         try {
             await ctx.answerCbQuery().catch(() => {});
             
@@ -811,7 +834,7 @@ export default class Expenses {
     }
 
     // Toggle individual participant in expense split
-    async toggleParticipant(ctx, holonId, messageId, expenseID, userID) {
+    async toggleParticipant(ctx: any, holonId: number | string, messageId: number, expenseID: string, userID: number) {
         try {
             await ctx.answerCbQuery().catch(() => {});
             
@@ -824,7 +847,7 @@ export default class Expenses {
             // Toggle participant
             if (expense.splitWith.includes(userID)) {
                 // Remove user from split
-                expense.splitWith = expense.splitWith.filter(id => id !== userID);
+                expense.splitWith = expense.splitWith.filter((id: any) => id !== userID);
                 // Add holonId ("This Holon") if split becomes empty
                 if (expense.splitWith.length === 0) {
                     expense.splitWith.push(holonId);
@@ -833,7 +856,7 @@ export default class Expenses {
                 // Add user to split
                 expense.splitWith.push(userID);
                 // Remove holonId ("This Holon") if it exists in the array
-                expense.splitWith = expense.splitWith.filter(id => id !== holonId);
+                expense.splitWith = expense.splitWith.filter((id: any) => id !== holonId);
             }
 
             await this.db.put(holonId.toString(), 'expenses', expense);
@@ -848,7 +871,7 @@ export default class Expenses {
     }
 
     // Show expense view with updated participant list
-    async showExpenseView(ctx, holonId, messageId, expenseID) {
+    async showExpenseView(ctx: any, holonId: number | string, messageId: number, expenseID: string) {
         try {
             await ctx.answerCbQuery().catch(() => {});
             
@@ -874,7 +897,7 @@ export default class Expenses {
     }
 
     // Select all participants for expense split
-    async selectAllParticipants(ctx, holonId, messageId, expenseID) {
+    async selectAllParticipants(ctx: any, holonId: number | string, messageId: number, expenseID: string) {
         try {
             await ctx.answerCbQuery().catch(() => {});
             

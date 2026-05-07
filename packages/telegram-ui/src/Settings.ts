@@ -1,3 +1,10 @@
+// @ts-nocheck — TS migration sweep (Phase B unit tg-ui/remaining-modules):
+// This 4k-line UI module is renamed `.js` → `.ts` and routed through
+// `@holons/core/settings` for the canonical lens list and shape, but full
+// strict typing of every Telegraf handler is deliberately deferred to the
+// future `core/settings` extraction unit. The `@ts-nocheck` directive
+// preserves the runtime behaviour exactly while letting the rest of the
+// telegram-ui TS migration land. New code added here should be typed.
 /**
  * @fileoverview Settings management for HolonsBot holons.
  * @module src/Settings
@@ -7,14 +14,23 @@ import fs from 'fs';
 import * as utils from './utilities.js'
 import { Scenes, Markup } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
+import {
+    ALL_AVAILABLE_LENSES as ALL_AVAILABLE_LENSES_CORE,
+    type HolonSettings,
+    type AvailableLens,
+} from '@holons/core/settings';
+
+// Re-export so other modules (web, ai-ui) can import the canonical settings
+// shape from either `./Settings.js` or `@holons/core/settings`.
+export type { HolonSettings, AvailableLens };
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 /**
  * All available lenses that can be configured for a holon.
- * @constant {string[]}
+ * Sourced from `@holons/core/settings` so other UIs stay aligned.
  */
-const ALL_AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
+const ALL_AVAILABLE_LENSES: readonly string[] = ALL_AVAILABLE_LENSES_CORE;
 
 /**
  * Settings management class for configuring holon behavior and preferences.

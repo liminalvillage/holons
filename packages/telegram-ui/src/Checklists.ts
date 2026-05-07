@@ -1,3 +1,8 @@
+// @ts-nocheck — TS migration sweep (Phase B unit tg-ui/remaining-modules):
+// Renamed `.js` → `.ts` and routed through `@holons/core/checklists` for the
+// canonical type/constant surface area. Strict typing of every Telegraf
+// handler in this 1k-line UI module is deferred to the future
+// `core/checklists` extraction unit; the runtime behaviour is unchanged.
 /**
  * @fileoverview Checklist management for HolonsBot.
  * @module src/Checklists
@@ -5,18 +10,22 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
+import {
+    CHECKLIST_TYPES as CHECKLIST_TYPES_CORE,
+    type Checklist,
+    type ChecklistItem,
+    type ChecklistType,
+} from '@holons/core/checklists';
+
+// Re-export so other modules can `import type { Checklist } from './Checklists.js'`
+// or directly from `@holons/core/checklists` — same shape either way.
+export type { Checklist, ChecklistItem, ChecklistType };
 
 /**
  * Standard checklist types supported by the system.
- * @constant {Object.<string, string>}
+ * Sourced from `@holons/core/checklists` so other UIs stay aligned.
  */
-const CHECKLIST_TYPES = {
-    CHECKLIST: 'checklist',
-    AGENDA: 'agenda',
-    SHOPPING: 'shopping',
-    QUEST: 'quest',
-    ROLE: 'role'
-};
+const CHECKLIST_TYPES = CHECKLIST_TYPES_CORE;
 
 /**
  * Checklist management class for creating and managing various types of checklists.

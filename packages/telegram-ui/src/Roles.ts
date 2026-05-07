@@ -1,3 +1,8 @@
+// @ts-nocheck — TS migration sweep (Phase B unit tg-ui/remaining-modules):
+// Renamed `.js` → `.ts` so the Telegram UI ships as TypeScript end-to-end.
+// No `@holons/core` extraction yet for roles — this module remains a UI
+// handler today. Strict typing of every Telegraf callback is deferred to
+// the future `core/roles` extraction unit.
 /**
  * @fileoverview Role management for HolonsBot.
  * @module src/Roles
