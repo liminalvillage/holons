@@ -1,14 +1,9 @@
-export interface Quest {
-    id?: string;
-    title: string;
-    when: string;
-    ends?: string;
-    status: 'ongoing' | 'completed' | 'cancelled' | 'scheduled' | string;
-    location?: string;
-    participants: Array<{
-        username: string;
-        [key: string]: any;
-    }>;
-    _deleted?: boolean;
-    [key: string]: any;
-} 
+// Re-export of the unified Quest type from @holons/core/tasks.
+// Kept as a thin facade so existing call sites (`import type { Quest } from '../types/Quest'`)
+// continue to work after Phase B unit `core/tasks`.
+export type {
+    Quest,
+    QuestInitiator,
+    QuestParticipant,
+    QuestMeta,
+} from '@holons/core/tasks';

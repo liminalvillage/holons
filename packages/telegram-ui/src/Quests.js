@@ -4,6 +4,10 @@ import { getholonId, getMessageId, capitalize, getDisplayName, getHolonName, cre
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
+// Shared task data layer — see packages/core/src/tasks for canonical Quest
+// shape and create/save primitives. The Telegram UI layers its own ids and
+// transient state on top of `createTaskRecord`'s return value.
+import { createTaskRecord, saveTaskToHolon } from '@holons/core/tasks';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -340,35 +344,17 @@ export default class Quests {
             }
         }
         
-        // Create quest object
-        const quest = {
-            id: '',
-            version: '0.1',
-            holon: holonId,
-            message_thread_id: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
+        // Create quest object via the shared core/tasks factory so the bot
+        // and the web app produce the same default-field set.
+        const quest = createTaskRecord({
+            holonId,
             initiator: sender,
             title,
-            picture,
             type,
-            status: 'ongoing',
-            date: Date.now(),
-            participants: [],
-            appreciation: [],
-            stoppers: [],
-            dependencies: [],
-            frequency: null,
-            recurringTaskId: null,
-            timeTracking: {},
-            checklistId: null,
-            reminderId: null,
-            activeHolograms: [],
             category: this.getCategory(ctx),
-            document: '',
-            where: { latitude: '', longitude: '' },
-            when: '',
-            until: '',
-            completed: ''
-        };
+            picture,
+            messageThreadId: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
+        });
         
         // Send message and save quest
         const showAsImage = this.shouldShowQuestsAsImages();
@@ -415,8 +401,10 @@ export default class Quests {
             appname: holonDB.appname,
             title: quest.title,
         });
-        const putResult = await holonDB.put(holonId, 'quests', quest).catch(e => ({ error: e.message }));
-        console.log('[QUEST_PERSIST_DEBUG] put.result', putResult);
+        // Route persistence through @holons/core/tasks so the bot and the web
+        // app share identical save semantics (logs+swallow, count of successes).
+        const putOk = await saveTaskToHolon(holonDB, holonId, quest);
+        console.log('[QUEST_PERSIST_DEBUG] put.result', { ok: putOk });
         // Immediate read-back to verify what's in the graph right after write
         try {
             const verify = await holonDB.getAll(holonId.toString(), 'quests');
