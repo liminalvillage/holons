@@ -8,9 +8,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "start": "node src/HolonsBot.js",
-    "dev": "nodemon --delay 5 src/HolonsBot.js",
-    "typecheck": "echo 'JS package — TS migration handled by Phase B unit tg-ui/core-bootstrap'",
+    "start": "node --import tsx src/HolonsBot.js",
+    "dev": "nodemon --delay 5 --exec 'node --import tsx' src/HolonsBot.js",
+    "typecheck": "echo 'JS+TS package — pre-existing TS2742 baseline; full migration tracked by tg-ui Phase B units'",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -56,6 +56,7 @@
     "winston": "^3.17.0"
   },
   "devDependencies": {
+    "@types/node": "^22.19.17",
     "clean-jsdoc-theme": "^4.3.0",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",
@@ -63,6 +64,7 @@
     "jsdoc": "^4.0.5",
     "nodemon": "^3.1.7",
     "prettier": "^3.6.2",
+    "tsx": "^4.21.0",
     "vitest": "^3.2.4"
   }
 }
