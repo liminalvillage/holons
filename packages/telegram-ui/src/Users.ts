@@ -1,4 +1,3 @@
-// @ts-nocheck — pending realignment with @holons/core after parallel-PR merge (see integration notes)
 /**
  * @fileoverview Telegram UI for user management.
  *
@@ -16,12 +15,11 @@ import {
   REAEventFactory,
   REAAggregator,
 } from './domain/rea/index.js';
+import type { ScoreEquation } from '@holons/core/scoring';
 
-// NOTE: `@holons/core/users` is being extracted in parallel by Phase B Unit 8.
-// Until it lands the import will fail to resolve. The structural delegation
-// below is intentional so that swap-in is a single-line change once available.
-// @ts-expect-error -- target import; module appears once Unit 8 lands.
-import type { UsersService as CoreUsersService } from '@holons/core/users';
+// `@holons/core/users` ships function exports (getUserProfile, joinHolon, ...);
+// the bot keeps a class-shaped service-locator pattern below for backwards
+// compat with existing handlers, structurally typed against UsersServiceLike.
 
 // ----------------------------------------------------------------------------
 // Local types modelling the Telegraf surface we need. Kept narrow on purpose
@@ -167,11 +165,11 @@ interface UsersServiceLike {
   getUserScore(
     holonId: string,
     userId: string | number,
-    equation: Record<string, number>,
+    equation: ScoreEquation,
   ): Promise<number>;
   getAllUserScores(
     holonId: string,
-    equation: Record<string, number>,
+    equation: ScoreEquation,
   ): Promise<unknown[]>;
 }
 
@@ -463,12 +461,12 @@ class LocalUsersService implements UsersServiceLike {
   async getUserScore(
     holonId: string,
     userId: string | number,
-    equation: Record<string, number>,
+    equation: ScoreEquation,
   ) {
     return this.aggregator.calculateUserScore(holonId, String(userId), equation);
   }
 
-  async getAllUserScores(holonId: string, equation: Record<string, number>) {
+  async getAllUserScores(holonId: string, equation: ScoreEquation) {
     const users = await this.getUsers(holonId);
     return this.aggregator.getAllUserScores(holonId, users, equation);
   }
@@ -570,12 +568,12 @@ class Users {
   async getUserScore(
     holonId: string,
     userId: string | number,
-    equation: Record<string, number>,
+    equation: ScoreEquation,
   ) {
     return this.service.getUserScore(holonId, userId, equation);
   }
 
-  async getAllUserScores(holonId: string, equation: Record<string, number>) {
+  async getAllUserScores(holonId: string, equation: ScoreEquation) {
     return this.service.getAllUserScores(holonId, equation);
   }
 
@@ -632,4 +630,4 @@ class Users {
 }
 
 export default Users;
-export type { UsersServiceLike, CoreUsersService };
+export type { UsersServiceLike };

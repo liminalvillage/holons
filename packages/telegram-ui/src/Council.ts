@@ -1,4 +1,3 @@
-// @ts-nocheck — pending realignment with @holons/core after parallel-PR merge (see integration notes)
 /**
  * @fileoverview AI-powered council for multi-perspective wisdom generation.
  * @module src/Council
@@ -6,17 +5,41 @@
 
 import OpenAI from 'openai';
 import h3 from 'h3-js';
-import {
-  COUNCIL_PERSPECTIVES,
-  emptyCell,
-  type CouncilCell,
-  type CouncilThread,
-} from '@holons/core/council';
 
 const MAX_POLLING_ATTEMPTS = 150; // 5 minutes at 2-second intervals
 
-// Council perspectives are sourced from @holons/core/council so the web and
-// AI UIs share the same prompt set.
+// 12-perspective advisor prompts. Bot-local (advisor content is not shared
+// with the web/text/ai UIs today; promote into @holons/core if/when it is).
+const COUNCIL_PERSPECTIVES: readonly string[] = [
+  'Answer the questions from the embodied perspective of Values and Worldview',
+  'Answer the questions from the embodied perspective of Health & Wellbeing',
+  'Answer the questions from the embodied perspective of Food & Agriculture',
+  'Answer the questions from the embodied perspective of Business & Trade',
+  'Answer the questions from the embodied perspective of Energy & Resources',
+  'Answer the questions from the embodied perspective of Climate Change',
+  'Answer the questions from the embodied perspective of Ecosystems & Biosphere',
+  'Answer the questions from the embodied perspective of Water Availability',
+  'Answer the questions from the embodied perspective of Habitat & Infrastructure',
+  'Answer the questions from the embodied perspective of Economy & Wealth',
+  'Answer the questions from the embodied perspective of Governance & Institutions',
+  'Answer the questions from the embodied perspective of Community & Resilience',
+];
+
+interface CouncilThread {
+  id: string;
+}
+
+interface CouncilCell {
+  id: string;
+  content: { wisdom?: string[]; [k: string]: unknown };
+  threads?: CouncilThread[];
+  summary?: string;
+}
+
+function emptyCell(id: string): CouncilCell {
+  return { id, content: {} };
+}
+
 const council: readonly string[] = COUNCIL_PERSPECTIVES;
 
 // Minimal structural type for the bits of the bot/db this module touches.

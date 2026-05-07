@@ -1,4 +1,3 @@
-// @ts-nocheck — pending realignment with @holons/core after parallel-PR merge (see integration notes)
 /**
  * @fileoverview Expense tracking and splitting for HolonsBot.
  * @module src/Expenses
@@ -9,10 +8,12 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
-import type { ExpenseRecord, ExpenseCurrency } from '@holons/core/expenses';
+import type { Expense } from '@holons/core/expenses';
 
-// Re-export from core so callers can `import type { ExpenseRecord } from './Expenses.js'`
-// or directly from `@holons/core/expenses` — same shape either way.
+// Bot-side aliases for the historical Expenses.js naming. `Expense` in core
+// is the canonical record; `currency` is a normalized string code.
+type ExpenseRecord = Expense;
+type ExpenseCurrency = string;
 export type { ExpenseRecord, ExpenseCurrency };
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
