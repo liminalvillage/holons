@@ -62,8 +62,12 @@
     // Touch drag (HTML5 drag/drop is broken on mobile — we hand-roll it via
     // pointer events when pointerType === 'touch'). Long-press initiates the
     // drag so vertical scrolling within the unscheduled list still works.
-    const TOUCH_DRAG_HOLD_MS = 350;
-    const TOUCH_DRAG_CANCEL_PX = 8;
+    const TOUCH_DRAG_HOLD_MS = 300;
+    const TOUCH_DRAG_CANCEL_PX = 12;
+    // Window after a touch drop during which we swallow synthetic clicks so
+    // the task modal doesn't pop open on release. Android can delay click
+    // dispatch by 300ms+ so we keep the window comfortably wide.
+    const TOUCH_DRAG_CLICK_SUPPRESS_MS = 800;
     let touchDrag: {
         key: string;
         task: any;
@@ -77,6 +81,8 @@
         timerId: number | null;
         sourceEl: HTMLElement;
     } | null = null;
+    let touchDragEndedAt = 0;
+    let isTouchDevice = false;
 
     // Unassigned panel width (persisted across sessions)
     const PANEL_WIDTH_KEY = 'calendar_unassigned_width';
@@ -364,6 +370,19 @@
         // Add resize listener for orbital view
         window.addEventListener('resize', handleResize);
 
+        // Detect touch-primary devices so we can disable native HTML5 drag
+        // (which intercepts long-press on Android with a context menu) and
+        // route everything through pointer events instead.
+        try {
+            isTouchDevice = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+        } catch { isTouchDevice = false; }
+
+        // Persistent capture-phase click swallower: any click within
+        // TOUCH_DRAG_CLICK_SUPPRESS_MS of a touch-drop is dropped on the
+        // floor. Keeps the source tile from re-opening the task modal after
+        // the user lifts their finger.
+        document.addEventListener('click', suppressClickIfRecentDrop, true);
+
         // Note: resize listener is cleaned up in onDestroy
         // currentTimeInterval is handled in a separate onMount block
     });
@@ -387,6 +406,7 @@
 
         // Tear down any in-flight touch drag (ghost element + body styles).
         if (touchDrag) cancelTouchDrag();
+        document.removeEventListener('click', suppressClickIfRecentDrop, true);
     });
 
     // Function to reload data when view changes
@@ -1159,6 +1179,10 @@
     }
 
     // --- Touch drag handlers (long-press to start) ---
+    // We attach pointermove/up/cancel on window (not the source) so the
+    // gesture can roam outside the source element without losing events —
+    // the alternative (setPointerCapture) blocks the panel from scrolling
+    // while we're still in the "is this a tap or a drag?" phase.
     function onTaskTouchPointerDown(e: PointerEvent, key: string, task: any) {
         if (e.pointerType !== 'touch') return;
         if (readOnly) return;
@@ -1187,12 +1211,15 @@
             beginTouchDrag(td);
         }, TOUCH_DRAG_HOLD_MS);
         touchDrag = td;
+
+        window.addEventListener('pointermove', onTaskTouchPointerMove);
+        window.addEventListener('pointerup', onTaskTouchPointerUp);
+        window.addEventListener('pointercancel', onTaskTouchPointerCancel);
     }
 
     function beginTouchDrag(td: NonNullable<typeof touchDrag>) {
         td.started = true;
         draggedTask = { key: td.key, task: td.task };
-        try { td.sourceEl.setPointerCapture(td.pointerId); } catch {}
 
         const ghost = document.createElement('div');
         ghost.style.cssText = [
@@ -1271,9 +1298,10 @@
         // Tear down visual state before await so the user sees immediate feedback.
         cleanupTouchDragVisual(td);
         touchDrag = null;
-        // Suppress the synthetic click that would otherwise fire on the source
-        // element after pointerup and re-open the task modal.
-        suppressNextClick();
+        // Mark that we just dropped — the persistent click swallower will
+        // eat the synthetic click that fires on the source tile so the task
+        // modal doesn't reopen.
+        touchDragEndedAt = Date.now();
         if (target) {
             const dateStr = target.getAttribute('data-drop-date');
             const hourStr = target.getAttribute('data-drop-hour');
@@ -1289,17 +1317,13 @@
         dragOverTime = null;
     }
 
-    function suppressNextClick() {
-        const swallow = (ev: MouseEvent) => {
+    function suppressClickIfRecentDrop(ev: MouseEvent) {
+        if (touchDragEndedAt && Date.now() - touchDragEndedAt < TOUCH_DRAG_CLICK_SUPPRESS_MS) {
             ev.preventDefault();
             ev.stopPropagation();
             (ev as any).stopImmediatePropagation?.();
-        };
-        document.addEventListener('click', swallow, { capture: true, once: true });
-        // Safety net: drop the listener if no click arrives.
-        window.setTimeout(() => {
-            document.removeEventListener('click', swallow, true);
-        }, 500);
+            touchDragEndedAt = 0; // only swallow the first click after a drop
+        }
     }
 
     function onTaskTouchPointerCancel(e: PointerEvent) {
@@ -1308,23 +1332,29 @@
     }
 
     function elementUnderPoint(x: number, y: number): HTMLElement | null {
-        // Hide the ghost so it doesn't intercept the hit test.
+        // Use elementsFromPoint (plural) so absolutely-positioned task tiles
+        // don't shadow the underlying hour cell. Hide the ghost first so it
+        // can't show up in the hit list.
         const ghost = touchDrag?.ghostEl;
         const prev = ghost?.style.display;
         if (ghost) ghost.style.display = 'none';
-        const el = document.elementFromPoint(x, y) as HTMLElement | null;
+        const els = document.elementsFromPoint(x, y);
         if (ghost) ghost.style.display = prev ?? '';
-        return el?.closest('[data-drop-date]') as HTMLElement | null;
+        for (const el of els) {
+            const target = (el as HTMLElement).closest('[data-drop-date]');
+            if (target) return target as HTMLElement;
+        }
+        return null;
     }
 
     function cleanupTouchDragVisual(td: NonNullable<typeof touchDrag>) {
         if (td.timerId != null) clearTimeout(td.timerId);
         if (td.ghostEl) td.ghostEl.remove();
-        if (td.started) {
-            try { td.sourceEl.releasePointerCapture(td.pointerId); } catch {}
-        }
         document.body.style.userSelect = '';
         document.body.style.touchAction = '';
+        window.removeEventListener('pointermove', onTaskTouchPointerMove);
+        window.removeEventListener('pointerup', onTaskTouchPointerUp);
+        window.removeEventListener('pointercancel', onTaskTouchPointerCancel);
     }
 
     function cancelTouchDrag() {
@@ -2347,14 +2377,15 @@
                     <div
                         class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors select-none"
                         class:opacity-50={draggedTask?.key === task.key}
-                        style="-webkit-touch-callout:none;"
-                        draggable="true"
+                        style="-webkit-touch-callout:none;-webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
+                        draggable={!isTouchDevice}
                         ondragstart={(e) => handleDragStart(e, task.key, task)}
                         ondragend={handleDragEnd}
                         onpointerdown={(e) => onTaskTouchPointerDown(e, task.key, task)}
                         onpointermove={onTaskTouchPointerMove}
                         onpointerup={onTaskTouchPointerUp}
                         onpointercancel={onTaskTouchPointerCancel}
+                        oncontextmenu={(e) => isTouchDevice && e.preventDefault()}
                         onclick={() => handleTaskClick(task.key, task)}
                         onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
                         role="button"
@@ -2452,14 +2483,15 @@
                                 <div
                                     class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move select-none"
                                     class:opacity-50={draggedTask?.key === event.id}
-                                    style="background-color: {event.color || '#4B5563'}; -webkit-touch-callout:none;"
-                                    draggable="true"
+                                    style="background-color: {event.color || '#4B5563'}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
+                                    draggable={!isTouchDevice}
                                     ondragstart={(e) => handleDragStart(e, event.id, event)}
                                     ondragend={handleDragEnd}
                                     onpointerdown={(e) => onTaskTouchPointerDown(e, event.id, event)}
                                     onpointermove={onTaskTouchPointerMove}
                                     onpointerup={onTaskTouchPointerUp}
                                     onpointercancel={onTaskTouchPointerCancel}
+                                    oncontextmenu={(e) => isTouchDevice && e.preventDefault()}
                                     role="listitem"
                                     aria-label="Drag task: {event.title}"
                                 >
@@ -2542,19 +2574,20 @@
                                 class:text-[10px]={isShortEvent}
                                 class:p-1={isShortEvent}
                                 class:p-2={!isShortEvent}
-                                draggable="true"
+                                draggable={!isTouchDevice}
                                 ondragstart={(e) => handleDragStart(e, key, task)}
                                 ondragend={handleDragEnd}
                                 onpointerdown={(e) => onTaskTouchPointerDown(e, key, task)}
                                 onpointermove={onTaskTouchPointerMove}
                                 onpointerup={onTaskTouchPointerUp}
                                 onpointercancel={onTaskTouchPointerCancel}
+                                oncontextmenu={(e) => isTouchDevice && e.preventDefault()}
                                 onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
                                 onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
                                 title={task.title || 'Untitled'}
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none;"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                             >
                                 <SourceBadge item={task} currentHolonId={$ID} lensRoute="calendar" />
                                 <div class="font-bold truncate leading-tight">
@@ -2705,19 +2738,20 @@
                         class:opacity-50={draggedTask?.key === key}
                         class:ring-2={resizingEvent?.key === key}
                         class:ring-white={resizingEvent?.key === key}
-                        draggable="true"
+                        draggable={!isTouchDevice}
                         ondragstart={(e) => handleDragStart(e, key, task)}
                         ondragend={handleDragEnd}
                         onpointerdown={(e) => onTaskTouchPointerDown(e, key, task)}
                         onpointermove={onTaskTouchPointerMove}
                         onpointerup={onTaskTouchPointerUp}
                         onpointercancel={onTaskTouchPointerCancel}
+                        oncontextmenu={(e) => isTouchDevice && e.preventDefault()}
                         onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
                         onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
                         title={task.title || 'Untitled'}
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none;"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
