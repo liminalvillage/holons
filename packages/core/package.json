@@ -12,6 +12,11 @@
       "default": "./src/*/index.ts"
     }
   },
+  "typesVersions": {
+    "*": {
+      "*": ["./src/*/index.ts"]
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
