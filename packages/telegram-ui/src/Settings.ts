@@ -15,9 +15,9 @@ import * as utils from './utilities.js'
 import { Scenes, Markup } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 import {
-    ALL_AVAILABLE_LENSES as ALL_AVAILABLE_LENSES_CORE,
+    AVAILABLE_LENSES as ALL_AVAILABLE_LENSES_CORE,
     type HolonSettings,
-    type AvailableLens,
+    type LensType as AvailableLens,
 } from '@holons/core/settings';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
