@@ -105,12 +105,8 @@
 		// Check if user just logged out (show welcome screen to allow re-login)
 		const justLoggedOut = sessionStorage.getItem('just_logged_out') === 'true';
 		if (justLoggedOut) {
-			// Clear the flag
 			sessionStorage.removeItem('just_logged_out');
-			// Show welcome screen with login options
-			setTimeout(() => {
-				view = 'welcome';
-			}, 300);
+			view = 'welcome';
 			return;
 		}
 
@@ -131,12 +127,10 @@
 		} else if (state.privateKey) {
 			// Returning Nostr user - legacy fallback for keys persisted before
 			// the telegram-only flow.
-			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
+			dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' });
 		} else {
 			// No key, no telegram - show welcome screen (widget loads via reactive block)
-			setTimeout(() => {
-				view = 'welcome';
-			}, 500);
+			view = 'welcome';
 		}
 	});
 
@@ -155,14 +149,12 @@
 		if (existingTelegramMapping) {
 			console.log('Telegram: Auto-login to existing holon:', existingTelegramMapping.holonName);
 			isProcessing = false;
-			setTimeout(() => {
-				dispatch('authenticated', {
-					publicKey: existingTelegramMapping!.publicKey,
-					holonName: existingTelegramMapping!.holonName,
-					telegramUserId: user.id,
-					mode: 'telegram-mapped'
-				});
-			}, 300);
+			dispatch('authenticated', {
+				publicKey: existingTelegramMapping!.publicKey,
+				holonName: existingTelegramMapping!.holonName,
+				telegramUserId: user.id,
+				mode: 'telegram-mapped'
+			});
 		} else {
 			// New telegram user — use the telegram id as both the home holon
 			// id and the publicKey hint. No Nostr keypair is generated; the
@@ -174,14 +166,12 @@
 				? `@${user.username}'s Holon`
 				: `${user.first_name}'s Holon`;
 			isProcessing = false;
-			setTimeout(() => {
-				dispatch('authenticated', {
-					publicKey: String(user.id),
-					holonName: name,
-					telegramUserId: user.id,
-					mode: 'telegram-mapped'
-				});
-			}, 300);
+			dispatch('authenticated', {
+				publicKey: String(user.id),
+				holonName: name,
+				telegramUserId: user.id,
+				mode: 'telegram-mapped'
+			});
 		}
 	}
 
@@ -857,13 +847,23 @@
 	.logo-icon {
 		width: 300px;
 		height: 300px;
-		filter: drop-shadow(0 0 60px rgba(66, 153, 225, 0.5));
-		animation: pulse-glow 3s ease-in-out infinite;
+		filter:
+			drop-shadow(0 0 40px rgba(147, 197, 253, 0.95))
+			drop-shadow(0 0 90px rgba(99, 179, 237, 0.85));
+		animation: pulse-glow 2.4s ease-in-out infinite;
 	}
 
 	@keyframes pulse-glow {
-		0%, 100% { filter: drop-shadow(0 0 60px rgba(66, 153, 225, 0.5)); }
-		50% { filter: drop-shadow(0 0 100px rgba(66, 153, 225, 0.7)); }
+		0%, 100% {
+			filter:
+				drop-shadow(0 0 40px rgba(147, 197, 253, 0.95))
+				drop-shadow(0 0 90px rgba(99, 179, 237, 0.85));
+		}
+		50% {
+			filter:
+				drop-shadow(0 0 70px rgba(191, 219, 254, 1))
+				drop-shadow(0 0 140px rgba(99, 179, 237, 1));
+		}
 	}
 
 	/* Onboarding Card */

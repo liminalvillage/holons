@@ -11,7 +11,6 @@
 	import Overlay from './Overlay.svelte';
 	import BrowserPanel from './browser/BrowserPanel.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
-	import Onboarding from '../components/Onboarding.svelte';
 	import WriteNotificationToast from '../components/WriteNotificationToast.svelte';
 
 
@@ -148,9 +147,6 @@
 				</RouteTransition>
 			</main>
 		</div>
-
-		<!-- Onboarding for first-time users -->
-		<Onboarding />
 
 		<!-- Write permission denied notifications -->
 		<WriteNotificationToast />

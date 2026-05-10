@@ -176,7 +176,7 @@
 
 <nav class="topbar" aria-label="Main navigation">
 	<!-- Menu button to toggle sidebar -->
-	<button class="topbar__menu-btn" onclick={() => dispatch('toggleBrowser')} aria-label="Toggle sidebar" data-tour="menu">
+	<button class="topbar__menu-btn" onclick={() => dispatch('toggleBrowser')} aria-label="Toggle sidebar">
 		<Menu size="20" />
 	</button>
 
