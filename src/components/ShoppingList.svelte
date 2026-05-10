@@ -91,8 +91,9 @@
 
     $: visibleItems = shoppingItems.filter((item) => {
         const isHologram = item._hologram?.isHologram === true;
+        const isFederated = !!(item as any)?._federation;
         if (!$showHolograms && isHologram) return false;
-        if (!$showFederated && isHologram) return false;
+        if (!$showFederated && (isHologram || isFederated)) return false;
         const q = filters.searchQuery.trim().toLowerCase();
         if (q && !(item.text ?? '').toLowerCase().includes(q)) return false;
         return true;

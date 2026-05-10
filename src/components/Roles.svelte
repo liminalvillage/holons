@@ -80,8 +80,9 @@
 		if (!q && $showHolograms && $showFederated) return roles;
 		return roles.filter(([, role]) => {
 			const isHologram = (role as any)?._hologram?.isHologram === true;
+			const isFederated = !!(role as any)?._federation;
 			if (!$showHolograms && isHologram) return false;
-			if (!$showFederated && isHologram) return false;
+			if (!$showFederated && (isHologram || isFederated)) return false;
 			if (!q) return true;
 			const title = (role as any)?.title ?? '';
 			const description = (role as any)?.description ?? '';

@@ -268,8 +268,9 @@
 		.filter(e => e.currency === selectedCurrency)
 		.filter((e: any) => {
 			const isHologram = e?._hologram?.isHologram === true;
+			const isFederated = !!e?._federation;
 			if (!$showHolograms && isHologram) return false;
-			if (!$showFederated && isHologram) return false;
+			if (!$showFederated && (isHologram || isFederated)) return false;
 			const q = filters.searchQuery.trim().toLowerCase();
 			if (!q) return true;
 			return `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q);

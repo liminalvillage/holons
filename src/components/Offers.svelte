@@ -57,8 +57,9 @@
 
 	function matchesVisibility(item: any): boolean {
 		const isHologram = item?._hologram?.isHologram === true;
+		const isFederated = !!item?._federation;
 		if (!$showHolograms && isHologram) return false;
-		if (!$showFederated && isHologram) return false;
+		if (!$showFederated && (isHologram || isFederated)) return false;
 		return true;
 	}
 
