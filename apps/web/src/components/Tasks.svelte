@@ -1137,10 +1137,12 @@
 								id: messageID,
 								chatID: holonID,
 								amount: hoursNum,
-								unit: 'hour',
+								// 'hour' is just another currency in the ledger.
+								currency: 'hour',
 								description: quest.title,
 								paidBy: userID,
 								splitWith: [holonID],
+								date: Date.now(),
 								timestamp: new Date().toISOString(),
 								fromTimeTracking: true,
 								questId: key
