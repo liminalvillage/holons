@@ -10,6 +10,7 @@ export {
   DEFAULT_EQUATION,
   getCachedEquation,
   loadEquation,
+  migrateEquation,
   preloadEquation,
   subscribeToEquationChanges,
   type ScoreEquation,

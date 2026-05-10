@@ -3,14 +3,20 @@
  * deltas from aggregates and a value equation.
  *
  * Score formula:
- *   score = aggregates.initiated * equation.initiated
- *         + aggregates.completed * equation.completed
- *         + aggregates.sent * equation.sent
- *         + aggregates.received * equation.received
- *         + aggregates.hours * equation.hours
+ *   score = aggregates.initiated     * equation.initiated
+ *         + aggregates.completed     * equation.completed
+ *         + aggregates.sent          * equation.sent
+ *         + aggregates.received      * equation.received
  *         + aggregates.collaboration * equation.collaboration
- *         + aggregates.wants * equation.wants
- *         + aggregates.offers * equation.offers
+ *         + aggregates.wants         * equation.wants
+ *         + aggregates.offers        * equation.offers
+ *         + Σ currencyBalances[c]    * equation.currencies[c]
+ *
+ * Hours: when `equation.currencies.hour` is set, the hour contribution comes
+ * from `currencyBalances.hour` (or, if missing, falls back to
+ * `aggregates.hours`). When `currencies.hour` is unset but the legacy
+ * `equation.hours` is, scoring falls back to `aggregates.hours *
+ * equation.hours`. Both paths produce the same result for migrated holons.
  */
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './equation.js';
@@ -21,10 +27,13 @@ export interface ScoreBreakdown {
   completed: number;
   sent: number;
   received: number;
+  /** @deprecated Use `currencies.hour` (or read `breakdown.currencies['hour']`). */
   hours: number;
   collaboration: number;
   wants: number;
   offers: number;
+  /** Per-currency contribution: balance × weight. */
+  currencies: Record<string, number>;
   total: number;
 }
 
@@ -43,11 +52,39 @@ export interface ActionScore {
 }
 
 /**
+ * Resolve the effective per-currency balances for scoring, applying the
+ * `aggregates.hours → currencyBalances.hour` fallback when the caller hasn't
+ * supplied an explicit hour balance. Used by every scoring helper so the
+ * fallback rule lives in one place.
+ */
+function resolveCurrencyBalances(
+  aggregates: UserAggregates,
+  equation: ScoreEquation,
+  currencyBalances: Record<string, number>,
+): Record<string, number> {
+  const balances = { ...currencyBalances };
+  if (
+    balances.hour === undefined &&
+    aggregates.hours &&
+    (equation.currencies?.hour ?? 0) > 0
+  ) {
+    balances.hour = aggregates.hours;
+  }
+  return balances;
+}
+
+/**
  * Calculate a user's total score from aggregates using the supplied equation.
+ *
+ * `currencyBalances` (optional) maps currency code → balance for the user.
+ * If `currencies.hour` is set but `currencyBalances.hour` isn't, the score
+ * falls back to `aggregates.hours` so legacy callers that don't thread
+ * balances yet keep working.
  */
 export function calculateUserScore(
   aggregates: UserAggregates,
   equation: ScoreEquation = DEFAULT_EQUATION,
+  currencyBalances: Record<string, number> = {},
 ): number {
   let score = 0;
 
@@ -55,10 +92,22 @@ export function calculateUserScore(
   if (equation.completed) score += aggregates.completed * equation.completed;
   if (equation.sent) score += aggregates.sent * equation.sent;
   if (equation.received) score += aggregates.received * equation.received;
-  if (equation.hours) score += aggregates.hours * equation.hours;
   if (equation.collaboration) score += aggregates.collaboration * equation.collaboration;
   if (equation.wants) score += aggregates.wants * equation.wants;
   if (equation.offers) score += aggregates.offers * equation.offers;
+
+  const hourCurrencyWeight = equation.currencies?.hour ?? 0;
+  // Legacy path: if no currencies.hour weight is set, score hours via
+  // equation.hours so unmigrated holons keep working.
+  if (!hourCurrencyWeight && equation.hours) {
+    score += aggregates.hours * equation.hours;
+  }
+
+  const balances = resolveCurrencyBalances(aggregates, equation, currencyBalances);
+  for (const [currency, weight] of Object.entries(equation.currencies ?? {})) {
+    if (!weight) continue;
+    score += (balances[currency] ?? 0) * weight;
+  }
 
   return score;
 }
@@ -69,26 +118,48 @@ export function calculateUserScore(
 export function calculateScoreFromUserData(
   userData: any,
   equation: ScoreEquation = DEFAULT_EQUATION,
+  currencyBalances: Record<string, number> = {},
 ): number {
-  return calculateUserScore(toAggregates(userData), equation);
+  return calculateUserScore(toAggregates(userData), equation, currencyBalances);
 }
 
 /**
  * Get a detailed breakdown of scores by category.
+ *
+ * The `hours` field is kept for backwards-compat: it equals
+ * `currencies.hour` when the equation has migrated, otherwise
+ * `aggregates.hours * equation.hours`.
  */
 export function getScoreBreakdown(
   aggregates: UserAggregates,
   equation: ScoreEquation = DEFAULT_EQUATION,
+  currencyBalances: Record<string, number> = {},
 ): ScoreBreakdown {
-  const breakdown = {
-    initiated: aggregates.initiated * equation.initiated,
-    completed: aggregates.completed * equation.completed,
-    sent: aggregates.sent * equation.sent,
-    received: aggregates.received * equation.received,
-    hours: aggregates.hours * equation.hours,
-    collaboration: aggregates.collaboration * equation.collaboration,
-    wants: aggregates.wants * equation.wants,
-    offers: aggregates.offers * equation.offers,
+  const hourCurrencyWeight = equation.currencies?.hour ?? 0;
+  const balances = resolveCurrencyBalances(aggregates, equation, currencyBalances);
+
+  const currencies: Record<string, number> = {};
+  for (const [currency, weight] of Object.entries(equation.currencies ?? {})) {
+    if (!weight) continue;
+    const contribution = (balances[currency] ?? 0) * weight;
+    if (contribution !== 0) currencies[currency] = contribution;
+  }
+
+  const legacyHours = !hourCurrencyWeight && equation.hours
+    ? aggregates.hours * equation.hours
+    : 0;
+  const hours = legacyHours + (currencies.hour ?? 0);
+
+  const breakdown: ScoreBreakdown = {
+    initiated: aggregates.initiated * (equation.initiated ?? 0),
+    completed: aggregates.completed * (equation.completed ?? 0),
+    sent: aggregates.sent * (equation.sent ?? 0),
+    received: aggregates.received * (equation.received ?? 0),
+    hours,
+    collaboration: aggregates.collaboration * (equation.collaboration ?? 0),
+    wants: aggregates.wants * (equation.wants ?? 0),
+    offers: aggregates.offers * (equation.offers ?? 0),
+    currencies,
     total: 0,
   };
 
@@ -97,10 +168,11 @@ export function getScoreBreakdown(
     breakdown.completed +
     breakdown.sent +
     breakdown.received +
-    breakdown.hours +
+    legacyHours +
     breakdown.collaboration +
     breakdown.wants +
-    breakdown.offers;
+    breakdown.offers +
+    Object.values(currencies).reduce((s, v) => s + v, 0);
 
   return breakdown;
 }
@@ -134,12 +206,15 @@ export function getActionScore(
         points: amount * equation.collaboration,
         description: `+${amount * equation.collaboration} for joining`,
       };
-    case 'hours':
+    case 'hours': {
+      // Prefer currencies.hour (post-migration); fall back to legacy hours.
+      const hourWeight = equation.currencies?.hour ?? equation.hours ?? 0;
       return {
         type: 'hours',
-        points: amount * equation.hours,
-        description: `+${(amount * equation.hours).toFixed(2)} for ${amount.toFixed(2)} hours`,
+        points: amount * hourWeight,
+        description: `+${(amount * hourWeight).toFixed(2)} for ${amount.toFixed(2)} hours`,
       };
+    }
     case 'sent':
       return {
         type: 'sent',
@@ -229,10 +304,15 @@ export function calculatePercentageShare(
 
 /**
  * Calculate all user scores and percentages for a holon.
+ *
+ * `currencyBalances` (optional) is keyed by userId, then by currency code.
+ * Callers that already track balances per user can pass them through; absent
+ * entries fall back to the `aggregates.hours` shim for the hour currency.
  */
 export function calculateAllUserScores(
   users: any[],
   equation: ScoreEquation = DEFAULT_EQUATION,
+  currencyBalances: Record<string, Record<string, number>> = {},
 ): Array<{
   userId: string;
   username: string;
@@ -242,10 +322,11 @@ export function calculateAllUserScores(
 }> {
   const usersWithScores = users.map((user) => {
     const aggregates = toAggregates(user);
+    const userId = String(user.id);
     return {
-      userId: String(user.id),
-      username: user.username || String(user.id),
-      score: calculateUserScore(aggregates, equation),
+      userId,
+      username: user.username || userId,
+      score: calculateUserScore(aggregates, equation, currencyBalances[userId] ?? {}),
       percentage: 0,
       aggregates,
     };

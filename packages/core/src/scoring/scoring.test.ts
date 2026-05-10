@@ -10,6 +10,7 @@ import {
   getActionScore,
   getCachedEquation,
   getScoreBreakdown,
+  migrateEquation,
   toAggregates,
   type REAEventStoreLike,
   type UserAggregates,
@@ -26,7 +27,41 @@ describe('DEFAULT_EQUATION', () => {
       collaboration: 1,
       wants: 1,
       offers: 1,
+      currencies: { hour: 1 },
     });
+  });
+});
+
+describe('migrateEquation', () => {
+  it('folds legacy hours into currencies.hour', () => {
+    const migrated = migrateEquation({
+      initiated: 1,
+      completed: 2,
+      sent: 1,
+      received: 1,
+      hours: 3,
+      collaboration: 1,
+      wants: 1,
+      offers: 1,
+    });
+    expect(migrated.currencies.hour).toBe(3);
+    // hours is mirrored back for legacy readers.
+    expect(migrated.hours).toBe(3);
+  });
+
+  it('is idempotent', () => {
+    const once = migrateEquation({ hours: 4 });
+    const twice = migrateEquation(once);
+    expect(twice).toEqual(once);
+  });
+
+  it('preserves currencies.hour when both are set', () => {
+    const migrated = migrateEquation({ hours: 5, currencies: { hour: 7 } });
+    expect(migrated.currencies.hour).toBe(7);
+  });
+
+  it('returns the default equation when called with undefined', () => {
+    expect(migrateEquation(undefined)).toEqual(DEFAULT_EQUATION);
   });
 });
 
@@ -106,8 +141,53 @@ describe('calculateUserScore', () => {
         collaboration: 0,
         wants: 0,
         offers: 0,
+        currencies: {},
       }),
     ).toBe(10);
+  });
+
+  it('adds Σ currencyBalances * equation.currencies', () => {
+    const aggregates: UserAggregates = {
+      initiated: 0,
+      completed: 0,
+      sent: 0,
+      received: 0,
+      hours: 0,
+      collaboration: 0,
+      wants: 0,
+      offers: 0,
+    };
+    const equation = {
+      ...DEFAULT_EQUATION,
+      // Clear everything except the currency weights so the test is focused.
+      initiated: 0, completed: 0, sent: 0, received: 0, hours: 0,
+      collaboration: 0, wants: 0, offers: 0,
+      currencies: { hour: 2, eur: 3 },
+    };
+    expect(
+      calculateUserScore(aggregates, equation, { hour: 5, eur: 10 }),
+    ).toBe(5 * 2 + 10 * 3);
+  });
+
+  it('falls back to aggregates.hours when currencies.hour is set but balance is not', () => {
+    const aggregates: UserAggregates = {
+      initiated: 0, completed: 0, sent: 0, received: 0,
+      hours: 4, collaboration: 0, wants: 0, offers: 0,
+    };
+    // Migrated equation: currencies.hour = 2, hours mirrored to 2.
+    const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
+    // Without currencyBalances, hours fall-through path applies once: 4*2 = 8.
+    expect(calculateUserScore(aggregates, equation)).toBe(8);
+  });
+
+  it('does not double-count hours when both currencies.hour and equation.hours are set', () => {
+    const aggregates: UserAggregates = {
+      initiated: 0, completed: 0, sent: 0, received: 0,
+      hours: 4, collaboration: 0, wants: 0, offers: 0,
+    };
+    const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
+    // Explicit hour balance wins; aggregates.hours fallback is suppressed.
+    expect(calculateUserScore(aggregates, equation, { hour: 4 })).toBe(8);
   });
 });
 
@@ -139,7 +219,10 @@ describe('getScoreBreakdown', () => {
     );
     expect(breakdown.initiated).toBe(2);
     expect(breakdown.completed).toBe(2);
+    // DEFAULT_EQUATION has currencies.hour=1, so hours flows through the
+    // currency path; breakdown.hours equals currencies.hour.
     expect(breakdown.hours).toBe(4);
+    expect(breakdown.currencies.hour).toBe(4);
     expect(breakdown.collaboration).toBe(1);
     expect(breakdown.total).toBe(2 + 2 + 4 + 1);
   });
