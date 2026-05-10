@@ -616,8 +616,16 @@ export default class Quests {
         if (quest.timeTracking) {
             for (const [userID, hours] of Object.entries(quest.timeTracking)) {
                 if (hours > 0) {
-                    await this.expenses?.addExpense(messageId, holonId, hours, 'hour',
-                                                   quest.title, userID, holonId);
+                    // Per-user, per-completion expense id — without the userID
+                    // suffix every iteration of this loop overwrites the
+                    // previous user's expense doc (they all share `messageId`).
+                    // Date.now() also makes re-completions accumulate rather
+                    // than clobber. Matches harvest's TaskModal/Tasks shape.
+                    const expenseId = `${messageId}_time_${userID}_${Date.now()}`;
+                    // splitWith must be an array; passing the scalar holonId
+                    // here used to make harvest's balance calc skip the entry.
+                    await this.expenses?.addExpense(expenseId, holonId, hours, 'hour',
+                                                   quest.title, userID, [holonId]);
 
                     try {
                         const userInfo = await this.users.getUserInfo({ id: parseInt(userID) }, holonId);

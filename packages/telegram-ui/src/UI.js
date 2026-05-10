@@ -238,7 +238,7 @@ class UI {
   getPuppeteerLaunchOptions() {
     return {
           headless: true,
-          protocolTimeout: 10000, // Fast timeout - 10 seconds
+          protocolTimeout: 30000,
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
@@ -1721,11 +1721,20 @@ class UI {
   }
 
   async generateHtml(element, theme) {
+    // Kill all motion at render time — themes are shared with the web UI, so
+    // override here instead of editing them. Static screenshots don't need
+    // transitions or keyframes, and zeroing them avoids paint churn.
+    const killMotion = `
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    `;
     return `<!DOCTYPE html>
       <html>
       <head>
       <style>`
-      + theme +
+      + theme + killMotion +
       `</style>
       </head>
       <body>`
@@ -1755,13 +1764,13 @@ class UI {
     let pageBroken = false;
 
     try {
-      // DYNAMIC VIEWPORT: Use high DPI for better image quality
-      let initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
+      // 1x DPR everywhere: 2x quadruples pixels, blowing PNG/JPEG encode time
+      // past protocolTimeout on low-RAM hosts. Telegram resamples anyway.
+      let initialViewport = { width: 1200, height: 800, deviceScaleFactor: 1 };
 
       if (klass === 'table') {
-        initialViewport = { width: 1400, height: 1200, deviceScaleFactor: 2 };
+        initialViewport = { width: 1400, height: 1200, deviceScaleFactor: 1 };
       } else if (klass === 'quest-card') {
-        // 1x scale for speed on low-RAM servers
         initialViewport = { width: 800, height: 600, deviceScaleFactor: 1 };
       }
 
@@ -1777,22 +1786,29 @@ class UI {
 
       try {
         await page.evaluate(() => Promise.all(
-          Array.from(document.images).map(img =>
-            img.complete && img.naturalWidth > 0
-              ? Promise.resolve()
-              : (img.decode ? img.decode().catch(() => {}) : new Promise(res => {
+          Array.from(document.images).map(img => {
+            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+            const ready = img.decode
+              ? img.decode().catch(() => {})
+              : new Promise(res => {
                   img.addEventListener('load', res, { once: true });
                   img.addEventListener('error', res, { once: true });
-                }))
-          )
+                });
+            const timeout = new Promise(res => setTimeout(res, 1500));
+            return Promise.race([ready, timeout]);
+          })
         ));
       } catch {
         // best-effort: proceed even if some images fail to decode
       }
 
+      // JPEG encodes far faster than PNG on large viewports. Quest cards and
+      // tables are opaque, so transparency loss is irrelevant. Telegram sniffs
+      // content from bytes, so the .png path on disk is harmless.
       const screenshotOptions = {
         path: pathToSave,
-        type: 'png',
+        type: 'jpeg',
+        quality: 85,
         omitBackground: false,
         captureBeyondViewport: false
       };
@@ -1832,7 +1848,9 @@ class UI {
 
             console.log(`Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`);
             await page.setViewport(newViewport);
-            await new Promise((r) => setTimeout(r, 500));
+            await page.evaluate(() => new Promise(res =>
+              requestAnimationFrame(() => requestAnimationFrame(res))
+            ));
 
             const updatedElementInfo = await page.evaluate((selector) => {
               const element = document.querySelector(selector);
@@ -1877,7 +1895,8 @@ class UI {
       // down the browser so the next call relaunches.
       if (error.message?.includes('Protocol error') ||
           error.message?.includes('Connection closed') ||
-          error.message?.includes('Target closed')) {
+          error.message?.includes('Target closed') ||
+          error.message?.includes('timed out')) {
         pageBroken = true;
         console.log('Browser connection lost, attempting quick restart...');
         try {
