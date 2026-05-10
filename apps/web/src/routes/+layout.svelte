@@ -557,11 +557,8 @@
 			console.error('No private key available for initialization');
 		}
 
-		// Small delay for smooth transition
-		setTimeout(() => {
-			showSplash = false;
-			splashComplete = true;
-		}, 500);
+		showSplash = false;
+		splashComplete = true;
 	}
 
 	async function handleSkip() {

@@ -68,7 +68,7 @@
 <ul class="md:pl-3 overflow-hidden">
 	<li>
 		{#each activeStates as item (item.title)}
-            <a class={style.link} href={item.isStandaloneRoute ? item.link : '/'+$page.params.id+item.link} data-tour={item.link.replace(/^\//, '')}>
+            <a class={style.link} href={item.isStandaloneRoute ? item.link : '/'+$page.params.id+item.link}>
 				<div class={`${style.iconContainer} ${item.isActive ? style.active : style.inactive}`}>
 					<div class={style.icon}>
 						<svelte:component this={item.icon} />
