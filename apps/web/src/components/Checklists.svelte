@@ -66,8 +66,9 @@
 
         entries = entries.filter(([_, checklist]) => {
             const isHologram = (checklist as any)?._hologram?.isHologram === true;
+            const isFederated = !!(checklist as any)?._federation;
             if (!$showHolograms && isHologram) return false;
-            if (!$showFederated && isHologram) return false;
+            if (!$showFederated && (isHologram || isFederated)) return false;
             return true;
         });
 

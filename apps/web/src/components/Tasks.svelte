@@ -376,6 +376,11 @@
 				return false;
 			}
 
+			// Hide federated items (and any holograms) when the federation toggle is off.
+			if (!$showFederated && (quest._hologram?.isHologram || quest._federation)) {
+				return false;
+			}
+
 			return true; // Quest passes all filters
 		});
 

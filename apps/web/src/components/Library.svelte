@@ -80,8 +80,9 @@
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
         const isHologram = item._hologram?.isHologram === true;
+        const isFederated = !!item._federation;
         if (!$showHolograms && isHologram) return false;
-        if (!$showFederated && isHologram) return false;
+        if (!$showFederated && (isHologram || isFederated)) return false;
 
         const q = filters.searchQuery.trim().toLowerCase();
         if (q) {

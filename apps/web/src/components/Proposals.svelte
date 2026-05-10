@@ -38,8 +38,9 @@
         .filter(p => p.type === "proposal")
         .filter((p) => {
             const isHologram = p._hologram?.isHologram === true;
+            const isFederated = !!(p as any)?._federation;
             if (!$showHolograms && isHologram) return false;
-            if (!$showFederated && isHologram) return false;
+            if (!$showFederated && (isHologram || isFederated)) return false;
             const q = filters.searchQuery.trim().toLowerCase();
             if (q && !`${p.title} ${p.description}`.toLowerCase().includes(q)) return false;
             return true;
