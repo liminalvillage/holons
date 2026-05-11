@@ -4150,7 +4150,9 @@ export default class Settings {
             });
 
             item.participants = participants;
-            this.db.gun.get(appName).get(targetHolonId).get(lens).get(itemId).put(JSON.stringify(item));
+            // Use the holosphere wrapper so nested fields land as a graph node,
+            // not as a stringified blob that breaks subsequent reads.
+            await this.db.put(targetHolonId, lens, item);
 
             const title = item.title || item.name || itemId;
             await ctx.reply(

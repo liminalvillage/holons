@@ -449,6 +449,7 @@ export default class BookingSystem {
             const timestamp = Date.now();
 
             const application = {
+                id: timestamp.toString(),
                 status: 'submitted',
                 submittedAt: new Date().toISOString(),
                 userId: userId,
@@ -458,13 +459,10 @@ export default class BookingSystem {
                 data: data
             };
 
-            // Save to Gun DB
+            // Persist via the holosphere wrapper so nested fields land as a
+            // graph node, not as a stringified blob.
             if (ctx.session.db) {
-                await ctx.session.db.gun
-                    .get(userId)
-                    .get(storagePrefix)
-                    .get(timestamp.toString())
-                    .put(JSON.stringify(application));
+                await ctx.session.db.put(userId, storagePrefix, application);
             }
 
             console.log(`BookingSystem: Application saved for user ${userId}`);
