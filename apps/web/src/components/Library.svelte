@@ -5,7 +5,7 @@
     import type { HoloSphere } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
     import { goto } from "$app/navigation";
-    import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+    import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
@@ -79,10 +79,7 @@
     $: libraryItems = Object.entries(store);
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
-        const isHologram = item._hologram?.isHologram === true;
-        const isFederated = !!item._federation;
-        if (!$showHolograms && isHologram) return false;
-        if (!$showFederated && (isHologram || isFederated)) return false;
+        if (!passesLensFilters(item, $showHolograms, $showFederated)) return false;
 
         const q = filters.searchQuery.trim().toLowerCase();
         if (q) {

@@ -9,7 +9,7 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-    import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+    import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
@@ -64,13 +64,9 @@
         const q = filters.searchQuery.trim().toLowerCase();
         let entries = Object.entries(allChecklists);
 
-        entries = entries.filter(([_, checklist]) => {
-            const isHologram = (checklist as any)?._hologram?.isHologram === true;
-            const isFederated = !!(checklist as any)?._federation;
-            if (!$showHolograms && isHologram) return false;
-            if (!$showFederated && (isHologram || isFederated)) return false;
-            return true;
-        });
+        entries = entries.filter(([_, checklist]) =>
+            passesLensFilters(checklist as any, $showHolograms, $showFederated)
+        );
 
         switch (filters.activeFilter) {
             case 'standalone':

@@ -41,7 +41,7 @@
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
-	import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
 	import type { PublishOutcome } from "$lib/holosphere/publish";
@@ -371,13 +371,7 @@
 				return false;
 			}
 
-			// Filter holograms if showHolograms is false
-			if (!$showHolograms && quest._hologram?.isHologram) {
-				return false;
-			}
-
-			// Hide federated items (and any holograms) when the federation toggle is off.
-			if (!$showFederated && (quest._hologram?.isHologram || quest._federation)) {
+			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
 				return false;
 			}
 

@@ -44,3 +44,25 @@ if (browser) {
 	showFederated.subscribe(value => writeSnapshot({ showFederated: value }));
 	showHolograms.subscribe(value => writeSnapshot({ showHolograms: value }));
 }
+
+export interface LensFilterable {
+	_hologram?: { isHologram?: boolean } | null;
+	_federation?: unknown;
+}
+
+/**
+ * Shared visibility gate used by every lens view (tasks, expenses, offers,
+ * proposals, roles, shopping, library, checklists). Keeps the two toggles
+ * in lockstep across lenses.
+ */
+export function passesLensFilters(
+	item: LensFilterable | null | undefined,
+	holograms: boolean,
+	federated: boolean
+): boolean {
+	const isHologram = item?._hologram?.isHologram === true;
+	const isFederated = !!item?._federation;
+	if (!holograms && isHologram) return false;
+	if (!federated && (isHologram || isFederated)) return false;
+	return true;
+}

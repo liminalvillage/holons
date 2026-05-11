@@ -9,7 +9,7 @@
     import GenericImportModal from './shared/GenericImportModal.svelte';
     import { nameMap, resolveHologramSource, extractHolonIdFromSoul, resolveName, resolvedName } from '$lib/stores/nameResolver';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
-    import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+    import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
     import TitleBar from './shared/TitleBar.svelte';
     import { CheckSquare } from 'svelte-feathers';
@@ -37,10 +37,7 @@
     $: sortedProposals = Object.values(proposals)
         .filter(p => p.type === "proposal")
         .filter((p) => {
-            const isHologram = p._hologram?.isHologram === true;
-            const isFederated = !!(p as any)?._federation;
-            if (!$showHolograms && isHologram) return false;
-            if (!$showFederated && (isHologram || isFederated)) return false;
+            if (!passesLensFilters(p, $showHolograms, $showFederated)) return false;
             const q = filters.searchQuery.trim().toLowerCase();
             if (q && !`${p.title} ${p.description}`.toLowerCase().includes(q)) return false;
             return true;

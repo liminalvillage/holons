@@ -3,7 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
-	import { calculateCreditMatrix, expenseCurrency } from "../utils/expenseCalculations";
+	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
 
 	// Holonsbot writes `date` (epoch ms number); harvest writes `timestamp`
 	// (ISO string). Read either so cross-system data sorts/displays correctly.
@@ -32,7 +32,7 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { goto } from '$app/navigation';
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 
 	interface Expense {
@@ -265,18 +265,15 @@
 		calculateCredits(selectedCurrency);
 	}
 
-	$: filteredExpenses = Object.values(expenses)
-		.filter(e => e.currency === selectedCurrency)
-		.filter((e: any) => {
-			const isHologram = e?._hologram?.isHologram === true;
-			const isFederated = !!e?._federation;
-			if (!$showHolograms && isHologram) return false;
-			if (!$showFederated && (isHologram || isFederated)) return false;
-			const q = filters.searchQuery.trim().toLowerCase();
-			if (!q) return true;
-			return `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q);
-		})
-		.sort((a, b) => expenseTimestampMs(b) - expenseTimestampMs(a));
+	$: filteredExpenses = (() => {
+		const want = normalizeCurrency(selectedCurrency || '');
+		const q = filters.searchQuery.trim().toLowerCase();
+		return Object.values(expenses)
+			.filter(e => expenseCurrency(e as any) === want)
+			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated))
+			.filter((e: any) => !q || `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q))
+			.sort((a, b) => expenseTimestampMs(b) - expenseTimestampMs(a));
+	})();
 
 	$: noCurrenciesAvailable = !isLoading && availableCurrencies.length === 0;
 

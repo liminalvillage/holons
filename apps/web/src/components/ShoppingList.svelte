@@ -12,7 +12,7 @@
     import { ShoppingCart, Trash2, RefreshCw } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
-    import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+    import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
 
     // Storage layout matches HolonsBot: a single container document under the
@@ -90,10 +90,7 @@
         : localItems;
 
     $: visibleItems = shoppingItems.filter((item) => {
-        const isHologram = item._hologram?.isHologram === true;
-        const isFederated = !!(item as any)?._federation;
-        if (!$showHolograms && isHologram) return false;
-        if (!$showFederated && (isHologram || isFederated)) return false;
+        if (!passesLensFilters(item as any, $showHolograms, $showFederated)) return false;
         const q = filters.searchQuery.trim().toLowerCase();
         if (q && !(item.text ?? '').toLowerCase().includes(q)) return false;
         return true;

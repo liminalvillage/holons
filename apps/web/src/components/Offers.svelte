@@ -14,7 +14,7 @@
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
-	import { showFederated, showHolograms } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
@@ -56,11 +56,7 @@
 	let loadingFederated = false;
 
 	function matchesVisibility(item: any): boolean {
-		const isHologram = item?._hologram?.isHologram === true;
-		const isFederated = !!item?._federation;
-		if (!$showHolograms && isHologram) return false;
-		if (!$showFederated && (isHologram || isFederated)) return false;
-		return true;
+		return passesLensFilters(item, $showHolograms, $showFederated);
 	}
 
 	function matchesSearch(item: any, query: string): boolean {

@@ -638,21 +638,29 @@
         return getBreakdown(user, userKey).total;
     }
 
-    // Force recomputation when equation changes
-    $: equationChanged = JSON.stringify(equation);
-    
-    $: sortedUsers = Object.entries(store).sort(([keyA, a], [keyB, b]) => {
-        // Force dependency on equation changes
-        equationChanged;
-        return calculateScore(b, keyB) - calculateScore(a, keyA);
-    });
+    // Compute every user's score exactly once per reactive tick. All the
+    // downstream derivations (sort, totals, pie chart, table rows, footer)
+    // read from this map instead of re-invoking calculateScore — which used
+    // to walk the breakdown 5–6 times per user per render.
+    $: scoreByKey = (() => {
+        equation; availableCurrencies; expenseStore; store;
+        const map: Record<string, number> = {};
+        for (const [key, user] of Object.entries(store)) {
+            map[key] = calculateScore(user, key);
+        }
+        return map;
+    })();
 
-    $: maxScore = sortedUsers.length > 0 ? calculateScore(sortedUsers[0][1], sortedUsers[0][0]) : 0;
-    $: totalScore = sortedUsers.reduce((sum, [key, user]) => sum + calculateScore(user, key), 0);
+    $: sortedUsers = Object.entries(store).sort(
+        ([keyA], [keyB]) => (scoreByKey[keyB] ?? 0) - (scoreByKey[keyA] ?? 0)
+    );
+
+    $: maxScore = sortedUsers.length > 0 ? (scoreByKey[sortedUsers[0][0]] ?? 0) : 0;
+    $: totalScore = Object.values(scoreByKey).reduce((sum, v) => sum + v, 0);
 
     // Prepare data for the 3D pie chart
     $: pieChartData = sortedUsers.map(([userId, user]) => {
-        const score = calculateScore(user, userId);
+        const score = scoreByKey[userId] ?? 0;
         const percentage = totalScore > 0 ? (score / totalScore) * 100 : 0;
 
         // Build the breakdown object
@@ -774,7 +782,7 @@
                     </div>
                     <div class="stats-bar__divider"></div>
                     <div class="stats-bar__item stats-bar__item--success">
-                        <span class="stats-bar__value">{sortedUsers.filter(([key, user]) => calculateScore(user, key) > 0).length}</span>
+                        <span class="stats-bar__value">{sortedUsers.filter(([key]) => (scoreByKey[key] ?? 0) > 0).length}</span>
                         <span class="stats-bar__label">Active</span>
                     </div>
                     <div class="stats-bar__divider"></div>
@@ -817,7 +825,7 @@
                             </thead>
                             <tbody>
                                 {#each sortedUsers as [userId, user], index}
-                                    {@const score = calculateScore(user, userId)}
+                                    {@const score = scoreByKey[userId] ?? 0}
                                     {@const percentage = calculatePercentage(score)}
                                     <tr class="border-b border-gray-600/50 hover:bg-gray-600/20 transition-all duration-200">
                                         <td class="p-2 text-center">
