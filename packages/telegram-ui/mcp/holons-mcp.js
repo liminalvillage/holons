@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
+ * @deprecated Superseded by `@holons/mcp-ui`. This file is retained for
+ * backwards compatibility and will be removed in a future release. Use
+ * `node packages/mcp-ui/dist/index.js` instead.
+ *
  * HolonsBot MCP Server
- * 
+ *
  * Exposes the full HolonsBot feature set via MCP protocol (SSE + REST).
  * Connects to the running bot's HTTP API on port 3101.
- * 
+ *
  * Usage:
  *   node mcp/holons-mcp.js                  # stdio transport
  *   node mcp/holons-mcp.js --port 3100      # SSE + REST on port
