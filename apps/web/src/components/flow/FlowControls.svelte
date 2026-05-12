@@ -368,10 +368,6 @@
     border: 2px solid #1e293b;
   }
 
-  .interior-slider::-webkit-slider-thumb {
-    background: linear-gradient(135deg, #475569 0%, #64748b 100%);
-  }
-
   .steepness-slider::-webkit-slider-thumb {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   }

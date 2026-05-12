@@ -56,6 +56,7 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="expiration-title"
+        tabindex="-1"
     >
         <div class="bg-gray-800 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl border border-gray-700">
             <h3 id="expiration-title" class="text-lg font-semibold text-white mb-4">

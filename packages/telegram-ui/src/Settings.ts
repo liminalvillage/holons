@@ -22,6 +22,7 @@ import {
 import {
     DEFAULT_EQUATION,
     calculateUserScore,
+    migrateEquation,
     toAggregates,
 } from '@holons/core/scoring';
 
@@ -817,11 +818,15 @@ export default class Settings {
             const field = ctx.match[2];
 
             let weights = await this.getValueEquation(holonId);
+            const delta = action === 'increment' ? 1 : -1;
 
-            if (action === 'increment') {
-                weights[field]++;
+            // Per-currency weights live in valueEquation.currencies (canonical
+            // shape shared with core/web). Built-in equation fields (initiated,
+            // completed, sent, received, etc.) sit at the top level.
+            if (weights.currencies && Object.prototype.hasOwnProperty.call(weights.currencies, field)) {
+                weights.currencies[field] = (weights.currencies[field] || 0) + delta;
             } else {
-                weights[field]--;
+                weights[field] = (weights[field] || 0) + delta;
             }
 
             await this.setValueEquation(holonId, weights);
@@ -2020,15 +2025,18 @@ export default class Settings {
             ]
         ];
 
-        // Dynamically add currencies from the settings.currencies array
+        // Dynamically add currencies from the settings.currencies array.
+        // Per-currency weights are read from the canonical `currencies` sub-map.
         if (currencies && Array.isArray(currencies)) {
+            const currencyWeights = weights?.currencies ?? {};
             currencies.forEach(currency => {
                 const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                if (currencyKey) { // Ensure the key is valid
+                if (currencyKey) {
+                    const weight = currencyWeights[currencyKey];
                     inlineKeyboard.push([
-                        { text: currency.toUpperCase(), callback_data: 'null' }, // Display currency name
+                        { text: currency.toUpperCase(), callback_data: 'null' },
                         { text: '<', callback_data: `decrement_${currencyKey}` },
-                        { text: weights[currencyKey] !== undefined ? weights[currencyKey].toString() : '0', callback_data: 'null' },
+                        { text: weight !== undefined ? weight.toString() : '0', callback_data: 'null' },
                         { text: '>', callback_data: `increment_${currencyKey}` }
                     ]);
                 }
@@ -2050,7 +2058,7 @@ export default class Settings {
      */
     getDefaultSettings(holonId, holonName) {
         return {
-            id: holonId,
+            id: String(holonId),
             hex: '',
             version: 0.2,
             name: holonName || 'unknown',
@@ -2064,11 +2072,13 @@ export default class Settings {
             purpose: '',
             domains: [],
             currencies: ['hour','euro'], // Default currency for all groups
+            // Canonical equation shape lives in @holons/core/scoring so web,
+            // telegram, text, and ai UIs score identically. Spread to copy
+            // (including the nested `currencies` map) so callers can't mutate
+            // the module-level singleton.
             valueEquation: {
-                initiated: 1,
-                completed: 1,
-                sent: 1,
-                received: 1
+                ...DEFAULT_EQUATION,
+                currencies: { ...DEFAULT_EQUATION.currencies },
             },
             maxTasks: 13, // Default to 13 (Fibonacci)
         }
@@ -2359,40 +2369,36 @@ export default class Settings {
             settings = this.getDefaultSettings(holonId, holonName)
             await this.db.put(holonId.toString(), 'settings', settings)
         } else {
-            // Ensure all required fields exist by merging with default settings
+            // Ensure all required fields exist by merging with default settings.
+            // migrateEquation folds legacy `hours` and flat per-currency keys
+            // (e.g. `valueEquation.euro`, the shape this UI used to write) into
+            // the canonical `.currencies` sub-map so cross-system reads agree.
             const defaultSettings = this.getDefaultSettings(holonId, settings.name || 'unknown')
             settings = {
-                ...defaultSettings,  // Start with all default values
-                ...settings,         // Override with existing settings
-                // Ensure array properties exist
+                ...defaultSettings,
+                ...settings,
+                id: String(settings.id ?? holonId),
                 roles: settings.roles || defaultSettings.roles,
                 values: settings.values || defaultSettings.values,
                 domains: settings.domains || defaultSettings.domains,
                 currencies: settings.currencies || defaultSettings.currencies,
-                // Ensure object properties exist
-                valueEquation: {
-                    ...defaultSettings.valueEquation,
-                    ...(settings.valueEquation || {})
-                },
+                valueEquation: migrateEquation(settings.valueEquation),
                 maxTasks: typeof settings.maxTasks !== 'undefined' ? settings.maxTasks : defaultSettings.maxTasks,
             }
-                // Ensure 'hour' is always included as a default currency
-                if (!settings.currencies.includes('hour')) {
-                    settings.currencies.push('hour');
-                }
-
-                // Dynamically add currencies from settings.currencies to valueEquation if not present
-                if (settings.currencies && Array.isArray(settings.currencies)) {
-                    settings.currencies.forEach(currency => {
-                        // Ensure currency is a simple string and suitable as a key
-                        const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                        if (currencyKey && typeof settings.valueEquation[currencyKey] === 'undefined') {
-                            settings.valueEquation[currencyKey] = 0; // Default weight for new currency
-                        }
-                    });
-                }
-            // NOTE: Removed auto-save here - it was causing race conditions
-            // Settings should only be saved explicitly via setSettings()
+            // 'hour' is the time-tracking currency and must always be present.
+            if (!settings.currencies.includes('hour')) {
+                settings.currencies.push('hour');
+            }
+            // Add weights for any newly-listed currencies, into the canonical
+            // sub-map. Existing weights are preserved by `??=`.
+            for (const currency of settings.currencies) {
+                const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                if (!currencyKey) continue;
+                settings.valueEquation.currencies ??= {};
+                settings.valueEquation.currencies[currencyKey] ??= 0;
+            }
+            // NOTE: No auto-save here — causes race conditions. Settings are
+            // persisted explicitly via setSettings().
         }
 
         // Cache the result
@@ -2415,13 +2421,16 @@ export default class Settings {
             console.error('[setSettings] ERROR: settings.id is missing!');
             return;
         }
-        await this.db.put(settings.id, 'settings', settings);
+        // Holon IDs are strings everywhere in core and web; coerce so a
+        // numeric Telegram chat_id can't leak into the stored document.
+        const holonId = String(settings.id);
+        settings.id = holonId;
+        await this.db.put(holonId, 'settings', settings);
 
-        // Invalidate local cache - delete both numeric and string keys to handle type mismatches
-        const holonId = settings.id;
+        // Cache may have been populated under a numeric key by an older
+        // caller before the string coercion landed — clear both for safety.
         this._settingsCache.delete(holonId);
         this._settingsCache.delete(Number(holonId));
-        this._settingsCache.delete(String(holonId));
     }
 
     /**

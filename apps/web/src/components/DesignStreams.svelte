@@ -180,7 +180,7 @@
             const targetHolonId = target === 'current' && holonID ? holonID : `qt-${hashString(questTree.vision.statement)}-${Date.now().toString(36)}`;
 
             const tasks = createTasksFromQuestTree(questTree, targetHolonId);
-            const count = await saveTasksToHolon(holosphere, targetHolonId, tasks);
+            const count = await saveTasksToHolon(holosphere as any, targetHolonId, tasks);
 
             if (count > 0) {
                 addTimelineMappingMessage('system', `✅ Saved ${count} quest${count === 1 ? '' : 's'} to ${target === 'current' ? 'this holon' : 'a new holon'} (${targetHolonId}).`);

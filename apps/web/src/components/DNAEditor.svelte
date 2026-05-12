@@ -569,7 +569,7 @@
   {/if}
 </div>
 
-<style>
+<style lang="postcss">
   .dna-editor {
     @apply flex flex-col h-full bg-gray-50 dark:bg-gray-900;
   }

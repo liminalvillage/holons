@@ -667,7 +667,7 @@
 				<span class="hidden sm:inline">Export</span>
 			</button>
 			<button class="btn btn--primary" onclick={() => isAddingNewEntry = true}>
-				<Plus size={16} />
+				<Plus size="16" />
 				<span class="hidden sm:inline">New Entry</span>
 			</button>
 		</div>

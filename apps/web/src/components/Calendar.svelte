@@ -2766,6 +2766,9 @@
                             </div>
                         {/if}
                         <SourceBadge item={task} currentHolonId={$ID} lensRoute="calendar" />
+                        <!-- Pointer-only resize handle; no keyboard interaction exists for drag-resize. -->
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                         <div
                             class="absolute left-0 right-0 bottom-0 h-2 cursor-ns-resize touch-none hover:bg-white/40"
                             role="separator"

@@ -1030,7 +1030,7 @@
                   on:click={addMember}
                   disabled={addingMember || !newMemberAddress}
                 >
-                  <Plus size={16} />
+                  <Plus size="16" />
                   {#if addingMember}
                     <span>Adding...</span>
                   {:else}

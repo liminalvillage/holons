@@ -63,6 +63,37 @@ describe('migrateEquation', () => {
   it('returns the default equation when called with undefined', () => {
     expect(migrateEquation(undefined)).toEqual(DEFAULT_EQUATION);
   });
+
+  it('folds flat per-currency keys into the currencies sub-map', () => {
+    // telegram-ui historically wrote `valueEquation.euro = 0` at the top
+    // level instead of `valueEquation.currencies.euro`. Migration must
+    // recover those weights so cross-system reads agree.
+    const migrated = migrateEquation({
+      initiated: 1,
+      completed: 2,
+      sent: 1,
+      received: 1,
+      hours: 1,
+      collaboration: 1,
+      wants: 1,
+      offers: 1,
+      euro: 3,
+      usd: 5,
+    });
+    expect(migrated.currencies.euro).toBe(3);
+    expect(migrated.currencies.usd).toBe(5);
+    expect((migrated as any).euro).toBeUndefined();
+    expect((migrated as any).usd).toBeUndefined();
+  });
+
+  it('lets an explicit currencies entry win over a flat duplicate', () => {
+    const migrated = migrateEquation({
+      hours: 1,
+      euro: 3,
+      currencies: { euro: 9 },
+    });
+    expect(migrated.currencies.euro).toBe(9);
+  });
 });
 
 describe('toAggregates', () => {

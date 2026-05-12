@@ -1303,11 +1303,15 @@
                                     {@const isPending = pendingUserUpdates.has(userKey)}
                                     {@const isSelected = participantIds.has(user.id)}
                                     {@const currentTime = isSelected ? (quest.timeTracking?.[user.id] || 0) : 0}
-                                    <button
-                                        class="w-full flex items-center justify-between p-2.5 rounded-lg text-sm transition-all touch-manipulation select-none active:scale-[0.98] {isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border border-transparent'} {isPending ? 'opacity-60 pointer-events-none' : ''}"
+                                    <!-- Row is a div, not a button, so the +15m action button inside is valid HTML. -->
+                                    <div
+                                        class="w-full flex items-center justify-between p-2.5 rounded-lg text-sm transition-all touch-manipulation select-none active:scale-[0.98] cursor-pointer {isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border border-transparent'} {isPending ? 'opacity-60 pointer-events-none' : ''}"
+                                        role="button"
+                                        tabindex={isPending ? -1 : 0}
+                                        aria-pressed={isSelected}
+                                        aria-disabled={isPending}
                                         on:click|stopPropagation={() => toggleUserParticipation(userKey, user)}
-                                        type="button"
-                                        disabled={isPending}
+                                        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleUserParticipation(userKey, user); } }}
                                     >
                                         <div class="flex items-center gap-2.5">
                                             <!-- Checkbox indicator -->
@@ -1347,7 +1351,7 @@
                                                 +15m
                                             </button>
                                         {/if}
-                                    </button>
+                                    </div>
                                 {/each}
                             {/if}
                         </div>

@@ -287,7 +287,7 @@
                             on:click={addCalendar}
                             disabled={loading}
                         >
-                            <Plus size={16} />
+                            <Plus size="16" />
                             {loading ? 'Adding...' : 'Add Calendar'}
                         </button>
                     </div>

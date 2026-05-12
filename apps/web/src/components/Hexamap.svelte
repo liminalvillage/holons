@@ -195,7 +195,7 @@
     y2withBuffer = Math.min(y2withBuffer, latitudeMax);
     console.log(`BUFF Coordinates x1:${x1withBuffer} x2:${x2withBuffer} y1:${y1withBuffer} y2:${y2withBuffer} fullView:${fullX}`);
 
-    let coordinates = [];
+    let coordinates: any[] = [];
     if (fullX) {
       coordinates.push([
         [latitudeMin, longitudeMin],
@@ -226,8 +226,8 @@
       }
     }
 
-    const shapes = [].concat(...coordinates.map(e => h3.polygonToCells(e, h3res)));
-    const innershapes = [].concat(...coordinates.map(e => h3.polygonToCells(e, h3res + 1)));
+    const shapes = ([] as string[]).concat(...coordinates.map((e: any) => h3.polygonToCells(e, h3res)));
+    const innershapes = ([] as string[]).concat(...coordinates.map((e: any) => h3.polygonToCells(e, h3res + 1)));
     const hexBoundaries: any[] = [];
     const pentaBoundaries: any[] = [];
     const innerBoundaries: any[] = [];

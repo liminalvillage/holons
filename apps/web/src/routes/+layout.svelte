@@ -9,6 +9,7 @@
 	import Splash from '../components/Splash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
+	import { homeHolonIdOverride } from '$lib/stores/homeHolonId';
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
@@ -68,7 +69,7 @@
 		try {
 			// Check if holon settings already exist with retry logic
 			// Relay data may take time to sync on first connection
-			let existingSettings = null;
+			let existingSettings: { name?: string; [key: string]: any } | null = null;
 			const maxRetries = 3;
 			const retryDelay = 500; // ms
 
@@ -534,6 +535,12 @@
 					? String(pendingTelegramUserId)
 					: telegramMappedPublicKey;
 
+				// Pin this as the user's home for sidebar/federation source —
+				// $nostrPublicKey is null for telegram-mapped sessions, so
+				// consumers that read `homeHolonId` would otherwise fall back
+				// to the URL-driven $ID and drift on every navigation.
+				homeHolonIdOverride.set(homeHolonId);
+
 				if (browser) {
 					addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
 				}
@@ -574,6 +581,11 @@
 	// Check for URL private key parameter on mount (for direct access from safe environments)
 	onMount(async () => {
 		if (!browser) return;
+
+		// Hydrate $nostrPublicKey from localStorage even when the user skipped
+		// the splash (e.g. landed directly on a /[id]/dashboard URL). Without
+		// this the home-holon row in the sidebar stays hidden after a refresh.
+		await nostrStore.init();
 
 		const urlPrivateKey = data?.urlPrivateKey;
 		if (urlPrivateKey) {

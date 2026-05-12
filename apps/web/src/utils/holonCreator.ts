@@ -139,7 +139,7 @@ export async function createHolonFromRitual(
 		);
 
 		// Save tasks to new holon
-		const successfulTasks = await saveTasksToHolon(holosphere, newHolonID, tasks);
+		const successfulTasks = await saveTasksToHolon(holosphere as any, newHolonID, tasks);
 
 		// If no tasks were saved successfully, throw an error
 		if (successfulTasks === 0) {

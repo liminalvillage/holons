@@ -71,7 +71,7 @@
 	}
 
 	function getStartTime(quest: Quest) {
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		let hours = date.getHours();
 		let minutes: number | string = date.getMinutes();
 		minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
@@ -80,13 +80,13 @@
 
 	function getEndTime(quest: Quest) {
 		if (!quest.ends) {
-			const date = new Date(quest.when);
+			const date = new Date(quest.when || '');
 			let hours = date.getHours();
 			let minutes: number | string = date.getMinutes();
 			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
 			return `${hours + 1}${minutes}`;
 		} else {
-			const date = new Date(quest.ends);
+			const date = new Date(quest.ends || '');
 			let hours = date.getHours();
 			let minutes: number | string = date.getMinutes();
 			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
@@ -98,7 +98,7 @@
 		if (!quest || !quest.when) return false;
 		
 		const today = new Date();
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		
 		return (
 			date.getDate() === today.getDate() &&
@@ -109,13 +109,13 @@
 
 	function isTomorrow(quest: Quest) {
 		const today = new Date();
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		return date.getDate() === today.getDate() + 1;
 	}
 
 	function getDay(quest: Quest) {
 		const today = new Date();
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		if (date.getDate() < today.getDate()) return "past";
 		if (date.getDate() === today.getDate()) return "today";
 		if (date.getDate() === today.getDate() + 1) return "tomorrow";
@@ -125,7 +125,7 @@
 	function getLength(quest: Quest	) {
 		if (!quest.when) return 0;
 		if (!quest.ends) return 1;
-		const start: Date = new Date(quest.when);
+		const start: Date = new Date(quest.when || '');
 		const end: Date = new Date(quest.end);
 		const diff: number = end.getTime() - start.getTime();
 		const minutes: number = Math.floor(diff / 60000);
@@ -142,7 +142,7 @@
 
 		// Sort quests by when property
 		const sortedQuests = filteredQuests.sort(
-			([keyA, questA], [keyB, questB]) => new Date(questA.when).getTime() - new Date(questB.when).getTime()
+			([keyA, questA], [keyB, questB]) => new Date(questA.when || '').getTime() - new Date(questB.when || '').getTime()
 		);
 
 		return sortedQuests;
@@ -150,7 +150,7 @@
 
 	function handleQuestClick(key: string, quest: Quest) {
 		selectedQuest = { id: key, quest };
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		tempDate = date.toISOString().split('T')[0];
 		tempTime = date.toTimeString().slice(0, 5);
 		showDatePicker = true;

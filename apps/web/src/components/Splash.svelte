@@ -1039,12 +1039,6 @@
 		cursor: not-allowed;
 	}
 
-	.key-length {
-		color: #64748b;
-		font-size: 0.8rem;
-		margin-top: 0.5rem;
-		text-align: right;
-	}
 
 	.error-message {
 		color: #f87171;
@@ -1160,11 +1154,6 @@
 		flex-direction: column;
 	}
 
-	.telegram-username {
-		color: #0088cc;
-		font-size: 0.85rem;
-		font-weight: 400;
-	}
 
 	.telegram-id {
 		color: #64748b;

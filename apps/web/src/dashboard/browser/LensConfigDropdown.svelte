@@ -4,7 +4,7 @@
 	import { X, Trash2 } from 'svelte-feathers';
 
 	export let holonId: string;
-	export let holonName: string;
+	export const holonName: string = '';
 	export let sharedLenses: string[] = [];
 	export let isOpen: boolean = false;
 
@@ -85,7 +85,7 @@
 		<div class="lens-dropdown__header">
 			<span class="lens-dropdown__title">Shared Lenses</span>
 			<button class="lens-dropdown__close" onclick={close}>
-				<X size={14} />
+				<X size="14" />
 			</button>
 		</div>
 
@@ -108,7 +108,7 @@
 
 		<div class="lens-dropdown__footer">
 			<button class="lens-dropdown__remove" onclick={handleRemove}>
-				<Trash2 size={14} />
+				<Trash2 size="14" />
 				<span>Remove Federation</span>
 			</button>
 		</div>

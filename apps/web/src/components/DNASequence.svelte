@@ -20,7 +20,9 @@
     isLoading = false
   }: Props = $props();
 
-  // Local items state for drag-and-drop
+  // Local items state for drag-and-drop. Captures the initial value of
+  // `sequence`; the $effect below re-syncs on prop changes.
+  // svelte-ignore state_referenced_locally
   let items = $state(sequence);
 
   // Update items when sequence prop changes
@@ -131,7 +133,7 @@
   </div>
 </div>
 
-<style>
+<style lang="postcss">
   .sequence-container {
     @apply flex flex-col h-full;
   }

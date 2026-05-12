@@ -409,7 +409,7 @@
     {/if}
 </form>
 
-<style>
+<style lang="postcss">
     /* Add styles for required fields focus */
     input:required:focus,
     select:required:focus {

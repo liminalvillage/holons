@@ -185,13 +185,6 @@
 		color: var(--color-text-muted, #6b7280);
 	}
 
-	.federation-section__chevron {
-		transition: transform 200ms ease;
-	}
-
-	.federation-section__chevron--up {
-		transform: rotate(180deg);
-	}
 
 	.federation-section__content {
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);

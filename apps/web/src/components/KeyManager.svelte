@@ -153,6 +153,7 @@
 			on:click|stopPropagation
 			on:keydown|stopPropagation
 			role="menu"
+			tabindex="-1"
 		>
 			<!-- Header -->
 			<div class="px-4 py-3 bg-gray-900/50 border-b border-gray-700">

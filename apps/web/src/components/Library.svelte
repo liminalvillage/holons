@@ -1282,7 +1282,7 @@
 
                 {#if !borrowNow}
                     <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-300 mb-3">Select start date:</label>
+                        <div class="block text-sm font-medium text-gray-300 mb-3">Select start date:</div>
 
                         <!-- Start-date calendar -->
                         <div class="bg-gray-700/50 rounded-xl p-4">
@@ -1290,6 +1290,7 @@
                             <div class="flex items-center justify-between mb-4">
                                 <button
                                     on:click={prevStartMonth}
+                                    aria-label="Previous month"
                                     class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1301,6 +1302,7 @@
                                 </span>
                                 <button
                                     on:click={nextStartMonth}
+                                    aria-label="Next month"
                                     class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1348,7 +1350,7 @@
                 {/if}
 
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-300 mb-3">Select return date:</label>
+                    <div class="block text-sm font-medium text-gray-300 mb-3">Select return date:</div>
 
                     <!-- Calendar -->
                     <div class="bg-gray-700/50 rounded-xl p-4">
@@ -1356,6 +1358,7 @@
                         <div class="flex items-center justify-between mb-4">
                             <button
                                 on:click={prevMonth}
+                                aria-label="Previous month"
                                 class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
                             >
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1367,6 +1370,7 @@
                             </span>
                             <button
                                 on:click={nextMonth}
+                                aria-label="Next month"
                                 class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
                             >
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1546,10 +1550,10 @@
 
                 <div class="flex justify-between gap-3 pt-6">
                     <div>
-                        {#if selectedItem.createdBy === currentUserId && detailBookings.length === 0}
+                        {#if selectedItem && selectedItem.createdBy === currentUserId && detailBookings.length === 0}
                             <button
                                 type="button"
-                                on:click={() => handleDelete(selectedItem.id)}
+                                on:click={() => handleDelete(selectedItem!.id)}
                                 class="px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 text-sm font-medium transition-colors border border-red-600/30"
                             >
                                 Delete
@@ -1571,10 +1575,10 @@
                         >
                             Book
                         </button>
-                        {#if detailActive && (detailActive.borrowerId === currentUserId || detailActive.borrower === currentUsername)}
+                        {#if selectedItem && detailActive && (detailActive.borrowerId === currentUserId || detailActive.borrower === currentUsername)}
                             <button
                                 type="button"
-                                on:click={() => handleReturn(selectedItem)}
+                                on:click={() => handleReturn(selectedItem!)}
                                 class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
                             >
                                 Return

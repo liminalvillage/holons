@@ -28,7 +28,8 @@
 		calculateTaskCompletionScores,
 		getActionScore,
 		type ScoreEquation,
-		DEFAULT_EQUATION
+		DEFAULT_EQUATION,
+		loadEquation
 	} from "../lib/scoring/ContributionScoring";
 	import { getColorFromCategory } from "@holons/core/categories";
 	import {
@@ -99,6 +100,10 @@
 			originalId?: string;
 		};
 		_deleted?: boolean;
+		// Map of userId -> hours logged against this quest. Written by
+		// TaskModal / Tasks completion flows; consumed by the hour-expense
+		// builder when the quest is closed out.
+		timeTracking?: Record<string, number>;
 	}
 
 	interface Store {
@@ -207,16 +212,22 @@
 
 	// Initialize preferences with default values
 	let showTaskInput = $state(false);
-	let newTask: Quest = $state({
-		id: generateId(),
-		title: '',
-		description: '',
-		category: '',
-		status: 'ongoing',
-		type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
-		participants: [],
-		appreciation: []
-	});
+	// Wrap in a function so the filterType read doesn't trip Svelte 5's
+	// state_referenced_locally check — we want the snapshot at construction time,
+	// not a reactive binding.
+	function buildBlankNewTask(): Quest {
+		return {
+			id: generateId(),
+			title: '',
+			description: '',
+			category: '',
+			status: 'ongoing',
+			type: filterType === 'all' ? 'task' : filterType,
+			participants: [],
+			appreciation: []
+		};
+	}
+	let newTask: Quest = $state(buildBlankNewTask());
 
 	let questsUnsubscribe: (() => void) | undefined;
 
@@ -921,7 +932,7 @@
 			try {
 				const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
 				await holosphere.put(holonID, 'quests', updatedQuest);
-				store = { ...store, [key]: updatedQuest };
+				store = { ...store, [key]: updatedQuest as Quest };
 			} catch (error: any) {
 				if (error?.name === 'AuthorizationError') {
 					notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -1781,7 +1792,7 @@
 							{filteredQuests}
 							{holonID}
 							{showCompleted}
-							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest as Quest)}
 						/>
 					{:else}
 						<div class="flex items-center justify-center py-12">

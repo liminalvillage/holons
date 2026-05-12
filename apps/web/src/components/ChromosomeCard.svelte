@@ -105,7 +105,7 @@
   </div>
 </div>
 
-<style>
+<style lang="postcss">
   .card {
     @apply bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm;
     @apply text-gray-900 dark:text-gray-100;

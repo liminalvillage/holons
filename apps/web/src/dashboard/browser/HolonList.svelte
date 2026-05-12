@@ -13,6 +13,8 @@
 		federationStatus?: FederationStatus;
 		lensConfig?: {
 			lenses: string[];
+			inbound?: string[];
+			outbound?: string[];
 		};
 		accessLevel?: 'none' | 'read' | 'write' | 'member';
 	}
@@ -31,9 +33,7 @@
 	export let currentHolonId: string | null = null;
 	export let isLoading: boolean = false;
 	export let showPinButton: boolean = false;
-	export let showStarButton: boolean = false;
 	export let showRemoveButton: boolean = false;
-	export let starredIds: string[] = [];
 	export let homeHolonId: string | null = null;
 	export let homeHolonName: string = '';
 	export let showHomeSection: boolean = true;
@@ -89,11 +89,28 @@
 			<span>Loading...</span>
 		</div>
 	{:else}
+		<!-- Home Holon — pinned at the top after login. Uses HolonItem with key management. -->
+		{#if showHomeSection && homeHolonId}
+			<div class="holon-list__home">
+				<HolonItem
+					id={homeHolonId}
+					name={homeHolonName || 'My Holon'}
+					isActive={currentHolonId === homeHolonId}
+					isPinned={false}
+					isStarred={false}
+					isHome={true}
+					showPinButton={false}
+					showStarButton={false}
+					on:select={() => selectHolon(homeHolonId)}
+				/>
+			</div>
+		{/if}
+
 		<!-- Incoming Federation Requests -->
 		{#if federationRequests.length > 0}
 			<div class="holon-list__section holon-list__section--requests">
 				<span class="holon-list__section-title holon-list__section-title--notification">
-					<Bell size={10} />
+					<Bell size="10" />
 					Federation Requests ({federationRequests.length})
 				</span>
 				{#each federationRequests as request (request.id)}
@@ -112,28 +129,11 @@
 			</div>
 		{/if}
 
-		<!-- Home Holon - Always at top, uses HolonItem with key management -->
-		{#if showHomeSection && homeHolonId}
-			<div class="holon-list__home">
-				<HolonItem
-					id={homeHolonId}
-					name={homeHolonName || 'My Holon'}
-					isActive={currentHolonId === homeHolonId}
-					isPinned={false}
-					isStarred={false}
-					isHome={true}
-					showPinButton={false}
-					showStarButton={false}
-					on:select={() => selectHolon(homeHolonId)}
-				/>
-			</div>
-		{/if}
-
 		<!-- Federated holons (accepted) -->
 		{#if acceptedHolons.length > 0 || lensUpdateRequests.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
-					<Users size={10} />
+					<Users size="10" />
 					Federated
 					{#if lensUpdateRequests.length > 0}
 						<span class="holon-list__update-badge">{lensUpdateRequests.length}</span>
@@ -164,6 +164,8 @@
 						isHome={false}
 						federationStatus={holon.federationStatus || 'none'}
 						sharedLenses={holon.lensConfig?.lenses || []}
+						inboundLenses={holon.lensConfig?.inbound || []}
+						outboundLenses={holon.lensConfig?.outbound || []}
 						accessLevel={(holon.lensConfig?.lenses?.length ?? 0) > 0 ? 'read' : 'none'}
 						{showPinButton}
 						showStarButton={false}

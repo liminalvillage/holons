@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { goto } from '$app/navigation';
-	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X, Settings } from 'svelte-feathers';
+	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X, Settings, ArrowDown, ArrowUp } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
 	import { nostrUtils } from 'holosphere';
 
@@ -21,6 +21,11 @@
 	export let showRemoveButton: boolean = false;
 	export let federationStatus: FederationStatus = 'none';
 	export let sharedLenses: string[] = [];
+	// Per-direction lens config (preferred). Falls back to sharedLenses when
+	// the parent only knows the union — keeps backwards compat with callers
+	// that haven't been wired through yet.
+	export let inboundLenses: string[] = [];
+	export let outboundLenses: string[] = [];
 	export let accessLevel: 'none' | 'read' | 'write' | 'member' = 'none';
 
 	const dispatch = createEventDispatcher();
@@ -35,10 +40,22 @@
 	// Derive nsec for display
 	$: displayNsec = $nostrPrivateKey ? hexToNsec($nostrPrivateKey) : '';
 
-	// Pending lens config changes (tracked locally before sending)
-	let pendingLensConfig: { lenses: string[] } | null = null;
+	// Pending lens config changes (tracked locally before sending). Per-direction
+	// to mirror Federation.svelte and the BrowserPanel add modal.
+	let pendingLensConfig: { inbound: string[]; outbound: string[] } | null = null;
 
 	$: hasPendingChanges = pendingLensConfig !== null;
+
+	// Effective in/out lists for the inline config — show pending edits if any,
+	// else the props the parent passed. Falls back to `sharedLenses` for callers
+	// that haven't been wired through with per-direction info yet.
+	$: hasPerDirProps = inboundLenses.length > 0 || outboundLenses.length > 0;
+	$: effectiveInbound = pendingLensConfig
+		? pendingLensConfig.inbound
+		: (hasPerDirProps ? inboundLenses : sharedLenses);
+	$: effectiveOutbound = pendingLensConfig
+		? pendingLensConfig.outbound
+		: (hasPerDirProps ? outboundLenses : sharedLenses);
 
 
 	function handleSelect() {
@@ -164,28 +181,45 @@
 		return icons[lens] || '📦';
 	}
 
-	function toggleLens(lens: string) {
-		// Initialize pending config from current if not already pending
+	function ensurePending(): { inbound: string[]; outbound: string[] } {
 		if (!pendingLensConfig) {
-			pendingLensConfig = { lenses: [...sharedLenses] };
+			// Seed from props. If only sharedLenses is populated (legacy caller),
+			// assume it represents the union and seed both directions to it.
+			const hasPerDir = inboundLenses.length > 0 || outboundLenses.length > 0;
+			pendingLensConfig = hasPerDir
+				? { inbound: [...inboundLenses], outbound: [...outboundLenses] }
+				: { inbound: [...sharedLenses], outbound: [...sharedLenses] };
 		}
+		return pendingLensConfig;
+	}
 
-		if (pendingLensConfig.lenses.includes(lens)) {
-			pendingLensConfig.lenses = pendingLensConfig.lenses.filter(l => l !== lens);
-		} else {
-			pendingLensConfig.lenses = [...pendingLensConfig.lenses, lens];
-		}
+	function toggleInboundLens(lens: string) {
+		const cfg = ensurePending();
+		cfg.inbound = cfg.inbound.includes(lens)
+			? cfg.inbound.filter(l => l !== lens)
+			: [...cfg.inbound, lens];
+		pendingLensConfig = { ...cfg };
+	}
 
-		// Trigger reactivity
-		pendingLensConfig = { ...pendingLensConfig };
+	function toggleOutboundLens(lens: string) {
+		const cfg = ensurePending();
+		cfg.outbound = cfg.outbound.includes(lens)
+			? cfg.outbound.filter(l => l !== lens)
+			: [...cfg.outbound, lens];
+		pendingLensConfig = { ...cfg };
 	}
 
 	function requestLensUpdate() {
 		if (!pendingLensConfig) return;
 
+		const { inbound, outbound } = pendingLensConfig;
 		dispatch('lensConfigUpdate', {
 			holonId: id,
-			lensConfig: pendingLensConfig
+			lensConfig: {
+				lenses: [...new Set([...inbound, ...outbound])],
+				inbound,
+				outbound
+			}
 		});
 
 		pendingLensConfig = null;
@@ -244,7 +278,7 @@
 			style="background-color: {isActive ? 'var(--color-accent)' : isHome ? '' : avatarColor}"
 		>
 			{#if isHome}
-				<Home size={16} />
+				<Home size="16" />
 			{:else}
 				{initials}
 			{/if}
@@ -283,9 +317,9 @@
 				title="Copy ID"
 			>
 				{#if copied}
-					<Check size={14} />
+					<Check size="14" />
 				{:else}
-					<Copy size={14} />
+					<Copy size="14" />
 				{/if}
 			</button>
 
@@ -297,7 +331,7 @@
 					on:click={openSettings}
 					title="Holon Settings"
 				>
-					<Settings size={14} />
+					<Settings size="14" />
 				</button>
 
 				<!-- Key management dropdown -->
@@ -307,8 +341,8 @@
 						on:click={toggleKeyMenu}
 						title="Identity & Keys"
 					>
-						<Key size={14} />
-						<ChevronDown size={10} />
+						<Key size="14" />
+						<ChevronDown size="10" />
 					</button>
 
 					{#if showKeyMenu}
@@ -334,7 +368,7 @@
 							{/if}
 
 							<button class="holon-item__dropdown-action holon-item__dropdown-action--danger" on:click={logout}>
-								<LogOut size={14} />
+								<LogOut size="14" />
 								<span>Logout</span>
 							</button>
 						</div>
@@ -350,7 +384,7 @@
 						on:click={toggleLensConfig}
 						title="Lens Configuration"
 					>
-						<Settings size={14} />
+						<Settings size="14" />
 					</button>
 				{/if}
 
@@ -361,7 +395,7 @@
 						on:click={handlePin}
 						title={isPinned ? 'Unpin' : 'Pin'}
 					>
-						<Star size={14} fill={isPinned ? 'currentColor' : 'none'} />
+						<Star size="14" fill={isPinned ? 'currentColor' : 'none'} />
 					</button>
 				{/if}
 
@@ -372,7 +406,7 @@
 						on:click={handleStar}
 						title={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
 					>
-						<Star size={14} fill={isStarred ? 'currentColor' : 'none'} />
+						<Star size="14" fill={isStarred ? 'currentColor' : 'none'} />
 					</button>
 				{/if}
 
@@ -382,33 +416,56 @@
 						on:click={handleRemove}
 						title="Remove from list"
 					>
-						<X size={14} />
+						<X size="14" />
 					</button>
 				{/if}
 			{/if}
 		</div>
 	</div>
 
-	<!-- Inline lens config panel (expands below the holon item) -->
+	<!-- Inline lens config panel (expands below the holon item). Per-direction
+	     toggles mirror Federation.svelte and the BrowserPanel add modal. -->
 	{#if showLensConfig && isFederated}
 		<div class="holon-item__inline-config" transition:slide={{ duration: 150 }} on:click|stopPropagation on:keydown|stopPropagation role="presentation">
-			<!-- Lens rows -->
 			<div class="holon-item__lens-list">
+				<div class="holon-item__lens-head">
+					<span>Lens</span>
+					<span class="holon-item__lens-col" title="Inbound — receive from this holon">
+						<ArrowDown size="12" /> In
+					</span>
+					<span class="holon-item__lens-col" title="Outbound — send to this holon">
+						<ArrowUp size="12" /> Out
+					</span>
+				</div>
 				{#each AVAILABLE_LENSES as lens}
-					{@const effectiveLenses = pendingLensConfig ? pendingLensConfig.lenses : sharedLenses}
-					{@const isEnabled = effectiveLenses.includes(lens)}
-					<div class="holon-item__lens-row" class:holon-item__lens-row--active={isEnabled}>
+					{@const isIn = effectiveInbound.includes(lens)}
+					{@const isOut = effectiveOutbound.includes(lens)}
+					<div class="holon-item__lens-row" class:holon-item__lens-row--active={isIn || isOut}>
 						<div class="holon-item__lens-info">
 							<span class="holon-item__lens-icon">{getLensIcon(lens)}</span>
 							<span class="holon-item__lens-name">{lens}</span>
 						</div>
 						<button
-							class="holon-item__lens-btn"
-							class:holon-item__lens-btn--active={isEnabled}
-							title="{isEnabled ? 'Remove' : 'Add'} {lens}"
-							on:click={() => toggleLens(lens)}
+							type="button"
+							class="holon-item__toggle"
+							class:holon-item__toggle--on={isIn}
+							on:click={() => toggleInboundLens(lens)}
+							aria-pressed={isIn}
+							aria-label="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
+							title="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
 						>
-							{isEnabled ? '✓' : '+'}
+							<span class="holon-item__toggle-dot"></span>
+						</button>
+						<button
+							type="button"
+							class="holon-item__toggle"
+							class:holon-item__toggle--on={isOut}
+							on:click={() => toggleOutboundLens(lens)}
+							aria-pressed={isOut}
+							aria-label="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
+							title="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
+						>
+							<span class="holon-item__toggle-dot"></span>
 						</button>
 					</div>
 				{/each}
@@ -426,7 +483,7 @@
 			{/if}
 
 			<button class="holon-item__config-remove" on:click={handleRemove}>
-				<X size={12} />
+				<X size="12" />
 				Remove Federation
 			</button>
 		</div>
@@ -733,10 +790,30 @@
 		gap: 2px;
 	}
 
-	.holon-item__lens-row {
-		display: flex;
+	.holon-item__lens-head {
+		display: grid;
+		grid-template-columns: 1fr 36px 36px;
 		align-items: center;
-		justify-content: space-between;
+		gap: 4px;
+		padding: 3px 4px;
+		font-size: 10px;
+		color: var(--color-text-muted, #6b7280);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.holon-item__lens-col {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		justify-content: center;
+	}
+
+	.holon-item__lens-row {
+		display: grid;
+		grid-template-columns: 1fr 36px 36px;
+		align-items: center;
+		gap: 4px;
 		padding: 3px 4px;
 		border-radius: var(--radius-sm, 0.25rem);
 		transition: background-color 150ms ease;
@@ -747,13 +824,14 @@
 	}
 
 	.holon-item__lens-row--active {
-		background: rgba(79, 70, 229, 0.1);
+		background: rgba(79, 70, 229, 0.08);
 	}
 
 	.holon-item__lens-info {
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		min-width: 0;
 	}
 
 	.holon-item__lens-icon {
@@ -766,28 +844,39 @@
 		text-transform: capitalize;
 	}
 
-	.holon-item__lens-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 22px;
-		height: 22px;
-		border: none;
-		border-radius: var(--radius-sm, 0.25rem);
-		font-size: 11px;
-		cursor: pointer;
-		transition: all 150ms ease;
-		background: var(--color-bg-primary, #111827);
-		color: var(--color-text-muted, #6b7280);
-	}
-
-	.holon-item__lens-btn:hover {
+	.holon-item__toggle {
+		position: relative;
+		width: 28px;
+		height: 16px;
+		justify-self: center;
+		border-radius: 9999px;
 		background: var(--color-bg-tertiary, #374151);
+		border: 1px solid var(--color-border, #4b5563);
+		cursor: pointer;
+		transition: background-color 150ms ease, border-color 150ms ease;
+		padding: 0;
 	}
 
-	.holon-item__lens-btn--active {
+	.holon-item__toggle--on {
 		background: var(--color-accent, #4f46e5);
-		color: white;
+		border-color: var(--color-accent, #4f46e5);
+	}
+
+	.holon-item__toggle-dot {
+		display: block;
+		position: absolute;
+		top: 50%;
+		left: 1px;
+		width: 12px;
+		height: 12px;
+		border-radius: 9999px;
+		background: white;
+		transform: translateY(-50%);
+		transition: left 150ms ease;
+	}
+
+	.holon-item__toggle--on .holon-item__toggle-dot {
+		left: 13px;
 	}
 
 	/* Access badge */

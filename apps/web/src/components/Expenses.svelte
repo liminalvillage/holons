@@ -742,25 +742,6 @@
 		padding: 1.5rem;
 	}
 
-	.header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.header h2 {
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: white;
-		margin: 0;
-	}
-
-	.text-muted {
-		color: #6b7280;
-		font-size: 0.875rem;
-	}
-
 	.loading, .empty-state {
 		display: flex;
 		flex-direction: column;
@@ -991,10 +972,6 @@
 			border-radius: 1rem;
 		}
 
-		.header h2 {
-			font-size: 1.25rem;
-		}
-
 		.expense-card {
 			flex-direction: column;
 			gap: 0.75rem;
@@ -1005,11 +982,5 @@
 		}
 	}
 
-	/* Header actions */
-	.header-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
 
 </style>

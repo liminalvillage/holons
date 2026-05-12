@@ -58,13 +58,14 @@
 
 		try {
 			// Load initial quests data
-			const initialQuestsData = await holosphere.getAll(holonID, "quests");
-			if (initialQuestsData && typeof initialQuestsData === 'object') {
-				store = initialQuestsData;
+			const initialQuestsData: any = await holosphere.getAll(holonID, "quests");
+			if (initialQuestsData && typeof initialQuestsData === 'object' && !Array.isArray(initialQuestsData)) {
+				store = initialQuestsData as Record<string, Quest>;
 			}
 
 			// Subscribe to quest updates
-			unsubscribe = holosphere.subscribe(holonID, 'quests', (newquest, key) => {
+			unsubscribe = holosphere.subscribe(holonID, 'quests', (newquest: any, key: string | undefined) => {
+				if (!key) return;
 				if (newquest) {
 					const parsedQuest = newquest;
 					// Updates the store with the new value
@@ -75,7 +76,7 @@
 					const { [key]: _, ...rest } = store;
 					store = rest;
 				}
-			});
+			}) as unknown as () => void;
 
 			console.log(`Successfully loaded schedule for holon ${holonID}:`, Object.keys(store).length, 'quests');
 

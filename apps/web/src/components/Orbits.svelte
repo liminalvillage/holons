@@ -1175,7 +1175,7 @@
 	{/if}
 </div>
 
-<style>
+<style lang="postcss">
 	.orbits-container {
 		@apply min-h-screen bg-gray-900 text-white p-6;
 		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1251,7 +1251,12 @@
 	.legend-color.social { background-color: #EC4899; }
 
 	.list-view {
-		@apply space-y-6;
+		/* `space-y-6` expands to `> :not([hidden]) ~ :not([hidden])`, which
+		 * Svelte's CSS scoper can't see through a child component boundary —
+		 * use gap on a flex column for equivalent stacked spacing. */
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
 	}
 
 	.tasks-grid {

@@ -41,10 +41,27 @@ export const DEFAULT_EQUATION: ScoreEquation = {
   currencies: { hour: 1 },
 };
 
+const BUILT_IN_EQUATION_KEYS = new Set<keyof ScoreEquation>([
+  'initiated',
+  'completed',
+  'sent',
+  'received',
+  'hours',
+  'collaboration',
+  'wants',
+  'offers',
+  'currencies',
+]);
+
 /**
  * Fold legacy `equation.hours` into `equation.currencies.hour` and ensure
  * `currencies` is an object. Idempotent — safe to call on already-migrated
  * data. Returns a new object; does not mutate the input.
+ *
+ * Also folds flat per-currency keys (e.g. `valueEquation.euro = 0`) — the
+ * shape telegram-ui historically wrote — into `currencies.euro`. Anything
+ * top-level numeric that isn't a known built-in equation field is treated
+ * as a currency weight.
  *
  * After migration the equation still carries `hours` (set to the same value
  * as `currencies.hour`) so consumers that haven't been updated yet keep
@@ -63,6 +80,20 @@ export function migrateEquation(raw: any): ScoreEquation {
       : null;
 
   const currencies: Record<string, number> = rawCurrencies ?? {};
+
+  // Fold flat top-level per-currency keys into the currencies sub-map.
+  // An explicit currencies entry wins over the legacy flat key.
+  const cleanRawObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawObj)) {
+    if (BUILT_IN_EQUATION_KEYS.has(key as keyof ScoreEquation)) {
+      cleanRawObj[key] = value;
+      continue;
+    }
+    if (typeof value === 'number' && currencies[key] === undefined) {
+      currencies[key] = value;
+    }
+  }
+
   if (!(currencies.hour > 0)) {
     if (legacyHours !== null && legacyHours > 0) {
       currencies.hour = legacyHours;
@@ -76,7 +107,7 @@ export function migrateEquation(raw: any): ScoreEquation {
 
   return {
     ...DEFAULT_EQUATION,
-    ...rawObj,
+    ...cleanRawObj,
     currencies,
     // Mirror currencies.hour back so legacy `equation.hours` readers stay correct.
     hours: currencies.hour ?? 0,

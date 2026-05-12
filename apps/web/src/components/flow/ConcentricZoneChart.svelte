@@ -406,7 +406,7 @@
             on:mouseleave={hideTooltip}
             on:mousemove={(e) => showMemberTooltip(e, member)}
             role="img"
-            aria-label="{member?.name || 'Member'}: {member?.percentage?.toFixed(1) || 0}%"
+            aria-label="{(member as any)?.name || 'Member'}: {member?.percentage?.toFixed(1) || 0}%"
           />
         {/each}
         <text class="center-percent" text-anchor="middle" dominant-baseline="middle" y="-5">

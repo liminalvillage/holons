@@ -99,12 +99,13 @@ function createNostrStore() {
 		importKey: async (keyInput: string) => {
 			if (!browser) return;
 
-			// Parse key input (accepts nsec or hex)
-			const parsed = parseNsecOrHex(keyInput);
-			if (!parsed.valid) {
-				throw new Error(parsed.error || 'Invalid private key format');
+			// Parse key input (accepts nsec or hex). Library returns the
+			// canonical hex string on success, or null if the input is neither
+			// a valid nsec nor a 64-char hex.
+			const privateKey = parseNsecOrHex(keyInput);
+			if (!privateKey) {
+				throw new Error('Invalid private key format');
 			}
-			const privateKey = parsed.hexPrivKey!;
 
 			update((state) => ({ ...state, isLoading: true }));
 

@@ -55,7 +55,7 @@
 		<div class="lens-update__content">
 			<span class="lens-update__name">{senderHolonName}</span>
 			<span class="lens-update__badge">
-				<RefreshCw size={9} />
+				<RefreshCw size="9" />
 				Lens Update
 			</span>
 		</div>
@@ -68,7 +68,7 @@
 				disabled={isProcessing}
 				title="Decline"
 			>
-				<X size={14} />
+				<X size="14" />
 			</button>
 			<button
 				class="lens-update__btn lens-update__btn--accept"
@@ -79,7 +79,7 @@
 				{#if isProcessing}
 					<span class="lens-update__spinner"></span>
 				{:else}
-					<Check size={14} />
+					<Check size="14" />
 				{/if}
 			</button>
 			<button
@@ -87,7 +87,7 @@
 				on:click={toggleExpand}
 				title={expanded ? 'Hide details' : 'Show details'}
 			>
-				<ChevronDown size={14} class={expanded ? 'rotated' : ''} />
+				<ChevronDown size="14" class={expanded ? 'rotated' : ''} />
 			</button>
 		</div>
 	</div>
@@ -267,9 +267,6 @@
 		color: var(--color-success, #22c55e);
 	}
 
-	.lens-update__lens-label--share {
-		color: var(--color-info, #3b82f6);
-	}
 
 	.lens-update__lens-list {
 		color: var(--color-text-secondary, #d1d5db);

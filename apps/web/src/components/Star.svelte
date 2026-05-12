@@ -371,11 +371,11 @@
 					/>
 					<div
 						class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"
-					/>
+					></div>
 					<div
 						class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
 						class:translate-x-4={showCompleted}
-					/>
+					></div>
 				</div>
 				<div class="ml-3 text-sm font-medium text-white">
 					Show Completed

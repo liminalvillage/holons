@@ -377,14 +377,6 @@
 		background: rgba(239, 68, 68, 0.1);
 	}
 
-	.keys-section__action--primary {
-		background: var(--color-accent, #4f46e5);
-		color: white;
-	}
-
-	.keys-section__action--primary:hover {
-		background: var(--color-accent-dark, #4338ca);
-	}
 
 	.keys-section__private-key {
 		padding: var(--spacing-2, 0.5rem);

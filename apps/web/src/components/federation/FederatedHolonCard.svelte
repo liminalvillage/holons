@@ -128,7 +128,7 @@
 
         <!-- Expand indicator -->
         <div class="holon-card__expand" class:holon-card__expand--rotated={expanded}>
-            <ChevronDown size={18} />
+            <ChevronDown size="18" />
         </div>
     </button>
 
@@ -139,19 +139,19 @@
             <div class="holon-card__actions">
                 <button class="holon-card__action" on:click={handleCopyPubKey} title="Copy Public Key">
                     {#if copied}
-                        <Check size={14} />
+                        <Check size="14" />
                         <span>Copied</span>
                     {:else}
-                        <Copy size={14} />
+                        <Copy size="14" />
                         <span>Copy ID</span>
                     {/if}
                 </button>
                 <button class="holon-card__action" on:click={handleNavigate} title="Open holon">
-                    <ExternalLink size={14} />
+                    <ExternalLink size="14" />
                     <span>Open</span>
                 </button>
                 <button class="holon-card__action holon-card__action--danger" on:click={handleRemove} disabled={saving} title="Remove federation">
-                    <Trash2 size={14} />
+                    <Trash2 size="14" />
                     <span>Remove</span>
                 </button>
             </div>

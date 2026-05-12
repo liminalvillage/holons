@@ -11,14 +11,14 @@
 				transition:fly={{ y: -20, duration: 200 }}
 				class="toast"
 			>
-				<AlertTriangle size={20} class="toast-icon" />
+				<AlertTriangle size="20" class="toast-icon" />
 				<span class="toast-message">{notification.message}</span>
 				<button
 					on:click={() => dismissNotification(notification.id)}
 					class="toast-dismiss"
 					aria-label="Dismiss"
 				>
-					<X size={16} />
+					<X size="16" />
 				</button>
 			</div>
 		{/each}
@@ -49,11 +49,6 @@
 		max-width: 24rem;
 	}
 
-	.toast-icon {
-		color: #d97706;
-		flex-shrink: 0;
-	}
-
 	.toast-message {
 		flex: 1;
 		font-size: 0.875rem;
@@ -82,10 +77,6 @@
 			background: #451a03;
 			border-color: #92400e;
 			color: #fcd34d;
-		}
-
-		.toast-icon {
-			color: #fbbf24;
 		}
 
 		.toast-dismiss {

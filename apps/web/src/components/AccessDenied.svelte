@@ -25,7 +25,7 @@
 <div class="access-denied">
 	<div class="access-denied__card">
 		<div class="access-denied__icon">
-			<ShieldOff size={48} />
+			<ShieldOff size="48" />
 		</div>
 
 		<h1 class="access-denied__title">Access Denied</h1>
@@ -45,11 +45,11 @@
 
 		<div class="access-denied__actions">
 			<button class="access-denied__btn access-denied__btn--primary" on:click={goToMyHolon}>
-				<Home size={18} />
+				<Home size="18" />
 				Go to My Holon
 			</button>
 			<button class="access-denied__btn access-denied__btn--secondary" on:click={goBack}>
-				<ArrowLeft size={18} />
+				<ArrowLeft size="18" />
 				Go Back
 			</button>
 		</div>

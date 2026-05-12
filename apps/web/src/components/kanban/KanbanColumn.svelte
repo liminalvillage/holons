@@ -52,9 +52,15 @@
     onColumnDelete
   }: Props = $props();
 
+  // Local drag buffer seeded from `cards`. We deliberately capture the initial
+  // value; the $effect below re-syncs from `cards` when not mid-drag.
+  // svelte-ignore state_referenced_locally
   let items = $state(cards);
   let showMenu = $state(false);
   let isEditing = $state(false);
+  // Local edit buffer for the column name. Captures the current value at the
+  // moment editing starts; not meant to live-update from external column changes.
+  // svelte-ignore state_referenced_locally
   let editName = $state(column.name);
   // Don't let an external `cards` update (holosphere subscription echo,
   // showCompleted toggle, sibling reorder, etc.) reset our local items

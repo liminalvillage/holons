@@ -149,7 +149,7 @@
 				<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white/50 mx-auto"></div>
 			</div>
 		{:else}
-			<Badges isVisible={true} />
+			<Badges />
 		{/if}
 	</div>
 </div>

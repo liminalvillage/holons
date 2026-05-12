@@ -1706,34 +1706,6 @@
 		flex-shrink: 0;
 	}
 
-	.search-placeholder {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		flex: 1;
-		min-width: 0;
-		padding: 8px 12px;
-		background: rgba(55, 65, 81, 0.4);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 12px;
-		color: #9ca3af;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.search-placeholder:hover {
-		background: rgba(55, 65, 81, 0.6);
-		border-color: rgba(96, 165, 250, 0.3);
-	}
-
-	.search-text {
-		font-size: 14px;
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
 	.location-button-embedded {
 		background: rgba(96, 165, 250, 0.15);
 		border: 1px solid rgba(96, 165, 250, 0.2);
@@ -1910,18 +1882,8 @@
 			display: none;
 		}
 
-		.search-placeholder {
-			order: 3;
-			flex: 1 1 100%;
-			min-width: 0;
-		}
-
 		.location-button-embedded {
 			order: 2;
-		}
-
-		.search-text {
-			font-size: 13px;
 		}
 
 		.lens-options-grid {
@@ -1941,10 +1903,6 @@
 
 		.lens-select-embedded {
 			min-width: 100px;
-			font-size: 12px;
-		}
-
-		.search-text {
 			font-size: 12px;
 		}
 

@@ -20,7 +20,7 @@
 	 */
 
 	// Component props
-	export let holonID: string = '';
+	export const holonID: string = '';
 	export let onAuthSuccess: (userData: TelegramUser) => void = () => {};
 	export let redirectAfterAuth: boolean = true; // Whether to perform post-auth actions like closing modals
 
@@ -435,11 +435,6 @@
 		.user-name {
 			font-weight: 600;
 			font-size: 1.125rem;
-		}
-
-		.user-username {
-			font-size: 0.875rem;
-			opacity: 0.9;
 		}
 
 		.user-id {

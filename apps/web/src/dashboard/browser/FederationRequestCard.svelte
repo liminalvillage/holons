@@ -28,7 +28,7 @@
 	<!-- Header -->
 	<div class="request-card__header">
 		{#if type === 'lens_update'}
-			<RefreshCw size={14} class="request-card__icon request-card__icon--update" />
+			<RefreshCw size="14" class="request-card__icon request-card__icon--update" />
 			<span class="request-card__type">Lens Update Request</span>
 		{:else}
 			<span class="request-card__type">Federation Request</span>
@@ -81,7 +81,7 @@
 			onclick={handleDecline}
 			disabled={isProcessing}
 		>
-			<X size={14} />
+			<X size="14" />
 			Decline
 		</button>
 		<button
@@ -92,7 +92,7 @@
 			{#if isProcessing}
 				<span class="request-card__spinner"></span>
 			{:else}
-				<Check size={14} />
+				<Check size="14" />
 			{/if}
 			Accept
 		</button>
@@ -131,9 +131,6 @@
 		color: var(--color-warning, #f59e0b);
 	}
 
-	.request-card__icon--update {
-		color: var(--color-warning, #f59e0b);
-	}
 
 	/* Preview section with dashed appearance */
 	.request-card__preview {

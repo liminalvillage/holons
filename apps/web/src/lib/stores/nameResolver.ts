@@ -271,7 +271,7 @@ export interface NameUser {
  *   nameMap[id] → first+last → first → username → fallback → truncated ID → "Unknown"
  */
 export function resolvedName(
-	id: string | undefined,
+	id: string | null | undefined,
 	nameMap: Record<string, string>,
 	user?: NameUser | null,
 	fallback?: string

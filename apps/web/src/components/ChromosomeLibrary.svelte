@@ -155,7 +155,7 @@
   </div>
 </div>
 
-<style>
+<style lang="postcss">
   .library-container {
     @apply flex flex-col h-full;
   }

@@ -21,7 +21,7 @@
 
 <header class="browser-header">
 	<div class="browser-header__search">
-		<Search size={16} class="browser-header__search-icon" />
+		<Search size="16" class="browser-header__search-icon" />
 		<input
 			type="text"
 			class="browser-header__search-input"
@@ -30,17 +30,17 @@
 		/>
 		{#if searchQuery}
 			<button class="browser-header__clear" on:click={clearSearch} aria-label="Clear search">
-				<X size={14} />
+				<X size="14" />
 			</button>
 		{/if}
 	</div>
 
 	<button class="browser-header__add" on:click={handleAdd} aria-label="Add holon">
-		<Plus size={18} />
+		<Plus size="18" />
 	</button>
 
 	<button class="browser-header__close" on:click={handleClose} aria-label="Close browser">
-		<X size={18} />
+		<X size="18" />
 	</button>
 </header>
 

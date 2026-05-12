@@ -39,7 +39,7 @@
   {/if}
 </div>
 
-<style>
+<style lang="postcss">
   .page-container {
     @apply w-full h-screen;
   }

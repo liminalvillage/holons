@@ -231,7 +231,7 @@
 
     <div class="mt-4">
         <ProposalChart
-            proposals={Object.values(proposals)}
+            proposals={Object.values(proposals) as any}
             quorum={5}
         />
     </div>
