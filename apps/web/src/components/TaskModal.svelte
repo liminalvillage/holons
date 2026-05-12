@@ -10,8 +10,6 @@
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
     import {
-        calculateTaskCompletionScores,
-        getActionScore,
         type ScoreEquation,
         DEFAULT_EQUATION
     } from "../lib/scoring/ContributionScoring";
@@ -29,7 +27,14 @@
         CHECKLIST_TYPES,
         createChecklistObject,
     } from "@holons/core/checklists";
-    import { addParticipant as coreAddParticipant, removeParticipant as coreRemoveParticipant } from "@holons/core/tasks";
+    import {
+        addParticipant as coreAddParticipant,
+        removeParticipant as coreRemoveParticipant,
+        applyTaskCompletion,
+        planTaskCompletion,
+        executeCompletionPlan,
+    } from "@holons/core/tasks";
+    import { getEventStore } from "../lib/rea/eventStore";
 
     export let quest: any;
     export let questId: string;
@@ -373,136 +378,39 @@
             quest.status === "completed" ? "ongoing" : "completed";
 
         if (newStatus === "completed") {
-            // Use the participants already on the quest — adding/removing
-            // participants happens in the participants section above.
-            const selectedParticipants = (quest.participants || []) as any[];
-            const selectedParticipantIds = selectedParticipants.map((p: any) => p.id);
+            // Completer = current logged-in user, falling back to initiator.
+            const telegramUser = telegramStore.getState().user;
+            const pubKey = $nostrPublicKey;
+            const completerId =
+                (telegramUser && String(telegramUser.id))
+                || pubKey
+                || (quest.initiator?.id ? String(quest.initiator.id) : '');
 
-            // Calculate scores using the same computation as Holonsbot
-            const completionScores = calculateTaskCompletionScores(
-                quest.initiator?.id || null,
-                selectedParticipantIds,
-                quest.timeTracking || {},
-                equation
-            );
-
-            // Track initiator action with equation-based scoring
-            if (quest.initiator) {
-                const initiatorData = await holosphere.get(
-                    holonId,
-                    "users",
-                    quest.initiator.id,
-                );
-                if (initiatorData) {
-                    const initiatorScore = completionScores.get(quest.initiator.id);
-                    const initiatedPoints = getActionScore('initiated', 1, equation).points;
-
-                    await holosphere.put(holonId, "users", {
-                        ...initiatorData,
-                        initiated: [
-                            ...(Array.isArray(initiatorData.initiated) ? initiatorData.initiated : []),
-                            quest.title,
-                        ],
-                        actions: [
-                            ...(Array.isArray(initiatorData.actions) ? initiatorData.actions : []),
-                            {
-                                type: "initiated",
-                                action: quest.title,
-                                amount: initiatedPoints, // Use equation weight
-                                questId: questId,
-                                timestamp: new Date(),
-                            },
-                        ],
-                    });
-                }
+            // isAdmin=true mirrors web pre-unify behaviour — the modal already
+            // gates this UI on having access.
+            const result = applyTaskCompletion(quest, completerId, { isAdmin: true });
+            if (!result.ok) {
+                console.warn('[TaskModal] applyTaskCompletion blocked:', result.reason);
+                return;
             }
 
-            // Track participant completions with equation-based scoring
-            for (const participant of selectedParticipants) {
-                const userData = await holosphere.get(
-                    holonId,
-                    "users",
-                    participant.id,
-                );
-                if (!userData) {
-                    console.error(`User data not found for participant ID: ${participant.id}`);
-                    continue;
+            const plan = planTaskCompletion(result.task, equation, {
+                holonId,
+                now: Date.now(),
+            });
+            const eventStore = getEventStore(holosphere);
+
+            try {
+                await executeCompletionPlan(holosphere as any, eventStore, holonId, plan);
+            } catch (error: any) {
+                if (error?.name === 'AuthorizationError') {
+                    notifyWriteDenied('Unable to save - no write permission for this holon');
+                    return;
                 }
-
-                const participantScore = completionScores.get(participant.id);
-                const completedPoints = getActionScore('completed', 1, equation).points;
-                const hoursTracked = (quest.timeTracking?.[participant.id] || 0) as number;
-
-                // Build updated user data
-                const updatedUser: any = {
-                    ...userData,
-                    completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
-                    actions: [
-                        ...(Array.isArray(userData.actions) ? userData.actions : []),
-                        {
-                            type: "completed",
-                            action: quest.title,
-                            amount: completedPoints, // Use equation weight
-                            questId: questId,
-                            timestamp: new Date(),
-                        },
-                    ],
-                };
-
-                // If they tracked hours, update hours and collaboration (same as Holonsbot)
-                if (hoursTracked > 0) {
-                    const hoursPoints = getActionScore('hours', hoursTracked, equation).points;
-                    const collabPoints = equation.collaboration; // 1 per time log event
-
-                    updatedUser.hours = (userData.hours || 0) + hoursTracked;
-                    updatedUser.collaboration = (userData.collaboration || 0) + 1;
-                    updatedUser.actions.push({
-                        type: "collaborated",
-                        action: quest.title,
-                        amount: hoursPoints + collabPoints, // Combined hours + collaboration score
-                        hours: hoursTracked,
-                        questId: questId,
-                        timestamp: new Date(),
-                    });
-                }
-
-                await holosphere.put(holonId, "users", updatedUser);
+                console.error('[TaskModal] executeCompletionPlan failed:', error);
             }
 
-            // Create expense entries for all time tracked
-            if (quest.timeTracking) {
-                for (const [userID, hours] of Object.entries(quest.timeTracking)) {
-                    const hoursAsNumber = hours as number;
-                    if (hoursAsNumber > 0) {
-                        // Create expense entry for the time logged, using chatID for splitWith
-                        try {
-                            const messageID = `${questId}_time_${userID}_${Date.now()}`; // Unique ID for this expense
-                            await holosphere.put(holonId, "expenses", {
-                                id: messageID,
-                                chatID: holonId,
-                                amount: hoursAsNumber, // Total hours logged
-                                // 'hour' is just another currency in the ledger.
-                                currency: 'hour',
-                                description: quest.title,
-                                paidBy: userID,
-                                splitWith: [holonId], // Split with the current holon (chatID)
-                                date: Date.now(),
-                                timestamp: new Date().toISOString(),
-                                fromTimeTracking: true, // Flag to identify expenses from time tracking
-                                questId: questId
-                            });
-                        } catch (error: any) {
-                            if (error?.name === 'AuthorizationError') {
-                                notifyWriteDenied('Unable to save - no write permission for this holon');
-                            } else {
-                                console.error(`Error adding time tracking expense for user ${userID}:`, error);
-                            }
-                        }
-                    }
-                }
-            }
-
-            await updateQuest({ status: newStatus, completed_at: new Date().toISOString() });
+            quest = result.task;
             dispatch("taskCompleted", { questId });
             dispatch("close");
         } else {

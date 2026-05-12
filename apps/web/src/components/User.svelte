@@ -4,6 +4,8 @@
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
+    import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from "@holons/core/scoring";
+    import { getEventStore } from "../lib/rea/eventStore";
 
     export let userId: string;
     export let holonId: string;
@@ -38,6 +40,7 @@
     let loading = true;
     let activeTab = 'overview';
     let selectedActionType = 'all';
+    let aggregates: UserAggregates = { ...ZERO_USER_AGGREGATES };
 
     onMount(async () => {
         if (userData) {
@@ -47,6 +50,7 @@
             await loadUserData();
         }
         // Name resolution is now automatic via resolvedName()
+        await loadAggregates();
     });
 
     async function loadUserData() {
@@ -67,6 +71,16 @@
         }
     }
 
+    async function loadAggregates() {
+        if (!holosphere || !holonId || !userId) return;
+        try {
+            const aggregator = new REAAggregator(getEventStore(holosphere));
+            aggregates = await aggregator.getUserAggregates(String(holonId), String(userId));
+        } catch (error) {
+            console.error("[User.svelte] Error loading REA aggregates:", error);
+        }
+    }
+
     function closeModal() {
         dispatch('close');
     }
@@ -83,12 +97,12 @@
 
 
     $: stats = user ? [
-        { label: 'Tasks Initiated', value: user.initiated?.length || 0, color: 'text-blue-400' },
-        { label: 'Tasks Completed', value: user.completed?.length || 0, color: 'text-green-400' },
-        { label: 'Messages Sent', value: user.sent || 0, color: 'text-purple-400' },
-        { label: 'Appreciation Received', value: user.received || 0, color: 'text-orange-400' },
-        { label: 'Hours Contributed', value: user.hours || 0, color: 'text-yellow-400' },
-        { label: 'Collaboration Score', value: user.collaboration?.length || 0, color: 'text-pink-400' }
+        { label: 'Tasks Initiated', value: aggregates.initiated, color: 'text-blue-400' },
+        { label: 'Tasks Completed', value: aggregates.completed, color: 'text-green-400' },
+        { label: 'Appreciation Sent', value: aggregates.sent, color: 'text-purple-400' },
+        { label: 'Appreciation Received', value: aggregates.received, color: 'text-orange-400' },
+        { label: 'Hours Contributed', value: aggregates.hours, color: 'text-yellow-400' },
+        { label: 'Collaboration Score', value: aggregates.collaboration, color: 'text-pink-400' }
     ] : [];
 
     // Get unique action types from user data

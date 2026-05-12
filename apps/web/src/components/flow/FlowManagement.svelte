@@ -9,11 +9,12 @@
   import { awaitName } from '$lib/stores/nameResolver';
   import {
     loadEquation,
-    toAggregates,
     calculateUserScore as calculateScore,
     type ScoreEquation,
     DEFAULT_EQUATION
   } from '../../lib/scoring/ContributionScoring';
+  import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from '@holons/core/scoring';
+  import { getEventStore } from '../../lib/rea/eventStore';
 
   import FlowHeader from './FlowHeader.svelte';
   import FlowControls from './FlowControls.svelte';
@@ -73,6 +74,11 @@
     offers?: string[];
   }
   let holosphereUsers: HolosphereUser[] = [];
+  // REA-derived aggregates per user; zero-filled while requests are in flight.
+  let aggregatesByUser: Record<string, UserAggregates> = {};
+  function userAggregates(user: HolosphereUser): UserAggregates {
+    return aggregatesByUser[String(user.id)] ?? ZERO_USER_AGGREGATES;
+  }
   // Use shared equation type with same defaults as Holonsbot
   let equation: ScoreEquation = { ...DEFAULT_EQUATION };
 
@@ -323,6 +329,7 @@
 
       // Load equation from settings (using shared service - same as Holonsbot)
       equation = await loadEquation(holosphere, holonId);
+      await loadAggregatesForUsers();
 
       // Calculate interior members from users
       calculateInteriorMembers();
@@ -331,6 +338,25 @@
     }
   }
 
+
+  async function loadAggregatesForUsers() {
+    if (!holosphere || !holonId || holosphereUsers.length === 0) {
+      aggregatesByUser = {};
+      return;
+    }
+    const aggregator = new REAAggregator(getEventStore(holosphere));
+    const next: Record<string, UserAggregates> = {};
+    await Promise.all(holosphereUsers.map(async (user) => {
+      const id = String(user.id);
+      try {
+        next[id] = await aggregator.getUserAggregates(String(holonId), id);
+      } catch (err) {
+        console.error('[FlowMgmt] REA aggregates fetch failed for', id, err);
+        next[id] = ZERO_USER_AGGREGATES;
+      }
+    }));
+    aggregatesByUser = next;
+  }
   // Load interior members from smart contract (with balances)
   async function loadInteriorMembersFromContract() {
     if (!manager || !existingBundle?.address) return;
@@ -348,16 +374,7 @@
             score: cm.sharePercent || 0,
             percentage: cm.sharePercent || 0,
             color: COLOR_PALETTE[i % COLOR_PALETTE.length],
-            breakdown: holosphereUser ? {
-              initiated: holosphereUser.initiated?.length || 0,
-              completed: holosphereUser.completed?.length || 0,
-              sent: holosphereUser.sent || 0,
-              received: holosphereUser.received || 0,
-              hours: holosphereUser.hours || 0,
-              collaboration: holosphereUser.collaboration || 0,
-              wants: holosphereUser.wants?.length || 0,
-              offers: holosphereUser.offers?.length || 0,
-            } : undefined
+            breakdown: holosphereUser ? { ...userAggregates(holosphereUser) } : undefined,
           };
         });
         console.log('[FlowMgmt] Loaded interior members from contract:', interiorMembers.length);
@@ -368,16 +385,15 @@
     }
   }
 
-  // Use shared scoring service (same calculation as Holonsbot).
-  // Hours used to be a top-level equation weight; it now lives under
-  // equation.currencies.hour. Until Flow ingests the expense ledger we
-  // approximate the hour balance from user.hours so the score keeps the
-  // same shape as before.
+  // Use shared scoring service (same calculation as Holonsbot). Aggregates
+  // now come from the REA event stream (loaded by loadAggregatesForUsers)
+  // so the score matches the values shown in Status.svelte and User.svelte.
   function calculateUserScore(user: HolosphereUser): number {
-    const aggregates = toAggregates(user);
-    const currencyBalances = { hour: user.hours || 0 };
+    const aggregates = userAggregates(user);
+    const currencyBalances = { hour: aggregates.hours };
     return calculateScore(aggregates, equation, currencyBalances);
   }
+
 
   function calculateInteriorMembers() {
     const usersWithScores = holosphereUsers.map((user, i) => ({
@@ -386,17 +402,7 @@
       score: calculateUserScore(user),
       percentage: 0,
       color: COLOR_PALETTE[i % COLOR_PALETTE.length],
-      breakdown: {
-        initiated: user.initiated?.length || 0,
-        completed: user.completed?.length || 0,
-        sent: user.sent || 0,
-        received: user.received || 0,
-        // Mirrors equation.currencies.hour weighting; kept here for the UI tooltip.
-        hours: user.hours || 0,
-        collaboration: user.collaboration || 0,
-        wants: user.wants?.length || 0,
-        offers: user.offers?.length || 0,
-      }
+      breakdown: { ...userAggregates(user) },
     }));
 
     const totalScore = usersWithScores.reduce((sum, u) => sum + u.score, 0);

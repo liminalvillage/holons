@@ -9,6 +9,8 @@
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance, expenseCurrency } from "../utils/expenseCalculations";
     import { migrateEquation, type ScoreEquation } from "$lib/scoring/ContributionScoring";
+    import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from "@holons/core/scoring";
+    import { getEventStore } from "../lib/rea/eventStore";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
@@ -51,6 +53,13 @@
     let currenciesLoaded = false;
     let expensesLoaded = false;
     let currencyBalanceCache: Record<string, number> = {};
+    // REA-derived aggregates keyed by user.id. Falls back to zero while
+    // the per-user query is in flight (table keeps rendering).
+    let aggregatesByUser: Record<string, UserAggregates> = {};
+    function userAggregates(user: User, userKey: string): UserAggregates {
+        const id = String(user.id || userKey);
+        return aggregatesByUser[id] ?? ZERO_USER_AGGREGATES;
+    }
 
     // Contract share state
     let manager: HolonsManager | null = null;
@@ -588,6 +597,30 @@
         subscribeToUsers();
     }
 
+    // Per-user REA aggregates fetched in parallel.
+    async function loadAggregatesForUsers() {
+        if (!holosphere || !holonID) return;
+        const aggregator = new REAAggregator(getEventStore(holosphere));
+        const entries = Object.entries(store);
+        if (entries.length === 0) {
+            aggregatesByUser = {};
+            return;
+        }
+        const next: Record<string, UserAggregates> = {};
+        await Promise.all(entries.map(async ([key, user]) => {
+            const id = String(user.id || key);
+            try {
+                next[id] = await aggregator.getUserAggregates(String(holonID), id);
+            } catch (err) {
+                console.error("[Status.svelte] REA aggregates fetch failed for", id, err);
+                next[id] = ZERO_USER_AGGREGATES;
+            }
+        }));
+        aggregatesByUser = next;
+    }
+
+    $: if (store && holonID) loadAggregatesForUsers();
+
     type BreakdownLine = { label: string; count: number; weight: number; points: number };
 
     // Per-user score breakdown — used both for the score itself and for the
@@ -595,13 +628,15 @@
     function getBreakdown(user: User, userKey: string): { lines: BreakdownLine[]; total: number } {
         const userId = user.id || userKey;
         const lines: BreakdownLine[] = [];
-        const initiatedCount = Array.isArray(user.initiated) ? user.initiated.length : 0;
-        const completedCount = Array.isArray(user.completed) ? user.completed.length : 0;
-        const wantsCount = Array.isArray(user.wants) ? user.wants.length : 0;
-        const offersCount = Array.isArray(user.offers) ? user.offers.length : 0;
-        const sentCount = user.sent || 0;
-        const receivedCount = user.received || 0;
-        const collaborationCount = user.collaboration || 0;
+        // Counts come from REA aggregates, not the flat user.\* arrays.
+        const agg = userAggregates(user, userKey);
+        const initiatedCount = agg.initiated;
+        const completedCount = agg.completed;
+        const wantsCount = agg.wants;
+        const offersCount = agg.offers;
+        const sentCount = agg.sent;
+        const receivedCount = agg.received;
+        const collaborationCount = agg.collaboration;
 
         const flat: Array<[string, number, number]> = [
             ['Tasks initiated', initiatedCount, equation.initiated],
@@ -663,15 +698,15 @@
         const score = scoreByKey[userId] ?? 0;
         const percentage = totalScore > 0 ? (score / totalScore) * 100 : 0;
 
-        // Build the breakdown object
+        const agg = userAggregates(user, userId);
         const breakdown = {
-            initiated: (user.initiated && Array.isArray(user.initiated)) ? user.initiated.length : 0,
-            completed: (user.completed && Array.isArray(user.completed)) ? user.completed.length : 0,
-            sent: user.sent || 0,
-            received: user.received || 0,
-            collaboration: user.collaboration || 0,
-            wants: (user.wants && Array.isArray(user.wants)) ? user.wants.length : 0,
-            offers: (user.offers && Array.isArray(user.offers)) ? user.offers.length : 0,
+            initiated: agg.initiated,
+            completed: agg.completed,
+            sent: agg.sent,
+            received: agg.received,
+            collaboration: agg.collaboration,
+            wants: agg.wants,
+            offers: agg.offers,
             currencies: {} as Record<string, number>
         };
 
@@ -869,12 +904,12 @@
                                         </td>
                                         <td class="p-2 text-center">
                                             <span class="text-xs text-blue-300">
-                                                {(user.initiated && Array.isArray(user.initiated)) ? user.initiated.length : 0}
+                                                {userAggregates(user, userId).initiated}
                                             </span>
                                         </td>
                                         <td class="p-2 text-center">
                                             <span class="text-xs text-green-300">
-                                                {(user.completed && Array.isArray(user.completed)) ? user.completed.length : 0}
+                                                {userAggregates(user, userId).completed}
                                             </span>
                                         </td>
                                         <td class="p-2 text-center">
