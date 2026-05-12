@@ -2,12 +2,18 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   addChromosome,
+  getAllDefaultChromosomes,
+  getChromosome,
   getChromosomeLibrary,
+  getDefaultChromosomesByType,
   getDNASequence,
   removeChromosome,
   saveDNASequence,
   seedChromosomeLibrary,
+  updateChromosome,
+  validateChromosome,
   validateDNA,
+  validateDNASequence,
   type Chromosome,
   type DNASequence,
 } from '@holons/core/dna';
@@ -44,6 +50,14 @@ function parseJSON<T = unknown>(raw: string, label: string): T {
   } catch (e) {
     throw new Error(`${label}: invalid JSON — ${(e as Error).message}`);
   }
+}
+
+/** Parse an optional inline library JSON arg into a Chromosome[]. */
+function parseLibraryArg(library: string | undefined): Chromosome[] {
+  if (!library) return [];
+  const parsed = parseJSON<unknown>(library, 'library');
+  if (!Array.isArray(parsed)) throw new Error('library: expected an array of Chromosome');
+  return parsed as Chromosome[];
 }
 
 /** Coerce a `sequence` arg into the shape `saveDNASequence` expects.
@@ -87,12 +101,8 @@ export function registerDnaTools(server: McpServer, deps: ToolDeps): void {
     async ({ sequence, holon, library }) => {
       try {
         const seq = parseJSON<DNASequence>(sequence, 'sequence');
-        let lib: Chromosome[] = [];
-        if (library) {
-          const parsed = parseJSON<unknown>(library, 'library');
-          if (!Array.isArray(parsed)) throw new Error('library: expected an array of Chromosome');
-          lib = parsed as Chromosome[];
-        } else if (holon) {
+        let lib: Chromosome[] = parseLibraryArg(library);
+        if (!library && holon) {
           const hs = await deps.getHoloSphere();
           lib = await getChromosomeLibrary(hs, holon);
         }
@@ -223,6 +233,122 @@ export function registerDnaTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const saved = await saveDNASequence(hs, holon, chromosomeIds, version);
         return ok({ sequence: saved });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // 8. dna_chromosome_get ----------------------------------------------------
+  server.tool(
+    'dna_chromosome_get',
+    "Read a single chromosome from a holon's library by id (returns null if missing).",
+    {
+      holon: z.string().describe('Holon id.'),
+      chromosomeId: z.string().describe('Chromosome id.'),
+    },
+    async ({ holon, chromosomeId }) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const chromosome = await getChromosome(hs, holon, chromosomeId);
+        return ok({ holon, chromosomeId, chromosome });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // 9. dna_chromosome_update -------------------------------------------------
+  server.tool(
+    'dna_chromosome_update',
+    "Update an existing chromosome. Pass the full chromosome JSON (must include `id`); only name/description/icon/color are mutable.",
+    {
+      holon: z.string().describe('Holon id.'),
+      chromosome: z
+        .string()
+        .describe('Chromosome JSON — must include `id`. Mutable: name, description, icon, color.'),
+    },
+    async ({ holon, chromosome }) => {
+      try {
+        const raw = parseJSON<Record<string, unknown>>(chromosome, 'chromosome');
+        const id = typeof raw.id === 'string' ? raw.id : '';
+        if (!id) throw new Error('chromosome.id is required');
+        const updates: Partial<Pick<Chromosome, 'name' | 'description' | 'icon' | 'color'>> = {};
+        if (typeof raw.name === 'string') updates.name = raw.name;
+        if (typeof raw.description === 'string') updates.description = raw.description;
+        if (typeof raw.icon === 'string') updates.icon = raw.icon;
+        if (typeof raw.color === 'string') updates.color = raw.color;
+        const hs = await deps.getHoloSphere();
+        const updated = await updateChromosome(hs, holon, id, updates);
+        return ok({ chromosome: updated });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // 10. dna_chromosome_validate ---------------------------------------------
+  server.tool(
+    'dna_chromosome_validate',
+    'Validate a single chromosome against business rules (name/type/description constraints). Pure — no holosphere access.',
+    {
+      chromosome: z.string().describe('Chromosome JSON.'),
+      library: z
+        .string()
+        .optional()
+        .describe('Optional inline library JSON (Chromosome[]) for duplicate-name detection.'),
+    },
+    async ({ chromosome, library }) => {
+      try {
+        const chromo = parseJSON<Chromosome>(chromosome, 'chromosome');
+        const lib = parseLibraryArg(library);
+        const result = validateChromosome(chromo, lib);
+        return ok({ result });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // 11. dna_sequence_validate ------------------------------------------------
+  server.tool(
+    'dna_sequence_validate',
+    'Validate a DNA sequence (alias of dna_validate that does not auto-load library from holosphere). Pure.',
+    {
+      sequence: z.string().describe('DNASequence JSON.'),
+      library: z
+        .string()
+        .optional()
+        .describe('Optional inline library JSON (Chromosome[]). Empty array if omitted.'),
+    },
+    async ({ sequence, library }) => {
+      try {
+        const seq = parseJSON<DNASequence>(sequence, 'sequence');
+        const lib = parseLibraryArg(library);
+        const result = validateDNASequence(seq, lib);
+        return ok({ result, librarySize: lib.length });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  // 12. dna_defaults_get -----------------------------------------------------
+  server.tool(
+    'dna_defaults_get',
+    'Return the default seed chromosomes. Optionally filter by type (value | tool | practice).',
+    {
+      type: z
+        .enum(['value', 'tool', 'practice'])
+        .optional()
+        .describe('Filter by chromosome type. Omit to get all defaults.'),
+    },
+    async ({ type }) => {
+      try {
+        const defaults = type
+          ? getDefaultChromosomesByType(type)
+          : getAllDefaultChromosomes();
+        return ok({ type: type ?? 'all', count: defaults.length, chromosomes: defaults });
       } catch (e) {
         return fail((e as Error).message);
       }
