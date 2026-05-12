@@ -11,6 +11,7 @@ import {
   removeItem,
   normalizeChecklist,
   createEmptyChecklist,
+  addItems,
   CHECKLISTS_COLLECTION,
   SHOPPING_KEY,
   type ShoppingChecklist,
@@ -205,6 +206,103 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
 
         const persisted = await saveList(hs, args.holon, updated);
         return ok({ success: true, persisted, removedId: args.itemId, list: updated });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // --- pure helpers (no I/O) ---------------------------------------------
+  // These mirror @holons/core/shopping exports 1:1 so callers can compose
+  // checklist updates client-side without round-tripping through HoloSphere.
+
+  server.registerTool(
+    'shopping_checklist_create_empty',
+    {
+      description:
+        'Build a fresh empty shopping checklist container. Pure wrapper around @holons/core/shopping createEmptyChecklist — does not touch HoloSphere. Returns the new container (id: "shopping", type: "shopping", items: []).',
+      inputSchema: {
+        holon: z
+          .string()
+          .describe('Holon id for context (echoed in the response; not written to storage).'),
+      },
+    },
+    async (args) => {
+      try {
+        const checklist = createEmptyChecklist();
+        return ok({ success: true, holon: args.holon, checklist });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'shopping_normalize_checklist',
+    {
+      description:
+        'Coerce a raw shopping document (e.g. from gun/HoloSphere) into a normalized ShoppingChecklist, or null if the doc is deleted/absent. Pure wrapper around @holons/core/shopping normalizeChecklist.',
+      inputSchema: {
+        raw: z
+          .string()
+          .describe('JSON-encoded raw document to normalize.'),
+      },
+    },
+    async (args) => {
+      try {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(args.raw);
+        } catch {
+          return fail("'raw' must be a JSON-encoded value.");
+        }
+        const checklist = normalizeChecklist(parsed);
+        return ok({ success: true, checklist });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'shopping_items_add_batch',
+    {
+      description:
+        'Append multiple items to a shopping checklist in one call. Pure wrapper around @holons/core/shopping addItems — blanks are dropped, input is not mutated. Pass `checklist` as null/JSON-null to seed from an empty container.',
+      inputSchema: {
+        checklist: z
+          .string()
+          .describe('JSON-encoded ShoppingChecklist (or "null" to start from an empty container).'),
+        items: z
+          .string()
+          .describe('JSON-encoded array of item text strings (e.g. ["milk","bread"]).'),
+      },
+    },
+    async (args) => {
+      try {
+        let parsedChecklist: unknown;
+        let parsedItems: unknown;
+        try {
+          parsedChecklist = JSON.parse(args.checklist);
+        } catch {
+          return fail("'checklist' must be a JSON-encoded ShoppingChecklist or null.");
+        }
+        try {
+          parsedItems = JSON.parse(args.items);
+        } catch {
+          return fail("'items' must be a JSON-encoded array of strings.");
+        }
+        if (!Array.isArray(parsedItems)) {
+          return fail("'items' must decode to an array.");
+        }
+        const texts = parsedItems.map((t) => String(t));
+        const base =
+          parsedChecklist == null
+            ? null
+            : normalizeChecklist(parsedChecklist);
+        const actor = deps.resolveActor();
+        const updated = addItems(base, texts, { createdBy: actor.id });
+        return ok({ success: true, checklist: updated });
       } catch (err) {
         return fail((err as Error).message);
       }
