@@ -9,11 +9,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   FlowSettings,
   addFederationLink,
+  applyAddFederationLink,
+  applyRemoveFederationLink,
+  getDefaultHolonSettings,
+  getLensDescription,
   loadSettings,
+  parseHolonSettings,
   removeFederationLink,
   saveSettings,
   type FederationLink,
   type HolonSettings,
+  type LensType,
 } from '@holons/core/settings';
 import type { ToolDeps } from './index.js';
 
@@ -227,6 +233,142 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         };
         await saveSettings(hs, args.holon, updated);
         return ok({ success: true, holon: args.holon, equation, settings: updated });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // settings_defaults_get ----------------------------------------------
+  server.registerTool(
+    'settings_defaults_get',
+    {
+      description:
+        'Pure: return the default HolonSettings skeleton for a holon id (no I/O). Wraps @holons/core/settings getDefaultHolonSettings.',
+      inputSchema: {
+        holon: z.string().describe('Holon id to seed into the defaults.'),
+      },
+    },
+    async (args) => {
+      try {
+        const settings = getDefaultHolonSettings(args.holon);
+        return ok({ success: true, holon: args.holon, settings });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // settings_lens_description_get --------------------------------------
+  server.registerTool(
+    'settings_lens_description_get',
+    {
+      description:
+        'Pure: return the human-readable description for a lens type. Wraps @holons/core/settings getLensDescription.',
+      inputSchema: {
+        lensType: z.string().describe('Lens identifier (e.g. "tasks", "expenses", "library").'),
+      },
+    },
+    async (args) => {
+      try {
+        const description = getLensDescription(args.lensType as LensType);
+        return ok({ success: true, lensType: args.lensType, description });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // settings_parse ------------------------------------------------------
+  server.registerTool(
+    'settings_parse',
+    {
+      description:
+        'Pure: normalise raw holosphere settings data into a populated HolonSettings (defaults for missing fields). Wraps @holons/core/settings parseHolonSettings. Accepts a JSON-encoded object.',
+      inputSchema: {
+        input: z
+          .string()
+          .describe('JSON-encoded raw settings object to normalise.'),
+      },
+    },
+    async (args) => {
+      try {
+        const raw = parseJsonObject(args.input);
+        if (!raw) return fail("'input' must be a JSON-encoded object.");
+        const settings = parseHolonSettings(raw);
+        return ok({ success: true, settings });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // settings_apply_add_federation_link ---------------------------------
+  server.registerTool(
+    'settings_apply_add_federation_link',
+    {
+      description:
+        'Pure mutation: apply an add-federation-link mutation to a HolonSettings object and return the result (no I/O). Wraps @holons/core/settings applyAddFederationLink. The `link` JSON must include { targetId, targetName, relationship }.',
+      inputSchema: {
+        settings: z
+          .string()
+          .describe('JSON-encoded HolonSettings object to mutate.'),
+        link: z
+          .string()
+          .describe(
+            'JSON-encoded FederationLink seed { targetId: string, targetName: string, relationship: "federated"|"notifies" }.',
+          ),
+      },
+    },
+    async (args) => {
+      try {
+        const settingsRaw = parseJsonObject(args.settings);
+        if (!settingsRaw) return fail("'settings' must be a JSON-encoded object.");
+        const linkRaw = parseJsonObject(args.link) as Partial<FederationLink> | null;
+        if (!linkRaw) return fail("'link' must be a JSON-encoded object.");
+
+        const { targetId, targetName, relationship } = linkRaw;
+        if (typeof targetId !== 'string' || !targetId) {
+          return fail("'link.targetId' is required (string).");
+        }
+        if (typeof targetName !== 'string') {
+          return fail("'link.targetName' is required (string).");
+        }
+        if (relationship !== 'federated' && relationship !== 'notifies') {
+          return fail("'link.relationship' must be 'federated' or 'notifies'.");
+        }
+
+        const settings = parseHolonSettings(settingsRaw);
+        const updated = applyAddFederationLink(settings, targetId, targetName, relationship);
+        return ok({ success: true, settings: updated });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // settings_apply_remove_federation_link ------------------------------
+  server.registerTool(
+    'settings_apply_remove_federation_link',
+    {
+      description:
+        'Pure mutation: apply a remove-federation-link mutation to a HolonSettings object and return the result (no I/O). Wraps @holons/core/settings applyRemoveFederationLink.',
+      inputSchema: {
+        settings: z
+          .string()
+          .describe('JSON-encoded HolonSettings object to mutate.'),
+        target: z.string().describe('Target holon id to unlink.'),
+      },
+    },
+    async (args) => {
+      try {
+        if (!args.target) return fail("'target' is required.");
+        const settingsRaw = parseJsonObject(args.settings);
+        if (!settingsRaw) return fail("'settings' must be a JSON-encoded object.");
+
+        const settings = parseHolonSettings(settingsRaw);
+        const updated = applyRemoveFederationLink(settings, args.target);
+        return ok({ success: true, removedTarget: args.target, settings: updated });
       } catch (err) {
         return fail((err as Error).message);
       }
