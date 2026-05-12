@@ -19,6 +19,7 @@ export {
 export {
   REAAggregator,
   toAggregates,
+  ZERO_USER_AGGREGATES,
   type REAEventStoreLike,
   type UserAggregates,
 } from './aggregator.js';

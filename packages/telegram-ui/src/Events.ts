@@ -18,7 +18,13 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import { getholonId, getMessageId, capitalize, getDisplayName, createPaddedCaption } from './utilities.js';
 import { log } from '../utils/logger.js';
-import { saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
+import {
+    saveTasksToHolon,
+    planTaskCompletion,
+    executeCompletionPlan,
+    type Quest as CoreQuest,
+} from '@holons/core/tasks';
+import { DEFAULT_EQUATION } from '@holons/core/scoring';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -414,8 +420,12 @@ export default class Events {
 
         ctx.telegram.unpinChatMessage(holonId, eventID).catch(() => {});
 
-        // Record REA completion actions
-        await this.recordCompletionActions(event, holonId);
+        // REA side-effects via shared core; events have no timeTracking so
+        // plan.expenses is empty — same code path as Quests.
+        const equation =
+            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
+        const plan = planTaskCompletion(event, equation, { holonId });
+        await executeCompletionPlan(this.db, this.users.getEventStore(), holonId, plan);
 
         ctx.reply(`Event "${event.title}" completed! 🎊`, { reply_to_message_id: eventID }).catch(() => {});
     }
@@ -870,51 +880,16 @@ export default class Events {
     // ==================== REA Integration ====================
 
     /**
-     * Record completion actions for REA economic tracking.
+     * Record completion actions for an event via the shared core planner.
+     *
+     * @deprecated `complete()` now calls `planTaskCompletion` +
+     * `executeCompletionPlan` directly. Retained for external callers.
      */
     async recordCompletionActions(event, holonId) {
-        const actions = [];
-
-        // Record event initiated
-        actions.push({
-            user: event.initiator,
-            action: "initiated",
-            quest: event.title,
-            value: 0,
-            holonId,
-            questId: event.id
-        });
-
-        // Record completed for each participant
-        for (const user of event.participants) {
-            actions.push({
-                user,
-                action: "completed",
-                quest: event.title,
-                value: 0,
-                holonId,
-                questId: event.id
-            });
-        }
-
-        // Record appreciation events with duality
-        for (const sender of event.appreciation) {
-            for (const recipient of event.participants) {
-                if (sender.id === recipient.id) continue;
-
-                actions.push({
-                    user: sender,
-                    action: "sent",
-                    quest: event.title,
-                    value: 1,
-                    holonId,
-                    questId: event.id,
-                    receiver: recipient
-                });
-            }
-        }
-
-        await this.batchSaveUserActions(actions);
+        const equation =
+            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
+        const plan = planTaskCompletion(event, equation, { holonId });
+        await executeCompletionPlan(this.db, this.users.getEventStore(), holonId, plan);
     }
 
     async batchSaveUserActions(actions) {

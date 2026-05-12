@@ -120,8 +120,9 @@ class Library {
             start_date: new Date(), // Can't select past dates
         } as any);
 
-        // Initialize REA components
-        this.eventStore = new REAEventStore(db);
+        // Initialize REA components. Bot's DbLike.get requires the id arg;
+        // core's HoloSphereLike.get treats it as optional — cast at boundary.
+        this.eventStore = new REAEventStore(db as any);
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);
 

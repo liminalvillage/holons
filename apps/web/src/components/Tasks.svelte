@@ -25,12 +25,16 @@
 	import ToggleChip from "./shared/ToggleChip.svelte";
 	import { CheckSquare, Calendar as CalendarIcon, Plus, List, Grid, Columns } from 'svelte-feathers';
 	import {
-		calculateTaskCompletionScores,
-		getActionScore,
 		type ScoreEquation,
 		DEFAULT_EQUATION,
 		loadEquation
 	} from "../lib/scoring/ContributionScoring";
+	import {
+		applyTaskCompletion,
+		planTaskCompletion,
+		executeCompletionPlan
+	} from "@holons/core/tasks";
+	import { getEventStore } from "../lib/rea/eventStore";
 	import { getColorFromCategory } from "@holons/core/categories";
 	import {
 		getCachedEquation,
@@ -1052,126 +1056,29 @@
 				equation = await loadEquation(holosphere, holonID);
 			}
 
-			// Calculate scores
-			const participantIds = (quest.participants || []).map((p: any) => p.id);
-			const completionScores = calculateTaskCompletionScores(
-				quest.initiator?.id || null,
-				participantIds,
-				quest.timeTracking || {},
-				equation
-			);
+			// Completer = current logged-in user, falling back to initiator.
+			const telegramUser = telegramStore.getState().user;
+			const pubKey = $nostrPublicKey;
+			const completerId =
+				(telegramUser && String(telegramUser.id))
+				|| pubKey
+				|| (quest.initiator?.id ? String(quest.initiator.id) : '');
 
-			// Track initiator action
-			if (quest.initiator) {
-				const initiatorData = await holosphere.get(holonID, 'users', quest.initiator.id);
-				if (initiatorData) {
-					const initiatedPoints = getActionScore('initiated', 1, equation).points;
-					await holosphere.put(holonID, 'users', {
-						...initiatorData,
-						initiated: [
-							...(Array.isArray(initiatorData.initiated) ? initiatorData.initiated : []),
-							quest.title,
-						],
-						actions: [
-							...(Array.isArray(initiatorData.actions) ? initiatorData.actions : []),
-							{
-								type: 'initiated',
-								action: quest.title,
-								amount: initiatedPoints,
-								questId: key,
-								timestamp: new Date(),
-							},
-						],
-					});
-				}
+			const result = applyTaskCompletion(quest as any, completerId, { isAdmin: true });
+			if (!result.ok) {
+				console.warn('[Tasks] applyTaskCompletion blocked:', result.reason);
+				return;
 			}
 
-			// Track participant completions
-			if (quest.participants) {
-				for (const participant of quest.participants) {
-					const userData = await holosphere.get(holonID, 'users', participant.id);
-					if (!userData) continue;
+			const plan = planTaskCompletion(result.task, equation, {
+				holonId: holonID,
+				now: Date.now(),
+			});
+			const eventStore = getEventStore(holosphere);
 
-					const completedPoints = getActionScore('completed', 1, equation).points;
-					const hoursTracked = (quest.timeTracking?.[participant.id] || 0) as number;
+			await executeCompletionPlan(holosphere as any, eventStore, holonID, plan);
 
-					const updatedUser: any = {
-						...userData,
-						completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
-						actions: [
-							...(Array.isArray(userData.actions) ? userData.actions : []),
-							{
-								type: 'completed',
-								action: quest.title,
-								amount: completedPoints,
-								questId: key,
-								timestamp: new Date(),
-							},
-						],
-					};
-
-					// Track hours if any
-					if (hoursTracked > 0) {
-						const hoursPoints = getActionScore('hours', hoursTracked, equation).points;
-						const collabPoints = equation.collaboration;
-
-						updatedUser.hours = (userData.hours || 0) + hoursTracked;
-						updatedUser.collaboration = (userData.collaboration || 0) + 1;
-						updatedUser.actions.push({
-							type: 'collaborated',
-							action: quest.title,
-							amount: hoursPoints + collabPoints,
-							hours: hoursTracked,
-							questId: key,
-							timestamp: new Date(),
-						});
-					}
-
-					await holosphere.put(holonID, 'users', updatedUser);
-				}
-			}
-
-			// Create expense entries for time tracked
-			if (quest.timeTracking) {
-				for (const [userID, hours] of Object.entries(quest.timeTracking)) {
-					const hoursNum = hours as number;
-					if (hoursNum > 0) {
-						try {
-							const messageID = `${key}_time_${userID}_${Date.now()}`;
-							await holosphere.put(holonID, 'expenses', {
-								id: messageID,
-								chatID: holonID,
-								amount: hoursNum,
-								// 'hour' is just another currency in the ledger.
-								currency: 'hour',
-								description: quest.title,
-								paidBy: userID,
-								splitWith: [holonID],
-								date: Date.now(),
-								timestamp: new Date().toISOString(),
-								fromTimeTracking: true,
-								questId: key
-							});
-						} catch (error: any) {
-							if (error?.name === 'AuthorizationError') {
-								notifyWriteDenied('Unable to save - no write permission for this holon');
-							} else {
-								console.error(`Error adding time tracking expense for user ${userID}:`, error);
-							}
-						}
-					}
-				}
-			}
-
-			// Update quest status
-			const completedQuest = {
-				...quest,
-				id: key,
-				status: 'completed' as const,
-				completed_at: new Date().toISOString()
-			};
-
-			await holosphere.put(holonID, 'quests', completedQuest);
+			const completedQuest = { ...result.task, id: key } as Quest;
 			store = { ...store, [key]: completedQuest };
 
 			// Show celebration
@@ -1230,7 +1137,6 @@
 
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
 
 						// Preserve hologram metadata
 						const processedQuest: Quest = {
@@ -1267,7 +1173,6 @@
 
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
 
 						newStore[key] = quest as Quest;
 					}
@@ -1300,7 +1205,6 @@
 							}
 
 							if (!quest.participants) quest.participants = [];
-							if (!quest.appreciation) quest.appreciation = [];
 
 							newStore[key] = quest as Quest;
 						}
@@ -1372,7 +1276,6 @@
 
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
 
 						newStore[key] = quest as Quest;
 					}
@@ -1383,7 +1286,6 @@
 					if (quest && quest.id && !quest._deleted) {
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
 
 						newStore[key] = quest as Quest;
 					}
@@ -1492,7 +1394,6 @@
 				if (!isDeleted) {
 					// Ensure required arrays are initialized
 					if (!newquest.participants) newquest.participants = [];
-					if (!newquest.appreciation) newquest.appreciation = [];
 					// Atomic update: spread current store and add/update this quest
 					store = { ...store, [questKey]: newquest };
 				} else {
