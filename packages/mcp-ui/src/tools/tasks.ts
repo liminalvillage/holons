@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  applyTaskCompletion,
   createTaskRecord,
   saveTaskToHolon,
   saveTasksToHolon,
@@ -343,6 +344,59 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           toggleAppreciation(t, user),
         );
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // task_complete — mark a task completed. Permission + status guards live
+  // in @holons/core/tasks/applyTaskCompletion so bot/web/MCP all share the
+  // same rule set. Returns the updated task; the REA scoring + time-tracking
+  // expense side-effects intentionally stay in the UI layers for now.
+  server.registerTool(
+    'task_complete',
+    {
+      description:
+        'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAdmin:true if the caller has verified admin rights). Refuses if the task is already completed or stopped.',
+      inputSchema: {
+        holon: z.string(),
+        taskId: z.string(),
+        completerId: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe('User id of the completer. Defaults to the configured actor.'),
+        isAdmin: z
+          .boolean()
+          .optional()
+          .describe('Set true to bypass initiator/participant check (caller has resolved admin rights elsewhere).'),
+      },
+    },
+    async (args) => {
+      try {
+        const completerId = args.completerId ?? deps.resolveActor().id;
+        const hs = await deps.getHoloSphere();
+        const existing = await hs.get(args.holon, 'quests', args.taskId);
+        if (!existing) {
+          return fail('Task not found.', { holon: args.holon, taskId: args.taskId });
+        }
+        const result = applyTaskCompletion(existing as Quest, completerId, {
+          isAdmin: args.isAdmin,
+        });
+        if (!result.ok) {
+          return fail(`Cannot complete task: ${result.reason}.`, {
+            holon: args.holon,
+            taskId: args.taskId,
+            reason: result.reason,
+          });
+        }
+        const saved = await saveTaskToHolon(hs, args.holon, result.task);
+        if (!saved) return fail('Save failed.', { holon: args.holon, taskId: args.taskId });
+        return ok({
+          success: true,
+          task: result.task,
+          releasedHolograms: result.releasedHolograms,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }

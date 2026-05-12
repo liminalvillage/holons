@@ -5,3 +5,4 @@ export * from './types.js';
 export * from './creation.js';
 export * from './persistence.js';
 export * from './participants.js';
+export * from './completion.js';
