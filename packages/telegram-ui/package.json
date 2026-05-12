@@ -23,6 +23,7 @@
   "license": "GPL-3.0-only",
   "dependencies": {
     "@holons/core": "workspace:*",
+    "@holons/mcp-ui": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.7.8",
     "compression": "^1.8.1",

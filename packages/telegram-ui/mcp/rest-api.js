@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 /**
+ * @deprecated Superseded by `@holons/mcp-ui`. This file is retained for
+ * backwards compatibility and will be removed in a future release. Use
+ * `node packages/mcp-ui/dist/index.js` instead.
+ *
  * HolonsBot REST API — simple HTTP wrapper around HoloSphere
  * Usage: node mcp/rest-api.js [--port 3100]
  */
