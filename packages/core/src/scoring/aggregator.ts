@@ -33,6 +33,18 @@ export interface UserAggregates {
   offers: number;
 }
 
+/** All-zero UserAggregates — useful default while REA queries are in flight. */
+export const ZERO_USER_AGGREGATES: UserAggregates = {
+  initiated: 0,
+  completed: 0,
+  sent: 0,
+  received: 0,
+  hours: 0,
+  collaboration: 0,
+  wants: 0,
+  offers: 0,
+};
+
 /**
  * Convert raw user data (from web stores or REA events) into the canonical
  * UserAggregates shape. Handles both array-based (Dashboard) and count-based

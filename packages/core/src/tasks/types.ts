@@ -279,16 +279,18 @@ export interface RitualOrigin {
 
 // Minimal HoloSphere surface used by the persistence helpers. Both UIs pass
 // the real instance from the `holosphere` package; we only require the
-// methods we actually call so this stays UI-agnostic.
+// methods we actually call so this stays UI-agnostic. holonId is narrowed
+// to `string` to match the runtime contract that all UIs already enforce
+// (Telegraf chat ids and apps/web holon ids are both stringified upstream).
 export interface HoloSphereLike {
   put: (
-    holonId: string | number,
+    holonId: string,
     bucket: string,
     value: any,
   ) => Promise<unknown>;
   get?: (
-    holonId: string | number,
+    holonId: string,
     bucket: string,
-    key?: string,
+    key?: string | number,
   ) => Promise<unknown>;
 }

@@ -77,7 +77,9 @@ export default class Expenses {
         this.ui = ui;
         this.settings = settings;
 
-        this.eventStore = new REAEventStore(db);
+        // Bot's DbLike.get requires the id arg; core's HoloSphereLike.get
+        // treats it as optional — runtime-compatible, cast at boundary.
+        this.eventStore = new REAEventStore(db as any);
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);
 

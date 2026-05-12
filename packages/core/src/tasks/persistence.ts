@@ -14,7 +14,7 @@ export async function saveTaskToHolon(
   task: Quest,
 ): Promise<boolean> {
   try {
-    await holosphere.put(holonID, 'quests', task);
+    await holosphere.put(String(holonID), 'quests', task);
     return true;
   } catch (taskError) {
     console.error(`Failed to save task ${task.title}:`, taskError);
