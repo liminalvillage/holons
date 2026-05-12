@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  createDefaultProfile,
   getUserProfile,
+  getUsers,
   ensureUserProfile,
   saveUserProfile,
   addUserValues,
@@ -61,6 +63,23 @@ function resolveTargetUser(userId: string | number, userJson?: string): Telegram
 
 export function registerUsersTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
+    'user_create_default_profile',
+    'Build a default UserProfile object for the given TelegramUserLike (pure; no I/O).',
+    {
+      user: z.string().describe('JSON-encoded TelegramUserLike'),
+    },
+    async ({ user }) => {
+      try {
+        const u = parseJson<TelegramUserLike>('user', user);
+        const profile = createDefaultProfile(u);
+        return ok({ profile });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.tool(
     'user_profile_get',
     'Load a user profile for a holon. Creates a default profile if absent.',
     {
@@ -115,6 +134,23 @@ export function registerUsersTools(server: McpServer, deps: ToolDeps): void {
         const p = parseJson<UserProfile>('profile', profile);
         await saveUserProfile(db, holon, p);
         return ok({ saved: true, holon, userId: p.id });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.tool(
+    'users_list',
+    'List every stored user profile in a holon.',
+    {
+      holon: z.string().describe('Holon id'),
+    },
+    async ({ holon }) => {
+      try {
+        const db = (await deps.getHoloSphere()) as UserDB;
+        const users = await getUsers(db, holon);
+        return ok({ users });
       } catch (e) {
         return fail(e);
       }
