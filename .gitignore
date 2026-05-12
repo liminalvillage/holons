@@ -11,6 +11,9 @@ dist/
 .package-lock.json
 pnpm-lock.yaml
 !.env.example
+# Per-developer Claude Code MCP wiring (contains actor id env defaults).
+# See https://docs.anthropic.com/claude/docs/claude-code/mcp for the schema.
+.mcp.json
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 yarn-error.log
