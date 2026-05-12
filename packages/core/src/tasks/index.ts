@@ -6,3 +6,5 @@ export * from './creation.js';
 export * from './persistence.js';
 export * from './participants.js';
 export * from './completion.js';
+export * from './completion-plan.js';
+export * from './completion-execute.js';

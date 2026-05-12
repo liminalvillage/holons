@@ -7,6 +7,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   applyTaskCompletion,
   createTaskRecord,
+  executeCompletionPlan,
+  planTaskCompletion,
   saveTaskToHolon,
   saveTasksToHolon,
   addParticipant,
@@ -18,6 +20,8 @@ import {
   type Quest,
   type QuestParticipant,
 } from '@holons/core/tasks';
+import { REAEventStore } from '@holons/core/rea';
+import { DEFAULT_EQUATION, loadEquation } from '@holons/core/scoring';
 import type { ToolDeps } from './index.js';
 
 const TASK_TYPE = z.enum(['task', 'quest', 'proposal', 'bounty']);
@@ -350,15 +354,16 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
-  // task_complete — mark a task completed. Permission + status guards live
-  // in @holons/core/tasks/applyTaskCompletion so bot/web/MCP all share the
-  // same rule set. Returns the updated task; the REA scoring + time-tracking
-  // expense side-effects intentionally stay in the UI layers for now.
+  // task_complete — mark a task completed and run all canonical
+  // side-effects through @holons/core: applyTaskCompletion (permission +
+  // status guards), planTaskCompletion (derive REA actions + time-tracking
+  // expenses from the equation), executeCompletionPlan (persist task,
+  // events, and expenses). Bot/web/MCP all share this exact flow.
   server.registerTool(
     'task_complete',
     {
       description:
-        'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAdmin:true if the caller has verified admin rights). Refuses if the task is already completed or stopped.',
+        'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAdmin:true if the caller has verified admin rights). Refuses if the task is already completed or stopped. Also records REA events (quest:initiated/completed, appreciation pairs, quest:time_logged) and time-tracking expenses derived from the holon\'s value equation.',
       inputSchema: {
         holon: z.string(),
         taskId: z.string(),
@@ -390,12 +395,36 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
             reason: result.reason,
           });
         }
-        const saved = await saveTaskToHolon(hs, args.holon, result.task);
-        if (!saved) return fail('Save failed.', { holon: args.holon, taskId: args.taskId });
+
+        let equation = DEFAULT_EQUATION;
+        try {
+          equation = await loadEquation(hs, args.holon);
+        } catch {
+          // Falls back to DEFAULT_EQUATION when settings are unreadable.
+        }
+
+        const plan = planTaskCompletion(result.task, equation, {
+          holonId: args.holon,
+          now: Date.now(),
+        });
+        const eventStore = new REAEventStore(hs);
+        const outcome = await executeCompletionPlan(hs, eventStore, args.holon, plan);
+
+        if (!outcome.taskSaved) {
+          return fail('Save failed.', {
+            holon: args.holon,
+            taskId: args.taskId,
+            errors: outcome.errors,
+          });
+        }
+
         return ok({
           success: true,
           task: result.task,
           releasedHolograms: result.releasedHolograms,
+          savedActions: outcome.savedActions,
+          savedExpenses: outcome.savedExpenses,
+          errors: outcome.errors,
         });
       } catch (err) {
         return fail((err as Error).message);
