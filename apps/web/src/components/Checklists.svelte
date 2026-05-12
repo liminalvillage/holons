@@ -15,20 +15,19 @@
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
-
-    interface ChecklistItem {
-        text: string;
-        checked: boolean;
-    }
-
-    interface Checklist {
-        id: string;
-        items: ChecklistItem[];
-        creator?: string;
-        created?: Date;
-        questId?: string; // Optional property to indicate if checklist is attached to a quest
-        roleId?: string; // Optional property to indicate if checklist is attached to a role
-    }
+    import {
+        CHECKLIST_TYPES,
+        appendItems,
+        clearChecklist as coreClearChecklist,
+        createChecklist,
+        createChecklistObject,
+        deleteChecklist as coreDeleteChecklist,
+        removeItemAt,
+        toggleItem,
+        type Checklist,
+        type ChecklistItem,
+        type ChecklistStore,
+    } from "@holons/core/checklists";
 
     const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
@@ -312,16 +311,16 @@
         if (!allChecklists[checklistId] || !holonID) return;
 
         try {
-            const checklist = { ...allChecklists[checklistId] };
-            checklist.items = [...checklist.items];
-            checklist.items[itemIndex] = {
-                ...checklist.items[itemIndex],
-                checked: !checklist.items[itemIndex].checked,
-            };
-
-            await holosphere.put(holonID, "checklists", checklist);
-            allChecklists[checklistId] = checklist;
-            allChecklists = allChecklists;
+            const updated = await toggleItem(
+                holosphere as unknown as ChecklistStore,
+                holonID,
+                checklistId,
+                itemIndex,
+            );
+            if (updated) {
+                allChecklists[checklistId] = updated;
+                allChecklists = allChecklists;
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -350,15 +349,15 @@
         if (!checklistId || !allChecklists[checklistId] || !holonID) return;
 
         try {
-            const checklist = { ...allChecklists[checklistId] };
-            checklist.items = (checklist.items || []).map((item) => ({
-                ...item,
-                checked: false,
-            }));
-
-            await holosphere.put(holonID, "checklists", checklist);
-            allChecklists[checklistId] = checklist;
-            allChecklists = allChecklists;
+            const result = await coreClearChecklist(
+                holosphere as unknown as ChecklistStore,
+                holonID,
+                checklistId,
+            );
+            if (result.ok) {
+                allChecklists[checklistId] = result.checklist;
+                allChecklists = allChecklists;
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -380,6 +379,7 @@
         if (!holonID) return;
         const items = event.detail;
         try {
+            const store = holosphere as unknown as ChecklistStore;
             for (const raw of items) {
                 const src = raw ?? {};
                 const id = String(src.id ?? src.title ?? src.name ?? src.text ?? '').trim();
@@ -398,13 +398,10 @@
                     })
                     .filter(Boolean) as ChecklistItem[];
 
-                const newChecklist: Checklist = {
-                    id,
-                    items: checklistItems,
+                await appendItems(store, holonID, id, checklistItems, {
                     creator: "Dashboard User",
-                    created: new Date()
-                };
-                await holosphere.put(holonID, "checklists", newChecklist);
+                    type: CHECKLIST_TYPES.CHECKLIST,
+                });
             }
             showImportModal = false;
         } catch (error: any) {
@@ -420,25 +417,24 @@
         if (!inputText.trim() || !holonID) return;
 
         try {
+            const store = holosphere as unknown as ChecklistStore;
             if (isAddingChecklist) {
-                const newChecklistId = inputText.trim();
-                const newChecklist = {
-                    id: newChecklistId,
-                    items: [],
-                    creator: "Dashboard User",
-                    created: new Date().toISOString(),
-                };
-                await holosphere.put(holonID, "checklists", newChecklist);
+                const result = await createChecklist(
+                    store,
+                    holonID,
+                    inputText.trim(),
+                    { creator: "Dashboard User" },
+                );
+                if (!result.ok && result.reason === 'invalid_name') {
+                    console.warn(`Invalid checklist name: ${inputText.trim()}`);
+                }
             } else if (selectedChecklist && allChecklists[selectedChecklist]) {
-                const checklist = { ...allChecklists[selectedChecklist] };
-                checklist.items = [
-                    ...checklist.items,
-                    {
-                        text: inputText.trim(),
-                        checked: false,
-                    },
-                ];
-                await holosphere.put(holonID, "checklists", checklist);
+                await appendItems(
+                    store,
+                    holonID,
+                    selectedChecklist,
+                    [{ text: inputText.trim(), checked: false }],
+                );
             }
 
             showInput = false;
@@ -458,16 +454,18 @@
 
         try {
             const newChecklistId = `task_${taskId}_checklist`;
-            const newChecklist = {
-                id: newChecklistId,
-                items: [],
-                creator: "Dashboard User",
-                created: new Date().toISOString(),
-                questId: taskId // Link to the specific task
-            };
-
+            const newChecklist = createChecklistObject(
+                newChecklistId,
+                CHECKLIST_TYPES.QUEST,
+                {
+                    creator: "Dashboard User",
+                    questId: taskId,
+                    parentTitle: taskTitle,
+                    holonId: holonID,
+                },
+            );
             await holosphere.put(holonID, "checklists", newChecklist);
-            
+
             // Update the task to include the checklist ID
             const task = await holosphere.get(holonID, "quests", taskId);
             if (task) {
@@ -476,7 +474,7 @@
                     checklistId: newChecklistId
                 });
             }
-            
+
             console.log(`Created checklist for task ${taskId}: ${newChecklistId}`);
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
@@ -491,7 +489,15 @@
         if (!holonID) return;
 
         try {
-            await holosphere.delete(holonID, "checklists", checklistId);
+            const result = await coreDeleteChecklist(
+                holosphere as unknown as ChecklistStore,
+                holonID,
+                checklistId,
+            );
+            if (!result.ok && result.reason === 'special') {
+                console.warn(`Cannot delete special checklist: ${checklistId}`);
+                return;
+            }
             delete allChecklists[checklistId];
             allChecklists = allChecklists;
             if (selectedChecklist === checklistId) {
@@ -514,17 +520,19 @@
         }
 
         try {
-            const checklist = { ...allChecklists[checklistId] };
-            const originalLength = (checklist.items || []).length;
-            checklist.items = (checklist.items || []).filter(
-                (_, index) => index !== itemIndex
+            const result = await removeItemAt(
+                holosphere as unknown as ChecklistStore,
+                holonID,
+                checklistId,
+                itemIndex,
             );
-            console.log('Items before:', originalLength, 'after:', checklist.items.length);
-
-            await holosphere.put(holonID, "checklists", checklist);
-            allChecklists[checklistId] = checklist;
-            allChecklists = allChecklists;
-            console.log('removeItem: put succeeded');
+            if (result) {
+                allChecklists[checklistId] = result.checklist;
+                allChecklists = allChecklists;
+                console.log('removeItem: put succeeded');
+            } else {
+                console.log('removeItem: item not found at index', itemIndex);
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');

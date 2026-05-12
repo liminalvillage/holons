@@ -25,6 +25,10 @@
     import { nostrPublicKey } from "../lib/stores/nostr";
     import { telegramStore } from "../lib/stores/telegram";
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+    import {
+        CHECKLIST_TYPES,
+        createChecklistObject,
+    } from "@holons/core/checklists";
 
     export let quest: any;
     export let questId: string;
@@ -878,14 +882,16 @@
         }
 
         try {
-            const newChecklist = {
-                id: `task_${questId}_checklist`,
-                items: [],
-                creator: "Dashboard User",
-                created: new Date().toISOString(),
-                questId: questId // Link to this task
-            };
-
+            const newChecklist = createChecklistObject(
+                `task_${questId}_checklist`,
+                CHECKLIST_TYPES.QUEST,
+                {
+                    creator: "Dashboard User",
+                    questId,
+                    parentTitle: quest?.title,
+                    holonId,
+                },
+            );
             await holosphere.put(holonId, "checklists", newChecklist);
 
             // Update the quest to include the checklist ID
