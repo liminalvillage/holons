@@ -2,13 +2,19 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   agree,
+  applyVote,
   block,
   castVote,
+  createAndSaveProposal,
   createProposal,
   deleteProposal,
+  deriveStatus,
+  hasAgreed,
+  hasBlocked,
   saveProposal,
   tallyVotes,
   PROPOSAL_LENS,
+  type CreateProposalInput,
   type Proposal,
   type ProposalStore,
   type VoteEntry,
@@ -249,6 +255,115 @@ export function registerCouncilTools(server: McpServer, deps: ToolDeps): void {
         const record = parseJSON<Proposal>(proposal, 'proposal');
         const tally = tallyVotes(record, quorum);
         return ok({ tally });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_apply_vote',
+    'Pure — apply a vote to a proposal JSON and return the updated record. Does not persist.',
+    {
+      proposal: z.string().describe('Proposal JSON.'),
+      voter: z.string().describe('Voter JSON or bare id.'),
+      direction: z.enum(['agree', 'block']).describe('Vote direction.'),
+    },
+    async ({ proposal, voter, direction }) => {
+      try {
+        const record = parseJSON<Proposal>(proposal, 'proposal');
+        const next = applyVote(record, coerceVoter(voter), direction);
+        return ok({ proposal: next });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_derive_status',
+    'Pure — derive the lifecycle status (`ongoing` / `stopped` / `completed`) from a proposal JSON.',
+    {
+      proposal: z.string().describe('Proposal JSON.'),
+    },
+    async ({ proposal }) => {
+      try {
+        const record = parseJSON<Proposal>(proposal, 'proposal');
+        return ok({ status: deriveStatus(record) });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_has_agreed',
+    'Pure predicate — has the given voter agreed to the proposal?',
+    {
+      proposal: z.string().describe('Proposal JSON.'),
+      voter: z.string().describe('Voter JSON or bare id.'),
+    },
+    async ({ proposal, voter }) => {
+      try {
+        const record = parseJSON<Proposal>(proposal, 'proposal');
+        return ok({ agreed: hasAgreed(record, coerceVoter(voter)) });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_has_blocked',
+    'Pure predicate — has the given voter blocked (vetoed) the proposal?',
+    {
+      proposal: z.string().describe('Proposal JSON.'),
+      voter: z.string().describe('Voter JSON or bare id.'),
+    },
+    async ({ proposal, voter }) => {
+      try {
+        const record = parseJSON<Proposal>(proposal, 'proposal');
+        return ok({ blocked: hasBlocked(record, coerceVoter(voter)) });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_save_proposal',
+    'Persist a fully-formed proposal record via the shared core helper (HoloSphere under the `quests` lens).',
+    {
+      holon: z.string().describe('Holon id.'),
+      proposal: z.string().describe('Proposal JSON.'),
+    },
+    async ({ holon, proposal }) => {
+      try {
+        const record = parseJSON<Proposal>(proposal, 'proposal');
+        const store = await withStore(deps);
+        await saveProposal(store, holon, record);
+        return ok({ holon, lens: PROPOSAL_LENS, id: record.id });
+      } catch (e) {
+        return fail((e as Error).message);
+      }
+    }
+  );
+
+  server.tool(
+    'council_create_and_save_proposal',
+    'Create a proposal from a `CreateProposalInput` JSON and persist it in one call.',
+    {
+      holon: z.string().describe('Holon id.'),
+      input: z
+        .string()
+        .describe('CreateProposalInput JSON ({title, description?, creator?, date?, id?}).'),
+    },
+    async ({ holon, input }) => {
+      try {
+        const parsed = parseJSON<CreateProposalInput>(input, 'input');
+        const store = await withStore(deps);
+        const proposal = await createAndSaveProposal(store, holon, parsed);
+        return ok({ holon, lens: PROPOSAL_LENS, proposal });
       } catch (e) {
         return fail((e as Error).message);
       }
