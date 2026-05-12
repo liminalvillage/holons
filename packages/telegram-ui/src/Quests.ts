@@ -18,7 +18,14 @@ import { getholonId, getMessageId, capitalize, getDisplayName, getHolonName, cre
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
-import { createTaskRecord, saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
+import {
+    createTaskRecord,
+    saveTasksToHolon,
+    planTaskCompletion,
+    executeCompletionPlan,
+    type Quest as CoreQuest,
+} from '@holons/core/tasks';
+import { DEFAULT_EQUATION } from '@holons/core/scoring';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -613,37 +620,17 @@ export default class Quests {
             delete quest.reminderId;
         }
 
-        if (quest.timeTracking) {
-            for (const [userID, hours] of Object.entries(quest.timeTracking)) {
-                if (hours > 0) {
-                    // Per-user, per-completion expense id — without the userID
-                    // suffix every iteration of this loop overwrites the
-                    // previous user's expense doc (they all share `messageId`).
-                    // Date.now() also makes re-completions accumulate rather
-                    // than clobber. Matches harvest's TaskModal/Tasks shape.
-                    const expenseId = `${messageId}_time_${userID}_${Date.now()}`;
-                    // splitWith must be an array; passing the scalar holonId
-                    // here used to make harvest's balance calc skip the entry.
-                    await this.expenses?.addExpense(expenseId, holonId, hours, 'hour',
-                                                   quest.title, userID, [holonId]);
-
-                    try {
-                        const userInfo = await this.users.getUserInfo({ id: parseInt(userID) }, holonId);
-                        userInfo.hours = (userInfo.hours || 0) + hours;
-                        await holonDB.put(holonId, 'users', userInfo);
-                    } catch {}
-                }
-            }
-        }
-
         const hologramsToUpdate = quest.activeHolograms ? [...quest.activeHolograms] : [];
         quest.activeHolograms = [];
-        // Unified save and update
         await this.updateMessage(ctx, quest, language, { explicitHologramsToUpdate: hologramsToUpdate });
 
         ctx.telegram.unpinChatMessage(holonId, messageId).catch(() => {});
 
-        await this.recordCompletionActions(quest, holonId);
+        // REA side-effects (events + time-tracking expenses) via shared core.
+        const equation =
+            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
+        const plan = planTaskCompletion(quest, equation, { holonId });
+        await executeCompletionPlan(holonDB, this.users.getEventStore(), holonId, plan);
 
         ctx.reply(`Quest "${quest.title}" completed! 🎊`, { reply_to_message_id: messageId }).catch(() => {});
     }
@@ -1213,54 +1200,19 @@ export default class Quests {
         }
     }
 
+    /**
+     * Record completion actions for a quest via the shared core planner.
+     *
+     * @deprecated `complete()` now calls `planTaskCompletion` +
+     * `executeCompletionPlan` directly. This method is retained as a thin
+     * wrapper for any external callers that still expect it.
+     */
     async recordCompletionActions(quest, holonId) {
-        const actions = [];
-
-        // Record quest initiated event
-        actions.push({
-            user: quest.initiator,
-            action: "initiated",
-            quest: quest.title,
-            value: 0,
-            holonId,
-            questId: quest.id
-        });
-
-        // Record quest completed events for each participant
-        for (const user of quest.participants) {
-            actions.push({
-                user,
-                action: "completed",
-                quest: quest.title,
-                value: 0,
-                holonId,
-                questId: quest.id
-            });
-        }
-
-        // Record appreciation events with full duality (sender + receiver)
-        // REA pattern: each appreciation creates dual events for both parties
-        for (const sender of quest.appreciation) {
-            for (const recipient of quest.participants) {
-                // Skip self-appreciation
-                if (sender.id === recipient.id) continue;
-
-                // Create appreciation sent event with receiver context
-                // The Users.saveUserAction will create both sent and received events
-                actions.push({
-                    user: sender,
-                    action: "sent",
-                    quest: quest.title,
-                    value: 1,
-                    holonId,
-                    questId: quest.id,
-                    receiver: recipient
-                });
-            }
-        }
-
-        // Process actions in parallel batches (grouped by user to prevent race conditions)
-        await this.batchSaveUserActions(actions);
+        const holonDB = await this.getHolonDB(holonId);
+        const equation =
+            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
+        const plan = planTaskCompletion(quest, equation, { holonId });
+        await executeCompletionPlan(holonDB, this.users.getEventStore(), holonId, plan);
     }
 
     async handleBackAction(ctx) {

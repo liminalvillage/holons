@@ -14,9 +14,13 @@ import {
   addAppreciation,
   removeAppreciation,
   toggleAppreciation,
+  planTaskCompletion,
+  executeCompletionPlan,
   type Quest,
   type QuestParticipant,
 } from '@holons/core/tasks';
+import { REAEventStore } from '@holons/core/rea';
+import { DEFAULT_EQUATION } from '@holons/core/scoring';
 import type { ToolDeps } from './index.js';
 
 const TASK_TYPE = z.enum(['task', 'quest', 'proposal', 'bounty']);
@@ -319,6 +323,51 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           removeAppreciation(t, userId),
         );
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // task_complete — mark a task completed and run the canonical REA
+  // completion pipeline (planTaskCompletion + executeCompletionPlan).
+  // Mirrors what the telegram bot now does in Quests.complete(): persist the
+  // task with status: 'completed', record REA events for initiator /
+  // participants / appreciation, and write time-tracking expense docs.
+  server.registerTool(
+    'task_complete',
+    {
+      description:
+        'Mark a task complete and record REA side-effects (initiated/completed/appreciation events + time-tracking expenses) via @holons/core/tasks planTaskCompletion + executeCompletionPlan.',
+      inputSchema: {
+        holon: z.string(),
+        taskId: z.string(),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        if (typeof hs.get !== 'function') {
+          return fail('HoloSphere instance does not expose a `get` method.');
+        }
+        const existing = (await hs.get(args.holon, 'quests', args.taskId)) as
+          | Quest
+          | null;
+        if (!existing) return fail('Task not found.', { holon: args.holon, taskId: args.taskId });
+        const task: Quest = { ...existing, status: 'completed' };
+        const eventStore = new REAEventStore(hs);
+        const plan = planTaskCompletion(task, DEFAULT_EQUATION, { holonId: args.holon });
+        const outcome = await executeCompletionPlan(
+          hs,
+          eventStore,
+          args.holon,
+          plan,
+        );
+        return ok({
+          success: outcome.errors.length === 0,
+          outcome,
+          task,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }

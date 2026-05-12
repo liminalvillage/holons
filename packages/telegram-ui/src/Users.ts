@@ -119,6 +119,96 @@ function isUserProfile(v: unknown): v is UserProfile {
 }
 
 /**
+ * Map a (legacy) user-action tuple into REA events via the canonical factory.
+ * Extracted from `saveUserAction` so the persistence half (eventStore.put +
+ * ensureUserProfile) stays a one-liner. Factory now lives in
+ * `@holons/core/rea`; legacy `'received' | 'appreciated'` types are kept as
+ * no-ops for backwards compatibility with old call sites.
+ */
+function buildUserActionEvents(
+  factory: typeof REAEventFactory,
+  user: TelegramUser,
+  type: string,
+  action: string,
+  amount: number,
+  holonId: string,
+  extraContext: ActionExtraContext,
+): any[] {
+  const events: any[] = [];
+
+  switch (type) {
+    case 'initiated':
+      events.push(
+        factory.questInitiated(holonId, user, {
+          id: extraContext.questId || action,
+          title: action,
+        }),
+      );
+      break;
+
+    case 'completed':
+      events.push(
+        factory.questCompleted(holonId, user, {
+          id: extraContext.questId || action,
+          title: action,
+        }),
+      );
+      break;
+
+    case 'sent':
+      if (extraContext.receiver) {
+        events.push(
+          ...factory.appreciationExchange(
+            holonId,
+            user,
+            extraContext.receiver,
+            1,
+            action,
+            extraContext.questId,
+          ),
+        );
+      }
+      break;
+
+    case 'received':
+      // Handled by 'sent' case above (dual events). Legacy compatibility.
+      break;
+
+    case 'collaborated':
+      if (amount > 0) {
+        events.push(
+          factory.timeLogged(
+            holonId,
+            user,
+            amount,
+            extraContext.questId,
+            action,
+          ),
+        );
+      }
+      break;
+
+    case 'offers':
+      events.push(factory.offerDeclared(holonId, user, action));
+      break;
+
+    case 'wants':
+      events.push(factory.wantDeclared(holonId, user, action));
+      break;
+
+    case 'appreciated':
+      // Legacy appreciation record.
+      break;
+
+    default:
+      console.warn(`Unknown action type: ${type}`);
+      break;
+  }
+
+  return events;
+}
+
+/**
  * Interface mirroring `@holons/core/users` UsersService. This is the surface
  * the Telegram UI delegates to; the implementation is currently inline in
  * `LocalUsersService` below until Unit 8 lands the canonical core module.
@@ -285,75 +375,15 @@ class LocalUsersService implements UsersServiceLike {
     holonId: string,
     extraContext: ActionExtraContext = {},
   ) {
-    const events: object[] = [];
-
-    switch (type) {
-      case 'initiated':
-        events.push(
-          this.eventFactory.questInitiated(holonId, user, {
-            id: extraContext.questId || action,
-            title: action,
-          }),
-        );
-        break;
-
-      case 'completed':
-        events.push(
-          this.eventFactory.questCompleted(holonId, user, {
-            id: extraContext.questId || action,
-            title: action,
-          }),
-        );
-        break;
-
-      case 'sent':
-        if (extraContext.receiver) {
-          const appreciationEvents = this.eventFactory.appreciationExchange(
-            holonId,
-            user,
-            extraContext.receiver,
-            1,
-            action,
-            extraContext.questId,
-          );
-          events.push(...appreciationEvents);
-        }
-        break;
-
-      case 'received':
-        // Handled by 'sent' case above (dual events). Legacy compatibility.
-        break;
-
-      case 'collaborated':
-        if (amount > 0) {
-          events.push(
-            this.eventFactory.timeLogged(
-              holonId,
-              user,
-              amount,
-              extraContext.questId,
-              action,
-            ),
-          );
-        }
-        break;
-
-      case 'offers':
-        events.push(this.eventFactory.offerDeclared(holonId, user, action));
-        break;
-
-      case 'wants':
-        events.push(this.eventFactory.wantDeclared(holonId, user, action));
-        break;
-
-      case 'appreciated':
-        // Legacy appreciation record.
-        break;
-
-      default:
-        console.warn(`Unknown action type: ${type}`);
-        break;
-    }
+    const events = buildUserActionEvents(
+      this.eventFactory,
+      user,
+      type,
+      action,
+      amount,
+      holonId,
+      extraContext,
+    );
 
     for (const event of events) {
       await this.eventStore.put(holonId, event);
