@@ -10,7 +10,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   DEFAULT_EQUATION,
+  calculateAllUserScores,
   calculatePercentageShare,
+  calculateTaskCompletionScores,
+  calculateUserScore,
+  getActionScore,
   getScoreBreakdown,
   loadEquation,
   toAggregates,
@@ -178,6 +182,152 @@ export function registerScoringTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const equation = await loadEquation(hs, holon);
         return ok({ holon, equation });
+      } catch (e: any) {
+        return err(e?.message ?? String(e));
+      }
+    },
+  );
+
+  server.tool(
+    'score_calculate_user',
+    "Calculate a single user's total score from raw user data using the supplied (or default) value equation. Internally derives aggregates via toAggregates(). Wraps @holons/core/scoring: calculateUserScore.",
+    {
+      user: z
+        .string()
+        .describe(
+          'JSON-encoded user data (object with initiated/completed/sent/received/hours/collaboration/wants/offers — arrays or counts).',
+        ),
+      equation: z
+        .string()
+        .optional()
+        .describe('JSON-encoded ScoreEquation. Defaults to DEFAULT_EQUATION when omitted.'),
+    },
+    async ({ user, equation }) => {
+      try {
+        const userData = parseJson<any>(user, {}, 'user');
+        const eq = parseJson<ScoreEquation>(equation, DEFAULT_EQUATION, 'equation');
+        const aggregates = toAggregates(userData);
+        const score = calculateUserScore(aggregates, eq);
+        return ok({ score, aggregates });
+      } catch (e: any) {
+        return err(e?.message ?? String(e));
+      }
+    },
+  );
+
+  server.tool(
+    'score_calculate_all',
+    'Calculate scores + percentage shares for every user in a list using the supplied (or default) value equation. Wraps @holons/core/scoring: calculateAllUserScores.',
+    {
+      users: z
+        .string()
+        .describe('JSON-encoded array of user objects (each with id + REA fields).'),
+      equation: z
+        .string()
+        .optional()
+        .describe('JSON-encoded ScoreEquation. Defaults to DEFAULT_EQUATION when omitted.'),
+    },
+    async ({ users, equation }) => {
+      try {
+        const userList = parseJson<any[]>(users, [], 'users');
+        if (!Array.isArray(userList)) {
+          throw new Error('users must be a JSON array');
+        }
+        const eq = parseJson<ScoreEquation>(equation, DEFAULT_EQUATION, 'equation');
+        const scored = calculateAllUserScores(userList, eq);
+        return ok({ scored, count: scored.length });
+      } catch (e: any) {
+        return err(e?.message ?? String(e));
+      }
+    },
+  );
+
+  server.tool(
+    'score_action',
+    'Compute the score delta for a specific action (initiated/completed/joined/hours/sent/received). Wraps @holons/core/scoring: getActionScore.',
+    {
+      actionType: z
+        .enum(['initiated', 'completed', 'joined', 'hours', 'sent', 'received'])
+        .describe('Action type to score.'),
+      amount: z
+        .number()
+        .optional()
+        .describe('Quantity (e.g., hours, count). Defaults to 1.'),
+      equation: z
+        .string()
+        .optional()
+        .describe('JSON-encoded ScoreEquation. Defaults to DEFAULT_EQUATION when omitted.'),
+    },
+    async ({ actionType, amount, equation }) => {
+      try {
+        const eq = parseJson<ScoreEquation>(equation, DEFAULT_EQUATION, 'equation');
+        const action = getActionScore(actionType, amount ?? 1, eq);
+        return ok({ action });
+      } catch (e: any) {
+        return err(e?.message ?? String(e));
+      }
+    },
+  );
+
+  server.tool(
+    'score_task_completion',
+    'Compute contribution scores for task completion: the initiator earns initiated points, each participant earns completed + hours + collaboration points. Wraps @holons/core/scoring: calculateTaskCompletionScores.',
+    {
+      initiatorId: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Initiator user id, or null/omitted when no initiator.'),
+      participantIds: z
+        .array(z.string())
+        .describe('Participant user ids who completed the task.'),
+      timeTracking: z
+        .string()
+        .optional()
+        .describe(
+          'JSON-encoded Record<userId, hours>. Hours logged per participant. Defaults to {}.',
+        ),
+      equation: z
+        .string()
+        .optional()
+        .describe('JSON-encoded ScoreEquation. Defaults to DEFAULT_EQUATION when omitted.'),
+    },
+    async ({ initiatorId, participantIds, timeTracking, equation }) => {
+      try {
+        const tt = parseJson<Record<string, number>>(timeTracking, {}, 'timeTracking');
+        const eq = parseJson<ScoreEquation>(equation, DEFAULT_EQUATION, 'equation');
+        const scoresMap = calculateTaskCompletionScores(
+          initiatorId ?? null,
+          participantIds,
+          tt,
+          eq,
+        );
+        const scores: Record<string, { total: number; breakdown: any[] }> = {};
+        for (const [userId, entry] of scoresMap.entries()) {
+          scores[userId] = entry;
+        }
+        return ok({ scores, count: scoresMap.size });
+      } catch (e: any) {
+        return err(e?.message ?? String(e));
+      }
+    },
+  );
+
+  server.tool(
+    'score_aggregator_to_aggregates',
+    'Convert raw user data (or REA-style event-derived object) into the canonical UserAggregates shape used by scoring. Wraps @holons/core/scoring: toAggregates.',
+    {
+      events: z
+        .string()
+        .describe(
+          'JSON-encoded user data object whose fields will be normalized into UserAggregates.',
+        ),
+    },
+    async ({ events }) => {
+      try {
+        const userData = parseJson<any>(events, {}, 'events');
+        const aggregates = toAggregates(userData);
+        return ok({ aggregates });
       } catch (e: any) {
         return err(e?.message ?? String(e));
       }
