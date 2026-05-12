@@ -8,7 +8,14 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
-import type { Expense } from '@holons/core/expenses';
+import {
+    computeCreditMatrix,
+    computeUserCurrencyBalance,
+    createExpense,
+    toggleParticipant as toggleParticipantCore,
+    type AgentId,
+    type Expense,
+} from '@holons/core/expenses';
 
 // Bot-side aliases for the historical Expenses.js naming. `Expense` in core
 // is the canonical record; `currency` is a normalized string code.
@@ -276,33 +283,20 @@ export default class Expenses {
     };
 
     async addExpense(messageId: number | null, holonId: number | string, amount: number, currency: string, description: string, paidBy: number | string, splitWith: Array<number | string>, picture: string | null = null) {
-        //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
-        if (isNaN(amount) || amount <= 0 ) { // Currency validation moved to 'spent'
-            return false;
-        }
-
-        // amount = parseFloat(amount); // Already float from 'spent'
-
-        // currency is already normalized (lowercase, singular, no special chars) by the caller (`spent` method)
-        // description = description.replace(/^for /, ''); //EN (already done in `spent` if needed, but usually fine here)
-        description = description.replace(/^for /i, ''); // Case-insensitive
-        description = description.replace(/^per /i, '');
-        description = description.replace(/^voor /i, '');
-        description = description.replace(/^für /i, '');
-        description = description.replace(/^por /i, '');
-        description = description.replace(/^pour /i, '');
-
-
-        const expense = {
-            id: messageId,
-            date: Date.now(),
+        // Delegate validation, currency normalization and description-prefix
+        // stripping to @holons/core/expenses.createExpense. Returns null on
+        // non-positive/invalid amounts, matching the previous early-return.
+        const expense = createExpense({
+            id: messageId ?? Date.now(),
+            holonId,
             amount,
             currency,
             description,
             paidBy,
             splitWith,
-            picture: picture || null
-        };
+            picture,
+        });
+        if (!expense) return false;
 
         // Store expense record (for display and backward compatibility)
         await this.db.put(holonId.toString(), 'expenses', expense);
@@ -319,27 +313,14 @@ export default class Expenses {
         return expense;
     }
 
-    // add user to split TODO: BOT ID IS HARDCODED, switch to either holonId or variable bot id
+    // add/remove user to split. Delegates the splitWith state machine
+    // (including the holonId sentinel fallback) to @holons/core/expenses.
     async joinSplit(holonId: number | string, userID: number | string, expenseID: string) {
-        let expense = await this.db.get(holonId.toString(), 'expenses', expenseID)
-
-        if (expense) {
-            if (!expense.splitWith.includes(userID)) { //add user to split
-                expense.splitWith.push(userID);
-                // Remove holonId ("This Holon") if it exists in the array
-                expense.splitWith = expense.splitWith.filter((id: any) => id !== holonId);
-            }
-            else {//remove user from split
-                expense.splitWith = expense.splitWith.filter(function (value: any, _index: number, _arr: any[]) { return value != userID; });
-                if (expense.splitWith.length == 0) {
-                    expense.splitWith.push(holonId);
-                }
-            }
-
-            await this.db.put(holonId.toString(), 'expenses', expense)
-            return expense;
-        }
-        return false;
+        const expense = await this.db.get(holonId.toString(), 'expenses', expenseID);
+        if (!expense) return false;
+        const next = toggleParticipantCore(expense as Expense, userID as AgentId, holonId as AgentId);
+        await this.db.put(holonId.toString(), 'expenses', next);
+        return next;
     }
 
     async removeFromSplit(ctx: any) {
@@ -469,186 +450,28 @@ export default class Expenses {
     }
 
     async calculateCredits(holonId: number | string, currency: string) {
-        console.log(`\n=== CALCULATING CREDITS ===`);
-        console.log(`Holon ID: ${holonId}`);
-        console.log(`Currency: ${currency}`);
-        
-        // Validate and normalize currency input
         if (!currency || typeof currency !== 'string' || currency.length === 0) {
-            console.error('❌ Invalid currency provided to calculateCredits:', currency);
+            console.error('Invalid currency provided to calculateCredits:', currency);
             return { creditMatrix: [], userNames: [] };
         }
-        
-        const requestedCurrencyNormalized = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
-        console.log(`✅ Normalized currency: ${requestedCurrencyNormalized}`);
 
-        // Fetch data from the database
-        let expenses = await this.db.getAll(holonId.toString(), 'expenses');
-        let users = await this.db.getAll(holonId.toString(), 'users');
-        const currentSettings = await this.settings.getSettings(holonId); 
-        const allowedCurrenciesSetting = currentSettings.currencies || [];
+        const expenses = await this.db.getAll(holonId.toString(), 'expenses');
+        const users = await this.db.getAll(holonId.toString(), 'users');
+        const currentSettings = await this.settings.getSettings(holonId);
+        const allowedCurrenciesSetting: string[] = currentSettings.currencies || [];
 
-        console.log(`📊 Data Summary:`);
-        console.log(`  - Total expenses: ${expenses?.length || 0}`);
-        console.log(`  - Total users: ${users?.length || 0}`);
-        console.log(`  - Allowed currencies: [${allowedCurrenciesSetting.join(', ')}]`);
-
-        // Early exit if no users are found
         if (!users || users.length === 0) {
-            console.log('❌ No users found for credit calculation in chat:', holonId);
-            return { creditMatrix: [], userNames: [] }; // Return empty structure
+            console.log('No users found for credit calculation in chat:', holonId);
+            return { creditMatrix: [], userNames: [] };
         }
 
-        let userArray = users.map(user => user.id);
-        let creditMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
-
-        console.log(`\n=== PROCESSING EXPENSES ===`);
-        let processedExpenses = 0;
-        let skippedExpenses = 0;
-
-        // Process each expense to calculate credits
-        expenses.forEach(expense => {
-            // Ensure the expense currency matches the requested currency (case-insensitive)
-            const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
-            
-            console.log(`\nExpense ID: ${expense.id}`);
-            console.log(`  Amount: ${expense.amount} ${expense.currency}`);
-            console.log(`  Description: ${expense.description}`);
-            console.log(`  Paid by: ${expense.paidBy}`);
-            
-            // FIX: Add proper type checking for splitWith
-            let splitWithDisplay = 'none';
-            if (expense.splitWith) {
-                if (Array.isArray(expense.splitWith)) {
-                    splitWithDisplay = expense.splitWith.join(', ');
-                } else if (typeof expense.splitWith === 'string') {
-                    splitWithDisplay = expense.splitWith;
-                } else if (typeof expense.splitWith === 'number') {
-                    splitWithDisplay = expense.splitWith.toString();
-                } else {
-                    splitWithDisplay = JSON.stringify(expense.splitWith);
-                }
-            }
-            console.log(`  Split with: [${splitWithDisplay}]`);
-            console.log(`  Currency match: ${expenseCurrencyNormalized} === ${requestedCurrencyNormalized} ? ${expenseCurrencyNormalized === requestedCurrencyNormalized}`);
-            
-            if (expenseCurrencyNormalized === requestedCurrencyNormalized) {
-                // If allowed currencies are defined in settings, ensure this expense's currency is one of them
-                if (allowedCurrenciesSetting.length > 0 && !allowedCurrenciesSetting.includes(expenseCurrencyNormalized)) {
-                    console.warn(`⚠️ Skipping expense ${expense.id} for credit calculation; its currency '${expense.currency}' (normalized: '${expenseCurrencyNormalized}') is not in the allowed list: [${allowedCurrenciesSetting.join(', ')}]`);
-                    skippedExpenses++;
-                    return; 
-                }
-
-                // FIX: Ensure splitWith is an array, default to empty if not
-                let splitWithArray = [];
-                if (expense.splitWith) {
-                    if (Array.isArray(expense.splitWith)) {
-                        splitWithArray = expense.splitWith;
-                    } else if (typeof expense.splitWith === 'string') {
-                        // Try to parse as JSON or treat as single value
-                        try {
-                            const parsed = JSON.parse(expense.splitWith);
-                            splitWithArray = Array.isArray(parsed) ? parsed : [parsed];
-                        } catch {
-                            splitWithArray = [expense.splitWith];
-                        }
-                    } else if (typeof expense.splitWith === 'number') {
-                        splitWithArray = [expense.splitWith];
-                    } else {
-                        console.warn(`⚠️ Unknown splitWith type for expense ${expense.id}:`, typeof expense.splitWith, expense.splitWith);
-                        splitWithArray = [];
-                    }
-                }
-                
-                const numberOfSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
-                const amountPerPerson = expense.amount / numberOfSplitters;
-
-                console.log(`  ✅ Processing expense:`);
-                console.log(`    Number of splitters: ${numberOfSplitters}`);
-                console.log(`    Amount per person: ${amountPerPerson.toFixed(2)}`);
-                console.log(`    SplitWith array: [${splitWithArray.join(', ')}]`);
-
-                const payerIndex = userArray.indexOf(expense.paidBy);
-
-                // Ensure payer is found in the user list
-                if (payerIndex === -1) {
-                    console.warn(`⚠️ Payer ID ${expense.paidBy} not found in user list for expense ${expense.id}`);
-                    skippedExpenses++;
-                    return; // Skip this expense if payer not found
-                }
-
-                console.log(`    Payer index: ${payerIndex}`);
-
-                splitWithArray.forEach((memberId: any) => {
-                    const memberIndex = userArray.indexOf(memberId);
-
-                    // Ensure member is found in the user list
-                    if (memberIndex === -1) {
-                        console.warn(`⚠️ Member ID ${memberId} not found in user list for expense ${expense.id}`);
-                        return; // Skip this member if not found
-                    }
-
-                    console.log(`    Processing member ${memberId} (index: ${memberIndex})`);
-
-                    // Update the credit matrix, avoiding self-credit updates
-                    if (payerIndex !== memberIndex) {
-                        // Ensure the matrix indices are valid before assignment
-                        if (creditMatrix[payerIndex] && creditMatrix[memberIndex]) {
-                           creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                           creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-                           console.log(`      ✅ Updated matrix: [${payerIndex}][${memberIndex}] += ${amountPerPerson.toFixed(2)}`);
-                           console.log(`      ✅ Updated matrix: [${memberIndex}][${payerIndex}] -= ${amountPerPerson.toFixed(2)}`);
-                        } else {
-                           console.error(`❌ Invalid indices for credit matrix update: payerIndex=${payerIndex}, memberIndex=${memberIndex}`);
-                        }
-                    } else {
-                        console.log(`      ⏭️ Skipping self-credit update for payer ${expense.paidBy}`);
-                    }
-                });
-                
-                processedExpenses++;
-            } else {
-                console.log(`  ⏭️ Skipping - currency mismatch`);
-                skippedExpenses++;
-            }
-        });
-
-        console.log(`\n=== PROCESSING SUMMARY ===`);
-        console.log(`✅ Processed expenses: ${processedExpenses}`);
-        console.log(`⏭️ Skipped expenses: ${skippedExpenses}`);
-
-        // Get display names for the users involved
-        let userNames = await Promise.all(userArray.map(userId => this.getDisplayName(holonId, userId)));
-        
-        console.log(`\n=== FINAL USER LIST ===`);
-        userNames.forEach((name, index) => {
-            console.log(`  ${index}: ${name} (ID: ${userArray[index]})`);
-        });
-
-        // ADD: Detailed credit matrix analysis
-        console.log(`\n=== CREDIT MATRIX ANALYSIS ===`);
-        console.log(`Matrix format: [Row User] owes [Column User] amount`);
-        for (let i = 0; i < creditMatrix.length; i++) {
-            for (let j = 0; j < creditMatrix[i].length; j++) {
-                if (i !== j && creditMatrix[i][j] !== 0) {
-                    console.log(`  ${userNames[i]} owes ${userNames[j]}: ${creditMatrix[i][j].toFixed(2)}`);
-                }
-            }
-        }
-
-        // ADD: Net balance calculation for each user
-        console.log(`\n=== NET BALANCES ===`);
-        for (let i = 0; i < creditMatrix.length; i++) {
-            let netBalance = 0;
-            for (let j = 0; j < creditMatrix[i].length; j++) {
-                if (i !== j) {
-                    netBalance += creditMatrix[i][j]; // Positive = owes money, Negative = is owed money
-                }
-            }
-            console.log(`  ${userNames[i]}: ${netBalance.toFixed(2)} (${netBalance > 0 ? 'owes' : netBalance < 0 ? 'is owed' : 'balanced'})`);
-        }
-
+        const { creditMatrix, userIds } = computeCreditMatrix(
+            (expenses ?? []) as Expense[],
+            users.map((u: any) => ({ id: u.id })),
+            currency,
+            allowedCurrenciesSetting,
+        );
+        const userNames = await Promise.all(userIds.map((id) => this.getDisplayName(holonId, id)));
         return { creditMatrix, userNames };
     }
 
@@ -686,101 +509,9 @@ export default class Expenses {
     }
 
     async getUserCurrencyBalance(holonId: number | string, userID: number | string, currencyName: string) {
-        console.log(`\n=== GETTING CURRENCY BALANCE ===`);
-        console.log(`Holon ID: ${holonId}, User ID: ${userID}, Currency: ${currencyName}`);
-        
         const expenses = await this.db.getAll(holonId.toString(), 'expenses');
-        let netBalance = 0;
-        const normalizedTargetCurrency = currencyName.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
-
-        console.log(`Total expenses found: ${expenses?.length || 0}`);
-        console.log(`Normalized target currency: ${normalizedTargetCurrency}`);
-
-        if (!expenses || expenses.length === 0) {
-            console.log(`❌ No expenses found`);
-            return 0;
-        }
-
-        for (const expense of expenses) {
-            const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
-            
-            // FIX: Handle splitWith properly for display
-            let splitWithDisplay = 'none';
-            if (expense.splitWith) {
-                if (Array.isArray(expense.splitWith)) {
-                    splitWithDisplay = expense.splitWith.join(', ');
-                } else if (typeof expense.splitWith === 'string') {
-                    splitWithDisplay = expense.splitWith;
-                } else if (typeof expense.splitWith === 'number') {
-                    splitWithDisplay = expense.splitWith.toString();
-                } else {
-                    splitWithDisplay = JSON.stringify(expense.splitWith);
-                }
-            }
-            
-            console.log(`\nExpense ID: ${expense.id}`);
-            console.log(`  Amount: ${expense.amount} ${expense.currency}`);
-            console.log(`  Paid by: ${expense.paidBy}`);
-            console.log(`  Split with: [${splitWithDisplay}]`);
-            console.log(`  Currency match: ${expenseCurrencyNormalized} === ${normalizedTargetCurrency} ? ${expenseCurrencyNormalized === normalizedTargetCurrency}`);
-
-            if (expenseCurrencyNormalized === normalizedTargetCurrency) {
-                // FIX: Handle splitWith properly for calculation
-                let splitWithArray = [];
-                if (expense.splitWith) {
-                    if (Array.isArray(expense.splitWith)) {
-                        splitWithArray = expense.splitWith;
-                    } else if (typeof expense.splitWith === 'string') {
-                        // Try to parse as JSON or treat as single value
-                        try {
-                            const parsed = JSON.parse(expense.splitWith);
-                            splitWithArray = Array.isArray(parsed) ? parsed : [parsed];
-                        } catch {
-                            splitWithArray = [expense.splitWith];
-                        }
-                    } else if (typeof expense.splitWith === 'number') {
-                        splitWithArray = [expense.splitWith];
-                    } else {
-                        console.warn(`⚠️ Unknown splitWith type for expense ${expense.id}:`, typeof expense.splitWith, expense.splitWith);
-                        splitWithArray = [];
-                    }
-                }
-                
-                const numSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
-                const share = expense.amount / numSplitters;
-                // FIX: Handle data type mismatch for includes check
-                let userInSplit = splitWithArray.some((id: any) => id == userID); // Use == for type coercion
-
-                console.log(`  ✅ Processing expense:`);
-                console.log(`    Number of splitters: ${numSplitters}`);
-                console.log(`    Share per person: ${share.toFixed(2)}`);
-                console.log(`    User in split: ${userInSplit}`);
-                console.log(`    User is payer: ${expense.paidBy === userID}`);
-                console.log(`    Data types - expense.paidBy: ${typeof expense.paidBy} (${expense.paidBy}), userID: ${typeof userID} (${userID})`);
-
-                // FIX: Handle data type mismatch for comparison
-                const isPayer = expense.paidBy == userID; // Use == instead of === for type coercion
-                
-                if (isPayer) {
-                    netBalance += expense.amount; // User paid the full amount
-                    console.log(`    +${expense.amount} (paid full amount)`);
-                    if (userInSplit) {
-                        netBalance -= share; // Subtract their own share
-                        console.log(`    -${share.toFixed(2)} (own share)`);
-                    }
-                } else if (userInSplit) {
-                    netBalance -= share; // User is in split but didn't pay, so they owe their share
-                    console.log(`    -${share.toFixed(2)} (owe share)`);
-                }
-                
-                console.log(`    Current net balance: ${netBalance.toFixed(2)}`);
-            } else {
-                console.log(`  ⏭️ Skipping - currency mismatch`);
-            }
-        }
-        
-        console.log(`\nFinal net balance for user ${userID}: ${netBalance.toFixed(2)}`);
-        return netBalance;
+        if (!expenses || expenses.length === 0) return 0;
+        return computeUserCurrencyBalance(expenses as Expense[], userID as AgentId, currencyName);
     }
 
     // Show participant selection interface with checklist-style user selection
@@ -835,34 +566,21 @@ export default class Expenses {
         }
     }
 
-    // Toggle individual participant in expense split
+    // Toggle individual participant in expense split. SplitWith state machine
+    // (including the holonId sentinel fallback) is delegated to core.
     async toggleParticipant(ctx: any, holonId: number | string, messageId: number, expenseID: string, userID: number) {
         try {
             await ctx.answerCbQuery().catch(() => {});
-            
-            let expense = await this.db.get(holonId.toString(), 'expenses', expenseID);
+
+            const expense = await this.db.get(holonId.toString(), 'expenses', expenseID);
             if (!expense) {
                 await ctx.answerCbQuery('Expense not found');
                 return;
             }
 
-            // Toggle participant
-            if (expense.splitWith.includes(userID)) {
-                // Remove user from split
-                expense.splitWith = expense.splitWith.filter((id: any) => id !== userID);
-                // Add holonId ("This Holon") if split becomes empty
-                if (expense.splitWith.length === 0) {
-                    expense.splitWith.push(holonId);
-                }
-            } else {
-                // Add user to split
-                expense.splitWith.push(userID);
-                // Remove holonId ("This Holon") if it exists in the array
-                expense.splitWith = expense.splitWith.filter((id: any) => id !== holonId);
-            }
+            const next = toggleParticipantCore(expense as Expense, userID as AgentId, holonId as AgentId);
+            await this.db.put(holonId.toString(), 'expenses', next);
 
-            await this.db.put(holonId.toString(), 'expenses', expense);
-            
             // Refresh the participant selection view
             await this.showParticipantSelection(ctx, holonId, messageId, expenseID);
 

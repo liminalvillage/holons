@@ -12,6 +12,7 @@
 	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import DisplayName from './shared/DisplayName.svelte';
 	import { getColorFromCategory } from '@holons/core/categories';
+	import { toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -158,32 +159,26 @@
 		const quest = store[questId];
 		if (!quest) return;
 
-		if (!quest.participants) {
-			quest.participants = [];
-		}
-		if (!quest.appreciation) {
-			quest.appreciation = [];
-		}
-
-		if (!quest.participants) {
-			quest.participants = [];
-		}
-		const participantIndex = quest.participants.findIndex(
-			(p) => p.id === userId
-		);
-
-		if (participantIndex >= 0) {
-			quest.participants.splice(participantIndex, 1);
-		} else {
-			const user = userStore[userId];
-			quest.participants.push({
+		const user = userStore[userId];
+		const candidate = user
+			? {
 				id: userId,
 				username:
 					user.first_name +
 					(user.last_name ? " " + user.last_name : ""),
 				picture: user.picture,
-			});
-		}
+			}
+			: { id: userId };
+
+		const base = {
+			...quest,
+			participants: quest.participants || [],
+			appreciation: quest.appreciation || [],
+		};
+		const updated = coreToggleParticipant(base, candidate);
+
+		quest.participants = updated.participants;
+		quest.appreciation = base.appreciation;
 
 		await holosphere.put(holonID, "quests", quest);
 

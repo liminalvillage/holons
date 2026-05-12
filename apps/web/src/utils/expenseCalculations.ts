@@ -1,3 +1,17 @@
+// Thin facade over @holons/core/expenses.
+//
+// We keep this module so existing call sites (`Status.svelte`, `Expenses.svelte`)
+// don't need to change shape: web stores expenses as a Gun-style
+// Record<id, Expense> rather than the Expense[] core works with, and the
+// legacy `unit` field needs to be folded into `currency` before delegating.
+import {
+    computeCreditMatrix,
+    computeUserCurrencyBalance,
+    normalizeCurrency as coreNormalizeCurrency,
+    type Expense as CoreExpense,
+    type User as CoreUser,
+} from '@holons/core/expenses';
+
 interface Expense {
     id: string;
     amount: number;
@@ -16,7 +30,7 @@ interface User {
 }
 
 export function normalizeCurrency(c: string): string {
-    return (c || '').toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+    return coreNormalizeCurrency(c);
 }
 
 /**
@@ -25,19 +39,20 @@ export function normalizeCurrency(c: string): string {
  * older time-tracking entries (currency: 'hour').
  */
 export function expenseCurrency(e: Expense): string {
-    return normalizeCurrency((e?.currency || e?.unit || '') as string);
+    return coreNormalizeCurrency((e?.currency || e?.unit || '') as string);
 }
 
 /**
- * Normalize `splitWith` to an array. Some upstream call sites (notably
- * holonsbot's hour-tracking before the array-splitWith fix) passed a scalar
- * holonId instead of `[holonId]`; without this shim those entries contribute
- * zero to anyone's balance because the inner loop runs zero times.
+ * Fold the legacy `unit` field into `currency` so core (which only inspects
+ * `currency`) sees the same value `expenseCurrency()` would return.
  */
-function splitWithArray(raw: unknown): Array<string | number> {
-    if (Array.isArray(raw)) return raw as Array<string | number>;
-    if (raw === null || raw === undefined || raw === '') return [];
-    return [raw as string | number];
+function toCoreExpenses(expenses: Record<string, Expense>): CoreExpense[] {
+    return Object.values(expenses)
+        .filter((e): e is Expense => Boolean(e))
+        .map((e) => ({
+            ...(e as unknown as CoreExpense),
+            currency: e.currency || e.unit || '',
+        }));
 }
 
 export function calculateCurrencyBalance(
@@ -47,40 +62,8 @@ export function calculateCurrencyBalance(
     users: User[]
 ): number {
     if (!currency || !userId || users.length === 0) return 0;
-
-    const normalizedCurrency = normalizeCurrency(currency);
-
-    // Find the user index - use string comparison for consistency
-    const userIndex = users.findIndex(user => String(user.id) === String(userId));
-    if (userIndex === -1) return 0;
-
-    // Create credit matrix using the exact same logic as Expenses.svelte
-    const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
-
-    Object.values(expenses).forEach(expense => {
-        if (!expense) return;
-        if (expenseCurrency(expense) !== normalizedCurrency) return;
-        const splitWithList = splitWithArray((expense as any).splitWith);
-        const amountPerPerson = expense.amount / (splitWithList.length || 1);
-        const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
-
-        if (payerIndex === -1) return; // Skip if payer not found
-
-        splitWithList.forEach(memberId => {
-            const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
-            if (memberIndex === -1) return; // Skip if member not found
-
-            if (payerIndex !== memberIndex) {
-                // Different people: payer is owed, member owes
-                creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-            }
-            // If payerIndex === memberIndex, they paid for themselves, so no credit/debt
-        });
-    });
-
-    // Calculate balance by summing the user's row in the credit matrix
-    return creditMatrix[userIndex].reduce((sum, val) => sum + val, 0);
+    if (!users.some((u) => String(u.id) === String(userId))) return 0;
+    return computeUserCurrencyBalance(toCoreExpenses(expenses), userId, currency);
 }
 
 export function calculateCreditMatrix(
@@ -89,29 +72,7 @@ export function calculateCreditMatrix(
     users: User[]
 ): number[][] {
     if (!currency || users.length === 0) return [];
-
-    const normalizedCurrency = normalizeCurrency(currency);
-    const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
-
-    Object.values(expenses).forEach(expense => {
-        if (!expense) return;
-        if (expenseCurrency(expense) !== normalizedCurrency) return;
-        const splitWithList = splitWithArray((expense as any).splitWith);
-        const amountPerPerson = expense.amount / (splitWithList.length || 1);
-        const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
-
-        if (payerIndex === -1) return;
-
-        splitWithList.forEach(memberId => {
-            const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
-            if (memberIndex === -1) return;
-
-            if (payerIndex !== memberIndex) {
-                creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-            }
-        });
-    });
-
+    const coreUsers: CoreUser[] = users.map((u) => ({ id: u.id }));
+    const { creditMatrix } = computeCreditMatrix(toCoreExpenses(expenses), coreUsers, currency);
     return creditMatrix;
 }

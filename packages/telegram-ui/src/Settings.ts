@@ -19,6 +19,11 @@ import {
     type HolonSettings,
     type LensType as AvailableLens,
 } from '@holons/core/settings';
+import {
+    DEFAULT_EQUATION,
+    calculateUserScore,
+    toAggregates,
+} from '@holons/core/scoring';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -2464,53 +2469,35 @@ export default class Settings {
 
     async calculateUserScores(users, holonId, expensesInstance) {
         const settings = await this.getSettings(holonId);
-        const equation = settings.valueEquation;
+        const equation = settings.valueEquation ?? DEFAULT_EQUATION;
         const currencies = settings.currencies || [];
-        
+        const currencyWeights = equation?.currencies ?? {};
+
         const userScores = [];
         for (const userId in users) {
             const user = users[userId];
             if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
 
-            let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
-                (user.completed && user.completed.length * equation.completed || 0) +
-                (user.sent * equation.sent || 0) +
-                (user.received * equation.received || 0) +
-                // (user.hours * equation.hours || 0) + // COMMENTED OUT FOR TESTING
-                (user.collaboration * equation.collaboration || 0) +
-                (user.wants && user.wants.length * equation.wants || 0) +
-                (user.offers && user.offers.length * equation.offers || 0);
-
-            let currencyScoreContribution = 0;
-            console.log(`\n=== CURRENCY CALCULATION FOR USER ${user.id} ===`);
-            console.log(`Available currencies: [${currencies.join(', ')}]`);
-            console.log(`Equation keys: [${Object.keys(equation).join(', ')}]`);
-            
-            if (currencies && currencies.length > 0 && expensesInstance) {
+            // Fetch per-currency balances so core/scoring can apply the
+            // equation's currency weights uniformly.
+            const currencyBalances = {};
+            if (currencies.length > 0 && expensesInstance) {
                 for (const currencyName of currencies) {
                     const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                    console.log(`\nProcessing currency: ${currencyName} -> ${currencyKey}`);
-                    
-                    if (currencyKey && equation[currencyKey] !== undefined) {
-                        try {
-                            const balance = await expensesInstance.getUserCurrencyBalance(holonId, user.id, currencyKey);
-                            const weight = equation[currencyKey] || 0;
-                            const contribution = balance * weight;
-                            currencyScoreContribution += contribution;
-                            console.log(`  ✅ Balance: ${balance}, Weight: ${weight}, Contribution: ${contribution}`);
-                        } catch (e) {
-                            console.error(`❌ Error getting balance for ${currencyKey} for user ${user.id}:`, e);
-                        }
-                    } else {
-                        console.log(`  ⏭️ Skipped - currencyKey: ${currencyKey}, equation[currencyKey]: ${equation[currencyKey]}`);
+                    if (!currencyKey || currencyWeights[currencyKey] === undefined) continue;
+                    try {
+                        currencyBalances[currencyKey] = await expensesInstance.getUserCurrencyBalance(
+                            holonId,
+                            user.id,
+                            currencyKey,
+                        );
+                    } catch (e) {
+                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
                     }
                 }
-            } else {
-                console.log(`  ⏭️ No currencies or expenses instance available`);
             }
-            
-            console.log(`Total currency contribution: ${currencyScoreContribution}`);
-            score += currencyScoreContribution;
+
+            const score = calculateUserScore(toAggregates(user), equation, currencyBalances);
             userScores.push({ ...user, score });
         }
 
