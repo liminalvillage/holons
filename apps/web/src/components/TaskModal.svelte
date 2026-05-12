@@ -25,6 +25,11 @@
     import { nostrPublicKey } from "../lib/stores/nostr";
     import { telegramStore } from "../lib/stores/telegram";
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+    import {
+        CHECKLIST_TYPES,
+        createChecklistObject,
+    } from "@holons/core/checklists";
+    import { addParticipant as coreAddParticipant, removeParticipant as coreRemoveParticipant } from "@holons/core/tasks";
 
     export let quest: any;
     export let questId: string;
@@ -315,19 +320,19 @@
     }
 
     async function removeParticipant(participantId: string) {
-        const participants = (quest.participants || []).filter(
-            (p: { id: string }) => p.id !== participantId
-        );
+        const base = { ...quest, participants: quest.participants || [] };
+        const updated = coreRemoveParticipant(base, participantId);
 
-        // Also reset time tracking for the removed participant
+        // Side effect: clear this participant's time-tracking entry. Time tracking
+        // is UI/Telegram-specific state, so it stays here rather than in core.
         const updatedTimeTracking = { ...quest.timeTracking };
         if (updatedTimeTracking[participantId]) {
             delete updatedTimeTracking[participantId];
         }
 
         await updateQuest({
-            participants,
-            timeTracking: updatedTimeTracking
+            participants: updated.participants,
+            timeTracking: updatedTimeTracking,
         });
     }
 
@@ -522,10 +527,11 @@
             id: user.id, // Store the actual user ID
             firstName: user.first_name, // Map to firstName
             lastName: user.last_name,   // Map to lastName
-            username: user.username, 
+            username: user.username,
         };
 
-        const newParticipantsArray = [...(quest.participants || []), newParticipant];
+        const base = { ...quest, participants: quest.participants || [] };
+        const newParticipantsArray = coreAddParticipant(base, newParticipant).participants;
 
         // When updating user data (actions), use the canonical ID that holosphere.get/put expects for users.
         // This might be user.id (the original UUID-like ID) if it exists and is different from username.
@@ -878,14 +884,16 @@
         }
 
         try {
-            const newChecklist = {
-                id: `task_${questId}_checklist`,
-                items: [],
-                creator: "Dashboard User",
-                created: new Date().toISOString(),
-                questId: questId // Link to this task
-            };
-
+            const newChecklist = createChecklistObject(
+                `task_${questId}_checklist`,
+                CHECKLIST_TYPES.QUEST,
+                {
+                    creator: "Dashboard User",
+                    questId,
+                    parentTitle: quest?.title,
+                    holonId,
+                },
+            );
             await holosphere.put(holonId, "checklists", newChecklist);
 
             // Update the quest to include the checklist ID

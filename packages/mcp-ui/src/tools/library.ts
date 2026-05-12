@@ -3,17 +3,45 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   addItem,
   borrowItem,
+  detectItemType,
+  getItem,
   getLibraryStats,
   listItems,
+  recordBorrowAccounting,
+  recordReturnAccounting,
   removeItem,
   returnItem,
   setItemValue,
+  type AccountingDeps,
   type BorrowActor,
   type CreateLibraryItemOptions,
   type LibraryDB,
+  type LibraryItem,
   type LibraryItemType,
+  type REAEventFactoryLike,
+  type REAEventStoreLike,
 } from '@holons/core/library';
 import type { ToolDeps } from './index.js';
+
+// MCP-side accounting helpers: the REA event store and factory live in
+// telegram-ui today. The MCP server has no transport for those domain
+// services, so we plug in no-op stubs that satisfy the core interface while
+// still letting `recordBorrow/ReturnAccounting` persist the credit-denominated
+// expense bookkeeping (which only needs the HoloSphere `db`).
+const NOOP_EVENT_STORE: REAEventStoreLike = {
+  async put() {
+    return undefined;
+  },
+};
+
+const NOOP_EVENT_FACTORY: REAEventFactoryLike = {
+  itemBorrowed() {
+    return [];
+  },
+  itemReturned() {
+    return [];
+  },
+};
 
 type JsonResult = {
   content: Array<{ type: 'text'; text: string }>;
@@ -205,6 +233,85 @@ export function registerLibraryTools(server: McpServer, deps: ToolDeps): void {
       const items = await listItems(db, holon);
       const stats = getLibraryStats(items);
       return ok({ stats });
+    }
+  );
+
+  server.tool(
+    'library_item_get',
+    'Fetch a single library item by id from a holon. Returns null when absent.',
+    {
+      holon: z.string(),
+      itemId: z.string(),
+    },
+    async ({ holon, itemId }) => {
+      const db = (await deps.getHoloSphere()) as LibraryDB;
+      const item = await getItem(db, holon, itemId);
+      return ok({ item });
+    }
+  );
+
+  server.tool(
+    'library_borrow_accounting_record',
+    'Record borrow-side bookkeeping for a library item (credit-denominated expense + REA events). Skipped when the borrower owns the item or the item has no value. REA events are no-ops in the MCP context — the expense entry is still persisted.',
+    {
+      holon: z.string(),
+      borrower: z
+        .string()
+        .optional()
+        .describe('JSON-encoded BorrowActor override: { id, username?, first_name?, last_name? }'),
+      item: z.string().describe('JSON-encoded LibraryItem snapshot to bill against.'),
+    },
+    async ({ holon, borrower, item }) => {
+      const actor = buildBorrowActor(deps, parseJson<ActorOverride>(borrower, {}));
+      const parsedItem = parseJson<LibraryItem | null>(item, null);
+      if (!parsedItem) return fail('item is required');
+
+      const db = (await deps.getHoloSphere()) as LibraryDB;
+      const accountingDeps: AccountingDeps = {
+        db,
+        eventStore: NOOP_EVENT_STORE,
+        eventFactory: NOOP_EVENT_FACTORY,
+      };
+      await recordBorrowAccounting(accountingDeps, holon, actor, parsedItem);
+      return ok({ itemId: parsedItem.id });
+    }
+  );
+
+  server.tool(
+    'library_return_accounting_record',
+    'Record return-side bookkeeping for a library item (refund expense + REA events). Skipped when the returner owns the item or the item has no value. REA events are no-ops in the MCP context — the refund expense is still persisted.',
+    {
+      holon: z.string(),
+      returner: z
+        .string()
+        .optional()
+        .describe('JSON-encoded BorrowActor override for the returner.'),
+      item: z.string().describe('JSON-encoded LibraryItem snapshot being returned.'),
+    },
+    async ({ holon, returner, item }) => {
+      const actor = buildBorrowActor(deps, parseJson<ActorOverride>(returner, {}));
+      const parsedItem = parseJson<LibraryItem | null>(item, null);
+      if (!parsedItem) return fail('item is required');
+
+      const db = (await deps.getHoloSphere()) as LibraryDB;
+      const accountingDeps: AccountingDeps = {
+        db,
+        eventStore: NOOP_EVENT_STORE,
+        eventFactory: NOOP_EVENT_FACTORY,
+      };
+      await recordReturnAccounting(accountingDeps, holon, actor, parsedItem);
+      return ok({ itemId: parsedItem.id });
+    }
+  );
+
+  server.tool(
+    'library_detect_item_type',
+    'Infer a likely library item category (tool|book|equipment|other) from free text.',
+    {
+      text: z.string(),
+    },
+    async ({ text }) => {
+      return ok({ type: detectItemType(text) });
     }
   );
 }

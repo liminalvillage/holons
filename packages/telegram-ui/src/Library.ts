@@ -7,7 +7,15 @@ import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
-import { LIBRARY_TYPES as LIBRARY_TYPES_CORE, type LibraryItem } from '@holons/core/library';
+import {
+    LIBRARY_TYPES as LIBRARY_TYPES_CORE,
+    borrowItem as coreBorrowItem,
+    recordBorrowAccounting as coreRecordBorrowAccounting,
+    recordReturnAccounting as coreRecordReturnAccounting,
+    returnItem as coreReturnItem,
+    type AccountingDeps,
+    type LibraryItem,
+} from '@holons/core/library';
 
 // Re-export LIBRARY_TYPES so existing imports `from './Library.js'` keep working
 // while also making it sourceable from `@holons/core/library`.
@@ -455,15 +463,21 @@ class Library {
         const { itemName, username, firstName, lastName } = pendingBorrow;
         const returnDate = new Date(dateStr);
 
-        // Create initials from first name and last name
-        const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : '';
-        const lastInitial = lastName ? lastName.charAt(0).toUpperCase() : '';
-        const initials = firstInitial + lastInitial || (username ? username.charAt(0).toUpperCase() : '?');
-
         try {
-            // Re-check item is still available
-            const freshItem = await this.db.get(holonId.toString(), 'library', itemName);
-            if (!freshItem || freshItem.borrowed) {
+            const borrowResult = await coreBorrowItem(
+                this.db as any,
+                holonId.toString(),
+                itemName,
+                {
+                    id: ctx.from.id,
+                    username,
+                    first_name: firstName,
+                    last_name: lastName,
+                },
+                returnDate
+            );
+
+            if (!borrowResult.ok || !borrowResult.item) {
                 await ctx.answerCbQuery('Item is no longer available.').catch(() => {});
                 this.pendingBorrows.delete(lockKey);
                 this.borrowLocks.delete(lockKey);
@@ -471,46 +485,17 @@ class Library {
                 return;
             }
 
-            // Check if it's the owner borrowing
-            const isOwner = freshItem.createdBy === ctx.from.id;
+            const freshItem = borrowResult.item;
+            const isOwner = !!borrowResult.isOwner;
 
-            // Create expense entry for borrowed item (if has value and not owner)
-            if (!isOwner && freshItem.value > 0) {
-                try {
-                    const expense = {
-                        id: Date.now(),
-                        date: Date.now(),
-                        amount: freshItem.value,
-                        currency: 'credits',
-                        description: `Borrowed: ${itemName}`,
-                        paidBy: freshItem.createdBy,
-                        splitWith: [ctx.from.id],
-                        itemId: itemName,
-                        type: 'borrow'
-                    };
-                    await this.db.put(holonId.toString(), 'expenses', expense);
-
-                    const events = this.eventFactory.itemBorrowed(
-                        holonId,
-                        ctx.from,
-                        freshItem,
-                        freshItem.value,
-                        0
-                    );
-                    await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-                } catch (error) {
-                    console.error('Error creating borrow expense/events:', error);
-                }
-            }
-
-            // Update item with borrow info including return date and initials
-            freshItem.borrowed = true;
-            freshItem.borrower = username;
-            freshItem.borrowerId = ctx.from.id;
-            freshItem.borrowerInitials = initials;
-            freshItem.borrowedAt = new Date();
-            freshItem.returnBy = returnDate;
-            await this.db.put(holonId.toString(), 'library', freshItem);
+            // Core helper internally skips owners + zero-value items and
+            // swallows persistence errors (matches the original inline path).
+            const accountingDeps: AccountingDeps = {
+                db: this.db as any,
+                eventStore: this.eventStore,
+                eventFactory: this.eventFactory,
+            };
+            await coreRecordBorrowAccounting(accountingDeps, holonId, ctx.from, freshItem);
 
             await ctx.answerCbQuery(`Borrowed until ${dateStr}`).catch(() => {});
 
@@ -592,68 +577,41 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId.toString(), 'library', item);
-        if (!currentItem) {
-            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
-            else ctx.reply(`${item} is not in the library.`);
-            return;
-        }
-        if (!currentItem.borrowed) {
-            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not borrowed.`).catch(() => {});
-            else ctx.reply(`${item} is not borrowed.`);
-            return;
-        }
-
-        // Check by borrowerId (more reliable) or fall back to username
-        const isBorrower = currentItem.borrowerId === ctx.from.id ||
-                          currentItem.borrower === ctx.from.username;
-        if (!isBorrower) {
-            if (fromKeyboard) await ctx.answerCbQuery(`Only ${currentItem.borrower} can return this item.`).catch(() => {});
-            else ctx.reply(`Only ${currentItem.borrower} can return this item.`);
-            return;
-        }
-
-        // Check if it's the owner returning (owner doesn't pay/get refunded)
-        const isOwner = currentItem.createdBy === ctx.from.id;
-
-        // Create reverse expense entry to cancel the borrow charge
-        if (!isOwner && currentItem.value > 0) {
-            try {
-                const refundExpense = {
-                    id: Date.now(),
-                    date: Date.now(),
-                    amount: currentItem.value,
-                    currency: 'credits',
-                    description: `Returned: ${item}`,
-                    paidBy: ctx.from.id,
-                    splitWith: [currentItem.createdBy],
-                    itemId: item,
-                    type: 'return'
-                };
-                await this.db.put(holonId.toString(), 'expenses', refundExpense);
-            } catch (error) {
-                console.error('Error creating return expense:', error);
+        const returnResult = await coreReturnItem(
+            this.db as any,
+            holonId.toString(),
+            item,
+            {
+                id: ctx.from.id,
+                username: ctx.from.username,
+                first_name: ctx.from.first_name,
+                last_name: ctx.from.last_name,
             }
+        );
+
+        if (!returnResult.ok) {
+            const errorMessages: Record<string, string> = {
+                not_found: `${item} is not in the library.`,
+                not_borrowed: `${item} is not borrowed.`,
+                forbidden: `Only ${returnResult.item?.borrower} can return this item.`,
+            };
+            const msg = errorMessages[returnResult.reason ?? 'not_found'];
+            if (fromKeyboard) await ctx.answerCbQuery(msg).catch(() => {});
+            else ctx.reply(msg);
+            return;
         }
 
-        // Create REA events for the return transaction
-        try {
-            const events = this.eventFactory.itemReturned(
-                holonId,
-                ctx.from,
-                currentItem,
-                currentItem.value || 0
-            );
-            await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-        } catch (error) {
-            console.error('Error creating REA events for return:', error);
-        }
+        const currentItem = returnResult.item!;
+        const isOwner = !!returnResult.isOwner;
 
-        currentItem.borrowed = false;
-        currentItem.borrower = null;
-        currentItem.borrowerId = null;
-        currentItem.returnedAt = new Date();
-        await this.db.put(holonId.toString(), 'library', currentItem);
+        // Core helper internally skips owners + zero-value items and
+        // swallows persistence errors (matches the original inline path).
+        const accountingDeps: AccountingDeps = {
+            db: this.db as any,
+            eventStore: this.eventStore,
+            eventFactory: this.eventFactory,
+        };
+        await coreRecordReturnAccounting(accountingDeps, holonId, ctx.from, currentItem);
 
         if (fromKeyboard) {
             const refundMsg = (!isOwner && currentItem.value > 0) ? ` (${currentItem.value}● refunded)` : '';

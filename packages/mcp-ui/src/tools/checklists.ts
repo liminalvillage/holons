@@ -19,12 +19,18 @@ import {
   CHECKLIST_TYPES,
   addItemsToChecklist,
   createChecklist,
+  createChecklistObject,
   getChecklist,
+  migrateLegacyChecklistType,
   removeItemAt,
   toggleItem,
+  type Checklist,
   type ChecklistStore,
+  type ChecklistType,
 } from '@holons/core/checklists';
 import type { ToolDeps } from './index.js';
+
+const CHECKLIST_TYPE_VALUES = Object.values(CHECKLIST_TYPES) as ChecklistType[];
 
 // --- helpers -------------------------------------------------------------
 
@@ -191,6 +197,98 @@ export function registerChecklistsTools(server: McpServer, deps: ToolDeps): void
         if (!checklist) {
           return fail('subtask_not_found', { reason: 'subtask_not_found' });
         }
+        return ok({ success: true, checklist });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // checklist_get — fetch a single checklist by id.
+  server.registerTool(
+    'checklist_get',
+    {
+      description:
+        'Fetch a single checklist (with items) by id. Wraps @holons/core/checklists getChecklist. Returns null in the `checklist` field if the record does not exist; legacy records are migrated to the typed shape transparently.',
+      inputSchema: {
+        holon: z.string().describe('Holon id.'),
+        checklistId: z.string().describe('Existing checklist id.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = (await deps.getHoloSphere()) as ChecklistStore;
+        const checklist = await getChecklist(hs, args.holon, args.checklistId);
+        return ok({ success: true, checklist });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // checklist_migrate_legacy_type — pure migration helper.
+  server.registerTool(
+    'checklist_migrate_legacy_type',
+    {
+      description:
+        'Pure helper that infers the `type` field of a legacy checklist record (pre-typed-shape). Accepts a JSON string of a single checklist and returns the migrated checklist. Wraps @holons/core/checklists migrateLegacyChecklistType. No storage I/O.',
+      inputSchema: {
+        checklist: z
+          .string()
+          .describe('JSON-encoded Checklist record to migrate.'),
+      },
+    },
+    async (args) => {
+      try {
+        let parsed: Checklist;
+        try {
+          parsed = JSON.parse(args.checklist) as Checklist;
+        } catch (parseErr) {
+          return fail(`invalid_json: ${(parseErr as Error).message}`);
+        }
+        const migrated = migrateLegacyChecklistType(parsed);
+        return ok({ success: true, checklist: migrated });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // checklist_build_object — pure factory for a checklist record (no I/O).
+  // Distinct from `checklist_create`: this only builds the in-memory record
+  // (createChecklistObject), while `checklist_create` persists with a
+  // collision check (createChecklist). Useful when the caller wants to
+  // construct + inspect the record without committing it.
+  server.registerTool(
+    'checklist_build_object',
+    {
+      description:
+        'Pure helper that builds a checklist record with the right type-specific fields. Wraps @holons/core/checklists createChecklistObject — does NOT persist. Use `checklist_create` if you want to save it.',
+      inputSchema: {
+        id: z.string().describe('Checklist id (also used as name).'),
+        type: z
+          .enum(CHECKLIST_TYPE_VALUES as [ChecklistType, ...ChecklistType[]])
+          .describe('Checklist type (checklist|agenda|shopping|quest|role).'),
+        creator: z
+          .string()
+          .optional()
+          .describe('Creator id (optional). Falls back to resolved actor id.'),
+        questId: z.string().optional(),
+        roleId: z.string().optional(),
+        parentTitle: z.string().optional(),
+        holonId: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const actor = deps.resolveActor();
+        const checklist = createChecklistObject(args.id, args.type, {
+          creator: args.creator ?? actor.id,
+          questId: args.questId,
+          roleId: args.roleId,
+          parentTitle: args.parentTitle,
+          holonId: args.holonId,
+        });
         return ok({ success: true, checklist });
       } catch (err) {
         return fail((err as Error).message);
