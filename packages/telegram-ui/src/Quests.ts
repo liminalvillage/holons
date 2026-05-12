@@ -18,7 +18,7 @@ import { getholonId, getMessageId, capitalize, getDisplayName, getHolonName, cre
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
-import { createTaskRecord, saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
+import { applyTaskCompletion, createTaskRecord, saveTasksToHolon, toggleParticipant, toggleAppreciation, type Quest as CoreQuest } from '@holons/core/tasks';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -489,33 +489,15 @@ export default class Quests {
             quest.participants = quest.participants || [];
             quest.appreciation = quest.appreciation || [];
 
-            if (action === 'join') {
-                const idx = quest.participants.findIndex(u => u.id === sender.id);
-                if (idx > -1) {
-                    quest.participants.splice(idx, 1);
-                } else {
-                    quest.participants.push(sender);
-                }
-                quest.appreciation = quest.appreciation.filter(u => u.id !== sender.id);
-            } else {
-                const userIdx = quest.participants.findIndex(u => u.id === sender.id);
-                if (userIdx > -1) {
-                    if (quest.status === "completed") {
-                        return;
-                    }
-                    quest.participants.splice(userIdx, 1);
-                }
-
-                const appIdx = quest.appreciation.findIndex(u => u.id === sender.id);
-                if (appIdx > -1) {
-                    if (quest.status === "completed") {
-                        return;
-                    }
-                    quest.appreciation.splice(appIdx, 1);
-                } else {
-                    quest.appreciation.push(sender);
-                }
-            }
+            // Delegates to @holons/core/tasks which enforces the participants/
+            // appreciation mutex (a user is in at most one of the two lists)
+            // and the completion guard (no-op when the quest is already
+            // completed and the user is in either list).
+            const updated = action === 'join'
+                ? toggleParticipant(quest, sender)
+                : toggleAppreciation(quest, sender);
+            quest.participants = updated.participants;
+            quest.appreciation = updated.appreciation ?? [];
 
             // Unified save and update - pass interacting user for personal hologram on join
             const interactingUser = (action === 'join') ? sender : null;
@@ -590,23 +572,28 @@ export default class Quests {
         const quest = await holonDB.get(holonId, 'quests', messageId);
 
         if (!await this.questExists(quest, ctx, messageId)) return;
-        if (quest.status === 'stopped') {
-            return ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }));
-        }
 
         const completerId = ctx.from.id;
-        const canComplete = quest.initiator.id === completerId ||
-                           quest.participants.some(u => u.id === completerId) ||
-                           await this.checkUserAdmin(completerId, holonId);
-
-        if (!canComplete) {
-            return ctx.answerCbQuery(i18next.t('onlyinitiatorcomplete', { lng: language }));
+        // Permission check + status flip lives in @holons/core/tasks so the
+        // same rules apply to web/MCP. Bot layers admin lookup + scheduler
+        // cancellation + REA event recording on top.
+        const isAdmin = await this.checkUserAdmin(completerId, holonId);
+        const result = applyTaskCompletion(quest, completerId, { isAdmin });
+        if (!result.ok) {
+            if (result.reason === 'stopped') {
+                return ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }));
+            }
+            if (result.reason === 'forbidden') {
+                return ctx.answerCbQuery(i18next.t('onlyinitiatorcomplete', { lng: language }));
+            }
+            return; // already-completed
         }
 
         // Answer callback query IMMEDIATELY before heavy operations
         ctx.answerCbQuery(`Completing "${quest.title}"...`).catch(() => {});
 
-        quest.status = "completed";
+        Object.assign(quest, result.task);
+        const hologramsToUpdate = result.releasedHolograms;
 
         if (quest.reminderId && this.scheduler) {
             await this.scheduler.cancelReminder(quest.reminderId);
@@ -636,9 +623,8 @@ export default class Quests {
             }
         }
 
-        const hologramsToUpdate = quest.activeHolograms ? [...quest.activeHolograms] : [];
-        quest.activeHolograms = [];
-        // Unified save and update
+        // Unified save and update — hologramsToUpdate captured before the
+        // applyTaskCompletion call cleared quest.activeHolograms.
         await this.updateMessage(ctx, quest, language, { explicitHologramsToUpdate: hologramsToUpdate });
 
         ctx.telegram.unpinChatMessage(holonId, messageId).catch(() => {});

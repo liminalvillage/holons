@@ -18,7 +18,7 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import { getholonId, getMessageId, capitalize, getDisplayName, createPaddedCaption } from './utilities.js';
 import { log } from '../utils/logger.js';
-import { saveTasksToHolon, type Quest as CoreQuest } from '@holons/core/tasks';
+import { saveTasksToHolon, toggleParticipant, toggleAppreciation, type Quest as CoreQuest } from '@holons/core/tasks';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -342,27 +342,14 @@ export default class Events {
             event.participants = event.participants || [];
             event.appreciation = event.appreciation || [];
 
-            if (action === 'join') {
-                const idx = event.participants.findIndex(u => u.id === sender.id);
-                if (idx > -1) {
-                    event.participants.splice(idx, 1);
-                } else {
-                    event.participants.push(sender);
-                }
-                event.appreciation = event.appreciation.filter(u => u.id !== sender.id);
-            } else {
-                const userIdx = event.participants.findIndex(u => u.id === sender.id);
-                if (userIdx > -1 && event.status === "completed") return;
-                if (userIdx > -1) event.participants.splice(userIdx, 1);
-
-                const appIdx = event.appreciation.findIndex(u => u.id === sender.id);
-                if (appIdx > -1) {
-                    if (event.status === "completed") return;
-                    event.appreciation.splice(appIdx, 1);
-                } else {
-                    event.appreciation.push(sender);
-                }
-            }
+            // Events share Quest shape, so the @holons/core/tasks mutex
+            // helpers apply 1:1 (participants/appreciation exclusivity +
+            // completion guard).
+            const updated = action === 'join'
+                ? toggleParticipant(event, sender)
+                : toggleAppreciation(event, sender);
+            event.participants = updated.participants;
+            event.appreciation = updated.appreciation ?? [];
 
             // Save event using the same holonId we fetched from
             try {
