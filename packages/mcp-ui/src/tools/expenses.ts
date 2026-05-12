@@ -7,8 +7,13 @@ import { z } from 'zod';
 import {
   addParticipant,
   calculateBalance,
+  coerceSplitWith,
+  computeBalances,
   computeCreditMatrix,
+  computeUserCurrencyBalance,
   createExpense,
+  normalizeCurrency,
+  removeParticipant,
   splitAmongAll,
   toggleParticipant,
   type AgentId,
@@ -211,6 +216,135 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
         const exp = parseJson<Expense>(expense, 'expense');
         const next = toggleParticipant(exp, userId as AgentId, holonId as AgentId);
         return ok({ expense: next });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  // holonId is accepted for forward-compat with the toggle variant; core's
+  // removeParticipant does not currently re-seed an empty splitWith with the
+  // holon sentinel, so we leave that behaviour to the caller.
+  server.registerTool(
+    'expense_remove_participant',
+    {
+      description:
+        'Remove a user from an expense splitWith. Returns a new Expense (no-op if the user was not present).',
+      inputSchema: {
+        expense: z.string().describe('JSON-encoded Expense.'),
+        userId: z.union([z.string(), z.number()]).describe('User id to remove.'),
+        holonId: z
+          .union([z.string(), z.number()])
+          .describe('Holon id (accepted for forward-compat; not used by core.removeParticipant).'),
+      },
+    },
+    async ({ expense, userId }) => {
+      try {
+        const exp = parseJson<Expense>(expense, 'expense');
+        const next = removeParticipant(exp, userId as AgentId);
+        return ok({ expense: next });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  // Core's computeBalances takes User[]; this tool accepts plain userIds and
+  // synthesizes a minimal User[] so callers without a populated roster can
+  // still compute net positions for an arbitrary id set.
+  server.registerTool(
+    'expense_compute_balances',
+    {
+      description:
+        'Compute per-user net balances + credit matrix for a currency, given a list of user ids.',
+      inputSchema: {
+        expenses: z.string().describe('JSON array of Expense objects.'),
+        userIds: z
+          .array(z.union([z.string(), z.number()]))
+          .describe('User ids participating in the calculation.'),
+        currency: z
+          .string()
+          .optional()
+          .describe('Currency code (normalized internally). Defaults to empty (zeroed result).'),
+      },
+    },
+    async ({ expenses, userIds, currency }) => {
+      try {
+        const list = parseJson<Expense[]>(expenses, 'expenses');
+        if (!Array.isArray(list)) throw new Error('"expenses" must be a JSON array');
+        const users: User[] = (userIds ?? []).map((id) => ({ id: id as AgentId }));
+        const result = computeBalances(list, users, currency ?? '');
+        return ok({ ...result, currency: currency ?? '', expenseCount: list.length });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    'expense_user_currency_balance',
+    {
+      description:
+        'Net balance for a single user in one currency. Positive = user is owed; negative = user owes.',
+      inputSchema: {
+        expenses: z.string().describe('JSON array of Expense objects.'),
+        userId: z.union([z.string(), z.number()]).describe('User to score.'),
+        currency: z.string().describe('Currency code (normalized internally).'),
+      },
+    },
+    async ({ expenses, userId, currency }) => {
+      try {
+        const list = parseJson<Expense[]>(expenses, 'expenses');
+        if (!Array.isArray(list)) throw new Error('"expenses" must be a JSON array');
+        const net = computeUserCurrencyBalance(list, userId as AgentId, currency);
+        return ok({ userId, currency, net, expenseCount: list.length });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    'expense_normalize_currency',
+    {
+      description:
+        'Normalize a currency code the same way @holons/core does (lowercase, drop trailing s, strip non-letters).',
+      inputSchema: {
+        input: z.string().describe('Raw currency string.'),
+      },
+    },
+    async ({ input }) => {
+      try {
+        return ok({ input, normalized: normalizeCurrency(input) });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    'expense_coerce_split_with',
+    {
+      description:
+        'Coerce a legacy splitWith value (scalar / JSON-encoded / array) into an AgentId[] using core rules.',
+      inputSchema: {
+        value: z
+          .string()
+          .describe('JSON-encoded legacy splitWith value (string|number|array|null).'),
+      },
+    },
+    async ({ value }) => {
+      try {
+        // Allow a bare scalar JSON token ("123" or 123) or an array. If JSON
+        // parsing fails, fall back to the raw string.
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          parsed = value;
+        }
+        const coerced = coerceSplitWith(parsed);
+        return ok({ value: parsed, splitWith: coerced });
       } catch (err) {
         return fail(err);
       }
