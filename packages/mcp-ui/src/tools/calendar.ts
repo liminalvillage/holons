@@ -7,6 +7,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   generateICalFeed,
   toggleRSVP,
+  isAttending,
+  rsvpDisplayName,
   type HolonEvent,
   type RSVPUser,
 } from '@holons/core/calendar';
@@ -136,6 +138,47 @@ export function registerCalendarTools(server: McpServer, deps: ToolDeps): void {
           attending,
           status: status ?? (attending ? 'yes' : 'no'),
         });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+  );
+
+  server.tool(
+    'calendar_rsvp_is_attending',
+    'Check whether a user is marked attending for an event/message key. Pure wrapper over @holons/core/calendar.isAttending — no HoloSphere reads.',
+    {
+      user: z
+        .string()
+        .describe('RSVP user record as JSON. Must include `participated` map keyed by event/message id.'),
+      eventKey: z
+        .union([z.string(), z.number()])
+        .describe('Event / message key to check attendance for'),
+    },
+    async ({ user, eventKey }): Promise<ToolResult> => {
+      try {
+        const parsed = JSON.parse(user) as RSVPUser;
+        const attending = isAttending(parsed, eventKey);
+        return ok({ success: true, attending });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+  );
+
+  server.tool(
+    'calendar_rsvp_display_name',
+    'Render a display name for an RSVP participant, falling back through first_name / username / id. Pure wrapper over @holons/core/calendar.rsvpDisplayName.',
+    {
+      participant: z
+        .string()
+        .describe('Participant / RSVP user record as JSON ({ id, username?, first_name?, second_name? })'),
+    },
+    async ({ participant }): Promise<ToolResult> => {
+      try {
+        const parsed = JSON.parse(participant) as RSVPUser;
+        const name = rsvpDisplayName(parsed);
+        return ok({ success: true, name });
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }
