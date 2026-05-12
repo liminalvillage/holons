@@ -5,6 +5,7 @@
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
+    import { removeParticipant as coreRemoveParticipant, toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
@@ -154,42 +155,32 @@
     }
 
     async function removeParticipant(participantId: string) {
-        // Update the item directly for immediate UI update
-        item.participants = (item.participants || []).filter((p: any) => p.id !== participantId);
-
-        if (quest) {
-            quest.participants = (quest.participants || []).filter((p: any) => p.id !== participantId);
-        } else if (role) {
-            role.participants = (role.participants || []).filter((p: any) => p.id !== participantId);
-        }
-        const participants = (quest || role).participants;
-        await updateItem({ participants });
+        const target = (quest || role) as any;
+        const base = { ...target, participants: target.participants || [] };
+        const updated = coreRemoveParticipant(base, participantId);
+        if (quest) quest.participants = updated.participants;
+        if (role) role.participants = updated.participants;
+        item.participants = updated.participants;
+        await updateItem({ participants: updated.participants });
     }
 
     async function toggleParticipant(userId: string) {
-        const participants = [...((quest || role).participants || [])];
-        const participantIndex = participants.findIndex((p: any) => p.id === userId);
-
-        if (participantIndex >= 0) {
-            participants.splice(participantIndex, 1);
-            if (quest) quest.participants = participants;
-            if (role) role.participants = participants;
-        } else {
-            const user = userStore[userId];
-            if (user) {
-                const newParticipant = {
-                    id: userId,
-                    first_name: user.first_name,
-                    last_name: user.last_name,
-                    username: user.username
-                };
-                participants.push(newParticipant);
-                if (quest) quest.participants = participants;
-                if (role) role.participants = participants;
-            }
+        const target = (quest || role) as any;
+        const base = { ...target, participants: target.participants || [] };
+        const u = userStore[userId];
+        // If user isn't in the store and isn't already a participant, nothing to add.
+        if (!u && !base.participants.some((p: any) => String(p.id) === String(userId))) {
+            showDropdown = false;
+            return;
         }
-
-        await updateItem({ participants });
+        const candidate = u
+            ? { id: userId, first_name: u.first_name, last_name: u.last_name, username: u.username }
+            : { id: userId };
+        const updated = coreToggleParticipant(base, candidate);
+        if (quest) quest.participants = updated.participants;
+        if (role) role.participants = updated.participants;
+        item.participants = updated.participants;
+        await updateItem({ participants: updated.participants });
         showDropdown = false;
     }
 
