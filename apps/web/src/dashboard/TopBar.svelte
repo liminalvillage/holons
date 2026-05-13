@@ -8,7 +8,7 @@
 	import type { HoloSphere } from "holosphere";
 	import { addVisitedHolon, getWalletAddress, loadVisitedHolons, saveVisitedHolons, type VisitedHolon } from "../utils/localStorage";
 	import { nameMap, resolveName, forceRefresh, awaitName } from '$lib/stores/nameResolver';
-	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
+	import { Menu } from 'svelte-feathers';
 	import VideoCall from '../components/VideoCall.svelte';
 	import WidgetDashboard from '../components/WidgetDashboard.svelte';
 	import TopNavItems from './TopNavItems.svelte';

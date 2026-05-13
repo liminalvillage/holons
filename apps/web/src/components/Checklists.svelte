@@ -11,8 +11,7 @@
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
     import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
-    import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
-    import { Plus } from 'svelte-feathers';
+    import { CheckSquare, Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import {

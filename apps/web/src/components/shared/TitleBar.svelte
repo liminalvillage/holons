@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, type ComponentType } from 'svelte';
-	import { ArrowLeftIcon as ArrowLeft } from 'svelte-feather-icons';
-	import { Globe, Eye } from 'svelte-feathers';
+	import { ArrowLeft, Globe, Eye } from 'svelte-feathers';
 	import ToggleChip from './ToggleChip.svelte';
 	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
 

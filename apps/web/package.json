@@ -36,7 +36,7 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-netlify": "^4.4.2",
-		"@sveltejs/kit": "^2.4.0",
+		"@sveltejs/kit": "^2.59.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.1",
 		"@tsconfig/svelte": "^5.0.4",
 		"@types/d3": "^7.4.3",
@@ -45,7 +45,6 @@
 		"@typescript-eslint/eslint-plugin": "^8.32.0",
 		"@typescript-eslint/parser": "^8.32.0",
 		"autoprefixer": "^10.4.20",
-		"clean-jsdoc-theme": "^4.3.0",
 		"eslint": "^8.57.0",
 		"eslint-config-prettier": "^9.0.0",
 		"eslint-plugin-svelte": "^3.5.1",
@@ -65,9 +64,6 @@
 		"vitest": "^4.0.18"
 	},
 	"type": "module",
-	"overrides": {
-		"esbuild": "0.19.12"
-	},
 	"dependencies": {
 		"@holons/core": "workspace:*",
 		"@mapbox/mapbox-gl-geocoder": "^5.0.3",
@@ -95,7 +91,6 @@
 		"sass": "^1.77.6",
 		"svelte": "^5.0.0",
 		"svelte-dnd-action": "^0.9.65",
-		"svelte-feather-icons": "^4.2.0",
 		"svelte-feathers": "^1.0.6",
 		"svelte-preprocess": "^6.0.3"
 	}
