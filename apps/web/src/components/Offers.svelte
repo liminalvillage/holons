@@ -9,9 +9,10 @@
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import { nameMap, resolvedName, resolveName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-	import DisplayName from './shared/DisplayName.svelte';
 	import TitleBar from "./shared/TitleBar.svelte";
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import Modal from "./shared/Modal.svelte";
+	import OfferDetailModal from "./OfferDetailModal.svelte";
 	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
@@ -83,7 +84,7 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let userStore = {};
-	let showDropdownFor = null; // key of offer/need for which dropdown is open
+	let selectedItem: any = null; // item currently shown in detail modal
 	let componentReady = false; // Track if component is ready to work
 
 	// Add publish functionality
@@ -222,9 +223,6 @@
 			}
 		});
 		
-		// Add click outside handler
-		document.addEventListener('click', handleClickOutside);
-
 		// Listen for federation changes (e.g. holon removed from federation)
 		const handleFederationChanged = () => {
 			if (includeFederatedOffers) {
@@ -245,7 +243,6 @@
 
 		return () => {
 			isDestroyed = true;
-			document.removeEventListener('click', handleClickOutside);
 			window.removeEventListener('federationChanged', handleFederationChanged);
 			idUnsubscribe();
 			// Clean up subscriptions on unmount
@@ -650,14 +647,11 @@
 	// Assign a user as a participant to an offer or need
 	async function takeOfferOrNeed(item, user) {
 		if (!holosphere || !holonID || !item || !user) return;
-		
+
 		// Check if user is already a participant
-		const isAlreadyParticipant = item.participants?.some(p => p.id === user.id);
-		if (isAlreadyParticipant) {
-			showDropdownFor = null;
-			return;
-		}
-		
+		const isAlreadyParticipant = item.participants?.some(p => String(p.id) === String(user.id));
+		if (isAlreadyParticipant) return;
+
 		// Use the correct property names that match the Tasks component expectations
 		const newParticipant = {
 			id: user.id,
@@ -665,17 +659,20 @@
 			lastName: user.last_name,    // Changed from last_name to lastName
 			username: user.username
 		};
-		
+
 		// Add to existing participants or create new array
 		const updatedParticipants = [...(item.participants || []), newParticipant];
-		
+
 		const updatedItem = {
 			...item,
 			participants: updatedParticipants
 		};
-		
+
 		try {
 			await holosphere.put(holonID, 'quests', updatedItem);
+			if (selectedItem && selectedItem.key === item.key) {
+				selectedItem = { ...updatedItem, key: item.key };
+			}
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -683,29 +680,14 @@
 				console.error('[Offers.svelte] Error updating quest:', error);
 			}
 		}
-
-		showDropdownFor = null;
 	}
 
-	// Toggle dropdown for a specific item
-	function toggleDropdown(itemKey) {
-		console.log('toggleDropdown called with:', itemKey, 'current showDropdownFor:', showDropdownFor);
-		showDropdownFor = showDropdownFor === itemKey ? null : itemKey;
-		console.log('showDropdownFor set to:', showDropdownFor);
+	function openDetail(item: any) {
+		selectedItem = item;
 	}
 
-	// Close dropdown when clicking outside
-	function handleClickOutside(event) {
-		console.log('handleClickOutside called');
-		const dropdowns = document.querySelectorAll('.user-dropdown');
-		let clickedInside = false;
-		dropdowns.forEach(dropdown => {
-			if (dropdown.contains(event.target)) clickedInside = true;
-		});
-		if (!clickedInside) {
-			console.log('Clicked outside, closing dropdown');
-			showDropdownFor = null;
-		}
+	function closeDetail() {
+		selectedItem = null;
 	}
 
 
@@ -893,12 +875,12 @@
 		if (!holosphere || !holonID || !item || !user) return;
 		
 		// Check if user is actually a participant
-		const isParticipant = item.participants?.some(p => p.id === user.id);
+		const isParticipant = item.participants?.some(p => String(p.id) === String(user.id));
 		if (!isParticipant) {
 			return;
 		}
 		
-		const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
+		const updatedParticipants = (item.participants || []).filter(p => String(p.id) !== String(user.id));
 		const updatedItem = {
 			...item,
 			participants: updatedParticipants
@@ -906,6 +888,9 @@
 
 		try {
 			await holosphere.put(holonID, 'quests', updatedItem);
+			if (selectedItem && selectedItem.key === item.key) {
+				selectedItem = { ...updatedItem, key: item.key };
+			}
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -990,6 +975,10 @@
 							{#each offers as offer (offer.key)}
 								<div
 									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									role="button"
+									tabindex="0"
+									on:click={() => openDetail(offer)}
+									on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(offer); } }}
 									style="background-color: {getItemBackgroundColor(offer.type)};
 										   opacity: {offer._hologram?.isHologram ? '0.75' : '1'};
 										   {offer._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
@@ -1107,35 +1096,18 @@
 												{/if}
 											</button>
 
-											<!-- Take Offer Dropdown -->
-											<div class="relative">
-												<button
-													class="btn btn--primary btn--sm"
-													on:click|stopPropagation={(e) => {
-														console.log('Take Offer button clicked for:', offer.key);
-														toggleDropdown(offer.key);
-													}}
-												>
-													{#if offer.participants && offer.participants.length > 0}
-														Add ({offer.participants.length})
-													{:else}
-														Accept
-													{/if}
-												</button>
-												{#if showDropdownFor === offer.key}
-													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
-														{#each Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)) as [userId, user]}
-															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(offer, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={resolvedName(user.id, $nameMap, user)} />
-																<span><DisplayName id={user.id} {user} /></span>
-															</button>
-														{/each}
-														{#if Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)).length === 0}
-															<div class="px-4 py-2 text-gray-400 text-sm">All users already participating</div>
-														{/if}
-													</div>
+											<!-- Open detail modal -->
+											<button
+												class="btn btn--primary btn--sm"
+												on:click|stopPropagation={() => openDetail(offer)}
+												aria-label={offer.participants && offer.participants.length > 0 ? `Manage participants (${offer.participants.length})` : 'Accept offer'}
+											>
+												{#if offer.participants && offer.participants.length > 0}
+													Manage
+												{:else}
+													Accept
 												{/if}
-											</div>
+											</button>
 
 											{#if offer.participants?.length > 0}
 												<div class="flex items-center gap-1">
@@ -1219,6 +1191,10 @@
 							{#each needs as need (need.key)}
 								<div
 									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									role="button"
+									tabindex="0"
+									on:click={() => openDetail(need)}
+									on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(need); } }}
 									style="background-color: {getItemBackgroundColor(need.type)};
 										   opacity: {need._hologram?.isHologram ? '0.75' : '1'};
 										   {need._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
@@ -1336,35 +1312,18 @@
 												{/if}
 											</button>
 
-											<!-- Take Need Dropdown -->
-											<div class="relative">
-												<button 
-													class="btn btn--primary btn--sm"
-													on:click|stopPropagation={(e) => {
-														console.log('Take Need button clicked for:', need.key);
-														toggleDropdown(need.key);
-													}}
-												>
-													{#if need.participants && need.participants.length > 0}
-														Add ({need.participants.length})
-													{:else}
-														Fulfill
-													{/if}
-												</button>
-												{#if showDropdownFor === need.key}
-													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
-														{#each Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)) as [userId, user]}
-															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(need, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={resolvedName(user.id, $nameMap, user)} />
-																<span><DisplayName id={user.id} {user} /></span>
-															</button>
-														{/each}
-														{#if Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)).length === 0}
-															<div class="px-4 py-2 text-gray-400 text-sm">All users already participating</div>
-														{/if}
-													</div>
+											<!-- Open detail modal -->
+											<button
+												class="btn btn--primary btn--sm"
+												on:click|stopPropagation={() => openDetail(need)}
+												aria-label={need.participants && need.participants.length > 0 ? `Manage participants (${need.participants.length})` : 'Fulfill request'}
+											>
+												{#if need.participants && need.participants.length > 0}
+													Manage
+												{:else}
+													Fulfill
 												{/if}
-											</div>
+											</button>
 
 											{#if need.participants?.length > 0}
 												<div class="flex items-center gap-1">
@@ -1425,162 +1384,137 @@
 </div>
 
 <!-- Add Offer/Request Modal -->
-{#if showAddModal}
-	<div
-		class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-		on:click|self={() => showAddModal = false}
-		on:keydown={(e) => e.key === 'Escape' && (showAddModal = false)}
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-	>
-		<div class="bg-gray-800 rounded-2xl w-full max-w-md shadow-xl">
-			<div class="p-6 border-b border-gray-700">
-				<div class="flex justify-between items-center">
-					<h2 class="text-xl font-bold text-white">
-						New {addModalType === 'offer' ? 'Offer' : 'Request'}
-					</h2>
-					<button
-						class="text-gray-400 hover:text-white transition-colors"
-						on:click={() => showAddModal = false}
-						aria-label="Close modal"
-					>
-						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-						</svg>
-					</button>
-				</div>
-			</div>
+<Modal
+	open={showAddModal}
+	title={addModalType === 'offer' ? 'New offer' : 'New request'}
+	size="md"
+	on:close={() => (showAddModal = false)}
+>
+	<div class="add-form">
+		<div class="add-form__field">
+			<label for="item-title" class="add-form__label">Title</label>
+			<input
+				id="item-title"
+				type="text"
+				bind:value={newItemTitle}
+				placeholder={addModalType === 'offer' ? 'What are you offering?' : 'What do you need?'}
+				class="add-form__input"
+			/>
+		</div>
 
-			<div class="p-6 space-y-4">
-				<div>
-					<label for="item-title" class="block text-sm font-medium text-gray-300 mb-2">Title</label>
+		<div class="add-form__field">
+			<label for="item-description" class="add-form__label">Description <span class="add-form__hint">(optional)</span></label>
+			<textarea
+				id="item-description"
+				bind:value={newItemDescription}
+				placeholder="Add more details…"
+				rows="3"
+				class="add-form__input add-form__textarea"
+			></textarea>
+		</div>
+
+		<div class="add-form__field">
+			<span class="add-form__label">Item type</span>
+			<div class="add-form__radio-group">
+				<label class="add-form__radio">
 					<input
-						id="item-title"
-						type="text"
-						bind:value={newItemTitle}
-						placeholder={addModalType === 'offer' ? 'What are you offering?' : 'What do you need?'}
-						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
+						type="radio"
+						name="item-type"
+						value="good"
+						bind:group={newItemItemType}
 					/>
-				</div>
-
-				<div>
-					<label for="item-description" class="block text-sm font-medium text-gray-300 mb-2">Description (optional)</label>
-					<textarea
-						id="item-description"
-						bind:value={newItemDescription}
-						placeholder="Add more details..."
-						rows="3"
-						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors resize-none"
-					></textarea>
-				</div>
-
-				<div>
-					<span class="block text-sm font-medium text-gray-300 mb-2">Item type</span>
-					<div class="flex gap-4">
-						<label class="inline-flex items-center gap-2 text-gray-200">
-							<input
-								type="radio"
-								name="item-type"
-								value="good"
-								bind:group={newItemItemType}
-								class="accent-indigo-500"
-							/>
-							Good
-						</label>
-						<label class="inline-flex items-center gap-2 text-gray-200">
-							<input
-								type="radio"
-								name="item-type"
-								value="service"
-								bind:group={newItemItemType}
-								class="accent-indigo-500"
-							/>
-							Service
-						</label>
-					</div>
-				</div>
-
-				<div>
-					<span class="block text-sm font-medium text-gray-300 mb-2">
-						Transaction type
-						<span class="text-red-400">*</span>
-					</span>
-					<div class="flex flex-wrap gap-2">
-						{#each TRANSACTION_TYPES as tx}
-							{@const label = addModalType === 'offer' ? tx.offerLabel : tx.requestLabel}
-							{@const selected = newItemTransactionTypes.includes(tx.value)}
-							<button
-								type="button"
-								class="px-3 py-1 rounded-full text-sm border transition-colors"
-								class:bg-indigo-500={selected}
-								class:border-indigo-500={selected}
-								class:text-white={selected}
-								class:bg-gray-700={!selected}
-								class:border-gray-600={!selected}
-								class:text-gray-300={!selected}
-								on:click={() => toggleTransactionType(tx.value)}
-							>
-								{label}
-							</button>
-						{/each}
-					</div>
-				</div>
-
-				<div>
-					<label for="item-tags" class="block text-sm font-medium text-gray-300 mb-2">Tags</label>
-					<div class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg border border-gray-600 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
-						{#each newItemTags as tag}
-							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 text-sm">
-								{tag}
-								<button
-									type="button"
-									class="hover:text-white"
-									on:click={() => removeTag(tag)}
-									aria-label={`Remove tag ${tag}`}
-								>&times;</button>
-							</span>
-						{/each}
-						<input
-							id="item-tags"
-							type="text"
-							bind:value={newItemTagInput}
-							on:keydown={handleTagKeydown}
-							placeholder={newItemTags.length === 0 ? 'Add tags (Enter or , to add)' : ''}
-							class="flex-1 min-w-[6rem] bg-transparent text-white outline-none text-sm py-1"
-						/>
-					</div>
-				</div>
-
-				<div>
-					<label for="item-expires-at" class="block text-sm font-medium text-gray-300 mb-2">Expires at (optional)</label>
+					<span>📦 Good</span>
+				</label>
+				<label class="add-form__radio">
 					<input
-						id="item-expires-at"
-						type="datetime-local"
-						bind:value={newItemExpiresAtLocal}
-						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
+						type="radio"
+						name="item-type"
+						value="service"
+						bind:group={newItemItemType}
 					/>
-				</div>
-			</div>
-
-			<div class="p-6 border-t border-gray-700 flex justify-end gap-3">
-				<button
-					class="btn btn--secondary"
-					on:click={() => showAddModal = false}
-				>
-					Cancel
-				</button>
-				<button
-					class="btn btn--primary"
-					on:click={createNewItem}
-					disabled={!newItemTitle.trim() || newItemTransactionTypes.length === 0}
-				>
-					Create {addModalType === 'offer' ? 'Offer' : 'Request'}
-				</button>
+					<span>🛠️ Service</span>
+				</label>
 			</div>
 		</div>
+
+		<div class="add-form__field">
+			<span class="add-form__label">
+				Transaction type <span class="add-form__required">*</span>
+			</span>
+			<div class="add-form__chips">
+				{#each TRANSACTION_TYPES as tx}
+					{@const label = addModalType === 'offer' ? tx.offerLabel : tx.requestLabel}
+					{@const selected = newItemTransactionTypes.includes(tx.value)}
+					<button
+						type="button"
+						class="add-form__chip"
+						class:add-form__chip--selected={selected}
+						on:click={() => toggleTransactionType(tx.value)}
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<div class="add-form__field">
+			<label for="item-tags" class="add-form__label">Tags</label>
+			<div class="add-form__tag-input">
+				{#each newItemTags as tag}
+					<span class="add-form__tag">
+						{tag}
+						<button
+							type="button"
+							class="add-form__tag-remove"
+							on:click={() => removeTag(tag)}
+							aria-label={`Remove tag ${tag}`}
+						>&times;</button>
+					</span>
+				{/each}
+				<input
+					id="item-tags"
+					type="text"
+					bind:value={newItemTagInput}
+					on:keydown={handleTagKeydown}
+					placeholder={newItemTags.length === 0 ? 'Add tags (Enter or , to add)' : ''}
+					class="add-form__tag-field"
+				/>
+			</div>
+		</div>
+
+		<div class="add-form__field">
+			<label for="item-expires-at" class="add-form__label">Expires at <span class="add-form__hint">(optional)</span></label>
+			<input
+				id="item-expires-at"
+				type="datetime-local"
+				bind:value={newItemExpiresAtLocal}
+				class="add-form__input"
+			/>
+		</div>
 	</div>
-{/if}
+
+	<svelte:fragment slot="footer">
+		<button class="btn btn--secondary" on:click={() => (showAddModal = false)}>Cancel</button>
+		<button
+			class="btn btn--primary"
+			on:click={createNewItem}
+			disabled={!newItemTitle.trim() || newItemTransactionTypes.length === 0}
+		>
+			Create {addModalType === 'offer' ? 'offer' : 'request'}
+		</button>
+	</svelte:fragment>
+</Modal>
+
+<!-- Detail modal -->
+<OfferDetailModal
+	open={selectedItem !== null}
+	item={selectedItem}
+	{holonID}
+	{userStore}
+	on:close={closeDetail}
+	on:addParticipant={(e) => takeOfferOrNeed(e.detail.item, e.detail.user)}
+	on:removeParticipant={(e) => removeParticipation(e.detail.item, e.detail.user)}
+/>
 
 <style>
 	/* Task card styling */
@@ -1721,5 +1655,155 @@
 		font-size: 0.7rem;
 		color: #374151;
 		margin-left: auto;
+	}
+
+	/* Add modal form */
+	.add-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.875rem;
+	}
+
+	.add-form__field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.add-form__label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #d1d5db;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.add-form__hint {
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: normal;
+		color: #6b7280;
+	}
+
+	.add-form__required {
+		color: #f87171;
+	}
+
+	.add-form__input {
+		width: 100%;
+		background: #111827;
+		border: 1px solid #374151;
+		border-radius: 0.5rem;
+		color: #f9fafb;
+		font-size: 0.9rem;
+		padding: 0.55rem 0.75rem;
+		transition: border-color 150ms ease;
+	}
+
+	.add-form__input:focus {
+		outline: none;
+		border-color: #6366f1;
+		box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+	}
+
+	.add-form__textarea {
+		resize: vertical;
+		min-height: 4.5rem;
+	}
+
+	.add-form__radio-group {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.add-form__radio {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		color: #e5e7eb;
+		font-size: 0.875rem;
+		cursor: pointer;
+	}
+
+	.add-form__radio input {
+		accent-color: #6366f1;
+	}
+
+	.add-form__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+	}
+
+	.add-form__chip {
+		padding: 0.3rem 0.7rem;
+		border-radius: 9999px;
+		border: 1px solid #374151;
+		background: #111827;
+		color: #d1d5db;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+	}
+
+	.add-form__chip:hover {
+		border-color: #6366f1;
+		color: #fff;
+	}
+
+	.add-form__chip--selected {
+		background: #6366f1;
+		border-color: #6366f1;
+		color: #fff;
+	}
+
+	.add-form__tag-input {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		padding: 0.4rem;
+		background: #111827;
+		border: 1px solid #374151;
+		border-radius: 0.5rem;
+	}
+
+	.add-form__tag-input:focus-within {
+		border-color: #6366f1;
+		box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+	}
+
+	.add-form__tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.15rem 0.55rem;
+		border-radius: 9999px;
+		background: rgba(99, 102, 241, 0.3);
+		color: #e0e7ff;
+		font-size: 0.8rem;
+	}
+
+	.add-form__tag-remove {
+		background: transparent;
+		border: none;
+		color: inherit;
+		cursor: pointer;
+		font-size: 1rem;
+		line-height: 1;
+	}
+
+	.add-form__tag-remove:hover {
+		color: #fff;
+	}
+
+	.add-form__tag-field {
+		flex: 1;
+		min-width: 6rem;
+		background: transparent;
+		border: none;
+		outline: none;
+		color: #fff;
+		font-size: 0.875rem;
 	}
 </style>

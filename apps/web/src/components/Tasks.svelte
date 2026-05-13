@@ -47,6 +47,7 @@
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
+	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
 	import type { PublishOutcome } from "$lib/holosphere/publish";
@@ -269,6 +270,8 @@
 	// Add these variables after the existing let declarations
 	let selectedCategory = $state("all");
 	let selectedUserId = $state("all");
+	let searchQuery = $state(loadFilters('tasks', { searchQuery: '' }).searchQuery);
+	$effect(() => { saveFilters('tasks', { searchQuery }); });
 	
 	// Compute unique categories from quests
 	let categories = $derived([
@@ -300,15 +303,18 @@
 			users.set(pubKey, { id: pubKey, name: resolvedName(pubKey, $nameMap) });
 		}
 
-		// Add users from quest participants
+		// Add users from quest participants. Normalize id to string — participant
+		// rows can arrive with id as number (Telegram) or string (MCP writes).
 		Object.values(store).forEach(quest => {
 			if (quest.participants) {
 				quest.participants.forEach(p => {
-					if (p.id && !users.has(p.id)) {
+					if (p.id == null) return;
+					const idKey = String(p.id);
+					if (!users.has(idKey)) {
 						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username || '').trim();
 						if (name) { // Only add users with a name
-							users.set(p.id, {
-								id: p.id,
+							users.set(idKey, {
+								id: idKey,
 								name: name
 							});
 						}
@@ -351,7 +357,7 @@
 						return false;
 					}
 				} else {
-					if (!quest.participants || !quest.participants.some(p => p.id === selectedUserId)) {
+					if (!quest.participants || !quest.participants.some(p => String(p.id) === String(selectedUserId))) {
 						return false;
 					}
 				}
@@ -388,6 +394,13 @@
 
 			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
 				return false;
+			}
+
+			const q = searchQuery.trim().toLowerCase();
+			if (q) {
+				const tagsText = Array.isArray((quest as any).tags) ? (quest as any).tags.join(' ') : '';
+				const haystack = `${quest.title ?? ''} ${quest.description ?? ''} ${quest.category ?? ''} ${tagsText}`.toLowerCase();
+				if (!haystack.includes(q)) return false;
 			}
 
 			return true; // Quest passes all filters
@@ -1028,11 +1041,12 @@
 				username: user.username
 			}));
 
-		// Merge with existing participants (avoid duplicates)
-		const existingIds = new Set((quest.participants || []).map((p: any) => p.id));
+		// Merge with existing participants (avoid duplicates). Normalize ids to
+		// strings — Telegram users carry numeric ids, MCP writes strings.
+		const existingIds = new Set((quest.participants || []).map((p: any) => String(p.id)));
 		const updatedParticipants = [
 			...(quest.participants || []),
-			...newParticipants.filter(p => !existingIds.has(p.id))
+			...newParticipants.filter(p => !existingIds.has(String(p.id)))
 		];
 
 		const updatedQuest = { ...quest, participants: updatedParticipants };
@@ -1600,6 +1614,9 @@
 					addLabel="Add Task"
 					onImport={() => (showImportModal = true)}
 					importLabel="Import"
+					searchQuery={searchQuery}
+					searchPlaceholder="Search tasks…"
+					on:search={(e) => (searchQuery = e.detail)}
 					viewMode={viewMode}
 					on:viewChange={(e) => (viewMode = e.detail as 'list' | 'canvas' | 'kanban')}
 					viewModes={[

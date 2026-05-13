@@ -62,10 +62,19 @@ function actorAsInitiator(actor: { id: string | number; first_name?: string; use
 
 function actorAsParticipant(actor: { id: string | number; first_name?: string; username?: string }): QuestParticipant {
   return {
-    id: actor.id,
+    id: actor.id != null ? String(actor.id) : undefined,
     username: actor.username,
     firstName: actor.first_name,
   };
+}
+
+// Telegram-native data carries numeric ids; MCP callers may pass them as
+// strings. Coerce to string at the write boundary so participant/appreciation
+// lookups in the web UI (which match by `String(id) === String(other)`) stay
+// consistent regardless of source.
+function normalizeParticipant(user: QuestParticipant): QuestParticipant {
+  if (user.id == null) return user;
+  return { ...user, id: String(user.id) };
 }
 
 // Match the web UI's generateId() exactly: base36 ms + 3 base36 random chars,
@@ -225,7 +234,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = args.user ?? actorAsParticipant(deps.resolveActor());
+        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           addParticipant(t, user),
         );
@@ -273,7 +282,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = args.user ?? actorAsParticipant(deps.resolveActor());
+        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           toggleParticipant(t, user),
         );
@@ -297,7 +306,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = args.user ?? actorAsParticipant(deps.resolveActor());
+        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           addAppreciation(t, user),
         );
@@ -345,7 +354,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = args.user ?? actorAsParticipant(deps.resolveActor());
+        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           toggleAppreciation(t, user),
         );

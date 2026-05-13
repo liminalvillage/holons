@@ -341,13 +341,16 @@
         });
     }
 
-    function isUserParticipant(userId: string): boolean {
+    function isUserParticipant(userId: string | number): boolean {
         if (!quest.participants || quest.participants.length === 0) return false;
-        return quest.participants.some((p: { id: string }) => p.id === userId);
+        const target = String(userId);
+        return quest.participants.some((p: { id: string | number }) => String(p.id) === target);
     }
 
-    // Reactive Set of participant IDs for Svelte template reactivity
-    $: participantIds = new Set((quest.participants || []).map((p: any) => p.id));
+    // Reactive Set of participant IDs for Svelte template reactivity.
+    // Ids can arrive as number (Telegram-native) or string (MCP/web writes), so
+    // normalize to string before comparing in the template.
+    $: participantIds = new Set((quest.participants || []).map((p: any) => String(p.id)));
 
     // Toggle completion. For recurring occurrences, only this occurrence is
     // toggled; otherwise we flip the series status using the participants
@@ -1209,7 +1212,7 @@
                             {:else}
                                 {#each Object.entries(userStore) as [userKey, user] (user.id)}
                                     {@const isPending = pendingUserUpdates.has(userKey)}
-                                    {@const isSelected = participantIds.has(user.id)}
+                                    {@const isSelected = participantIds.has(String(user.id))}
                                     {@const currentTime = isSelected ? (quest.timeTracking?.[user.id] || 0) : 0}
                                     <!-- Row is a div, not a button, so the +15m action button inside is valid HTML. -->
                                     <div
