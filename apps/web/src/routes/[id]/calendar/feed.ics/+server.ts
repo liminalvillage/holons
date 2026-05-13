@@ -11,8 +11,10 @@ let holosphere: InstanceType<typeof HoloSphere>;
 
 function getHolosphere() {
     if (!holosphere) {
+        // Single source of truth: HOLONS_APP from the monorepo root .env.
+        const appName = process.env.HOLONS_APP || 'HolonsDebug';
         holosphere = new HoloSphere({
-            appName: 'Holons',
+            appName,
             // Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
             // Holosphere 2: uncomment below to use Nostr relay instead
             // backend: 'nostr',

@@ -68,12 +68,13 @@ function actorAsParticipant(actor: { id: string | number; first_name?: string; u
   };
 }
 
-// Short, human-readable id: `t_<base36 ms>_<base36 rand>` (≈14 chars).
-// Avoids HoloSphere's auto-generated 60+ char timestamp+binary string.
+// Match the web UI's generateId() exactly: base36 ms + 3 base36 random chars,
+// NO underscores. The Telegram bot parses callback_data by splitting on `_`,
+// so any underscore in a task id makes the bot misroute or drop it (which
+// also hides the task from the web UI's task lists indirectly).
+// See apps/web/src/components/Tasks.svelte:480.
 function shortTaskId(): string {
-  const ts = Date.now().toString(36);
-  const rand = Math.floor(Math.random() * 0x100000).toString(36).padStart(4, '0');
-  return `t_${ts}_${rand}`;
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
 const userSchema = z

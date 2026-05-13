@@ -4,12 +4,19 @@
  * Creates quests in HoloSphere and sends formatted messages via Telegram bot API
  * Usage: node api.js [--port 3101]
  */
-import 'dotenv/config';
+// Load monorepo root .env (single source of truth) before reading process.env.
+import { config as loadDotenv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: resolve(__dirname, '../../.env') });
+loadDotenv();
+
 import http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
-const APP = process.env.HOLONS_APP || 'Holons';
+const APP = process.env.HOLONS_APP || 'HolonsDebug';
 const PORT = parseInt(process.argv[process.argv.indexOf('--port') + 1] || '3101');
 
 if (!BOT_TOKEN) { console.error('BOT_TOKEN required in .env'); process.exit(1); }

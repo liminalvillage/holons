@@ -140,11 +140,14 @@ export const serviceDefinitions = {
   // bot's chat-ID-keyed data layout doesn't require a pubkey-based migration.
   keyManager: {
     factory: async ({ config }) => {
-      const appname = config.isDevelopment ? 'HolonsDebug' : 'Holons';
+      // HOLONS_APP comes from the monorepo root .env (single source of truth).
+      // Falls back to env-mode branching only if the var is unset.
+      const appname =
+        process.env.HOLONS_APP ||
+        (config.isDevelopment ? 'HolonsDebug' : 'Holons');
+      const peers = [process.env.HOLONS_PEER || 'https://gun.holons.io/gun'];
       const { HoloSphere } = await import('holosphere');
-      const holosphere = new HoloSphere(appname, false, null, {
-        peers: ['https://gun.holons.io/gun'],
-      });
+      const holosphere = new HoloSphere(appname, false, null, { peers });
       // Inspect the local radisk file at startup so we can see what survived
       try {
         const fs = await import('fs');

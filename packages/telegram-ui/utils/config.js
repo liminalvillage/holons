@@ -3,8 +3,14 @@
  * @module utils/config
  */
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { log } from './logger.js';
 
+// Load the monorepo root .env first (single source of truth shared with web + mcp-ui),
+// then fall through to a local .env if any package-specific overrides exist.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: resolve(__dirname, '../../../.env') });
 dotenv.config();
 
 /**

@@ -51,7 +51,10 @@
 		if (!HOLOSPHERE_PRIVATE_KEY) return null;
 
 		try {
-			const environmentName = import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug";
+			// Single source of truth: VITE_HOLONS_APP from the monorepo root .env.
+			const environmentName =
+				import.meta.env.VITE_HOLONS_APP ||
+				(import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug");
 
 			// Create a temporary HoloSphere instance to check mappings
 			const tempHolosphere = new HoloSphere({

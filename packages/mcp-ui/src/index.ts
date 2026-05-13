@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-import 'dotenv/config';
+// Load .env from the monorepo root (single source of truth shared with web + bot).
+// Falls back silently if the file is missing.
+import { config as loadDotenv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: resolve(__dirname, '../../../.env') });
+loadDotenv(); // also pick up cwd .env if present (no-op when absent)
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import http from 'http';

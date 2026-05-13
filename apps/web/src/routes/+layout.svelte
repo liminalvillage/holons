@@ -30,8 +30,11 @@
 	// Subscribe to holosphere store for reactive updates
 	$: holosphere = $holosphereStore;
 
+	// Single source of truth: VITE_HOLONS_APP from the monorepo root .env.
+	// Falls back to env-mode branching only if the var is unset.
 	let environmentName: string =
-		import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug";
+		import.meta.env.VITE_HOLONS_APP ||
+		(import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug");
 
 	console.log("Vite mode:", import.meta.env.MODE)
 	console.log("Environment:", environmentName)

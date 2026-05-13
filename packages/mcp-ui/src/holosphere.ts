@@ -1,5 +1,7 @@
+// Both vars come from the monorepo root .env (loaded in src/index.ts).
+// Default to dev namespace if unset.
 const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
-const APP = process.env.HOLONS_APP || 'Holons';
+const APP = process.env.HOLONS_APP || 'HolonsDebug';
 
 let hs: any;
 export async function getHoloSphere(): Promise<any> {
