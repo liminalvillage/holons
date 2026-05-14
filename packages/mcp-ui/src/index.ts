@@ -1,12 +1,23 @@
 #!/usr/bin/env node
+import './silence-stdout.js';
 // Load .env from the monorepo root (single source of truth shared with web + bot).
 // Falls back silently if the file is missing.
 import { config as loadDotenv } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-loadDotenv({ path: resolve(__dirname, '../../../.env') });
-loadDotenv(); // also pick up cwd .env if present (no-op when absent)
+const REPO_ROOT = resolve(__dirname, '../../..');
+// Gun.js (via holosphere) writes its radata to `./holosphere` relative to CWD.
+// When launched from clients like Claude Desktop, CWD may be `/` (EROFS).
+// Pin CWD to the monorepo root so we share the holosphere/ that web+bot use.
+// Respect HOLONS_CWD if the operator wants a different writable location.
+try {
+  process.chdir(process.env.HOLONS_CWD || REPO_ROOT);
+} catch (err) {
+  console.error('[holons-mcp-ui] failed to chdir to repo root:', err);
+}
+loadDotenv({ path: resolve(REPO_ROOT, '.env'), quiet: true });
+loadDotenv({ quiet: true }); // also pick up cwd .env if present (no-op when absent)
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import http from 'http';
