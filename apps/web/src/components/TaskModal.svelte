@@ -29,7 +29,6 @@
     } from "@holons/core/checklists";
     import {
         addParticipant as coreAddParticipant,
-        removeParticipant as coreRemoveParticipant,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -249,25 +248,85 @@
 
     const dispatch = createEventDispatcher();
     let usersLoading = true;
-    let pendingUserUpdates = new Set<string>(); // Track pending updates for optimistic UI
+    let userSearchQuery = '';
 
-    // Optimistic toggle for snappy UI
-    async function toggleUserParticipation(userKey: string, user: User) {
-        if (pendingUserUpdates.has(userKey)) return; // Prevent double-clicks
+    // Toggle participant fully optimistically. The original flow did three
+    // sequential awaits (get users → put users → put quest) before showing
+    // any visual change — on mobile that read as broken. Now the local
+    // `quest` is mutated synchronously so the checkbox flips on tap, and the
+    // network writes propagate in the background.
+    function toggleUserParticipation(userKey: string, user: User) {
+        const userIdStr = String(user.id);
+        const isSelected = participantIds.has(userIdStr);
+        const base = { ...quest, participants: quest.participants || [] };
 
-        pendingUserUpdates.add(userKey);
-        pendingUserUpdates = pendingUserUpdates; // Trigger reactivity
-
-        try {
-            if (isUserParticipant(user.id)) {
-                await removeParticipant(user.id);
-            } else {
-                await toggleParticipant(userKey);
-            }
-        } finally {
-            pendingUserUpdates.delete(userKey);
-            pendingUserUpdates = pendingUserUpdates;
+        let updatedQuest: any;
+        if (isSelected) {
+            const newList = base.participants.filter((p: any) => String(p.id) !== userIdStr);
+            const newTime = { ...(quest.timeTracking || {}) };
+            if (newTime[user.id] != null) delete newTime[user.id];
+            updatedQuest = { ...base, participants: newList, timeTracking: newTime };
+        } else {
+            const newParticipant = {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                username: user.username,
+            };
+            const newList = coreAddParticipant(base, newParticipant).participants;
+            updatedQuest = { ...base, participants: newList };
         }
+
+        const previousQuest = quest;
+        quest = updatedQuest;
+
+        // Sync quest in background — roll back on failure.
+        holosphere.put(holonId, "quests", updatedQuest).catch((error: any) => {
+            quest = previousQuest;
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("[TaskModal.svelte] Error syncing participant:", error);
+            }
+        });
+
+        // Log user-actions in background (only on add). Pure bookkeeping for
+        // scoring — never block the participant toggle on it.
+        if (!isSelected) {
+            recordUserJoinAction(user, quest.title, quest.category || '').catch((err) => {
+                console.warn("[TaskModal.svelte] User action log failed:", err);
+            });
+        }
+    }
+
+    async function recordUserJoinAction(user: User, action: string, category: string) {
+        const canonicalUserId = user.id || user.username;
+        let existing: any = null;
+        try {
+            existing = await holosphere.get(holonId, "users", canonicalUserId);
+        } catch {
+            // Treat as new user record.
+        }
+
+        const userData = {
+            id: user.id,
+            first_name: user.first_name,
+            last_name: user.last_name || '',
+            username: user.username,
+            ...(existing || {}),
+            actions: [
+                ...(Array.isArray(existing?.actions) ? existing.actions : []),
+                {
+                    type: "joined",
+                    action,
+                    category,
+                    amount: 1,
+                    timestamp: Date.now(),
+                },
+            ],
+        };
+
+        await holosphere.put(holonId, "users", userData);
     }
 
     async function updateQuest(updates: any, shouldClose = false) {
@@ -324,22 +383,6 @@
         dispatch("close");
     }
 
-    async function removeParticipant(participantId: string) {
-        const base = { ...quest, participants: quest.participants || [] };
-        const updated = coreRemoveParticipant(base, participantId);
-
-        // Side effect: clear this participant's time-tracking entry. Time tracking
-        // is UI/Telegram-specific state, so it stays here rather than in core.
-        const updatedTimeTracking = { ...quest.timeTracking };
-        if (updatedTimeTracking[participantId]) {
-            delete updatedTimeTracking[participantId];
-        }
-
-        await updateQuest({
-            participants: updated.participants,
-            timeTracking: updatedTimeTracking,
-        });
-    }
 
     function isUserParticipant(userId: string | number): boolean {
         if (!quest.participants || quest.participants.length === 0) return false;
@@ -351,6 +394,27 @@
     // Ids can arrive as number (Telegram-native) or string (MCP/web writes), so
     // normalize to string before comparing in the template.
     $: participantIds = new Set((quest.participants || []).map((p: any) => String(p.id)));
+
+    // Filter + sort the team list. Selected users float to the top so the
+    // current participants are always visible without scrolling; the rest
+    // follow the search filter.
+    $: filteredUserEntries = (() => {
+        const q = userSearchQuery.trim().toLowerCase();
+        const entries = Object.entries(userStore);
+        const matches = entries.filter(([_, u]: any) => {
+            if (!q) return true;
+            const hay = `${u.first_name || ''} ${u.last_name || ''} ${u.username || ''}`.toLowerCase();
+            return hay.includes(q);
+        });
+        return matches.sort(([_a, a]: any, [_b, b]: any) => {
+            const aSel = participantIds.has(String(a.id)) ? 0 : 1;
+            const bSel = participantIds.has(String(b.id)) ? 0 : 1;
+            if (aSel !== bSel) return aSel - bSel;
+            const an = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
+            const bn = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+            return an.localeCompare(bn);
+        });
+    })();
 
     // Toggle completion. For recurring occurrences, only this occurrence is
     // toggled; otherwise we flip the series status using the participants
@@ -419,76 +483,6 @@
         } else {
             await updateQuest({ status: newStatus, completed_at: null });
         }
-    }
-
-    async function toggleParticipant(userKey: string) {
-        // userKey is a key from userStore (username)
-        const user = userStore[userKey];
-        if (!user || !user.id) {
-            console.error("User not found in userStore or user.id is missing:", userKey);
-            return;
-        }
-
-        // Check if user is already a participant by ID
-        if (isUserParticipant(user.id)) {
-            return;
-        }
-
-        const newParticipant = {
-            id: user.id, // Store the actual user ID
-            firstName: user.first_name, // Map to firstName
-            lastName: user.last_name,   // Map to lastName
-            username: user.username,
-        };
-
-        const base = { ...quest, participants: quest.participants || [] };
-        const newParticipantsArray = coreAddParticipant(base, newParticipant).participants;
-
-        // When updating user data (actions), use the canonical ID that holosphere.get/put expects for users.
-        // This might be user.id (the original UUID-like ID) if it exists and is different from username.
-        const canonicalUserIdForHolosphere = user.id || user.username; // Choose appropriately
-        const existingUserData = await holosphere.get(holonId, "users", canonicalUserIdForHolosphere);
-
-        // Build full user data, ensuring all fields are saved to database
-        const userData = {
-            id: user.id,
-            first_name: user.first_name,
-            last_name: user.last_name || '',
-            username: user.username,
-            actions: Array.isArray(existingUserData?.actions) ? existingUserData.actions : [],
-            // Preserve any other existing fields
-            ...(existingUserData || {})
-        };
-
-        try {
-            await holosphere.put(holonId, "users", {
-                ...userData,
-                id: user.id,  // Ensure ID is set correctly
-                first_name: user.first_name,
-                last_name: user.last_name || '',
-                username: user.username,
-                actions: [
-                    ...userData.actions,
-                    {
-                        type: "joined",
-                        action: quest.title,
-                        category: quest.category || "",
-                        amount: 1,
-                        timestamp: Date.now(),
-                    },
-                ],
-            });
-        } catch (error: any) {
-            if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
-                return;
-            } else {
-                console.error("[TaskModal.svelte] Error saving user data:", error);
-            }
-        }
-
-            // Update quest with new participants
-    await updateQuest({ participants: newParticipantsArray });
     }
 
     async function scheduleTask() {
@@ -787,37 +781,85 @@
         showRecurringEditor = false;
     }
 
-    // Add function to create checklist for this task
-    async function createChecklistForTask() {
+    // Canvas: navigate to an existing per-task canvas, or initialize one.
+    function navigateToCanvas() {
+        if (quest && quest.canvasId) {
+            goto(`/${holonId}/canvas/${quest.canvasId}`);
+        }
+    }
+
+    function createCanvasForTask() {
+        if (!holosphere || !holonId || !questId) {
+            console.error("Cannot create canvas: missing parameters");
+            return;
+        }
+        if (quest.canvasId) {
+            navigateToCanvas();
+            return;
+        }
+        const canvasId = `task_${questId}_canvas`;
+        const newCanvas = {
+            id: canvasId,
+            data: [],
+            updatedAt: Date.now(),
+        };
+        const previousQuest = quest;
+        quest = { ...quest, canvasId };
+
+        Promise.all([
+            holosphere.put(holonId, "canvases", newCanvas),
+            holosphere.put(holonId, "quests", quest),
+        ])
+            .then(() => {
+                goto(`/${holonId}/canvas/${canvasId}`);
+            })
+            .catch((error: any) => {
+                quest = previousQuest;
+                if (error?.name === 'AuthorizationError') {
+                    notifyWriteDenied('Unable to save - no write permission for this holon');
+                } else {
+                    console.error("Error creating canvas for task:", error);
+                }
+            });
+    }
+
+    // Add function to create checklist for this task. Optimistic — flip the
+    // button to "View Checklist" immediately and sync to HoloSphere in the
+    // background. Without this, two sequential awaits (put checklist → put
+    // quest) leave the button unchanged until both round-trips finish; on
+    // mobile that looked like a hang.
+    function createChecklistForTask() {
         if (!holosphere || !holonId || !questId) {
             console.error("Cannot create checklist: missing parameters");
             return;
         }
+        if (quest.checklistId) return; // already has one
 
-        try {
-            const newChecklist = createChecklistObject(
-                `task_${questId}_checklist`,
-                CHECKLIST_TYPES.QUEST,
-                {
-                    creator: "Dashboard User",
-                    questId,
-                    parentTitle: quest?.title,
-                    holonId,
-                },
-            );
-            await holosphere.put(holonId, "checklists", newChecklist);
+        const newChecklist = createChecklistObject(
+            `task_${questId}_checklist`,
+            CHECKLIST_TYPES.QUEST,
+            {
+                creator: "Dashboard User",
+                questId,
+                parentTitle: quest?.title,
+                holonId,
+            },
+        );
 
-            // Update the quest to include the checklist ID
-            await updateQuest({ checklistId: newChecklist.id });
+        const previousQuest = quest;
+        quest = { ...quest, checklistId: newChecklist.id };
 
-            console.log(`Created checklist for task ${questId}: ${newChecklist.id}`);
-        } catch (error: any) {
+        Promise.all([
+            holosphere.put(holonId, "checklists", newChecklist),
+            holosphere.put(holonId, "quests", quest),
+        ]).catch((error: any) => {
+            quest = previousQuest;
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
             } else {
                 console.error("Error creating checklist for task:", error);
             }
-        }
+        });
     }
 
     // Function to open dependency modal
@@ -975,6 +1017,105 @@
     
     .modal-content::-webkit-scrollbar-thumb:hover {
         background: #9CA3AF;
+    }
+
+    /* Team selector */
+    .team-search {
+        position: relative;
+        margin-bottom: 0.5rem;
+    }
+
+    .team-search__input {
+        width: 100%;
+        background: #111827;
+        border: 1px solid #374151;
+        border-radius: 0.5rem;
+        color: #f9fafb;
+        font-size: 0.875rem;
+        padding: 0.5rem 2rem 0.5rem 0.75rem;
+        line-height: 1.2;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    .team-search__input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .team-search__input::placeholder {
+        color: #6b7280;
+    }
+
+    .team-search__clear {
+        position: absolute;
+        right: 0.4rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 0.375rem;
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .team-search__clear:hover {
+        background: #374151;
+        color: #fff;
+    }
+
+    .user-row {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.625rem 0.625rem;
+        border-radius: 0.5rem;
+        background: #1f2937;
+        border: 1px solid transparent;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+        transition: background-color 120ms ease, border-color 120ms ease;
+        min-height: 48px; /* WCAG 2.2 touch target */
+    }
+
+    .user-row:hover {
+        background: #374151;
+    }
+
+    .user-row:active {
+        background: #4b5563;
+    }
+
+    .user-row--selected,
+    .user-row--selected:hover {
+        background: rgba(99, 102, 241, 0.18);
+        border-color: rgba(99, 102, 241, 0.5);
+    }
+
+    .user-row__check {
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 0.375rem;
+        border: 2px solid #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background-color 120ms ease, border-color 120ms ease;
+    }
+
+    .user-row__check--on {
+        background: #6366f1;
+        border-color: #6366f1;
     }
 </style>
 
@@ -1200,6 +1341,29 @@
                             {/if}
                         </h4>
 
+                        {#if !usersLoading && Object.keys(userStore).length > 4}
+                            <div class="team-search">
+                                <input
+                                    type="search"
+                                    class="team-search__input"
+                                    placeholder="Search team…"
+                                    bind:value={userSearchQuery}
+                                    autocomplete="off"
+                                    autocorrect="off"
+                                    autocapitalize="off"
+                                    spellcheck="false"
+                                />
+                                {#if userSearchQuery}
+                                    <button
+                                        type="button"
+                                        class="team-search__clear"
+                                        on:click|stopPropagation={() => (userSearchQuery = '')}
+                                        aria-label="Clear search"
+                                    >&times;</button>
+                                {/if}
+                            </div>
+                        {/if}
+
                         <!-- Always visible, scrollable user list with multi-select -->
                         <div class="max-h-48 overflow-y-auto space-y-1 pr-1 overscroll-contain">
                             {#if usersLoading}
@@ -1209,27 +1373,25 @@
                                 </div>
                             {:else if Object.keys(userStore).length === 0}
                                 <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
+                            {:else if filteredUserEntries.length === 0}
+                                <p class="text-gray-500 text-xs py-2 text-center">No matching users</p>
                             {:else}
-                                {#each Object.entries(userStore) as [userKey, user] (user.id)}
-                                    {@const isPending = pendingUserUpdates.has(userKey)}
+                                {#each filteredUserEntries as [userKey, user] (user.id)}
                                     {@const isSelected = participantIds.has(String(user.id))}
                                     {@const currentTime = isSelected ? (quest.timeTracking?.[user.id] || 0) : 0}
                                     <!-- Row is a div, not a button, so the +15m action button inside is valid HTML. -->
                                     <div
-                                        class="w-full flex items-center justify-between p-2.5 rounded-lg text-sm transition-all touch-manipulation select-none active:scale-[0.98] cursor-pointer {isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border border-transparent'} {isPending ? 'opacity-60 pointer-events-none' : ''}"
+                                        class="user-row {isSelected ? 'user-row--selected' : ''}"
                                         role="button"
-                                        tabindex={isPending ? -1 : 0}
+                                        tabindex="0"
                                         aria-pressed={isSelected}
-                                        aria-disabled={isPending}
                                         on:click|stopPropagation={() => toggleUserParticipation(userKey, user)}
                                         on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleUserParticipation(userKey, user); } }}
                                     >
-                                        <div class="flex items-center gap-2.5">
+                                        <div class="flex items-center gap-2.5 min-w-0">
                                             <!-- Checkbox indicator -->
-                                            <div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}">
-                                                {#if isPending}
-                                                    <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                {:else if isSelected}
+                                            <div class="user-row__check {isSelected ? 'user-row__check--on' : ''}">
+                                                {#if isSelected}
                                                     <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
                                                     </svg>
@@ -1241,8 +1403,8 @@
                                                 class="w-7 h-7 rounded-full"
                                                 loading="lazy"
                                             />
-                                            <div class="text-left">
-                                                <div class="text-gray-200 font-medium">
+                                            <div class="text-left min-w-0">
+                                                <div class="text-gray-200 font-medium truncate">
                                                     <DisplayName id={user.id} {user} />
                                                 </div>
                                                 {#if currentTime > 0}
@@ -1252,7 +1414,7 @@
                                         </div>
 
                                         <!-- Time tracking button (only for selected users) -->
-                                        {#if isSelected && !isPending}
+                                        {#if isSelected}
                                             <button
                                                 class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30 active:bg-green-500/40 flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px]"
                                                 on:click|stopPropagation={() => updateTimeTracking(user.id, 0.25)}
@@ -1309,6 +1471,30 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                     </svg>
                                     Create Checklist
+                            </button>
+                        {/if}
+
+                        {#if quest.canvasId}
+                            <button
+                                class="w-full px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs hover:bg-purple-500/30 transition-colors flex items-center gap-2"
+                                on:click={navigateToCanvas}
+                                type="button"
+                            >
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                Open Canvas
+                            </button>
+                        {:else}
+                            <button
+                                class="w-full px-2 py-1 bg-gray-600 text-gray-300 rounded text-xs hover:bg-gray-500 transition-colors flex items-center gap-2"
+                                on:click={createCanvasForTask}
+                                type="button"
+                            >
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                Create Canvas
                             </button>
                         {/if}
                     </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, getContext, onMount, afterUpdate } from 'svelte';
+    import { createEventDispatcher, getContext, onMount, afterUpdate, tick } from 'svelte';
     import { goto } from '$app/navigation';
     import { formatDate, formatTime } from '../utils/date.js';
     import type { HoloSphere } from 'holosphere';
@@ -10,9 +10,19 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
-    export let filteredQuests: [string, any][];
+    export let filteredQuests: [string, any][] = [];
     export let holonID: string;
-    export let showCompleted: boolean;
+    export let showCompleted: boolean = false;
+    // The canvas this view persists to. Defaults to the holon-level canvas
+    // (canvasId = holonID). Task canvases pass an explicit canvasId.
+    export let canvasId: string | undefined = undefined;
+    // 'tasks' (default) renders the embedded spatial-task layer on top of the
+    // canvas. 'standalone' renders only the drawing/image layer — used by the
+    // /[id]/canvas[/canvasId] routes.
+    export let mode: 'tasks' | 'standalone' = 'tasks';
+
+    $: effectiveCanvasId = canvasId ?? holonID;
+    $: isStandalone = mode === 'standalone';
 
     const dispatch = createEventDispatcher();
     let canvas: HTMLElement;
@@ -56,6 +66,52 @@
     let isEditingText = false;
     let textInput = '';
     let textPosition: { x: number; y: number } | null = null;
+    let currentFontFamily = 'sans-serif';
+
+    // Image resize state
+    let isResizingImage = false;
+    let resizeHandle: 'nw' | 'ne' | 'sw' | 'se' | null = null;
+    let resizeStartRect: { x: number; y: number; width: number; height: number } | null = null;
+    let resizeStartPoint: { x: number; y: number } | null = null;
+    let resizeKeepAspect = false;
+    // Type-specific snapshot of the selected drawing taken when resize begins,
+    // so non-image scaling can recompute from a stable baseline instead of
+    // accumulating per-frame.
+    let resizeStartMeta: any = null;
+    let isDraggingFiles = false;
+
+    // Image rotation state
+    let isRotatingImage = false;
+    let rotateStartAngle = 0;
+    let rotateStartRotation = 0;
+    let rotateCenter: { x: number; y: number } | null = null;
+
+    let textInputEl: HTMLInputElement | null = null;
+
+    // Web-safe + commonly-installed fonts surfaced in the text selection font picker.
+    const FONT_OPTIONS = [
+        { label: 'Sans', value: 'sans-serif' },
+        { label: 'Serif', value: 'serif' },
+        { label: 'Mono', value: 'monospace' },
+        { label: 'Georgia', value: 'Georgia, serif' },
+        { label: 'Times', value: '"Times New Roman", Times, serif' },
+        { label: 'Courier', value: '"Courier New", Courier, monospace' },
+        { label: 'Comic', value: '"Comic Sans MS", "Comic Sans", cursive' },
+        { label: 'Impact', value: 'Impact, "Arial Black", sans-serif' },
+    ];
+
+    // Diagonal drag distance (px, post-pan/zoom canvas coords) that produces
+    // a 1.0 → 2.0 size change for non-image drawings. Larger = slower / more
+    // controlled scaling. Used by the linear, opposite-corner-anchored scale
+    // applied to text/line/path so a 16px font doesn't explode the way a
+    // proportional bbox-fit would.
+    const NONIMAGE_RESIZE_REFERENCE = 250;
+
+    // The canvas is "editable" (select / move / resize / rotate / delete
+    // existing drawings) when the user is either in drawing mode or viewing
+    // the canvas standalone. Standalone has no task cards to interact with,
+    // so it always behaves like an edit view.
+    $: canEditCanvas = drawingEnabled || isStandalone;
 
 
 
@@ -130,7 +186,7 @@
         positionAssignments.clear();
         pendingPositionSaves.clear();
         generatedInboxPositions.clear(); // Clear cached inbox positions for new holon
-        
+
         // Load hologram positions from localStorage
         try {
             const stored = localStorage.getItem(`hologramPositions_${holonID}`);
@@ -144,8 +200,10 @@
             console.error('Error loading hologram positions:', error);
             hologramPositions.clear();
         }
+    }
 
-        // Load drawings
+    // Re-load drawings whenever the canvas being viewed changes.
+    $: if (holonID && effectiveCanvasId) {
         loadDrawings();
     }
     
@@ -164,16 +222,37 @@
     // Drawing functions
     async function loadDrawings() {
         if (!holosphere || !holonID) return;
+        const cid = effectiveCanvasId;
         try {
-            const entry = await holosphere.get(holonID, 'canvas', 'drawings');
+            const entry = await holosphere.get(holonID, 'canvases', cid);
             if (entry && entry.data && Array.isArray(entry.data)) {
                 drawings = entry.data;
                 drawingsUpdatedAt = entry.updatedAt || 0;
-            } else if (Array.isArray(entry)) { // backward compatibility
-                drawings = entry;
-            } else {
-                drawings = [];
+                return;
             }
+
+            // Back-compat: the holon canvas used to live at
+            // (holonID, 'canvas', 'drawings'). On first read of the new
+            // 'canvases' lens for the holon canvas, migrate from the old
+            // location so existing drawings don't disappear.
+            if (cid === holonID) {
+                const legacy = await holosphere.get(holonID, 'canvas', 'drawings');
+                if (legacy && legacy.data && Array.isArray(legacy.data)) {
+                    drawings = legacy.data;
+                    drawingsUpdatedAt = legacy.updatedAt || Date.now();
+                    // Mirror into the new lens so future reads skip the legacy path.
+                    holosphere.put(holonID, 'canvases', { id: cid, data: drawings, updatedAt: drawingsUpdatedAt })
+                        .catch((err: unknown) => console.error('Error migrating legacy canvas drawings:', err));
+                    return;
+                }
+                if (Array.isArray(legacy)) {
+                    drawings = legacy;
+                    drawingsUpdatedAt = Date.now();
+                    return;
+                }
+            }
+
+            drawings = [];
         } catch (error) {
             console.error('Error loading drawings:', error);
             drawings = [];
@@ -182,9 +261,10 @@
 
     async function saveDrawings() {
         if (!holosphere || !holonID) return;
+        const cid = effectiveCanvasId;
         drawingsUpdatedAt = Date.now();
         try {
-            await holosphere.put(holonID, 'canvas', { id: 'drawings', data: drawings, updatedAt: drawingsUpdatedAt });
+            await holosphere.put(holonID, 'canvases', { id: cid, data: drawings, updatedAt: drawingsUpdatedAt });
         } catch (error) {
             console.error('Error saving drawings:', error);
         }
@@ -251,6 +331,7 @@
                 y: textPosition.y,
                 color: currentColor,
                 fontSize: currentStroke * 4, // Use stroke width as font size multiplier
+                fontFamily: currentFontFamily,
                 timestamp: Date.now()
             }];
             console.log('Saved text:', textInput, 'at:', textPosition);
@@ -411,22 +492,58 @@
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
         event.preventDefault();
         event.stopPropagation();
-        
+
         dragStartPosition = { x: event.clientX, y: event.clientY };
-        
+
+        // Resize / rotate handles take priority whenever the canvas is editable.
+        if (canEditCanvas && event.button === 0) {
+            const target = event.target as HTMLElement | null;
+            const handleEl = target?.closest?.('.image-resize-handle') as HTMLElement | null;
+            if (handleEl) {
+                const handle = handleEl.getAttribute('data-handle') as 'nw' | 'ne' | 'sw' | 'se' | null;
+                if (handle) {
+                    beginSelectionResize(event, handle);
+                    return;
+                }
+            }
+            const rotEl = target?.closest?.('.image-rotate-handle') as HTMLElement | null;
+            if (rotEl) {
+                beginSelectionRotate(event);
+                return;
+            }
+            // Clicks on the floating action bar should not start a selection.
+            if (target?.closest?.('.canvas-action-bar')) {
+                return;
+            }
+        }
+
+        // Selecting/moving existing drawings — works in drawing mode OR in
+        // standalone view (no task cards to fight over the click).
+        if (canEditCanvas && event.button === 0 && (!drawingEnabled || currentTool === 'hand')) {
+            const point = getCanvasPoint(event.clientX, event.clientY);
+            const idx = hitTestDrawing(point);
+            if (idx !== null) {
+                isMovingDrawing = true;
+                selectedDrawingIndex = idx;
+                lastMovePoint = { ...point };
+                return;
+            } else if (drawingEnabled && currentTool === 'hand') {
+                // In drawing mode, clicking empty space deselects.
+                selectedDrawingIndex = null;
+            } else if (isStandalone && !drawingEnabled) {
+                // In standalone mode, clicking empty space deselects but
+                // also falls through to panning below.
+                selectedDrawingIndex = null;
+            }
+        }
+
         // Handle drawing mode - disable all other interactions
         if (drawingEnabled && event.button === 0) {
             const point = getCanvasPoint(event.clientX, event.clientY);
-            
+
             if (currentTool === 'hand') {
-                // try select drawing
-                const idx = hitTestDrawing(point);
-                if (idx!==null) {
-                    isMovingDrawing = true;
-                    selectedDrawingIndex = idx;
-                    lastMovePoint = { ...point };
-                    return;
-                }
+                // Hit-test was already performed above; fall through to no-op.
+                return;
             }
 
             if (currentTool === 'line') {
@@ -446,11 +563,15 @@
                 const eraseRadius = currentStroke * 2;
                 drawings = drawings.filter(drawing => {
                     if (drawing.type === 'path' || drawing.type === 'line') {
-                        return !drawing.points?.some((p: any) => 
+                        return !drawing.points?.some((p: any) =>
                             Math.hypot(p.x - point.x, p.y - point.y) < eraseRadius
                         );
                     } else if (drawing.type === 'text') {
                         return Math.hypot(drawing.x - point.x, drawing.y - point.y) > eraseRadius;
+                    } else if (drawing.type === 'image') {
+                        // Erase an image when the point falls inside its bounding box.
+                        return !(point.x >= drawing.x && point.x <= drawing.x + drawing.width
+                            && point.y >= drawing.y && point.y <= drawing.y + drawing.height);
                     }
                     return true;
                 });
@@ -489,15 +610,25 @@
     function handleMouseMove(event: MouseEvent) {
         event.preventDefault();
         event.stopPropagation();
-        
-        // Handle drawing mode - only allow drawing interactions
-        if (drawingEnabled && isMovingDrawing && selectedDrawingIndex!==null) {
+
+        // Image resize / rotate take precedence.
+        if (canEditCanvas && isResizingImage) {
+            applySelectionResize(event);
+            return;
+        }
+        if (canEditCanvas && isRotatingImage) {
+            applySelectionRotate(event);
+            return;
+        }
+
+        // Move the currently selected drawing.
+        if (canEditCanvas && isMovingDrawing && selectedDrawingIndex!==null) {
             const point = getCanvasPoint(event.clientX, event.clientY);
             const deltaX = point.x - lastMovePoint.x;
             const deltaY = point.y - lastMovePoint.y;
             if (deltaX===0 && deltaY===0) return;
             const d = drawings[selectedDrawingIndex];
-            if (d.type === 'text') {
+            if (d.type === 'text' || d.type === 'image') {
                 d.x += deltaX;
                 d.y += deltaY;
             } else if (d.type==='line' && d.points?.length===2) {
@@ -506,6 +637,7 @@
                 d.points.forEach((p:any)=>{p.x+=deltaX; p.y+=deltaY;});
             }
             lastMovePoint = point;
+            drawings = drawings;
             return;
         }
         
@@ -523,11 +655,15 @@
                 const eraseRadius = currentStroke * 2;
                 drawings = drawings.filter(drawing => {
                     if (drawing.type === 'path' || drawing.type === 'line') {
-                        return !drawing.points?.some((p: any) => 
+                        return !drawing.points?.some((p: any) =>
                             Math.hypot(p.x - point.x, p.y - point.y) < eraseRadius
                         );
                     } else if (drawing.type === 'text') {
                         return Math.hypot(drawing.x - point.x, drawing.y - point.y) > eraseRadius;
+                    } else if (drawing.type === 'image') {
+                        // Erase an image when the point falls inside its bounding box.
+                        return !(point.x >= drawing.x && point.x <= drawing.x + drawing.width
+                            && point.y >= drawing.y && point.y <= drawing.y + drawing.height);
                     }
                     return true;
                 });
@@ -565,11 +701,21 @@
     function handleMouseUp(event: MouseEvent) {
         event.preventDefault();
         event.stopPropagation();
-        
-        // Handle drawing mode - only process drawing interactions
-        if (drawingEnabled && isMovingDrawing) {
+
+        // Finish an in-progress image resize / rotate.
+        if (canEditCanvas && isResizingImage) {
+            endSelectionResize();
+            return;
+        }
+        if (canEditCanvas && isRotatingImage) {
+            endSelectionRotate();
+            return;
+        }
+
+        // End drag-move of a selected drawing.
+        if (canEditCanvas && isMovingDrawing) {
             isMovingDrawing = false;
-            selectedDrawingIndex = null;
+            // Keep selection sticky so the user can resize / rotate / delete next.
             saveDrawings();
             return;
         }
@@ -1006,16 +1152,18 @@
         console.log('Canvas mounted, viewContainer:', viewContainer, 'canvas:', canvas);
 
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isDragging || isPanning || isDrawing || isMovingDrawing) {
+            if (isDragging || isPanning || isDrawing || isMovingDrawing || isResizingImage || isRotatingImage) {
                 handleMouseMove(e);
             }
         };
-        
+
         const handleGlobalMouseUp = (e: MouseEvent) => {
-            if (isDragging || isPanning || isDrawing || isMovingDrawing) {
+            if (isDragging || isPanning || isDrawing || isMovingDrawing || isResizingImage || isRotatingImage) {
                 handleMouseUp(e);
             }
         };
+
+        window.addEventListener('keydown', handleCanvasKeydown);
         
         window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
         window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
@@ -1069,11 +1217,12 @@
         document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
-        // Subscribe for real-time drawing updates
+        // Subscribe for real-time drawing updates on the 'canvases' lens.
         let drawingsOff: (()=>void)|undefined;
         if (holosphere && holonID) {
-            holosphere.subscribe(holonID, 'canvas', (entry: any, key?: string) => {
-                if (entry && key === 'drawings') {
+            const watchedCid = effectiveCanvasId;
+            holosphere.subscribe(holonID, 'canvases', (entry: any, key?: string) => {
+                if (entry && key === watchedCid) {
                     if (entry.updatedAt && entry.updatedAt <= drawingsUpdatedAt) return; // ignore older updates
                     if (Array.isArray(entry.data)) {
                         drawings = entry.data;
@@ -1089,6 +1238,7 @@
             if (drawingsOff) drawingsOff();
             window.removeEventListener('mousemove', handleGlobalMouseMove);
             window.removeEventListener('mouseup', handleGlobalMouseUp);
+            window.removeEventListener('keydown', handleCanvasKeydown);
             viewContainer?.removeEventListener('wheel', handleWheel);
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
             document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -1111,25 +1261,414 @@
     // -------- Move drawings logic --------
     let isMobile = false;
 
+    // Axis-aligned bounding box for any drawing, in canvas coordinates and in
+    // the drawing's local (unrotated) frame. Used by selection rendering,
+    // resize, rotate, and the floating action bar so a single code path drives
+    // all four drawing kinds.
+    function getDrawingBounds(d: any): { x: number; y: number; width: number; height: number } {
+        if (!d) return { x: 0, y: 0, width: 0, height: 0 };
+        if (d.type === 'image') {
+            return { x: d.x, y: d.y, width: d.width, height: d.height };
+        }
+        if (d.type === 'text') {
+            const fs = d.fontSize || 16;
+            const w = Math.max(8, (d.text?.length || 4) * fs * 0.6);
+            return { x: d.x, y: d.y, width: w, height: fs };
+        }
+        if (d.type === 'line' && d.points?.length === 2) {
+            const [p1, p2] = d.points;
+            const x = Math.min(p1.x, p2.x);
+            const y = Math.min(p1.y, p2.y);
+            return { x, y, width: Math.abs(p1.x - p2.x), height: Math.abs(p1.y - p2.y) };
+        }
+        if (d.type === 'path' && d.points?.length > 0) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of d.points as { x: number; y: number }[]) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        }
+        return { x: 0, y: 0, width: 0, height: 0 };
+    }
+
+    // Transform a canvas point back into a drawing's local (unrotated) frame
+    // for hit-testing rotated drawings.
+    function inverseRotatePoint(point: { x: number; y: number }, d: any): { x: number; y: number } {
+        const rot = d.rotation || 0;
+        if (!rot) return point;
+        const b = getDrawingBounds(d);
+        const cx = b.x + b.width / 2;
+        const cy = b.y + b.height / 2;
+        const rad = (-rot * Math.PI) / 180;
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        return {
+            x: cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+            y: cy + dx * Math.sin(rad) + dy * Math.cos(rad)
+        };
+    }
+
     function hitTestDrawing(point: {x:number;y:number}): number | null {
         // iterate from topmost
         for (let i = drawings.length - 1; i >= 0; i--) {
             const d = drawings[i];
+            const p = inverseRotatePoint(point, d);
             if (d.type === 'text') {
-                const width = (d.text?.length || 4) * (d.fontSize || 16) * 0.6;
-                const height = d.fontSize || 16;
-                if (point.x >= d.x && point.x <= d.x + width && point.y >= d.y && point.y <= d.y + height) return i;
+                const b = getDrawingBounds(d);
+                if (p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) return i;
+            } else if (d.type === 'image') {
+                if (p.x >= d.x && p.x <= d.x + d.width && p.y >= d.y && p.y <= d.y + d.height) return i;
             } else if (d.type === 'line' && d.points?.length === 2) {
                 const [p1,p2] = d.points;
-                const dist = distancePointToSegment(point, p1, p2);
+                const dist = distancePointToSegment(p, p1, p2);
                 if (dist < 6) return i;
             } else if (d.type === 'path' && d.points?.length>1) {
                 for (let j=0;j<d.points.length-1;j++) {
-                    if (distancePointToSegment(point, d.points[j], d.points[j+1])<6) return i;
+                    if (distancePointToSegment(p, d.points[j], d.points[j+1])<6) return i;
                 }
             }
         }
         return null;
+    }
+
+    // -------- Image drag-drop + resize --------
+    const MAX_IMAGE_DIMENSION = 1600; // downscale anything larger than this
+    const DEFAULT_IMAGE_PLACEMENT = 600; // initial on-canvas max width/height
+
+    async function fileToDownscaledDataURL(file: File): Promise<{ src: string; width: number; height: number } | null> {
+        try {
+            const initialSrc: string = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(reader.error);
+                reader.onload = () => resolve(reader.result as string);
+                reader.readAsDataURL(file);
+            });
+            const img: HTMLImageElement = await new Promise((resolve, reject) => {
+                const im = new Image();
+                im.onload = () => resolve(im);
+                im.onerror = reject;
+                im.src = initialSrc;
+            });
+            let w = img.naturalWidth;
+            let h = img.naturalHeight;
+            const maxSide = Math.max(w, h);
+            if (maxSide > MAX_IMAGE_DIMENSION) {
+                const scale = MAX_IMAGE_DIMENSION / maxSide;
+                w = Math.round(w * scale);
+                h = Math.round(h * scale);
+                const off = document.createElement('canvas');
+                off.width = w;
+                off.height = h;
+                const ctx = off.getContext('2d');
+                if (!ctx) return { src: initialSrc, width: img.naturalWidth, height: img.naturalHeight };
+                ctx.drawImage(img, 0, 0, w, h);
+                const downscaled = off.toDataURL('image/jpeg', 0.85);
+                return { src: downscaled, width: w, height: h };
+            }
+            return { src: initialSrc, width: w, height: h };
+        } catch (err) {
+            console.error('Error processing dropped image:', err);
+            return null;
+        }
+    }
+
+    async function handleCanvasDrop(event: DragEvent) {
+        event.preventDefault();
+        event.stopPropagation();
+        isDraggingFiles = false;
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+        const dropPoint = getCanvasPoint(event.clientX, event.clientY);
+        let cursorX = dropPoint.x;
+        let cursorY = dropPoint.y;
+        const newImages: any[] = [];
+        for (const file of Array.from(files)) {
+            if (!file.type.startsWith('image/')) continue;
+            const processed = await fileToDownscaledDataURL(file);
+            if (!processed) continue;
+            // Fit initial placement size to DEFAULT_IMAGE_PLACEMENT while preserving aspect ratio.
+            let placeW = processed.width;
+            let placeH = processed.height;
+            const maxSide = Math.max(placeW, placeH);
+            if (maxSide > DEFAULT_IMAGE_PLACEMENT) {
+                const scale = DEFAULT_IMAGE_PLACEMENT / maxSide;
+                placeW = Math.round(placeW * scale);
+                placeH = Math.round(placeH * scale);
+            }
+            // Center the image on the drop point for the first, then offset subsequent images.
+            newImages.push({
+                type: 'image',
+                src: processed.src,
+                x: cursorX - placeW / 2,
+                y: cursorY - placeH / 2,
+                width: placeW,
+                height: placeH,
+                timestamp: Date.now()
+            });
+            // Cascade offset for additional drops
+            cursorX += 24;
+            cursorY += 24;
+        }
+        if (newImages.length > 0) {
+            drawings = [...drawings, ...newImages];
+            // Make the newly dropped image immediately interactive. In
+            // standalone mode the canvas is always editable; in the embedded
+            // (Tasks) view, flip into drawing+hand mode so the user can
+            // resize/move without an extra click.
+            if (!isStandalone && !drawingEnabled) {
+                drawingEnabled = true;
+                currentTool = 'hand';
+            }
+            selectedDrawingIndex = drawings.length - 1;
+            await saveDrawings();
+        }
+    }
+
+    function handleCanvasDragOver(event: DragEvent) {
+        if (!event.dataTransfer) return;
+        const hasFiles = Array.from(event.dataTransfer.types || []).includes('Files');
+        if (!hasFiles) return;
+        event.preventDefault();
+        event.stopPropagation();
+        isDraggingFiles = true;
+        try { event.dataTransfer.dropEffect = 'copy'; } catch {}
+    }
+
+    function handleCanvasDragLeave(event: DragEvent) {
+        // Only clear when leaving the container (relatedTarget outside).
+        const relatedTarget = event.relatedTarget as Node | null;
+        if (!relatedTarget || !viewContainer?.contains(relatedTarget)) {
+            isDraggingFiles = false;
+        }
+    }
+
+    // Apply a new bounding box directly to an image drawing. Only images use
+    // the "bbox matches mouse" resize semantic — text/line/path get a
+    // dampened, linear-in-drag scaling computed inline in applySelectionResize.
+    function applyBoundsToDrawing(d: any, _oldB: { x: number; y: number; width: number; height: number }, newB: { x: number; y: number; width: number; height: number }) {
+        if (d.type === 'image') {
+            d.x = newB.x;
+            d.y = newB.y;
+            d.width = newB.width;
+            d.height = newB.height;
+        }
+    }
+
+    function beginSelectionResize(event: MouseEvent, handle: 'nw' | 'ne' | 'sw' | 'se') {
+        if (selectedDrawingIndex === null) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d) return;
+        event.preventDefault();
+        event.stopPropagation();
+        isResizingImage = true;
+        resizeHandle = handle;
+        resizeStartRect = getDrawingBounds(d);
+        resizeStartPoint = getCanvasPoint(event.clientX, event.clientY);
+        resizeKeepAspect = event.shiftKey;
+        if (d.type === 'text') {
+            resizeStartMeta = { fontSize: d.fontSize || 16 };
+        } else if ((d.type === 'line' || d.type === 'path') && Array.isArray(d.points)) {
+            resizeStartMeta = { points: d.points.map((p: { x: number; y: number }) => ({ x: p.x, y: p.y })) };
+        } else {
+            resizeStartMeta = null;
+        }
+    }
+
+    function applySelectionResize(event: MouseEvent) {
+        if (!isResizingImage || selectedDrawingIndex === null || !resizeStartRect || !resizeStartPoint || !resizeHandle) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d) return;
+        const cur = getCanvasPoint(event.clientX, event.clientY);
+        const dx = cur.x - resizeStartPoint.x;
+        const dy = cur.y - resizeStartPoint.y;
+
+        if (d.type === 'image') {
+            // Images: classic bbox-tracks-mouse resize. Anchor is the corner
+            // opposite the dragged handle.
+            let nx = resizeStartRect.x;
+            let ny = resizeStartRect.y;
+            let nw = resizeStartRect.width;
+            let nh = resizeStartRect.height;
+
+            if (resizeHandle === 'se') {
+                nw = resizeStartRect.width + dx;
+                nh = resizeStartRect.height + dy;
+            } else if (resizeHandle === 'ne') {
+                nw = resizeStartRect.width + dx;
+                nh = resizeStartRect.height - dy;
+                ny = resizeStartRect.y + dy;
+            } else if (resizeHandle === 'sw') {
+                nw = resizeStartRect.width - dx;
+                nx = resizeStartRect.x + dx;
+                nh = resizeStartRect.height + dy;
+            } else if (resizeHandle === 'nw') {
+                nw = resizeStartRect.width - dx;
+                nx = resizeStartRect.x + dx;
+                nh = resizeStartRect.height - dy;
+                ny = resizeStartRect.y + dy;
+            }
+
+            const MIN = 8;
+            if (nw < MIN) {
+                if (resizeHandle === 'nw' || resizeHandle === 'sw') nx = resizeStartRect.x + resizeStartRect.width - MIN;
+                nw = MIN;
+            }
+            if (nh < MIN) {
+                if (resizeHandle === 'nw' || resizeHandle === 'ne') ny = resizeStartRect.y + resizeStartRect.height - MIN;
+                nh = MIN;
+            }
+
+            if (resizeKeepAspect || event.shiftKey) {
+                const aspect = resizeStartRect.width / resizeStartRect.height;
+                if (Math.abs(nw - resizeStartRect.width) > Math.abs(nh - resizeStartRect.height)) {
+                    const newH = nw / aspect;
+                    if (resizeHandle === 'nw' || resizeHandle === 'ne') ny = resizeStartRect.y + (resizeStartRect.height - newH);
+                    nh = newH;
+                } else {
+                    const newW = nh * aspect;
+                    if (resizeHandle === 'nw' || resizeHandle === 'sw') nx = resizeStartRect.x + (resizeStartRect.width - newW);
+                    nw = newW;
+                }
+            }
+
+            applyBoundsToDrawing(d, resizeStartRect, { x: nx, y: ny, width: nw, height: nh });
+        } else {
+            // Text / line / path: linear-in-drag uniform scaling around the
+            // corner opposite the dragged handle. Decoupled from the bbox
+            // size so a tiny drawing doesn't explode under a long drag.
+            const xSign = (resizeHandle === 'se' || resizeHandle === 'ne') ? 1 : -1;
+            const ySign = (resizeHandle === 'se' || resizeHandle === 'sw') ? 1 : -1;
+            const outward = (xSign * dx + ySign * dy) / 2;
+            let uniformScale = 1 + outward / NONIMAGE_RESIZE_REFERENCE;
+            uniformScale = Math.max(0.1, Math.min(8, uniformScale));
+
+            const anchorX = (resizeHandle === 'nw' || resizeHandle === 'sw')
+                ? resizeStartRect.x + resizeStartRect.width
+                : resizeStartRect.x;
+            const anchorY = (resizeHandle === 'nw' || resizeHandle === 'ne')
+                ? resizeStartRect.y + resizeStartRect.height
+                : resizeStartRect.y;
+
+            if (d.type === 'text') {
+                const startFs = resizeStartMeta?.fontSize ?? 16;
+                d.fontSize = Math.max(8, startFs * uniformScale);
+                const newBounds = getDrawingBounds(d);
+                const cornerOffsetX = (resizeHandle === 'nw' || resizeHandle === 'sw') ? newBounds.width : 0;
+                const cornerOffsetY = (resizeHandle === 'nw' || resizeHandle === 'ne') ? newBounds.height : 0;
+                d.x = anchorX - cornerOffsetX;
+                d.y = anchorY - cornerOffsetY;
+            } else if ((d.type === 'line' || d.type === 'path') && Array.isArray(resizeStartMeta?.points)) {
+                d.points = resizeStartMeta.points.map((p: { x: number; y: number }) => ({
+                    x: anchorX + (p.x - anchorX) * uniformScale,
+                    y: anchorY + (p.y - anchorY) * uniformScale
+                }));
+            }
+        }
+
+        drawings = drawings; // trigger reactivity
+    }
+
+    function endSelectionResize() {
+        if (!isResizingImage) return;
+        isResizingImage = false;
+        resizeHandle = null;
+        resizeStartRect = null;
+        resizeStartPoint = null;
+        resizeStartMeta = null;
+        saveDrawings();
+    }
+
+    function beginSelectionRotate(event: MouseEvent) {
+        if (selectedDrawingIndex === null) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const b = getDrawingBounds(d);
+        const cx = b.x + b.width / 2;
+        const cy = b.y + b.height / 2;
+        rotateCenter = { x: cx, y: cy };
+        const p = getCanvasPoint(event.clientX, event.clientY);
+        rotateStartAngle = Math.atan2(p.y - cy, p.x - cx);
+        rotateStartRotation = d.rotation || 0;
+        isRotatingImage = true;
+    }
+
+    function applySelectionRotate(event: MouseEvent) {
+        if (!isRotatingImage || selectedDrawingIndex === null || !rotateCenter) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d) return;
+        const p = getCanvasPoint(event.clientX, event.clientY);
+        const a = Math.atan2(p.y - rotateCenter.y, p.x - rotateCenter.x);
+        let deg = rotateStartRotation + ((a - rotateStartAngle) * 180) / Math.PI;
+        // Snap to 15° steps while holding shift.
+        if (event.shiftKey) deg = Math.round(deg / 15) * 15;
+        d.rotation = deg;
+        drawings = drawings;
+    }
+
+    function endSelectionRotate() {
+        if (!isRotatingImage) return;
+        isRotatingImage = false;
+        rotateCenter = null;
+        saveDrawings();
+    }
+
+    function rotateSelectedBy(delta: number) {
+        if (selectedDrawingIndex === null) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d) return;
+        d.rotation = ((d.rotation || 0) + delta) % 360;
+        drawings = drawings;
+        saveDrawings();
+    }
+
+    function setSelectedTextFont(fontFamily: string) {
+        if (selectedDrawingIndex === null) return;
+        const d = drawings[selectedDrawingIndex];
+        if (!d || d.type !== 'text') return;
+        d.fontFamily = fontFamily;
+        currentFontFamily = fontFamily;
+        drawings = drawings;
+        saveDrawings();
+    }
+
+    function deleteSelectedDrawing() {
+        if (selectedDrawingIndex === null) return;
+        drawings = drawings.filter((_, i) => i !== selectedDrawingIndex);
+        selectedDrawingIndex = null;
+        saveDrawings();
+    }
+
+    function handleCanvasKeydown(event: KeyboardEvent) {
+        // Don't hijack keystrokes typed into the text-tool input.
+        if (isEditingText) return;
+        const target = event.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            if (selectedDrawingIndex === null) return;
+            event.preventDefault();
+            deleteSelectedDrawing();
+        } else if (event.key === 'Escape') {
+            // First Esc clears the current selection. If nothing was
+            // selected, let the host route decide what to do (e.g. a task
+            // canvas navigates back to its TaskModal).
+            if (selectedDrawingIndex !== null) {
+                selectedDrawingIndex = null;
+            } else {
+                dispatch('escape');
+            }
+        }
+    }
+
+    // Focus the text input when the text tool places it on the canvas.
+    $: if (isEditingText && textPosition) {
+        tick().then(() => textInputEl?.focus());
     }
 
     function distancePointToSegment(p:any, v:any, w:any) {
@@ -1177,11 +1716,14 @@
     on:touchmove|preventDefault={handleTouchMove}
     on:touchend|preventDefault={handleTouchEnd}
     on:contextmenu|preventDefault
+    on:dragover={handleCanvasDragOver}
+    on:dragleave={handleCanvasDragLeave}
+    on:drop={handleCanvasDrop}
     role="presentation"
     style="touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;"
 >
     <!-- Drawing Tools Overlay -->
-    <DrawingTools 
+    <DrawingTools
         {drawingEnabled}
         {currentTool}
         {currentColor}
@@ -1193,6 +1735,15 @@
         on:clear={clearDrawings}
     />
 
+    <!-- File drop overlay -->
+    {#if isDraggingFiles}
+        <div class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-blue-500 bg-opacity-10 border-4 border-dashed border-blue-400">
+            <div class="px-6 py-4 bg-gray-900 bg-opacity-80 rounded-lg text-blue-200 text-lg font-medium">
+                🖼️ Drop images to add them to the canvas
+            </div>
+        </div>
+    {/if}
+
     <!-- Control Panel -->
     <div class="absolute top-4 right-4 z-10 flex flex-col gap-2">
         <!-- Mobile indicator -->
@@ -1203,28 +1754,30 @@
             </div>
         {/if}
         
-        <!-- Go to Inbox button -->
-        <button 
-            class="p-2 bg-blue-800 bg-opacity-70 hover:bg-blue-700 rounded-lg text-white text-opacity-90 hover:text-white transition-colors"
-            on:click={goToInbox}
-            aria-label="Go to inbox area"
-            title="Go to new task inbox"
-        >
-            📥
-        </button>
+        {#if !isStandalone}
+            <!-- Go to Inbox button -->
+            <button
+                class="p-2 bg-blue-800 bg-opacity-70 hover:bg-blue-700 rounded-lg text-white text-opacity-90 hover:text-white transition-colors"
+                on:click={goToInbox}
+                aria-label="Go to inbox area"
+                title="Go to new task inbox"
+            >
+                📥
+            </button>
 
-        <!-- Center on Tasks button -->
-        <button 
-            class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
-            on:click={centerOnTasks}
-            aria-label="Center view on tasks"
-            title="Center view on tasks"
-        >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-        </button>
+            <!-- Center on Tasks button -->
+            <button
+                class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
+                on:click={centerOnTasks}
+                aria-label="Center view on tasks"
+                title="Center view on tasks"
+            >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+            </button>
+        {/if}
 
         <!-- Fullscreen toggle button -->
         <button 
@@ -1243,6 +1796,7 @@
             {/if}
         </button>
 
+        {#if !isStandalone}
         <!-- Minimap -->
         <div class="bg-gray-800 bg-opacity-90 rounded-lg p-2 border border-gray-600">
             <div class="text-white text-opacity-70 text-xs mb-1 text-center">Map</div>
@@ -1290,9 +1844,10 @@
                 {questCards.length} tasks
             </div>
         </div>
+        {/if}
     </div>
 
-    <div 
+    <div
         bind:this={canvas}
         class="absolute w-full h-full"
         style="width: {CANVAS_WIDTH}px; height: {CANVAS_HEIGHT}px; transform: translate({pan.x}px, {pan.y}px) scale({zoom}); transform-origin: 0 0;"
@@ -1308,41 +1863,125 @@
             viewBox="0 0 {CANVAS_WIDTH} {CANVAS_HEIGHT}"
             xmlns="http://www.w3.org/2000/svg"
         >
-            <!-- Saved drawings -->
+            <!-- Saved drawings. Each drawing renders inside a <g> so an
+                 optional rotation transform can be applied uniformly across
+                 every drawing type. -->
             {#each drawings as drawing, i}
-                {#if drawing.type === 'path' && drawing.points && drawing.points.length > 1}
-                    {@const pathData = `M ${drawing.points[0].x},${drawing.points[0].y} ${drawing.points.slice(1).map(p => `L ${p.x},${p.y}`).join(' ')}`}
-                    <path
-                        d={pathData}
-                        stroke={drawing.color || '#3B82F6'}
-                        stroke-width={drawing.strokeWidth || 3}
-                        fill="none"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    />
-                {:else if drawing.type === 'line' && drawing.points && drawing.points.length === 2}
-                    <line
-                        x1={drawing.points[0].x}
-                        y1={drawing.points[0].y}
-                        x2={drawing.points[1].x}
-                        y2={drawing.points[1].y}
-                        stroke={drawing.color || '#3B82F6'}
-                        stroke-width={drawing.strokeWidth || 3}
-                        stroke-linecap="round"
-                    />
-                {:else if drawing.type === 'text'}
-                    <text
-                        x={drawing.x}
-                        y={drawing.y}
-                        fill={drawing.color || '#3B82F6'}
-                        font-size={drawing.fontSize || 16}
-                        font-family="sans-serif"
-                        dominant-baseline="hanging"
-                    >
-                        {drawing.text}
-                    </text>
-                {/if}
+                {@const db = getDrawingBounds(drawing)}
+                {@const dcx = db.x + db.width / 2}
+                {@const dcy = db.y + db.height / 2}
+                {@const rot = drawing.rotation ? `rotate(${drawing.rotation} ${dcx} ${dcy})` : undefined}
+                <g transform={rot}>
+                    {#if drawing.type === 'path' && drawing.points && drawing.points.length > 1}
+                        {@const pathData = `M ${drawing.points[0].x},${drawing.points[0].y} ${drawing.points.slice(1).map(p => `L ${p.x},${p.y}`).join(' ')}`}
+                        <path
+                            d={pathData}
+                            stroke={drawing.color || '#3B82F6'}
+                            stroke-width={drawing.strokeWidth || 3}
+                            fill="none"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    {:else if drawing.type === 'line' && drawing.points && drawing.points.length === 2}
+                        <line
+                            x1={drawing.points[0].x}
+                            y1={drawing.points[0].y}
+                            x2={drawing.points[1].x}
+                            y2={drawing.points[1].y}
+                            stroke={drawing.color || '#3B82F6'}
+                            stroke-width={drawing.strokeWidth || 3}
+                            stroke-linecap="round"
+                        />
+                    {:else if drawing.type === 'text'}
+                        <text
+                            x={drawing.x}
+                            y={drawing.y}
+                            fill={drawing.color || '#3B82F6'}
+                            font-size={drawing.fontSize || 16}
+                            font-family={drawing.fontFamily || 'sans-serif'}
+                            dominant-baseline="hanging"
+                        >
+                            {drawing.text}
+                        </text>
+                    {:else if drawing.type === 'image' && drawing.src}
+                        <image
+                            href={drawing.src}
+                            x={drawing.x}
+                            y={drawing.y}
+                            width={drawing.width}
+                            height={drawing.height}
+                            preserveAspectRatio="xMidYMid meet"
+                        />
+                    {/if}
+                </g>
             {/each}
+
+            <!-- Selection overlay + resize / rotate handles for the currently
+                 selected drawing (works for image, text, line, path). -->
+            {#if canEditCanvas && selectedDrawingIndex !== null && drawings[selectedDrawingIndex]}
+                {@const sel = drawings[selectedDrawingIndex]}
+                {@const b = getDrawingBounds(sel)}
+                {@const pad = 6}
+                {@const bx = b.x - pad}
+                {@const by = b.y - pad}
+                {@const bw = b.width + pad * 2}
+                {@const bh = b.height + pad * 2}
+                {@const cx = b.x + b.width / 2}
+                {@const cy = b.y + b.height / 2}
+                {@const rotateAttr = sel.rotation ? `rotate(${sel.rotation} ${cx} ${cy})` : undefined}
+                <g transform={rotateAttr}>
+                    <rect
+                        x={bx}
+                        y={by}
+                        width={bw}
+                        height={bh}
+                        fill="none"
+                        stroke="#3B82F6"
+                        stroke-width="2"
+                        stroke-dasharray="6 4"
+                        class="pointer-events-none"
+                    />
+                    {#each [
+                        { corner: 'nw', x: bx, y: by },
+                        { corner: 'ne', x: bx + bw, y: by },
+                        { corner: 'sw', x: bx, y: by + bh },
+                        { corner: 'se', x: bx + bw, y: by + bh }
+                    ] as h}
+                        <rect
+                            x={h.x - 6}
+                            y={h.y - 6}
+                            width="12"
+                            height="12"
+                            fill="#3B82F6"
+                            stroke="white"
+                            stroke-width="2"
+                            class="image-resize-handle"
+                            data-handle={h.corner}
+                            style="cursor: {h.corner === 'nw' || h.corner === 'se' ? 'nwse-resize' : 'nesw-resize'}; pointer-events: auto;"
+                        />
+                    {/each}
+                    <!-- Rotation handle: a small circle above the top edge, connected by a stem. -->
+                    <line
+                        x1={cx}
+                        y1={by}
+                        x2={cx}
+                        y2={by - 28}
+                        stroke="#3B82F6"
+                        stroke-width="2"
+                        class="pointer-events-none"
+                    />
+                    <circle
+                        cx={cx}
+                        cy={by - 32}
+                        r="8"
+                        fill="#3B82F6"
+                        stroke="white"
+                        stroke-width="2"
+                        class="image-rotate-handle"
+                        style="cursor: grab; pointer-events: auto;"
+                    />
+                </g>
+            {/if}
             
             <!-- Current drawing preview -->
             {#if currentTool === 'line' && currentPath.length === 2}
@@ -1369,31 +2008,91 @@
             <input
                 type="text"
                 bind:value={textInput}
-                on:keydown={handleTextInput}
+                bind:this={textInputEl}
+                on:keydown|stopPropagation={handleTextInput}
+                on:mousedown|stopPropagation
                 class="absolute bg-white border border-gray-300 px-2 py-1 rounded text-black z-20"
-                style="left: {textPosition.x}px; 
+                style="left: {textPosition.x}px;
                        top: {textPosition.y}px;
-                       font-size: {currentStroke * 4}px;"
+                       font-size: {currentStroke * 4}px;
+                       font-family: {currentFontFamily};"
                 placeholder="Type text and press Enter"
             />
         {/if}
 
-        <!-- New Task Inbox Area -->
-        <div 
-            class="absolute border-2 border-dashed border-blue-400 border-opacity-50 rounded-lg bg-blue-400 bg-opacity-10 flex items-center justify-center"
-            style="left: {INBOX_CENTER.x - INBOX_WIDTH/2}px; 
-                   top: {INBOX_CENTER.y - INBOX_HEIGHT/2}px; 
-                   width: {INBOX_WIDTH}px; 
-                   height: {INBOX_HEIGHT}px;"
-        >
-            <div class="text-blue-300 text-opacity-70 text-lg font-medium text-center pointer-events-none select-none">
-                📥 New Tasks<br/>
-                <span class="text-sm opacity-60">Drag to organize</span>
+        <!-- Floating action bar for the currently selected drawing -->
+        {#if canEditCanvas && selectedDrawingIndex !== null && drawings[selectedDrawingIndex]}
+            {@const sel2 = drawings[selectedDrawingIndex]}
+            {@const selBounds = getDrawingBounds(sel2)}
+            {@const barX = selBounds.x}
+            {@const barY = selBounds.y - 76}
+            <div
+                class="canvas-action-bar absolute z-30 flex items-center gap-1 bg-gray-900/90 border border-gray-700 rounded-lg px-2 py-1 shadow-lg"
+                style="left: {barX}px; top: {barY}px;"
+                on:mousedown|stopPropagation
+                role="toolbar"
+                tabindex="-1"
+                aria-label="Canvas selection actions"
+            >
+                {#if sel2.type === 'text'}
+                    <select
+                        class="text-xs bg-gray-800 text-gray-200 border border-gray-700 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400"
+                        value={sel2.fontFamily || 'sans-serif'}
+                        on:change={(e) => setSelectedTextFont((e.currentTarget as HTMLSelectElement).value)}
+                        on:mousedown|stopPropagation
+                        title="Font"
+                    >
+                        {#each FONT_OPTIONS as f}
+                            <option value={f.value} style="font-family: {f.value};">{f.label}</option>
+                        {/each}
+                    </select>
+                {/if}
+                <button
+                    type="button"
+                    class="px-2 py-1 text-xs text-gray-200 hover:text-white hover:bg-gray-700 rounded"
+                    on:click={() => rotateSelectedBy(-90)}
+                    title="Rotate 90° counter-clockwise"
+                >
+                    ↺
+                </button>
+                <button
+                    type="button"
+                    class="px-2 py-1 text-xs text-gray-200 hover:text-white hover:bg-gray-700 rounded"
+                    on:click={() => rotateSelectedBy(90)}
+                    title="Rotate 90° clockwise"
+                >
+                    ↻
+                </button>
+                <button
+                    type="button"
+                    class="px-2 py-1 text-xs text-red-300 hover:text-white hover:bg-red-500/40 rounded"
+                    on:click={deleteSelectedDrawing}
+                    title="Delete (Del)"
+                >
+                    🗑
+                </button>
             </div>
-        </div>
+        {/if}
+
+        <!-- New Task Inbox Area -->
+        {#if !isStandalone}
+            <div
+                class="absolute border-2 border-dashed border-blue-400 border-opacity-50 rounded-lg bg-blue-400 bg-opacity-10 flex items-center justify-center"
+                style="left: {INBOX_CENTER.x - INBOX_WIDTH/2}px;
+                       top: {INBOX_CENTER.y - INBOX_HEIGHT/2}px;
+                       width: {INBOX_WIDTH}px;
+                       height: {INBOX_HEIGHT}px;"
+            >
+                <div class="text-blue-300 text-opacity-70 text-lg font-medium text-center pointer-events-none select-none">
+                    📥 New Tasks<br/>
+                    <span class="text-sm opacity-60">Drag to organize</span>
+                </div>
+            </div>
+        {/if}
 
         
 
+        {#if !isStandalone}
         {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
@@ -1518,9 +2217,11 @@
 
             </div>
         {/each}
+        {/if}
 
     </div>
 
+    {#if !isStandalone}
     <!-- Dependency arrows - outside canvas, using DOM coordinates -->
     <svg 
         class="absolute pointer-events-none inset-0"
@@ -1597,6 +2298,7 @@
             {/each}
         {/key}
     </svg>
+    {/if}
 </div>
 
 <style>

@@ -98,23 +98,65 @@
         showAddCurrencyModal = true;
     }
 
+    // Coerce a raw equation field to a finite number. type="number" inputs
+    // can hand back '', null, or NaN when the user clears them; without
+    // this step the equation round-trips through JSON as null and the value
+    // appears lost on next load.
+    function toNumber(v: unknown): number {
+        const n = typeof v === 'number' ? v : Number(v);
+        return Number.isFinite(n) ? n : 0;
+    }
+
     // Function to save equation changes
     async function saveEquation() {
         try {
             const settings = await holosphere.getAll(holonID, 'settings');
             const currentSettings = settings && settings[0] ? settings[0] : {};
 
+            // Coerce every numeric field before migrating so a blank input
+            // (which the browser hands us as null/NaN) doesn't poison the
+            // saved record.
+            const normalizedCurrencies: Record<string, number> = {};
+            for (const [c, w] of Object.entries(editingEquation.currencies ?? {})) {
+                normalizedCurrencies[c] = toNumber(w);
+            }
+            // Strip any legacy top-level `hours` before normalizing — the
+            // canonical hour weight is at currencies.hour and we don't want
+            // the deprecated field to round-trip back into settings.
+            const { hours: _dropHours, ...editingNoHours } =
+                editingEquation as Equation & { hours?: number };
+            const normalized: Equation = {
+                ...editingNoHours,
+                initiated:      toNumber(editingEquation.initiated),
+                completed:      toNumber(editingEquation.completed),
+                sent:           toNumber(editingEquation.sent),
+                received:       toNumber(editingEquation.received),
+                collaboration:  toNumber(editingEquation.collaboration),
+                wants:          toNumber(editingEquation.wants),
+                offers:         toNumber(editingEquation.offers),
+                participation:  toNumber(editingEquation.participation),
+                coParticipants: toNumber(editingEquation.coParticipants),
+                activity:       toNumber(editingEquation.activity),
+                groupSize:      toNumber(editingEquation.groupSize),
+                variance:       toNumber(editingEquation.variance),
+                currencies:     normalizedCurrencies,
+            };
+
             // Always save the migrated shape (no top-level `hours` field).
-            const cleanEquation = migrateEquation(editingEquation);
+            // Stamp `id: holonID` so this record collides with the bot's
+            // settings (which reads via db.get(holonId,'settings',holonId)) —
+            // otherwise the two UIs can diverge into separate settings docs.
+            const cleanEquation = migrateEquation(normalized);
             const updatedSettings = {
                 ...currentSettings,
+                id: holonID,
                 valueEquation: cleanEquation
             };
 
             await holosphere.put(holonID, 'settings', updatedSettings);
             equation = cleanEquation;
             isEditingEquation = false;
-            console.log('Value equation updated successfully');
+            console.log('[Status] Value equation saved', cleanEquation);
         } catch (error) {
             console.error('Error saving value equation:', error);
         }
@@ -126,20 +168,20 @@
         isEditingEquation = false;
     }
 
-    // Function to adjust value with arrows
+    // Function to adjust value with arrows. Negative weights are allowed
+    // (e.g. to penalize a metric); the equation just sums weight × count.
     function adjustValue(metric: keyof Equation, delta: number) {
-        const current = (editingEquation as any)[metric] || 0;
-        const newValue = Math.max(0, current + delta);
-        editingEquation = { ...editingEquation, [metric]: newValue };
+        const current = Number((editingEquation as any)[metric]) || 0;
+        editingEquation = { ...editingEquation, [metric]: current + delta };
     }
 
-    // Function to adjust currency weight
+    // Function to adjust currency weight. Negative weights are allowed for
+    // the same reason as the built-in metrics.
     function adjustCurrencyWeight(currency: string, delta: number) {
-        const currentWeight = editingEquation.currencies[currency] || 0;
-        const newWeight = Math.max(0, currentWeight + delta);
+        const currentWeight = Number(editingEquation.currencies[currency]) || 0;
         editingEquation = {
             ...editingEquation,
-            currencies: { ...editingEquation.currencies, [currency]: newWeight }
+            currencies: { ...editingEquation.currencies, [currency]: currentWeight + delta }
         };
     }
 
@@ -170,6 +212,7 @@
 
             const updatedSettings = {
                 ...currentSettings,
+                id: holonID,
                 currencies: uniqueCurrencies
             };
 
@@ -228,6 +271,9 @@
                 expenseStore = {};
                 availableCurrencies = [];
                 contractShares = {};
+                aggregatesByUser = {};
+                aggregatesLoaded = false;
+                reaSubscribedFor = null;
                 loadEquation();
                 loadContractShares();
                 fetchInitialUsersAndSubscribe();
@@ -261,6 +307,9 @@
                 expenseStore = {};
                 availableCurrencies = [];
                 contractShares = {};
+                aggregatesByUser = {};
+                aggregatesLoaded = false;
+                reaSubscribedFor = null;
                 loadEquation();
                 loadContractShares();
                 fetchInitialUsersAndSubscribe();
@@ -317,6 +366,7 @@
                 if (typeof (stored as any).hours === 'number') {
                     holosphere.put(holonID, 'settings', {
                         ...(settings[0] || {}),
+                        id: holonID,
                         valueEquation: equation
                     }).catch((e: any) => console.warn('[Status] Could not persist migrated equation:', e?.message));
                 }
@@ -598,12 +648,14 @@
     }
 
     // Per-user REA aggregates fetched in parallel.
+    let aggregatesLoaded = false;
     async function loadAggregatesForUsers() {
         if (!holosphere || !holonID) return;
         const aggregator = new REAAggregator(getEventStore(holosphere));
         const entries = Object.entries(store);
         if (entries.length === 0) {
             aggregatesByUser = {};
+            aggregatesLoaded = true;
             return;
         }
         const next: Record<string, UserAggregates> = {};
@@ -617,9 +669,33 @@
             }
         }));
         aggregatesByUser = next;
+        aggregatesLoaded = true;
     }
 
     $: if (store && holonID) loadAggregatesForUsers();
+
+    // Live refresh: re-fetch aggregates whenever a rea_events write lands.
+    // Debounced because a single task completion writes several events in
+    // quick succession (initiator + N participants + appreciation pairs).
+    let reaRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let reaSubscribedFor: string | null = null;
+    function subscribeToReaEvents() {
+        if (!holosphere || !holonID) return;
+        if (reaSubscribedFor === holonID) return; // already wired for this holon
+        reaSubscribedFor = holonID;
+        try {
+            holosphere.subscribe(holonID, 'rea_events', () => {
+                if (reaRefreshTimer) clearTimeout(reaRefreshTimer);
+                reaRefreshTimer = setTimeout(() => {
+                    loadAggregatesForUsers();
+                }, 250);
+            });
+        } catch (e: any) {
+            console.warn('[Status] rea_events subscription failed:', e?.message);
+        }
+    }
+
+    $: if (holosphere && holonID) subscribeToReaEvents();
 
     type BreakdownLine = { label: string; count: number; weight: number; points: number };
 
@@ -638,14 +714,24 @@
         const receivedCount = agg.received;
         const collaborationCount = agg.collaboration;
 
+        // Use the live edit buffer while the user is editing the equation
+        // so the table, pie chart and breakdown popover all preview the
+        // weights they're about to save. Cancel reverts; Save persists.
+        const eq = isEditingEquation ? editingEquation : equation;
+
         const flat: Array<[string, number, number]> = [
-            ['Tasks initiated', initiatedCount, equation.initiated],
-            ['Tasks completed', completedCount, equation.completed],
-            ['Appreciations sent', sentCount, equation.sent],
-            ['Appreciations received', receivedCount, equation.received],
-            ['Collaboration events', collaborationCount, equation.collaboration],
-            ['Wants', wantsCount, equation.wants],
-            ['Offers', offersCount, equation.offers],
+            ['Tasks initiated', initiatedCount, eq.initiated],
+            ['Tasks completed', completedCount, eq.completed],
+            ['Appreciations sent', sentCount, eq.sent],
+            ['Appreciations received', receivedCount, eq.received],
+            ['Collaboration events', collaborationCount, eq.collaboration],
+            ['Wants', wantsCount, eq.wants],
+            ['Offers', offersCount, eq.offers],
+            ['Participation (quests)', agg.participation ?? 0, eq.participation ?? 0],
+            ['Co-participants', agg.coParticipants ?? 0, eq.coParticipants ?? 0],
+            ['Activity (events)', agg.activity ?? 0, eq.activity ?? 0],
+            ['Group size (avg)', agg.groupSize ?? 0, eq.groupSize ?? 0],
+            ['Group-size variance', agg.variance ?? 0, eq.variance ?? 0],
         ];
         for (const [label, count, weight] of flat) {
             if (!weight || !count) continue;
@@ -653,7 +739,7 @@
         }
 
         for (const currency of availableCurrencies) {
-            const weight = equation.currencies?.[currency] || 0;
+            const weight = eq.currencies?.[currency] || 0;
             if (!weight) continue;
             const balance = getCurrencyBalance(userId, currency);
             if (!balance) continue;
@@ -677,11 +763,26 @@
     // downstream derivations (sort, totals, pie chart, table rows, footer)
     // read from this map instead of re-invoking calculateScore — which used
     // to walk the breakdown 5–6 times per user per render.
-    $: scoreByKey = (() => {
-        equation; availableCurrencies; expenseStore; store;
-        const map: Record<string, number> = {};
+    // aggregatesByUser is in the dep list so loading REA aggregates after
+    // initial render triggers a recompute (otherwise scores stay 0 even
+    // after the REA query returns).
+    // Compute breakdown + total per user in one reactive pass. The popover
+    // reads breakdownByKey directly so it stays in sync with the live edit
+    // buffer without needing its own subscription wiring.
+    $: breakdownByKey = (() => {
+        equation; editingEquation; isEditingEquation;
+        availableCurrencies; expenseStore; store; aggregatesByUser;
+        const map: Record<string, { lines: BreakdownLine[]; total: number }> = {};
         for (const [key, user] of Object.entries(store)) {
-            map[key] = calculateScore(user, key);
+            map[key] = getBreakdown(user, key);
+        }
+        return map;
+    })();
+    $: scoreByKey = (() => {
+        breakdownByKey;
+        const map: Record<string, number> = {};
+        for (const [key, bd] of Object.entries(breakdownByKey)) {
+            map[key] = bd.total;
         }
         return map;
     })();
@@ -828,15 +929,28 @@
                 </div>
 
                 <!-- 3D Pie Chart Section -->
-                {#if pieChartData.length > 0}
-                    <div class="bg-gray-700/30 rounded-2xl p-6 mb-8">
-                        <div class="mb-4">
-                            <h3 class="text-xl font-bold text-white">Share Distribution</h3>
-                            <p class="text-gray-400 text-sm">Tap or hover over slices to see detailed breakdowns</p>
-                        </div>
-                        <PieChart3D users={pieChartData} />
+                <div class="bg-gray-700/30 rounded-2xl p-6 mb-8">
+                    <div class="mb-4">
+                        <h3 class="text-xl font-bold text-white">Share Distribution</h3>
+                        <p class="text-gray-400 text-sm">Tap or hover over slices to see detailed breakdowns</p>
                     </div>
-                {/if}
+                    {#if pieChartData.length > 0}
+                        <PieChart3D users={pieChartData} />
+                    {:else if !aggregatesLoaded}
+                        <div class="flex items-center justify-center py-8 text-gray-400 text-sm">
+                            <svg class="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            Loading contributions…
+                        </div>
+                    {:else}
+                        <div class="text-center py-8 text-gray-400 text-sm">
+                            <p class="mb-1">No scored activity yet.</p>
+                            <p class="text-gray-500 text-xs">Complete a task or change the value equation weights below to see the share distribution.</p>
+                        </div>
+                    {/if}
+                </div>
 
                 <!-- Rankings Table -->
                 <div class="bg-gray-700/30 rounded-2xl overflow-hidden">
@@ -914,12 +1028,12 @@
                                         </td>
                                         <td class="p-2 text-center">
                                             <span class="text-xs text-blue-300">
-                                                {user.sent || 0}
+                                                {userAggregates(user, userId).sent}
                                             </span>
                                         </td>
                                         <td class="p-2 text-center">
                                             <span class="text-xs text-purple-300">
-                                                {user.received || 0}
+                                                {userAggregates(user, userId).received}
                                             </span>
                                         </td>
                                         {#each availableCurrencies as currency}
@@ -1038,9 +1152,18 @@
                                 </button>
                             </div>
                         {:else}
-                            <button 
+                            <button
                                 onclick={() => {
-                                    editingEquation = { ...equation };
+                                    // Deep-copy currencies and seed every
+                                    // availableCurrency so bind:value can
+                                    // write to keys that didn't exist on
+                                    // the loaded equation (currency added
+                                    // after equation last saved).
+                                    const seeded: Record<string, number> = { ...equation.currencies };
+                                    for (const c of availableCurrencies) {
+                                        if (!(c in seeded)) seeded[c] = 0;
+                                    }
+                                    editingEquation = { ...equation, currencies: seeded };
                                     isEditingEquation = true;
                                 }}
                                 class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors text-sm font-medium"
@@ -1055,10 +1178,10 @@
 
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <!-- Tasks Initiated -->
-                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.initiated > 0 ? '' : 'opacity-50'}">
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.initiated !== 0 ? '' : 'opacity-50'}">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-medium {equation.initiated > 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Initiated</span>
-                                <span class="text-xs {equation.initiated > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                <span class="text-sm font-medium {equation.initiated !== 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Initiated</span>
+                                <span class="text-xs {equation.initiated !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                             </div>
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
@@ -1074,7 +1197,6 @@
                                     <input 
                                         type="number" 
                                         bind:value={editingEquation.initiated}
-                                        min="0"
                                         step="0.1"
                                         class="w-16 text-center bg-gray-700 text-blue-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-blue-400 focus:outline-none"
                                     />
@@ -1089,19 +1211,19 @@
                                     </button>
                                 </div>
                             {:else}
-                                <div class="text-2xl font-bold {equation.initiated > 0 ? 'text-blue-400' : 'text-gray-500'}">{equation.initiated}</div>
+                                <div class="text-2xl font-bold {equation.initiated !== 0 ? 'text-blue-400' : 'text-gray-500'}">{equation.initiated}</div>
                             {/if}
-                            <div class="text-xs {equation.initiated > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per initiated task</div>
+                            <div class="text-xs {equation.initiated !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per initiated task</div>
                             {#if equation.initiated === 0}
                                 <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                             {/if}
                         </div>
 
                         <!-- Tasks Completed -->
-                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.completed > 0 ? '' : 'opacity-50'}">
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.completed !== 0 ? '' : 'opacity-50'}">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-medium {equation.completed > 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Completed</span>
-                                <span class="text-xs {equation.completed > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                <span class="text-sm font-medium {equation.completed !== 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Completed</span>
+                                <span class="text-xs {equation.completed !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                             </div>
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
@@ -1117,7 +1239,6 @@
                                     <input 
                                         type="number" 
                                         bind:value={editingEquation.completed}
-                                        min="0"
                                         step="0.1"
                                         class="w-16 text-center bg-gray-700 text-green-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-green-400 focus:outline-none"
                                     />
@@ -1132,19 +1253,19 @@
                                     </button>
                                 </div>
                             {:else}
-                                <div class="text-2xl font-bold {equation.completed > 0 ? 'text-green-400' : 'text-gray-500'}">{equation.completed}</div>
+                                <div class="text-2xl font-bold {equation.completed !== 0 ? 'text-green-400' : 'text-gray-500'}">{equation.completed}</div>
                             {/if}
-                            <div class="text-xs {equation.completed > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per completed task</div>
+                            <div class="text-xs {equation.completed !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per completed task</div>
                             {#if equation.completed === 0}
                                 <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                             {/if}
                         </div>
 
                         <!-- Sent -->
-                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.sent > 0 ? '' : 'opacity-50'}">
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.sent !== 0 ? '' : 'opacity-50'}">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-medium {equation.sent > 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Sent</span>
-                                <span class="text-xs {equation.sent > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                <span class="text-sm font-medium {equation.sent !== 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Sent</span>
+                                <span class="text-xs {equation.sent !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                             </div>
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
@@ -1160,7 +1281,6 @@
                                     <input 
                                         type="number" 
                                         bind:value={editingEquation.sent}
-                                        min="0"
                                         step="0.1"
                                         class="w-16 text-center bg-gray-700 text-purple-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-purple-400 focus:outline-none"
                                     />
@@ -1175,19 +1295,19 @@
                                     </button>
                                 </div>
                             {:else}
-                                <div class="text-2xl font-bold {equation.sent > 0 ? 'text-purple-400' : 'text-gray-500'}">{equation.sent}</div>
+                                <div class="text-2xl font-bold {equation.sent !== 0 ? 'text-purple-400' : 'text-gray-500'}">{equation.sent}</div>
                             {/if}
-                            <div class="text-xs {equation.sent > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation sent</div>
+                            <div class="text-xs {equation.sent !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation sent</div>
                             {#if equation.sent === 0}
                                 <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                             {/if}
                         </div>
 
                         <!-- Received -->
-                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.received > 0 ? '' : 'opacity-50'}">
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.received !== 0 ? '' : 'opacity-50'}">
                             <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-medium {equation.received > 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Received</span>
-                                <span class="text-xs {equation.received > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                <span class="text-sm font-medium {equation.received !== 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Received</span>
+                                <span class="text-xs {equation.received !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                             </div>
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
@@ -1203,7 +1323,6 @@
                                     <input 
                                         type="number" 
                                         bind:value={editingEquation.received}
-                                        min="0"
                                         step="0.1"
                                         class="w-16 text-center bg-gray-700 text-orange-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-orange-400 focus:outline-none"
                                     />
@@ -1218,9 +1337,9 @@
                                     </button>
                                 </div>
                             {:else}
-                                <div class="text-2xl font-bold {equation.received > 0 ? 'text-orange-400' : 'text-gray-500'}">{equation.received}</div>
+                                <div class="text-2xl font-bold {equation.received !== 0 ? 'text-orange-400' : 'text-gray-500'}">{equation.received}</div>
                             {/if}
-                            <div class="text-xs {equation.received > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation received</div>
+                            <div class="text-xs {equation.received !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation received</div>
                             {#if equation.received === 0}
                                 <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                             {/if}
@@ -1245,10 +1364,10 @@
                         {#if availableCurrencies.length > 0}
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {#each availableCurrencies as currency}
-                                    <div class="bg-gray-600/50 rounded-xl p-4 {equation.currencies[currency] > 0 ? '' : 'opacity-50'}">
+                                    <div class="bg-gray-600/50 rounded-xl p-4 {equation.currencies[currency] !== 0 ? '' : 'opacity-50'}">
                                         <div class="flex items-center justify-between mb-2">
-                                            <span class="text-sm font-medium {equation.currencies[currency] > 0 ? 'text-gray-300' : 'text-gray-400'}">{currency.toUpperCase()}</span>
-                                            <span class="text-xs {equation.currencies[currency] > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                            <span class="text-sm font-medium {equation.currencies[currency] !== 0 ? 'text-gray-300' : 'text-gray-400'}">{currency.toUpperCase()}</span>
+                                            <span class="text-xs {equation.currencies[currency] !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                                         </div>
                                         {#if isEditingEquation}
                                             <div class="flex items-center gap-2">
@@ -1264,7 +1383,6 @@
                                                 <input 
                                                     type="number" 
                                                     bind:value={editingEquation.currencies[currency]}
-                                                    min="0"
                                                     step="0.1"
                                                     class="w-16 text-center bg-gray-700 text-emerald-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-emerald-400 focus:outline-none"
                                                 />
@@ -1279,9 +1397,9 @@
                                                 </button>
                                             </div>
                                         {:else}
-                                            <div class="text-2xl font-bold {equation.currencies[currency] > 0 ? 'text-emerald-400' : 'text-gray-500'}">{equation.currencies[currency] || 0}</div>
+                                            <div class="text-2xl font-bold {equation.currencies[currency] !== 0 ? 'text-emerald-400' : 'text-gray-500'}">{equation.currencies[currency] || 0}</div>
                                         {/if}
-                                        <div class="text-xs {equation.currencies[currency] > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per {currency} balance</div>
+                                        <div class="text-xs {equation.currencies[currency] !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per {currency} balance</div>
                                         {#if !equation.currencies[currency] || equation.currencies[currency] === 0}
                                             <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                                         {/if}
@@ -1301,10 +1419,10 @@
                         <h4 class="text-sm font-medium text-gray-400 mb-3">Additional Metrics</h4>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <!-- Collaboration -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.collaboration > 0 ? '' : 'opacity-50'}">
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.collaboration !== 0 ? '' : 'opacity-50'}">
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.collaboration > 0 ? 'text-gray-300' : 'text-gray-400'}">Collaboration</span>
-                                    <span class="text-xs {equation.collaboration > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                    <span class="text-sm font-medium {equation.collaboration !== 0 ? 'text-gray-300' : 'text-gray-400'}">Collaboration</span>
+                                    <span class="text-xs {equation.collaboration !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                                 </div>
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
@@ -1320,7 +1438,6 @@
                                         <input 
                                             type="number" 
                                             bind:value={editingEquation.collaboration}
-                                            min="0"
                                             step="0.1"
                                             class="w-16 text-center bg-gray-700 text-teal-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-teal-400 focus:outline-none"
                                         />
@@ -1335,19 +1452,19 @@
                                         </button>
                                     </div>
                                 {:else}
-                                    <div class="text-2xl font-bold {equation.collaboration > 0 ? 'text-teal-400' : 'text-gray-500'}">{equation.collaboration}</div>
+                                    <div class="text-2xl font-bold {equation.collaboration !== 0 ? 'text-teal-400' : 'text-gray-500'}">{equation.collaboration}</div>
                                 {/if}
-                                <div class="text-xs {equation.collaboration > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per collaboration</div>
+                                <div class="text-xs {equation.collaboration !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per collaboration</div>
                                 {#if equation.collaboration === 0}
                                     <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                                 {/if}
                             </div>
 
                             <!-- Wants -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.wants > 0 ? '' : 'opacity-50'}">
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.wants !== 0 ? '' : 'opacity-50'}">
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.wants > 0 ? 'text-gray-300' : 'text-gray-400'}">Wants</span>
-                                    <span class="text-xs {equation.wants > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                    <span class="text-sm font-medium {equation.wants !== 0 ? 'text-gray-300' : 'text-gray-400'}">Wants</span>
+                                    <span class="text-xs {equation.wants !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                                 </div>
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
@@ -1363,7 +1480,6 @@
                                         <input 
                                             type="number" 
                                             bind:value={editingEquation.wants}
-                                            min="0"
                                             step="0.1"
                                             class="w-16 text-center bg-gray-700 text-pink-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-pink-400 focus:outline-none"
                                         />
@@ -1378,19 +1494,19 @@
                                         </button>
                                     </div>
                                 {:else}
-                                    <div class="text-2xl font-bold {equation.wants > 0 ? 'text-pink-400' : 'text-gray-500'}">{equation.wants}</div>
+                                    <div class="text-2xl font-bold {equation.wants !== 0 ? 'text-pink-400' : 'text-gray-500'}">{equation.wants}</div>
                                 {/if}
-                                <div class="text-xs {equation.wants > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per want</div>
+                                <div class="text-xs {equation.wants !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per want</div>
                                 {#if equation.wants === 0}
                                     <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                                 {/if}
                             </div>
 
                             <!-- Offers -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.offers > 0 ? '' : 'opacity-50'}">
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.offers !== 0 ? '' : 'opacity-50'}">
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.offers > 0 ? 'text-gray-300' : 'text-gray-400'}">Offers</span>
-                                    <span class="text-xs {equation.offers > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                    <span class="text-sm font-medium {equation.offers !== 0 ? 'text-gray-300' : 'text-gray-400'}">Offers</span>
+                                    <span class="text-xs {equation.offers !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
                                 </div>
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
@@ -1406,7 +1522,6 @@
                                         <input 
                                             type="number" 
                                             bind:value={editingEquation.offers}
-                                            min="0"
                                             step="0.1"
                                             class="w-16 text-center bg-gray-700 text-indigo-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-indigo-400 focus:outline-none"
                                         />
@@ -1421,13 +1536,72 @@
                                     </button>
                                     </div>
                                 {:else}
-                                    <div class="text-2xl font-bold {equation.offers > 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>
+                                    <div class="text-2xl font-bold {equation.offers !== 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>
                                 {/if}
-                                <div class="text-xs {equation.offers > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per offer</div>
+                                <div class="text-xs {equation.offers !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per offer</div>
                                 {#if equation.offers === 0}
                                     <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                                 {/if}
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Collaboration Signals (REA-derived) -->
+                    <div class="mt-6">
+                        <h4 class="text-sm font-medium text-gray-400 mb-1">Collaboration Signals</h4>
+                        <p class="text-xs text-gray-500 mb-3">Derived from REA event groupings. Reward teamwork, network size, activity volume, and team-size diversity.</p>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <!--
+                                Tailwind's JIT scans for literal class names; dynamic
+                                template-string classes (e.g. text-${color}-400) don't
+                                survive, so each row spells its colour classes out.
+                            -->
+                            {#each [
+                                { key: 'participation',  label: 'Participation',   textOn: 'text-cyan-400',    focus: 'focus:border-cyan-400',    desc: 'Per distinct quest touched' },
+                                { key: 'coParticipants', label: 'Co-Participants', textOn: 'text-fuchsia-400', focus: 'focus:border-fuchsia-400', desc: 'Per distinct collaborator' },
+                                { key: 'activity',       label: 'Activity',        textOn: 'text-amber-400',   focus: 'focus:border-amber-400',   desc: 'Per recorded event' },
+                                { key: 'groupSize',      label: 'Group Size',      textOn: 'text-lime-400',    focus: 'focus:border-lime-400',    desc: 'Points × mean group size' },
+                                { key: 'variance',       label: 'Variance',        textOn: 'text-violet-400',  focus: 'focus:border-violet-400',  desc: 'Points × group-size variance' },
+                            ] as field}
+                                {@const weight = (equation as any)[field.key] ?? 0}
+                                {@const active = weight !== 0}
+                                <div class="bg-gray-600/50 rounded-xl p-4 {active ? '' : 'opacity-50'}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-medium {active ? 'text-gray-300' : 'text-gray-400'}">{field.label}</span>
+                                        <span class="text-xs {active ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                    </div>
+                                    {#if isEditingEquation}
+                                        <div class="flex items-center gap-2">
+                                            <button
+                                                onclick={() => adjustValue(field.key as keyof Equation, -1)}
+                                                class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                aria-label={`Decrease ${field.label} weight`}
+                                            >
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                                            </button>
+                                            <input
+                                                type="number"
+                                                bind:value={(editingEquation as any)[field.key]}
+                                                step="0.1"
+                                                class="w-16 text-center bg-gray-700 {field.textOn} text-xl font-bold rounded-lg border border-gray-500 {field.focus} focus:outline-none"
+                                            />
+                                            <button
+                                                onclick={() => adjustValue(field.key as keyof Equation, 1)}
+                                                class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                aria-label={`Increase ${field.label} weight`}
+                                            >
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                            </button>
+                                        </div>
+                                    {:else}
+                                        <div class="text-2xl font-bold {active ? field.textOn : 'text-gray-500'}">{weight}</div>
+                                    {/if}
+                                    <div class="text-xs {active ? 'text-gray-400' : 'text-gray-500'} mt-1">{field.desc}</div>
+                                    {#if weight === 0}
+                                        <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                    {/if}
+                                </div>
+                            {/each}
                         </div>
                     </div>
 
@@ -1531,7 +1705,7 @@
 <!-- Score breakdown popover — explains exactly how a user's score is built. -->
 {#if breakdownUserId && store[breakdownUserId]}
     {@const u = store[breakdownUserId]}
-    {@const bd = getBreakdown(u, breakdownUserId)}
+    {@const bd = breakdownByKey[breakdownUserId] ?? { lines: [], total: 0 }}
     <div
         class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
         onclick={(e) => { if (e.target === e.currentTarget) breakdownUserId = null; }}
