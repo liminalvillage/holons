@@ -32,6 +32,12 @@ export interface ScoreBreakdown {
   collaboration: number;
   wants: number;
   offers: number;
+  /** Collaboration-signal contributions: aggregate × weight. */
+  participation: number;
+  coParticipants: number;
+  activity: number;
+  groupSize: number;
+  variance: number;
   /** Per-currency contribution: balance × weight. */
   currencies: Record<string, number>;
   total: number;
@@ -95,6 +101,11 @@ export function calculateUserScore(
   if (equation.collaboration) score += aggregates.collaboration * equation.collaboration;
   if (equation.wants) score += aggregates.wants * equation.wants;
   if (equation.offers) score += aggregates.offers * equation.offers;
+  if (equation.participation)   score += (aggregates.participation   ?? 0) * equation.participation;
+  if (equation.coParticipants)  score += (aggregates.coParticipants  ?? 0) * equation.coParticipants;
+  if (equation.activity)        score += (aggregates.activity        ?? 0) * equation.activity;
+  if (equation.groupSize)       score += (aggregates.groupSize       ?? 0) * equation.groupSize;
+  if (equation.variance)        score += (aggregates.variance        ?? 0) * equation.variance;
 
   const hourCurrencyWeight = equation.currencies?.hour ?? 0;
   // Legacy path: if no currencies.hour weight is set, score hours via
@@ -159,6 +170,11 @@ export function getScoreBreakdown(
     collaboration: aggregates.collaboration * (equation.collaboration ?? 0),
     wants: aggregates.wants * (equation.wants ?? 0),
     offers: aggregates.offers * (equation.offers ?? 0),
+    participation:  (aggregates.participation  ?? 0) * (equation.participation  ?? 0),
+    coParticipants: (aggregates.coParticipants ?? 0) * (equation.coParticipants ?? 0),
+    activity:       (aggregates.activity       ?? 0) * (equation.activity       ?? 0),
+    groupSize:      (aggregates.groupSize      ?? 0) * (equation.groupSize      ?? 0),
+    variance:       (aggregates.variance       ?? 0) * (equation.variance       ?? 0),
     currencies,
     total: 0,
   };
@@ -172,6 +188,11 @@ export function getScoreBreakdown(
     breakdown.collaboration +
     breakdown.wants +
     breakdown.offers +
+    breakdown.participation +
+    breakdown.coParticipants +
+    breakdown.activity +
+    breakdown.groupSize +
+    breakdown.variance +
     Object.values(currencies).reduce((s, v) => s + v, 0);
 
   return breakdown;

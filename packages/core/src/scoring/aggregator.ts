@@ -31,6 +31,34 @@ export interface UserAggregates {
   wants: number;
   /** Count of offers declared. */
   offers: number;
+  /**
+   * Count of distinct quests this user has any event in. Quest is identified
+   * by `context.questId`; events with no quest context don't contribute.
+   */
+  participation: number;
+  /**
+   * Count of distinct other agents the user has appeared alongside in any
+   * quest's event stream (i.e. the size of their collaboration network).
+   * Holon-typed and 'external' agents are excluded — only real users count.
+   */
+  coParticipants: number;
+  /**
+   * Total event count where the user is provider or receiver, regardless
+   * of event type. Approximates raw activity volume.
+   */
+  activity: number;
+  /**
+   * Mean group size across quests the user participated in. Group size for
+   * a quest = number of distinct real-agent participants in its event
+   * stream. Solo quests contribute 1; pairs contribute 2; etc.
+   */
+  groupSize: number;
+  /**
+   * Population variance of group size across the user's quests. Higher =
+   * the user works in differently-sized teams; zero = always the same
+   * size (e.g. always solo, or always pairs).
+   */
+  variance: number;
 }
 
 /** All-zero UserAggregates — useful default while REA queries are in flight. */
@@ -43,6 +71,11 @@ export const ZERO_USER_AGGREGATES: UserAggregates = {
   collaboration: 0,
   wants: 0,
   offers: 0,
+  participation: 0,
+  coParticipants: 0,
+  activity: 0,
+  groupSize: 0,
+  variance: 0,
 };
 
 /**
@@ -69,6 +102,18 @@ export function toAggregates(userData: any): UserAggregates {
     offers: Array.isArray(userData.offers)
       ? userData.offers.length
       : userData.offers || 0,
+    // Collaboration aggregates: legacy flat user records don't carry these,
+    // so default to 0. The REAAggregator path produces them from events.
+    participation:
+      typeof userData.participation === 'number' ? userData.participation : 0,
+    coParticipants:
+      typeof userData.coParticipants === 'number' ? userData.coParticipants : 0,
+    activity:
+      typeof userData.activity === 'number' ? userData.activity : 0,
+    groupSize:
+      typeof userData.groupSize === 'number' ? userData.groupSize : 0,
+    variance:
+      typeof userData.variance === 'number' ? userData.variance : 0,
   };
 }
 
@@ -96,10 +141,53 @@ export class REAAggregator {
 
   /**
    * Get a user's aggregate statistics for scoring.
+   *
+   * The per-action counts are filtered from the user-scoped event stream;
+   * the collaboration signals (`participation`, `coParticipants`,
+   * `groupSize`, `variance`) require the holon-wide stream so we can see
+   * who else appears in the same quest as the user.
    */
   async getUserAggregates(holonId: string, userId: string): Promise<UserAggregates> {
     const events = await this.eventStore.query(holonId, { agentId: userId });
     const userIdStr = String(userId);
+
+    // Group every quest's events by questId so we can see the full
+    // collaborator set per quest. Holon-typed and 'external' agents are
+    // not real participants — exclude them to keep the network metric
+    // meaningful.
+    const allEvents = await this.eventStore.query(holonId, {});
+    const questParticipants = new Map<string, Set<string>>();
+    for (const e of allEvents) {
+      const qid = e.context?.questId;
+      if (qid == null) continue;
+      const key = String(qid);
+      const set = questParticipants.get(key) ?? new Set<string>();
+      const addAgent = (a: any) => {
+        if (!a || a.id == null) return;
+        if (a.type === 'holon' || a.type === 'external') return;
+        set.add(String(a.id));
+      };
+      addAgent(e.provider);
+      addAgent(e.receiver);
+      questParticipants.set(key, set);
+    }
+    const userQuestSets = Array.from(questParticipants.values()).filter((s) =>
+      s.has(userIdStr),
+    );
+    const participation = userQuestSets.length;
+    const coSet = new Set<string>();
+    const sizes: number[] = [];
+    for (const set of userQuestSets) {
+      for (const id of set) if (id !== userIdStr) coSet.add(id);
+      sizes.push(set.size);
+    }
+    const coParticipants = coSet.size;
+    const mean = sizes.length
+      ? sizes.reduce((a, b) => a + b, 0) / sizes.length
+      : 0;
+    const variance = sizes.length
+      ? sizes.reduce((a, s) => a + (s - mean) * (s - mean), 0) / sizes.length
+      : 0;
 
     return {
       initiated: events.filter(
@@ -136,6 +224,12 @@ export class REAAggregator {
       offers: events.filter(
         (e) => e.eventType === 'offer:declared' && String(e.provider?.id) === userIdStr,
       ).length,
+
+      participation,
+      coParticipants,
+      activity: events.length,
+      groupSize: mean,
+      variance,
     };
   }
 

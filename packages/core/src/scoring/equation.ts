@@ -11,37 +11,60 @@ export interface ScoreEquation {
   sent: number;
   received: number;
   /**
-   * @deprecated Top-level hours weight; new code reads
-   * `currencies.hour` instead. `migrateEquation()` folds this into
-   * `currencies.hour` on load. Kept readable for unmigrated callers.
+   * @deprecated Read-only fallback for unmigrated holons. The canonical
+   * hour weight lives at `currencies.hour`. `migrateEquation()` folds any
+   * top-level `hours` into `currencies.hour` and never emits it back, so
+   * fresh saves don't carry this field at all. Scoring code keeps the
+   * fallback so already-saved equations from older clients still compute.
    */
-  hours: number;
+  hours?: number;
   collaboration: number;
   wants: number;
   offers: number;
+  /**
+   * Collaboration signals (REA-derived):
+   *  - participation: # distinct quests touched
+   *  - coParticipants: # distinct other agents in those quests
+   *  - activity: total event count (provider or receiver)
+   *  - groupSize: mean group size across the user's quests
+   *  - variance: variance of group size across the user's quests
+   *
+   * All optional — equations that predate the addition score them as 0.
+   */
+  participation?: number;
+  coParticipants?: number;
+  activity?: number;
+  groupSize?: number;
+  variance?: number;
   /** Per-currency weights (currency code -> weight). */
   currencies: Record<string, number>;
 }
 
 /**
  * Default equation weights — must match across all UIs (web, telegram, text, ai).
- * `currencies.hour: 1` mirrors the legacy `hours: 1` so existing time-tracking
- * data scores identically whether read via `aggregates.hours * equation.hours`
- * or via `currencyBalances.hour * equation.currencies.hour`.
+ * The hour weight lives at `currencies.hour`; there is no top-level `hours`
+ * field on freshly-created equations.
  */
 export const DEFAULT_EQUATION: ScoreEquation = {
   initiated: 1,
   completed: 2, // Completing is worth 2x more than initiating
   sent: 1,
   received: 1,
-  hours: 1,
   collaboration: 1,
   wants: 1,
   offers: 1,
+  // Collaboration signals default to 0 so a fresh holon's scores match the
+  // pre-feature behaviour exactly. Holons that want to reward teamwork
+  // raise these via the equation editor.
+  participation: 0,
+  coParticipants: 0,
+  activity: 0,
+  groupSize: 0,
+  variance: 0,
   currencies: { hour: 1 },
 };
 
-const BUILT_IN_EQUATION_KEYS = new Set<keyof ScoreEquation>([
+const BUILT_IN_EQUATION_KEYS = new Set<string>([
   'initiated',
   'completed',
   'sent',
@@ -50,6 +73,11 @@ const BUILT_IN_EQUATION_KEYS = new Set<keyof ScoreEquation>([
   'collaboration',
   'wants',
   'offers',
+  'participation',
+  'coParticipants',
+  'activity',
+  'groupSize',
+  'variance',
   'currencies',
 ]);
 
@@ -63,9 +91,10 @@ const BUILT_IN_EQUATION_KEYS = new Set<keyof ScoreEquation>([
  * top-level numeric that isn't a known built-in equation field is treated
  * as a currency weight.
  *
- * After migration the equation still carries `hours` (set to the same value
- * as `currencies.hour`) so consumers that haven't been updated yet keep
- * computing the same score. New code should read `currencies.hour`.
+ * The output never contains a top-level `hours` field: the canonical
+ * hour weight lives at `currencies.hour`. Legacy `hours` on the input is
+ * folded into `currencies.hour` (when an explicit currencies entry isn't
+ * already there) and otherwise discarded.
  */
 export function migrateEquation(raw: any): ScoreEquation {
   const rawObj = raw ?? {};
@@ -85,7 +114,7 @@ export function migrateEquation(raw: any): ScoreEquation {
   // An explicit currencies entry wins over the legacy flat key.
   const cleanRawObj: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rawObj)) {
-    if (BUILT_IN_EQUATION_KEYS.has(key as keyof ScoreEquation)) {
+    if (BUILT_IN_EQUATION_KEYS.has(key)) {
       cleanRawObj[key] = value;
       continue;
     }
@@ -94,8 +123,8 @@ export function migrateEquation(raw: any): ScoreEquation {
     }
   }
 
-  if (!(currencies.hour > 0)) {
-    if (legacyHours !== null && legacyHours > 0) {
+  if (currencies.hour === undefined) {
+    if (legacyHours !== null) {
       currencies.hour = legacyHours;
     } else if (rawCurrencies === null) {
       // No raw currencies, no legacy hours — apply the default.
@@ -105,14 +134,24 @@ export function migrateEquation(raw: any): ScoreEquation {
     // currencies map is a valid "disable hours" signal.
   }
 
+  // Strip the legacy top-level `hours` from the output. The canonical
+  // hour weight is `currencies.hour`. Leaving it would let stale data
+  // round-trip back into settings on save.
+  delete (cleanRawObj as Record<string, unknown>).hours;
+
   return {
-    ...DEFAULT_EQUATION,
+    ...DEFAULT_EQUATION_NO_HOURS,
     ...cleanRawObj,
     currencies,
-    // Mirror currencies.hour back so legacy `equation.hours` readers stay correct.
-    hours: currencies.hour ?? 0,
   } as ScoreEquation;
 }
+
+// DEFAULT_EQUATION minus the (already-absent) `hours` field. Kept as a
+// separate constant so migrateEquation's output shape is explicit about
+// the omission and a stray `hours: 1` on a future DEFAULT_EQUATION edit
+// won't silently leak back into saved data.
+const { hours: _legacyDefaultHours, ...DEFAULT_EQUATION_NO_HOURS } =
+  DEFAULT_EQUATION as ScoreEquation & { hours?: number };
 
 // Per-holon equation cache for instant synchronous access.
 const equationCache = new Map<string, ScoreEquation>();

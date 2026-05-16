@@ -23,17 +23,25 @@ describe('DEFAULT_EQUATION', () => {
       completed: 2,
       sent: 1,
       received: 1,
-      hours: 1,
       collaboration: 1,
       wants: 1,
       offers: 1,
+      participation: 0,
+      coParticipants: 0,
+      activity: 0,
+      groupSize: 0,
+      variance: 0,
       currencies: { hour: 1 },
     });
+  });
+
+  it('omits the deprecated top-level hours field', () => {
+    expect('hours' in DEFAULT_EQUATION).toBe(false);
   });
 });
 
 describe('migrateEquation', () => {
-  it('folds legacy hours into currencies.hour', () => {
+  it('folds legacy hours into currencies.hour and discards the top-level field', () => {
     const migrated = migrateEquation({
       initiated: 1,
       completed: 2,
@@ -45,8 +53,7 @@ describe('migrateEquation', () => {
       offers: 1,
     });
     expect(migrated.currencies.hour).toBe(3);
-    // hours is mirrored back for legacy readers.
-    expect(migrated.hours).toBe(3);
+    expect('hours' in migrated).toBe(false);
   });
 
   it('is idempotent', () => {
@@ -118,6 +125,11 @@ describe('toAggregates', () => {
       collaboration: 1,
       wants: 1,
       offers: 0,
+      participation: 0,
+      coParticipants: 0,
+      activity: 0,
+      groupSize: 0,
+      variance: 0,
     });
   });
 
@@ -131,6 +143,11 @@ describe('toAggregates', () => {
       collaboration: 0,
       wants: 0,
       offers: 0,
+      participation: 0,
+      coParticipants: 0,
+      activity: 0,
+      groupSize: 0,
+      variance: 0,
     });
   });
 });
@@ -377,7 +394,40 @@ describe('REAAggregator', () => {
       collaboration: 2,
       wants: 1,
       offers: 1,
+      // No `context.questId` on any of the fixture events, so the
+      // collaboration signals all land at 0.
+      participation: 0,
+      coParticipants: 0,
+      activity: 9,
+      groupSize: 0,
+      variance: 0,
     });
+  });
+
+  it('derives collaboration signals from quest event groupings', async () => {
+    // Two quests:
+    //  - q1: u1 + u2  → group size 2
+    //  - q2: u1 + u2 + u3 → group size 3
+    // u1's group sizes: [2, 3] → mean 2.5, variance ((0.5)² + (0.5)²)/2 = 0.25
+    // co-participants: {u2, u3} → 2
+    // participation: 2 (both quests touch u1)
+    // activity: count of events where u1 is provider or receiver.
+    const aggregator = new REAAggregator(
+      buildStore([
+        // q1
+        { eventType: 'quest:initiated', provider: { id: 'u1' }, receiver: { id: 'holon', type: 'holon' }, context: { questId: 'q1' }, resource: {} },
+        { eventType: 'quest:time_logged', provider: { id: 'u2' }, receiver: { id: 'holon', type: 'holon' }, context: { questId: 'q1' }, resource: { quantity: 1 } },
+        // q2
+        { eventType: 'quest:initiated', provider: { id: 'u1' }, receiver: { id: 'holon', type: 'holon' }, context: { questId: 'q2' }, resource: {} },
+        { eventType: 'quest:time_logged', provider: { id: 'u2' }, receiver: { id: 'holon', type: 'holon' }, context: { questId: 'q2' }, resource: { quantity: 1 } },
+        { eventType: 'quest:time_logged', provider: { id: 'u3' }, receiver: { id: 'holon', type: 'holon' }, context: { questId: 'q2' }, resource: { quantity: 1 } },
+      ]),
+    );
+    const a = await aggregator.getUserAggregates('h1', 'u1');
+    expect(a.participation).toBe(2);
+    expect(a.coParticipants).toBe(2);
+    expect(a.groupSize).toBe(2.5);
+    expect(a.variance).toBe(0.25);
   });
 
   it('computes a user score consistent with calculateUserScore', async () => {
