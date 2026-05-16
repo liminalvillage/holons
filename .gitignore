@@ -20,6 +20,8 @@ yarn-error.log
 radata*
 radata/*
 holosphere.db/*
+# Gun.js radata written by the MCP server (CWD pinned to repo root)
+holosphere/
 docs/api/*
 .superpowers/
 .claude/
