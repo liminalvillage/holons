@@ -1,12 +1,10 @@
 // @holons/core/commands — tests
 //
-// Cover the registry/executor contract end-to-end without depending on
-// sibling domain modules (which other Phase B units own). Built-in commands
-// are also exercised: validation paths run in-process, while the execute path
-// is asserted to fail loudly with a "TODO: depends on @holons/core/<X>" error
-// while the upstream domains are still placeholders.
+// Cover the registry/executor contract end-to-end. Built-in commands exercise
+// validation in-process; createTask runs against @holons/core/tasks; other
+// built-ins still fail loudly until their sibling domains ship.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	CommandRegistry,
 	addToShoppingListCommand,
@@ -145,12 +143,32 @@ describe('built-in commands', () => {
 		).toMatchObject({ code: 'invalid_params' });
 	});
 
-	it('createTask execute fails loudly while @holons/core/tasks is a placeholder', async () => {
-		const result = await executeCommand('createTask', { holonId: 'h', title: 't' });
-		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.error.code).toBe('execution_failed');
-			expect(result.error.message).toMatch(/TODO: depends on @holons\/core\/tasks/);
+	it('createTask execute builds a task (persists when holosphere is in context)', async () => {
+		const withoutStore = await executeCommand(
+			'createTask',
+			{ holonId: 'h1', title: 'My task', description: 'details' },
+			{ userId: 'u1', userName: 'alice' }
+		);
+		expect(withoutStore.ok).toBe(true);
+		if (withoutStore.ok) {
+			expect(withoutStore.data.persisted).toBe(false);
+			expect(withoutStore.data.task.title).toBe('My task');
+			expect(withoutStore.data.task.description).toBe('details');
+			expect(withoutStore.data.task.holon).toBe('h1');
+			expect(withoutStore.data.task.id).toBeTruthy();
+			expect(String(withoutStore.data.task.id)).not.toContain('_');
+		}
+
+		const put = vi.fn().mockResolvedValue(undefined);
+		const withStore = await executeCommand(
+			'createTask',
+			{ holonId: 'h1', title: 'Saved' },
+			{ userId: 'u1', holosphere: { put } }
+		);
+		expect(withStore.ok).toBe(true);
+		if (withStore.ok) {
+			expect(withStore.data.persisted).toBe(true);
+			expect(put).toHaveBeenCalledWith('h1', 'quests', expect.objectContaining({ title: 'Saved' }));
 		}
 	});
 });

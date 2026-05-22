@@ -15,7 +15,7 @@ Depend on it with `"@holons/core": "workspace:*"` and import per domain via
 
 ```ts
 import { calculateUserScore } from '@holons/core/scoring';
-import { createTask }        from '@holons/core/tasks';
+import { createTask }  from '@holons/core/tasks';
 import { tallyVotes }        from '@holons/core/council';
 ```
 

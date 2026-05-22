@@ -19,7 +19,7 @@ import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
 import {
-    createTaskRecord,
+    createTask,
     saveTasksToHolon,
     planTaskCompletion,
     executeCompletionPlan,
@@ -364,7 +364,7 @@ export default class Quests {
         
         // Create quest object via the shared core/tasks factory so the bot
         // and the web app produce the same default-field set.
-        const quest = createTaskRecord({
+        const quest = createTask({
             holonId,
             initiator: sender,
             title,

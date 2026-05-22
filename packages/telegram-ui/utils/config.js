@@ -112,6 +112,17 @@ class Config {
       log.error(error);
       throw new Error(error);
     }
+
+    if (this.isProduction) {
+      const secret = process.env.SESSION_SECRET;
+      const weakDefault = 'holonsbot-secret-key-change-in-production';
+      if (!secret || secret === weakDefault) {
+        const error =
+          'SESSION_SECRET must be set to a strong, unique value in production';
+        log.error(error);
+        throw new Error(error);
+      }
+    }
   }
 
   // Bot Configuration

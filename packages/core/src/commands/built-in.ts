@@ -1,13 +1,15 @@
 // @holons/core/commands — built-in commands
 //
-// Three example commands wired end-to-end so text-ui (Unit 19) and ai-ui (Unit
-// 20) have something concrete to call. Each delegates to a sibling
-// `@holons/core/<domain>` module via dynamic relative import so we don't hard-
-// fail typecheck/build if the sibling unit hasn't landed yet — instead we
-// throw a clear "TODO: depends on @holons/core/<X> (Unit Y)" at execute time.
+// Commands wired for text-ui, ai-ui, and MCP. Each delegates to a sibling
+// `@holons/core/<domain>` module via dynamic relative import. Domains that are
+// not implemented yet throw a clear "TODO: depends on @holons/core/<X>" at
+// execute time.
 
 import { commandRegistry } from './registry.js';
 import type { CommandContext, CommandError, CoreCommand } from './types.js';
+import { createTask } from '../tasks/creation.js';
+import { saveTaskToHolon } from '../tasks/persistence.js';
+import type { Quest } from '../tasks/types.js';
 
 // ---------- shared helpers ----------
 
@@ -91,6 +93,20 @@ function validateBy(
 
 // ---------- createTask ----------
 
+/** Task ids must not contain underscores (Telegram callback_data parsing). */
+function generateTaskId(): string {
+	return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+}
+
+function initiatorFromContext(ctx: CommandContext, holonId: string): Quest['initiator'] {
+	const id = ctx.userId ?? holonId;
+	return {
+		id,
+		username: ctx.userName,
+		firstName: ctx.userName
+	};
+}
+
 export interface CreateTaskParams {
 	holonId: string;
 	title: string;
@@ -98,7 +114,12 @@ export interface CreateTaskParams {
 	location?: string;
 }
 
-export const createTaskCommand: CoreCommand<CreateTaskParams, unknown> = {
+export interface CreateTaskResult {
+	task: Quest;
+	persisted: boolean;
+}
+
+export const createTaskCommand: CoreCommand<CreateTaskParams, CreateTaskResult> = {
 	name: 'createTask',
 	description: 'Create a new task in the given holon',
 	paramsSchema: {
@@ -116,9 +137,25 @@ export const createTaskCommand: CoreCommand<CreateTaskParams, unknown> = {
 		requireString(p, 'title');
 	}),
 	async execute(params, ctx: CommandContext) {
-		const mod = await loadDomain('tasks', 'Unit 7');
-		const fn = pickFn(mod, ['createTask', 'addTask', 'create'], 'tasks', 'Unit 7');
-		return await fn(params, ctx);
+		const task = createTask({
+			holonId: params.holonId,
+			title: params.title,
+			initiator: initiatorFromContext(ctx, params.holonId)
+		});
+		task.id = generateTaskId();
+		if (params.description) task.description = params.description;
+		if (params.location) task.location = params.location;
+
+		let persisted = false;
+		if (ctx.holosphere) {
+			persisted = await saveTaskToHolon(
+				ctx.holosphere as import('../tasks/types.js').HoloSphereLike,
+				params.holonId,
+				task
+			);
+		}
+
+		return { task, persisted };
 	}
 };
 

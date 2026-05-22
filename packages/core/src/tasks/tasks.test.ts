@@ -7,7 +7,7 @@ import {
   createDefaultTask,
   createTasksFromDesignStreams,
   createTasksFromQuestTree,
-  createTaskRecord,
+  createTask,
   COUNCIL_INITIATOR,
   DEFAULT_TASK_CATEGORY,
 } from './creation.js';
@@ -143,9 +143,9 @@ describe('createTasksFromQuestTree', () => {
   });
 });
 
-describe('createTaskRecord', () => {
+describe('createTask', () => {
   it('produces the bot-style default-field set', () => {
-    const q = createTaskRecord({
+    const q = createTask({
       holonId: 42,
       initiator: { id: 7, username: 'alice' },
       title: 'Write tests',

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   applyTaskCompletion,
-  createTaskRecord,
+  createTask,
   executeCompletionPlan,
   planTaskCompletion,
   saveTaskToHolon,
@@ -115,12 +115,12 @@ async function mutateAndSave(
 // --- registration --------------------------------------------------------
 
 export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
-  // task_create — build a Quest via createTaskRecord, optionally persist.
+  // task_create — build a Quest via createTask, optionally persist.
   server.registerTool(
     'task_create',
     {
       description:
-        'Create a new task/quest record for a holon. Wraps @holons/core/tasks createTaskRecord. A short id is generated automatically if `id` is omitted. Pass persist:true to write it to HoloSphere under the "quests" bucket.',
+        'Create a new task/quest record for a holon. Wraps @holons/core/tasks createTask. A short id is generated automatically if `id` is omitted. Pass persist:true to write it to HoloSphere under the "quests" bucket.',
       inputSchema: {
         holon: z.string().describe('Holon id (e.g. Telegram chat id, Discord channel id).'),
         title: z.string().min(1),
@@ -137,7 +137,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const actor = deps.resolveActor();
-        const task = createTaskRecord({
+        const task = createTask({
           holonId: args.holon,
           initiator: actorAsInitiator(actor),
           title: args.title,

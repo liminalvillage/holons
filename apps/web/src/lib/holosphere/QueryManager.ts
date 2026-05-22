@@ -86,6 +86,8 @@ class QueryManager {
 	private isValidItem(item: any): boolean {
 		if (!item || !item.id) return false;
 		if (item._deleted) return false;
+		// Unresolved hologram placeholders (not yet materialized as real quests)
+		if (item.hologram === true || item._hologram?.isHologram === true) return false;
 		return true;
 	}
 

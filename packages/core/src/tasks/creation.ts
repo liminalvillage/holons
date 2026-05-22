@@ -198,7 +198,7 @@ export function createTasksFromQuestTree(
 // transient UI state on top.
 // ---------------------------------------------------------------------------
 
-export interface NewTaskRecordInput {
+export interface CreateTaskInput {
   holonId: string | number;
   initiator: Quest['initiator'];
   title: string;
@@ -215,7 +215,7 @@ export interface NewTaskRecordInput {
  * default-field set. The id is left empty — the caller assigns the platform
  * message id (Telegram message_id / Discord id) once the message is sent.
  */
-export function createTaskRecord(input: NewTaskRecordInput): Quest {
+export function createTask(input: CreateTaskInput): Quest {
   const now = input.now ?? Date.now();
   return {
     id: '',
