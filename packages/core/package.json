@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Shared domain logic for Holons UIs (web, telegram, text, ai). UI-agnostic.",
+  "license": "AGPL-3.0-or-later",
   "exports": {
     ".": "./src/index.ts",
     "./*": {

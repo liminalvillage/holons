@@ -1,8 +1,8 @@
-# Harvest User Guide
+# Holons User Guide
 
-Welcome to **Harvest** - a decentralized holonic platform for organizational governance, resource distribution, and wisdom aggregation.
+Welcome to **Holons** - a decentralized holonic platform for organizational governance, resource distribution, and wisdom aggregation.
 
-> **Full Documentation**: For comprehensive documentation, visit our [GitBook](https://liminalvillage.gitbook.io/harvest)
+> **Project & source**: <https://github.com/HolonicLabs/holons>
 
 ---
 
@@ -21,14 +21,14 @@ Welcome to **Harvest** - a decentralized holonic platform for organizational gov
 
 ### First Time Setup
 
-1. **Visit Harvest**: Open the application in your browser
+1. **Visit Holons**: Open the application in your browser
 2. **Identity Setup**: You'll start in "Guest Mode" - a public browsing experience
 3. **Create Your Identity**: Click "Keys & Access" in the sidebar and select "Create Identity" to generate your unique cryptographic key pair
 4. **Access Your Home**: Your personal holon (your "Home") is automatically created using your public key
 
 ### The Interface
 
-The Harvest interface consists of three main areas:
+The Holons interface consists of three main areas:
 
 - **Sidebar (Left)**: Holon browser and identity management
   - Home holon (always at top when viewing "My Holons")
@@ -44,7 +44,7 @@ The Harvest interface consists of three main areas:
 
 ### What is a Holon?
 
-A **holon** is a self-organizing unit that is simultaneously whole in itself AND part of larger wholes. In Harvest:
+A **holon** is a self-organizing unit that is simultaneously whole in itself AND part of larger wholes. In Holons:
 
 - **Your Home Holon**: Your personal space tied to your identity
 - **Team Holons**: Collaborative spaces for groups
@@ -53,7 +53,7 @@ A **holon** is a self-organizing unit that is simultaneously whole in itself AND
 
 ### Identity & Keys
 
-Harvest uses cryptographic keys for identity:
+Holons uses cryptographic keys for identity:
 
 - **Private Key**: Your secret - never share it! Used to sign your actions
 - **Public Key**: Your identifier - shareable with others
@@ -73,7 +73,7 @@ Holons can federate with each other, creating networks of interconnected spaces 
 Start
   |
   v
-[Visit Harvest] --> [Land in Guest Mode]
+[Visit Holons] --> [Land in Guest Mode]
   |
   v
 [Explore the interface] --> [See "Guest Mode" in sidebar]
@@ -92,7 +92,7 @@ Start
 ```
 
 **Steps:**
-1. Open Harvest in your browser
+1. Open Holons in your browser
 2. Notice you're in "Guest Mode" (green badge in sidebar)
 3. Expand "Keys & Access" section
 4. Click "Create Identity" to generate your keys
@@ -382,10 +382,6 @@ Direct view of HoloSphere data for administrative purposes.
 
 ## Getting Help
 
-- **Documentation**: [GitBook](https://liminalvillage.gitbook.io/harvest)
-- **Issues**: [GitHub Issues](https://github.com/liminalvillage/harvest/issues)
-- **Community**: Join our Telegram group via the app
-
----
-
-*Last updated: January 2026*
+- **Documentation**: see the [docs index](./README.md)
+- **Issues**: [GitHub Issues](https://github.com/HolonicLabs/holons/issues)
+- **Community**: Join the Telegram group via the app

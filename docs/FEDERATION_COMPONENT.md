@@ -1,37 +1,39 @@
 # Federation Configuration Component
 
-A beautiful Svelte component for configuring federation between holons in the Harvest dashboard.
+A Svelte component for configuring federation between holons in the Holons
+web dashboard (`apps/web`). It is the UI on top of the core federation layer
+documented in [architecture.md](./architecture.md).
 
 ## Features
 
-### 🎨 **Beautiful UI/UX**
-- Modern dark theme with Tailwind CSS
-- Smooth animations and transitions
+### UI/UX
+- Dark theme with Tailwind CSS
+- Animations and transitions
 - Responsive grid layout
 - Interactive cards with hover effects
 - Loading states and error handling
 
-### 🔗 **Federation Management**
+### Federation management
 - **Add Federation**: Create bidirectional federation relationships between holons
 - **Remove Federation**: Safely unfederate from other holons
 - **Visual Status**: See connection status and bidirectional indicators
 - **Federation Overview**: Dashboard showing total federations and active lenses
 
-### ⚙️ **Lens Configuration**
-- **Granular Control**: Configure which lenses to federate per holon
-- **Data Federation**: Select which lenses share data (Quests, Offers, Tags, etc.)
+### Lens configuration
+- **Granular control**: Configure which lenses to federate per holon
+- **Data federation**: Select which lenses share data (Quests, Offers, Tags, etc.)
 - **Notifications**: Choose which lenses to receive notifications about
-- **Visual Indicators**: Color-coded badges for federated vs notification lenses
+- **Visual indicators**: Color-coded badges for federated vs notification lenses
 
-### 📊 **Available Lenses**
-- 🎯 **Quests** - Task and project management
-- 🤝 **Offers** - Service and resource offerings
-- 🏷️ **Tags** - Categorization and labeling
-- 💰 **Expenses** - Financial tracking
-- 📢 **Announcements** - Communications
-- 👥 **Users** - Member management
-- 🛒 **Shopping** - Shopping lists and procurement
-- 🔄 **Recurring** - Recurring tasks and events
+### Available lenses
+- **Quests** - Task and project management
+- **Offers** - Service and resource offerings
+- **Tags** - Categorization and labeling
+- **Expenses** - Financial tracking
+- **Announcements** - Communications
+- **Users** - Member management
+- **Shopping** - Shopping lists and procurement
+- **Recurring** - Recurring tasks and events
 
 ## Usage
 
@@ -59,11 +61,14 @@ Access the Federation configuration through the Dashboard:
 - **Green badges**: Notification lenses (receiving updates)
 - **Bidirectional tag**: Two-way federation relationship
 
-## Technical Implementation
+## Technical implementation
 
-### Component Structure
+The component lives under `apps/web/src/` and renders federation state for
+the holon currently in the dashboard `ID` store.
+
+### Component structure
 ```
-Federation.svelte
+Federation component
 ├── Header with stats and add button
 ├── Status messages (error/success)
 ├── Federation cards grid
@@ -71,21 +76,22 @@ Federation.svelte
 └── Lens configuration modal
 ```
 
-### Key Functions
+### Key functions
 - `loadFederationData()` - Fetches current federation info
 - `addFederation()` - Creates new federation relationships
 - `removeFederation()` - Removes federation relationships
 - `updateLensConfig()` - Updates lens-specific settings
 
 ### Integration
-- Uses HoloSphere federation API
-- Integrates with dashboard store (ID)
-- Follows project's TypeScript and styling patterns
-- Responsive design with Tailwind CSS
+- Goes through `@holons/core/federation` and the shared HoloSphere instance
+  (see [architecture.md](./architecture.md) and
+  [realtime-sync.md](./realtime-sync.md))
+- Integrates with the dashboard store (`ID`)
+- Follows the project's TypeScript and Tailwind styling patterns
 
-## Error Handling
+## Error handling
 
-The component includes comprehensive error handling:
+The component handles:
 - Network errors during federation operations
 - Invalid holon IDs
 - Missing federation data
@@ -93,16 +99,8 @@ The component includes comprehensive error handling:
 
 ## Accessibility
 
-- Proper ARIA labels and roles
+- ARIA labels and roles
 - Keyboard navigation support
 - Screen reader friendly
 - High contrast design
 - Focus management in modals
-
-## Future Enhancements
-
-- Real-time federation status monitoring
-- Federation analytics and metrics
-- Bulk lens configuration
-- Federation templates and presets
-- Advanced filtering and search 

@@ -20,7 +20,7 @@
     "docs:watch": "nodemon --watch src --watch core --watch utils --ext js --exec 'npm run docs'"
   },
   "author": "Roberto Valenti",
-  "license": "GPL-3.0-only",
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@holons/core": "workspace:*",
     "@holons/mcp-ui": "workspace:*",

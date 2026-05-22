@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Natural-language interpreter for Holons via Claude tool-use. Calls into @holons/core.",
+  "license": "AGPL-3.0-or-later",
   "bin": {
     "holons-ai": "./dist/cli.js"
   },

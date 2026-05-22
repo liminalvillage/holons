@@ -1,27 +1,51 @@
+# ── OS / editor ───────────────────────────────────────────────────────────
 .DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ── Dependencies ──────────────────────────────────────────────────────────
 node_modules
+/package
+.package-lock.json
+# NOTE: pnpm-lock.yaml IS committed — it pins the whole workspace for
+# reproducible installs and CI. Do not add it back here.
+
+# ── Build output ──────────────────────────────────────────────────────────
 build/
+dist/
 .svelte-kit/
 .netlify/
-dist/
 *.tsbuildinfo
-/package
-.env
-.env.*
-.package-lock.json
-pnpm-lock.yaml
-!.env.example
-# Per-developer Claude Code MCP wiring (contains actor id env defaults).
-# See https://docs.anthropic.com/claude/docs/claude-code/mcp for the schema.
-.mcp.json
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+*.log
 yarn-error.log
+
+# ── Secrets & per-developer config (NEVER commit) ─────────────────────────
+.env
+.env.*
+!.env.example
+# Per-developer Claude Code MCP wiring (contains actor-id env defaults).
+.mcp.json
+# Local Claude Code / agent state.
+.claude/
+.superpowers/
+# Executed/signed legal originals (contain signatures, addresses, tax codes).
+# Only the unexecuted templates in legal/ are tracked.
+legal/executed/
+legal/**/*.signed.*
+legal/**/*.pdf
+
+# ── Gun.js / Holosphere local replica (regenerated at runtime) ────────────
 radata*
 radata/*
 holosphere.db/*
-# Gun.js radata written by the MCP server (CWD pinned to repo root)
 holosphere/
+# Gun RAD temp files written to CWD (e.g. holosphere-!-xyz.tmp)
+holosphere-!-*
+
+# ── Generated API docs ────────────────────────────────────────────────────
 docs/api/*
-.superpowers/
-.claude/

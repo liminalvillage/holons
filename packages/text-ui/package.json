@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Framework-agnostic text/CLI renderer for Holons. Calls into @holons/core.",
+  "license": "AGPL-3.0-or-later",
   "bin": {
     "holons": "./dist/cli.js"
   },

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "MCP server exposing every @holons/core function as an independently-callable tool. Replaces the telegram-ui HTTP bot API.",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "dist/index.js",
   "bin": "./dist/index.js",

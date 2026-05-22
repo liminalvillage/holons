@@ -5,13 +5,12 @@
 	"author": {
 		"name": "Roberto Valenti"
 	},
-	"license": "AGPL",
+	"license": "AGPL-3.0-or-later",
 	"description": "Holons monorepo: shared core domain logic + web, telegram, text, and AI UIs.",
 	"type": "module",
 	"scripts": {
 		"dev": "pnpm -F harvest-web dev",
 		"dev:bot": "pnpm -F @holons/telegram-ui dev",
-		"reboot": "bash scripts/restart-debug.sh",
 		"build": "pnpm -r --if-present build",
 		"typecheck": "pnpm -r --if-present typecheck",
 		"test": "pnpm -r --if-present test",
