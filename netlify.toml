@@ -1,10 +1,11 @@
 [build]
-  # Build from the web app subdirectory inside the monorepo.
-  base = "apps/web"
-  # publish is resolved relative to base, so this is apps/web/build
-  publish = "build"
-  # Default build command — invokes the web app's Vite build
-  command = "npm run build"
+  # Build from the monorepo ROOT so the pnpm workspace is intact.
+  # apps/web imports @holons/core via subpath exports (e.g. @holons/core/checklists)
+  # that resolve to ./dist/<domain>/index.js — Vite's production build will fail
+  # unless @holons/core is built BEFORE harvest-web. The filter '...harvest-web'
+  # tells pnpm to topologically build harvest-web and all its workspace deps.
+  publish = "apps/web/build"
+  command = "corepack enable && pnpm install --frozen-lockfile && pnpm -F @holons/core build && pnpm -F harvest-web build"
 
 [build.environment]
   # Node.js version for builds
