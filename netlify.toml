@@ -66,9 +66,14 @@
 #   PUBLIC_GOOGLE_TRANSLATE_KEY = "your-google-translate-key"
 #   DATABASE_URL = "your-database-url"
 
-# Functions configuration (if you add serverless functions later)
-# [functions]
-#   directory = "netlify/functions"
+# Functions configuration.
+# @sveltejs/adapter-netlify writes the SSR function to
+# .netlify/functions-internal/sveltekit-render.mjs (resolved from `base`,
+# i.e. apps/web/.netlify/functions-internal/). Declaring it explicitly here
+# makes function discovery deterministic and survives future Netlify default
+# changes.
+[functions]
+  directory = ".netlify/functions-internal"
 
 # Dev server configuration for local development
 # [dev]
