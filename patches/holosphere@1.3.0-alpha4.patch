@@ -1,5 +1,5 @@
 diff --git a/content.js b/content.js
-index 77b6d79..668cd93 100644
+index 77b6d79..d3b3842 100644
 --- a/content.js
 +++ b/content.js
 @@ -1,5 +1,37 @@
@@ -66,16 +66,43 @@ index 77b6d79..668cd93 100644
                  const payload = JSON.stringify(dataToStore); // The data being stored
  
                  const putCallback = async (ack) => {
-@@ -400,7 +449,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -400,7 +449,19 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
      }
  
      // Destructure options, including visited
 -    const { resolveHolograms = true, validationOptions = {}, visited } = options;
-+    const { resolveHolograms = true, validationOptions = {}, visited, timeout = READ_TIMEOUT_MS } = options;
++    const {
++        resolveHolograms = true,
++        validationOptions = {},
++        visited,
++        timeout = READ_TIMEOUT_MS,
++        // `_deleted: true` is the soft-tombstone convention used by the bot,
++        // the web dashboard, and the MCP council tools. Pre-this fix the
++        // library was unaware of it and every caller filtered defensively.
++        // Now `get` returns `null` for tombstoned records by default; pass
++        // `includeDeleted: true` to surface them (admin/debug views,
++        // history reconstruction, etc.).
++        includeDeleted = false,
++    } = options;
  
      // Get schema for validation if in strict mode
      let schema = null;
-@@ -454,17 +503,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -444,6 +505,14 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+                         return;
+                     }
+ 
++                    // Treat the harvest-side `_deleted: true` soft-tombstone
++                    // as "not found" by default. Callers that want to see
++                    // tombstones can pass `{ includeDeleted: true }`.
++                    if (!includeDeleted && parsed._deleted === true) {
++                        resolve(null);
++                        return;
++                    }
++
+                     // Check if this is a hologram that needs to be resolved
+                     if (resolveHolograms && holoInstance.isHologram(parsed)) {
+                         const resolvedValue = await holoInstance.resolveHologram(parsed, {
+@@ -454,17 +523,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                          });
  
                          if (resolvedValue === null) {
@@ -107,7 +134,7 @@ index 77b6d79..668cd93 100644
                              resolve(null);
                              return;
                          }
-@@ -472,7 +524,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -472,7 +544,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                          // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
                          // For now, assume resolvedValue is either the resolved data or we've returned null above.
  
@@ -116,7 +143,7 @@ index 77b6d79..668cd93 100644
                              parsed = resolvedValue;
                          }
                      }
-@@ -505,7 +557,10 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -505,7 +577,10 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                  user.get('private').get(lens).get(key) :
                  holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
  
@@ -128,7 +155,7 @@ index 77b6d79..668cd93 100644
          });
      } catch (error) {
          console.error('Error in get:', error);
-@@ -519,12 +574,18 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -519,12 +594,23 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
   * @param {string} holon - The holon identifier.
   * @param {string} lens - The lens from which to retrieve content.
   * @param {string} [password] - Optional password for private holon.
@@ -144,11 +171,16 @@ index 77b6d79..668cd93 100644
      if (!holon || !lens) {
          throw new Error('getAll: Missing required parameters');
      }
-+    const { timeout = READ_TIMEOUT_MS } = options;
++    const {
++        timeout = READ_TIMEOUT_MS,
++        // See `get` above: `_deleted: true` records are dropped from the
++        // response unless the caller opts in.
++        includeDeleted = false,
++    } = options;
  
      const schema = await holoInstance.getSchema(lens);
      if (!schema && holoInstance.strict) {
-@@ -584,9 +645,12 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+@@ -584,9 +670,12 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                  holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
  
              // PASS 1: Get shallow node to determine expected item count.
@@ -164,7 +196,19 @@ index 77b6d79..668cd93 100644
  
              const processShallow = (data) => {
                  if (!data) {
-@@ -630,12 +694,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+@@ -621,6 +710,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+                         const parsed = await holoInstance.parse(itemData);
+                         if (!parsed || !parsed.id) return;
+ 
++                        // Drop `_deleted: true` soft-tombstones by default;
++                        // callers wanting them in the result pass
++                        // `{ includeDeleted: true }` to `getAll`.
++                        if (!includeDeleted && parsed._deleted === true) return;
++
+                         if (holoInstance.isHologram(parsed)) {
+                             try {
+                                 const resolved = await holoInstance.resolveHologram(parsed, {
+@@ -630,12 +724,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                                  });
  
                                  if (resolved === null) {
@@ -182,7 +226,7 @@ index 77b6d79..668cd93 100644
                                      return;
                                  }
  
-@@ -678,11 +741,10 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+@@ -678,11 +771,10 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                          return processItem(inline, key);
                      }
                      // Otherwise fetch the leaf — sub-graph reference path.
@@ -349,24 +393,28 @@ index 5f27676..ef44e26 100644
                  }
              } else {
 diff --git a/holosphere.d.ts b/holosphere.d.ts
-index bd12d2e..02d0fdc 100644
+index bd12d2e..9670172 100644
 --- a/holosphere.d.ts
 +++ b/holosphere.d.ts
-@@ -20,6 +20,13 @@ interface PutOptions {
+@@ -20,6 +20,17 @@ interface PutOptions {
  interface GetOptions {
    resolveHolograms?: boolean;
    validationOptions?: object;
 +  /** Per-`.once()` deadline in ms; cold paths resolve `null` after this. Default 8000. Pass `0` to disable. */
 +  timeout?: number;
++  /** Return `_deleted: true` soft-tombstoned records instead of treating them as not-found. Default false. */
++  includeDeleted?: boolean;
 +}
 +
 +interface GetAllOptions {
 +  /** Per-`.once()` deadline in ms; cold paths resolve `[]` after this. Default 8000. Pass `0` to disable. */
 +  timeout?: number;
++  /** Include `_deleted: true` soft-tombstoned records in the response. Default false. */
++  includeDeleted?: boolean;
  }
  
  interface ResolveHologramOptions {
-@@ -168,7 +175,7 @@ declare class HoloSphere {
+@@ -168,7 +179,7 @@ declare class HoloSphere {
      put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
      get(holon: string, lens: string): Promise<any | null>;
      get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
@@ -375,7 +423,7 @@ index bd12d2e..02d0fdc 100644
      parse(rawData: any): Promise<object | null>;
      delete(holon: string, lens: string, key: string, password?: string | null): Promise<boolean>;
      deleteAll(holon: string, lens: string, password?: string | null): Promise<boolean>;
-@@ -187,8 +194,8 @@ declare class HoloSphere {
+@@ -187,8 +198,8 @@ declare class HoloSphere {
      getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
      deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
      deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
@@ -386,7 +434,7 @@ index bd12d2e..02d0fdc 100644
  
      // Hologram
      createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
-@@ -210,8 +217,10 @@ declare class HoloSphere {
+@@ -210,8 +221,10 @@ declare class HoloSphere {
      getScalespace(lat: number, lng: number): string[];
      getHolonScalespace(holon: string): string[];
  

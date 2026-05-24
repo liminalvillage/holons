@@ -166,7 +166,9 @@
 				if (currentSubscription.holonId !== safeHolonID || currentSubscription.tableName !== tableName) {
 					return; // Ignore stale callbacks
 				}
-				// Filter out deleted items - holosphere marks deleted items with _deleted: true
+				// Filter out the harvest soft-tombstone convention (`_deleted: true`).
+				// Holosphere's `get`/`getAll` now drop these by default; the
+				// subscribe stream still surfaces every change so we filter here too.
 				if (newData && !newData._deleted) {
 					store[key] = newData;
 				} else {
