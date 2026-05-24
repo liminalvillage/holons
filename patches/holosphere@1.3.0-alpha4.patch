@@ -3,7 +3,7 @@ index f9405326b6a1067b0eff91a313589e9a84896e59..4c1bcb48da4cb66b9f1cd103ae35eb31
 --- a/federation.js
 +++ b/federation.js
 @@ -795,7 +795,12 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
-         
+
          // Only propagate if we have outbound partners configured.
          if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
 -            let spaces = fedInfo.outbound;
@@ -13,13 +13,13 @@ index f9405326b6a1067b0eff91a313589e9a84896e59..4c1bcb48da4cb66b9f1cd103ae35eb31
 +            // it as a "broken hologram" (resolveHologram returns null because
 +            // the soul resolves to itself), silently destroying the entry.
 +            let spaces = fedInfo.outbound.filter(s => String(s) !== String(holon));
- 
+
              if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
                  spaces = spaces.filter(space => targetSpaces.includes(space));
 @@ -861,10 +866,18 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                  };
                              }
-                             
+
 +                            // Defensive: even if the outbound list somehow
 +                            // contains the source holon, never write a self-
 +                            // hologram. The source already has the original.
@@ -29,12 +29,41 @@ index f9405326b6a1067b0eff91a313589e9a84896e59..4c1bcb48da4cb66b9f1cd103ae35eb31
 +                            }
 +
                              // Store in the target space with redirection disabled and no further auto-propagation
--                            await holosphere.put(targetSpace, lens, payloadToPut, null, { 
--                                disableHologramRedirection: true, 
--                                autoPropagate: false 
+-                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
+-                                disableHologramRedirection: true,
+-                                autoPropagate: false
 +                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
 +                                disableHologramRedirection: true,
 +                                autoPropagate: false
                              });
- 
+
                              result.success++;
+diff --git a/content.js b/content.js
+--- a/content.js
++++ b/content.js
+@@ -214,8 +214,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
+                 }
+                 // Strip read-side envelopes that must never be persisted
+                 // (they're attached at resolution time).
++                //
++                // `_hologram` and `_meta` are always read-side-only.
++                //
++                // `_federation` is also read-side for ordinary writes — it
++                // describes where data was fetched from, not where it
++                // currently lives. The one legitimate carrier is federation
++                // propagation, which writes hologram envelopes (top-level
++                // `id` + `soul`) tagged with `_federation` provenance; we
++                // detect that via `isHologram(data)` and leave it alone.
++                // Without this, a UI that reads a federated record and puts
++                // it back ends up persisting stale `_federation.origin`
++                // metadata, which then drives downstream code (federation
++                // propagators, hologram resolvers) to write or follow
++                // pointers that don't match the current storage location —
++                // producing "broken hologram" garbage-collection cascades
++                // that silently delete the user's write.
+                 if (dataToStore._meta !== undefined) delete dataToStore._meta;
+                 if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
++                if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
+                 const payload = JSON.stringify(dataToStore); // The data being stored
+
+                 const putCallback = async (ack) => {
