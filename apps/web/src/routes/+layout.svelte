@@ -430,7 +430,16 @@
 		// In debug mode, default to a local bot at http://localhost:8080.
 		const botApiUrl = import.meta.env.VITE_BOT_API_URL
 			|| (import.meta.env.MODE !== 'production' ? 'http://localhost:8080' : undefined);
-		if (botApiUrl) {
+		// Skip the bot call when our current origin almost certainly won't
+		// pass the bot's CORS allow-list. The production bot only allows
+		// dashboard.holons.io; calling it from `localhost:5173` triggers a
+		// preflight failure on every put — harmless but spams the console
+		// and adds round-trip latency to every write. (Override by setting
+		// VITE_BOT_API_URL=http://localhost:8080 when running a local bot.)
+		const isDevOrigin = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(window.location.host);
+		const botIsLocal = !!botApiUrl && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(botApiUrl);
+		const botReachable = !!botApiUrl && (!isDevOrigin || botIsLocal);
+		if (botReachable) {
 			const REFRESH_LENSES: Record<string, string> = {
 				quests: 'quest',
 				expenses: 'expense',
