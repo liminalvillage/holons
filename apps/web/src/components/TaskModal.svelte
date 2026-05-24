@@ -231,10 +231,9 @@
                 console.error("Error subscribing to quests in TaskModal:", e);
             }
 
-            // Fetch quests for dependencies
-            holosphere.getAll(holonId, "quests").then((questsData: any) => {
-                const quests = Array.isArray(questsData) ? questsData : Object.values(questsData || {});
-                availableTasks = quests
+            // Fetch quests for dependencies (getAll resolves to Array<T>).
+            holosphere.getAll(holonId, "quests").then((quests: any[]) => {
+                availableTasks = (quests ?? [])
                     .filter((q: any) => q?.id && q.id !== questId)
                     .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
             }).catch(() => {});

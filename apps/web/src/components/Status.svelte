@@ -617,34 +617,18 @@
 
         try {
             console.log(`[Status.svelte] Fetching initial users for holon ${holonID} using reliable wrapper`);
+            // holosphere.getAll resolves to Array<T>.
             const initialUsers = await holosphere.getAll(holonID, "users");
-            
-            if (Array.isArray(initialUsers)) {
-                let usersKeyedById: Record<string, User> = {};
-                initialUsers.forEach(user => {
-                    if (user && user.id) {
-                        usersKeyedById[user.id] = user as User;
-                    } else if (user && user.username) {
-                        // Fallback to username if no id
-                        usersKeyedById[user.username] = user as User;
-                    }
-                });
-                store = usersKeyedById;
-            } else if (typeof initialUsers === 'object' && initialUsers !== null) {
-                // If it's already an object, normalize the keys to use ids
-                let normalizedStore: Record<string, User> = {};
-                Object.entries(initialUsers).forEach(([key, user]) => {
-                    if (user && user.id) {
-                        normalizedStore[user.id] = user as User;
-                    } else if (user) {
-                        // Keep original key if no id
-                        normalizedStore[key] = user as User;
-                    }
-                });
-                store = normalizedStore;
-            } else {
-                store = {};
+            const usersKeyedById: Record<string, User> = {};
+            for (const user of initialUsers ?? []) {
+                if (user?.id) {
+                    usersKeyedById[user.id] = user as User;
+                } else if (user?.username) {
+                    // Fallback to username if no id
+                    usersKeyedById[user.username] = user as User;
+                }
             }
+            store = usersKeyedById;
         } catch (error) {
             console.error("[Status.svelte] Error fetching initial users:", error);
             store = {};

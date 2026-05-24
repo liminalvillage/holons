@@ -94,10 +94,10 @@
 
 		// Name resolution is automatic via resolvedName() in TitleBar
 
-		// Helper to convert data to map
-		const toMap = (data: any): Map<string, any> => {
+		// Helper to convert data to map. `data` is whatever
+		// `holosphere.getAll` resolved to — guaranteed Array<T>.
+		const toMap = (items: any[]): Map<string, any> => {
 			const map = new Map<string, any>();
-			const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
 			for (const item of items) {
 				if (isValidItem(item)) {
 					map.set(item.id, item);

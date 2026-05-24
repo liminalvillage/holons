@@ -643,17 +643,13 @@ class UI {
       holonId: holonId.toString(),
       appname: this.db.holosphere.appname,
     });
-    let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
+    // holosphere.getAll resolves to Array<T>.
+    let quests = (await this.db.holosphere.getAll(holonId.toString(), 'quests')) ?? [];
     console.log('[QUEST_PERSIST_DEBUG] questboard.getAll', {
       holonId: holonId.toString(),
-      count: Array.isArray(quests) ? quests.length : 'not-array',
-      ids: Array.isArray(quests) ? quests.slice(0, 10).map(q => ({ id: q?.id, type: q?.type, status: q?.status, title: (q?.title || '').slice(0, 30) })) : 'n/a',
+      count: quests.length,
+      ids: quests.slice(0, 10).map(q => ({ id: q?.id, type: q?.type, status: q?.status, title: (q?.title || '').slice(0, 30) })),
     });
-
-      // Ensure we have a valid array before filtering
-      if (!Array.isArray(quests)) {
-        quests = [];
-      }
 
       // Filter by type and status. Federated holograms (source holon !==
       // current) are kept — they render with the cyan-glow style so they're

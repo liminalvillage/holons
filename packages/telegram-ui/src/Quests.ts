@@ -426,12 +426,13 @@ export default class Quests {
         console.log('[QUEST_PERSIST_DEBUG] put.result', { saved });
         // Immediate read-back to verify what's in the graph right after write
         try {
-            const verify = await holonDB.getAll(holonId.toString(), 'quests');
+            // holosphere.getAll resolves to Array<T>.
+            const verify = (await holonDB.getAll(holonId.toString(), 'quests')) ?? [];
             console.log('[QUEST_PERSIST_DEBUG] verify.getAll', {
                 holonId: holonId.toString(),
-                count: Array.isArray(verify) ? verify.length : 'n/a',
-                ids: Array.isArray(verify) ? verify.slice(0, 5).map(q => q?.id) : 'n/a',
-                hasJustWritten: Array.isArray(verify) && verify.some(q => q?.id == quest.id),
+                count: verify.length,
+                ids: verify.slice(0, 5).map(q => q?.id),
+                hasJustWritten: verify.some(q => q?.id == quest.id),
             });
         } catch (e) {
             console.log('[QUEST_PERSIST_DEBUG] verify.error', e.message);

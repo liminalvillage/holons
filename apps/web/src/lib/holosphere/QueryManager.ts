@@ -187,11 +187,12 @@ class QueryManager {
 	 */
 	private async executeQuery(holonId: string, lens: string, key: string): Promise<any[]> {
 		try {
-			const data = await this.holosphere!.getAll(holonId, lens);
+			// holosphere.getAll's contract is Promise<Array<T>> — every code
+			// path in content.js resolves to an array (or throws).
+			const items = await this.holosphere!.getAll(holonId, lens);
 
 			// Convert to map for efficient updates
 			const dataMap = new Map<string, any>();
-			const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
 
 			for (const item of items) {
 				if (this.isValidItem(item)) {

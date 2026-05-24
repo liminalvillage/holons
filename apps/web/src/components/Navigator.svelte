@@ -541,36 +541,6 @@
         }, 100); // 100ms debounce
     }
 
-    // Helper function to ensure we get arrays from API calls
-    function ensureArray(data: any): any[] {
-        if (!data) return [];
-        
-        // Handle case where data might be individual characters from a JSON string
-        if (typeof data === 'string') {
-            // If it's a single character, it's likely part of a JSON string being streamed
-            if (data.length === 1) {
-                console.warn('Received single character, likely incomplete JSON:', data);
-                return [];
-            }
-            // If it looks like a JSON string, try to parse it
-            if (data.startsWith('{') || data.startsWith('[')) {
-                try {
-                    const parsed = JSON.parse(data);
-                    if (Array.isArray(parsed)) return parsed;
-                    if (typeof parsed === 'object') return Object.values(parsed);
-                } catch (e) {
-                    console.warn('Failed to parse JSON string:', data);
-                }
-            }
-            return [];
-        }
-        
-        if (Array.isArray(data)) return data;
-        if (typeof data === 'object' && Object.keys(data).length === 0) return [];
-        // If it's an object with properties, convert to array of values
-        if (typeof data === 'object') return Object.values(data);
-        return [];
-    }
 
     // Direct holosphere access for faster stats computation
     async function getStatsDirectly(holonId: string) {
@@ -598,10 +568,11 @@
                             holosphere.getAll(holonId, "offers")
                         ]);
                         
-                        const userCount = ensureArray(users.status === 'fulfilled' ? users.value : null).length;
-                        const questsArray = ensureArray(quests.status === 'fulfilled' ? quests.value : null);
-                        const shoppingCount = ensureArray(shopping.status === 'fulfilled' ? shopping.value : null).length;
-                        const offersCount = ensureArray(offers.status === 'fulfilled' ? offers.value : null).length;
+                        // holosphere.getAll is guaranteed to resolve to Array<T>.
+                        const userCount = (users.status === 'fulfilled' ? users.value : []).length;
+                        const questsArray: any[] = quests.status === 'fulfilled' ? quests.value : [];
+                        const shoppingCount = (shopping.status === 'fulfilled' ? shopping.value : []).length;
+                        const offersCount = (offers.status === 'fulfilled' ? offers.value : []).length;
                         
                         // Process quests safely
                         const actualTasks = questsArray.filter((item: any) => item && (!item.type || item.type === "task"));

@@ -214,18 +214,13 @@ import ItemModal from "./ItemModal.svelte";
         
         isLoadingRoles = true;
         try {
-            // Load initial data
+            // Load initial data — holosphere.getAll resolves to Array<T>.
             const rolesData = await holosphere.getAll(holonID, "roles");
-            let rolesStore: Record<string, any> = {};
-            
-            if (Array.isArray(rolesData)) {
-                rolesData.forEach((role, index) => {
-                    const key = role.id || role.title || index.toString();
-                    rolesStore[key] = role;
-                });
-            } else if (rolesData && typeof rolesData === 'object') {
-                rolesStore = rolesData;
-            }
+            const rolesStore: Record<string, any> = {};
+            (rolesData ?? []).forEach((role: any, index: number) => {
+                const key = role.id || role.title || index.toString();
+                rolesStore[key] = role;
+            });
             
             // Process and normalize roles from store
             const updateRolesFromStore = () => {
@@ -278,21 +273,12 @@ import ItemModal from "./ItemModal.svelte";
         
         isLoadingUsers = true;
         try {
-            // Load initial data
+            // Load initial data — holosphere.getAll resolves to Array<T>.
             const usersData = await holosphere.getAll(holonID, "users");
-            let usersStore: Record<string, any> = {};
-            
-            if (Array.isArray(usersData)) {
-                // Convert array to object with user ID as key
-                usersData.forEach(user => {
-                    if (user && user.id) {
-                        usersStore[user.id] = user;
-                    }
-                });
-            } else if (usersData && typeof usersData === 'object') {
-                usersStore = usersData;
+            const usersStore: Record<string, any> = {};
+            for (const user of usersData ?? []) {
+                if (user?.id) usersStore[user.id] = user;
             }
-            
             users = usersStore;
             
             // Set up real-time subscription
@@ -342,18 +328,13 @@ import ItemModal from "./ItemModal.svelte";
         isLoadingEvents = true;
         isLoadingTasks = true;
         try {
-            // Load initial data
+            // Load initial data — holosphere.getAll resolves to Array<T>.
             const questsData = await holosphere.getAll(holonID, "quests");
             questsStore = {};
-            
-            if (Array.isArray(questsData)) {
-                questsData.forEach((quest, index) => {
-                    const key = quest.id || index.toString();
-                    questsStore[key] = quest;
-                });
-            } else if (questsData && typeof questsData === 'object') {
-                questsStore = questsData;
-            }
+            (questsData ?? []).forEach((quest: any, index: number) => {
+                const key = quest.id || index.toString();
+                questsStore[key] = quest;
+            });
             
             // Process events to filter for upcoming scheduled items (from today onwards)
             const updateEventsFromStore = () => {
@@ -473,18 +454,13 @@ import ItemModal from "./ItemModal.svelte";
         
         isLoadingBadges = true;
         try {
-            // Load initial data
+            // Load initial data — holosphere.getAll resolves to Array<T>.
             const badgesData = await holosphere.getAll(holonID, "badges");
-            let badgesStore: Record<string, any> = {};
-            
-            if (Array.isArray(badgesData)) {
-                badgesData.forEach((badge, index) => {
-                    const key = badge.id || index.toString();
-                    badgesStore[key] = badge;
-                });
-            } else if (badgesData && typeof badgesData === 'object') {
-                badgesStore = badgesData;
-            }
+            const badgesStore: Record<string, any> = {};
+            (badgesData ?? []).forEach((badge: any, index: number) => {
+                const key = badge.id || index.toString();
+                badgesStore[key] = badge;
+            });
             
             // Process badges from store
             const updateBadgesFromStore = () => {

@@ -899,34 +899,16 @@
 
 		completersLoading = true;
 		try {
+			// holosphere.getAll resolves to Array<T>.
 			const usersData = await holosphere.getAll(holonID, 'users');
-			const users: Array<{ id: string; firstName: string; lastName?: string; username: string }> = [];
-
-			if (Array.isArray(usersData)) {
-				usersData.forEach((user: any) => {
-					if (user && user.id) {
-						users.push({
-							id: user.id,
-							firstName: user.first_name || user.firstName || 'Unknown',
-							lastName: user.last_name || user.lastName,
-							username: user.username || ''
-						});
-					}
-				});
-			} else if (typeof usersData === 'object' && usersData !== null) {
-				Object.values(usersData).forEach((user: any) => {
-					if (user && user.id) {
-						users.push({
-							id: user.id,
-							firstName: user.first_name || user.firstName || 'Unknown',
-							lastName: user.last_name || user.lastName,
-							username: user.username || ''
-						});
-					}
-				});
-			}
-
-			availableCompleters = users;
+			availableCompleters = (usersData ?? [])
+				.filter((u: any) => u?.id)
+				.map((u: any) => ({
+					id: u.id,
+					firstName: u.first_name || u.firstName || 'Unknown',
+					lastName: u.last_name || u.lastName,
+					username: u.username || ''
+				}));
 		} catch (error) {
 			console.error('Error loading users for completion:', error);
 			availableCompleters = [];

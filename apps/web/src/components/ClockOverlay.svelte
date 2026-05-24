@@ -232,23 +232,10 @@
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
             
-            // Load calendar events
-            const eventsData = await holosphere.getAll(holonID, "calendar");
-            let events: any[] = [];
-            if (Array.isArray(eventsData)) {
-                events = eventsData;
-            } else if (eventsData && typeof eventsData === 'object') {
-                events = Object.values(eventsData);
-            }
-            
-            // Load scheduled tasks (use same logic as Calendar: tasks with `when`)
-            const tasksData = await holosphere.getAll(holonID, "quests");
-            let taskEntries: [string, any][] = [];
-            if (Array.isArray(tasksData)) {
-                taskEntries = tasksData.map((task: any, index: number) => [task?.id || index.toString(), task]);
-            } else if (tasksData && typeof tasksData === 'object') {
-                taskEntries = Object.entries(tasksData);
-            }
+            // holosphere.getAll resolves to Array<T>.
+            const events: any[] = (await holosphere.getAll(holonID, "calendar")) ?? [];
+            const tasksData: any[] = (await holosphere.getAll(holonID, "quests")) ?? [];
+            const taskEntries: [string, any][] = tasksData.map((task: any, index: number) => [task?.id || index.toString(), task]);
             
             // Filter for today's events (upcoming only)
             const nowMs = Date.now();
@@ -329,15 +316,9 @@
         
         isLoadingTasks = true;
         try {
-            const tasksData = await holosphere.getAll(holonID, "quests");
-            let tasks: any[] = [];
-            
-            if (Array.isArray(tasksData)) {
-                // Convert array to entries for consistent processing
-                tasks = tasksData.map((task, index) => [task.id || index.toString(), task]);
-            } else if (tasksData && typeof tasksData === 'object') {
-                tasks = Object.entries(tasksData);
-            }
+            // holosphere.getAll resolves to Array<T>.
+            const tasksData: any[] = (await holosphere.getAll(holonID, "quests")) ?? [];
+            const tasks: [string, any][] = tasksData.map((task: any, index: number) => [task.id || index.toString(), task]);
             
             // Filter active tasks first
             const activeTasks = tasks.filter(([_, task]: [string, any]) => 

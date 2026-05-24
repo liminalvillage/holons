@@ -181,10 +181,8 @@ export async function preloadHolon(
                 updateCachedSettings(holonId, settingsData);
             }
 
-            // Update users cache
-            const users = Array.isArray(usersData)
-                ? usersData
-                : Object.values(usersData || {});
+            // Update users cache — holosphere.getAll resolves to Array<T>.
+            const users: any[] = usersData ?? [];
             setCachedUsers(holonId, users.filter((u): u is CachedUser => !!u?.username));
 
         } catch (error) {
