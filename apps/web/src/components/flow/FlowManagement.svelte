@@ -320,12 +320,9 @@
     }
 
     try {
-      const users = await holosphere.getAll(holonId, 'users');
-      if (Array.isArray(users)) {
-        holosphereUsers = users.filter((u: any) => u && u.id) as HolosphereUser[];
-      } else if (typeof users === 'object' && users !== null) {
-        holosphereUsers = Object.values(users).filter((u: any) => u && u.id) as HolosphereUser[];
-      }
+      // holosphere.getAll resolves to Array<T>.
+      const users = (await holosphere.getAll(holonId, 'users')) ?? [];
+      holosphereUsers = users.filter((u: any) => u?.id) as HolosphereUser[];
 
       // Load equation from settings (using shared service - same as Holonsbot)
       equation = await loadEquation(holosphere, holonId);

@@ -160,16 +160,11 @@
 		}
 
 		try {
-			const initialUsers = await holosphere.getAll(holonID, "users");
-			let usersKeyedById = {};
-			if (Array.isArray(initialUsers)) {
-				initialUsers.forEach(user => {
-					if (user && user.id) usersKeyedById[user.id] = user;
-				});
-			} else if (typeof initialUsers === 'object' && initialUsers !== null) {
-				Object.values(initialUsers).forEach((user) => {
-					if (user && user.id) usersKeyedById[user.id] = user;
-				});
+			// holosphere.getAll resolves to Array<T>.
+			const initialUsers = (await holosphere.getAll(holonID, "users")) ?? [];
+			const usersKeyedById: Record<string, any> = {};
+			for (const user of initialUsers) {
+				if (user?.id) usersKeyedById[user.id] = user;
 			}
 			// Ensure current user is in the store
 			userStore = ensureCurrentUserInStore(usersKeyedById);
@@ -307,21 +302,15 @@
 					// Use federated data retrieval
 					await fetchFederatedOffersAndNeeds();
 				} else {
-					// First, load initial data with getAll (subscription only gets updates, not existing data).
-					// Always key by `item.id` so the subscribe callback below can't
-					// land the same item under a second key.
+					// First, load initial data with getAll (subscription only gets
+					// updates, not existing data). holosphere.getAll resolves to
+					// Array<T>. Always key by `item.id` so the subscribe callback
+					// below can't land the same item under a second key.
 					try {
-						const initialData = await holosphere.getAll(holonID, "quests");
-						const items = Array.isArray(initialData)
-							? initialData
-							: (initialData && typeof initialData === 'object'
-								? Object.values(initialData)
-								: []);
-						items.forEach((item: any) => {
-							if (item && item.id) {
-								store[item.id] = { ...item, key: item.id };
-							}
-						});
+						const items = (await holosphere.getAll(holonID, "quests")) ?? [];
+						for (const item of items) {
+							if (item?.id) store[item.id] = { ...item, key: item.id };
+						}
 						store = store; // Trigger reactivity
 					} catch (error) {
 						console.error('Error loading initial offers data:', error);

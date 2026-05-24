@@ -124,9 +124,9 @@ class QueryManager {
 	private isValidItem(item: any): boolean {
 		if (!item || !item.id) return false;
 		if (item._deleted) return false;
-		// Unresolved hologram placeholders. `_hologram.isHologram === true` marks
-		// a *resolved* hologram (real data sourced via reference) — keep those.
-		if (item.hologram === true) return false;
+		// Note: `getFederated` now drops unresolved-hologram error stubs
+		// (`_hologram.isHologram === false`) at the library boundary, so no
+		// extra placeholder filter is needed here.
 		return true;
 	}
 

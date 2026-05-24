@@ -66,22 +66,14 @@
             if (holosphere) {
                 // First, fetch all existing users
                 try {
+                    // holosphere.getAll resolves to Array<T>.
                     const initialUsers = await holosphere.getAll(holonId, "users");
-                    if (initialUsers) {
-                        // Convert array to object if needed
-                        if (Array.isArray(initialUsers)) {
-                            const userObject: UserStore = {};
-                            initialUsers.forEach((user, index) => {
-                                if (user && user.id) {
-                                    userObject[user.id] = user;
-                                }
-                            });
-                            userStore = userObject;
-                        } else {
-                            userStore = initialUsers as UserStore;
-                        }
-                        console.log("[ItemModal] Loaded initial users:", Object.keys(userStore).length);
+                    const userObject: UserStore = {};
+                    for (const user of initialUsers ?? []) {
+                        if (user?.id) userObject[user.id] = user;
                     }
+                    userStore = userObject;
+                    console.log("[ItemModal] Loaded initial users:", Object.keys(userStore).length);
                 } catch (error) {
                     console.error("[ItemModal] Error fetching initial users:", error);
                 }

@@ -148,25 +148,13 @@
 		currentSubscription = { holonId: safeHolonID, tableName };
 
 		if (holosphere && tableName.trim()) {
-			// First, fetch initial data using read() - this filters out _deleted items
+			// First, fetch initial data. holosphere.getAll resolves to Array<T>.
 			try {
 				const initialData = await holosphere.getAll(safeHolonID, tableName);
-				if (initialData) {
-					if (Array.isArray(initialData)) {
-						initialData.forEach((item: any) => {
-							if (item && item.id) {
-								store[item.id] = item;
-							}
-						});
-					} else if (typeof initialData === 'object') {
-						Object.entries(initialData).forEach(([key, value]: [string, any]) => {
-							if (value && value.id) {
-								store[key] = value;
-							}
-						});
-					}
-					store = { ...store }; // Trigger reactivity
+				for (const item of initialData ?? []) {
+					if (item?.id) store[item.id] = item;
 				}
+				store = { ...store }; // Trigger reactivity
 			} catch (error) {
 				console.error(`[DB] Error loading initial data:`, error);
 			}

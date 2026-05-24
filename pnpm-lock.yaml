@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   holosphere@1.3.0-alpha4:
-    hash: 25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613
+    hash: 5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9
     path: patches/holosphere@1.3.0-alpha4.patch
 
 importers:
@@ -67,7 +67,7 @@ importers:
         version: 4.4.0
       holosphere:
         specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        version: 1.3.0-alpha4(patch_hash=5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       html2canvas:
         specifier: ^1.4.1
         version: 1.4.1
@@ -213,7 +213,7 @@ importers:
     dependencies:
       holosphere:
         specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        version: 1.3.0-alpha4(patch_hash=5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       ical.js:
         specifier: ^2.2.1
         version: 2.2.1
@@ -241,7 +241,7 @@ importers:
         version: 17.4.2
       holosphere:
         specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        version: 1.3.0-alpha4(patch_hash=5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -314,7 +314,7 @@ importers:
         version: 8.1.0
       holosphere:
         specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        version: 1.3.0-alpha4(patch_hash=5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       http-proxy:
         specifier: ^1.18.1
         version: 1.18.1(debug@4.4.3)
@@ -7738,7 +7738,7 @@ snapshots:
 
   helmet@8.1.0: {}
 
-  holosphere@1.3.0-alpha4(patch_hash=25673651f410b5f4c9ab1961b911d215d3eda672d7e3c4b321b780d842263613)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76)):
+  holosphere@1.3.0-alpha4(patch_hash=5e89a0a7fce01e93ad6b8e157cba206b4e55044c486409e74759b009635157a9)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76)):
     dependencies:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0

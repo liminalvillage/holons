@@ -395,7 +395,11 @@ describe('QueryManager', () => {
 		qm.clear();
 	});
 
-	it('filters out deleted and unresolved hologram items', async () => {
+	it('filters out deleted and id-less items', async () => {
+		// Note: unresolved-hologram error stubs used to leak through here
+		// and we filtered them client-side. Holosphere now filters them at
+		// the `getFederated` boundary (federation.js `isResolved`), so
+		// QueryManager only needs to drop tombstones + id-less rows.
 		const { queryManager: qm } = await import('./lib/holosphere/QueryManager');
 		qm.clear();
 
@@ -404,7 +408,6 @@ describe('QueryManager', () => {
 				return [
 					{ id: 'valid', title: 'Good' },
 					{ id: 'deleted', title: 'Bad', _deleted: true },
-					{ id: 'hologram', title: 'Unresolved', hologram: true, target: 'some-target' },
 					{ id: null }, // invalid
 				];
 			}

@@ -155,17 +155,10 @@
 
   async function fetchRealUserCount() {
     try {
-      const users = await holosphere.getAll(holonId, 'users');
-      if (Array.isArray(users)) {
-        realUserCount = users.length;
-        realUsers = users;
-      } else if (typeof users === 'object' && users !== null) {
-        realUserCount = Object.keys(users).length;
-        realUsers = Object.values(users);
-      } else {
-        realUserCount = 0;
-        realUsers = [];
-      }
+      // holosphere.getAll resolves to Array<T>.
+      const users = (await holosphere.getAll(holonId, 'users')) ?? [];
+      realUserCount = users.length;
+      realUsers = users;
     } catch (err) {
       console.error('Error fetching user count:', err);
       realUserCount = 0;

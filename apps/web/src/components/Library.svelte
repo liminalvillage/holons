@@ -373,18 +373,17 @@
             aggregate: false
         });
 
+        // holosphere.getFederated resolves to Array<T> and filters
+        // unresolved-hologram error stubs by default.
         const newStore: Record<string, LibraryItem> = {};
-        if (Array.isArray(federatedData)) {
-            federatedData.forEach((item: any, index: number) => {
-                if (item && item.id && !item._deleted && item.hologram !== true) {
-                    const key = item.key || item.id || `fed_${index}`;
-                    const processed: any = { ...item, id: item.id };
-                    if (item._federation) processed._federation = item._federation;
-                    if (item._hologram) processed._hologram = item._hologram;
-                    newStore[key] = processed as LibraryItem;
-                }
-            });
-        }
+        (federatedData ?? []).forEach((item: any, index: number) => {
+            if (!item?.id || item._deleted) return;
+            const key = item.key || item.id || `fed_${index}`;
+            const processed: any = { ...item, id: item.id };
+            if (item._federation) processed._federation = item._federation;
+            if (item._hologram) processed._hologram = item._hologram;
+            newStore[key] = processed as LibraryItem;
+        });
         store = newStore;
 
         await preResolveHologramNames(Object.values(store));
