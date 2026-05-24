@@ -1,8 +1,46 @@
 diff --git a/content.js b/content.js
-index 77b6d79..d8e2769 100644
+index 77b6d79..668cd93 100644
 --- a/content.js
 +++ b/content.js
-@@ -214,8 +214,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
+@@ -1,5 +1,37 @@
+ // holo_content.js
+ 
++/**
++ * Default deadline (ms) for the read paths' `.once()` calls. Gun's `.once()`
++ * never fires when the requested node isn't in the local graph and no peer
++ * answers (cold-start, offline, partitioned mesh) — past consumers worked
++ * around this by wrapping every `getAll` in their own `Promise.race(reject,
++ * setTimeout(8000))`. Owning it here means the spinner can never hang
++ * indefinitely on a cold path and every caller stops needing the wrapper.
++ *
++ * Pick `READ_TIMEOUT_MS = 0` (or pass `{ timeout: 0 }`) to opt out of the
++ * fallback and keep the historical "wait forever" behaviour.
++ */
++const READ_TIMEOUT_MS = 8000;
++
++/**
++ * `.once()` wrapped in a deadline. Resolves with the value when Gun fires
++ * back, or `null` after `timeoutMs` if it hasn't. Pass `timeoutMs <= 0` to
++ * disable the deadline.
++ *
++ * The first responder wins — both branches are idempotent so a late
++ * `.once()` callback after timeout is harmlessly ignored.
++ */
++function onceWithTimeout(node, timeoutMs = READ_TIMEOUT_MS) {
++    return new Promise((resolve) => {
++        let done = false;
++        const finish = (v) => { if (!done) { done = true; resolve(v); } };
++        node.once((data) => finish(data));
++        if (timeoutMs > 0) {
++            setTimeout(() => finish(null), timeoutMs);
++        }
++    });
++}
++
+ /**
+  * Recursively sanitizes a value for storage in GunDB.
+  *
+@@ -214,8 +246,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                  }
                  // Strip read-side envelopes that must never be persisted
                  // (they're attached at resolution time).
@@ -28,7 +66,16 @@ index 77b6d79..d8e2769 100644
                  const payload = JSON.stringify(dataToStore); // The data being stored
  
                  const putCallback = async (ack) => {
-@@ -454,17 +471,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -400,7 +449,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+     }
+ 
+     // Destructure options, including visited
+-    const { resolveHolograms = true, validationOptions = {}, visited } = options;
++    const { resolveHolograms = true, validationOptions = {}, visited, timeout = READ_TIMEOUT_MS } = options;
+ 
+     // Get schema for validation if in strict mode
+     let schema = null;
+@@ -454,17 +503,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                          });
  
                          if (resolvedValue === null) {
@@ -60,7 +107,7 @@ index 77b6d79..d8e2769 100644
                              resolve(null);
                              return;
                          }
-@@ -472,7 +492,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+@@ -472,7 +524,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                          // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
                          // For now, assume resolvedValue is either the resolved data or we've returned null above.
  
@@ -69,7 +116,55 @@ index 77b6d79..d8e2769 100644
                              parsed = resolvedValue;
                          }
                      }
-@@ -630,12 +650,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+@@ -505,7 +557,10 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+                 user.get('private').get(lens).get(key) :
+                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+ 
+-            dataPath.once(handleData);
++            // `.once()` wrapped in a deadline — cold-path reads (peer offline,
++            // never-written key) used to hang forever otherwise. After
++            // `timeout` ms with no Gun response we treat it as "not found".
++            onceWithTimeout(dataPath, timeout).then(handleData);
+         });
+     } catch (error) {
+         console.error('Error in get:', error);
+@@ -519,12 +574,18 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+  * @param {string} holon - The holon identifier.
+  * @param {string} lens - The lens from which to retrieve content.
+  * @param {string} [password] - Optional password for private holon.
++ * @param {object} [options] - Additional options.
++ * @param {number} [options.timeout=READ_TIMEOUT_MS] - Per-`.once()` deadline
++ *   (ms); the shallow probe falls back to "empty" after this on cold paths
++ *   where Gun never responds. Pass `0` to disable and keep the historical
++ *   "wait forever" behaviour.
+  * @returns {Promise<Array<object>>} - The retrieved content.
+  */
+-export async function getAll(holoInstance, holon, lens, password = null) {
++export async function getAll(holoInstance, holon, lens, password = null, options = {}) {
+     if (!holon || !lens) {
+         throw new Error('getAll: Missing required parameters');
+     }
++    const { timeout = READ_TIMEOUT_MS } = options;
+ 
+     const schema = await holoInstance.getSchema(lens);
+     if (!schema && holoInstance.strict) {
+@@ -584,9 +645,12 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
+ 
+             // PASS 1: Get shallow node to determine expected item count.
+-            // Retry once if empty — Gun's .once() reads from local cache, which
+-            // may be cold immediately after startup before peers have synced.
+-            const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
++            // Wrapped in a deadline (see `onceWithTimeout`) so cold paths
++            // resolve `null` after `timeout` ms instead of hanging forever.
++            // We still retry once below — Gun's `.once()` reads from local
++            // cache, which may be cold immediately after startup before
++            // peers have synced.
++            const shallowOnce = () => onceWithTimeout(dataPath, timeout);
+ 
+             const processShallow = (data) => {
+                 if (!data) {
+@@ -630,12 +694,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                                  });
  
                                  if (resolved === null) {
@@ -86,6 +181,22 @@ index 77b6d79..d8e2769 100644
 +                                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
                                      return;
                                  }
+ 
+@@ -678,11 +741,10 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+                         return processItem(inline, key);
+                     }
+                     // Otherwise fetch the leaf — sub-graph reference path.
+-                    return new Promise((resolveItem) => {
+-                        dataPath.get(key).once((itemData) => {
+-                            processItem(itemData, key).then(resolveItem, resolveItem);
+-                        });
+-                    });
++                    // Same deadline as the shallow probe; a single missing
++                    // leaf can't stall the whole batch.
++                    return onceWithTimeout(dataPath.get(key), timeout)
++                        .then((itemData) => processItem(itemData, key));
+                 })).then(() => resolve(Array.from(output.values())));
+             };
  
 diff --git a/federation.js b/federation.js
 index f940532..2162cfc 100644
@@ -238,10 +349,33 @@ index 5f27676..ef44e26 100644
                  }
              } else {
 diff --git a/holosphere.d.ts b/holosphere.d.ts
-index bd12d2e..3ac30a3 100644
+index bd12d2e..02d0fdc 100644
 --- a/holosphere.d.ts
 +++ b/holosphere.d.ts
-@@ -187,8 +187,8 @@ declare class HoloSphere {
+@@ -20,6 +20,13 @@ interface PutOptions {
+ interface GetOptions {
+   resolveHolograms?: boolean;
+   validationOptions?: object;
++  /** Per-`.once()` deadline in ms; cold paths resolve `null` after this. Default 8000. Pass `0` to disable. */
++  timeout?: number;
++}
++
++interface GetAllOptions {
++  /** Per-`.once()` deadline in ms; cold paths resolve `[]` after this. Default 8000. Pass `0` to disable. */
++  timeout?: number;
+ }
+ 
+ interface ResolveHologramOptions {
+@@ -168,7 +175,7 @@ declare class HoloSphere {
+     put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
+     get(holon: string, lens: string): Promise<any | null>;
+     get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
+-    getAll(holon: string, lens: string, password?: string | null): Promise<Array<any>>;
++    getAll(holon: string, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
+     parse(rawData: any): Promise<object | null>;
+     delete(holon: string, lens: string, key: string, password?: string | null): Promise<boolean>;
+     deleteAll(holon: string, lens: string, password?: string | null): Promise<boolean>;
+@@ -187,8 +194,8 @@ declare class HoloSphere {
      getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
      deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
      deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
@@ -252,7 +386,7 @@ index bd12d2e..3ac30a3 100644
  
      // Hologram
      createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
-@@ -210,8 +210,10 @@ declare class HoloSphere {
+@@ -210,8 +217,10 @@ declare class HoloSphere {
      getScalespace(lat: number, lng: number): string[];
      getHolonScalespace(holon: string): string[];
  
@@ -266,9 +400,20 @@ index bd12d2e..3ac30a3 100644
      // Federation - v1 style
      federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
 diff --git a/holosphere.js b/holosphere.js
-index 73cef39..781fd79 100644
+index 73cef39..a055e62 100644
 --- a/holosphere.js
 +++ b/holosphere.js
+@@ -192,8 +192,8 @@ class HoloSphere {
+         return ContentOps.get(this, holon, lens, key, password, options);
+     }
+ 
+-    async getAll(holon, lens, password = null) {
+-        return ContentOps.getAll(this, holon, lens, password);
++    async getAll(holon, lens, password = null, options = {}) {
++        return ContentOps.getAll(this, holon, lens, password, options);
+     }
+ 
+     async parse(rawData) {
 @@ -262,8 +262,10 @@ class HoloSphere {
      /**
       * Subscribe to real-time changes in a global table.

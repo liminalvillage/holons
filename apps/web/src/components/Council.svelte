@@ -469,51 +469,35 @@ What matter brings you before the council today?`;
 		
 		try {
 			console.log(`Fetching council data for holon: ${holonID}`);
-			
-			// Fetch with timeout
-			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-				const timeoutPromise = new Promise((_, reject) => 
-					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-				);
-				return Promise.race([promise, timeoutPromise]);
-			};
 
-			// Fetch council data
+			// holosphere.getAll/get now have a built-in deadline (default 8s)
+			// so we no longer wrap them in Promise.race. Override via
+			// `{ timeout: ms }` on the call if a tighter bound is needed.
 			const [membersData, proposalsData] = await Promise.all([
-				fetchWithTimeout(holosphere.getAll(holonID, "council_members"), 5000),
-				fetchWithTimeout(holosphere.getAll(holonID, "council_proposals"), 5000)
+				holosphere.getAll(holonID, "council_members", null, { timeout: 5000 }),
+				holosphere.getAll(holonID, "council_proposals", null, { timeout: 5000 })
 			]);
 
-			// Fetch settings separately since it might not exist
+			// Fetch settings separately since it might not exist.
 			let settingsData = null;
 			try {
-				settingsData = await fetchWithTimeout(holosphere.get(holonID, "council_settings", holonID), 5000);
+				settingsData = await holosphere.get(holonID, "council_settings", holonID, null, { timeout: 5000 });
 			} catch (error) {
 				console.log('No council settings found, using defaults');
 			}
 
-			// Process members data
-			if (Array.isArray(membersData)) {
-				membersData.forEach((member: any) => {
-					if (member && member.id) {
-						councilData.members[member.id] = member as CouncilMember;
-					}
-				});
-			} else if (typeof membersData === 'object' && membersData !== null) {
-				Object.entries(membersData).forEach(([key, member]: [string, any]) => {
-					if (member && member.id) {
-						councilData.members[key] = member as CouncilMember;
-					}
-				});
+			// Process members data — getAll resolves to Array<T>.
+			for (const member of membersData ?? []) {
+				if (member?.id) {
+					councilData.members[member.id] = member as CouncilMember;
+				}
 			}
 
-			// Process proposals data
-			if (Array.isArray(proposalsData)) {
-				councilData.proposals = proposalsData.filter((proposal: any) => proposal && proposal.id);
-			}
+			// Process proposals data.
+			councilData.proposals = (proposalsData ?? []).filter((p: any) => p?.id);
 
-			// Process settings data
-			if (settingsData && typeof settingsData === 'object' && !Array.isArray(settingsData)) {
+			// Process settings data.
+			if (settingsData && typeof settingsData === 'object') {
 				councilData.settings = { ...councilData.settings, ...(settingsData as any) };
 			}
 
@@ -1764,18 +1748,11 @@ function selectSeatAdvisor(a: CouncilAdvisorExtended) {
 	// Load history data from holosphere
 	async function loadHistoryData() {
 		if (!holosphere || !holonID) return;
-		
-		// Fetch with timeout function
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
+
+		// holosphere.get/getAll now carry a built-in deadline (default 8s).
 		try {
 			// Load previous values
-			const valuesData = await fetchWithTimeout(holosphere.get(holonID, "ritual_previous_values", holonID), 2000);
+			const valuesData = await holosphere.get(holonID, "ritual_previous_values", holonID, null, { timeout: 2000 });
 			if (valuesData && Array.isArray(valuesData)) {
 				previousValues = [...new Set(valuesData)]; // Remove duplicates
 			}
@@ -1947,28 +1924,19 @@ function selectSeatAdvisor(a: CouncilAdvisorExtended) {
 			return;
 		}
 		
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
+		// holosphere.getAll now carries a built-in deadline; pass `timeout`
+		// in the options to override.
 		try {
 			console.log('🔍 Fetching previous rituals from HoloSphere...');
-			console.log('🔑 Using quest-like pattern: getAll for collection');
-			
+
 			// Add small delay for HoloSphere data propagation
 			if (retryCount === 0) {
 				await new Promise(resolve => setTimeout(resolve, 500));
 			}
-			
-			const ritualsData = await fetchWithTimeout(holosphere.getAll(holonID, "previous_rituals"), 3000);
-			console.log('📦 Raw rituals data from HoloSphere:', ritualsData);
-			
-			if (ritualsData && typeof ritualsData === 'object') {
-				// Convert getAll object result to array (like quests)
-				const ritualsArray = Object.values(ritualsData);
+
+			const ritualsArray = (await holosphere.getAll(holonID, "previous_rituals", null, { timeout: 3000 })) ?? [];
+			console.log('📦 Rituals from HoloSphere:', ritualsArray.length);
+			if (ritualsArray.length > 0) {
 				console.log('📦 Converted object to array:', ritualsArray.length, 'rituals');
 				
 				// Parse dates and fix data structure for loaded rituals
