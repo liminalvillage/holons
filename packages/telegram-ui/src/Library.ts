@@ -4,7 +4,8 @@
  */
 
 import { Markup } from 'telegraf';
-import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
+import { REAEventStore, REAEventFactory } from '@holons/core/rea';
+import { REAAggregator } from '@holons/core/scoring';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
 import {
@@ -184,7 +185,7 @@ class Library {
             category: options.category || 'Uncategorized',
             description: options.description || '',
             value: options.value || 0,
-            created: new Date(),
+            created: new Date().toISOString(),
         };
     }
 

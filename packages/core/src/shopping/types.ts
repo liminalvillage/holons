@@ -32,7 +32,8 @@ export interface ShoppingChecklist {
   type: 'shopping';
   title: string;
   items: ShoppingItem[];
-  createdAt: number;
+  /** Canonical creation timestamp (ISO string). */
+  created: string;
   _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
   _federation?: { origin?: string; sourceLens?: string };
   [key: string]: unknown;

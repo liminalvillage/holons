@@ -41,8 +41,10 @@ export interface Proposal {
   participants: VoteEntry[];
   /** Veto / block votes. */
   stoppers: VoteEntry[];
-  /** Unix seconds (web) or ms (bot). Stored as-is. */
-  date: number;
+  /** Canonical creation timestamp (ISO string). */
+  created?: string;
+  /** @deprecated Legacy `date` field — web used Unix **seconds**, bot used ms. Readers should prefer `created` and only fall back here for back-compat. */
+  date?: number;
   /** Free-form creator label or user object. */
   creator?: VoteEntry;
   status?: ProposalStatus;

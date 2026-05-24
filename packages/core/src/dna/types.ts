@@ -8,8 +8,10 @@ export interface Chromosome {
   name: string;
   type: ChromosomeType;
   description: string;
-  createdAt: number; // Unix timestamp
-  updatedAt: number;
+  /** Canonical creation timestamp (ISO 8601 string). */
+  created: string;
+  /** Canonical modification timestamp (ISO 8601 string). */
+  updated: string;
   icon?: string;
   color?: string;
 }
@@ -17,8 +19,10 @@ export interface Chromosome {
 export interface DNASequence {
   holonId: string;
   chromosomeIds: string[]; // Ordered, unique, max 20
-  createdAt: number;
-  updatedAt: number;
+  /** Canonical creation timestamp (ISO 8601 string). */
+  created: string;
+  /** Canonical modification timestamp (ISO 8601 string). */
+  updated: string;
   version: number;
 }
 

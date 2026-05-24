@@ -619,7 +619,7 @@ function ensureCreatorTracking(advisor: CouncilAdvisorExtended): CouncilAdvisorE
   return {
     ...advisor,
     creatorUserId: advisor.creatorUserId || "QBFRANK",
-    createdAt: advisor.createdAt || "2024-01-01T00:00:00.000Z" // Default creation date for static advisors
+    created: advisor.created || "2024-01-01T00:00:00.000Z" // Default creation date for static advisors
   };
 }
 

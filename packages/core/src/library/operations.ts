@@ -59,7 +59,7 @@ export function createLibraryItem(
     category: options.category || 'Uncategorized',
     description: options.description || '',
     value: options.value || 0,
-    created: new Date()
+    created: new Date().toISOString()
   };
 }
 

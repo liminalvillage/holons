@@ -29,7 +29,7 @@ export interface CouncilAdvisorExtended {
   
   // Creator tracking
   creatorUserId?: string; // ID of the user who created this advisor
-  createdAt?: string; // ISO timestamp when created
+  created?: string; // ISO timestamp when created
   
   // Extended character specification
   characterSpec: ArchetypeAdvisor | RealPersonAdvisor | MythicAdvisor;

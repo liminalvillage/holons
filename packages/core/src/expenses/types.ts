@@ -12,8 +12,8 @@ export type AgentId = string | number;
 export interface Expense {
   /** Stable identifier (telegram message id in the bot, uuid in web). */
   id: AgentId;
-  /** Unix epoch ms when the expense was recorded. */
-  date: number;
+  /** ISO 8601 string of when the expense was recorded. Canonical across every domain shape — `created` is the single name we use everywhere. */
+  created: string;
   /** Total amount in `currency` units. */
   amount: number;
   /** Currency code; persisted normalized (lowercase, singular, a-z only). */

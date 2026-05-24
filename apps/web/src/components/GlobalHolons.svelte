@@ -195,11 +195,20 @@
                 try {
                     const settings = await holosphere.get($ID, 'settings', $ID);
                     if (settings?.name) {
+                        // Canonical `created: ISO`. Promote either the legacy
+                        // settings `createdAt` (ms epoch) or new `created`
+                        // (ISO) so the registry record always carries the
+                        // unified shape.
+                        const createdIso = typeof settings.created === 'string'
+                            ? settings.created
+                            : (typeof settings.createdAt === 'number'
+                                ? new Date(settings.createdAt).toISOString()
+                                : new Date().toISOString());
                         await holosphere.writeGlobal('holons_registry', {
                             id: $ID,
                             name: settings.name,
                             purpose: settings.purpose || '',
-                            createdAt: settings.createdAt || Date.now(),
+                            created: createdIso,
                             type: 'personal'
                         });
                         console.log(`Registered current holon ${$ID} in global registry`);

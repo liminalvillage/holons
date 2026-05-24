@@ -5,9 +5,15 @@
 	import type { HoloSphere } from "holosphere";
 	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
 
-	// Holonsbot writes `date` (epoch ms number); harvest writes `timestamp`
-	// (ISO string). Read either so cross-system data sorts/displays correctly.
+	// Canonical creation timestamp is `created: ISO string` across every
+	// shape. Older records may carry the bot's legacy `date` (ms / numeric
+	// string) or harvest's legacy `timestamp` (ISO); read all three for
+	// back-compat so cross-system data sorts/displays correctly.
 	function expenseTimestampMs(e: any): number {
+		if (typeof e?.created === 'string') {
+			const t = Date.parse(e.created);
+			if (!Number.isNaN(t)) return t;
+		}
 		if (typeof e?.date === 'number') return e.date;
 		if (typeof e?.date === 'string') {
 			const n = parseInt(e.date, 10);
@@ -43,7 +49,8 @@
 		description: string;
 		paidBy: string;
 		splitWith: string[];
-		date: string;
+		/** Canonical creation timestamp (ISO). */
+		created: string;
 		picture?: string;
 		_hologram?: { isHologram?: boolean; soul?: string; sourceHolon?: string };
 		_federation?: { origin?: string; sourceLens?: string };
@@ -419,7 +426,7 @@
 			description: newExpense.description,
 			paidBy: newExpense.paidBy,
 			splitWith: newExpense.splitWith,
-			date: new Date().toISOString()
+			created: new Date().toISOString()
 		};
 
 		await holosphere.put(holonID, 'expenses', expense);
@@ -448,7 +455,7 @@
 					splitWith: Array.isArray(raw.splitWith) && raw.splitWith.length > 0
 						? raw.splitWith.map(String)
 						: allParticipants,
-					date: raw.date ?? new Date().toISOString()
+					created: raw.created ?? raw.date ?? new Date().toISOString()
 				};
 				await holosphere.put(holonID, 'expenses', expense);
 			}

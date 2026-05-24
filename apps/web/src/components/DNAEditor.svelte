@@ -183,8 +183,8 @@
         {
           holonId,
           chromosomeIds: currentSequence.map(c => c.id),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          created: new Date().toISOString(),
+          updated: new Date().toISOString(),
           version: currentVersion + 1
         },
         library

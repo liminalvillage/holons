@@ -18,7 +18,18 @@ export async function getDNASequence(
     if (!data || typeof data !== 'object') {
       return null;
     }
-    return data as DNASequence;
+    // Promote legacy `createdAt`/`updatedAt` (ms epoch) to canonical
+    // `created`/`updated` (ISO string) so consumers always see one shape.
+    const raw = data as any;
+    return {
+      ...raw,
+      created: typeof raw.created === 'string'
+        ? raw.created
+        : (typeof raw.createdAt === 'number' ? new Date(raw.createdAt).toISOString() : new Date().toISOString()),
+      updated: typeof raw.updated === 'string'
+        ? raw.updated
+        : (typeof raw.updatedAt === 'number' ? new Date(raw.updatedAt).toISOString() : new Date().toISOString()),
+    } as DNASequence;
   } catch (error) {
     console.error('Error getting DNA sequence:', error);
     return null;
@@ -33,15 +44,15 @@ export async function saveDNASequence(
   currentVersion?: number
 ): Promise<DNASequence> {
   try {
-    const now = Date.now();
+    const nowIso = new Date().toISOString();
     const existing = await getDNASequence(holosphere, holonId);
 
     const dna: DNASequence = {
       holonId,
       chromosomeIds,
-      updatedAt: now,
+      updated: nowIso,
       version: (currentVersion || 0) + 1,
-      createdAt: existing?.createdAt || now
+      created: existing?.created || nowIso
     };
 
     await holosphere.put(holonId, DNA_KEY, dna);
@@ -58,6 +69,15 @@ function hydrateChromosome(
   fallbackId: string,
   fallbackHolonId: string
 ): Chromosome {
+  // Read canonical `created`/`updated` (ISO) first; fall back to the legacy
+  // `createdAt`/`updatedAt` (ms epoch) so records written before the unify
+  // still hydrate with a usable ISO string.
+  const created = typeof raw.created === 'string'
+    ? raw.created
+    : (typeof raw.createdAt === 'number' ? new Date(raw.createdAt).toISOString() : new Date().toISOString());
+  const updated = typeof raw.updated === 'string'
+    ? raw.updated
+    : (typeof raw.updatedAt === 'number' ? new Date(raw.updatedAt).toISOString() : created);
   return {
     id: raw.id || fallbackId,
     holonId: raw.holonId || fallbackHolonId,
@@ -66,8 +86,8 @@ function hydrateChromosome(
     description: raw.description || '',
     icon: raw.icon,
     color: raw.color,
-    createdAt: raw.createdAt || Date.now(),
-    updatedAt: raw.updatedAt || Date.now()
+    created,
+    updated
   };
 }
 
@@ -107,11 +127,11 @@ export async function getChromosomeLibrary(
 export async function addChromosome(
   holosphere: HoloSphere,
   holonId: string,
-  chromosome: Omit<Chromosome, 'id' | 'createdAt' | 'updatedAt'>
+  chromosome: Omit<Chromosome, 'id' | 'created' | 'updated'>
 ): Promise<Chromosome> {
   try {
     const { raw, chromosomes } = await readLibrary(holosphere, holonId);
-    const now = Date.now();
+    const nowIso = new Date().toISOString();
     const newChromosome: Chromosome = {
       id: generateUUID(),
       holonId,
@@ -120,8 +140,8 @@ export async function addChromosome(
       description: chromosome.description,
       icon: chromosome.icon,
       color: chromosome.color,
-      createdAt: now,
-      updatedAt: now
+      created: nowIso,
+      updated: nowIso
     };
 
     const validation = validateChromosome(newChromosome, chromosomes);
@@ -158,7 +178,7 @@ export async function updateChromosome(
     const updatedChromosome: Chromosome = {
       ...existing,
       ...updates,
-      updatedAt: Date.now()
+      updated: new Date().toISOString()
     };
 
     const validation = validateChromosome(updatedChromosome, chromosomes);
@@ -274,7 +294,7 @@ export async function seedChromosomeLibrary(
 
     defaults.forEach((seed: SeedChromosome) => {
       const id = generateUUID();
-      const now = Date.now();
+      const nowIso = new Date().toISOString();
       library[id] = {
         id,
         holonId,
@@ -282,8 +302,8 @@ export async function seedChromosomeLibrary(
         type: seed.type,
         description: seed.description,
         icon: seed.icon,
-        createdAt: now,
-        updatedAt: now
+        created: nowIso,
+        updated: nowIso
       };
     });
 

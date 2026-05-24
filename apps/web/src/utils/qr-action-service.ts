@@ -284,7 +284,7 @@ export class QRActionService {
 					id: params.title, // Use title as ID for consistency
 					title: params.title,
 					description: params.desc || `Role created via QR code`,
-					created_at: new Date().toISOString(),
+					created: new Date().toISOString(),
 					created_by: user.id.toString(),
 					created_via: 'qr_code',
 					participants: [],
@@ -676,7 +676,7 @@ export class QRActionService {
 					id: params.title,
 					title: params.title,
 					description: params.desc || `Badge created via QR code`,
-					created_at: new Date().toISOString(),
+					created: new Date().toISOString(),
 					created_by: user.id.toString(),
 					created_via: 'qr_code',
 					awarded_to: [],
@@ -779,7 +779,7 @@ export class QRActionService {
 				inviteData = {
 					title: params.title,
 					description: params.desc || `Invite created via QR code`,
-					created_at: new Date().toISOString(),
+					created: new Date().toISOString(),
 					created_by: params.title,
 					accepted_by: [],
 					status: 'active',
@@ -860,7 +860,7 @@ export class QRActionService {
 				description: params.desc || `Resource created via QR code`,
 				status: 'available' as const,
 				type: 'resource' as const,
-				created_at: new Date().toISOString(),
+				created: new Date().toISOString(),
 				created_by: {
 					id: user.id.toString(),
 					username: user.username || `user_${user.id}`,

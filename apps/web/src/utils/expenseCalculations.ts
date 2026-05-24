@@ -21,7 +21,8 @@ interface Expense {
     description: string;
     paidBy: string;
     splitWith: string[];
-    date: string;
+    /** Canonical creation timestamp (ISO). */
+    created: string;
 }
 
 interface User {

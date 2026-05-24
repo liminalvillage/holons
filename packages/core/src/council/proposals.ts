@@ -16,8 +16,8 @@ export interface CreateProposalInput {
   title: string;
   description?: string;
   creator?: VoteEntry;
-  /** Override the timestamp (unix seconds). Defaults to now. */
-  date?: number;
+  /** Override the creation timestamp (ms since epoch). Defaults to `Date.now()`. */
+  now?: number;
   /** Override the id. Defaults to `crypto.randomUUID()` (or a fallback). */
   id?: string;
 }
@@ -45,7 +45,10 @@ export function createProposal(input: CreateProposalInput): Proposal {
     description: input.description?.trim() ?? '',
     participants: [],
     stoppers: [],
-    date: input.date ?? Math.floor(Date.now() / 1000),
+    // Canonical creation timestamp — ISO string. Was historically `date` in
+    // Unix SECONDS (web) or ms (bot); now both sides write `created` so the
+    // format ambiguity goes away.
+    created: new Date(input.now ?? Date.now()).toISOString(),
     creator: input.creator,
     status: 'ongoing',
   };

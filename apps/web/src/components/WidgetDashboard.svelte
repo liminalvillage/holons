@@ -41,7 +41,7 @@ import ItemModal from "./ItemModal.svelte";
             first_name?: string;
             last_name?: string;
         }>;
-        created_at?: string;
+        created?: string;
         status?: string;
     }> = [];
     let users: Record<string, any> = {};
@@ -234,7 +234,7 @@ import ItemModal from "./ItemModal.svelte";
                     title: role.title || 'Untitled Role',
                     description: role.description,
                     participants: role.participants || [],
-                    created_at: role.created_at,
+                    created: role.created,
                     status: role.status || 'active'
                 }));
             };

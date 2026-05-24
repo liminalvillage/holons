@@ -32,7 +32,8 @@ export interface LibraryItem {
   category: string;
   description: string;
   value: number;
-  created: Date | string;
+  /** Canonical creation timestamp (ISO 8601 string). */
+  created: string;
   ratings?: Array<{ user?: string; rating: number; review?: string; date: Date | string }>;
   issues?: Array<{ reporter?: string; issue: string; date: Date | string; resolved: boolean }>;
   // forward compat

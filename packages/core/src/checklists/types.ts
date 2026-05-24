@@ -26,7 +26,8 @@ export interface Checklist {
   id: string;
   type?: ChecklistType;
   items: ChecklistItem[];
-  created?: Date | string;
+  /** Canonical creation timestamp (ISO 8601 string). */
+  created?: string;
   creator?: string | number | null;
   // Quest/role linkage (optional, present on subtask checklists)
   questId?: string;

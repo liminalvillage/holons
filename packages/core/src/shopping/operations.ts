@@ -16,7 +16,7 @@ export function createEmptyChecklist(now: number = Date.now()): ShoppingChecklis
     type: 'shopping',
     title: 'Shopping List',
     items: [],
-    createdAt: now,
+    created: new Date(now).toISOString(),
   };
 }
 
@@ -25,6 +25,10 @@ export function normalizeChecklist(data: unknown): ShoppingChecklist | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   if (d._deleted) return null;
+  // Canonical `created` (ISO); promote legacy `createdAt` (ms epoch) for records written before the unify.
+  const created = typeof d.created === 'string'
+    ? d.created
+    : (typeof d.createdAt === 'number' ? new Date(d.createdAt).toISOString() : new Date().toISOString());
   return {
     id: SHOPPING_KEY,
     type: 'shopping',
@@ -32,7 +36,7 @@ export function normalizeChecklist(data: unknown): ShoppingChecklist | null {
     items: Array.isArray(d.items)
       ? (d.items as ShoppingItem[]).filter((i) => i && i.id != null && !i._deleted)
       : [],
-    createdAt: typeof d.createdAt === 'number' ? d.createdAt : Date.now(),
+    created,
     _hologram: d._hologram as ShoppingChecklist['_hologram'],
     _federation: d._federation as ShoppingChecklist['_federation'],
   };

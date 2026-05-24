@@ -16,8 +16,8 @@ export interface CreateExpenseInput {
   paidBy: AgentId;
   splitWith?: AgentId[];
   picture?: string | null;
-  /** Override timestamp (defaults to `Date.now()`). */
-  date?: number;
+  /** Override creation timestamp (ms since epoch; defaults to `Date.now()`). Mostly for tests. */
+  now?: number;
 }
 
 /** Strip leading prepositions in the languages the bot supports. */
@@ -51,7 +51,8 @@ export function createExpense(input: CreateExpenseInput): Expense | null {
 
   return {
     id: input.id,
-    date: input.date ?? Date.now(),
+    // Canonical creation timestamp — see Expense.created.
+    created: new Date(input.now ?? Date.now()).toISOString(),
     amount,
     currency,
     description,

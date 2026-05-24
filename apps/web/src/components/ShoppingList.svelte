@@ -35,7 +35,8 @@
         type: string;
         title: string;
         items: ShoppingItem[];
-        createdAt: number;
+        /** Canonical creation timestamp (ISO). */
+        created: string;
         _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
         _federation?: { origin?: string; sourceLens?: string };
         [key: string]: any;
@@ -59,12 +60,16 @@
             type: 'shopping',
             title: 'Shopping List',
             items: [],
-            createdAt: Date.now()
+            created: new Date().toISOString()
         };
     }
 
     function normalizeChecklist(data: any): ShoppingChecklist | null {
         if (!data || data._deleted) return null;
+        // Promote legacy `createdAt` (ms) to canonical `created` (ISO).
+        const created = typeof data.created === 'string'
+            ? data.created
+            : (typeof data.createdAt === 'number' ? new Date(data.createdAt).toISOString() : new Date().toISOString());
         return {
             id: SHOPPING_KEY,
             type: data.type ?? 'shopping',
@@ -72,7 +77,7 @@
             items: Array.isArray(data.items)
                 ? data.items.filter((i: any) => i && i.id != null && !i._deleted)
                 : [],
-            createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+            created,
             _hologram: data._hologram,
             _federation: data._federation
         };

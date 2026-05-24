@@ -23,7 +23,8 @@ export function createChecklistObject(
     id,
     type,
     items: [],
-    created: new Date(),
+    // Canonical: ISO string everywhere.
+    created: new Date().toISOString(),
     creator: options.creator ?? null,
   };
 

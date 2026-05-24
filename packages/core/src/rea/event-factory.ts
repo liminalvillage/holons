@@ -32,7 +32,10 @@ interface ExpenseLike {
   description: string;
   paidBy: string | number;
   splitWith: Array<string | number>;
-  date?: number;
+  /** Canonical creation timestamp (ISO). */
+  created?: string;
+  /** Legacy field — older bot/web records used `date: ms`. Read for back-compat. */
+  date?: number | string;
   [key: string]: any;
 }
 
@@ -53,6 +56,27 @@ export class REAEventFactory {
     const timestamp = Date.now();
     const nonce = Math.random().toString(36).substring(2, 9);
     return `${holonId}_${timestamp}_${nonce}`;
+  }
+
+  /**
+   * Deterministic event id for completion-path events. Re-completing the
+   * same (task, user) upserts the existing event in `rea_events` instead of
+   * appending duplicates, so aggregates don't double-count accidental
+   * double-clicks. Recurring tasks fire as fresh quests with new `task.id`s
+   * (Scheduler.js line 218), so each occurrence gets its own event.
+   *
+   * Falls back to `generateId` when any keying part is missing — keeps the
+   * "new event per call" semantics for ad-hoc cases (e.g. appreciation
+   * outside a task context).
+   */
+  static stableEventId(
+    holonId: string | number,
+    eventKind: string,
+    ...keyParts: Array<string | number | null | undefined>
+  ): string {
+    const normalized = keyParts.map((p) => (p == null ? '' : String(p)));
+    if (normalized.some((p) => p === '')) return this.generateId(holonId);
+    return `${holonId}_${eventKind}_${normalized.join('_')}`;
   }
 
   /** Build a user Agent from a user-like object. */
@@ -91,7 +115,7 @@ export class REAEventFactory {
     quest: { id: string | number; title: string },
   ): REAEvent {
     return {
-      id: this.generateId(holonId),
+      id: this.stableEventId(holonId, 'quest_initiated', initiator.id, quest.id),
       timestamp: Date.now(),
       resource: {
         type: 'appreciation',
@@ -117,7 +141,7 @@ export class REAEventFactory {
     quest: { id: string | number; title: string },
   ): REAEvent {
     return {
-      id: this.generateId(holonId),
+      id: this.stableEventId(holonId, 'quest_completed', participant.id, quest.id),
       timestamp: Date.now(),
       resource: {
         type: 'appreciation',
@@ -145,7 +169,7 @@ export class REAEventFactory {
     note: string | null = null,
   ): REAEvent {
     return {
-      id: this.generateId(holonId),
+      id: this.stableEventId(holonId, 'quest_time_logged', user.id, questId),
       timestamp: Date.now(),
       resource: {
         type: 'time',
@@ -178,7 +202,16 @@ export class REAEventFactory {
     reason: string,
     questId: string | number | null = null,
   ): REAEvent[] {
-    const baseId = this.generateId(holonId);
+    // Stable within a (sender, receiver, quest) tuple so a re-completed task
+    // collapses its appreciation pair. Ad-hoc appreciation outside a quest
+    // (questId == null) still gets a fresh random base id per call.
+    const baseId = this.stableEventId(
+      holonId,
+      'appreciation',
+      sender.id,
+      receiver.id,
+      questId,
+    );
     const timestamp = Date.now();
     const senderAgent = this.createUserAgent(sender);
     const receiverAgent = this.createUserAgent(receiver);
@@ -221,7 +254,23 @@ export class REAEventFactory {
   static expenseEvents(holonId: string | number, expense: ExpenseLike): REAEvent[] {
     const events: REAEvent[] = [];
     const baseId = this.generateId(holonId);
-    const timestamp = expense.date || Date.now();
+    // Read either the canonical `created` (ISO) or legacy `date` (ms / ISO string) for back-compat.
+    const timestamp = (() => {
+      const c = (expense as any).created;
+      if (typeof c === 'string') {
+        const t = Date.parse(c);
+        if (Number.isFinite(t)) return t;
+      }
+      const d = (expense as any).date;
+      if (typeof d === 'number' && Number.isFinite(d)) return d;
+      if (typeof d === 'string') {
+        const n = parseInt(d, 10);
+        if (Number.isFinite(n) && String(n) === d) return n;
+        const t = Date.parse(d);
+        if (Number.isFinite(t)) return t;
+      }
+      return Date.now();
+    })();
     const shareAmount = expense.amount / expense.splitWith.length;
 
     events.push({

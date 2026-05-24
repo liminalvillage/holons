@@ -852,7 +852,7 @@
 			description: newItemDescription.trim(),
 			transaction_type: [...newItemTransactionTypes],
 			participants: [],
-			created_at: new Date().toISOString()
+			created: new Date().toISOString()
 		};
 		if (newItemItemType) newItem.item_type = newItemItemType;
 		if (newItemTags.length > 0) newItem.tags = [...newItemTags];

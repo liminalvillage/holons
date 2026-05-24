@@ -95,7 +95,7 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
           paidBy: input.paidBy as AgentId,
           splitWith: input.splitWith,
           picture: input.picture ?? null,
-          date: input.date,
+          now: (input as any).now ?? (input as any).date,
         };
         const created = createExpense(fullInput);
         if (!created) return fail('createExpense rejected input (non-positive or invalid amount)');

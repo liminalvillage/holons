@@ -43,7 +43,12 @@
             return true;
         })
         .sort((a, b) => {
-            const dateComparison = b.date - a.date;
+            // Canonical creation timestamp is `created: ISO`. Legacy `date`
+            // was Unix SECONDS on the web side; multiply by 1000 to compare
+            // apples to apples.
+            const at = a.created ? Date.parse(a.created) : (typeof a.date === 'number' ? a.date * 1000 : 0);
+            const bt = b.created ? Date.parse(b.created) : (typeof b.date === 'number' ? b.date * 1000 : 0);
+            const dateComparison = bt - at;
             if (dateComparison === 0) {
                 return (b.participants || []).length - (a.participants || []).length;
             }
@@ -279,7 +284,7 @@
                             <span class="text-red-400">{proposal.stoppers.length} stoppers</span>
                         {/if}
                     </div>
-                    <span>Created {new Date(proposal.date * 1000).toLocaleDateString()}</span>
+                    <span>Created {new Date(proposal.created ? Date.parse(proposal.created) : (typeof proposal.date === 'number' ? proposal.date * 1000 : Date.now())).toLocaleDateString()}</span>
                 </div>
             </ItemCard>
         {/each}

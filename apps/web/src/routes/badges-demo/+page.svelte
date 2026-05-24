@@ -12,7 +12,7 @@
 			description: "Awarded for making your first contribution to the community. This badge recognizes the courage to take the first step and join our collaborative efforts.",
 			icon: "🌟",
 			rarity: "common",
-			created_at: "2024-01-15T10:30:00Z",
+			created: "2024-01-15T10:30:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{
@@ -38,7 +38,7 @@
 			description: "Recognized for exceptional leadership within the community. This badge is given to those who inspire others and drive positive change.",
 			icon: "👑",
 			rarity: "rare",
-			created_at: "2024-01-10T08:00:00Z",
+			created: "2024-01-10T08:00:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{
@@ -56,7 +56,7 @@
 			description: "Awarded for introducing groundbreaking ideas and innovative solutions that push the community forward.",
 			icon: "🚀",
 			rarity: "epic",
-			created_at: "2024-01-05T12:00:00Z",
+			created: "2024-01-05T12:00:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{
@@ -74,7 +74,7 @@
 			description: "Recognized for helping others grow and learn. This badge celebrates those who share knowledge and guide newcomers.",
 			icon: "🎓",
 			rarity: "uncommon",
-			created_at: "2024-01-12T15:30:00Z",
+			created: "2024-01-12T15:30:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{
@@ -92,7 +92,7 @@
 			description: "Awarded for promoting and implementing sustainable practices within the community and beyond.",
 			icon: "🌱",
 			rarity: "rare",
-			created_at: "2024-01-08T09:15:00Z",
+			created: "2024-01-08T09:15:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{
@@ -110,7 +110,7 @@
 			description: "Recognized for exceptional teamwork and collaboration skills that bring people together.",
 			icon: "🤝",
 			rarity: "common",
-			created_at: "2024-01-18T14:45:00Z",
+			created: "2024-01-18T14:45:00Z",
 			created_by: "Community Admin",
 			awarded_to: [
 				{

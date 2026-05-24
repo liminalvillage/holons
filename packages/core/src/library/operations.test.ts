@@ -67,7 +67,9 @@ describe('createLibraryItem', () => {
       createdBy: 1,
       createdByUsername: 'alice'
     });
-    expect(item.created).toBeInstanceOf(Date);
+    // Canonical creation timestamp is an ISO string everywhere.
+    expect(typeof item.created).toBe('string');
+    expect(Number.isFinite(Date.parse(item.created))).toBe(true);
   });
 
   it('falls back to OTHER when type is missing', () => {

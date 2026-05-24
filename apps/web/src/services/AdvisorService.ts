@@ -124,7 +124,7 @@ export class AdvisorService {
       id: advisorId,
       type: type,
       creatorUserId: creatorUserId,
-      createdAt: new Date().toISOString()
+      created: new Date().toISOString()
     };
 
     // Validate completeness with detailed logging

@@ -32,14 +32,14 @@ export function applyAddFederationLink(
 
   if (existingLink) {
     existingLink.relationship = relationship;
-    existingLink.timestamp = Date.now();
+    existingLink.created = new Date().toISOString();
   } else {
     const link: FederationLink = {
       targetId,
       targetName,
       relationship,
       lenses: { inbound: [], outbound: [] },
-      timestamp: Date.now(),
+      created: new Date().toISOString(),
     };
     settings.federation.push(link);
   }
@@ -78,7 +78,7 @@ export async function addFederationLink(
 
   applyAddFederationLink(settings, targetId, targetName, relationship);
   settings.id = holonId;
-  settings.timestamp = Date.now();
+  settings.created = new Date().toISOString();
   await saveSettings(holosphere, holonId, settings);
   return settings;
 }
@@ -99,7 +99,7 @@ export async function removeFederationLink(
 
   applyRemoveFederationLink(settings, targetId);
   settings.id = holonId;
-  settings.timestamp = Date.now();
+  settings.created = new Date().toISOString();
   await saveSettings(holosphere, holonId, settings);
   return settings;
 }

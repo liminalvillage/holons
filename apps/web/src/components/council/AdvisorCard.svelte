@@ -170,9 +170,9 @@
 
       <!-- Additional details for detailed variant -->
       {#if variant === 'detailed'}
-        {#if advisor.createdAt}
+        {#if advisor.created}
           <p class="text-gray-400 text-xs mt-1">
-            Created: {new Date(advisor.createdAt).toLocaleDateString()}
+            Created: {new Date(advisor.created).toLocaleDateString()}
           </p>
         {/if}
         

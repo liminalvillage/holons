@@ -278,14 +278,14 @@ export function sortAdvisors(
       return sorted.sort((a, b) => b.type.localeCompare(a.type));
     case 'created_asc':
       return sorted.sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const dateA = a.created ? new Date(a.created).getTime() : 0;
+        const dateB = b.created ? new Date(b.created).getTime() : 0;
         return dateA - dateB;
       });
     case 'created_desc':
       return sorted.sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const dateA = a.created ? new Date(a.created).getTime() : 0;
+        const dateB = b.created ? new Date(b.created).getTime() : 0;
         return dateB - dateA;
       });
     default:

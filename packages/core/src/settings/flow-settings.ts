@@ -21,7 +21,8 @@ export interface FederationLink {
     inbound: string[];
     outbound: string[];
   };
-  timestamp: number;
+  /** Canonical creation/last-touch timestamp (ISO string). */
+  created: string;
 }
 
 export interface HolonSettings {
@@ -39,7 +40,8 @@ export interface HolonSettings {
     [targetId: string]: {
       inbound: string[];
       outbound: string[];
-      timestamp: number;
+      /** Canonical creation/last-touch timestamp (ISO string). */
+      created: string;
     };
   };
   flowManagement: {
@@ -51,7 +53,8 @@ export interface HolonSettings {
       maxInternal: number;
     };
   };
-  timestamp: number;
+  /** Canonical creation/last-touch timestamp (ISO string). */
+  created: string;
 }
 
 export interface FlowVisualizationData {
@@ -132,7 +135,7 @@ export function getDefaultHolonSettings(holonId: string): HolonSettings {
         maxInternal: 90
       }
     },
-    timestamp: Date.now()
+    created: new Date().toISOString()
   };
 }
 
@@ -159,7 +162,11 @@ export function parseHolonSettings(data: any): HolonSettings {
       autoBalance: false,
       thresholds: { minInternal: 10, maxInternal: 90 }
     },
-    timestamp: data.timestamp || Date.now()
+    // Canonical `created` (ISO). Promote legacy `timestamp` (ms epoch) for
+    // records written before the unify.
+    created: typeof data.created === 'string'
+      ? data.created
+      : (typeof data.timestamp === 'number' ? new Date(data.timestamp).toISOString() : new Date().toISOString())
   };
 }
 
@@ -239,7 +246,7 @@ export class FlowSettings {
       ...currentSettings,
       ...settings,
       id: holonId,
-      timestamp: Date.now()
+      created: new Date().toISOString()
     };
 
     this.settings.set(holonId, updatedSettings);
@@ -279,14 +286,14 @@ export class FlowSettings {
 
     if (existingLink) {
       existingLink.relationship = relationship;
-      existingLink.timestamp = Date.now();
+      existingLink.created = new Date().toISOString();
     } else {
       settings.federation.push({
         targetId,
         targetName,
         relationship,
         lenses: { inbound: [], outbound: [] },
-        timestamp: Date.now()
+        created: new Date().toISOString()
       });
     }
 
@@ -315,7 +322,7 @@ export class FlowSettings {
       settings.lensConfig[targetId] = {
         inbound: [],
         outbound: [],
-        timestamp: Date.now()
+        created: new Date().toISOString()
       };
     }
 
@@ -329,7 +336,7 @@ export class FlowSettings {
       lensArray.push(lensType);
     }
 
-    settings.lensConfig[targetId].timestamp = Date.now();
+    settings.lensConfig[targetId].created = new Date().toISOString();
 
     await this.saveSettings(holosphere, holonId, settings);
   }
