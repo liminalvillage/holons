@@ -82,13 +82,14 @@ function parseItemArg(raw: string): { text: string; opts: Parameters<typeof crea
       const decoded = JSON.parse(trimmed);
       if (typeof decoded === 'string') return { text: decoded, opts: {} };
       if (decoded && typeof decoded === 'object') {
-        const { text, id, createdBy, checked } = decoded as Record<string, unknown>;
+        const { text, id, createdBy, checked, category } = decoded as Record<string, unknown>;
         return {
           text: String(text ?? ''),
           opts: {
             ...(id !== undefined ? { id: id as string | number } : {}),
             ...(createdBy !== undefined ? { createdBy: createdBy as string | number } : {}),
             ...(checked !== undefined ? { checked: Boolean(checked) } : {}),
+            ...(typeof category === 'string' ? { category } : {}),
           },
         };
       }
@@ -112,8 +113,12 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
         item: z
           .string()
           .describe(
-            'JSON-encoded item. Either a plain string (treated as text) or an object {text, id?, createdBy?, checked?}.',
+            'JSON-encoded item. Either a plain string (treated as text) or an object {text, id?, createdBy?, checked?, category?}.',
           ),
+        category: z
+          .string()
+          .optional()
+          .describe('Optional grouping label for this item (e.g. Telegram forum topic name). Overrides any `category` baked into the `item` payload.'),
         persist: z
           .boolean()
           .optional()
@@ -129,6 +134,7 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
         const item: ShoppingItem = createShoppingItem(text, {
           createdBy: actor.id,
           ...opts,
+          ...(typeof args.category === 'string' ? { category: args.category } : {}),
         });
 
         let persisted = false;
@@ -276,6 +282,10 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
         items: z
           .string()
           .describe('JSON-encoded array of item text strings (e.g. ["milk","bread"]).'),
+        category: z
+          .string()
+          .optional()
+          .describe('Optional grouping label applied to every item in the batch (e.g. Telegram forum topic name).'),
       },
     },
     async (args) => {
@@ -301,7 +311,10 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
             ? null
             : normalizeChecklist(parsedChecklist);
         const actor = deps.resolveActor();
-        const updated = addItems(base, texts, { createdBy: actor.id });
+        const updated = addItems(base, texts, {
+          createdBy: actor.id,
+          ...(typeof args.category === 'string' ? { category: args.category } : {}),
+        });
         return ok({ success: true, checklist: updated });
       } catch (err) {
         return fail((err as Error).message);

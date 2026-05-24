@@ -45,13 +45,20 @@ export function normalizeChecklist(data: unknown): ShoppingChecklist | null {
 /** Build one item with sensible defaults. id-collision-free even within the same millisecond. */
 export function createShoppingItem(
   text: string,
-  opts: { id?: string | number; createdBy?: number | string; checked?: boolean } = {}
+  opts: {
+    id?: string | number;
+    createdBy?: number | string;
+    checked?: boolean;
+    category?: string;
+  } = {}
 ): ShoppingItem {
+  const category = typeof opts.category === 'string' ? opts.category.trim() : '';
   return {
     id: opts.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     text: String(text).trim(),
     checked: opts.checked ?? false,
     ...(opts.createdBy !== undefined ? { createdBy: opts.createdBy } : {}),
+    ...(category ? { category } : {}),
   };
 }
 
@@ -59,7 +66,7 @@ export function createShoppingItem(
 export function addItems(
   checklist: ShoppingChecklist | null,
   texts: string[],
-  opts: { createdBy?: number | string } = {}
+  opts: { createdBy?: number | string; category?: string } = {}
 ): ShoppingChecklist {
   const base = checklist ?? createEmptyChecklist();
   const fresh = texts
@@ -73,7 +80,7 @@ export function addItems(
 export function addItem(
   checklist: ShoppingChecklist | null,
   text: string,
-  opts: { createdBy?: number | string } = {}
+  opts: { createdBy?: number | string; category?: string } = {}
 ): ShoppingChecklist {
   return addItems(checklist, [text], opts);
 }

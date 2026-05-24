@@ -43,6 +43,7 @@ interface ShoppingItem {
   text: string;
   checked: boolean;
   createdBy?: number;
+  category?: string;
 }
 
 interface ShoppingList {
@@ -63,6 +64,7 @@ interface ShoppingServiceLike {
     holonId: string,
     items: string[],
     createdBy?: number,
+    category?: string,
   ): Promise<ShoppingList>;
   toggleItem(holonId: string, itemId: string | number): Promise<ShoppingList | null>;
   removeChecked(holonId: string): Promise<{ list: ShoppingList; removed: number }>;
@@ -96,15 +98,22 @@ class LocalShoppingService implements ShoppingServiceLike {
     };
   }
 
-  async addItems(holonId: string, items: string[], createdBy?: number) {
+  async addItems(
+    holonId: string,
+    items: string[],
+    createdBy?: number,
+    category?: string,
+  ) {
     let list = await this.getList(holonId);
     if (!list) list = this.newEmptyList();
 
+    const cat = typeof category === 'string' ? category.trim() : '';
     const newItems: ShoppingItem[] = items.map((text) => ({
       id: Date.now() + Math.random(),
       text,
       checked: false,
       createdBy,
+      ...(cat ? { category: cat } : {}),
     }));
     list.items.push(...newItems);
     await this.db.put(holonId, 'checklists', list);
@@ -139,7 +148,14 @@ interface AnyCtx {
   chat?: { id: number | string };
   match?: RegExpMatchArray;
   from?: { id: number };
-  message?: { text: string };
+  message?: {
+    text: string;
+    message_thread_id?: number;
+    is_topic_message?: boolean;
+    reply_to_message?: {
+      forum_topic_created?: { name?: string };
+    };
+  };
   scene?: { enter: (name: string, state?: unknown) => unknown };
   reply: (text: string, extra?: unknown) => Promise<unknown>;
   editMessageText: (text: string, extra?: unknown) => Promise<unknown>;
@@ -174,12 +190,31 @@ class Shopping {
     this.bot.action('add_shopping_item', (ctx) =>
       this.addItem(ctx as unknown as AnyCtx),
     );
+    // Category headers are non-interactive — acknowledge the tap and do nothing.
+    this.bot.action(/shopping_category_.+/, (ctx) =>
+      (ctx as unknown as AnyCtx).answerCbQuery?.().catch(() => {}),
+    );
+  }
+
+  /**
+   * Derive a category for an incoming command from the Telegram forum topic
+   * it was sent into. Mirrors Quests.getCategory so /buy and /task agree on
+   * how topics map to categories.
+   */
+  getCategory(ctx: AnyCtx): string {
+    const msg = ctx.message;
+    if (!msg) return '';
+    if (msg.message_thread_id && msg.reply_to_message?.forum_topic_created?.name) {
+      return msg.reply_to_message.forum_topic_created.name;
+    }
+    return msg.message_thread_id ? `Topic ${msg.message_thread_id}` : '';
   }
 
   async buy(ctx: AnyCtx) {
     const holonId = String(ctx.chat!.id);
     const language = await this.settings.getLanguage(holonId);
     const items = utils.parseList(ctx.message!.text);
+    const category = this.getCategory(ctx);
 
     if (!items || items.length === 0) {
       // No items provided, use InputScene to collect them.
@@ -190,7 +225,9 @@ class Shopping {
         onComplete: async (cbCtx: AnyCtx, collected: string[]) => {
           const cbHolonId = String(cbCtx.chat!.id);
           const cbLanguage = await this.settings.getLanguage(cbHolonId);
-          await this.service.addItems(cbHolonId, collected, cbCtx.from?.id);
+          // Use the original command's category — the InputScene reply may
+          // arrive in the general chat even if the user started in a topic.
+          await this.service.addItems(cbHolonId, collected, cbCtx.from?.id, category);
           await cbCtx.reply(
             utils.i18next.t('shoppingadded', {
               items: collected.join(', '),
@@ -201,7 +238,7 @@ class Shopping {
       });
     }
 
-    await this.service.addItems(holonId, items, ctx.from?.id);
+    await this.service.addItems(holonId, items, ctx.from?.id, category);
     await ctx.reply(
       utils.i18next.t('shoppingadded', {
         items: items.join(', '),
@@ -220,10 +257,23 @@ class Shopping {
       return;
     }
 
+    // When the command runs inside a forum topic, scope the view to that
+    // topic's category. In the general chat, show every item across all
+    // categories.
+    const category = this.getCategory(ctx);
+    const visible = category
+      ? list.items.filter((i) => (i.category ?? '') === category)
+      : list.items;
+
+    if (visible.length === 0) {
+      await ctx.reply(utils.i18next.t('shoppingempty', { lng: language }));
+      return;
+    }
+
     await ctx
       .reply(
         utils.i18next.t('shoppinglist', { lng: language }),
-        this.getShoppingListKeyboard(list.items, language),
+        this.getShoppingListKeyboard(visible, language, !category),
       )
       .catch((error: unknown) => {
         console.log(error);
@@ -238,10 +288,16 @@ class Shopping {
     const updated = await this.service.toggleItem(holonId, itemId);
     if (!updated) return;
 
+    // Preserve the topic scope when re-rendering the inline keyboard.
+    const category = this.getCategory(ctx);
+    const visible = category
+      ? updated.items.filter((i) => (i.category ?? '') === category)
+      : updated.items;
+
     await ctx
       .editMessageText(
         utils.i18next.t('shoppinglist', { lng: language }),
-        this.getShoppingListKeyboard(updated.items, language),
+        this.getShoppingListKeyboard(visible, language, !category),
       )
       .catch((error: unknown) => {
         console.log(error);
@@ -269,6 +325,7 @@ class Shopping {
     await ctx.answerCbQuery?.().catch(() => {});
     const holonId = String(ctx.chat!.id);
     const language = await this.settings.getLanguage(holonId);
+    const category = this.getCategory(ctx);
 
     return ctx.scene!.enter('input_scene', {
       promptText: utils.i18next.t('shoppingprompt', { lng: language }),
@@ -281,6 +338,7 @@ class Shopping {
           cbHolonId,
           collected,
           cbCtx.from?.id,
+          category,
         );
         await cbCtx.reply(
           utils.i18next.t('shoppingadded', {
@@ -288,24 +346,68 @@ class Shopping {
             lng: cbLanguage,
           }),
         );
+        const visible = category
+          ? updated.items.filter((i) => (i.category ?? '') === category)
+          : updated.items;
         await cbCtx.reply(
           utils.i18next.t('shoppinglist', { lng: cbLanguage }),
-          this.getShoppingListKeyboard(updated.items, cbLanguage),
+          this.getShoppingListKeyboard(visible, cbLanguage, !category),
         );
       },
     });
   }
 
-  getShoppingListKeyboard(items: ShoppingItem[], language: string): any {
+  /**
+   * Build the inline keyboard for a shopping list. When `showCategoryHeaders`
+   * is true (the unscoped /shopping view), items are grouped under a non-
+   * clickable header row per category — uncategorized items appear first.
+   */
+  getShoppingListKeyboard(
+    items: ShoppingItem[],
+    language: string,
+    showCategoryHeaders = false,
+  ): any {
     const mu: any[][] = [];
-    items.forEach((item) => {
-      mu.push([
-        Markup.button.callback(
-          (item.checked ? '✅ ' : '☑️ ') + item.text,
-          `toggle_shopping_${item.id}`,
-        ),
-      ]);
-    });
+
+    if (showCategoryHeaders) {
+      const groups = new Map<string, ShoppingItem[]>();
+      for (const item of items) {
+        const key = item.category && item.category.trim() ? item.category : '';
+        const bucket = groups.get(key);
+        if (bucket) bucket.push(item);
+        else groups.set(key, [item]);
+      }
+      // Sort: uncategorized first, then alpha.
+      const keys = [...groups.keys()].sort((a, b) => {
+        if (a === '' && b !== '') return -1;
+        if (b === '' && a !== '') return 1;
+        return a.localeCompare(b);
+      });
+      const multiCategory = keys.some((k) => k !== '') && keys.length > 1;
+      for (const key of keys) {
+        if (multiCategory && key) {
+          mu.push([Markup.button.callback(`— ${key} —`, `shopping_category_${key}`)]);
+        }
+        for (const item of groups.get(key)!) {
+          mu.push([
+            Markup.button.callback(
+              (item.checked ? '✅ ' : '☑️ ') + item.text,
+              `toggle_shopping_${item.id}`,
+            ),
+          ]);
+        }
+      }
+    } else {
+      items.forEach((item) => {
+        mu.push([
+          Markup.button.callback(
+            (item.checked ? '✅ ' : '☑️ ') + item.text,
+            `toggle_shopping_${item.id}`,
+          ),
+        ]);
+      });
+    }
+
     mu.push([
       Markup.button.callback(
         utils.i18next.t('shoppingadd', { lng: language }),

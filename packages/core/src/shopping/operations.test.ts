@@ -68,6 +68,25 @@ describe('shopping operations', () => {
     expect(norm?.items.map((i) => i.text)).toEqual(['ok']);
   });
 
+  it('createShoppingItem records a category when provided, omits the key when blank', () => {
+    const tagged = createShoppingItem('Milk', { category: 'Groceries' });
+    expect(tagged.category).toBe('Groceries');
+
+    const trimmed = createShoppingItem('Milk', { category: '  Groceries  ' });
+    expect(trimmed.category).toBe('Groceries');
+
+    const blank = createShoppingItem('Milk', { category: '   ' });
+    expect('category' in blank).toBe(false);
+
+    const none = createShoppingItem('Milk');
+    expect('category' in none).toBe(false);
+  });
+
+  it('addItems threads category onto every item in the batch', () => {
+    const next = addItems(null, ['a', 'b'], { category: 'Hardware' });
+    expect(next.items.map((i) => i.category)).toEqual(['Hardware', 'Hardware']);
+  });
+
   it('isShoppingDoc recognises the container by key, id, or type', () => {
     expect(isShoppingDoc({ type: 'shopping' })).toBe(true);
     expect(isShoppingDoc({ id: 'shopping' })).toBe(true);

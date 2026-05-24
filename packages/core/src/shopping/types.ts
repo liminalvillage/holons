@@ -16,11 +16,17 @@ export interface ShoppingItem {
   text: string;
   checked: boolean;
   createdBy?: number | string;
+  /**
+   * Free-form grouping label. In the Telegram UI this is auto-populated from
+   * the forum topic the `/buy` command was sent into (see Shopping.getCategory).
+   * Empty / undefined means "uncategorized".
+   */
+  category?: string;
   // Optional federation/hologram metadata stamped by holosphere on read.
   _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
   _federation?: { origin?: string; sourceLens?: string };
   _deleted?: boolean;
-  // Allow forward-compatible fields (category, priority, quantity, notes — see schemas/shopping.json).
+  // Allow forward-compatible fields (priority, quantity, notes — see schemas/shopping.json).
   [key: string]: unknown;
 }
 
