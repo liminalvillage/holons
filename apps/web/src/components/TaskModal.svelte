@@ -35,6 +35,7 @@
         executeCompletionPlan,
     } from "@holons/core/tasks";
     import { getEventStore } from "../lib/rea/eventStore";
+    import { queryManager } from "$lib/holosphere/QueryManager";
 
     export let quest: any;
     export let questId: string;
@@ -370,6 +371,11 @@
         if (confirm("Are you sure you want to delete this task?")) {
             try {
                 await holosphere.delete(holonId, "quests", questId);
+                // Synchronously drop from the shared cache so the next
+                // snapshot emission doesn't flash the deleted card back
+                // into any list view that hasn't received Gun's null
+                // tombstone yet.
+                queryManager.evict(holonId, "quests", questId);
 
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {

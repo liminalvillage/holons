@@ -374,6 +374,24 @@ class QueryManager {
 	}
 
 	/**
+	 * Synchronously drop a single record from the cache and notify
+	 * subscribers. Use this immediately after `holosphere.delete(...)` so the
+	 * UI doesn't see the deleted item flash back when an unrelated update
+	 * causes the manager to re-emit its cached snapshot before Gun's null
+	 * tombstone has propagated through `subscribe()`.
+	 *
+	 * If the id isn't in the cache, it's a no-op (no spurious notification).
+	 */
+	evict(holonId: string, lens: string, id: string) {
+		const key = this.getCacheKey(holonId, lens);
+		const entry = this.cache.get(key);
+		if (entry?.data.delete(id)) {
+			entry.timestamp = Date.now();
+			this.scheduleNotify(key);
+		}
+	}
+
+	/**
 	 * Invalidate cache for a specific holon/lens
 	 */
 	invalidate(holonId: string, lens?: string) {

@@ -817,13 +817,20 @@
 	// Add this function to handle task deletion
 	function handleTaskDeleted(event: CustomEvent) {
 		if (event.detail?.deleted && event.detail?.questId) {
+			const deletedId = event.detail.questId;
+			// Drop from queryManager's cache too. Otherwise the next snapshot
+			// emission (any unrelated quest update, or just another subscriber
+			// registering) re-puts the deleted item into our `store` before
+			// Gun's null tombstone has propagated through `subscribe()` — and
+			// the deleted card flashes back into the list.
+			if (holonID) queryManager.evict(holonID, 'quests', deletedId);
 			// Update local store immediately
-			const { [event.detail.questId]: _, ...rest } = store;
+			const { [deletedId]: _, ...rest } = store;
 			store = rest;
 		}
 		// Always set selectedTask to null when modal closes
 		selectedTask = null;
-		
+
 		// Clear the task parameter from URL
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
