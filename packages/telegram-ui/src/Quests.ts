@@ -413,30 +413,12 @@ export default class Quests {
         }
 
         const holonDB = await this.getHolonDB(holonId);
-        console.log('[QUEST_PERSIST_DEBUG] put', {
-            holonId, holonIdType: typeof holonId,
-            questId: quest.id, questIdType: typeof quest.id,
-            appname: holonDB.appname,
-            title: quest.title,
-        });
         // Persist via @holons/core/tasks so the bot, web and any future UIs
         // share one persistence path. saveTasksToHolon returns the count of
         // successful saves (best-effort; logs failures internally).
-        const saved = await saveTasksToHolon(holonDB, holonId.toString(), [quest as CoreQuest]);
-        console.log('[QUEST_PERSIST_DEBUG] put.result', { saved });
-        // Immediate read-back to verify what's in the graph right after write
-        try {
-            // holosphere.getAll resolves to Array<T>.
-            const verify = (await holonDB.getAll(holonId.toString(), 'quests')) ?? [];
-            console.log('[QUEST_PERSIST_DEBUG] verify.getAll', {
-                holonId: holonId.toString(),
-                count: verify.length,
-                ids: verify.slice(0, 5).map(q => q?.id),
-                hasJustWritten: verify.some(q => q?.id == quest.id),
-            });
-        } catch (e) {
-            console.log('[QUEST_PERSIST_DEBUG] verify.error', e.message);
-        }
+        // `holosphere.put` awaits Gun's local ack, so by the time this
+        // resolves the record is on disk.
+        await saveTasksToHolon(holonDB, holonId.toString(), [quest as CoreQuest]);
 
         // Update buttons and pin message
         const questHolon = Quests.getQuestHolon(quest);

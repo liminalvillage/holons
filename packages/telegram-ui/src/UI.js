@@ -639,17 +639,8 @@ class UI {
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-    console.log('[QUEST_PERSIST_DEBUG] questboard.read', {
-      holonId: holonId.toString(),
-      appname: this.db.holosphere.appname,
-    });
     // holosphere.getAll resolves to Array<T>.
     let quests = (await this.db.holosphere.getAll(holonId.toString(), 'quests')) ?? [];
-    console.log('[QUEST_PERSIST_DEBUG] questboard.getAll', {
-      holonId: holonId.toString(),
-      count: quests.length,
-      ids: quests.slice(0, 10).map(q => ({ id: q?.id, type: q?.type, status: q?.status, title: (q?.title || '').slice(0, 30) })),
-    });
 
       // Filter by type and status. Federated holograms (source holon !==
       // current) are kept — they render with the cyan-glow style so they're

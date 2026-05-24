@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { writable } from 'svelte/store';
+	import type { ResolvedHologramMeta } from 'holosphere';
 
 	const dispatch = createEventDispatcher();
 
@@ -32,12 +33,7 @@
 			lastName?: string;
 		};
 		created?: string;
-		_hologram?: {
-			isHologram: boolean;
-			soul: string;
-			sourceHolon: string;
-			localOverrides?: string[];
-		};
+		_hologram?: ResolvedHologramMeta;
 	}
 
 	// State variables
