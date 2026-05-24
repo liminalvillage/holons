@@ -250,9 +250,6 @@
 	let showFireworks = $state(false);
 	let showConfetti = $state(false);
 
-	// Sort state variables - now using shared store
-	let sortButtonIconRotation = $state(0); // No rotation for calendar icon
-
 	// Subscribe to the shared sort state
 	let sortCriteria = $derived($taskSortStore.criteria);
 	let sortDirection = $derived($taskSortStore.direction);
@@ -261,7 +258,24 @@
 	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
-	let currentIconPath = $state(calendarIconPath); // Initial icon
+
+	// Sort chip icon + rotation derive from the shared sort state, so any
+	// change (button cycle, auto-switch on drag, programmatic) updates the
+	// chip without anyone touching the setters by hand.
+	let currentIconPath = $derived(
+		sortCriteria === 'orderIndex' ? orderIndexIconPath
+		: (sortCriteria === 'positionX' || sortCriteria === 'positionY') ? directionalSortIconPath
+		: calendarIconPath
+	);
+	let sortButtonIconRotation = $derived.by(() => {
+		switch (sortCriteria) {
+			case 'created':   return sortDirection === 'asc' ? 180 : 0;       // calendar: rotated for oldest-first
+			case 'orderIndex': return 0;                                       // bars: no rotation
+			case 'positionX':  return sortDirection === 'asc' ? 270 : 90;      // arrow left for asc, right for desc
+			case 'positionY':  return sortDirection === 'asc' ? 0 : 180;       // arrow down for asc, up for desc
+			default:           return 0;
+		}
+	});
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = $state("all");
@@ -413,47 +427,36 @@
 
 	// Updated sort button handler to use shared store
 	function handleSortButtonClick() {
+		// Cycle: created desc → created asc → orderIndex → positionX asc → positionX desc → positionY asc → positionY desc → back to created desc.
+		// Icon + rotation are derived from the store (see currentIconPath /
+		// sortButtonIconRotation $derived above), so we only need to update
+		// the criteria/direction here.
 		let newCriteria: SortCriteria;
 		let newDirection: 'asc' | 'desc';
-		
+
 		if (sortCriteria === 'created' && sortDirection === 'desc') {
 			newCriteria = 'created';
 			newDirection = 'asc';
-			currentIconPath = calendarIconPath;
-			sortButtonIconRotation = 180; // Calendar icon rotated for oldest first
 		} else if (sortCriteria === 'created' && sortDirection === 'asc') {
 			newCriteria = 'orderIndex';
 			newDirection = 'asc';
-			currentIconPath = orderIndexIconPath;
-			sortButtonIconRotation = 0; // No rotation for burger icon
 		} else if (sortCriteria === 'orderIndex') {
 			newCriteria = 'positionX';
 			newDirection = 'asc';
-			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 270; // Arrow left for X asc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'asc') {
 			newCriteria = 'positionX';
 			newDirection = 'desc';
-			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 90; // Arrow right for X desc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'desc') {
 			newCriteria = 'positionY';
 			newDirection = 'asc';
-			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 0; // Arrow down for Y asc
 		} else if (sortCriteria === 'positionY' && sortDirection === 'asc') {
 			newCriteria = 'positionY';
 			newDirection = 'desc';
-			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 180; // Arrow up for Y desc
-		} else { // Was positionY, desc, reset to created
+		} else { // Was positionY desc, reset to created desc (newest first)
 			newCriteria = 'created';
-			newDirection = 'desc'; // Newest first
-			currentIconPath = calendarIconPath;
-			sortButtonIconRotation = 0; // Calendar icon for newest first
+			newDirection = 'desc';
 		}
-		
-		// Update the shared store
+
 		updateTaskSort(newCriteria, newDirection);
 	}
 
