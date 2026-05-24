@@ -22,11 +22,15 @@ interface GetOptions {
   validationOptions?: object;
   /** Per-`.once()` deadline in ms; cold paths resolve `null` after this. Default 8000. Pass `0` to disable. */
   timeout?: number;
+  /** Return `_deleted: true` soft-tombstoned records instead of treating them as not-found. Default false. */
+  includeDeleted?: boolean;
 }
 
 interface GetAllOptions {
   /** Per-`.once()` deadline in ms; cold paths resolve `[]` after this. Default 8000. Pass `0` to disable. */
   timeout?: number;
+  /** Include `_deleted: true` soft-tombstoned records in the response. Default false. */
+  includeDeleted?: boolean;
 }
 
 interface ResolveHologramOptions {

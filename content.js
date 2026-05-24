@@ -449,7 +449,19 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
     }
 
     // Destructure options, including visited
-    const { resolveHolograms = true, validationOptions = {}, visited, timeout = READ_TIMEOUT_MS } = options;
+    const {
+        resolveHolograms = true,
+        validationOptions = {},
+        visited,
+        timeout = READ_TIMEOUT_MS,
+        // `_deleted: true` is the soft-tombstone convention used by the bot,
+        // the web dashboard, and the MCP council tools. Pre-this fix the
+        // library was unaware of it and every caller filtered defensively.
+        // Now `get` returns `null` for tombstoned records by default; pass
+        // `includeDeleted: true` to surface them (admin/debug views,
+        // history reconstruction, etc.).
+        includeDeleted = false,
+    } = options;
 
     // Get schema for validation if in strict mode
     let schema = null;
@@ -489,6 +501,14 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                     parsed = await holoInstance.parse(data); // Assign to the outer scoped parsed
 
                     if (!parsed) {
+                        resolve(null);
+                        return;
+                    }
+
+                    // Treat the harvest-side `_deleted: true` soft-tombstone
+                    // as "not found" by default. Callers that want to see
+                    // tombstones can pass `{ includeDeleted: true }`.
+                    if (!includeDeleted && parsed._deleted === true) {
                         resolve(null);
                         return;
                     }
@@ -585,7 +605,12 @@ export async function getAll(holoInstance, holon, lens, password = null, options
     if (!holon || !lens) {
         throw new Error('getAll: Missing required parameters');
     }
-    const { timeout = READ_TIMEOUT_MS } = options;
+    const {
+        timeout = READ_TIMEOUT_MS,
+        // See `get` above: `_deleted: true` records are dropped from the
+        // response unless the caller opts in.
+        includeDeleted = false,
+    } = options;
 
     const schema = await holoInstance.getSchema(lens);
     if (!schema && holoInstance.strict) {
@@ -684,6 +709,11 @@ export async function getAll(holoInstance, holon, lens, password = null, options
                     try {
                         const parsed = await holoInstance.parse(itemData);
                         if (!parsed || !parsed.id) return;
+
+                        // Drop `_deleted: true` soft-tombstones by default;
+                        // callers wanting them in the result pass
+                        // `{ includeDeleted: true }` to `getAll`.
+                        if (!includeDeleted && parsed._deleted === true) return;
 
                         if (holoInstance.isHologram(parsed)) {
                             try {
