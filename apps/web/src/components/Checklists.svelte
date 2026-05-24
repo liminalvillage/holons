@@ -14,6 +14,7 @@
     import { CheckSquare, Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+    import { queryManager } from '$lib/holosphere/QueryManager';
     import {
         CHECKLIST_TYPES,
         appendItems,
@@ -148,7 +149,9 @@
         // Cleanup subscription on unmount
         return () => {
             if (unsubscribe) unsubscribe();
-            if (checklistsUnsubscribe) checklistsUnsubscribe();
+            checklistsUnsubscribe?.();
+            rolesUnsubscribe?.();
+            questsUnsubscribe?.();
         };
     });
 
@@ -183,127 +186,117 @@
         }
     }
 
-    async function fetchData(retryCount = 0) {
+    let rolesUnsubscribe: (() => void) | undefined;
+    let questsUnsubscribe: (() => void) | undefined;
+    let subscribedHolonId: string | null = null;
+    let subscribedFedFlag: boolean | null = null;
+
+    // Local-first + progressive load via queryManager.subscribe.
+    // - Cached snapshot paints immediately (no waiting on peers).
+    // - Items stream in as Gun delivers them: local graph first, federated
+    //   peers after, populating the UI as info arrives.
+    // - Federated mode still routes through holosphere.getFederated (which
+    //   reads the full federated set) because subscribe is per-holon and
+    //   doesn't transparently include partner holons.
+    function fetchData(_retryCount = 0) {
         if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
             return;
         }
-        
-        isLoading = true;
-        
-        try {
-            console.log(`Fetching checklists for holon: ${holonID}`);
-            
-            // Fetch checklists data with timeout
-            const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-                );
-                return Promise.race([promise, timeoutPromise]);
-            };
 
-            // Fetch checklists, roles, and quests in parallel — federated when toggle is on
-            const checklistsPromise = $showFederated
-                ? holosphere.getFederated(holonID, "checklists", {
+        const targetHolon = holonID;
+        const targetFed = $showFederated;
+        if (subscribedHolonId === targetHolon && subscribedFedFlag === targetFed) return;
+
+        checklistsUnsubscribe?.();
+        rolesUnsubscribe?.();
+        questsUnsubscribe?.();
+        subscribedHolonId = targetHolon;
+        subscribedFedFlag = targetFed;
+        queryManager.init(holosphere);
+
+        isLoading = true;
+
+        // Checklists: federated mode delegates to getFederated (one-shot,
+        // returns local+federated rows). Local mode uses the streaming
+        // subscribe so per-item updates arrive as Gun resolves them.
+        if (targetFed) {
+            holosphere
+                .getFederated(targetHolon, 'checklists', {
                     includeLocal: true,
                     includeFederated: true,
                     resolveReferences: true,
                     aggregate: false
                 })
-                : holosphere.getAll(holonID, "checklists");
-
-            const [checklistsResult, rolesResult, questsResult] = await Promise.all([
-                fetchWithTimeout(checklistsPromise, 5000),
-                fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
-                holosphere.getAll(holonID, "quests")
-            ]);
-
-            // Process results safely - store all checklists.
-            // getFederated returns an array; getAll may return array or keyed object.
-            let checklistsData: any = checklistsResult || {};
-            if (Array.isArray(checklistsData)) {
-                const keyed: Record<string, any> = {};
-                checklistsData.forEach((item: any, idx: number) => {
-                    if (!item || item._deleted) return;
-                    const key = item.key || item.id || `fed_${idx}`;
-                    const processed: any = { ...item };
-                    if (item._federation) processed._federation = item._federation;
-                    if (item._hologram) processed._hologram = item._hologram;
-                    keyed[key] = processed;
-                });
-                checklistsData = keyed;
-            }
-            allChecklists = checklistsData;
-            roles = rolesResult || {};
-            quests = questsResult || {};
-
-            console.log(`Successfully fetched checklists for holon ${holonID}:`, Object.keys(filteredChecklists).length, 'checklists (filtered from', Object.keys(checklistsData).length, 'total)');
-
-            // Set up subscription after successful fetch
-            await subscribeToChecklists();
-
-        } catch (error: any) {
-            console.error('Error fetching checklists data:', error);
-            
-            // Retry on network errors up to 3 times with exponential backoff
-            if (retryCount < 3) {
-                const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-                console.log(`Retrying checklists fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
-                setTimeout(() => fetchData(retryCount + 1), delay);
-                return;
-            }
-        } finally {
-            isLoading = false;
-        }
-    }
-
-    async function subscribeToChecklists(): Promise<void> {
-        // Clear existing subscription
-        if (checklistsUnsubscribe) {
-            checklistsUnsubscribe();
-            checklistsUnsubscribe = undefined;
-        }
-
-        // Don't reset allChecklists - data already loaded by fetchData()
-
-        if (holosphere && holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
-            const subscription = await holosphere.subscribe(
-                holonID,
-                "checklists",
-                (newItem: Checklist | null, key?: string) => {
-                    if (key) {
-                        if (newItem) {
-                            // Add all checklists to allChecklists
-                            allChecklists[key] = newItem;
-                        } else {
-                            delete allChecklists[key];
-                        }
-                        allChecklists = allChecklists;
+                .then((result) => {
+                    if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+                    const keyed: Record<string, any> = {};
+                    if (Array.isArray(result)) {
+                        result.forEach((item: any, idx: number) => {
+                            if (!item || item._deleted) return;
+                            const key = item.key || item.id || `fed_${idx}`;
+                            const processed: any = { ...item };
+                            if (item._federation) processed._federation = item._federation;
+                            if (item._hologram) processed._hologram = item._hologram;
+                            keyed[key] = processed;
+                        });
+                    } else if (result && typeof result === 'object') {
+                        Object.assign(keyed, result);
                     }
-                }
-            );
-            checklistsUnsubscribe = subscription.unsubscribe;
-
-            // Also subscribe to roles and quests updates to keep titles current
-            holosphere.subscribe(holonID, "roles", (newRole: any, key?: string) => {
-                if (key && newRole) {
-                    roles[key] = newRole;
-                    roles = roles;
-                } else if (key) {
-                    const { [key]: _, ...rest } = roles;
-                    roles = rest;
-                }
-            });
-
-            holosphere.subscribe(holonID, "quests", (newQuest: any, key?: string) => {
-                if (key && newQuest) {
-                    quests[key] = newQuest;
-                    quests = quests;
-                } else if (key) {
-                    const { [key]: _, ...rest } = quests;
-                    quests = rest;
+                    allChecklists = keyed;
+                    isLoading = false;
+                })
+                .catch((error) => {
+                    console.error('Checklists: federated fetch error:', error);
+                    isLoading = false;
+                });
+        } else {
+            allChecklists = {};
+            checklistsUnsubscribe = queryManager.subscribe({
+                holonId: targetHolon,
+                lens: 'checklists',
+                onUpdate: (items) => {
+                    if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+                    const next: Record<string, Checklist> = {};
+                    for (const item of items as Checklist[]) {
+                        if (item && item.id) next[item.id] = item;
+                    }
+                    allChecklists = next;
+                    isLoading = false;
+                },
+                onError: (error) => {
+                    console.error('Checklists: checklists subscription error:', error);
+                    isLoading = false;
                 }
             });
         }
+
+        rolesUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'roles',
+            onUpdate: (items) => {
+                if (subscribedHolonId !== targetHolon) return;
+                const next: Record<string, any> = {};
+                for (const r of items as any[]) {
+                    if (r && r.id) next[r.id] = r;
+                }
+                roles = next;
+            },
+            onError: (error) => console.error('Checklists: roles subscription error:', error)
+        });
+
+        questsUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'quests',
+            onUpdate: (items) => {
+                if (subscribedHolonId !== targetHolon) return;
+                const next: Record<string, any> = {};
+                for (const q of items as any[]) {
+                    if (q && q.id) next[q.id] = q;
+                }
+                quests = next;
+            },
+            onError: (error) => console.error('Checklists: quests subscription error:', error)
+        });
     }
 
     async function toggleItemStatus(checklistId: string, itemIndex: number): Promise<void> {

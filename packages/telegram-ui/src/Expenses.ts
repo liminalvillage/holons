@@ -7,7 +7,8 @@ import fs from 'fs';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
-import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
+import { REAEventStore, REAEventFactory } from '@holons/core/rea';
+import { REAAggregator } from '@holons/core/scoring';
 import {
     computeCreditMatrix,
     computeUserCurrencyBalance,

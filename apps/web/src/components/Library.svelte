@@ -15,6 +15,7 @@
     import { telegramStore } from '$lib/stores/telegram';
     import { nostrPublicKey } from '$lib/stores/nostr';
     import CalendarComponent from './Calendar.svelte';
+    import { queryManager } from '$lib/holosphere/QueryManager';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -31,7 +32,8 @@
         borrowerId: string;
         borrower: string;     // display name
         borrowerInitials?: string | null;
-        createdAt: string;
+        /** Canonical creation timestamp (ISO). */
+        created: string;
     }
 
     interface LibraryItem {
@@ -245,7 +247,7 @@
                 borrowerId: item.borrowerId || '',
                 borrower: item.borrower || item.borrowerInitials || 'Unknown',
                 borrowerInitials: item.borrowerInitials,
-                createdAt: item.borrowedAt as string
+                created: item.borrowedAt as string
             });
         }
         list.sort((a, b) => a.start.localeCompare(b.start));
@@ -338,36 +340,29 @@
         }
     }
 
-    async function fetchLocalLibrary() {
-        const initialData = await holosphere.getAll(holonID, "library");
-
-        const newStore: Record<string, LibraryItem> = {};
-        if (typeof initialData === 'object' && initialData !== null) {
-            Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                if (item && item.id && !item._deleted && item.hologram !== true) {
-                    newStore[key] = item as LibraryItem;
+    function fetchLocalLibrary() {
+        // Local-first + progressive: queryManager.subscribe emits the cached
+        // snapshot synchronously, then streams items in as they arrive from
+        // Gun's local graph first and federated peers after. No blocking
+        // getAll round-trip on the render path.
+        queryManager.init(holosphere);
+        const lensHolon = holonID;
+        libraryItemsUnsubscribe = queryManager.subscribe({
+            holonId: lensHolon,
+            lens: 'library',
+            onUpdate: (items) => {
+                if (holonID !== lensHolon) return; // stale subscription, ignore
+                const next: Record<string, LibraryItem> = {};
+                for (const item of items as LibraryItem[]) {
+                    if (item && item.id) next[item.id] = item;
                 }
-            });
-        }
-        store = newStore;
-
-        await preResolveHologramNames(Object.values(store));
-
-        const off = holosphere.subscribe(holonID, "library", (newItem: any, key?: string) => {
-            if (newItem && key && !newItem._deleted && newItem.hologram !== true) {
-                store = { ...store, [key]: newItem as LibraryItem };
-                if (newItem._hologram?.isHologram) {
-                    preResolveHologramNames([newItem]);
-                }
-            } else if (!newItem && key) {
-                const { [key]: _, ...rest } = store;
-                store = rest;
+                store = next;
+                preResolveHologramNames(items as LibraryItem[]);
+            },
+            onError: (error) => {
+                console.error('Library subscription error:', error);
             }
         });
-
-        if (typeof off === 'function') {
-            libraryItemsUnsubscribe = off as unknown as () => void;
-        }
     }
 
     async function fetchFederatedLibrary() {
@@ -557,7 +552,7 @@
             borrowerId: borrower.id,
             borrower: borrower.displayName,
             borrowerInitials: borrower.initials,
-            createdAt: new Date().toISOString()
+            created: new Date().toISOString()
         };
 
         const existing = Array.isArray(borrowingItem.bookings) ? borrowingItem.bookings : [];

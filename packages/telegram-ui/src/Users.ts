@@ -10,11 +10,8 @@
 
 import { Telegraf } from 'telegraf';
 import * as utils from './utilities.js';
-import {
-  REAEventStore,
-  REAEventFactory,
-  REAAggregator,
-} from './domain/rea/index.js';
+import { REAEventStore } from '@holons/core/rea';
+import { REAAggregator } from '@holons/core/scoring';
 import type { ScoreEquation } from '@holons/core/scoring';
 
 // `@holons/core/users` ships function exports (getUserProfile, joinHolon, ...);
@@ -88,124 +85,9 @@ interface UserInfoWithAggregates extends UserProfile {
   actions: unknown[];
 }
 
-interface ActionInput {
-  user: TelegramUser;
-  action: string;
-  quest: string;
-  value: number;
-  holonId: string;
-  questId?: string;
-  receiver?: TelegramUser;
-}
-
-type ActionType =
-  | 'initiated'
-  | 'completed'
-  | 'sent'
-  | 'received'
-  | 'collaborated'
-  | 'offers'
-  | 'wants'
-  | 'appreciated';
-
-interface ActionExtraContext {
-  questId?: string;
-  receiver?: TelegramUser;
-}
-
 /** holosphere returns '' for missing keys; treat that and nullish as "no profile". */
 function isUserProfile(v: unknown): v is UserProfile {
   return v !== null && typeof v === 'object' && 'id' in (v as object);
-}
-
-/**
- * Map a (legacy) user-action tuple into REA events via the canonical factory.
- * Extracted from `saveUserAction` so the persistence half (eventStore.put +
- * ensureUserProfile) stays a one-liner. Factory now lives in
- * `@holons/core/rea`; legacy `'received' | 'appreciated'` types are kept as
- * no-ops for backwards compatibility with old call sites.
- */
-function buildUserActionEvents(
-  factory: typeof REAEventFactory,
-  user: TelegramUser,
-  type: string,
-  action: string,
-  amount: number,
-  holonId: string,
-  extraContext: ActionExtraContext,
-): any[] {
-  const events: any[] = [];
-
-  switch (type) {
-    case 'initiated':
-      events.push(
-        factory.questInitiated(holonId, user, {
-          id: extraContext.questId || action,
-          title: action,
-        }),
-      );
-      break;
-
-    case 'completed':
-      events.push(
-        factory.questCompleted(holonId, user, {
-          id: extraContext.questId || action,
-          title: action,
-        }),
-      );
-      break;
-
-    case 'sent':
-      if (extraContext.receiver) {
-        events.push(
-          ...factory.appreciationExchange(
-            holonId,
-            user,
-            extraContext.receiver,
-            1,
-            action,
-            extraContext.questId,
-          ),
-        );
-      }
-      break;
-
-    case 'received':
-      // Handled by 'sent' case above (dual events). Legacy compatibility.
-      break;
-
-    case 'collaborated':
-      if (amount > 0) {
-        events.push(
-          factory.timeLogged(
-            holonId,
-            user,
-            amount,
-            extraContext.questId,
-            action,
-          ),
-        );
-      }
-      break;
-
-    case 'offers':
-      events.push(factory.offerDeclared(holonId, user, action));
-      break;
-
-    case 'wants':
-      events.push(factory.wantDeclared(holonId, user, action));
-      break;
-
-    case 'appreciated':
-      // Legacy appreciation record.
-      break;
-
-    default:
-      console.warn(`Unknown action type: ${type}`);
-      break;
-  }
-
-  return events;
 }
 
 /**
@@ -226,15 +108,6 @@ interface UsersServiceLike {
     user: TelegramUser,
     holonId: string | number,
   ): Promise<UserInfoWithAggregates | null>;
-  saveUserAction(
-    user: TelegramUser,
-    type: ActionType | string,
-    action: string,
-    amount: number,
-    holonId: string,
-    extraContext?: ActionExtraContext,
-  ): Promise<object[]>;
-  batchSaveUserActions(actions: ActionInput[]): Promise<void>;
   addValueToProfile(
     user: TelegramUser,
     holonId: string,
@@ -272,7 +145,6 @@ interface UsersServiceLike {
 class LocalUsersService implements UsersServiceLike {
   private db: DB;
   private eventStore: REAEventStore;
-  private eventFactory: typeof REAEventFactory;
   private aggregator: REAAggregator;
 
   constructor(db: DB) {
@@ -280,7 +152,6 @@ class LocalUsersService implements UsersServiceLike {
     // Bot's DB.get requires the id arg; core's HoloSphereLike.get treats it as
     // optional. They're runtime-compatible — cast at the boundary.
     this.eventStore = new REAEventStore(db as any);
-    this.eventFactory = REAEventFactory;
     this.aggregator = new REAAggregator(this.eventStore);
   }
 
@@ -367,72 +238,6 @@ class LocalUsersService implements UsersServiceLike {
       offers: Array(aggregates.offers).fill(''),
       actions: [],
     };
-  }
-
-  async saveUserAction(
-    user: TelegramUser,
-    type: string,
-    action: string,
-    amount: number,
-    holonId: string,
-    extraContext: ActionExtraContext = {},
-  ) {
-    const events = buildUserActionEvents(
-      this.eventFactory,
-      user,
-      type,
-      action,
-      amount,
-      holonId,
-      extraContext,
-    );
-
-    for (const event of events) {
-      await this.eventStore.put(holonId, event);
-    }
-
-    await this.ensureUserProfile(user, holonId);
-
-    return events;
-  }
-
-  async batchSaveUserActions(actions: ActionInput[]) {
-    if (!actions?.length) return;
-
-    const actionsByUser = new Map<number, ActionInput[]>();
-    for (const action of actions) {
-      const userId = action.user?.id;
-      if (!userId) continue;
-      if (!actionsByUser.has(userId)) {
-        actionsByUser.set(userId, []);
-      }
-      actionsByUser.get(userId)!.push(action);
-    }
-
-    const userIds = Array.from(actionsByUser.keys());
-    const BATCH_SIZE = 10;
-
-    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-      const batchUserIds = userIds.slice(i, i + BATCH_SIZE);
-      const promises = batchUserIds.map(async (userId) => {
-        const userActions = actionsByUser.get(userId)!;
-        for (const action of userActions) {
-          try {
-            await this.saveUserAction(
-              action.user,
-              action.action,
-              action.quest,
-              action.value,
-              action.holonId,
-              { questId: action.questId, receiver: action.receiver },
-            );
-          } catch (error) {
-            console.error('Error saving user action:', error);
-          }
-        }
-      });
-      await Promise.allSettled(promises);
-    }
   }
 
   async addValueToProfile(
@@ -561,28 +366,6 @@ class Users {
 
   async getUserInfo(user: TelegramUser, holonId: string | number) {
     return this.service.getUserInfo(user, holonId);
-  }
-
-  async saveUserAction(
-    user: TelegramUser,
-    type: string,
-    action: string,
-    amount: number,
-    holonId: string,
-    extraContext: ActionExtraContext = {},
-  ) {
-    return this.service.saveUserAction(
-      user,
-      type,
-      action,
-      amount,
-      holonId,
-      extraContext,
-    );
-  }
-
-  async batchSaveUserActions(actions: ActionInput[]) {
-    return this.service.batchSaveUserActions(actions);
   }
 
   async listUsersActions(holonId: string) {

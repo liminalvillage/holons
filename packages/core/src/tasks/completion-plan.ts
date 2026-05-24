@@ -101,7 +101,9 @@ export function planTaskCompletion(
     });
     if (options.holonId != null) {
       expenses.push({
-        id: `${task.id ?? 'task'}_time_${userId}_${now}`,
+        // Stable id keyed on (task, user) so re-completion upserts the
+        // existing hour expense rather than stacking a new one per attempt.
+        id: `${task.id ?? 'task'}_time_${userId}`,
         amount: hours,
         currency: 'hour',
         description: task.title,

@@ -5,6 +5,7 @@
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
+    import { queryManager } from '$lib/holosphere/QueryManager';
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -19,7 +20,7 @@
         description: string;
         icon: string;
         rarity: string;
-        created_at: string;
+        created: string;
         created_by: string;
         awarded_to: Array<{
             id: string;
@@ -61,59 +62,63 @@
     // View toggle state
     let currentView: 'badges' | 'users' = 'users';
 
-    // Load users and badges data
-    async function loadData() {
-        if (!holosphere || !holonID) return;
-        
-        isLoading = true;
-        try {
-            // Load users
-            const usersData = await holosphere.getAll(holonID, "users");
-            if (Array.isArray(usersData)) {
-                users = usersData.reduce((acc, user) => {
-                    if (user && user.id) {
-                        acc[user.id] = user;
-                    }
-                    return acc;
-                }, {});
-            } else if (usersData && typeof usersData === 'object') {
-                users = usersData;
-            }
+    let usersUnsubscribe: (() => void) | undefined;
+    let badgesUnsubscribe: (() => void) | undefined;
+    let subscribedHolonId: string | null = null;
 
-            // Load badges
-            const badgesData = await holosphere.getAll(holonID, "badges");
-            let badgesDataArray: any[] = [];
-            
-            if (Array.isArray(badgesData)) {
-                badgesDataArray = badgesData;
-            } else if (badgesData && typeof badgesData === 'object') {
-                badgesDataArray = Object.values(badgesData);
-            }
-            
-            badges = badgesDataArray
-                .filter(badge => badge && badge.title)
-                .reduce((acc, badge) => {
+    // Local-first + progressive load via queryManager.subscribe: cached
+    // snapshots paint immediately, then items stream in as Gun delivers
+    // them (local graph first, federated peers after). No await on
+    // getAll on the render path.
+    function loadData() {
+        if (!holosphere || !holonID) return;
+        if (subscribedHolonId === holonID) return; // already subscribed
+
+        usersUnsubscribe?.();
+        badgesUnsubscribe?.();
+        subscribedHolonId = holonID;
+
+        queryManager.init(holosphere);
+        isLoading = true;
+
+        const targetHolon = holonID;
+
+        usersUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'users',
+            onUpdate: (items) => {
+                if (subscribedHolonId !== targetHolon) return;
+                const next: Record<string, User> = {};
+                for (const u of items as User[]) {
+                    if (u && u.id) next[u.id] = u;
+                }
+                users = next;
+                isLoading = false;
+                processUsersWithBadges();
+            },
+            onError: (error) => console.error('Badges: users subscription error:', error)
+        });
+
+        badgesUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'badges',
+            onUpdate: (items) => {
+                if (subscribedHolonId !== targetHolon) return;
+                const valid = (items as Badge[]).filter((b) => b && b.title);
+                badges = valid.reduce<Record<string, Badge>>((acc, badge) => {
                     acc[badge.id || badge.title] = badge;
                     return acc;
                 }, {});
-
-            // Sort badges by creation date (newest first) for badges view
-            badgesArray = badgesDataArray
-                .filter(badge => badge && badge.title)
-                .sort((a, b) => {
-                    const dateA = new Date(a.created_at || 0).getTime();
-                    const dateB = new Date(b.created_at || 0).getTime();
+                badgesArray = [...valid].sort((a, b) => {
+                    const dateA = new Date(a.created || 0).getTime();
+                    const dateB = new Date(b.created || 0).getTime();
                     return dateB - dateA;
                 });
-
-            // Process users with their badges
-            processUsersWithBadges();
-                
-        } catch (error) {
-            console.error("Badges: Error loading data:", error);
-        } finally {
-            isLoading = false;
-        }
+                isLoading = false;
+                processUsersWithBadges();
+            },
+            onError: (error) => console.error('Badges: badges subscription error:', error)
+        });
     }
 
     // Process users and their badges
@@ -250,6 +255,10 @@
         if (holonID) {
             loadData();
         }
+        return () => {
+            usersUnsubscribe?.();
+            badgesUnsubscribe?.();
+        };
     });
 </script>
 
@@ -552,7 +561,7 @@
                     <div class="grid grid-cols-2 gap-4 text-sm">
                         <div>
                             <span class="text-white/60">Created:</span>
-                            <div class="text-white font-medium">{formatDate(selectedBadge.created_at)}</div>
+                            <div class="text-white font-medium">{formatDate(selectedBadge.created)}</div>
                         </div>
                         <div>
                             <span class="text-white/60">Created by:</span>

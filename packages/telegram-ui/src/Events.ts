@@ -747,11 +747,6 @@ export default class Events {
 
         const updatedMessages = new Set();
 
-        // Handle personal hologram for interacting user
-        if (interactingUser && eventHolon.toString() !== interactingUser.id.toString()) {
-            await this.personalHologram(interactingUser.id, event);
-        }
-
         const mainMessageKey = `${eventHolon}_${event.id}`;
 
         // Update the main Telegram message
@@ -847,81 +842,6 @@ export default class Events {
                 await this.updateEventMessage(ctx, event, hologram.holonId, hologram.messageId, language, markupConfig);
                 updatedMessages.add(key);
             } catch {}
-        }
-    }
-
-    async personalHologram(userId, event) {
-        const eventHolon = Events.getEventHolon(event);
-        if (!userId || !event?.id || !eventHolon) return;
-
-        try {
-            // Use per-holon holosphere to match the keypair that wrote the data
-            const holonDB = await this.db.forHolon(eventHolon);
-
-            const eventData = {
-                id: event.id.toString(),
-                ...event
-            };
-
-            await holonDB.propagateData(
-                eventData,
-                eventHolon.toString(),
-                userId.toString(),
-                'events',
-                { mode: 'reference' }
-            ).catch(err => {
-                console.warn(`[personalHologram] Failed to propagate event ${event.id} to user ${userId}:`, err.message);
-            });
-        } catch (err) {
-            console.warn(`[personalHologram] Error:`, err.message);
-        }
-    }
-
-    // ==================== REA Integration ====================
-
-    /**
-     * Record completion actions for an event via the shared core planner.
-     *
-     * @deprecated `complete()` now calls `planTaskCompletion` +
-     * `executeCompletionPlan` directly. Retained for external callers.
-     */
-    async recordCompletionActions(event, holonId) {
-        const equation =
-            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
-        const plan = planTaskCompletion(event, equation, { holonId });
-        await executeCompletionPlan(this.db, this.users.getEventStore(), holonId, plan);
-    }
-
-    async batchSaveUserActions(actions) {
-        // Group by user to prevent race conditions
-        const byUser = {};
-        for (const action of actions) {
-            const key = action.user.id;
-            if (!byUser[key]) byUser[key] = [];
-            byUser[key].push(action);
-        }
-
-        // Process 10 users at a time
-        const userKeys = Object.keys(byUser);
-        for (let i = 0; i < userKeys.length; i += 10) {
-            const batch = userKeys.slice(i, i + 10);
-            await Promise.all(batch.map(async userKey => {
-                const userActions = byUser[userKey];
-                for (const action of userActions) {
-                    try {
-                        await this.users.saveUserAction(
-                            action.user,
-                            action.action,
-                            action.quest,
-                            action.value,
-                            action.holonId,
-                            { questId: action.questId, receiver: action.receiver }
-                        );
-                    } catch (err) {
-                        log.error(`Failed to save user action: ${action.action}`, err);
-                    }
-                }
-            }));
         }
     }
 

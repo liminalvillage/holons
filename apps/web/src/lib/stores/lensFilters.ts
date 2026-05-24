@@ -63,6 +63,6 @@ export function passesLensFilters(
 	const isHologram = item?._hologram?.isHologram === true;
 	const isFederated = !!item?._federation;
 	if (!holograms && isHologram) return false;
-	if (!federated && (isHologram || isFederated)) return false;
+	if (!federated && isFederated) return false;
 	return true;
 }

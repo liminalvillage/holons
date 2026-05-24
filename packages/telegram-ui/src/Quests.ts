@@ -1063,7 +1063,6 @@ export default class Quests {
         const questHolonStr = String(questHolon);
         const userIdStr = String(interactingUser?.id || '');
         if (interactingUser && clickedChatId !== questHolonStr && userIdStr !== questHolonStr) {
-            await this.personalHologram(interactingUser.id, quest);
             const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
             if (hologramResult) {
                 updatedMessages.add(`${hologramResult.holonId}_${hologramResult.messageId}`);
@@ -1104,33 +1103,6 @@ export default class Quests {
     }
 
     // Helper methods
-    async personalHologram(userId, quest) {
-        const questHolon = Quests.getQuestHolon(quest);
-        if (!userId || !quest?.id || !questHolon) return;
-
-        try {
-            // Use per-holon holosphere to match the keypair that wrote the data
-            const holonDB = await this.getHolonDB(questHolon);
-
-            const questData = {
-                id: quest.id,
-                ...quest
-            };
-
-            await holonDB.propagateData(
-                questData,
-                questHolon,    // sourceHolon - where the quest lives
-                userId.toString(),         // targetHolon - user's personal holon
-                'quests',
-                { mode: 'reference' }      // options - create hologram reference
-            ).catch(err => {
-                console.warn(`[personalHologram] Failed to propagate quest ${quest.id} to user ${userId}:`, err.message);
-            });
-        } catch (err) {
-            console.warn(`[personalHologram] Error:`, err.message);
-        }
-    }
-
     async checkUserAdmin(userId, holonId) {
         try {
             // Private chats (positive IDs) should always allow admin actions
@@ -1198,21 +1170,6 @@ export default class Quests {
             ctx.answerCbQuery('Quest not found or already completed.').catch(() => {});
             return true;
         }
-    }
-
-    /**
-     * Record completion actions for a quest via the shared core planner.
-     *
-     * @deprecated `complete()` now calls `planTaskCompletion` +
-     * `executeCompletionPlan` directly. This method is retained as a thin
-     * wrapper for any external callers that still expect it.
-     */
-    async recordCompletionActions(quest, holonId) {
-        const holonDB = await this.getHolonDB(holonId);
-        const equation =
-            (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
-        const plan = planTaskCompletion(quest, equation, { holonId });
-        await executeCompletionPlan(holonDB, this.users.getEventStore(), holonId, plan);
     }
 
     async handleBackAction(ctx) {
@@ -1710,7 +1667,7 @@ export default class Quests {
                     type: 'quest',
                     items: [],
                     creator: quest.initiator.id,
-                    created: new Date(),
+                    created: new Date().toISOString(),
                     questId: messageId,
                     title: quest.title
                 };
@@ -3265,54 +3222,6 @@ export default class Quests {
         return Promise.all(promises);
     }
 
-    async batchSaveUserActions(actions) {
-        if (!actions?.length) return;
-
-        // Check if users instance has batch method
-        if (this.users?.batchSaveUserActions) {
-            return this.users.batchSaveUserActions(actions);
-        }
-
-        // Group actions by user to prevent race conditions
-        // Multiple actions for the same user must be processed sequentially
-        const actionsByUser = new Map();
-        for (const action of actions) {
-            const userId = action.user?.id;
-            if (!userId) continue;
-            if (!actionsByUser.has(userId)) {
-                actionsByUser.set(userId, []);
-            }
-            actionsByUser.get(userId).push(action);
-        }
-
-        // Process users in parallel batches, but actions per user sequentially
-        const userIds = Array.from(actionsByUser.keys());
-        const BATCH_SIZE = 10;
-        for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-            const batchUserIds = userIds.slice(i, i + BATCH_SIZE);
-            const promises = batchUserIds.map(async (userId) => {
-                const userActions = actionsByUser.get(userId);
-                // Process this user's actions sequentially to avoid race conditions
-                for (const action of userActions) {
-                    try {
-                        // Pass extra context for REA events (questId, receiver)
-                        await this.users.saveUserAction(
-                            action.user,
-                            action.action,
-                            action.quest,
-                            action.value,
-                            action.holonId,
-                            { questId: action.questId, receiver: action.receiver }
-                        );
-                    } catch (error) {
-                        console.error('Error saving user action:', error);
-                    }
-                }
-            });
-            await Promise.allSettled(promises);
-        }
-    }
-
     async batchBroadcastToUsers(ctx, quest, users, language) {
         if (!users?.length) return 0;
 
@@ -3324,9 +3233,6 @@ export default class Quests {
 
             const batchPromises = batch.map(async user => {
                 try {
-                    // Create a hologram for this user
-                    await this.personalHologram(user.id, quest);
-
                     // Try to send as Telegram message if possible
                     await this.ensureTelegramHologramMessage(ctx, quest, user.id, language);
                     return true; // Success

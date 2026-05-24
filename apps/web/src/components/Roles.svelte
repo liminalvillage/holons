@@ -24,6 +24,7 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+	import { queryManager } from '$lib/holosphere/QueryManager';
 
 	/**
 	 * @type {Record<string, any>}
@@ -123,268 +124,90 @@
 	let rolesSubscriptionUnsubscribe: (() => void) | undefined;
 	let usersSubscriptionUnsubscribe: (() => void) | undefined;
 
-	async function loadAndSubscribeData(holonIdToLoad: string) {
-		console.log(`[Roles.svelte] loadAndSubscribeData called for holon: ${holonIdToLoad}`);
-		
-		// Clean up previous subscriptions
-		if (typeof rolesSubscriptionUnsubscribe === 'function') {
-			console.log(`[Roles.svelte] Cleaning up previous roles subscription`);
-			rolesSubscriptionUnsubscribe();
-		}
-		rolesSubscriptionUnsubscribe = undefined;
+	function normalizeRoleKey(role: any, fallback: string): string {
+		if (role && role.id && role.id !== role.title) return role.id;
+		if (role && role.title) return role.title;
+		return fallback;
+	}
 
-		if (typeof usersSubscriptionUnsubscribe === 'function') {
-			console.log(`[Roles.svelte] Cleaning up previous users subscription`);
-			usersSubscriptionUnsubscribe();
-		}
+	function loadAndSubscribeData(holonIdToLoad: string) {
+		// Tear down previous subscriptions
+		if (typeof rolesSubscriptionUnsubscribe === 'function') rolesSubscriptionUnsubscribe();
+		rolesSubscriptionUnsubscribe = undefined;
+		if (typeof usersSubscriptionUnsubscribe === 'function') usersSubscriptionUnsubscribe();
 		usersSubscriptionUnsubscribe = undefined;
 
-		// Reset stores and readiness flags
 		store = {};
 		userStore = {};
 		isUserStoreReady = false;
 
-		if (!holosphere || !holonIdToLoad) {
-			console.warn("[Roles.svelte] loadAndSubscribeData called without holosphere or holonIdToLoad.");
-			return;
-		}
+		if (!holosphere || !holonIdToLoad) return;
 
-		// Fetch initial roles (federated when toggle is on)
-		try {
-			let initialRolesData = $showFederated
-				? await holosphere.getFederated(holonIdToLoad, "roles", {
-					includeLocal: true,
-					includeFederated: true,
-					resolveReferences: true,
-					aggregate: false
-				})
-				: await holosphere.getAll(holonIdToLoad, "roles");
-			console.log(`[Roles.svelte] Initial roles data:`, initialRolesData);
-			
-			// Log detailed role information to see what's actually stored
-			if (Array.isArray(initialRolesData)) {
-				initialRolesData.forEach((role, index) => {
-					console.log(`[Roles.svelte] Role ${index}:`, {
-						id: role.id,
-						title: role.title,
-						participants: role.participants,
-						participantCount: role.participants?.length || 0,
-						created_at: role.created_at,
-						created_via: role.created_via
-					});
-				});
-			}
-			
-			if (Array.isArray(initialRolesData)) {
-				// Try to use role ID if available, otherwise use title
-				store = initialRolesData.reduce((acc, role) => {
-					// For QR-generated roles, ensure we use a consistent key
-					let roleKey;
-					if (role.id && role.id !== role.title) {
-						roleKey = role.id;
-					} else if (role.title) {
-						roleKey = role.title;
-					} else {
-						roleKey = `role_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-					}
-					
-					if (roleKey) {
-						acc[roleKey] = role;
-						console.log(`[Roles.svelte] Added role with key '${roleKey}' (ID: ${role.id}, title: '${role.title}')`);
-					}
-					return acc;
-				}, {});
-			} else if (typeof initialRolesData === 'object' && initialRolesData !== null) {
-				// If it's already an object, normalize the keys to ensure consistency
-				let normalizedRoleStore = {};
-				Object.entries(initialRolesData).forEach(([key, role]) => {
-					if (role && (role.id || role.title)) {
-						// For QR-generated roles, prefer title as key if id equals title
-						let roleKey;
-						if (role.id && role.id !== role.title) {
-							roleKey = role.id;
-						} else if (role.title) {
-							roleKey = role.title;
-						} else {
-							roleKey = key; // Fallback to original key
-						}
-						
-						normalizedRoleStore[roleKey] = role;
-						console.log(`[Roles.svelte] Normalized role with key '${roleKey}' from original key '${key}'`);
-					} else if (role) {
-						// Keep original key if no id or title
-						normalizedRoleStore[key] = role;
-						console.log(`[Roles.svelte] Kept role with original key '${key}' (no ID/title found)`);
-					}
-				});
-				store = normalizedRoleStore;
-                console.log(`[Roles.svelte] Store initialized with normalized object data, keys:`, Object.keys(store));
-            } else {
-				store = {};
-				console.log(`[Roles.svelte] Store initialized as empty object`);
-			}
-			
-			console.log(`[Roles.svelte] Final store after initialization:`, Object.keys(store));
-		} catch (e) {
-			console.error(`[Roles.svelte] Error fetching initial roles for ${holonIdToLoad}:`, e);
-			store = {};
-		}
-
-		// Fetch initial users
-		try {
-			const initialUsers = await holosphere.getAll(holonIdToLoad, "users");
-			console.log(`[Roles.svelte] Initial users data:`, initialUsers);
-			
-			// Log detailed user information to see what's actually stored
-			if (Array.isArray(initialUsers)) {
-				initialUsers.forEach((user, index) => {
-					console.log(`[Roles.svelte] User ${index}:`, {
-						id: user.id,
-						username: user.username,
-						first_name: user.first_name,
-						last_name: user.last_name
-					});
-				});
-			}
-			
-			if (Array.isArray(initialUsers)) {
-				// Convert array to object map using user.id as the canonical key
-				userStore = initialUsers.reduce((acc, user) => {
-					if (user && user.id) {
-						acc[user.id] = user;
-						console.log(`[Roles.svelte] Added user with key '${user.id}' (username: '${user.username || user.first_name}')`);
-					}
-					return acc;
-				}, {});
-			} else if (typeof initialUsers === 'object' && initialUsers !== null) {
-				// If it's already an object, normalize the keys to use user.id
-				let normalizedUserStore = {};
-				Object.entries(initialUsers).forEach(([key, user]) => {
-					if (user && user.id) {
-						normalizedUserStore[user.id] = user;
-						console.log(`[Roles.svelte] Normalized user with key '${user.id}' from original key '${key}'`);
-					} else if (user) {
-						// Fallback: keep original key if no id
-						normalizedUserStore[key] = user;
-						console.log(`[Roles.svelte] Kept user with original key '${key}' (no ID found)`);
-					}
-				});
-				userStore = normalizedUserStore;
-			} else {
-				userStore = {};
-				console.log(`[Roles.svelte] No initial users data, initialized empty userStore`);
-			}
-			
-			console.log(`[Roles.svelte] Final userStore after initialization:`, Object.keys(userStore));
-		} catch (e) {
-			console.error(`[Roles.svelte] Error fetching initial users for ${holonIdToLoad}:`, e);
-			userStore = {};
-		} finally {
-			isUserStoreReady = true;
-		}
-
-		// Subscribe to role updates
+		queryManager.init(holosphere);
 		const subscribedHolonId = holonIdToLoad;
-		rolesSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "roles", (newRole, key) => {
-			if (activeHolonId !== subscribedHolonId) {
-				return; // Ignore updates from old holon subscription
-			}
-			if (!key || key === 'undefined') {
-				console.warn(`[Roles.svelte] Subscription received update with invalid key: '${key}'`);
-				return;
-			}
 
-			console.log(`[Roles.svelte] Role update received - Key: '${key}', Role title: '${newRole?.title}', Role ID: '${newRole?.id}'`);
-			console.log(`[Roles.svelte] Current store keys:`, Object.keys(store));
-			console.log(`[Roles.svelte] Store before update:`, store);
-
-			if (newRole) {
-				// Normalize the role key using the same logic as initialization
-				let normalizedKey;
-				if (newRole.id && newRole.id !== newRole.title) {
-					normalizedKey = newRole.id;
-				} else if (newRole.title) {
-					normalizedKey = newRole.title;
-				} else {
-					normalizedKey = key; // Fallback to subscription key
+		// Local-first + progressive: queryManager.subscribe paints whatever
+		// is already cached, then streams items in via Gun's map().on() —
+		// local graph first, federated peers as they respond. No await on
+		// the render path.
+		rolesSubscriptionUnsubscribe = queryManager.subscribe({
+			holonId: holonIdToLoad,
+			lens: 'roles',
+			onUpdate: (items) => {
+				if (activeHolonId !== subscribedHolonId) return;
+				const next: Record<string, any> = {};
+				for (let i = 0; i < items.length; i++) {
+					const role = items[i];
+					if (!role) continue;
+					const key = normalizeRoleKey(role, role.id || `role_${i}`);
+					next[key] = role;
 				}
+				store = next;
+			},
+			onError: (e) => console.error(`[Roles.svelte] roles subscribe error:`, e)
+		});
 
-				// Check if we already have this role by normalized key
-				const existingKey = Object.keys(store).find(storeKey => 
-					store[storeKey].id === newRole.id || store[storeKey].title === newRole.title
-				);
-
-				if (existingKey && existingKey !== normalizedKey) {
-					// We have this role but with a different key, update the existing key
-					console.log(`[Roles.svelte] Role exists with different key '${existingKey}', updating it instead of '${normalizedKey}'`);
-					store = { ...store, [existingKey]: newRole };
-					// Remove the old key if it's different
-					if (existingKey !== normalizedKey) {
-						const { [normalizedKey]: _, ...rest } = store;
-						store = rest;
-					}
-				} else {
-					// Use the normalized key for updates
-					const oldRole = store[normalizedKey];
-					if (oldRole) {
-						console.log(`[Roles.svelte] Updating existing role with key '${normalizedKey}' (title: '${newRole.title}')`);
-					} else {
-						console.log(`[Roles.svelte] Adding new role with key '${normalizedKey}' (title: '${newRole.title}')`);
-					}
-					store = { ...store, [normalizedKey]: newRole };
+		usersSubscriptionUnsubscribe = queryManager.subscribe({
+			holonId: holonIdToLoad,
+			lens: 'users',
+			onUpdate: (items) => {
+				if (activeHolonId !== subscribedHolonId) return;
+				const next: Record<string, any> = {};
+				for (const user of items) {
+					if (user && user.id) next[user.id] = user;
 				}
-				console.log(`[Roles.svelte] Store after update:`, store);
-			} else {
-				// Remove the role - try to find it by the subscription key or normalized key
-				const roleToRemove = store[key] || store[newRole?.title] || store[newRole?.id];
-				if (roleToRemove) {
-					const keyToRemove = Object.keys(store).find(storeKey => store[storeKey] === roleToRemove);
-					if (keyToRemove) {
-						console.log(`[Roles.svelte] Removing role with key '${keyToRemove}'`);
-						const { [keyToRemove]: _, ...rest } = store;
-						store = rest;
-					}
-				} else {
-					console.log(`[Roles.svelte] Removing role with subscription key '${key}'`);
-					const { [key]: _, ...rest } = store;
-					store = rest;
-				}
+				userStore = next;
+				isUserStoreReady = true;
+			},
+			onError: (e) => {
+				console.error(`[Roles.svelte] users subscribe error:`, e);
+				isUserStoreReady = true; // Don't block the UI on errors.
 			}
 		});
 
-		// Subscribe to user updates
-		usersSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "users", (newUser, key) => {
-			if (activeHolonId !== subscribedHolonId) {
-				return; // Ignore updates from old holon subscription
-			}
-			if (!key || key === 'undefined') {
-				console.warn(`[Roles.svelte] User subscription received update with invalid key: '${key}'`);
-				return;
-			}
-			
-			console.log(`[Roles.svelte] User update received - Key: '${key}', User:`, newUser);
-			
-			if (newUser) {
-				// Use user.id as the canonical key if available
-				const canonicalKey = newUser.id || key;
-				
-				if (newUser.id && key !== newUser.id) {
-					console.log(`[Roles.svelte] Normalizing user key from '${key}' to '${newUser.id}'`);
-					// Remove the old key if it's different from the canonical key
-					const { [key]: _, ...rest } = userStore;
-					userStore = { ...rest, [canonicalKey]: newUser };
-				} else {
-					// Use the key directly
-					userStore = { ...userStore, [canonicalKey]: newUser };
-				}
-				console.log(`[Roles.svelte] Updated userStore with key '${canonicalKey}'`);
-			} else {
-				// Remove the user
-				console.log(`[Roles.svelte] Removing user with key '${key}'`);
-				const { [key]: _, ...rest } = userStore;
-				userStore = rest;
-			}
-		});
+		// Federated overlay: when the federation toggle is on, also fetch
+		// cross-holon roles in the background and merge into the store.
+		// Local subscribe items take precedence (latest write wins).
+		if ($showFederated) {
+			holosphere.getFederated(holonIdToLoad, 'roles', {
+				includeLocal: true,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			}).then((federatedRoles) => {
+				if (activeHolonId !== subscribedHolonId) return;
+				if (!Array.isArray(federatedRoles) || federatedRoles.length === 0) return;
+				const merged: Record<string, any> = {};
+				federatedRoles.forEach((role: any, i: number) => {
+					if (!role) return;
+					merged[normalizeRoleKey(role, role.id || `fed_${i}`)] = role;
+				});
+				// Local subscribe state overlays the federated baseline.
+				store = { ...merged, ...store };
+			}).catch((e) => {
+				console.error(`[Roles.svelte] federated roles error:`, e);
+			});
+		}
 	}
 
 	onMount(() => {
@@ -497,7 +320,7 @@
 			id: newRoleId,
 			title: 'New Role',
 			participants: [],
-			created_at: new Date().toISOString()
+			created: new Date().toISOString()
 		};
 		try {
 			// Save the new role to HoloSphere
@@ -528,7 +351,7 @@
 					title,
 					description: raw.description ?? '',
 					participants: Array.isArray(raw.participants) ? raw.participants : [],
-					created_at: new Date().toISOString()
+					created: new Date().toISOString()
 				};
 				await holosphere.put(activeHolonId, 'roles', newRole);
 			}

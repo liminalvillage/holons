@@ -427,10 +427,7 @@
             availableCurrencies = [];
             holosphere.subscribe(holonID, "settings", (settingsData: any) => {
                 currentSettingsSnapshot = settingsData ?? {};
-                const stored: string[] = Array.isArray(settingsData?.currencies)
-                    ? settingsData.currencies.filter((c: unknown) => typeof c === 'string')
-                    : [];
-                applyCurrencyList(stored);
+                applyCurrentCurrencyList();
                 currenciesLoaded = true;
                 maybeAutoMergeOrphanCurrencies();
             });
@@ -442,12 +439,23 @@
         }
     }
 
+    // Re-apply the currency list using the latest cached settings snapshot.
+    // Called when expense or aggregate state changes — both can flip the
+    // hour-detection guard without the settings record itself changing.
+    function applyCurrentCurrencyList() {
+        const stored: string[] = Array.isArray(currentSettingsSnapshot?.currencies)
+            ? currentSettingsSnapshot.currencies.filter((c: unknown) => typeof c === 'string')
+            : [];
+        applyCurrencyList(stored);
+    }
+
     // Apply a settings-derived currency list, augmenting it with 'hour'
-    // whenever any time-tracking expenses exist (so the hour balance shows
-    // up in the table even before an admin adds it to settings).
+    // whenever any time-tracking expense OR any declared hours exist (so
+    // the hour column shows up in the table even before an admin adds it
+    // to settings).
     function applyCurrencyList(stored: string[]) {
         const set = new Set(stored.map(c => c.toLowerCase()));
-        if (hasHourExpenses()) set.add('hour');
+        if (hasHourExpenses() || hasDeclaredHours()) set.add('hour');
         const next = [...set];
         const changed = JSON.stringify(next.sort()) !== JSON.stringify([...availableCurrencies].sort());
         if (changed) availableCurrencies = next;
@@ -456,6 +464,13 @@
     function hasHourExpenses(): boolean {
         for (const e of Object.values(expenseStore)) {
             if (expenseCurrency(e as any) === 'hour') return true;
+        }
+        return false;
+    }
+
+    function hasDeclaredHours(): boolean {
+        for (const agg of Object.values(aggregatesByUser)) {
+            if ((agg?.hours ?? 0) > 0) return true;
         }
         return false;
     }
@@ -517,10 +532,7 @@
 
                 // Re-apply the currency list now that hour-detection state may
                 // have changed, and try the orphan-merge again.
-                const stored = Array.isArray(currentSettingsSnapshot?.currencies)
-                    ? currentSettingsSnapshot.currencies.filter((c: unknown) => typeof c === 'string')
-                    : [];
-                applyCurrencyList(stored as string[]);
+                applyCurrentCurrencyList();
                 maybeAutoMergeOrphanCurrencies();
             });
             expensesLoaded = true;
@@ -670,6 +682,8 @@
         }));
         aggregatesByUser = next;
         aggregatesLoaded = true;
+        // 'hour' should appear once declared hours exist, even with no hour expenses yet.
+        applyCurrentCurrencyList();
     }
 
     $: if (store && holonID) loadAggregatesForUsers();
@@ -741,10 +755,10 @@
         for (const currency of availableCurrencies) {
             const weight = eq.currencies?.[currency] || 0;
             if (!weight) continue;
-            const balance = getCurrencyBalance(userId, currency);
+            const balance = getCurrencyAmount(userId, currency);
             if (!balance) continue;
             lines.push({
-                label: `${currency.toUpperCase()} balance`,
+                label: currency === 'hour' ? 'Declared hours' : `${currency.toUpperCase()} balance`,
                 count: balance,
                 weight,
                 points: balance * weight
@@ -813,7 +827,7 @@
 
         // Add currency balances to breakdown
         for (const currency of availableCurrencies) {
-            const balance = getCurrencyBalance(user.id || userId, currency);
+            const balance = getCurrencyAmount(user.id || userId, currency);
             if (balance !== 0) {
                 breakdown.currencies[currency] = balance;
             }
@@ -842,10 +856,23 @@
         return (score / totalScore) * 100;
     }
 
+    // Resolve the "amount" used for currency-weighted scoring per user.
+    // For 'hour', source from REA-aggregated declared hours (agg.hours from
+    // quest:time_logged events) so the score reflects work declared, not
+    // expense settlements. All other currencies still come from the expense
+    // ledger via getCurrencyBalance.
+    function getCurrencyAmount(userId: string, currency: string): number {
+        if (currency === 'hour') {
+            const id = String(userId);
+            return aggregatesByUser[id]?.hours ?? 0;
+        }
+        return getCurrencyBalance(userId, currency);
+    }
+
     // Wrapper function to handle caching and data conversion for the shared utility
     function getCurrencyBalance(userId: string, currency: string): number {
         if (!currency || !userId) return 0;
-        
+
         // Create cache key
         const expenseCount = Object.keys(expenseStore).length;
         const cacheKey = `${userId}-${currency}-${expenseCount}`;
@@ -1037,7 +1064,7 @@
                                             </span>
                                         </td>
                                         {#each availableCurrencies as currency}
-                                            {@const balance = getCurrencyBalance(user.id || userId, currency)}
+                                            {@const balance = getCurrencyAmount(user.id || userId, currency)}
                                             <td class="p-2 text-center">
                                                 <span class="text-xs {balance > 0 ? 'text-green-300' : balance < 0 ? 'text-red-300' : 'text-gray-400'}">
                                                     {formatCurrencyAmount(balance, currency)}
