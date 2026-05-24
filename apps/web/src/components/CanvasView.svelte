@@ -1,12 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount, afterUpdate, tick } from 'svelte';
     import { goto } from '$app/navigation';
-    import { formatDate, formatTime } from '../utils/date.js';
     import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
-    import { buildHologramLink, nameMap, resolveName, resolvedName } from '$lib/stores/nameResolver';
-    import SourceBadge from './shared/SourceBadge.svelte';
-    import { getColorFromCategory } from '@holons/core/categories';
+    import TaskCard from './shared/TaskCard.svelte';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -2122,100 +2119,13 @@
             >
 
 
-                <div 
-                    class="w-80 p-3 rounded-xl shadow-lg transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005] cursor-pointer"
-                    style="background-color: {card.quest.status === 'completed'
-                        ? '#374151'
-                        : getColorFromCategory(card.quest.category, card.quest.type)}; 
-                           opacity: {card.quest.status === 'completed' ? '0.7' : card.quest._hologram?.isHologram ? '0.75' : '1'};
-                           {card.quest._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
-                >
-                    <!-- Header -->
-                    <div class="flex items-center justify-between gap-3">
-                        <div class="flex-1 min-w-0">
-                            <!-- Main Content -->
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <h3 class="text-base font-bold text-gray-800">
-                                        {card.quest.title}
-                                    </h3>
-                                    {#if card.quest.created}
-                                        <div class="text-xs text-gray-500 ml-2">
-                                            Created: {formatDate(card.quest.created)}
-                                        </div>
-                                    {/if}
-                                    <SourceBadge item={card.quest} currentHolonId={holonID} lensRoute="tasks" />
-                                    {#if card.quest.type === 'recurring' || card.quest.status === 'recurring' || card.quest.status === 'repeating'}
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500 bg-opacity-30 text-purple-800 flex-shrink-0">
-                                            🔄
-                                        </span>
-                                    {/if}
-                                </div>
-                                {#if card.quest.category}
-                                    <div class="mb-2">
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-black bg-opacity-10 text-gray-700">
-                                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
-                                            </svg>
-                                            {card.quest.category}
-                                        </span>
-                                    </div>
-                                {/if}
-                                {#if card.quest.description}
-                                    <p class="text-sm text-gray-700 truncate">
-                                        {card.quest.description}
-                                    </p>
-                                {/if}
-                            </div>
-                        </div>
-
-                        <!-- Right Side Meta Info -->
-                        <div class="flex items-center gap-3 flex-shrink-0 text-sm">
-                            {#if card.quest.location}
-                                <div class="flex items-center gap-1 text-gray-600">
-                                    <span class="text-xs">📍</span>
-                                    <span class="truncate max-w-16 text-xs">{card.quest.location.split(",")[0]}</span>
-                                </div>
-                            {/if}
-
-                            {#if card.quest.participants?.length > 0}
-                                <div class="flex items-center gap-1">
-                                    <div class="flex -space-x-1 relative group" title={card.quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
-                                        {#each card.quest.participants.slice(0, 2) as participant}
-                                            <div class="relative">
-                                                <img
-                                                    class="w-5 h-5 rounded-full border border-white shadow-sm"
-                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                                    alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
-                                                />
-                                            </div>
-                                        {/each}
-                                        {#if card.quest.participants.length > 2}
-                                            <div class="w-5 h-5 rounded-full bg-gray-400 flex items-center justify-center text-xs border border-white shadow-sm text-white font-medium">
-                                                <span>+{card.quest.participants.length - 2}</span>
-                                            </div>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
-
-                            {#if card.quest.when}
-                                <div class="text-xs font-medium text-gray-700 whitespace-nowrap">
-                                    <div class="text-xs text-gray-600 mb-1">{formatDate(card.quest.when)}</div>
-                                    {formatTime(card.quest.when)}
-                                    {#if card.quest.ends}<br/>{formatTime(card.quest.ends)}{/if}
-                                </div>
-                            {/if}
-
-                            {#if card.quest.appreciation?.length > 0}
-                                <div class="flex items-center gap-1 text-gray-600" title={`${card.quest.appreciation.length} appreciations`}>
-                                    <span class="text-xs">👍</span>
-                                    <span class="text-xs font-medium">{card.quest.appreciation.length}</span>
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
-                </div>
+                <TaskCard
+                    quest={card.quest}
+                    variant="canvas"
+                    {holonID}
+                    showCreated
+                    extraClass="w-80"
+                />
 
 
             </div>
@@ -2375,11 +2285,6 @@
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
-        }
-        
-        /* Improve touch targets on mobile */
-        .task-card > div {
-            min-height: 44px; /* iOS minimum touch target */
         }
         
         /* Prevent zoom on double tap */

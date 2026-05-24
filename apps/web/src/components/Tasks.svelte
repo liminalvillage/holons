@@ -5,8 +5,6 @@
 	import { page } from "$app/stores";
 	import { replaceState, goto } from "$app/navigation";
 	import { fade, slide } from "svelte/transition";
-	import { formatDate, formatTime } from "../utils/date";
-	import { resolveImage } from "../utils/imageServer";
 	import type { HoloSphere } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
@@ -49,7 +47,7 @@
 	import { flip } from "svelte/animate";
 	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
-	import SourceBadge from "./shared/SourceBadge.svelte";
+	import TaskCard from "./shared/TaskCard.svelte";
 	import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
 	import type { PublishOutcome } from "$lib/holosphere/publish";
 
@@ -1477,171 +1475,86 @@
 							{@const quest = item.quest}
 						<div
 							id={key}
-							class="w-full task-card relative text-left group cursor-pointer"
-							onclick={(e) => { e.stopPropagation(); handleTaskClick(key, quest); }}
-							role="button"
-							tabindex="0"
-							aria-label={`Open task: ${quest.title}`}
+							class="w-full task-card relative text-left group"
 							animate:flip={{ duration: LIST_FLIP_MS }}
-							onkeydown={(e) => {
-								if (e.key === 'Enter' || e.key === ' ') {
-									handleTaskClick(key, quest);
-								}
-							}}
 						>
-							<div
-								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-								style="background-color: {getColorFromCategory(quest.category, quest.type)};
-								   opacity: {quest._hologram?.isHologram ? '0.75' : '1'};
-								   {quest._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
-							>
-								<div class="flex items-center justify-between gap-2 sm:gap-3">
-									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-										<!-- Clickable Checkbox for completion -->
-										<button
-											class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110 {quest.status === 'completed' ? 'bg-green-500 text-white' : 'bg-black/20 hover:bg-green-500/30 text-gray-600 hover:text-green-600'}"
-											onclick={(e) => handleCheckboxClick(e, key, quest)}
-											title={quest.status === 'completed' ? 'Mark as ongoing' : 'Mark as complete'}
-											aria-label={quest.status === 'completed' ? 'Mark task as ongoing' : 'Mark task as complete'}
-										>
-											{#if quest.status === 'completed'}
-												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
-												</svg>
-											{:else if quest.type === 'event' || (filterType === 'event' && quest.when)}
-												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/>
-													<line x1="16" y1="2" x2="16" y2="6" stroke-width="2"/>
-													<line x1="8" y1="2" x2="8" y2="6" stroke-width="2"/>
-													<line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/>
-												</svg>
-											{:else if quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating'}
-												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-												</svg>
-											{:else}
-												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<circle cx="12" cy="12" r="10" stroke-width="2"/>
-												</svg>
-											{/if}
-										</button>
-
-										{#if quest.picture}
-											<img
-												src={resolveImage(quest.picture)}
-												alt={quest.title}
-												class="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover bg-black/10"
-												loading="lazy"
-												onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-											/>
-										{/if}
-
-										<!-- Main Content -->
-										<div class="flex-1 min-w-0">
-											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
-												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-800 line-through' : 'text-gray-800'}">
-													{quest.title}
-												</h3>
-												{#if quest.category}
-													<span class="inline-block px-1.5 sm:px-2 py-0.5 text-xs bg-black/10 text-gray-700 rounded-md flex-shrink-0 hidden sm:inline-block">
-														{quest.category}
-													</span>
-												{/if}
-												<SourceBadge item={quest} currentHolonId={holonID} lensRoute="tasks" />
-											</div>
-
-											{#if quest.description}
-												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-700' : 'text-gray-700'}">{quest.description}</p>
-											{/if}
-											
-											{#if quest.dependsOn && quest.dependsOn.length > 0}
-												<div class="text-xs text-gray-600 mb-1">
-													<div class="flex items-center gap-1 mb-1">
-														<span class="text-blue-600 flex-shrink-0">📌 Depends on:</span>
-													</div>
-													<div class="flex flex-wrap items-center gap-1">
-														{#each quest.dependsOn as depId, index}
-															{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
-															{#if depQuest}
-																<button
-																	class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
-																	onclick={(e) => { e.stopPropagation(); handleDependencyClick(depId); }}
-																	ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-																	ontouchend={(e) => {
-																		e.stopPropagation();
-																		e.preventDefault();
-																		handleDependencyClick(depId);
-																	}}
-																	title="Click to open dependency task: {depQuest[1].title}"
-																	type="button"
-																>
-																	{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
-																</button>
-															{:else}
-																<span class="inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs flex-shrink-0">
-																	Unknown dependency
-																</span>
-															{/if}
-														{/each}
-													</div>
-												</div>
-											{/if}
-										</div>
-									</div>
-									
-									<!-- Right Side Content -->
-									<div class="flex items-center gap-1.5 sm:gap-3 text-xs sm:text-sm text-gray-700">
-										{#if quest.when}
-											<div class="text-center hidden sm:block" title="Scheduled time">
-												<span class="block text-xs opacity-75">
-													{formatDate(quest.when)} @ {formatTime(quest.when)}
-													{#if quest.ends}- {formatTime(quest.ends)}{/if}
-												</span>
-											</div>
-										{/if}
-										
-										{#if quest.participants && quest.participants.length > 0}
-											<div class="flex -space-x-1 relative" title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
-												{#each quest.participants.slice(0, 3) as participant}
-													{#if participant.id}
-														<img 
-															class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white object-cover" 
-															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`} 
-															alt={participant.firstName || participant.username || 'User'} 
-															title={`${participant.firstName || participant.username} ${participant.lastName || ''}`}
-														/>
-													{:else}
-														<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-blue-500 text-white">
-															{participant.firstName ? participant.firstName[0] : (participant.username ? participant.username[0] : '?')}
-														</div>
-													{/if}
-												{/each}
-												{#if quest.participants.length > 3}
-													<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-gray-500 text-white">
-														<span>+{quest.participants.length - 3}</span>
-													</div>
-												{/if}
-											</div>
-										{/if}
-
-										{#if quest.appreciation && quest.appreciation.length > 0}
-											<div class="flex items-center gap-0.5 sm:gap-1" title={`${quest.appreciation.length} appreciations`}>
-												<span class="text-xs">👍</span>
-												<span class="text-xs sm:text-sm">{quest.appreciation.length}</span>
-											</div>
-										{/if}
-
-										<!-- Publish to Federation (per-row) -->
-										<PublishToFederationButton
-											compact
-											holonId={holonID}
-											lens="quests"
-											item={{ ...quest, id: quest.id ?? key }}
-											onPublished={(outcome) => markQuestPublished(quest, outcome)}
-										/>
-									</div>
+							<div class="flex items-stretch gap-2 sm:gap-3">
+								<button
+									class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110 self-center {quest.status === 'completed' ? 'bg-green-500 text-white' : 'bg-black/20 hover:bg-green-500/30 text-gray-600 hover:text-green-600'}"
+									onclick={(e) => handleCheckboxClick(e, key, quest)}
+									title={quest.status === 'completed' ? 'Mark as ongoing' : 'Mark as complete'}
+									aria-label={quest.status === 'completed' ? 'Mark task as ongoing' : 'Mark task as complete'}
+								>
+									{#if quest.status === 'completed'}
+										<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+										</svg>
+									{:else if quest.type === 'event' || (filterType === 'event' && quest.when)}
+										<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/>
+											<line x1="16" y1="2" x2="16" y2="6" stroke-width="2"/>
+											<line x1="8" y1="2" x2="8" y2="6" stroke-width="2"/>
+											<line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/>
+										</svg>
+									{:else if quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating'}
+										<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+										</svg>
+									{:else}
+										<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<circle cx="12" cy="12" r="10" stroke-width="2"/>
+										</svg>
+									{/if}
+								</button>
+								<TaskCard
+									quest={quest}
+									variant="list"
+									{holonID}
+									extraClass="flex-1"
+									onclick={(e) => { e.stopPropagation(); handleTaskClick(key, quest); }}
+									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleTaskClick(key, quest); }}
+									role="button"
+									tabindex={0}
+									ariaLabel={`Open task: ${quest.title}`}
+								/>
+								<div class="flex flex-shrink-0 items-center">
+									<PublishToFederationButton
+										compact
+										holonId={holonID}
+										lens="quests"
+										item={{ ...quest, id: quest.id ?? key }}
+										onPublished={(outcome) => markQuestPublished(quest, outcome)}
+									/>
 								</div>
 							</div>
+							{#if quest.dependsOn && quest.dependsOn.length > 0}
+								<div class="text-xs text-gray-600 mt-1 ml-8 sm:ml-11">
+									<div class="flex items-center gap-1 mb-1">
+										<span class="text-blue-600 flex-shrink-0">📌 Depends on:</span>
+									</div>
+									<div class="flex flex-wrap items-center gap-1">
+										{#each quest.dependsOn as depId}
+											{@const depQuest = Object.entries(store).find(([k, q]) => k === depId)}
+											{#if depQuest}
+												<button
+													class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
+													onclick={(e) => { e.stopPropagation(); handleDependencyClick(depId); }}
+													ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); }}
+													ontouchend={(e) => { e.stopPropagation(); e.preventDefault(); handleDependencyClick(depId); }}
+													title="Click to open dependency task: {depQuest[1].title}"
+													type="button"
+												>
+													{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
+												</button>
+											{:else}
+												<span class="inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs flex-shrink-0">
+													Unknown dependency
+												</span>
+											{/if}
+										{/each}
+									</div>
+								</div>
+							{/if}
 						</div>
 						{/each}
 					</div>
