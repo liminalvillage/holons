@@ -795,7 +795,12 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         
         // Only propagate if we have outbound partners configured.
         if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
-            let spaces = fedInfo.outbound;
+            // Never propagate back to ourselves. Writing a hologram to the
+            // source holon overwrites the original data with a self-
+            // referencing pointer, and HoloSphere's get() then auto-deletes
+            // it as a "broken hologram" (resolveHologram returns null because
+            // the soul resolves to itself), silently destroying the entry.
+            let spaces = fedInfo.outbound.filter(s => String(s) !== String(holon));
 
             if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
                 spaces = spaces.filter(space => targetSpaces.includes(space));
@@ -860,11 +865,19 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                     }
                                 };
                             }
-                            
+
+                            // Defensive: even if the outbound list somehow
+                            // contains the source holon, never write a self-
+                            // hologram. The source already has the original.
+                            if (String(targetSpace) === String(holon)) {
+                                result.skipped++;
+                                return true;
+                            }
+
                             // Store in the target space with redirection disabled and no further auto-propagation
-                            await holosphere.put(targetSpace, lens, payloadToPut, null, { 
-                                disableHologramRedirection: true, 
-                                autoPropagate: false 
+                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
+                                disableHologramRedirection: true,
+                                autoPropagate: false
                             });
 
                             result.success++;

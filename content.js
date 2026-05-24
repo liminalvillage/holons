@@ -471,17 +471,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                         });
 
                         if (resolvedValue === null) {
-                            // This means resolveHologram determined the target doesn't exist or encountered an error
-                            console.warn(`Broken hologram detected at ${holon}/${lens}/${key}. Removing it...`);
-                            
-                            try {
-                                // Delete the broken hologram
-                                await holoInstance.delete(holon, lens, key, password);
-                                console.log(`Successfully removed broken hologram from ${holon}/${lens}/${key}`);
-                            } catch (cleanupError) {
-                                console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
-                            }
-                            
+                            // `resolveHologram` returned null. DON'T treat this
+                            // as a permission to delete — null fires for several
+                            // transient reasons:
+                            //   - source soul not in our local Gun graph yet
+                            //     (peer offline, federation propagation in flight)
+                            //   - maxDepth (10) reached on a deep hologram chain
+                            //   - circular reference detected mid-chain
+                            //   - any internal resolve error
+                            // None of these prove the pointer is permanently
+                            // broken, but the old behaviour `await delete(...)`
+                            // here permanently destroyed real data on the first
+                            // transient miss. Skip the entry instead; a real
+                            // garbage collector should own dead-pointer cleanup.
+                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
                             resolve(null);
                             return;
                         }
@@ -489,7 +492,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                         // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
                         // For now, assume resolvedValue is either the resolved data or we've returned null above.
 
-                        if (resolvedValue !== parsed) { 
+                        if (resolvedValue !== parsed) {
                             parsed = resolvedValue;
                         }
                     }
@@ -647,12 +650,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                                 });
 
                                 if (resolved === null) {
-                                    console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
-                                    try {
-                                        await holoInstance.delete(holon, lens, key, password);
-                                    } catch (cleanupError) {
-                                        console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
-                                    }
+                                    // See `get()` above: null is not proof of a
+                                    // permanently dead pointer. Skip the entry
+                                    // without deleting so transient resolution
+                                    // failures don't destroy real data.
+                                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
                                     return;
                                 }
 

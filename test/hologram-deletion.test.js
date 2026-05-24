@@ -194,4 +194,53 @@ describe('Hologram Deletion Tests', () => {
         const deletedData = await holoSphere.get(testHolon, testLens, 'regular-data-to-delete');
         expect(deletedData).toBeNull();
     }, 10000);
+
+    test('get() must NOT delete a hologram whose source soul does not resolve', async () => {
+        // Regression: `resolveHologram` returning null is NOT a signal that
+        // a hologram is permanently broken — it fires on transient
+        // unreachability too (peer offline, federation in flight, max depth).
+        // The old behaviour `await holoInstance.delete(...)` here destroyed
+        // real data on the first transient miss. get() must skip the entry
+        // without touching storage.
+        const unreachableSoul = `${appName}/${testHolon}/${testLens}/this-key-was-never-put`;
+        const hologramStorage = { id: 'pointer-to-missing', soul: unreachableSoul };
+
+        await holoSphere.put(testHolon, otherLens, hologramStorage);
+        await waitForGun();
+
+        // get() returns null (couldn't resolve) — but must NOT delete the
+        // hologram envelope from storage.
+        const resolved = await holoSphere.get(testHolon, otherLens, 'pointer-to-missing');
+        expect(resolved).toBeNull();
+
+        // Re-read with hologram resolution disabled: the raw envelope must
+        // still be present. If it were deleted by the previous call, this
+        // would return null.
+        const raw = await holoSphere.get(testHolon, otherLens, 'pointer-to-missing', null, { resolveHolograms: false });
+        expect(raw).not.toBeNull();
+        expect(raw.soul).toBe(unreachableSoul);
+    }, 10000);
+
+    test('getAll() must NOT delete unresolved-hologram entries', async () => {
+        // Same regression as above, but for the getAll path. A holon whose
+        // lens contains a mix of real items and stale hologram pointers
+        // should return the real items and skip-but-preserve the stale ones.
+        const realData = { id: 'real-1', value: 'real value' };
+        await holoSphere.put(testHolon, 'gctest', realData);
+
+        const stalePointer = { id: 'stale-1', soul: `${appName}/${testHolon}/gctest/never-put-key` };
+        await holoSphere.put(testHolon, 'gctest', stalePointer);
+        await waitForGun(400);
+
+        const items = await holoSphere.getAll(testHolon, 'gctest');
+        // The real item is returned; the stale pointer is skipped (resolved to null).
+        const ids = items.map(i => i.id);
+        expect(ids).toContain('real-1');
+        expect(ids).not.toContain('stale-1');
+
+        // But the stale pointer must still be on disk — not GCed by the read.
+        const raw = await holoSphere.get(testHolon, 'gctest', 'stale-1', null, { resolveHolograms: false });
+        expect(raw).not.toBeNull();
+        expect(raw.soul).toBe(stalePointer.soul);
+    }, 15000);
 }); 

@@ -177,9 +177,13 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
                     // resolved-hologram indicator HoloSphere emits.
                     return attachHologramMeta(originalData, hologram.soul);
                 } else {
-                console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Removing broken hologram.`);
-                
-                // Return null to indicate the hologram should be removed
+                // Note: this is informational, not a permission to delete. The
+                // source soul may simply not be reachable yet (peer offline,
+                // federation propagation in flight). Callers must decide on
+                // their own GC policy; this function only reports the miss.
+                console.warn(`Could not resolve hologram soul: ${hologram.soul} (target not present locally)`);
+
+                // Return null so the caller skips this entry.
                 return null;
                 }
             } else {
