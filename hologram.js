@@ -175,7 +175,20 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
             if (originalData && !originalData._invalidHologram) {
                     // Attach the canonical `_hologram` envelope. This is the only
                     // resolved-hologram indicator HoloSphere emits.
-                    return attachHologramMeta(originalData, hologram.soul);
+                    const withMeta = attachHologramMeta(originalData, hologram.soul);
+                    // Stamp the source holon's display name so every consumer
+                    // (subscribe, get, getAll, getFederated) has it without a
+                    // second round-trip. Cached on the instance, so a batch of
+                    // holograms from the same source resolves the name once.
+                    if (withMeta._hologram?.sourceHolon && typeof holoInstance.getHolonName === 'function') {
+                        try {
+                            const sourceHolonName = await holoInstance.getHolonName(withMeta._hologram.sourceHolon);
+                            if (sourceHolonName) {
+                                withMeta._hologram = { ...withMeta._hologram, sourceHolonName };
+                            }
+                        } catch { /* best-effort — name lookup must not fail the resolve */ }
+                    }
+                    return withMeta;
                 } else {
                 // Note: this is informational, not a permission to delete. The
                 // source soul may simply not be reachable yet (peer offline,

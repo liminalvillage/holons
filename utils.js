@@ -90,6 +90,17 @@ export function subscribe(holoInstance, holon, lens, callback) {
                         }
                     }
 
+                    // Subscribers expect `object | null`. `parse()` can return
+                    // a string/number/boolean when a legacy or corrupted leaf
+                    // happened to be a JSON-encoded primitive (e.g.
+                    // `'"hello"'` parses to `'hello'`). Drop those so every
+                    // consumer can stop guarding with
+                    // `typeof x === 'string' ? JSON.parse(x) : x`.
+                    if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
+                        console.warn(`[holosphere.subscribe] dropping non-object payload at ${holon}/${lens}/${key}:`, typeof parsed);
+                        return;
+                    }
+
                     // Check again if subscription ID still exists before calling callback
                     if (holoInstance.subscriptions[subscriptionId]) {
                         callback(parsed, key);

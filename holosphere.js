@@ -125,6 +125,10 @@ class HoloSphere {
         // Initialize schema cache
         this.schemaCache = new Map();
 
+        // Holon-name cache so resolveHologram + getFederated don't refetch
+        // `settings/<holon>` for every hologram from the same source.
+        this._holonNameCache = new Map();
+
         // Initialize allowed authors set (for canWrite)
         this._allowedAuthors = new Set();
     }
@@ -351,6 +355,38 @@ class HoloSphere {
 
     notifySubscribers(data) {
         return Utils.notifySubscribers(this, data);
+    }
+
+    /**
+     * Resolve a holon's display name from its `settings/<holon>` record.
+     * Cached per-instance so repeated lookups (e.g. one per hologram in a
+     * federated batch) only fetch once. Returns `null` when no name is set.
+     *
+     * Used internally by `resolveHologram` to stamp
+     * `_hologram.sourceHolonName` so every consumer of a resolved hologram
+     * already has the display name without a second round-trip.
+     */
+    async getHolonName(holonId) {
+        if (!holonId) return null;
+        const key = String(holonId);
+        if (this._holonNameCache.has(key)) return this._holonNameCache.get(key);
+        try {
+            const settings = await this.get(key, 'settings', key);
+            let name = null;
+            if (settings) {
+                if (Array.isArray(settings)) {
+                    const found = settings.find(s => s && typeof s.name === 'string' && s.name.trim() !== '');
+                    name = found ? found.name : null;
+                } else if (typeof settings.name === 'string' && settings.name.trim() !== '') {
+                    name = settings.name;
+                }
+            }
+            this._holonNameCache.set(key, name);
+            return name;
+        } catch {
+            this._holonNameCache.set(key, null);
+            return null;
+        }
     }
 
     generateId() {
