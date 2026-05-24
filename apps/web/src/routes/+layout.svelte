@@ -70,11 +70,15 @@
 		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession, 'telegramUserId:', pendingTelegramUserId);
 
 		try {
-			// Check if holon settings already exist with retry logic
-			// Relay data may take time to sync on first connection
+			// Check if holon settings already exist with a short retry — Gun may
+			// not have synced the user's namespace yet on first connection. Kept
+			// tight (2 attempts × 300ms = ~600ms worst case) so the splash hides
+			// quickly; if the real name shows up later the reactive nameResolver
+			// will pick it up, and the write-guard below avoids clobbering a
+			// returning user's custom name with the auto-generated default.
 			let existingSettings: { name?: string; [key: string]: any } | null = null;
-			const maxRetries = 3;
-			const retryDelay = 500; // ms
+			const maxRetries = 2;
+			const retryDelay = 300; // ms
 
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
 				// Pass userPublicKey as the key to fetch the specific settings record
@@ -527,41 +531,32 @@
 		}
 
 		if (privateKey) {
-			await initHoloSphere(privateKey);
+			try {
+				await initHoloSphere(privateKey);
 
-			// For telegram-mapped sessions, set the user's holon id (preferring
-			// the Telegram user id when available) but respect any holon ID in
-			// the URL — visiting /[someoneElsesId] after Telegram login should
-			// land on that holon, not bounce to your own.
-			if (isTelegramMappedSession && telegramMappedPublicKey) {
-				const homeHolonId = pendingTelegramUserId
-					? String(pendingTelegramUserId)
-					: telegramMappedPublicKey;
+				// For telegram-mapped sessions, pin the user's home holon id for
+				// sidebar/federation source — $nostrPublicKey is null in this mode,
+				// so without an override `homeHolonId` would fall back to the
+				// URL-driven $ID and drift on every navigation. Routing itself is
+				// handled by initializeUserHolon() inside initHoloSphere(), so we
+				// don't call goto() again here (the old duplicate caused a race
+				// with the layout's own redirect and with +page.svelte's subscription).
+				if (isTelegramMappedSession && telegramMappedPublicKey) {
+					const homeHolonId = pendingTelegramUserId
+						? String(pendingTelegramUserId)
+						: telegramMappedPublicKey;
+					homeHolonIdOverride.set(homeHolonId);
 
-				// Pin this as the user's home for sidebar/federation source —
-				// $nostrPublicKey is null for telegram-mapped sessions, so
-				// consumers that read `homeHolonId` would otherwise fall back
-				// to the URL-driven $ID and drift on every navigation.
-				homeHolonIdOverride.set(homeHolonId);
-
-				if (browser) {
-					addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
+					if (browser) {
+						addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
+					}
 				}
-
-				const currentPath = $page.url.pathname;
-				const pathParts = currentPath.split('/').filter(Boolean);
-				const holonIdInUrl = pathParts.length > 0 &&
-					!['federated', 'navigator', 'global', 'sdgs', 'qr', 'demo', 'badges-demo'].includes(pathParts[0])
-					? pathParts[0]
-					: null;
-
-				if (holonIdInUrl) {
-					ID.set(holonIdInUrl);
-					console.log('Telegram-mapped session - respecting holon ID from URL:', holonIdInUrl);
-				} else {
-					ID.set(homeHolonId);
-					goto(`/${homeHolonId}/dashboard`);
-				}
+			} catch (err) {
+				// initHoloSphere can throw on invalid keys or Nostr/Gun init failures.
+				// Without this catch the splash would stay visible forever — surface
+				// the failure to the user instead of hanging on the loading view.
+				console.error('HoloSphere initialization failed:', err);
+				window.dispatchEvent(new CustomEvent('holosphere-init-failed', { detail: { error: err } }));
 			}
 		} else {
 			console.error('No private key available for initialization');

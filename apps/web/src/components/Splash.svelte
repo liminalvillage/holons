@@ -2,8 +2,8 @@
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { nostrStore } from '$lib/stores/nostr';
-	import { telegramStore } from '$lib/stores/telegram';
-	import { HoloSphere, nostrUtils } from 'holosphere';
+	import { telegramStore, type TelegramUser } from '$lib/stores/telegram';
+	import { nostrUtils } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
 
 	const { hexToNsec } = nostrUtils;
@@ -15,7 +15,7 @@
 	const dispatch = createEventDispatcher();
 
 	// View states
-	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'telegram-choice' | 'save-key';
+	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'save-key';
 	let view: View = skipLoading ? 'welcome' : 'loading';
 
 	// Form state
@@ -32,9 +32,8 @@
 	let keyCopied = false;
 
 	// Telegram state
-	let telegramUser: any = null;
+	let telegramUser: TelegramUser | null = null;
 	let isTelegramWebApp = false;
-	let existingTelegramMapping: { publicKey: string; holonName: string } | null = null;
 
 	// Telegram Login Widget (web users — not Mini App)
 	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
@@ -43,49 +42,53 @@
 	let telegramWidgetError = '';
 	let telegramWidgetMounted = false;
 
-	// Holosphere service key from .env (for Telegram mapping lookups)
-	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-
-	// Check if Telegram user already has a mapped public key
-	async function checkTelegramMapping(telegramUserId: number): Promise<{ publicKey: string; holonName: string } | null> {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-
+	// Parse a Telegram Login Widget redirect-mode callback off the URL.
+	// The widget normally calls `onTelegramAuth(user)` via window.postMessage from
+	// its popup, but on Safari/ITP/mobile-in-app browsers that path can fail and
+	// it falls back to navigating the parent to `?tgAuthResult=<base64-json>` (or
+	// dropping the user fields directly as query params). Without this handler
+	// the auth data is silently dropped and the welcome view re-appears in a loop.
+	function consumeTelegramAuthFromUrl(): TelegramUser | null {
 		try {
-			// Single source of truth: VITE_HOLONS_APP from the monorepo root .env.
-			const environmentName =
-				import.meta.env.VITE_HOLONS_APP ||
-				(import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug");
+			const url = new URL(window.location.href);
+			const params = url.searchParams;
+			let user: TelegramUser | null = null;
 
-			// Create a temporary HoloSphere instance to check mappings
-			const tempHolosphere = new HoloSphere({
-				appName: environmentName,
-				privateKey: HOLOSPHERE_PRIVATE_KEY,
-				// Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
-				// Holosphere 2: uncomment below to use Nostr relay instead
-				// backend: 'nostr',
-				// nostr: {
-				// 	relays: ['wss://relay.holons.io'],
-				// 	persistence: true
-				// }
-			});
-
-			await tempHolosphere.ready();
-
-			// Query global telegram_mappings table for this user ID
-			const mapping = await tempHolosphere.getGlobal('telegram_mappings', String(telegramUserId));
-
-			console.log('Telegram mapping lookup for user', telegramUserId, ':', mapping);
-
-			if (mapping && mapping.publicKey) {
-				return {
-					publicKey: mapping.publicKey,
-					holonName: mapping.holonName || 'Your Holon'
+			const tgAuthResult = params.get('tgAuthResult');
+			if (tgAuthResult) {
+				const padded = tgAuthResult + '='.repeat((4 - (tgAuthResult.length % 4)) % 4);
+				const json = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+				const parsed = JSON.parse(json);
+				if (parsed?.id && parsed?.first_name) {
+					user = {
+						id: Number(parsed.id),
+						first_name: String(parsed.first_name),
+						last_name: parsed.last_name,
+						username: parsed.username,
+						photo_url: parsed.photo_url,
+					};
+				}
+			} else if (params.get('id') && params.get('first_name') && params.get('hash')) {
+				user = {
+					id: Number(params.get('id')),
+					first_name: String(params.get('first_name')),
+					last_name: params.get('last_name') ?? undefined,
+					username: params.get('username') ?? undefined,
+					photo_url: params.get('photo_url') ?? undefined,
 				};
+				['id', 'first_name', 'last_name', 'username', 'photo_url', 'auth_date', 'hash'].forEach((k) =>
+					params.delete(k)
+				);
 			}
 
-			return null;
+			if (user) {
+				params.delete('tgAuthResult');
+				const cleaned = url.pathname + (params.toString() ? '?' + params.toString() : '') + url.hash;
+				window.history.replaceState({}, '', cleaned);
+			}
+			return user;
 		} catch (err) {
-			console.error('Failed to check Telegram mapping:', err);
+			console.warn('Failed to parse Telegram auth result from URL:', err);
 			return null;
 		}
 	}
@@ -118,6 +121,17 @@
 		isTelegramWebApp = telegramState.isTelegramWebApp;
 		telegramUser = telegramState.user;
 
+		// Recover from the Telegram Login Widget's URL-redirect fallback before
+		// deciding which path to take — otherwise a popup-blocked login lands back
+		// on / with the auth data in the query string and we'd just re-show welcome.
+		if (!telegramUser) {
+			const urlUser = consumeTelegramAuthFromUrl();
+			if (urlUser) {
+				telegramStore.loginWithWidget(urlUser);
+				telegramUser = urlUser;
+			}
+		}
+
 		// Check if we have a saved private key
 		const state = nostrStore.getState();
 
@@ -126,7 +140,7 @@
 		// over any stored Nostr key so the dashboard always operates under the
 		// telegram-id namespace. Nostr stays available as a legacy fallback.
 		if (telegramUser) {
-			await handleTelegramUser(telegramUser);
+			handleTelegramUser(telegramUser);
 		} else if (state.privateKey) {
 			// Returning Nostr user - legacy fallback for keys persisted before
 			// the telegram-only flow.
@@ -137,45 +151,22 @@
 		}
 	});
 
-	// Shared flow: take a Telegram user (from Mini App or Login Widget) and
-	// either restore the mapped identity or generate a new one.
-	async function handleTelegramUser(user: any) {
+	// Hand a Telegram user (Mini App, Login Widget callback, or stored) over to
+	// the layout. The layout owns HoloSphere init, the telegram_mappings lookup,
+	// and the routing decision — we used to do a "is this user already mapped?"
+	// probe here, but it spun up a second HoloSphere instance (~1–2s of ready()
+	// + Gun handshake) for a publicKey value the layout never actually used.
+	function handleTelegramUser(user: TelegramUser) {
 		telegramUser = user;
-		isProcessing = true;
-		try {
-			existingTelegramMapping = await checkTelegramMapping(user.id);
-			console.log('Existing mapping found:', existingTelegramMapping);
-		} catch (err) {
-			console.error('Error checking telegram mapping:', err);
-		}
-
-		if (existingTelegramMapping) {
-			console.log('Telegram: Auto-login to existing holon:', existingTelegramMapping.holonName);
-			isProcessing = false;
-			dispatch('authenticated', {
-				publicKey: existingTelegramMapping!.publicKey,
-				holonName: existingTelegramMapping!.holonName,
-				telegramUserId: user.id,
-				mode: 'telegram-mapped'
-			});
-		} else {
-			// New telegram user — use the telegram id as both the home holon
-			// id and the publicKey hint. No Nostr keypair is generated; the
-			// session will be telegram-mapped (signed with the service key)
-			// and the layout will write settings + the telegram_mappings entry
-			// on first run so future visits resolve via existingTelegramMapping.
-			console.log('Telegram: New user, registering telegram-mapped identity for', user.first_name);
-			const name = user.username
-				? `@${user.username}'s Holon`
-				: `${user.first_name}'s Holon`;
-			isProcessing = false;
-			dispatch('authenticated', {
-				publicKey: String(user.id),
-				holonName: name,
-				telegramUserId: user.id,
-				mode: 'telegram-mapped'
-			});
-		}
+		const name = user.username
+			? `@${user.username}'s Holon`
+			: `${user.first_name}'s Holon`;
+		dispatch('authenticated', {
+			publicKey: String(user.id),
+			holonName: name,
+			telegramUserId: user.id,
+			mode: 'telegram-mapped'
+		});
 	}
 
 	// Mount the Telegram Login Widget into the welcome view (web users only).
@@ -193,6 +184,7 @@
 				} catch (err) {
 					console.error('Error handling Telegram widget login:', err);
 					telegramWidgetError = 'Login succeeded but processing failed.';
+					isProcessing = false;
 				}
 			};
 
@@ -220,37 +212,6 @@
 	// Re-mount the widget whenever the welcome view becomes visible to a non-Mini-App user.
 	$: if (view === 'welcome' && !isTelegramWebApp && telegramWidgetContainer && !telegramWidgetMounted) {
 		mountTelegramWidget();
-	}
-
-	// Handle Telegram create new identity
-	async function handleTelegramCreate() {
-		isProcessing = true;
-		error = '';
-
-		try {
-			// Use Telegram username or first name as holon name
-			const name = telegramUser.username
-				? `@${telegramUser.username}'s Holon`
-				: `${telegramUser.first_name}'s Holon`;
-
-			// Generate new key
-			const result = await nostrStore.generateKey();
-
-			if (result) {
-				// Store pending data and show save-key view
-				generatedNsec = hexToNsec(result.privateKey);
-				generatedPublicKey = result.publicKey;
-				pendingHolonName = name;
-				pendingTelegramUserId = telegramUser.id;
-				keyCopied = false;
-				view = 'save-key';
-			}
-		} catch (err: any) {
-			console.error('Telegram create failed:', err);
-			error = err.message || 'Failed to create holon';
-		} finally {
-			isProcessing = false;
-		}
 	}
 
 	// Handle create new holon
@@ -298,12 +259,6 @@
 			const result = await nostrStore.importKey(privateKeyInput.trim());
 
 			if (result) {
-				// Check if this matches expected public key for Telegram user
-				if (existingTelegramMapping && result.publicKey !== existingTelegramMapping.publicKey) {
-					// Key doesn't match the mapping - warn user but allow anyway
-					console.warn('Imported key does not match existing Telegram mapping. Will create new mapping.');
-				}
-
 				// Dispatch authenticated - include telegram user ID if available for mapping
 				dispatch('authenticated', {
 					publicKey: result.publicKey,
@@ -316,11 +271,6 @@
 		} finally {
 			isProcessing = false;
 		}
-	}
-
-	// Handle Telegram restore (from telegram-choice screen)
-	function goToTelegramRestore() {
-		view = 'restore';
 	}
 
 	// Handle key input (allow nsec or hex format)
@@ -478,148 +428,6 @@
 				</div>
 			{/if}
 
-		</div>
-
-		<div class="bottom-branding">
-			<p>powered by HoloSphere</p>
-		</div>
-	</div>
-
-{:else if view === 'telegram-choice'}
-	<!-- Telegram User Choice View -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="splash-container"
-		class:splash-container--modal={isModal}
-		transition:fade={{ duration: 300 }}
-		on:click={handleBackdropClick}
-	>
-		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
-			<!-- Logo -->
-			<div class="logo-small">
-				<MyHolonsIcon />
-			</div>
-
-			<!-- Telegram User Greeting -->
-			<div class="telegram-greeting">
-				{#if telegramUser?.photo_url}
-					<img src={telegramUser.photo_url} alt="Profile" class="telegram-avatar" />
-				{:else}
-					<div class="telegram-avatar-placeholder">
-						<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-						</svg>
-					</div>
-				{/if}
-				<span class="telegram-name">
-					{telegramUser?.first_name || 'User'}{telegramUser?.last_name ? ` ${telegramUser.last_name}` : ''}
-					<span class="telegram-id">ID: {String(telegramUser?.id || '')}</span>
-				</span>
-			</div>
-
-			<h1 class="title">Welcome from Telegram!</h1>
-
-			{#if existingTelegramMapping}
-				<!-- User has existing mapping -->
-				<p class="subtitle">
-					We found an existing identity linked to your Telegram account
-					<span class="holon-name-badge">{existingTelegramMapping.holonName}</span>
-				</p>
-				<p class="info-text highlight">
-					Enter your private key to restore access, or create a new identity.
-				</p>
-			{:else}
-				<!-- New Telegram user -->
-				<p class="subtitle">
-					Set up your decentralized identity to get started
-				</p>
-			{/if}
-
-			{#if error}
-				<p class="error-message" transition:slide>{error}</p>
-			{/if}
-
-			<!-- Options -->
-			<div class="options">
-				{#if existingTelegramMapping}
-					<!-- Restore existing is primary when mapping exists -->
-					<button
-						class="option-button primary"
-						on:click={goToTelegramRestore}
-						disabled={isProcessing}
-					>
-						<div class="option-icon">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-							</svg>
-						</div>
-						<div class="option-text">
-							<span class="option-title">Restore Identity</span>
-							<span class="option-desc">Enter your private key</span>
-						</div>
-					</button>
-
-					<button
-						class="option-button secondary"
-						on:click={handleTelegramCreate}
-						disabled={isProcessing}
-					>
-						<div class="option-icon">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-							</svg>
-						</div>
-						<div class="option-text">
-							<span class="option-title">Create New Identity</span>
-							<span class="option-desc">Start fresh (replaces existing link)</span>
-						</div>
-					</button>
-				{:else}
-					<!-- Create is primary for new users -->
-					<button
-						class="option-button primary"
-						on:click={handleTelegramCreate}
-						disabled={isProcessing}
-					>
-						<div class="option-icon">
-							{#if isProcessing}
-								<svg class="spinner" viewBox="0 0 24 24">
-									<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
-								</svg>
-							{:else}
-								<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-								</svg>
-							{/if}
-						</div>
-						<div class="option-text">
-							<span class="option-title">Create New Identity</span>
-							<span class="option-desc">Generate a new key pair</span>
-						</div>
-					</button>
-
-					<button
-						class="option-button secondary"
-						on:click={goToTelegramRestore}
-						disabled={isProcessing}
-					>
-						<div class="option-icon">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-							</svg>
-						</div>
-						<div class="option-text">
-							<span class="option-title">Import Existing Key</span>
-							<span class="option-desc">I already have a private key</span>
-						</div>
-					</button>
-				{/if}
-			</div>
-
-			<p class="info-text">
-				Your identity will be linked to your Telegram account for easy access.
-			</p>
 		</div>
 
 		<div class="bottom-branding">
@@ -922,16 +730,6 @@
 		width: 100%;
 	}
 
-	.option-button.primary {
-		background: rgba(79, 70, 229, 0.2);
-		border-color: rgba(79, 70, 229, 0.4);
-	}
-
-	.option-button.primary:hover {
-		background: rgba(79, 70, 229, 0.3);
-		border-color: rgba(79, 70, 229, 0.6);
-	}
-
 	.option-button.secondary {
 		background: rgba(100, 116, 139, 0.15);
 		border-color: rgba(100, 116, 139, 0.3);
@@ -950,11 +748,6 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-	}
-
-	.option-button.primary .option-icon {
-		background: rgba(79, 70, 229, 0.3);
-		color: #a5b4fc;
 	}
 
 	.option-button.secondary .option-icon {
@@ -1115,72 +908,6 @@
 	.h-5 { height: 1.25rem; }
 	.w-6 { width: 1.5rem; }
 	.h-6 { height: 1.5rem; }
-	.w-8 { width: 2rem; }
-	.h-8 { height: 2rem; }
-
-	/* Telegram User Greeting */
-	.telegram-greeting {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
-		margin-bottom: 1rem;
-		padding: 0.75rem;
-		background: rgba(0, 136, 204, 0.1);
-		border: 1px solid rgba(0, 136, 204, 0.2);
-		border-radius: 0.75rem;
-	}
-
-	.telegram-avatar {
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		border: 2px solid rgba(0, 136, 204, 0.5);
-	}
-
-	.telegram-avatar-placeholder {
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		background: rgba(0, 136, 204, 0.2);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: #0088cc;
-	}
-
-	.telegram-name {
-		color: white;
-		font-weight: 600;
-		font-size: 1rem;
-		display: flex;
-		flex-direction: column;
-	}
-
-
-	.telegram-id {
-		color: #64748b;
-		font-size: 0.75rem;
-		font-weight: 400;
-		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-	}
-
-	.holon-name-badge {
-		display: inline-block;
-		background: rgba(79, 70, 229, 0.2);
-		border: 1px solid rgba(79, 70, 229, 0.4);
-		color: #a5b4fc;
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.375rem;
-		font-size: 0.85rem;
-		font-weight: 500;
-		margin-left: 0.25rem;
-	}
-
-	.info-text.highlight {
-		color: #fbbf24;
-		font-size: 0.85rem;
-	}
 
 	/* Save Key View */
 	.subtitle.warning {

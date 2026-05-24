@@ -16,10 +16,10 @@
 	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 
-	// Vite-injected at build time; cast to satisfy svelte-check in instance script context.
-	const commitHash: string = typeof (globalThis as any).__COMMIT_HASH__ !== 'undefined'
-		? (globalThis as any).__COMMIT_HASH__
-		: 'dev';
+	// Vite `define` rewrites the bare `__COMMIT_HASH__` identifier at build time
+	// (see vite.config.ts and types/global.d.ts). Property-access forms like
+	// `globalThis.__COMMIT_HASH__` are NOT rewritten and silently fall back to "dev".
+	const commitHash: string = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
 
 	// Props
 	export let isOpen: boolean = true;

@@ -181,11 +181,14 @@
     tabindex="-1"
     transition:fade
 >
-    <div 
-        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl" 
+    <!-- Cap the modal at the viewport and let its body scroll. Without this,
+         expanding "Add Participant" with many users pushed the modal past the
+         viewport edge and the bottom (Delete / Close) got clipped. -->
+    <div
+        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl max-h-[90vh] flex flex-col"
         transition:scale={{duration: 200, start: 0.95}}
     >
-        <div class="p-6">
+        <div class="p-6 overflow-y-auto">
             <div class="flex justify-between items-start mb-6">
                 <div class="flex-1 mr-4">
                     <input
@@ -286,9 +289,11 @@
                         {/if}
                     </div>
 
-                    <!-- Add Participants Dropdown -->
+                    <!-- Add Participants Dropdown — caps height so a long user
+                         list scrolls inside the dropdown instead of pushing the
+                         modal footer (Delete / Close) off-screen. -->
                     {#if showAddParticipants}
-                        <div class="bg-gray-700 rounded-lg overflow-hidden mt-2">
+                        <div class="bg-gray-700 rounded-lg overflow-y-auto mt-2 max-h-64">
                             {#if Object.keys(userStore || {}).length === 0 && holosphere}
                                 <p class="p-3 text-sm text-gray-400">Loading users or no users found in this holon.</p>
                             {:else if availableUsersToList.length === 0 && Object.keys(userStore || {}).length > 0}

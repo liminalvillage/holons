@@ -35,6 +35,7 @@
 	let popoverOpen = false;
 	let popoverEl: HTMLDivElement | null = null;
 	let buttonWrapperEl: HTMLDivElement | null = null;
+	let popoverStyle = '';
 	let hexPickerOpen = false;
 
 	let federationLoaded = false;
@@ -79,19 +80,52 @@
 		loadFederation();
 	});
 
+	// Recompute the popover's viewport-fixed position from the trigger's
+	// bounding rect. Using `position: fixed` (instead of absolute-in-wrapper)
+	// lets the popover escape any ancestor `overflow: hidden` — the publish
+	// button lives in dense task rows inside scrollable containers where an
+	// absolute popover would otherwise be clipped at the row/card edge.
+	function repositionPopover() {
+		if (!popoverOpen || !buttonWrapperEl) return;
+		const trigger = buttonWrapperEl.getBoundingClientRect();
+		const popW = popoverEl?.offsetWidth ?? 280;
+		const popH = popoverEl?.offsetHeight ?? 320;
+		const margin = 6;
+		// Default: drop below, right-aligned to the trigger.
+		let top = trigger.bottom + margin;
+		let right = window.innerWidth - trigger.right;
+		// Flip above if the popover would overflow the bottom.
+		if (top + popH > window.innerHeight - 8 && trigger.top - margin - popH > 8) {
+			top = trigger.top - margin - popH;
+		}
+		// Clamp horizontally if the popover would overflow the left edge.
+		if (right + popW > window.innerWidth - 8) {
+			right = Math.max(8, window.innerWidth - 8 - popW);
+		}
+		popoverStyle = `position: fixed; top: ${top}px; right: ${right}px;`;
+	}
+
 	async function openPicker() {
 		if (effectiveDisabled) return;
 		if (!federationLoaded) await loadFederation();
 		popoverOpen = true;
 		await tick();
+		repositionPopover();
 		document.addEventListener('click', handleOutsideClick, { capture: true });
 		document.addEventListener('keydown', handleEsc);
+		window.addEventListener('resize', repositionPopover);
+		// Capture scrolls on any ancestor (the bubble-phase only fires on the
+		// scrolling element itself; capture catches scrolls in containing scroll
+		// parents so the popover stays pinned to the trigger).
+		window.addEventListener('scroll', repositionPopover, { capture: true });
 	}
 
 	function closePicker() {
 		popoverOpen = false;
 		document.removeEventListener('click', handleOutsideClick, { capture: true });
 		document.removeEventListener('keydown', handleEsc);
+		window.removeEventListener('resize', repositionPopover);
+		window.removeEventListener('scroll', repositionPopover, { capture: true } as any);
 	}
 
 	function handleOutsideClick(e: MouseEvent) {
@@ -255,8 +289,8 @@
 	{#if popoverOpen}
 		<div
 			class="ptf-popover"
-			class:ptf-popover--compact={compact}
 			bind:this={popoverEl}
+			style={popoverStyle}
 			role="menu"
 			transition:fade={{ duration: 100 }}
 		>
@@ -391,11 +425,10 @@
 		to   { transform: rotate(360deg); }
 	}
 
-	/* Popover */
+	/* Popover — positioned via inline `popoverStyle` (position: fixed) so it
+	   escapes ancestor `overflow: hidden`. Width/appearance live here; viewport
+	   coords come from repositionPopover(). */
 	.ptf-popover {
-		position: absolute;
-		top: calc(100% + 6px);
-		right: 0;
 		min-width: 240px;
 		max-width: 320px;
 		max-height: min(60vh, 400px);
@@ -406,10 +439,6 @@
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 		padding: 0.375rem;
 		z-index: 60;
-	}
-	.ptf-popover--compact {
-		/* For row buttons: align right edge so it doesn't overflow on narrow rows. */
-		right: 0;
 	}
 	.ptf-popover__title {
 		font-size: 0.75rem;
