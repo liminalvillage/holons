@@ -2,7 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import type { HoloSphere } from "holosphere";
+    import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
     import { goto } from "$app/navigation";
     import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
@@ -56,18 +56,8 @@
         value: number;
         created: string;
         _deleted?: boolean;
-        _hologram?: {
-            isHologram: boolean;
-            soul: string;
-            sourceHolon: string;
-            localOverrides?: string[];
-        };
-        _federation?: {
-            origin?: string;
-            sourceLens?: string;
-            propagatedAt?: number;
-            originalId?: string;
-        };
+        _hologram?: ResolvedHologramMeta;
+        _federation?: FederationMeta;
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;

@@ -6,6 +6,8 @@
  * holding all items in `items[]`.
  */
 
+import type { ResolvedHologramMeta, FederationMeta } from 'holosphere';
+
 /**
  * One row in a shopping checklist. Identical between web and telegram UIs.
  * `id` may be a string (web: `Date.now().toString()`) or number (telegram: `Date.now() + Math.random()`)
@@ -23,8 +25,8 @@ export interface ShoppingItem {
    */
   category?: string;
   // Optional federation/hologram metadata stamped by holosphere on read.
-  _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-  _federation?: { origin?: string; sourceLens?: string };
+  _hologram?: ResolvedHologramMeta;
+  _federation?: FederationMeta;
   _deleted?: boolean;
   // Allow forward-compatible fields (priority, quantity, notes — see schemas/shopping.json).
   [key: string]: unknown;
@@ -40,8 +42,8 @@ export interface ShoppingChecklist {
   items: ShoppingItem[];
   /** Canonical creation timestamp (ISO string). */
   created: string;
-  _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-  _federation?: { origin?: string; sourceLens?: string };
+  _hologram?: ResolvedHologramMeta;
+  _federation?: FederationMeta;
   [key: string]: unknown;
 }
 

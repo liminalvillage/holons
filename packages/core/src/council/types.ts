@@ -2,6 +2,8 @@
 // UI-agnostic. No LLM coupling. No Svelte stores. Both harvest-web and
 // telegram-ui share these shapes via holosphere's `quests` lens.
 
+import type { ResolvedHologramMeta, FederationMeta } from 'holosphere';
+
 /**
  * A user that has cast a vote on a proposal. The shape mirrors the loose
  * subset both UIs already persist:
@@ -51,8 +53,8 @@ export interface Proposal {
 
   // Federation/hologram bookkeeping kept opaque so federated views still
   // round-trip cleanly through core helpers.
-  _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-  _federation?: { origin?: string; sourceLens?: string };
+  _hologram?: ResolvedHologramMeta;
+  _federation?: FederationMeta;
 
   // Allow UIs to carry extra fields without losing them on round-trip.
   [extra: string]: unknown;

@@ -2,7 +2,7 @@
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
-	import type { HoloSphere } from "holosphere";
+	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
 
 	// Canonical creation timestamp is `created: ISO string` across every
@@ -52,8 +52,8 @@
 		/** Canonical creation timestamp (ISO). */
 		created: string;
 		picture?: string;
-		_hologram?: { isHologram?: boolean; soul?: string; sourceHolon?: string };
-		_federation?: { origin?: string; sourceLens?: string };
+		_hologram?: ResolvedHologramMeta;
+		_federation?: FederationMeta;
 	}
 
 	interface User {

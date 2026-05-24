@@ -2,7 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import type { HoloSphere } from "holosphere";
+    import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
@@ -25,8 +25,8 @@
         text: string;
         checked: boolean;
         createdBy?: number;
-        _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-        _federation?: { origin?: string; sourceLens?: string };
+        _hologram?: ResolvedHologramMeta;
+        _federation?: FederationMeta;
         [key: string]: any;
     }
 
@@ -37,8 +37,8 @@
         items: ShoppingItem[];
         /** Canonical creation timestamp (ISO). */
         created: string;
-        _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
-        _federation?: { origin?: string; sourceLens?: string };
+        _hologram?: ResolvedHologramMeta;
+        _federation?: FederationMeta;
         [key: string]: any;
     }
 
