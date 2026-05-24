@@ -214,8 +214,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 }
                 // Strip read-side envelopes that must never be persisted
                 // (they're attached at resolution time).
+                //
+                // `_hologram` and `_meta` are always read-side-only.
+                //
+                // `_federation` is also read-side for ordinary writes — it
+                // describes where data was fetched from, not where it
+                // currently lives. The one legitimate carrier is federation
+                // propagation, which writes hologram envelopes (top-level
+                // `id` + `soul`) tagged with `_federation` provenance; we
+                // detect that via `isHologram(data)` and leave it alone.
+                // Without this, a UI that reads a federated record and puts
+                // it back ends up persisting stale `_federation.origin`
+                // metadata, which then drives downstream code (federation
+                // propagators, hologram resolvers) to write or follow
+                // pointers that don't match the current storage location —
+                // producing "broken hologram" garbage-collection cascades
+                // that silently delete the user's write.
                 if (dataToStore._meta !== undefined) delete dataToStore._meta;
                 if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
+                if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
                 const payload = JSON.stringify(dataToStore); // The data being stored
 
                 const putCallback = async (ack) => {
