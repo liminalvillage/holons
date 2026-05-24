@@ -35,9 +35,17 @@
     filteredQuests: [string, Quest][];
     holonID: string;
     showCompleted: boolean;
+    resolveDependencyTitle?: (id: string) => string | undefined;
+    onDependencyClick?: (id: string) => void;
   }
 
-  let { filteredQuests, holonID, showCompleted }: Props = $props();
+  let {
+    filteredQuests,
+    holonID,
+    showCompleted,
+    resolveDependencyTitle,
+    onDependencyClick,
+  }: Props = $props();
 
   const dispatch = createEventDispatcher<{
     taskClick: { key: string; quest: Quest };
@@ -252,6 +260,8 @@
           {column}
           {holonID}
           cards={cardsByColumn[column.id] || []}
+          {resolveDependencyTitle}
+          {onDependencyClick}
           onCardClick={handleCardClick}
           onCardsReorder={handleCardsReorder}
           onColumnEdit={handleColumnEdit}

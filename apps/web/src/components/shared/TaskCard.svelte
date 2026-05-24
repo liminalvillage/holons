@@ -34,6 +34,7 @@
 		picture?: string;
 		type?: string;
 		status?: string;
+		dependsOn?: string[];
 		participants?: Participant[];
 		appreciation?: unknown[];
 		_hologram?: { isHologram?: boolean };
@@ -45,6 +46,13 @@
 		holonID?: string;
 		showCreated?: boolean;
 		extraClass?: string;
+		/**
+		 * Look up the title of a dependency task by id. When omitted, the
+		 * dependency badges are hidden — used by the canvas variant where
+		 * dependencies are drawn as arrows between cards instead.
+		 */
+		resolveDependencyTitle?: (id: string) => string | undefined;
+		onDependencyClick?: (id: string) => void;
 		onclick?: (event: MouseEvent) => void;
 		onkeydown?: (event: KeyboardEvent) => void;
 		role?: string;
@@ -58,12 +66,18 @@
 		holonID = '',
 		showCreated = false,
 		extraClass = '',
+		resolveDependencyTitle,
+		onDependencyClick,
 		onclick,
 		onkeydown,
 		role,
 		tabindex,
 		ariaLabel,
 	}: Props = $props();
+
+	const showDependencies = $derived(
+		!!resolveDependencyTitle && !!quest.dependsOn && quest.dependsOn.length > 0,
+	);
 
 	const overdueDays = $derived.by(() => {
 		if (!quest.when || quest.status === 'completed') return false as const;
@@ -128,6 +142,27 @@
 
 			{#if quest.description}
 				<p class="card-description">{quest.description}</p>
+			{/if}
+
+			{#if showDependencies}
+				<div class="card-dependencies">
+					<span class="dep-label" aria-hidden="true">📌</span>
+					{#each quest.dependsOn! as depId}
+						{@const depTitle = resolveDependencyTitle!(depId)}
+						{#if depTitle}
+							<button
+								type="button"
+								class="dep-badge"
+								title={`Open dependency: ${depTitle}`}
+								onclick={(e) => { e.stopPropagation(); onDependencyClick?.(depId); }}
+							>
+								{depTitle.length > 18 ? depTitle.slice(0, 18) + '…' : depTitle}
+							</button>
+						{:else}
+							<span class="dep-badge dep-badge--missing">Unknown</span>
+						{/if}
+					{/each}
+				</div>
 			{/if}
 
 			<div class="card-footer">
@@ -266,6 +301,46 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		line-height: 1.3;
+	}
+
+	.card-dependencies {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+		margin: 0.125rem 0 0.125rem 0.75rem; /* indent under title */
+	}
+
+	.dep-label {
+		font-size: 0.65rem;
+		line-height: 1;
+		opacity: 0.7;
+	}
+
+	.dep-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.075rem 0.375rem;
+		font-size: 0.65rem;
+		line-height: 1.2;
+		background-color: rgba(59, 130, 246, 0.18);
+		color: #1d4ed8;
+		border: none;
+		border-radius: 9999px;
+		cursor: pointer;
+		max-width: 9rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		transition: background-color 120ms ease;
+	}
+	.dep-badge:hover {
+		background-color: rgba(59, 130, 246, 0.32);
+	}
+	.dep-badge--missing {
+		background-color: rgba(0, 0, 0, 0.08);
+		color: #6b7280;
+		cursor: default;
 	}
 
 	.card-footer {

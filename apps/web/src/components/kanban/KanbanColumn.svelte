@@ -37,6 +37,8 @@
     onCardsReorder: (columnId: string, cards: CardItem[]) => void;
     onColumnEdit: (column: KanbanColumn) => void;
     onColumnDelete: (columnId: string) => void;
+    resolveDependencyTitle?: (id: string) => string | undefined;
+    onDependencyClick?: (id: string) => void;
   }
 
   let {
@@ -46,7 +48,9 @@
     onCardClick,
     onCardsReorder,
     onColumnEdit,
-    onColumnDelete
+    onColumnDelete,
+    resolveDependencyTitle,
+    onDependencyClick,
   }: Props = $props();
 
   // Local drag buffer seeded from `cards`. We deliberately capture the initial
@@ -164,6 +168,8 @@
         quest={item.quest}
         questKey={item.key}
         {holonID}
+        {resolveDependencyTitle}
+        {onDependencyClick}
         onclick={() => onCardClick(item.key, item.quest)}
       />
     {/each}

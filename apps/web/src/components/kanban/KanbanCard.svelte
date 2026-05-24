@@ -10,6 +10,7 @@
     status: 'ongoing' | 'completed' | 'recurring' | 'repeating';
     category?: string;
     picture?: string;
+    dependsOn?: string[];
     participants: Array<{
       id: string;
       username: string;
@@ -26,15 +27,25 @@
     questKey: string;
     holonID?: string;
     onclick?: () => void;
+    resolveDependencyTitle?: (id: string) => string | undefined;
+    onDependencyClick?: (id: string) => void;
   }
 
-  let { quest, holonID = '', onclick }: Props = $props();
+  let {
+    quest,
+    holonID = '',
+    onclick,
+    resolveDependencyTitle,
+    onDependencyClick,
+  }: Props = $props();
 </script>
 
 <TaskCard
   {quest}
   variant="kanban"
   {holonID}
+  {resolveDependencyTitle}
+  {onDependencyClick}
   onclick={() => onclick?.()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onclick?.(); }}
   role="button"

@@ -463,6 +463,12 @@
 		replaceState(url.toString(), { replaceState: true });
 	}
 
+	// Look up the title of a dependency task — used by TaskCard's dep badges
+	// in both the list and kanban views.
+	function resolveDepTitle(id: string): string | undefined {
+		return (store as Record<string, Quest | undefined>)[id]?.title;
+	}
+
 	// Handle dependency click to open dependency task modal
 	function handleDependencyClick(dependencyId: string) {
 		// Close current task modal if open
@@ -1440,6 +1446,8 @@
 							{filteredQuests}
 							{holonID}
 							{showCompleted}
+							resolveDependencyTitle={resolveDepTitle}
+							onDependencyClick={handleDependencyClick}
 							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest as Quest)}
 						/>
 					{:else}
@@ -1502,6 +1510,8 @@
 									variant="list"
 									{holonID}
 									extraClass="flex-1"
+									resolveDependencyTitle={resolveDepTitle}
+									onDependencyClick={handleDependencyClick}
 									onclick={(e) => { e.stopPropagation(); handleTaskClick(key, quest); }}
 									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleTaskClick(key, quest); }}
 									role="button"
@@ -1518,34 +1528,6 @@
 									/>
 								</div>
 							</div>
-							{#if quest.dependsOn && quest.dependsOn.length > 0}
-								<div class="text-xs text-gray-600 mt-1 ml-8 sm:ml-11">
-									<div class="flex items-center gap-1 mb-1">
-										<span class="text-blue-600 flex-shrink-0">📌 Depends on:</span>
-									</div>
-									<div class="flex flex-wrap items-center gap-1">
-										{#each quest.dependsOn as depId}
-											{@const depQuest = Object.entries(store).find(([k, q]) => k === depId)}
-											{#if depQuest}
-												<button
-													class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
-													onclick={(e) => { e.stopPropagation(); handleDependencyClick(depId); }}
-													ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-													ontouchend={(e) => { e.stopPropagation(); e.preventDefault(); handleDependencyClick(depId); }}
-													title="Click to open dependency task: {depQuest[1].title}"
-													type="button"
-												>
-													{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
-												</button>
-											{:else}
-												<span class="inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs flex-shrink-0">
-													Unknown dependency
-												</span>
-											{/if}
-										{/each}
-									</div>
-								</div>
-							{/if}
 						</div>
 						{/each}
 					</div>
