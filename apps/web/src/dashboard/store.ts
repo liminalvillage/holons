@@ -59,15 +59,15 @@ function getOrGeneratePosition(key: string, position: { x: number; y: number } |
     return generated;
 }
 
-// Pull a millisecond timestamp out of an id when the record itself has no
-// `created` field. Quest ids are either:
+// Pull a millisecond timestamp out of an id when the record carries no
+// creation timestamp at all. Quest ids are either:
 //   - base36 millisecond prefix: `Date.now().toString(36) + Math.random()...`
 //     produces ~9 leading lowercase-alphanum chars in the modern code path.
 //   - decimal millisecond prefix: legacy bot/web ids of the shape
 //     `${Date.now()}${randomTail}` — 13 leading digits.
-// Without this fallback, a list where every quest lacks `created` collapses
-// to the value `0`, the diff is zero, and asc/desc both yield input order —
-// the "date and date-reversed give the same list" bug.
+// Without this last-resort fallback, a list of pre-`created` records would
+// all hash to value `0`, the diff would be zero, and asc/desc would both
+// return input order — the "date and date-reversed give the same list" bug.
 function timestampFromKey(key: string): number {
     const base36 = key.match(/^[0-9a-z]{7,10}/);
     if (base36) {
@@ -83,9 +83,30 @@ function timestampFromKey(key: string): number {
     return 0;
 }
 
+// Read either the canonical `created` (ISO string) or the legacy bot-side
+// `date` (ms epoch). Older bot records used `date`; all new writes set
+// `created`. Read both so the date sort works regardless of who wrote the
+// record. Returns ms since epoch, or NaN if neither field carries a
+// parseable timestamp (callers fall back to id-derived timestamp below).
+function createdMs(q: { created?: string; date?: number | string }): number {
+    if (typeof q.created === 'string') {
+        const t = Date.parse(q.created);
+        if (Number.isFinite(t)) return t;
+    }
+    if (typeof q.date === 'number' && Number.isFinite(q.date)) return q.date;
+    if (typeof q.date === 'string') {
+        const n = parseInt(q.date, 10);
+        if (Number.isFinite(n) && String(n) === q.date) return n;
+        const t = Date.parse(q.date);
+        if (Number.isFinite(t)) return t;
+    }
+    return NaN;
+}
+
 // Helper function to apply the same sorting logic as Tasks.svelte
 export function sortTasks<T extends {
     created?: string;
+    date?: number | string;
     orderIndex?: number;
     position?: { x: number; y: number };
 }>(
@@ -99,8 +120,11 @@ export function sortTasks<T extends {
 
         switch (criteria) {
             case 'created':
-                valA = a.created ? new Date(a.created).getTime() : timestampFromKey(keyA);
-                valB = b.created ? new Date(b.created).getTime() : timestampFromKey(keyB);
+                // Falls back to a timestamp parsed from the id when the
+                // record has neither field (legacy data, hand-written
+                // imports) so asc/desc still produce different orders.
+                valA = createdMs(a) || timestampFromKey(keyA);
+                valB = createdMs(b) || timestampFromKey(keyB);
                 break;
             case 'positionX': {
                 const posA = getOrGeneratePosition(keyA, a.position);

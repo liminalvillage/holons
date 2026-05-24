@@ -95,7 +95,7 @@ const server = http.createServer(async (req, res) => {
         const quest = {
           id: h.generateId ? h.generateId() : `q_${Date.now()}`,
           version: '0.1', holon, title, description: description || '',
-          type: type || 'task', status: 'ongoing', date: Date.now(),
+          type: type || 'task', status: 'ongoing', created: new Date().toISOString(),
           participants: [], appreciation: [], category: category || '',
           when: when || '', until: until || '',
           initiator: { id: chatId, first_name: 'Atlas', username: 'atlas_ai' },

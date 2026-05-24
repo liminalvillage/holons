@@ -583,7 +583,7 @@
 			const task: Quest = {
 				...newTask,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
-				created: new Date().toISOString(),
+				created: new Date().toISOString(), // canonical, see taskCreatedAtMs
 				orderIndex: newOrderIndex // Assign orderIndex
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
@@ -757,7 +757,7 @@
 				const newQuest = {
 					...quest,
 					id: generateId(),
-					created: new Date().toISOString(),
+					created: new Date().toISOString(), // canonical, see taskCreatedAtMs
 					orderIndex: baseOrderIndex + i
 				};
 

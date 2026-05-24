@@ -30,6 +30,7 @@ function councilTask(
     category: DEFAULT_TASK_CATEGORY,
     participants: [],
     appreciation: [],
+    // Canonical creation timestamp — see `taskCreatedAtMs()`.
     created: new Date().toISOString(),
     initiator: { id: holonID, ...COUNCIL_INITIATOR },
   };
@@ -206,7 +207,7 @@ export interface CreateTaskInput {
   category?: string;
   picture?: string | null;
   messageThreadId?: number | null;
-  // Bot keeps `date` in ms (Date.now()), not ISO. Allow caller to override.
+  /** Override the creation timestamp (ms since epoch). Mostly for tests. */
   now?: number;
 }
 
@@ -227,7 +228,11 @@ export function createTask(input: CreateTaskInput): Quest {
     picture: input.picture ?? null,
     type: input.type ?? 'task',
     status: 'ongoing',
-    date: now,
+    // Canonical creation timestamp. Was historically `date: number (ms)`
+    // on the bot side; unified on `created: ISO string` so every UI reads
+    // one field. Use `taskCreatedAtMs(quest)` to read — it still falls
+    // back to the legacy `date` for pre-unification records.
+    created: new Date(now).toISOString(),
     participants: [],
     appreciation: [],
     stoppers: [],

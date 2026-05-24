@@ -158,7 +158,8 @@ describe('createTask', () => {
     expect(q.holon).toBe(42);
     expect(q.status).toBe('ongoing');
     expect(q.type).toBe('task');
-    expect(q.date).toBe(1_000);
+    // Canonical creation timestamp is the ISO form of `now`.
+    expect(q.created).toBe(new Date(1_000).toISOString());
     expect(q.participants).toEqual([]);
     expect(q.appreciation).toEqual([]);
     expect(q.stoppers).toEqual([]);

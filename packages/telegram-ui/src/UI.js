@@ -1109,7 +1109,7 @@ class UI {
           ${infoRows}
           <div class="quest-footer">
             <div class="quest-id">ID: #${quest.id}</div>
-            <div class="quest-date">Created: ${formatDate(quest.date)}</div>
+            <div class="quest-date">Created: ${formatDate(quest.created || quest.date)}</div>
           </div>
           ${hologramBadge}
         </div>

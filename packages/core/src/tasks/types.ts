@@ -78,8 +78,9 @@ export interface Quest {
   appreciation?: any[];
 
   // Provenance.
-  created?: string; // ISO from web side
-  date?: number; // ms epoch from bot side
+  // Canonical creation timestamp — ISO string. Set by every writer (web,
+  // bot, MCP, council).
+  created?: string;
   initiator?: QuestInitiator;
 
   // Ordering / dependencies (used by the council/quest-tree pipeline).
