@@ -1,6 +1,6 @@
 <script lang="ts">
 	// @ts-nocheck
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
 	import DisplayName from './shared/DisplayName.svelte';
@@ -15,7 +15,16 @@
 	const dispatch = createEventDispatcher();
 
 	let showDropdown = false;
+	let cellRef: HTMLDivElement;
+	let triggerRef: HTMLButtonElement;
 	let dropdownRef: HTMLDivElement;
+	// Coordinates for the fixed-positioned dropdown so it escapes any
+	// ancestor `overflow: auto` (e.g. the week-grid's horizontal scroller,
+	// which by spec clips vertically too).
+	let dropdownTop = 0;
+	let dropdownLeft = 0;
+	const DROPDOWN_MIN_WIDTH = 160;
+	const DROPDOWN_GAP = 4;
 
 	$: hasAssignment = assignedUsers && assignedUsers.length > 0;
 	$: assignedUser = hasAssignment ? assignedUsers[0] : null;
@@ -25,9 +34,27 @@
 		([userId, _user]) => !assignedUsers?.some(a => a.id === userId)
 	);
 
-	function toggleDropdown(e: MouseEvent) {
+	function positionDropdown() {
+		if (!triggerRef) return;
+		const rect = triggerRef.getBoundingClientRect();
+		const width = Math.max(DROPDOWN_MIN_WIDTH, dropdownRef?.offsetWidth ?? DROPDOWN_MIN_WIDTH);
+		// Center horizontally on the trigger, clamp to the viewport so the
+		// menu can't spill off-screen on narrow phones.
+		let left = rect.left + rect.width / 2 - width / 2;
+		left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+		dropdownLeft = left;
+		dropdownTop = rect.bottom + DROPDOWN_GAP;
+	}
+
+	async function toggleDropdown(e: MouseEvent) {
 		e.stopPropagation();
-		showDropdown = !showDropdown;
+		const next = !showDropdown;
+		showDropdown = next;
+		if (next) {
+			// Wait one tick so the dropdown is in the DOM, then anchor it.
+			await tick();
+			positionDropdown();
+		}
 	}
 
 	function selectUser(userId: string, user: any) {
@@ -43,7 +70,10 @@
 	}
 
 	function handleClickOutside(e: MouseEvent) {
-		if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
+		const target = e.target as Node;
+		const inCell = cellRef?.contains(target);
+		const inDropdown = dropdownRef?.contains(target);
+		if (!inCell && !inDropdown) {
 			showDropdown = false;
 		}
 	}
@@ -53,15 +83,28 @@
 			showDropdown = false;
 		}
 	}
+
+	// Re-anchor (or just close) when the page scrolls or resizes — a
+	// fixed-positioned menu detaches from its trigger otherwise.
+	function handleScrollOrResize() {
+		if (!showDropdown) return;
+		positionDropdown();
+	}
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeydown} />
+<svelte:window
+	on:click={handleClickOutside}
+	on:keydown={handleKeydown}
+	on:scroll={handleScrollOrResize}
+	on:resize={handleScrollOrResize}
+/>
 
 <div
 	class="week-cell {isToday ? 'week-cell--today' : ''} {isPermanent ? 'week-cell--permanent' : ''}"
-	bind:this={dropdownRef}
+	bind:this={cellRef}
 >
 	<button
+		bind:this={triggerRef}
 		class="week-cell__content"
 		on:click={toggleDropdown}
 		aria-haspopup="listbox"
@@ -100,7 +143,12 @@
 	</button>
 
 	{#if showDropdown}
-		<div class="week-cell__dropdown" transition:fade={{ duration: 100 }}>
+		<div
+			class="week-cell__dropdown"
+			bind:this={dropdownRef}
+			style="top: {dropdownTop}px; left: {dropdownLeft}px;"
+			transition:fade={{ duration: 100 }}
+		>
 			{#if hasAssignment}
 				<button class="week-cell__dropdown-item week-cell__dropdown-item--clear" on:click={clearAssignment}>
 					<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -252,10 +300,11 @@
 	}
 
 	.week-cell__dropdown {
-		position: absolute;
-		top: 100%;
-		left: 50%;
-		transform: translateX(-50%);
+		/* Fixed so the menu escapes the week-grid's overflow:auto scroller —
+		   per CSS spec, overflow-x:auto coerces overflow-y to auto too,
+		   which would clip an absolutely-positioned child's bottom edge.
+		   `top`/`left` are set inline from JS based on the trigger's rect. */
+		position: fixed;
 		z-index: 50;
 		min-width: 160px;
 		max-height: 200px;
@@ -263,7 +312,6 @@
 		background: #374151;
 		border-radius: 8px;
 		box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-		margin-top: 4px;
 	}
 
 	.week-cell__dropdown-item {
