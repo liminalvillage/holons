@@ -743,15 +743,18 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
 
 /**
  * Subscribe to real-time changes in a global table.
+ *
+ * Returns synchronously — see {@link subscribe} for the same rationale.
+ *
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {string} tableName - The table name to subscribe to.
  * @param {string|null} key - Specific key to subscribe to, or null for all keys.
  * @param {function} callback - Callback for data changes.
  * @param {object} [options] - Subscription options.
  * @param {boolean} [options.realtimeOnly] - Only fire for new changes.
- * @returns {Promise<{ unsubscribe: () => void }>}
+ * @returns {{ unsubscribe: () => void, stop: () => void }}
  */
-export async function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
+export function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
     const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
     let active = true;
 

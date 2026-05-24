@@ -262,8 +262,10 @@ class HoloSphere {
     /**
      * Subscribe to real-time changes in a global table.
      * v2-compatible: subscribeGlobal(lens, key, callback, options)
+     *
+     * Returns synchronously — see {@link subscribe}.
      */
-    async subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
+    subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
         let key, callback;
         if (typeof keyOrCallback === 'function') {
             callback = keyOrCallback;
@@ -336,7 +338,14 @@ class HoloSphere {
         return Utils.getHolonScalespace(holon);
     }
 
-    async subscribe(holon, lens, callback) {
+    /**
+     * Subscribe to real-time changes for a holon/lens.
+     *
+     * Synchronous return: `{ unsubscribe: () => void }`. Callers do not
+     * need to `await` — both `const s = holosphere.subscribe(...)` and
+     * `const s = await holosphere.subscribe(...)` yield the same shape.
+     */
+    subscribe(holon, lens, callback) {
         return Utils.subscribe(this, holon, lens, callback);
     }
 

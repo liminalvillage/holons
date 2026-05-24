@@ -41,6 +41,39 @@ describe('Subscription Tests', () => {
     // jest.clearAllMocks(); // Not needed if not using jest.fn()
   });
   
+  test('should return a synchronous { unsubscribe } object (not a Promise)', async () => {
+    // Callers shouldn't need `await` to get their cleanup handle, and
+    // `subscribe` must not be Promise-shaped — both styles produce the
+    // same value, but the sync return lets components write
+    // `const sub = holosphere.subscribe(...); onDestroy(() => sub.unsubscribe())`
+    // without a stale `Promise<...>` slot.
+    function noop() {}
+    const sub = holosphere.subscribe(testHolon, testLens, noop);
+
+    expect(sub).toBeDefined();
+    expect(typeof sub).toBe('object');
+    // Must not be a Promise — guards against accidental re-introduction of `async`.
+    expect(typeof sub.then).not.toBe('function');
+    expect(typeof sub.unsubscribe).toBe('function');
+
+    // `await` on a non-Promise still works (resolves to the value), so
+    // existing `await holosphere.subscribe(...)` call sites stay correct.
+    const subAwaited = await sub;
+    expect(subAwaited).toBe(sub);
+
+    sub.unsubscribe();
+    expect(Object.keys(holosphere.subscriptions).length).toBe(0);
+  });
+
+  test('subscribeGlobal should also return synchronously', () => {
+    function noop() {}
+    const sub = holosphere.subscribeGlobal('test_global_table', noop);
+    expect(sub).toBeDefined();
+    expect(typeof sub.then).not.toBe('function');
+    expect(typeof sub.unsubscribe).toBe('function');
+    sub.unsubscribe();
+  });
+
   test('should properly clean up subscription when unsubscribing', async () => {
     // Create test data
     const testData = {

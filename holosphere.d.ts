@@ -187,8 +187,8 @@ declare class HoloSphere {
     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
     deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
-    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): Promise<{ unsubscribe: () => void }>;
-    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
+    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void };
+    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
 
     // Hologram
     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
@@ -210,8 +210,10 @@ declare class HoloSphere {
     getScalespace(lat: number, lng: number): string[];
     getHolonScalespace(holon: string): string[];
 
-    // Subscription
-    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
+    // Subscription. Returns synchronously — `await` on the return value
+    // still works (await on a non-Promise resolves to the value), so both
+    // call styles produce the same `{ unsubscribe }` shape.
+    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
 
     // Federation - v1 style
     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;

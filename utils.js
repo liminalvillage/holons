@@ -44,13 +44,21 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
 
 /**
  * Subscribes to changes in a specific holon and lens.
+ *
+ * Returns **synchronously** — the call has no internal awaits, so callers
+ * never need to `await` the result. (`await` on the return value still
+ * works as before; it just resolves through the value unchanged.) This
+ * means `const sub = holosphere.subscribe(...); sub.unsubscribe();` is the
+ * canonical pattern and there is no `Promise<{ unsubscribe }>` shape to
+ * disambiguate against the resolved object.
+ *
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {string} holon - The holon identifier.
  * @param {string} lens - The lens to subscribe to.
  * @param {function} callback - The callback to execute on changes.
- * @returns {Promise<object>} - Subscription object with unsubscribe method
+ * @returns {{ unsubscribe: () => void }} - Subscription with unsubscribe method.
  */
-export async function subscribe(holoInstance, holon, lens, callback) {
+export function subscribe(holoInstance, holon, lens, callback) {
     if (!holon || !lens) {
         throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
     }
@@ -102,9 +110,14 @@ export async function subscribe(holoInstance, holon, lens, callback) {
             gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
         };
 
-        // Return an object with unsubscribe method
+        // Return an object with unsubscribe method.
+        // `unsubscribe` is sync — nothing it does (`mapChain.off()`,
+        // `delete subscriptions[id]`) blocks. Keeping it sync means the
+        // returned shape is `{ unsubscribe: () => void }` rather than
+        // `() => Promise<void>`, matching what callers expect when they
+        // store it in a `() => void` cleanup slot.
         return {
-            unsubscribe: async () => {
+            unsubscribe: () => {
                 const sub = holoInstance.subscriptions[subscriptionId];
                 if (!sub) {
                     return;
@@ -114,9 +127,7 @@ export async function subscribe(holoInstance, holon, lens, callback) {
                     // Turn off the Gun subscription using the stored mapChain reference
                     if (sub.mapChain) { // Check if mapChain exists
                         sub.mapChain.off(); // Call off() on the chain where .on() was attached
-                        // Optional: Add delay back? Let's omit for now.
-                        // await new Promise(res => setTimeout(res, 50));
-                    } // We might not need to call off() on gunListener explicitly
+                    }
 
                     // Remove from subscriptions object AFTER turning off listener
                     delete holoInstance.subscriptions[subscriptionId];
