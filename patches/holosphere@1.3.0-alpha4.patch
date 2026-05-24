@@ -372,12 +372,28 @@ index a4ca6d0..d139d94 100644
      let active = true;
  
 diff --git a/hologram.js b/hologram.js
-index 5f27676..ef44e26 100644
+index 5f27676..e8e8817 100644
 --- a/hologram.js
 +++ b/hologram.js
-@@ -177,9 +177,13 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
+@@ -175,11 +175,28 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
+             if (originalData && !originalData._invalidHologram) {
+                     // Attach the canonical `_hologram` envelope. This is the only
                      // resolved-hologram indicator HoloSphere emits.
-                     return attachHologramMeta(originalData, hologram.soul);
+-                    return attachHologramMeta(originalData, hologram.soul);
++                    const withMeta = attachHologramMeta(originalData, hologram.soul);
++                    // Stamp the source holon's display name so every consumer
++                    // (subscribe, get, getAll, getFederated) has it without a
++                    // second round-trip. Cached on the instance, so a batch of
++                    // holograms from the same source resolves the name once.
++                    if (withMeta._hologram?.sourceHolon && typeof holoInstance.getHolonName === 'function') {
++                        try {
++                            const sourceHolonName = await holoInstance.getHolonName(withMeta._hologram.sourceHolon);
++                            if (sourceHolonName) {
++                                withMeta._hologram = { ...withMeta._hologram, sourceHolonName };
++                            }
++                        } catch { /* best-effort — name lookup must not fail the resolve */ }
++                    }
++                    return withMeta;
                  } else {
 -                console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Removing broken hologram.`);
 -                
@@ -448,10 +464,21 @@ index bd12d2e..9670172 100644
      // Federation - v1 style
      federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
 diff --git a/holosphere.js b/holosphere.js
-index 73cef39..a055e62 100644
+index 73cef39..63343c5 100644
 --- a/holosphere.js
 +++ b/holosphere.js
-@@ -192,8 +192,8 @@ class HoloSphere {
+@@ -125,6 +125,10 @@ class HoloSphere {
+         // Initialize schema cache
+         this.schemaCache = new Map();
+ 
++        // Holon-name cache so resolveHologram + getFederated don't refetch
++        // `settings/<holon>` for every hologram from the same source.
++        this._holonNameCache = new Map();
++
+         // Initialize allowed authors set (for canWrite)
+         this._allowedAuthors = new Set();
+     }
+@@ -192,8 +196,8 @@ class HoloSphere {
          return ContentOps.get(this, holon, lens, key, password, options);
      }
  
@@ -462,7 +489,7 @@ index 73cef39..a055e62 100644
      }
  
      async parse(rawData) {
-@@ -262,8 +262,10 @@ class HoloSphere {
+@@ -262,8 +266,10 @@ class HoloSphere {
      /**
       * Subscribe to real-time changes in a global table.
       * v2-compatible: subscribeGlobal(lens, key, callback, options)
@@ -474,7 +501,7 @@ index 73cef39..a055e62 100644
          let key, callback;
          if (typeof keyOrCallback === 'function') {
              callback = keyOrCallback;
-@@ -336,7 +338,14 @@ class HoloSphere {
+@@ -336,7 +342,14 @@ class HoloSphere {
          return Utils.getHolonScalespace(holon);
      }
  
@@ -490,8 +517,47 @@ index 73cef39..a055e62 100644
          return Utils.subscribe(this, holon, lens, callback);
      }
  
+@@ -344,6 +357,38 @@ class HoloSphere {
+         return Utils.notifySubscribers(this, data);
+     }
+ 
++    /**
++     * Resolve a holon's display name from its `settings/<holon>` record.
++     * Cached per-instance so repeated lookups (e.g. one per hologram in a
++     * federated batch) only fetch once. Returns `null` when no name is set.
++     *
++     * Used internally by `resolveHologram` to stamp
++     * `_hologram.sourceHolonName` so every consumer of a resolved hologram
++     * already has the display name without a second round-trip.
++     */
++    async getHolonName(holonId) {
++        if (!holonId) return null;
++        const key = String(holonId);
++        if (this._holonNameCache.has(key)) return this._holonNameCache.get(key);
++        try {
++            const settings = await this.get(key, 'settings', key);
++            let name = null;
++            if (settings) {
++                if (Array.isArray(settings)) {
++                    const found = settings.find(s => s && typeof s.name === 'string' && s.name.trim() !== '');
++                    name = found ? found.name : null;
++                } else if (typeof settings.name === 'string' && settings.name.trim() !== '') {
++                    name = settings.name;
++                }
++            }
++            this._holonNameCache.set(key, name);
++            return name;
++        } catch {
++            this._holonNameCache.set(key, null);
++            return null;
++        }
++    }
++
+     generateId() {
+         return Utils.generateId();
+     }
 diff --git a/utils.js b/utils.js
-index 015025f..146b691 100644
+index 015025f..e939338 100644
 --- a/utils.js
 +++ b/utils.js
 @@ -44,13 +44,21 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
@@ -518,7 +584,25 @@ index 015025f..146b691 100644
      if (!holon || !lens) {
          throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
      }
-@@ -102,9 +110,14 @@ export async function subscribe(holoInstance, holon, lens, callback) {
+@@ -82,6 +90,17 @@ export async function subscribe(holoInstance, holon, lens, callback) {
+                         }
+                     }
+ 
++                    // Subscribers expect `object | null`. `parse()` can return
++                    // a string/number/boolean when a legacy or corrupted leaf
++                    // happened to be a JSON-encoded primitive (e.g.
++                    // `'"hello"'` parses to `'hello'`). Drop those so every
++                    // consumer can stop guarding with
++                    // `typeof x === 'string' ? JSON.parse(x) : x`.
++                    if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
++                        console.warn(`[holosphere.subscribe] dropping non-object payload at ${holon}/${lens}/${key}:`, typeof parsed);
++                        return;
++                    }
++
+                     // Check again if subscription ID still exists before calling callback
+                     if (holoInstance.subscriptions[subscriptionId]) {
+                         callback(parsed, key);
+@@ -102,9 +121,14 @@ export async function subscribe(holoInstance, holon, lens, callback) {
              gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
          };
  
@@ -535,7 +619,7 @@ index 015025f..146b691 100644
                  const sub = holoInstance.subscriptions[subscriptionId];
                  if (!sub) {
                      return;
-@@ -114,9 +127,7 @@ export async function subscribe(holoInstance, holon, lens, callback) {
+@@ -114,9 +138,7 @@ export async function subscribe(holoInstance, holon, lens, callback) {
                      // Turn off the Gun subscription using the stored mapChain reference
                      if (sub.mapChain) { // Check if mapChain exists
                          sub.mapChain.off(); // Call off() on the chain where .on() was attached

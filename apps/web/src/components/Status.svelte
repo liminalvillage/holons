@@ -518,13 +518,11 @@
             expenseStore = {};
             holosphere.subscribe(holonID, "expenses", (newExpense: any, key?: string) => {
                 if (!key) return;
+                // Library now guarantees the callback receives `object | null`
+                // (non-object leaves are dropped at the boundary), so no
+                // defensive JSON-parse needed here.
                 if (newExpense) {
-                    try {
-                        const parsedExpense = typeof newExpense === 'string' ? JSON.parse(newExpense) : newExpense;
-                        expenseStore[key] = parsedExpense as Expense;
-                    } catch (e) {
-                        console.error('Failed to parse expense:', e);
-                    }
+                    expenseStore[key] = newExpense as Expense;
                 } else {
                     delete expenseStore[key];
                 }
