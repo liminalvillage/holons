@@ -10,6 +10,7 @@
 
 	import type { HoloSphere } from "holosphere";
 	import type { Quest } from '../types/Quest';
+	import { queryManager } from '$lib/holosphere/QueryManager';
 	let holosphere = getContext('holosphere') as HoloSphere;
 
 	let holonID: string = '';
@@ -45,47 +46,44 @@
 		return false;
 	}
 
-	// Load initial data and subscribe to changes
-	async function loadScheduleData() {
+	// Local-first + progressive load via queryManager.subscribe. The cached
+	// snapshot fires synchronously so isLoading clears immediately even on a
+	// cold/empty lens — no more spinner hanging on Gun's `.once()`.
+	function loadScheduleData() {
 		if (!holonID || !holosphere) {
 			isLoading = false;
 			return;
 		}
 
+		if (unsubscribe) {
+			unsubscribe();
+			unsubscribe = null;
+		}
+
+		queryManager.init(holosphere);
 		isLoading = true;
 		error = '';
 		store = {};
+		const targetHolon = holonID;
 
-		try {
-			// Load initial quests data
-			const initialQuestsData: any = await holosphere.getAll(holonID, "quests");
-			if (initialQuestsData && typeof initialQuestsData === 'object' && !Array.isArray(initialQuestsData)) {
-				store = initialQuestsData as Record<string, Quest>;
-			}
-
-			// Subscribe to quest updates
-			unsubscribe = holosphere.subscribe(holonID, 'quests', (newquest: any, key: string | undefined) => {
-				if (!key) return;
-				if (newquest) {
-					const parsedQuest = newquest;
-					// Updates the store with the new value
-					store = { ...store, [key]: parsedQuest };
-				} else {
-					// A key may contain a null value (if data has been deleted/set to null)
-					// if so, we remove the item from the store
-					const { [key]: _, ...rest } = store;
-					store = rest;
+		unsubscribe = queryManager.subscribe({
+			holonId: targetHolon,
+			lens: 'quests',
+			onUpdate: (items) => {
+				if (holonID !== targetHolon) return; // stale subscription
+				const next: Record<string, Quest> = {};
+				for (const quest of items as Quest[]) {
+					if (quest && quest.id) next[quest.id] = quest;
 				}
-			}) as unknown as () => void;
-
-			console.log(`Successfully loaded schedule for holon ${holonID}:`, Object.keys(store).length, 'quests');
-
-		} catch (err) {
-			console.error('Error loading schedule data:', err);
-			error = 'Failed to load schedule. Please try again.';
-		} finally {
-			isLoading = false;
-		}
+				store = next;
+				isLoading = false;
+			},
+			onError: (err) => {
+				console.error('Error loading schedule data:', err);
+				error = 'Failed to load schedule. Please try again.';
+				isLoading = false;
+			}
+		});
 	}
 
 	let idUnsubscribe: (() => void) | undefined;
@@ -102,22 +100,17 @@
 			}
 
 			// Set up ID subscription
-			idUnsubscribe = ID.subscribe(async (value) => {
+			idUnsubscribe = ID.subscribe((value) => {
 				if (value && value !== holonID) {
 					holonID = value;
-					// Clean up previous subscription
-					if (unsubscribe) {
-						unsubscribe();
-						unsubscribe = null;
-					}
-					await loadScheduleData();
+					loadScheduleData(); // tears down previous subscription internally
 				}
 			});
 
 			// Initial load if we have an ID
 			if ($ID) {
 				holonID = $ID;
-				await loadScheduleData();
+				loadScheduleData();
 			}
 		})();
 

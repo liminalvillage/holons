@@ -12,7 +12,6 @@
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
 	import KanbanView from "./kanban/KanbanView.svelte";
-	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
 	import { nameMap, resolvedName, resolveName, resolveHologramSource, extractHolonIdFromSoul, awaitName, buildHologramLink } from '$lib/stores/nameResolver';
@@ -45,7 +44,9 @@
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
-	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
+	import { queryManager } from "$lib/holosphere/QueryManager";
+	import { dndzone } from "svelte-dnd-action";
+	import { flip } from "svelte/animate";
 	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
@@ -237,18 +238,13 @@
 	let questsUnsubscribe: (() => void) | undefined;
 
 	// Add initialization state tracking
-	let isInitialized = false;
-	let isSubscribed = false;
 	let isLoading = $state(true);
 	let connectionReady = false;
 	let currentHolonId: string | null = null;
 
-	// Add subscription state tracking
-	let subscriptionState = {
-		currentHolonID: null as string | null,
-		batchTimeout: null as NodeJS.Timeout | null,
-		pendingUpdates: new Map<string, Quest>()
-	};
+	// Helper to validate holon ID (declared up here so fetchData can use it).
+	const isValidHolonId = (id: string | undefined | null): id is string =>
+		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
 	// Add state for animations
 	let showFireworks = $state(false);
@@ -624,175 +620,108 @@
 		}
 	}
 
-	// Add drag and drop state
-	const dragState = writable<{
-		dragging: boolean;
-		draggedId: string | null;
-		dragOverId: string | null;
-	}>({
-		dragging: false,
-		draggedId: null,
-		dragOverId: null
+	// Drag-and-drop reorder for the list view, powered by svelte-dnd-action
+	// (same library + structure as KanbanColumn). The native HTML5 drag
+	// implementation it replaces clashed with touch devices and didn't
+	// animate. dndzone owns drag mechanics — we just persist the new order
+	// in `handleListDndFinalize` once the user releases the card.
+
+	type DndCard = { id: string; key: string; quest: Quest };
+	const LIST_FLIP_MS = 200;
+
+	let listDndItems: DndCard[] = $state([]);
+	// Same protection as KanbanColumn — while dndzone is mutating `items`,
+	// don't let the $effect below re-seed from `filteredQuests` and clobber
+	// the live drag.
+	let isListDragging = $state(false);
+
+	$effect(() => {
+		if (isListDragging) return;
+		listDndItems = filteredQuests
+			.filter(([_, q]) => q.status !== 'completed' || (showCompleted && q.status === 'completed'))
+			.map(([key, quest]) => ({ id: key, key, quest }));
 	});
 
-	// Add drag and drop handlers
-	function handleDragStart(event: DragEvent, key: string) {
-		event.dataTransfer?.setData('text/plain', key);
-		dragState.set({
-			dragging: true,
-			draggedId: key,
-			dragOverId: null
-		});
+	function handleListDndConsider(e: CustomEvent<{ items: DndCard[] }>) {
+		isListDragging = true;
+		listDndItems = e.detail.items;
 	}
 
-	function handleDragOver(event: DragEvent, key: string) {
-		event.preventDefault();
-		dragState.update(state => ({
-			...state,
-			dragOverId: key
-		}));
-	}
+	async function handleListDndFinalize(e: CustomEvent<{ items: DndCard[] }>) {
+		isListDragging = false;
+		listDndItems = e.detail.items;
 
-	function handleDragEnd() {
-		dragState.set({
-			dragging: false,
-			draggedId: null,
-			dragOverId: null
-		});
-	}
+		const currentHolonID = holonID;
+		if (!currentHolonID) return;
 
-	// Modify handleDrop to use 100px spacing
-	async function handleDrop(event: DragEvent, targetKey: string) {
-		event.preventDefault();
-		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
-
-		// Ensure holonID is not null before proceeding
-		const currentHolonID = holonID; // Use the reactive holonID variable
-		if (!currentHolonID) {
-			console.error("Cannot handle drop: holonID is null.");
-			handleDragEnd();
-			return;
-		}
-
-		if (!sourceKey || sourceKey === targetKey) {
-			handleDragEnd();
-			return;
-		}
-
-		if (sortCriteria === 'orderIndex') {
-			const currentQuestsArray = [...filteredQuests];
-			const sourceIndex = currentQuestsArray.findIndex(([key]) => key === sourceKey);
-			const targetIndexOriginal = currentQuestsArray.findIndex(([key]) => key === targetKey);
-
-			if (sourceIndex === -1 || targetIndexOriginal === -1) {
-				handleDragEnd();
-				return;
-			}
-
-			const [draggedItemKey, draggedItemQuest] = currentQuestsArray.splice(sourceIndex, 1)[0];
-			
-			const actualTargetIndex = sourceIndex < targetIndexOriginal ? targetIndexOriginal -1 : targetIndexOriginal;
-			
-			currentQuestsArray.splice(actualTargetIndex, 0, [draggedItemKey, draggedItemQuest]);
-
-			// Temporarily disable subscription to prevent override during update
-			let tempQuestsUnsub = questsUnsubscribe;
-			questsUnsubscribe = undefined;
-
-			// Build updates for store immutably
-			const storeUpdates: Record<string, Quest> = {};
-			const updatedQuestsPromises = currentQuestsArray.map(async ([key, questToUpdate], index) => {
-				if (questToUpdate.orderIndex !== index) {
-					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
-					storeUpdates[key] = updatedQuest;
-					return holosphere.put(currentHolonID, 'quests', updatedQuest);
+		// Sort criteria decides what we persist:
+		// - orderIndex: rewrite each card's orderIndex to its list position.
+		// - positionX/positionY: only the moved card changes — recompute a
+		//   midpoint position from its new neighbours so we don't disturb
+		//   the rest of the list.
+		try {
+			if (sortCriteria === 'orderIndex') {
+				const writes: Promise<unknown>[] = [];
+				const storeUpdates: Record<string, Quest> = {};
+				for (let i = 0; i < listDndItems.length; i++) {
+					const { key, quest } = listDndItems[i];
+					if ((quest as any).orderIndex === i) continue;
+					const updated = { ...quest, id: key, orderIndex: i };
+					storeUpdates[key] = updated;
+					writes.push(holosphere.put(currentHolonID, 'quests', updated));
 				}
-				return Promise.resolve();
-			});
-
-			try {
-				await Promise.all(updatedQuestsPromises);
-				// Re-enable subscription after save
-				questsUnsubscribe = tempQuestsUnsub;
-				// Immutable store update for Svelte reactivity
+				if (writes.length === 0) return;
+				await Promise.all(writes);
 				store = { ...store, ...storeUpdates };
-			} catch (error: any) {
-				if (error?.name === 'AuthorizationError') {
-					notifyWriteDenied('Unable to save - no write permission for this holon');
-				} else {
-					console.error('Error updating quest orderIndex after drop:', error);
+			} else if (sortCriteria === 'positionX' || sortCriteria === 'positionY') {
+				const POSITION_STEP = 10.0;
+				const mainAxis = sortCriteria === 'positionX' ? 'x' : 'y';
+				const crossAxis = sortCriteria === 'positionX' ? 'y' : 'x';
+
+				// Find the single item whose position-in-list changed vs the
+				// pre-drag arrangement (compare against the existing sort
+				// of filteredQuests).
+				const previousOrder = filteredQuests
+					.filter(([_, q]) => q.status !== 'completed' || (showCompleted && q.status === 'completed'))
+					.map(([key]) => key);
+				let movedIdx = -1;
+				for (let i = 0; i < listDndItems.length; i++) {
+					if (listDndItems[i].key !== previousOrder[i]) { movedIdx = i; break; }
 				}
-				// Re-enable subscription even on error
-				questsUnsubscribe = tempQuestsUnsub;
+				if (movedIdx === -1) return; // No actual change.
+
+				const moved = listDndItems[movedIdx].quest;
+				const prev = movedIdx > 0 ? listDndItems[movedIdx - 1].quest : null;
+				const next = movedIdx < listDndItems.length - 1 ? listDndItems[movedIdx + 1].quest : null;
+				const prevCoord = (prev as any)?.position?.[mainAxis];
+				const nextCoord = (next as any)?.position?.[mainAxis];
+
+				let newMain: number;
+				if (prevCoord !== undefined && nextCoord !== undefined) {
+					newMain = (prevCoord + nextCoord) / 2.0;
+				} else if (nextCoord !== undefined) {
+					newMain = nextCoord - POSITION_STEP * (sortDirection === 'asc' ? 1 : -1);
+				} else if (prevCoord !== undefined) {
+					newMain = prevCoord + POSITION_STEP * (sortDirection === 'asc' ? 1 : -1);
+				} else {
+					newMain = (moved as any).position?.[mainAxis] ?? 0;
+				}
+
+				const currentPos = (moved as any).position || { x: 0, y: 0 };
+				const newPos = { ...currentPos, [mainAxis]: newMain };
+				if (newPos[crossAxis] === undefined) newPos[crossAxis] = 0;
+
+				const updated = { ...moved, id: listDndItems[movedIdx].key, position: newPos } as Quest;
+				await holosphere.put(currentHolonID, 'quests', updated);
+				store = { ...store, [listDndItems[movedIdx].key]: updated };
 			}
-		} else { // sortCriteria is 'positionX' or 'positionY'
-			const POSITION_STEP = 10.0;
-
-			const sourceQuestEntry = filteredQuests.find(([k]) => k === sourceKey);
-			if (!sourceQuestEntry) { 
-				handleDragEnd(); 
-				console.error('Source quest not found during drop for position sort.');
-				return; 
-			}
-			const draggedQuest = { ...sourceQuestEntry[1] }; // Mutable copy of the quest data
-
-			const otherItems = filteredQuests.filter(([k]) => k !== sourceKey);
-			const insertionIndexInOthers = otherItems.findIndex(([k]) => k === targetKey);
-
-			if (insertionIndexInOthers === -1) {
-				console.error("Error determining drop position: targetKey not found in otherItems.");
-				handleDragEnd();
-				return;
-			}
-
-			const prevTaskData = (insertionIndexInOthers > 0) ? otherItems[insertionIndexInOthers - 1][1] : null;
-			const nextTaskData = otherItems[insertionIndexInOthers][1]; // This is the quest data for targetKey
-
-			const mainAxis = sortCriteria === 'positionX' ? 'x' : 'y';
-			const crossAxis = sortCriteria === 'positionX' ? 'y' : 'x';
-
-			const prevMainCoord = prevTaskData?.position?.[mainAxis];
-			const nextMainCoord = nextTaskData?.position?.[mainAxis];
-
-			let newMainCoordValue: number;
-
-			if (prevMainCoord !== undefined && nextMainCoord !== undefined) {
-				newMainCoordValue = (prevMainCoord + nextMainCoord) / 2.0;
-			} else if (nextMainCoord !== undefined) {
-				newMainCoordValue = nextMainCoord - (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
-			} else if (prevMainCoord !== undefined) {
-				newMainCoordValue = prevMainCoord + (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
 			} else {
-				newMainCoordValue = draggedQuest.position?.[mainAxis] ?? 0;
-			}
-			
-			const currentFullPosition = draggedQuest.position || { x: 0, y: 0 };
-			
-			let newPosition = {
-				...currentFullPosition,
-				[mainAxis]: newMainCoordValue
-			};
-
-			if (newPosition[crossAxis] === undefined) {
-				newPosition[crossAxis] = 0;
-			}
-			draggedQuest.position = newPosition;
-
-			draggedQuest.id = sourceKey; // Ensure ID is set
-			try {
-				await holosphere.put(currentHolonID, 'quests', draggedQuest);
-				// Immutable store update for Svelte reactivity
-				store = { ...store, [sourceKey]: draggedQuest };
-			} catch (error: any) {
-				if (error?.name === 'AuthorizationError') {
-					notifyWriteDenied('Unable to save - no write permission for this holon');
-				} else {
-					console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
-				}
+				console.error('Error persisting list reorder:', error);
 			}
 		}
-
-		handleDragEnd();
 	}
 
 	// Simplify show/hide functions
@@ -1110,129 +1039,72 @@
 		}
 	}
 
-	// Fetch federated tasks from connected holons
+	// Federated mode: local stream via queryManager (so the spinner clears
+	// immediately even on a cold/empty graph), plus a one-shot getFederated
+	// overlay merged on top. Federated items overlay the local baseline —
+	// later local subscribe events will still update their own entries.
 	async function fetchFederatedTasks() {
-		if (!holosphere || !holonID) return;
+		if (!holosphere || !holonID || !isValidHolonId(holonID)) return;
 
+		const loadKey = `${holonID}:fed`;
+		if (questsLoadKey === loadKey && questsUnsubscribe) return;
+
+		if (questsUnsubscribe) {
+			questsUnsubscribe();
+			questsUnsubscribe = undefined;
+		}
+
+		queryManager.init(holosphere);
+		questsLoadKey = loadKey;
+		isLoading = true;
 		loadingFederated = true;
+		store = {};
+
+		const subscribedHolonID = holonID;
+
+		questsUnsubscribe = queryManager.subscribe({
+			holonId: subscribedHolonID,
+			lens: 'quests',
+			onUpdate: (items) => {
+				if (questsLoadKey !== loadKey) return;
+				// Merge local items, preserving any federated overlay that arrived first.
+				const localStore = buildStoreFromItems(items);
+				store = { ...store, ...localStore };
+				isLoading = false;
+				preResolveHologramNames(Object.entries(store));
+				maybeOpenSelectedTask();
+			},
+			onError: (error) => {
+				console.error('[Tasks] federated local subscription error:', error);
+				isLoading = false;
+			}
+		});
+
 		try {
-			console.log("[Tasks.svelte] Fetching federated tasks...");
-			console.log("[Tasks.svelte] Current holonID:", holonID);
-
-			// First, get local data
-			console.log("[Tasks.svelte] Checking local data first...");
-			const localData = await holosphere.getAll(holonID, "quests");
-			console.log("[Tasks.svelte] Local data:", localData);
-
-			// Get federated data from connected holons
-			const federatedData = await holosphere.getFederated(holonID, "quests", {
+			const federatedData = await holosphere.getFederated(subscribedHolonID, 'quests', {
 				includeLocal: true,
 				includeFederated: true,
 				resolveReferences: true,
 				aggregate: false
 			});
-
-			console.log("[Tasks.svelte] Federated data result:", federatedData);
-
-			// Convert array to keyed object for consistency with subscription format
-			const newStore: Store = {};
-
-			// Handle federated data
-			if (Array.isArray(federatedData)) {
-				federatedData.forEach((quest: any, index) => {
-					if (quest && quest.id && !quest._deleted) {
-						const key = quest.key || quest.id || `federated_${index}`;
-
-						// Filter by type to only include tasks/quests (not offers/requests)
-						const questType = quest.type || 'task';
-						if (questType === 'offer' || questType === 'request' || questType === 'need') {
-							return; // Skip offers and requests
-						}
-
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-
-						// Preserve hologram metadata
-						const processedQuest: Quest = {
-							...quest,
-							id: quest.id
-						};
-
-						// If this item has federation/hologram metadata, preserve it
-						if (quest._federation) {
-							(processedQuest as any)._federation = quest._federation;
-						}
-						if (quest._hologram) {
-							processedQuest._hologram = quest._hologram;
-						}
-
-						newStore[key] = processedQuest;
-						console.log(`[Tasks.svelte] Added federated item to store with key ${key}:`, processedQuest);
-					}
-				});
-			}
-
-			// If no federated data was found, fall back to local data only
-			if (Object.keys(newStore).length === 0 && Array.isArray(localData) && localData.length > 0) {
-				console.log("[Tasks.svelte] No federated data found, using local data only");
-				localData.forEach((quest: any, index) => {
-					if (quest && quest.id) {
-						const key = quest.id || `local_${index}`;
-
-						// Filter by type to only include tasks/quests
-						const questType = quest.type || 'task';
-						if (questType === 'offer' || questType === 'request' || questType === 'need') {
-							return; // Skip offers and requests
-						}
-
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-
-						newStore[key] = quest as Quest;
-					}
-				});
-			}
-
-			store = newStore;
-			updateStats();
-
-			// Pre-resolve hologram names in background
-			preResolveHologramNames(Object.entries(store));
-
-			console.log(`[Tasks.svelte] Fetched ${Object.keys(store).length} total items (local + federated)`);
-		} catch (error) {
-			console.error("[Tasks.svelte] Error fetching federated data:", error);
-			// Fallback to local data only
-			try {
-				console.log("[Tasks.svelte] Falling back to local data only...");
-				const localData = await holosphere.getAll(holonID, "quests");
-				const newStore: Store = {};
-				if (Array.isArray(localData)) {
-					localData.forEach((quest: any, index) => {
-						if (quest && quest.id) {
-							const key = quest.id || `local_${index}`;
-
-							// Filter by type
-							const questType = quest.type || 'task';
-							if (questType === 'offer' || questType === 'request' || questType === 'need') {
-								return;
-							}
-
-							if (!quest.participants) quest.participants = [];
-
-							newStore[key] = quest as Quest;
-						}
-					});
+			if (questsLoadKey !== loadKey) return; // user switched holon mid-flight
+			if (Array.isArray(federatedData) && federatedData.length > 0) {
+				const merged: Store = {};
+				for (const q of federatedData as any[]) {
+					if (!isQuestRecord(q)) continue;
+					if (!q.participants) q.participants = [];
+					const key = (q as any).key || q.id;
+					merged[key] = q as Quest;
 				}
-				store = newStore;
-				updateStats();
-				console.log(`[Tasks.svelte] Fallback: Loaded ${Object.keys(store).length} local items`);
-			} catch (fallbackError) {
-				console.error("[Tasks.svelte] Error in fallback to local data:", fallbackError);
-				store = {};
+				if (Object.keys(merged).length > 0) {
+					store = { ...store, ...merged };
+				}
 			}
+		} catch (error) {
+			console.error('[Tasks] federated overlay error:', error);
 		} finally {
 			loadingFederated = false;
+			isLoading = false;
 		}
 	}
 
@@ -1259,83 +1131,76 @@
 		}
 	});
 
-	// Add fetchData function with retry logic
-	async function fetchData(retryCount = 0) {
-		if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+	// Identity of the current load — `${holonID}:${federated}`. Lets us drop
+	// stale callbacks from a previous holon/mode after a switch.
+	let questsLoadKey: string | null = null;
+
+	function isQuestRecord(quest: any): quest is Quest {
+		if (!quest || !quest.id || quest._deleted) return false;
+		const type = quest.type || 'task';
+		// Offers/requests/needs live in the same lens but render in other views.
+		if (type === 'offer' || type === 'request' || type === 'need') return false;
+		return true;
+	}
+
+	function buildStoreFromItems(items: any[]): Store {
+		const next: Store = {};
+		for (const quest of items) {
+			if (!isQuestRecord(quest)) continue;
+			if (!quest.participants) quest.participants = [];
+			const key = (quest as any).key || quest.id;
+			next[key] = quest as Quest;
+		}
+		return next;
+	}
+
+	// Open the URL-selected task as soon as it appears in the store.
+	function maybeOpenSelectedTask() {
+		if (!selectedTaskId || selectedTask || !store[selectedTaskId]) return;
+		selectedTask = { key: selectedTaskId, quest: store[selectedTaskId] };
+		const url = new URL(window.location.href);
+		url.searchParams.delete('task');
+		replaceState(url.toString(), { replaceState: true });
+		selectedTaskId = null;
+	}
+
+	// Local-first + progressive load via queryManager.subscribe. The cached
+	// snapshot fires synchronously (next microtask), so isLoading clears
+	// immediately even when the lens is empty — no more spinner forever
+	// waiting on Gun's `.once()` that never fires on cold empty paths.
+	function fetchData() {
+		if (!holonID || !holosphere || !connectionReady || !isValidHolonId(holonID)) {
 			return;
 		}
 
-		isLoading = true;
+		const loadKey = `${holonID}:local`;
+		if (questsLoadKey === loadKey && questsUnsubscribe) return;
 
-		// Clean up previous subscription before fetching new data
 		if (questsUnsubscribe) {
 			questsUnsubscribe();
 			questsUnsubscribe = undefined;
 		}
-		subscriptionState.currentHolonID = null;
 
-		// Clear store for fresh data
+		queryManager.init(holosphere);
+		questsLoadKey = loadKey;
+		isLoading = true;
 		store = {};
 
-		try {
-			const initialData = await holosphere.getAll(holonID, "quests");
-
-			// Process initial data
-			const newStore: Store = {};
-			if (Array.isArray(initialData)) {
-				initialData.forEach((quest: any, index) => {
-					if (quest && quest.id && !quest._deleted) {
-						// Use the quest ID as the key, or generate one if missing
-						const key = quest.id || `initial_${index}`;
-
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-
-						newStore[key] = quest as Quest;
-					}
-				});
-			} else if (typeof initialData === 'object' && initialData !== null) {
-				// If it's already a keyed object, use it directly
-				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
-					if (quest && quest.id && !quest._deleted) {
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-
-						newStore[key] = quest as Quest;
-					}
-				});
+		questsUnsubscribe = queryManager.subscribe({
+			holonId: holonID,
+			lens: 'quests',
+			onUpdate: (items) => {
+				if (questsLoadKey !== loadKey) return; // stale (user switched holon)
+				store = buildStoreFromItems(items);
+				isLoading = false;
+				preResolveHologramNames(Object.entries(store));
+				maybeOpenSelectedTask();
+			},
+			onError: (error) => {
+				console.error('[Tasks] quests subscription error:', error);
+				isLoading = false; // Never leave the spinner stuck on error.
 			}
-			
-			// Update store and stats
-			store = newStore;
-			updateStats();
-
-			// Pre-resolve hologram names in background (don't block rendering)
-			preResolveHologramNames(Object.entries(store));
-
-			// Set up subscription in background (don't block rendering)
-			subscribe();
-
-			// Open task modal if we have a selectedTaskId from URL
-			if (selectedTaskId && store[selectedTaskId]) {
-				selectedTask = { key: selectedTaskId, quest: store[selectedTaskId] };
-				// Clear the task parameter from URL
-				const url = new URL(window.location.href);
-				url.searchParams.delete('task');
-				replaceState(url.toString(), { replaceState: true });
-				selectedTaskId = null; // Reset after opening
-			}
-
-		} catch (error: any) {
-			// Retry on network errors up to 3 times with exponential backoff
-			if (retryCount < 3) {
-				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-				setTimeout(() => fetchData(retryCount + 1), delay);
-				return;
-			}
-		} finally {
-			isLoading = false;
-		}
+		});
 	}
 
 	function handleDialogKeydown(event: KeyboardEvent) {
@@ -1345,99 +1210,8 @@
 	}
 
 
-	// Set up real-time subscription for future updates (does NOT fetch initial data)
-	async function subscribe() {
-		if (!holosphere || !holonID) return;
-
-		// Don't resubscribe if already subscribed to this holon
-		if (subscriptionState.currentHolonID === holonID && questsUnsubscribe) return;
-
-		// Clear existing subscription
-		if (questsUnsubscribe) {
-			questsUnsubscribe();
-			questsUnsubscribe = undefined;
-		}
-
-		// Capture the holon ID at subscription time to verify in callbacks
-		const subscribedHolonID = holonID;
-		const userPubKey = $nostrPublicKey;
-		const isFederated = holonID !== userPubKey;
-
-		console.log('[Tasks] Setting up subscription:', {
-			holonID,
-			userPubKey,
-			isOwnHolon: holonID === userPubKey,
-			isFederated
-		});
-
-		try {
-			// Update subscription state
-			subscriptionState.currentHolonID = holonID;
-
-			// Callback handler for subscription updates
-			const handleQuestUpdate = async (newquest: Quest | null, key?: string) => {
-				console.log('[Tasks] Subscription callback fired:', {
-					holonID: subscribedHolonID,
-					isFederated,
-					questId: newquest?.id || key,
-					questTitle: newquest?.title,
-					isDeleted: !newquest || newquest._deleted
-				});
-				// IMPORTANT: Verify this callback is still for the current holon
-				// Old subscriptions may fire after we've switched holons
-				if (holonID !== subscribedHolonID) {
-					return; // Ignore updates from old subscription
-				}
-
-				// Check if this is the circular hologram that's causing issues
-				if (newquest && newquest.id === '1750286259429') {
-					console.warn('Blocking circular hologram quest:', newquest.id);
-					return;
-				}
-
-				// Use the key from the callback, or fall back to quest.id
-				const questKey = key || newquest?.id;
-				if (!questKey) {
-					return;
-				}
-
-				// Update store atomically - read current store at update time to avoid race conditions
-				// Check if this is a deletion: either null, _deleted flag, or empty object (no id)
-				const isDeleted = !newquest || newquest._deleted || !newquest.id;
-
-				if (!isDeleted) {
-					// Ensure required arrays are initialized
-					if (!newquest.participants) newquest.participants = [];
-					// Atomic update: spread current store and add/update this quest
-					store = { ...store, [questKey]: newquest };
-				} else {
-					// Delete: create new store without this key
-					const { [questKey]: _, ...rest } = store;
-					store = rest;
-				}
-				updateStats();
-
-				// Resolve hologram name for new holograms
-				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul) {
-					resolveHologramSource(newquest._hologram.soul);
-				}
-			};
-
-			// Use subscription helper for all holons (provides consistent logging)
-			const off = await subscribeWithFederationSupport(
-				holosphere,
-				userPubKey || holonID,
-				holonID,
-				"quests",
-				handleQuestUpdate
-			);
-			questsUnsubscribe = off;
-		} catch (error) {
-			console.error('Error setting up quest subscription:', error);
-			subscriptionState.currentHolonID = null; // Reset on error
-			questsUnsubscribe = undefined;
-		}
-	}
+	// Live updates are driven by queryManager.subscribe inside fetchData /
+	// fetchFederatedTasks; no separate subscribe() helper is needed.
 
 	// Simple onMount - one fetch, one subscription
 	onMount(() => {
@@ -1486,20 +1260,13 @@
 		return () => {
 			if (questsUnsubscribe) questsUnsubscribe();
 			questsUnsubscribe = undefined;
-			if (subscriptionState.batchTimeout) {
-				clearTimeout(subscriptionState.batchTimeout);
-			}
+			questsLoadKey = null;
 			// Note: Don't unsubscribe from holon cache here - it persists across mounts
-			subscriptionState.currentHolonID = null;
 			currentHolonId = null; // Reset so next mount triggers fetch
 			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
 			window.removeEventListener('federationChanged', handleFederationChanged);
 		};
 	});
-
-	// Helper to validate holon ID
-	const isValidHolonId = (id: string | undefined | null): id is string =>
-		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
 	// Reactive block: when page ID changes (different holon), fetch new data
 	$effect(() => {
@@ -1721,23 +1488,27 @@
 						</div>
 					{/if}
 				{:else}
-					<div class="space-y-2 sm:space-y-3">
-										{#each filteredQuests as [key, quest]}
-					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
+					<div
+						class="space-y-2 sm:space-y-3 task-list-dndzone"
+						use:dndzone={{
+							items: listDndItems,
+							flipDurationMs: LIST_FLIP_MS,
+							dropTargetStyle: { outline: '2px dashed #6366f1', outlineOffset: '-2px', borderRadius: '0.75rem' }
+						}}
+						onconsider={handleListDndConsider}
+						onfinalize={handleListDndFinalize}
+					>
+						{#each listDndItems as item (item.id)}
+							{@const key = item.key}
+							{@const quest = item.quest}
 						<div
 							id={key}
 							class="w-full task-card relative text-left group cursor-pointer"
 							onclick={(e) => { e.stopPropagation(); handleTaskClick(key, quest); }}
-							draggable="true"
-							ondragstart={(e) => handleDragStart(e, key)}
-							ondragover={(e) => handleDragOver(e, key)}
-							ondrop={(e) => handleDrop(e, key)}
-							ondragend={handleDragEnd}
 							role="button"
 							tabindex="0"
 							aria-label={`Open task: ${quest.title}`}
-							class:dragging={$dragState.draggedId === key}
-							class:drag-over={$dragState.dragOverId === key}
+							animate:flip={{ duration: LIST_FLIP_MS }}
 							onkeydown={(e) => {
 								if (e.key === 'Enter' || e.key === ' ') {
 									handleTaskClick(key, quest);
@@ -1898,27 +1669,26 @@
 								</div>
 							</div>
 						</div>
-							{/if}
 						{/each}
-						
-						{#if filteredQuests.length === 0}
-							<div class="text-center py-12">
-								<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
-									<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-									</svg>
-								</div>
-								<h3 class="text-lg font-medium text-white mb-2">No tasks or quests found</h3>
-								<p class="text-gray-400 mb-4">Get started by creating your first task or quest</p>
-								<button
-									onclick={showDialog}
-									class="btn btn--primary"
-								>
-									Create Task
-								</button>
-							</div>
-						{/if}
 					</div>
+
+					{#if listDndItems.length === 0}
+						<div class="text-center py-12">
+							<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+								<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+							</div>
+							<h3 class="text-lg font-medium text-white mb-2">No tasks or quests found</h3>
+							<p class="text-gray-400 mb-4">Get started by creating your first task or quest</p>
+							<button
+								onclick={showDialog}
+								class="btn btn--primary"
+							>
+								Create Task
+							</button>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</div>

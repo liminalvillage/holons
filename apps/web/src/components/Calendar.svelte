@@ -15,6 +15,7 @@
     import SourceBadge from './shared/SourceBadge.svelte';
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
+    import { queryManager } from '$lib/holosphere/QueryManager';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -399,6 +400,11 @@
         // Clean up HoloSphere subscriptions
         if (questsUnsubscribe) {
             questsUnsubscribe();
+            questsUnsubscribe = undefined;
+        }
+        if (usersUnsubscribe) {
+            usersUnsubscribe();
+            usersUnsubscribe = undefined;
         }
         if (unsubscribe && typeof unsubscribe === 'function') {
             unsubscribe();
@@ -463,56 +469,50 @@
         }
     }
 
-    // Load profiles
+    // Profile-fetch dedup: only request each user's profile once per session
+    // (the stream may emit the same user object on every burst).
+    const profileLookupsAttempted = new Set<string>();
+    let usersUnsubscribe: (() => void) | undefined;
+
+    // Local-first + progressive load via queryManager.subscribe: cached
+    // snapshot fires synchronously even when the lens is empty, so the
+    // calendar never waits on a cold Gun `.once()` to render.
     function loadProfiles() {
         if (!holosphere || !$ID) return;
-        
-        try {
-            // Subscribe to users
-            holosphere.subscribe($ID, "users", async (newUser: any, key?: string) => {
-                if (!key) return; // Skip if no key
-                if (newUser) {
-                    const userData = newUser;
-                    if (!userData?.id) return; // Skip if no user ID
-                    
-                    // Use user.id as the canonical key if available
-                    const canonicalKey = userData.id || key;
-                    
-                    if (userData.id && key !== userData.id) {
-                        // Remove the old key if it's different from the canonical key
-                        const { [key]: _, ...rest } = users;
-                        users = { ...rest, [canonicalKey]: userData };
-                    } else {
-                        // Use the key directly
-                        users[key] = userData;
-                    }
-                    users = users; // Trigger reactivity
-                   
-                    // Load profile for this user from the current holon's profiles lens
-                    // Only attempt if we have a valid holon ID
-                    if ($ID && typeof $ID === 'string' && $ID.length > 0) {
-                        try {
-                            const profile = await holosphere.get($ID, 'profiles', String(canonicalKey));
-                            if (profile) {
-                                profiles[canonicalKey] = profile;
-                                profiles = profiles; // Trigger reactivity
-                            }
-                        } catch (error) {
-                            // Silent - profile may not exist
-                        }
-                    }
-                } else {
-                    delete users[key];
-                    delete profiles[key];
-                    users = users;
-                    profiles = profiles;
-                }
-            });
-        } catch (error) {
-            console.error('Error loading users and profiles:', error);
-            users = {};
-            profiles = {};
+
+        if (usersUnsubscribe) {
+            usersUnsubscribe();
+            usersUnsubscribe = undefined;
         }
+        profileLookupsAttempted.clear();
+        queryManager.init(holosphere);
+        const targetHolon = $ID;
+
+        usersUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'users',
+            onUpdate: (items) => {
+                if ($ID !== targetHolon) return; // stale subscription
+                const next: Record<string, any> = {};
+                for (const userData of items as any[]) {
+                    if (!userData?.id) continue;
+                    next[userData.id] = userData;
+                }
+                users = next;
+                // Best-effort per-user profile fetch (silent on missing).
+                for (const id of Object.keys(next)) {
+                    if (profileLookupsAttempted.has(id)) continue;
+                    profileLookupsAttempted.add(id);
+                    holosphere.get(targetHolon, 'profiles', String(id))
+                        .then((profile: any) => {
+                            if ($ID !== targetHolon || !profile) return;
+                            profiles = { ...profiles, [id]: profile };
+                        })
+                        .catch(() => { /* profile may not exist */ });
+                }
+            },
+            onError: (error) => console.error('Error loading users and profiles:', error)
+        });
     }
 
     function getMonthData(date: Date) {
@@ -719,42 +719,34 @@
         return style;
     }
 
-    async function loadTasks() {
+    // Local-first + progressive: queryManager.subscribe emits the cached
+    // snapshot synchronously (next microtask) and streams items as Gun's
+    // map().on() delivers them. No blocking `await holosphere.getAll` on
+    // the render path — calendar paints with empty tasks instantly even
+    // when the lens is cold.
+    function loadTasks() {
         if (customItems !== null) return; // External-data mode: caller owns the items.
         if (!holosphere || !$ID) return;
 
-        // First, load initial data (subscription only gets updates, not existing data)
-        try {
-            const initialData = await holosphere.getAll($ID, 'quests');
-            if (initialData) {
-                // Handle both array and object formats
-                const items = Array.isArray(initialData) ? initialData : Object.values(initialData);
-                const newTasks: Record<string, any> = {};
-
-                items.forEach((task: any) => {
-                    if (task && task.id) {
-                        // Include all tasks — those with 'when' show on calendar, those without show as unassigned
-                        newTasks[task.id] = task;
-                    }
-                });
-
-                tasks = newTasks;
-                console.log(`[Calendar] Loaded ${Object.keys(tasks).length} items (${Object.values(tasks).filter(t => !t.when).length} unassigned)`);
-            }
-        } catch (error) {
-            console.error('[Calendar] Error loading initial tasks:', error);
+        if (questsUnsubscribe) {
+            questsUnsubscribe();
+            questsUnsubscribe = undefined;
         }
+        queryManager.init(holosphere);
+        const targetHolon = $ID;
 
-        // Then subscribe for real-time updates
-        holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
-            if (!key) return;
-            if (newTask) {
-                tasks[key] = newTask;
-                tasks = tasks;
-            } else {
-                delete tasks[key];
-                tasks = tasks;
-            }
+        questsUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'quests',
+            onUpdate: (items) => {
+                if ($ID !== targetHolon) return; // stale subscription
+                const next: Record<string, any> = {};
+                for (const task of items as any[]) {
+                    if (task && task.id) next[task.id] = task;
+                }
+                tasks = next;
+            },
+            onError: (error) => console.error('[Calendar] tasks subscription error:', error)
         });
     }
 

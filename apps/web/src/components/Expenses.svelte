@@ -34,6 +34,7 @@
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
+	import { queryManager } from '$lib/holosphere/QueryManager';
 
 	interface Expense {
 		id: string;
@@ -83,127 +84,135 @@
 		? [thisHolonUser, ...realUsers]
 		: realUsers;
 
-	// Subscription cleanup
+	// Subscription cleanup — populated by queryManager.subscribe and the
+	// direct holosphere.subscribe used for the settings doc.
 	let unsubscribeFunctions: (() => void)[] = [];
+	let subscribedHolonId: string | null = null;
+	let subscribedFedFlag: boolean | null = null;
 
 	function cleanupSubscriptions() {
 		unsubscribeFunctions.forEach(unsub => {
 			try { if (typeof unsub === 'function') unsub(); } catch (e) { }
 		});
 		unsubscribeFunctions = [];
+		subscribedHolonId = null;
+		subscribedFedFlag = null;
 	}
 
-	// Main data fetch - gets initial data then sets up subscriptions
-	async function fetchData() {
+	// Local-first + progressive load via queryManager.subscribe. The cached
+	// snapshot fires synchronously (next microtask) so isLoading clears
+	// immediately even when the lens is empty — no more spinner waiting on
+	// Gun's `.once()` that never fires on cold empty paths. Federated mode
+	// adds a getFederated overlay on top of the local stream.
+	function fetchData() {
 		if (!isValidId(holonID) || !holosphere || !connectionReady) return;
 
-		isLoading = true;
+		const targetHolon = holonID;
+		const targetFed = $showFederated;
+		if (subscribedHolonId === targetHolon && subscribedFedFlag === targetFed) return;
+
 		cleanupSubscriptions();
+		queryManager.init(holosphere);
+		subscribedHolonId = targetHolon;
+		subscribedFedFlag = targetFed;
+		isLoading = true;
+		expenses = {};
 
-		try {
-			// Fetch all data in parallel first
-			const expensesPromise = $showFederated
-				? holosphere.getFederated(holonID, "expenses", {
-					includeLocal: true,
-					includeFederated: true,
-					resolveReferences: true,
-					aggregate: false
-				})
-				: holosphere.getAll(holonID, "expenses");
-
-			const [expensesData, usersData, settingsData] = await Promise.allSettled([
-				expensesPromise,
-				holosphere.getAll(holonID, "users"),
-				holosphere.get(holonID, "settings", holonID)
-			]);
-
-			// Process expenses
-			if (expensesData.status === 'fulfilled' && expensesData.value) {
-				const data = expensesData.value;
-				expenses = {};
-				if (Array.isArray(data)) {
-					data.forEach((item: any, idx: number) => {
-						if (item?.id) {
-							const key = item.key || item.id || `fed_${idx}`;
-							const processed: any = { ...item };
-							if (item._federation) processed._federation = item._federation;
-							if (item._hologram) processed._hologram = item._hologram;
-							expenses[key] = processed;
-						}
-					});
-				} else if (typeof data === 'object') {
-					Object.entries(data).forEach(([key, value]: [string, any]) => {
-						if (value) expenses[key] = value;
-					});
+		// Expenses stream
+		const expensesOff = queryManager.subscribe({
+			holonId: targetHolon,
+			lens: 'expenses',
+			onUpdate: (items) => {
+				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+				const next: Record<string, Expense> = {};
+				for (const item of items as any[]) {
+					if (!item?.id) continue;
+					const key = item.key || item.id;
+					next[key] = item as Expense;
 				}
-			}
-
-			// Process users
-			if (usersData.status === 'fulfilled' && usersData.value) {
-				const data = usersData.value;
-				store = {};
-				if (Array.isArray(data)) {
-					data.forEach((item: any) => {
-						if (item?.id) store[item.id] = item;
-					});
-				} else if (typeof data === 'object') {
-					Object.entries(data).forEach(([key, value]: [string, any]) => {
-						if (value) store[value.id || key] = value;
-					});
+				// In federated mode, preserve any federated overlay rows already merged in.
+				if (targetFed) {
+					for (const [key, val] of Object.entries(expenses)) {
+						if (!next[key] && (val as any)?._federation) next[key] = val as Expense;
+					}
 				}
+				expenses = next;
+				isLoading = false;
+			},
+			onError: (error) => {
+				console.error('[Expenses] expenses subscribe error:', error);
+				isLoading = false;
 			}
-
-			// settings.currencies is the source of truth. Auto-merge any orphan
-			// currencies found in expenses (legacy data, foreign holons, etc.)
-			// into settings on first observation, best-effort.
-			const stored: string[] = settingsData.status === 'fulfilled' && Array.isArray(settingsData.value?.currencies)
-				? settingsData.value.currencies.filter((c: unknown) => typeof c === 'string')
-				: [];
-			availableCurrencies = [...stored];
-			await maybeAutoMergeOrphanCurrencies(settingsData.status === 'fulfilled' ? (settingsData.value || {}) : {});
-
-			// Set up subscriptions for real-time updates (don't await)
-			setupSubscriptions();
-
-		} catch (error) {
-			console.error('Error fetching expenses data:', error);
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	// Set up subscriptions for real-time updates
-	function setupSubscriptions() {
-		if (!holosphere || !isValidId(holonID)) return;
-
-		// Expenses subscription
-		holosphere.subscribe(holonID, "expenses", (newItem: any, key?: string) => {
-			if (typeof key !== 'string') return;
-			if (newItem && !newItem._deleted) {
-				expenses[key] = newItem;
-			} else {
-				delete expenses[key];
-			}
-			expenses = { ...expenses };
 		});
+		unsubscribeFunctions.push(expensesOff);
 
-		// Users subscription
-		holosphere.subscribe(holonID, "users", (newUser: any, key?: string) => {
-			if (typeof key !== 'string') return;
-			if (newUser && !newUser._deleted) {
-				store[newUser.id || key] = newUser;
-			} else {
-				delete store[key];
-			}
-			store = { ...store };
+		// Users stream
+		const usersOff = queryManager.subscribe({
+			holonId: targetHolon,
+			lens: 'users',
+			onUpdate: (items) => {
+				if (subscribedHolonId !== targetHolon) return;
+				const next: Record<string, User> = {};
+				for (const item of items as any[]) {
+					if (item?.id) next[item.id] = item as User;
+				}
+				store = next;
+			},
+			onError: (error) => console.error('[Expenses] users subscribe error:', error)
 		});
+		unsubscribeFunctions.push(usersOff);
 
-		// Settings subscription
-		holosphere.subscribe(holonID, "settings", (settings: any) => {
+		// Settings is a single document — keep the direct subscribe (no
+		// collection-empty hang risk: a per-key subscribe either has the
+		// doc or doesn't, no map().on() with no children).
+		const settingsSub = holosphere.subscribe(holonID, 'settings', (settings: any) => {
+			if (subscribedHolonId !== targetHolon) return;
 			if (settings?.currencies && Array.isArray(settings.currencies)) {
 				availableCurrencies = settings.currencies.filter((c: unknown) => typeof c === 'string');
 			}
-		});
+		}) as unknown as { unsubscribe?: () => void } | (() => void);
+		if (typeof settingsSub === 'function') {
+			unsubscribeFunctions.push(settingsSub);
+		} else if (settingsSub && typeof settingsSub === 'object' && 'unsubscribe' in settingsSub && settingsSub.unsubscribe) {
+			unsubscribeFunctions.push(settingsSub.unsubscribe);
+		}
+
+		// One-shot settings read to seed availableCurrencies and try the
+		// orphan-currency merge. Best-effort: if it never resolves (cold
+		// node, no peers) the live subscribe above will fill it in later.
+		holosphere.get(holonID, 'settings', holonID).then((settingsData: any) => {
+			if (subscribedHolonId !== targetHolon) return;
+			const stored: string[] = Array.isArray(settingsData?.currencies)
+				? settingsData.currencies.filter((c: unknown) => typeof c === 'string')
+				: [];
+			availableCurrencies = [...stored];
+			void maybeAutoMergeOrphanCurrencies(settingsData || {});
+		}).catch((err: unknown) => console.error('[Expenses] settings fetch error:', err));
+
+		// Federated overlay (one-shot, in background). Merged on top of
+		// the local stream — local subscribe events keep updating their
+		// own entries.
+		if (targetFed) {
+			holosphere.getFederated(targetHolon, 'expenses', {
+				includeLocal: true,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			}).then((data: any) => {
+				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+				if (!Array.isArray(data) || data.length === 0) return;
+				const merged: Record<string, Expense> = {};
+				data.forEach((item: any, idx: number) => {
+					if (!item?.id) return;
+					const key = item.key || item.id || `fed_${idx}`;
+					const processed: any = { ...item };
+					if (item._federation) processed._federation = item._federation;
+					if (item._hologram) processed._hologram = item._hologram;
+					merged[key] = processed;
+				});
+				expenses = { ...expenses, ...merged };
+			}).catch((err: unknown) => console.error('[Expenses] federated overlay error:', err));
+		}
 	}
 
 	async function maybeAutoMergeOrphanCurrencies(currentSettings: any) {
