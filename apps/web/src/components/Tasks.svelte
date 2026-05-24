@@ -643,8 +643,21 @@
 	});
 
 	function handleListDndConsider(e: CustomEvent<{ items: DndCard[] }>) {
+		// Capture the pre-drag arrangement on the first consider event of
+		// this drag so we can revert if the user cancels the sort switch.
+		if (!isListDragging) preDragOrder = listDndItems.map(c => ({ ...c }));
 		isListDragging = true;
 		listDndItems = e.detail.items;
+	}
+
+	// Snapshot of the list order at drag-start, used to revert if the user
+	// declines to switch out of a date/direction sort.
+	let preDragOrder: DndCard[] = [];
+
+	function snapshotCurrentOrder(): DndCard[] {
+		return filteredQuests
+			.filter(([_, q]) => q.status !== 'completed' || (showCompleted && q.status === 'completed'))
+			.map(([key, quest]) => ({ id: key, key, quest }));
 	}
 
 	async function handleListDndFinalize(e: CustomEvent<{ items: DndCard[] }>) {
@@ -654,67 +667,43 @@
 		const currentHolonID = holonID;
 		if (!currentHolonID) return;
 
-		// Sort criteria decides what we persist:
-		// - orderIndex: rewrite each card's orderIndex to its list position.
-		// - positionX/positionY: only the moved card changes — recompute a
-		//   midpoint position from its new neighbours so we don't disturb
-		//   the rest of the list.
-		try {
-			if (sortCriteria === 'orderIndex') {
-				const writes: Promise<unknown>[] = [];
-				const storeUpdates: Record<string, Quest> = {};
-				for (let i = 0; i < listDndItems.length; i++) {
-					const { key, quest } = listDndItems[i];
-					if ((quest as any).orderIndex === i) continue;
-					const updated = { ...quest, id: key, orderIndex: i };
-					storeUpdates[key] = updated;
-					writes.push(holosphere.put(currentHolonID, 'quests', updated));
-				}
-				if (writes.length === 0) return;
-				await Promise.all(writes);
-				store = { ...store, ...storeUpdates };
-			} else if (sortCriteria === 'positionX' || sortCriteria === 'positionY') {
-				const POSITION_STEP = 10.0;
-				const mainAxis = sortCriteria === 'positionX' ? 'x' : 'y';
-				const crossAxis = sortCriteria === 'positionX' ? 'y' : 'x';
-
-				// Find the single item whose position-in-list changed vs the
-				// pre-drag arrangement (compare against the existing sort
-				// of filteredQuests).
-				const previousOrder = filteredQuests
-					.filter(([_, q]) => q.status !== 'completed' || (showCompleted && q.status === 'completed'))
-					.map(([key]) => key);
-				let movedIdx = -1;
-				for (let i = 0; i < listDndItems.length; i++) {
-					if (listDndItems[i].key !== previousOrder[i]) { movedIdx = i; break; }
-				}
-				if (movedIdx === -1) return; // No actual change.
-
-				const moved = listDndItems[movedIdx].quest;
-				const prev = movedIdx > 0 ? listDndItems[movedIdx - 1].quest : null;
-				const next = movedIdx < listDndItems.length - 1 ? listDndItems[movedIdx + 1].quest : null;
-				const prevCoord = (prev as any)?.position?.[mainAxis];
-				const nextCoord = (next as any)?.position?.[mainAxis];
-
-				let newMain: number;
-				if (prevCoord !== undefined && nextCoord !== undefined) {
-					newMain = (prevCoord + nextCoord) / 2.0;
-				} else if (nextCoord !== undefined) {
-					newMain = nextCoord - POSITION_STEP * (sortDirection === 'asc' ? 1 : -1);
-				} else if (prevCoord !== undefined) {
-					newMain = prevCoord + POSITION_STEP * (sortDirection === 'asc' ? 1 : -1);
-				} else {
-					newMain = (moved as any).position?.[mainAxis] ?? 0;
-				}
-
-				const currentPos = (moved as any).position || { x: 0, y: 0 };
-				const newPos = { ...currentPos, [mainAxis]: newMain };
-				if (newPos[crossAxis] === undefined) newPos[crossAxis] = 0;
-
-				const updated = { ...moved, id: listDndItems[movedIdx].key, position: newPos } as Quest;
-				await holosphere.put(currentHolonID, 'quests', updated);
-				store = { ...store, [listDndItems[movedIdx].key]: updated };
+		// Custom-order drag only makes sense when the list is sorted by
+		// `orderIndex`. Date- or direction-sorted lists would just snap the
+		// card back on the next render, so prompt the user to switch first.
+		if (sortCriteria !== 'orderIndex') {
+			const sortLabel = sortCriteria === 'created'
+				? 'date'
+				: (sortCriteria === 'positionX' || sortCriteria === 'positionY')
+					? 'direction'
+					: String(sortCriteria);
+			const accepted = typeof window !== 'undefined'
+				&& window.confirm(
+					`This list is sorted by ${sortLabel}. Switch to custom order so you can rearrange tasks?`
+				);
+			if (!accepted) {
+				// Revert the visual reorder; $effect won't re-seed because
+				// `filteredQuests` hasn't changed.
+				listDndItems = preDragOrder.length > 0 ? preDragOrder : snapshotCurrentOrder();
+				return;
 			}
+			// Switch to custom order; the rest of this handler then writes
+			// new orderIndex values that match the dragged arrangement.
+			updateTaskSort('orderIndex', 'asc');
+		}
+
+		try {
+			const writes: Promise<unknown>[] = [];
+			const storeUpdates: Record<string, Quest> = {};
+			for (let i = 0; i < listDndItems.length; i++) {
+				const { key, quest } = listDndItems[i];
+				if ((quest as any).orderIndex === i) continue;
+				const updated = { ...quest, id: key, orderIndex: i };
+				storeUpdates[key] = updated;
+				writes.push(holosphere.put(currentHolonID, 'quests', updated));
+			}
+			if (writes.length === 0) return;
+			await Promise.all(writes);
+			store = { ...store, ...storeUpdates };
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
