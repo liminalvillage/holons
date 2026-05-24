@@ -53,20 +53,67 @@ interface Hologram {
  *
  * On success: `isHologram === true` and source* fields point at the origin.
  * On failure: `isHologram === false` and `error` describes why resolution failed.
+ *
+ * **Exported.** Domain types in consumers should declare
+ * `_hologram?: ResolvedHologramMeta` instead of inlining the shape.
  */
-interface ResolvedHologramMeta {
+export interface ResolvedHologramMeta {
   isHologram: boolean;
   soul: string;
   sourceHolon?: string | null;
   sourceLens?: string | null;
   sourceKey?: string | null;
+  /** Display name of the source holon — stamped by `resolveHologram` when known. */
+  sourceHolonName?: string;
   resolvedAt: number;
   error?: string;
 }
 
-interface ResolvedHologramData {
+export interface ResolvedHologramData {
   _hologram: ResolvedHologramMeta;
   [key: string]: any;
+}
+
+/**
+ * Federation provenance envelope stamped on records that arrived via a
+ * federated partner. Set by `getFederated` and by `propagate` when writing
+ * to outbound partners.
+ *
+ * **Exported.** Domain types should declare `_federation?: FederationMeta`
+ * instead of inlining the shape.
+ */
+export interface FederationMeta {
+  /** The holon the record was propagated FROM. */
+  origin: string;
+  /** The lens it was published under at the origin. */
+  sourceLens: string;
+  /** Origin holon's display name (best-effort; absent if the source has no name). */
+  originName?: string;
+  /** Source-side id of the record, useful when local-side keys differ. */
+  originalId?: string;
+  /** Wall-clock ms when the propagation was emitted. */
+  propagatedAt?: number;
+}
+
+/**
+ * Soft-tombstone marker recognised by `get`/`getAll`. A record with
+ * `_deleted: true` is treated as not-found in the default response and
+ * surfaced only when `{ includeDeleted: true }` is passed.
+ *
+ * **Exported.** Domain types that want to allow tombstoned records on the
+ * wire should declare `_deleted?: boolean`.
+ */
+export type DeletedMarker = boolean;
+
+/**
+ * Convenience mixin: the three envelope fields the library stamps onto
+ * records. Domain types can extend or intersect with this to avoid
+ * redeclaring the shapes.
+ */
+export interface HolosphereEnvelope {
+  _hologram?: ResolvedHologramMeta;
+  _federation?: FederationMeta;
+  _deleted?: DeletedMarker;
 }
 
 /**
