@@ -1,44 +1,5 @@
-diff --git a/federation.js b/federation.js
-index f9405326b6a1067b0eff91a313589e9a84896e59..4c1bcb48da4cb66b9f1cd103ae35eb314e44d0ae 100644
---- a/federation.js
-+++ b/federation.js
-@@ -795,7 +795,12 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
-
-         // Only propagate if we have outbound partners configured.
-         if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
--            let spaces = fedInfo.outbound;
-+            // Never propagate back to ourselves. Writing a hologram to the
-+            // source holon overwrites the original data with a self-
-+            // referencing pointer, and HoloSphere's get() then auto-deletes
-+            // it as a "broken hologram" (resolveHologram returns null because
-+            // the soul resolves to itself), silently destroying the entry.
-+            let spaces = fedInfo.outbound.filter(s => String(s) !== String(holon));
-
-             if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
-                 spaces = spaces.filter(space => targetSpaces.includes(space));
-@@ -861,10 +866,18 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
-                                 };
-                             }
-
-+                            // Defensive: even if the outbound list somehow
-+                            // contains the source holon, never write a self-
-+                            // hologram. The source already has the original.
-+                            if (String(targetSpace) === String(holon)) {
-+                                result.skipped++;
-+                                return true;
-+                            }
-+
-                             // Store in the target space with redirection disabled and no further auto-propagation
--                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
--                                disableHologramRedirection: true,
--                                autoPropagate: false
-+                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
-+                                disableHologramRedirection: true,
-+                                autoPropagate: false
-                             });
-
-                             result.success++;
 diff --git a/content.js b/content.js
+index 77b6d79..d8e2769 100644
 --- a/content.js
 +++ b/content.js
 @@ -214,8 +214,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
@@ -65,13 +26,221 @@ diff --git a/content.js b/content.js
                  if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
 +                if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
                  const payload = JSON.stringify(dataToStore); // The data being stored
-
+ 
                  const putCallback = async (ack) => {
+@@ -454,17 +471,20 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+                         });
+ 
+                         if (resolvedValue === null) {
+-                            // This means resolveHologram determined the target doesn't exist or encountered an error
+-                            console.warn(`Broken hologram detected at ${holon}/${lens}/${key}. Removing it...`);
+-                            
+-                            try {
+-                                // Delete the broken hologram
+-                                await holoInstance.delete(holon, lens, key, password);
+-                                console.log(`Successfully removed broken hologram from ${holon}/${lens}/${key}`);
+-                            } catch (cleanupError) {
+-                                console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
+-                            }
+-                            
++                            // `resolveHologram` returned null. DON'T treat this
++                            // as a permission to delete — null fires for several
++                            // transient reasons:
++                            //   - source soul not in our local Gun graph yet
++                            //     (peer offline, federation propagation in flight)
++                            //   - maxDepth (10) reached on a deep hologram chain
++                            //   - circular reference detected mid-chain
++                            //   - any internal resolve error
++                            // None of these prove the pointer is permanently
++                            // broken, but the old behaviour `await delete(...)`
++                            // here permanently destroyed real data on the first
++                            // transient miss. Skip the entry instead; a real
++                            // garbage collector should own dead-pointer cleanup.
++                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                             resolve(null);
+                             return;
+                         }
+@@ -472,7 +492,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
+                         // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
+                         // For now, assume resolvedValue is either the resolved data or we've returned null above.
+ 
+-                        if (resolvedValue !== parsed) { 
++                        if (resolvedValue !== parsed) {
+                             parsed = resolvedValue;
+                         }
+                     }
+@@ -630,12 +650,11 @@ export async function getAll(holoInstance, holon, lens, password = null) {
+                                 });
+ 
+                                 if (resolved === null) {
+-                                    console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
+-                                    try {
+-                                        await holoInstance.delete(holon, lens, key, password);
+-                                    } catch (cleanupError) {
+-                                        console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
+-                                    }
++                                    // See `get()` above: null is not proof of a
++                                    // permanently dead pointer. Skip the entry
++                                    // without deleting so transient resolution
++                                    // failures don't destroy real data.
++                                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                                     return;
+                                 }
+ 
+diff --git a/federation.js b/federation.js
+index f940532..623aa19 100644
+--- a/federation.js
++++ b/federation.js
+@@ -795,7 +795,12 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
+         
+         // Only propagate if we have outbound partners configured.
+         if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
+-            let spaces = fedInfo.outbound;
++            // Never propagate back to ourselves. Writing a hologram to the
++            // source holon overwrites the original data with a self-
++            // referencing pointer, and HoloSphere's get() then auto-deletes
++            // it as a "broken hologram" (resolveHologram returns null because
++            // the soul resolves to itself), silently destroying the entry.
++            let spaces = fedInfo.outbound.filter(s => String(s) !== String(holon));
+ 
+             if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
+                 spaces = spaces.filter(space => targetSpaces.includes(space));
+@@ -860,11 +865,19 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
+                                     }
+                                 };
+                             }
+-                            
++
++                            // Defensive: even if the outbound list somehow
++                            // contains the source holon, never write a self-
++                            // hologram. The source already has the original.
++                            if (String(targetSpace) === String(holon)) {
++                                result.skipped++;
++                                return true;
++                            }
++
+                             // Store in the target space with redirection disabled and no further auto-propagation
+-                            await holosphere.put(targetSpace, lens, payloadToPut, null, { 
+-                                disableHologramRedirection: true, 
+-                                autoPropagate: false 
++                            await holosphere.put(targetSpace, lens, payloadToPut, null, {
++                                disableHologramRedirection: true,
++                                autoPropagate: false
+                             });
+ 
+                             result.success++;
+diff --git a/global.js b/global.js
+index a4ca6d0..d139d94 100644
+--- a/global.js
++++ b/global.js
+@@ -743,15 +743,18 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null)
+ 
+ /**
+  * Subscribe to real-time changes in a global table.
++ *
++ * Returns synchronously — see {@link subscribe} for the same rationale.
++ *
+  * @param {HoloSphere} holoInstance - The HoloSphere instance.
+  * @param {string} tableName - The table name to subscribe to.
+  * @param {string|null} key - Specific key to subscribe to, or null for all keys.
+  * @param {function} callback - Callback for data changes.
+  * @param {object} [options] - Subscription options.
+  * @param {boolean} [options.realtimeOnly] - Only fire for new changes.
+- * @returns {Promise<{ unsubscribe: () => void }>}
++ * @returns {{ unsubscribe: () => void, stop: () => void }}
+  */
+-export async function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
++export function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
+     const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
+     let active = true;
+ 
+diff --git a/hologram.js b/hologram.js
+index 5f27676..ef44e26 100644
+--- a/hologram.js
++++ b/hologram.js
+@@ -177,9 +177,13 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
+                     // resolved-hologram indicator HoloSphere emits.
+                     return attachHologramMeta(originalData, hologram.soul);
+                 } else {
+-                console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Removing broken hologram.`);
+-                
+-                // Return null to indicate the hologram should be removed
++                // Note: this is informational, not a permission to delete. The
++                // source soul may simply not be reachable yet (peer offline,
++                // federation propagation in flight). Callers must decide on
++                // their own GC policy; this function only reports the miss.
++                console.warn(`Could not resolve hologram soul: ${hologram.soul} (target not present locally)`);
++
++                // Return null so the caller skips this entry.
+                 return null;
+                 }
+             } else {
+diff --git a/holosphere.d.ts b/holosphere.d.ts
+index bd12d2e..3ac30a3 100644
+--- a/holosphere.d.ts
++++ b/holosphere.d.ts
+@@ -187,8 +187,8 @@ declare class HoloSphere {
+     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
+     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
+     deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
+-    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): Promise<{ unsubscribe: () => void }>;
+-    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
++    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void };
++    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+ 
+     // Hologram
+     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
+@@ -210,8 +210,10 @@ declare class HoloSphere {
+     getScalespace(lat: number, lng: number): string[];
+     getHolonScalespace(holon: string): string[];
+ 
+-    // Subscription
+-    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
++    // Subscription. Returns synchronously — `await` on the return value
++    // still works (await on a non-Promise resolves to the value), so both
++    // call styles produce the same `{ unsubscribe }` shape.
++    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+ 
+     // Federation - v1 style
+     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
+diff --git a/holosphere.js b/holosphere.js
+index 73cef39..781fd79 100644
+--- a/holosphere.js
++++ b/holosphere.js
+@@ -262,8 +262,10 @@ class HoloSphere {
+     /**
+      * Subscribe to real-time changes in a global table.
+      * v2-compatible: subscribeGlobal(lens, key, callback, options)
++     *
++     * Returns synchronously — see {@link subscribe}.
+      */
+-    async subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
++    subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
+         let key, callback;
+         if (typeof keyOrCallback === 'function') {
+             callback = keyOrCallback;
+@@ -336,7 +338,14 @@ class HoloSphere {
+         return Utils.getHolonScalespace(holon);
+     }
+ 
+-    async subscribe(holon, lens, callback) {
++    /**
++     * Subscribe to real-time changes for a holon/lens.
++     *
++     * Synchronous return: `{ unsubscribe: () => void }`. Callers do not
++     * need to `await` — both `const s = holosphere.subscribe(...)` and
++     * `const s = await holosphere.subscribe(...)` yield the same shape.
++     */
++    subscribe(holon, lens, callback) {
+         return Utils.subscribe(this, holon, lens, callback);
+     }
+ 
 diff --git a/utils.js b/utils.js
+index 015025f..146b691 100644
 --- a/utils.js
 +++ b/utils.js
 @@ -44,13 +44,21 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
-
+ 
  /**
   * Subscribes to changes in a specific holon and lens.
 + *
@@ -97,7 +266,7 @@ diff --git a/utils.js b/utils.js
 @@ -102,9 +110,14 @@ export async function subscribe(holoInstance, holon, lens, callback) {
              gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
          };
-
+ 
 -        // Return an object with unsubscribe method
 +        // Return an object with unsubscribe method.
 +        // `unsubscribe` is sync — nothing it does (`mapChain.off()`,
@@ -119,88 +288,6 @@ diff --git a/utils.js b/utils.js
 -                        // await new Promise(res => setTimeout(res, 50));
 -                    } // We might not need to call off() on gunListener explicitly
 +                    }
-
+ 
                      // Remove from subscriptions object AFTER turning off listener
                      delete holoInstance.subscriptions[subscriptionId];
-diff --git a/global.js b/global.js
---- a/global.js
-+++ b/global.js
-@@ -743,15 +743,18 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null)
-
- /**
-  * Subscribe to real-time changes in a global table.
-+ *
-+ * Returns synchronously — see {@link subscribe} for the same rationale.
-+ *
-  * @param {HoloSphere} holoInstance - The HoloSphere instance.
-  * @param {string} tableName - The table name to subscribe to.
-  * @param {string|null} key - Specific key to subscribe to, or null for all keys.
-  * @param {function} callback - Callback for data changes.
-  * @param {object} [options] - Subscription options.
-  * @param {boolean} [options.realtimeOnly] - Only fire for new changes.
-- * @returns {Promise<{ unsubscribe: () => void }>}
-+ * @returns {{ unsubscribe: () => void, stop: () => void }}
-  */
--export async function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
-+export function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
-     const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
-     let active = true;
-
-diff --git a/holosphere.js b/holosphere.js
---- a/holosphere.js
-+++ b/holosphere.js
-@@ -262,8 +262,10 @@ class HoloSphere {
-     /**
-      * Subscribe to real-time changes in a global table.
-      * v2-compatible: subscribeGlobal(lens, key, callback, options)
-+     *
-+     * Returns synchronously — see {@link subscribe}.
-      */
--    async subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
-+    subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
-         let key, callback;
-         if (typeof keyOrCallback === 'function') {
-             callback = keyOrCallback;
-@@ -336,7 +338,14 @@ class HoloSphere {
-         return Utils.getHolonScalespace(holon);
-     }
-
--    async subscribe(holon, lens, callback) {
-+    /**
-+     * Subscribe to real-time changes for a holon/lens.
-+     *
-+     * Synchronous return: `{ unsubscribe: () => void }`. Callers do not
-+     * need to `await` — both `const s = holosphere.subscribe(...)` and
-+     * `const s = await holosphere.subscribe(...)` yield the same shape.
-+     */
-+    subscribe(holon, lens, callback) {
-         return Utils.subscribe(this, holon, lens, callback);
-     }
-
-diff --git a/holosphere.d.ts b/holosphere.d.ts
---- a/holosphere.d.ts
-+++ b/holosphere.d.ts
-@@ -187,8 +187,8 @@ declare class HoloSphere {
-     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
-     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
-     deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
--    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): Promise<{ unsubscribe: () => void }>;
--    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
-+    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void };
-+    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
-
-     // Hologram
-     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
-@@ -210,8 +210,10 @@ declare class HoloSphere {
-     getScalespace(lat: number, lng: number): string[];
-     getHolonScalespace(holon: string): string[];
-
--    // Subscription
--    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
-+    // Subscription. Returns synchronously — `await` on the return value
-+    // still works (await on a non-Promise resolves to the value), so both
-+    // call styles produce the same `{ unsubscribe }` shape.
-+    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
-
-     // Federation - v1 style
-     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;

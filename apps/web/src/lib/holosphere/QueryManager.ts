@@ -32,6 +32,39 @@ const CACHE_TTL = 5 * 60 * 1000;
 const DEDUP_WINDOW = 100;
 
 /**
+ * Coerce whatever shape `holosphere.subscribe` returned into a stable
+ * `{ unsubscribe: () => void }`. The patched library returns this shape
+ * synchronously, but a stale dev bundle may still return the old
+ * `Promise<{ unsubscribe }>`. Without this, swapping versions mid-session
+ * crashes the next teardown with `subscription.unsubscribe is not a function`.
+ */
+function normalizeSubscription(sub: unknown): { unsubscribe: () => void } {
+	if (sub && typeof (sub as any).unsubscribe === 'function') {
+		return sub as { unsubscribe: () => void };
+	}
+	if (sub && typeof (sub as any).then === 'function') {
+		let resolved: { unsubscribe?: () => void } | null = null;
+		let cancelled = false;
+		(sub as PromiseLike<{ unsubscribe?: () => void }>).then(
+			(value) => {
+				resolved = value;
+				// If unsubscribe was called before the Promise settled, fire now.
+				if (cancelled) value?.unsubscribe?.();
+			},
+			() => { /* swallow — subscribe errors are reported via onError */ }
+		);
+		return {
+			unsubscribe: () => {
+				cancelled = true;
+				resolved?.unsubscribe?.();
+			}
+		};
+	}
+	// Unknown shape — no-op cleanup rather than crash on teardown.
+	return { unsubscribe: () => {} };
+}
+
+/**
  * Centralized query management with caching, deduplication, and real-time subscriptions.
  *
  * QueryManager provides an optimized layer for data fetching across all components
@@ -228,13 +261,17 @@ class QueryManager {
 		// Set up holosphere subscription if not already active. Gun's
 		// map().on() fires per-item — first for whatever is in the local
 		// graph, then again for each peer response as it arrives.
-		// holosphere.subscribe returns `{ unsubscribe }` synchronously now,
-		// so no Promise wrapping or race-handling is needed.
+		//
+		// Patched holosphere returns `{ unsubscribe }` synchronously, but
+		// a stale Vite/browser cache may still be serving the pre-patch
+		// async version (Promise<{ unsubscribe }>). Coerce both shapes
+		// through a small normalizer so a cache miss can't crash the app.
 		if (!entry.subscription) {
 			try {
-				entry.subscription = this.holosphere.subscribe(holonId, lens, (item: any, itemKey?: string) => {
+				const sub = this.holosphere.subscribe(holonId, lens, (item: any, itemKey?: string) => {
 					this.handleSubscriptionEvent(key, item, itemKey);
 				});
+				entry.subscription = normalizeSubscription(sub);
 			} catch (error) {
 				console.error(`QueryManager: subscribe error for ${holonId}/${lens}:`, error);
 				if (onError) onError(error instanceof Error ? error : new Error(String(error)));
@@ -253,8 +290,13 @@ class QueryManager {
 						this.subscribers.delete(key);
 						const cacheEntry = this.cache.get(key);
 						if (cacheEntry?.subscription) {
-							cacheEntry.subscription.unsubscribe();
+							const sub = cacheEntry.subscription;
 							cacheEntry.subscription = undefined;
+							try {
+								sub.unsubscribe();
+							} catch (e) {
+								console.error('QueryManager: unsubscribe error:', e);
+							}
 						}
 					}
 				}
