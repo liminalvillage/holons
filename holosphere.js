@@ -192,8 +192,8 @@ class HoloSphere {
         return ContentOps.get(this, holon, lens, key, password, options);
     }
 
-    async getAll(holon, lens, password = null) {
-        return ContentOps.getAll(this, holon, lens, password);
+    async getAll(holon, lens, password = null, options = {}) {
+        return ContentOps.getAll(this, holon, lens, password, options);
     }
 
     async parse(rawData) {

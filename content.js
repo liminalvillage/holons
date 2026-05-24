@@ -1,6 +1,38 @@
 // holo_content.js
 
 /**
+ * Default deadline (ms) for the read paths' `.once()` calls. Gun's `.once()`
+ * never fires when the requested node isn't in the local graph and no peer
+ * answers (cold-start, offline, partitioned mesh) — past consumers worked
+ * around this by wrapping every `getAll` in their own `Promise.race(reject,
+ * setTimeout(8000))`. Owning it here means the spinner can never hang
+ * indefinitely on a cold path and every caller stops needing the wrapper.
+ *
+ * Pick `READ_TIMEOUT_MS = 0` (or pass `{ timeout: 0 }`) to opt out of the
+ * fallback and keep the historical "wait forever" behaviour.
+ */
+const READ_TIMEOUT_MS = 8000;
+
+/**
+ * `.once()` wrapped in a deadline. Resolves with the value when Gun fires
+ * back, or `null` after `timeoutMs` if it hasn't. Pass `timeoutMs <= 0` to
+ * disable the deadline.
+ *
+ * The first responder wins — both branches are idempotent so a late
+ * `.once()` callback after timeout is harmlessly ignored.
+ */
+function onceWithTimeout(node, timeoutMs = READ_TIMEOUT_MS) {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (v) => { if (!done) { done = true; resolve(v); } };
+        node.once((data) => finish(data));
+        if (timeoutMs > 0) {
+            setTimeout(() => finish(null), timeoutMs);
+        }
+    });
+}
+
+/**
  * Recursively sanitizes a value for storage in GunDB.
  *
  * Drops keys whose values would corrupt the graph or round-trip incorrectly:
@@ -417,7 +449,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
     }
 
     // Destructure options, including visited
-    const { resolveHolograms = true, validationOptions = {}, visited } = options;
+    const { resolveHolograms = true, validationOptions = {}, visited, timeout = READ_TIMEOUT_MS } = options;
 
     // Get schema for validation if in strict mode
     let schema = null;
@@ -525,7 +557,10 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                 user.get('private').get(lens).get(key) :
                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
 
-            dataPath.once(handleData);
+            // `.once()` wrapped in a deadline — cold-path reads (peer offline,
+            // never-written key) used to hang forever otherwise. After
+            // `timeout` ms with no Gun response we treat it as "not found".
+            onceWithTimeout(dataPath, timeout).then(handleData);
         });
     } catch (error) {
         console.error('Error in get:', error);
@@ -539,12 +574,18 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
  * @param {string} holon - The holon identifier.
  * @param {string} lens - The lens from which to retrieve content.
  * @param {string} [password] - Optional password for private holon.
+ * @param {object} [options] - Additional options.
+ * @param {number} [options.timeout=READ_TIMEOUT_MS] - Per-`.once()` deadline
+ *   (ms); the shallow probe falls back to "empty" after this on cold paths
+ *   where Gun never responds. Pass `0` to disable and keep the historical
+ *   "wait forever" behaviour.
  * @returns {Promise<Array<object>>} - The retrieved content.
  */
-export async function getAll(holoInstance, holon, lens, password = null) {
+export async function getAll(holoInstance, holon, lens, password = null, options = {}) {
     if (!holon || !lens) {
         throw new Error('getAll: Missing required parameters');
     }
+    const { timeout = READ_TIMEOUT_MS } = options;
 
     const schema = await holoInstance.getSchema(lens);
     if (!schema && holoInstance.strict) {
@@ -604,9 +645,12 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
 
             // PASS 1: Get shallow node to determine expected item count.
-            // Retry once if empty — Gun's .once() reads from local cache, which
-            // may be cold immediately after startup before peers have synced.
-            const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
+            // Wrapped in a deadline (see `onceWithTimeout`) so cold paths
+            // resolve `null` after `timeout` ms instead of hanging forever.
+            // We still retry once below — Gun's `.once()` reads from local
+            // cache, which may be cold immediately after startup before
+            // peers have synced.
+            const shallowOnce = () => onceWithTimeout(dataPath, timeout);
 
             const processShallow = (data) => {
                 if (!data) {
@@ -697,11 +741,10 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                         return processItem(inline, key);
                     }
                     // Otherwise fetch the leaf — sub-graph reference path.
-                    return new Promise((resolveItem) => {
-                        dataPath.get(key).once((itemData) => {
-                            processItem(itemData, key).then(resolveItem, resolveItem);
-                        });
-                    });
+                    // Same deadline as the shallow probe; a single missing
+                    // leaf can't stall the whole batch.
+                    return onceWithTimeout(dataPath.get(key), timeout)
+                        .then((itemData) => processItem(itemData, key));
                 })).then(() => resolve(Array.from(output.values())));
             };
 

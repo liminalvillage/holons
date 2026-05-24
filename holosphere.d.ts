@@ -20,6 +20,13 @@ interface PutOptions {
 interface GetOptions {
   resolveHolograms?: boolean;
   validationOptions?: object;
+  /** Per-`.once()` deadline in ms; cold paths resolve `null` after this. Default 8000. Pass `0` to disable. */
+  timeout?: number;
+}
+
+interface GetAllOptions {
+  /** Per-`.once()` deadline in ms; cold paths resolve `[]` after this. Default 8000. Pass `0` to disable. */
+  timeout?: number;
 }
 
 interface ResolveHologramOptions {
@@ -168,7 +175,7 @@ declare class HoloSphere {
     put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
     get(holon: string, lens: string): Promise<any | null>;
     get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
-    getAll(holon: string, lens: string, password?: string | null): Promise<Array<any>>;
+    getAll(holon: string, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
     parse(rawData: any): Promise<object | null>;
     delete(holon: string, lens: string, key: string, password?: string | null): Promise<boolean>;
     deleteAll(holon: string, lens: string, password?: string | null): Promise<boolean>;
