@@ -11,7 +11,7 @@ scratch notes.
 
 ## The transport
 
-Sync is provided by the pinned `holosphere@1.3.0-alpha4` package, which runs
+Sync is provided by the pinned `holosphere@1.3.0-alpha5` package, which runs
 on **GunDB** — a peer-to-peer graph database with its own real-time sync
 layer over WebSocket/HTTP.
 

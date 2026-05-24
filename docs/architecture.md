@@ -92,11 +92,12 @@ constructed and the single gate for identity-aware writes. Files:
   authorization errors into a `false` return (with an optional `onDenied`
   callback) while letting non-auth errors bubble.
 
-### Backend reality (holosphere 1.3.0-alpha4)
+### Backend reality (holosphere 1.3.0-alpha5)
 
-The pinned `holosphere` is patched in `patches/holosphere@1.3.0-alpha4.patch`
-(fixes a federation self-propagation data-loss bug). Under the hood it runs
-on **GunDB**, not raw Nostr:
+The pinned `holosphere` is consumed straight from npm (the soft-tombstone,
+hologram-resolve-resilience, and bounded-read fixes that used to live in
+`patches/holosphere@1.3.0-alpha4.patch` are now upstream as of alpha5).
+Under the hood it runs on **GunDB**, not raw Nostr:
 
 - Default Gun peer: `https://gun.holons.io/gun`. In the browser, `radisk`
   persistence is on and `localStorage` is disabled.

@@ -24,7 +24,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "holosphere": "1.3.0-alpha4",
+    "holosphere": "1.3.0-alpha5",
     "ical.js": "^2.2.1"
   },
   "devDependencies": {

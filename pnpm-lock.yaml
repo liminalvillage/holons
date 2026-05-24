@@ -8,11 +8,6 @@ overrides:
   esbuild@<0.25.0: '>=0.25.0'
   cookie@<0.7.0: '>=0.7.0'
 
-patchedDependencies:
-  holosphere@1.3.0-alpha4:
-    hash: 7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42
-    path: patches/holosphere@1.3.0-alpha4.patch
-
 importers:
 
   .:
@@ -66,8 +61,8 @@ importers:
         specifier: ^4.4.0
         version: 4.4.0
       holosphere:
-        specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        specifier: 1.3.0-alpha5
+        version: 1.3.0-alpha5(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       html2canvas:
         specifier: ^1.4.1
         version: 1.4.1
@@ -212,8 +207,8 @@ importers:
   packages/core:
     dependencies:
       holosphere:
-        specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        specifier: 1.3.0-alpha5
+        version: 1.3.0-alpha5(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       ical.js:
         specifier: ^2.2.1
         version: 2.2.1
@@ -240,8 +235,8 @@ importers:
         specifier: ^17.2.3
         version: 17.4.2
       holosphere:
-        specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        specifier: 1.3.0-alpha5
+        version: 1.3.0-alpha5(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -313,8 +308,8 @@ importers:
         specifier: ^8.1.0
         version: 8.1.0
       holosphere:
-        specifier: 1.3.0-alpha4
-        version: 1.3.0-alpha4(patch_hash=7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
+        specifier: 1.3.0-alpha5
+        version: 1.3.0-alpha5(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76))
       http-proxy:
         specifier: ^1.18.1
         version: 1.18.1(debug@4.4.3)
@@ -3081,8 +3076,8 @@ packages:
     resolution: {integrity: sha512-jOiHyAZsmnr8LqoPGmCjYAaiuWwjAPLgY8ZX2XrmHawt99/u1y6RgrZMTeoPfpUbV96HOalYgz1qzkRbw54Pmg==}
     engines: {node: '>=18.0.0'}
 
-  holosphere@1.3.0-alpha4:
-    resolution: {integrity: sha512-jWE402aSGu4x8z8xNlBwJxS8pFPcKYKeV+8ewwExTlqqANm4UTIcZS7WZpNcN3uDnch+iPXjZhb9uGS6d0fn7A==}
+  holosphere@1.3.0-alpha5:
+    resolution: {integrity: sha512-/9Oat/9sGkPNI6CkLOaBUkPobqF5rP66BlR+3UdQTEVrXZMfZ/b59LQUhWYb8HcA7o+F/OA56Ds8wc6wldt01Q==}
     peerDependencies:
       gun: ^0.2020.1240
       h3-js: ^4.1.0
@@ -7738,7 +7733,7 @@ snapshots:
 
   helmet@8.1.0: {}
 
-  holosphere@1.3.0-alpha4(patch_hash=7ca3c59a054eb79b90a79f6de2bcb436176224513f6d2ba6e042aa52d592eb42)(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76)):
+  holosphere@1.3.0-alpha5(gun@0.2020.1241)(h3-js@4.4.0)(openai@4.104.0(ws@8.20.0)(zod@3.25.76)):
     dependencies:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
