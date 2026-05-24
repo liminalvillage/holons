@@ -1,11 +1,29 @@
 /**
- * Centralized per-holon cache for settings and users
+ * Centralized per-holon cache for settings and users.
  *
- * Provides instant access to cached data and keeps it fresh via subscriptions.
- * Preload on holon navigation for instant TaskModal/component loading.
+ * Provides instant **synchronous** access to cached data (`getCachedEquation`,
+ * `getCachedUsersObject`) for components that mount and want to paint before
+ * any async resolution finishes — primarily TaskModal/Tasks.
+ *
+ * Why this exists alongside `QueryManager`:
+ *
+ *   - QueryManager is **collection-oriented** + async-callback driven; its
+ *     consumers register an `onUpdate` and react to snapshots. That works
+ *     for the `users` lens (a collection) but not for `settings`, which is
+ *     a **single document** at `(<holonId>, 'settings', <holonId>)`.
+ *   - holonCache exposes a `getCachedX()` synchronous shape that components
+ *     read at construction time without subscribing. QueryManager does not
+ *     surface that pattern (its `peek` would be an opt-in subset).
+ *   - Equation is a derived field: `settings.equation → ScoreEquation` with
+ *     a default merge. Living here keeps the derivation in one place.
+ *
+ * The users half **delegates to QueryManager** so the `users` subscription
+ * is deduped across every component that watches it (Tasks, TaskModal,
+ * Roles, Status, Library, …) instead of each opening its own.
  */
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './scoring/ContributionScoring';
+import { queryManager } from './holosphere/QueryManager';
 
 // Types
 export interface CachedUser {
@@ -170,10 +188,13 @@ export async function preloadHolon(
 
     const preloadPromise = (async () => {
         try {
-            // Fetch settings and users in parallel
+            // Settings is a single doc — fetched directly (no QueryManager
+            // path for that shape). Users is a collection — routed through
+            // QueryManager so the underlying subscription is shared.
+            queryManager.init(holosphere);
             const [settingsData, usersData] = await Promise.all([
                 holosphere.get(holonId, 'settings', holonId).catch(() => null),
-                holosphere.getAll(holonId, 'users').catch(() => [])
+                queryManager.query(holonId, 'users').catch(() => [] as any[]),
             ]);
 
             // Update settings cache
@@ -181,10 +202,11 @@ export async function preloadHolon(
                 updateCachedSettings(holonId, settingsData);
             }
 
-            // Update users cache — holosphere.getAll resolves to Array<T>.
-            const users: any[] = usersData ?? [];
-            setCachedUsers(holonId, users.filter((u): u is CachedUser => !!u?.username));
-
+            // Update users cache. QueryManager.query already returns Array<T>.
+            setCachedUsers(
+                holonId,
+                (usersData as CachedUser[]).filter((u) => !!u?.username),
+            );
         } catch (error) {
             console.error('[HolonCache] Preload error:', error);
         } finally {
@@ -224,15 +246,24 @@ export function subscribeToHolon(holosphere: any, holonId: string): () => void {
         console.error('[HolonCache] Settings subscription error:', e);
     }
 
-    // Subscribe to user changes
+    // Subscribe to user changes via QueryManager so the underlying
+    // `users` subscription is shared with every other component that
+    // watches the same lens (Tasks, Roles, Status, Library, …) —
+    // QueryManager only opens one holosphere subscription per
+    // (holon, lens) regardless of how many onUpdate callbacks register.
     try {
-        subs.users = holosphere.subscribe(holonId, 'users', (user: CachedUser | null, key?: string) => {
-            if (user?.username) {
-                updateCachedUser(holonId, user);
-            } else if (user === null && key) {
-                removeCachedUser(holonId, String(key));
-            }
-        }).unsubscribe;
+        queryManager.init(holosphere);
+        subs.users = queryManager.subscribe({
+            holonId,
+            lens: 'users',
+            onUpdate: (items) => {
+                setCachedUsers(
+                    holonId,
+                    (items as CachedUser[]).filter((u) => !!u?.username)
+                );
+            },
+            onError: (err) => console.error('[HolonCache] Users subscription error:', err),
+        });
     } catch (e) {
         console.error('[HolonCache] Users subscription error:', e);
     }
