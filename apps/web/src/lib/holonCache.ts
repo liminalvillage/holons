@@ -214,32 +214,27 @@ export function subscribeToHolon(holosphere: any, holonId: string): () => void {
 
     const subs: { settings?: () => void; users?: () => void } = {};
 
-    // Subscribe to settings changes
+    // Subscribe to settings changes — holosphere.subscribe is sync and
+    // always returns `{ unsubscribe }`.
     try {
-        const settingsUnsub = holosphere.subscribe(holonId, 'settings', (settings: any) => {
+        subs.settings = holosphere.subscribe(holonId, 'settings', (settings: any) => {
             if (settings) {
                 updateCachedSettings(holonId, settings);
             }
-        });
-        subs.settings = typeof settingsUnsub === 'function'
-            ? settingsUnsub
-            : settingsUnsub?.unsubscribe;
+        }).unsubscribe;
     } catch (e) {
         console.error('[HolonCache] Settings subscription error:', e);
     }
 
     // Subscribe to user changes
     try {
-        const usersUnsub = holosphere.subscribe(holonId, 'users', (user: CachedUser | null, key?: string) => {
+        subs.users = holosphere.subscribe(holonId, 'users', (user: CachedUser | null, key?: string) => {
             if (user?.username) {
                 updateCachedUser(holonId, user);
             } else if (user === null && key) {
                 removeCachedUser(holonId, String(key));
             }
-        });
-        subs.users = typeof usersUnsub === 'function'
-            ? usersUnsub
-            : usersUnsub?.unsubscribe;
+        }).unsubscribe;
     } catch (e) {
         console.error('[HolonCache] Users subscription error:', e);
     }

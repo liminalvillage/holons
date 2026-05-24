@@ -1221,17 +1221,20 @@
         let drawingsOff: (()=>void)|undefined;
         if (holosphere && holonID) {
             const watchedCid = effectiveCanvasId;
-            holosphere.subscribe(holonID, 'canvases', (entry: any, key?: string) => {
-                if (entry && key === watchedCid) {
-                    if (entry.updatedAt && entry.updatedAt <= drawingsUpdatedAt) return; // ignore older updates
-                    if (Array.isArray(entry.data)) {
-                        drawings = entry.data;
-                        drawingsUpdatedAt = entry.updatedAt || Date.now();
+            try {
+                const sub = holosphere.subscribe(holonID, 'canvases', (entry: any, key?: string) => {
+                    if (entry && key === watchedCid) {
+                        if (entry.updatedAt && entry.updatedAt <= drawingsUpdatedAt) return; // ignore older updates
+                        if (Array.isArray(entry.data)) {
+                            drawings = entry.data;
+                            drawingsUpdatedAt = entry.updatedAt || Date.now();
+                        }
                     }
-                }
-            }).then((sub: { unsubscribe: () => void }) => {
+                });
                 drawingsOff = sub.unsubscribe;
-            }).catch(console.error);
+            } catch (e) {
+                console.error(e);
+            }
         }
 
         return () => {

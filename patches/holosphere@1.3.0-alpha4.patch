@@ -67,3 +67,140 @@ diff --git a/content.js b/content.js
                  const payload = JSON.stringify(dataToStore); // The data being stored
 
                  const putCallback = async (ack) => {
+diff --git a/utils.js b/utils.js
+--- a/utils.js
++++ b/utils.js
+@@ -44,13 +44,21 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
+
+ /**
+  * Subscribes to changes in a specific holon and lens.
++ *
++ * Returns **synchronously** — the call has no internal awaits, so callers
++ * never need to `await` the result. (`await` on the return value still
++ * works as before; it just resolves through the value unchanged.) This
++ * means `const sub = holosphere.subscribe(...); sub.unsubscribe();` is the
++ * canonical pattern and there is no `Promise<{ unsubscribe }>` shape to
++ * disambiguate against the resolved object.
++ *
+  * @param {HoloSphere} holoInstance - The HoloSphere instance.
+  * @param {string} holon - The holon identifier.
+  * @param {string} lens - The lens to subscribe to.
+  * @param {function} callback - The callback to execute on changes.
+- * @returns {Promise<object>} - Subscription object with unsubscribe method
++ * @returns {{ unsubscribe: () => void }} - Subscription with unsubscribe method.
+  */
+-export async function subscribe(holoInstance, holon, lens, callback) {
++export function subscribe(holoInstance, holon, lens, callback) {
+     if (!holon || !lens) {
+         throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
+     }
+@@ -102,9 +110,14 @@ export async function subscribe(holoInstance, holon, lens, callback) {
+             gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
+         };
+
+-        // Return an object with unsubscribe method
++        // Return an object with unsubscribe method.
++        // `unsubscribe` is sync — nothing it does (`mapChain.off()`,
++        // `delete subscriptions[id]`) blocks. Keeping it sync means the
++        // returned shape is `{ unsubscribe: () => void }` rather than
++        // `() => Promise<void>`, matching what callers expect when they
++        // store it in a `() => void` cleanup slot.
+         return {
+-            unsubscribe: async () => {
++            unsubscribe: () => {
+                 const sub = holoInstance.subscriptions[subscriptionId];
+                 if (!sub) {
+                     return;
+@@ -114,9 +127,7 @@ export async function subscribe(holoInstance, holon, lens, callback) {
+                     // Turn off the Gun subscription using the stored mapChain reference
+                     if (sub.mapChain) { // Check if mapChain exists
+                         sub.mapChain.off(); // Call off() on the chain where .on() was attached
+-                        // Optional: Add delay back? Let's omit for now.
+-                        // await new Promise(res => setTimeout(res, 50));
+-                    } // We might not need to call off() on gunListener explicitly
++                    }
+
+                     // Remove from subscriptions object AFTER turning off listener
+                     delete holoInstance.subscriptions[subscriptionId];
+diff --git a/global.js b/global.js
+--- a/global.js
++++ b/global.js
+@@ -743,15 +743,18 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null)
+
+ /**
+  * Subscribe to real-time changes in a global table.
++ *
++ * Returns synchronously — see {@link subscribe} for the same rationale.
++ *
+  * @param {HoloSphere} holoInstance - The HoloSphere instance.
+  * @param {string} tableName - The table name to subscribe to.
+  * @param {string|null} key - Specific key to subscribe to, or null for all keys.
+  * @param {function} callback - Callback for data changes.
+  * @param {object} [options] - Subscription options.
+  * @param {boolean} [options.realtimeOnly] - Only fire for new changes.
+- * @returns {Promise<{ unsubscribe: () => void }>}
++ * @returns {{ unsubscribe: () => void, stop: () => void }}
+  */
+-export async function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
++export function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
+     const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
+     let active = true;
+
+diff --git a/holosphere.js b/holosphere.js
+--- a/holosphere.js
++++ b/holosphere.js
+@@ -262,8 +262,10 @@ class HoloSphere {
+     /**
+      * Subscribe to real-time changes in a global table.
+      * v2-compatible: subscribeGlobal(lens, key, callback, options)
++     *
++     * Returns synchronously — see {@link subscribe}.
+      */
+-    async subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
++    subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
+         let key, callback;
+         if (typeof keyOrCallback === 'function') {
+             callback = keyOrCallback;
+@@ -336,7 +338,14 @@ class HoloSphere {
+         return Utils.getHolonScalespace(holon);
+     }
+
+-    async subscribe(holon, lens, callback) {
++    /**
++     * Subscribe to real-time changes for a holon/lens.
++     *
++     * Synchronous return: `{ unsubscribe: () => void }`. Callers do not
++     * need to `await` — both `const s = holosphere.subscribe(...)` and
++     * `const s = await holosphere.subscribe(...)` yield the same shape.
++     */
++    subscribe(holon, lens, callback) {
+         return Utils.subscribe(this, holon, lens, callback);
+     }
+
+diff --git a/holosphere.d.ts b/holosphere.d.ts
+--- a/holosphere.d.ts
++++ b/holosphere.d.ts
+@@ -187,8 +187,8 @@ declare class HoloSphere {
+     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
+     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
+     deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
+-    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): Promise<{ unsubscribe: () => void }>;
+-    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
++    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void };
++    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+
+     // Hologram
+     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
+@@ -210,8 +210,10 @@ declare class HoloSphere {
+     getScalespace(lat: number, lng: number): string[];
+     getHolonScalespace(holon: string): string[];
+
+-    // Subscription
+-    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
++    // Subscription. Returns synchronously — `await` on the return value
++    // still works (await on a non-Promise resolves to the value), so both
++    // call styles produce the same `{ unsubscribe }` shape.
++    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+
+     // Federation - v1 style
+     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;

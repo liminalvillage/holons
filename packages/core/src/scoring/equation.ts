@@ -219,7 +219,7 @@ export function subscribeToEquationChanges(
   const existing = equationSubscriptions.get(holonId);
   if (existing) return existing;
 
-  const unsub = holosphere.subscribe(holonId, 'settings', (settings: any) => {
+  const sub = holosphere.subscribe(holonId, 'settings', (settings: any) => {
     const raw = settings?.valueEquation ?? settings?.equation;
     if (raw) {
       equationCache.set(holonId, migrateEquation(raw));
@@ -227,8 +227,7 @@ export function subscribeToEquationChanges(
   });
 
   const unsubscribe = () => {
-    if (unsub?.unsubscribe) unsub.unsubscribe();
-    else if (typeof unsub === 'function') unsub();
+    sub.unsubscribe();
     equationSubscriptions.delete(holonId);
   };
 

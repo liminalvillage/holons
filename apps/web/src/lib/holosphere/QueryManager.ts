@@ -69,6 +69,11 @@ class QueryManager {
 	private subscribers: Map<string, Set<(data: any[]) => void>> = new Map();
 	private holosphere: HoloSphere | null = null;
 
+	// Pending notifications (coalesced via microtask so a burst of per-item
+	// updates from Gun's map().on() fires one re-render per cycle, not N).
+	private pendingNotifications: Set<string> = new Set();
+	private notifyScheduled = false;
+
 	/**
 	 * Initialize the query manager with a HoloSphere instance
 	 */
@@ -86,8 +91,9 @@ class QueryManager {
 	private isValidItem(item: any): boolean {
 		if (!item || !item.id) return false;
 		if (item._deleted) return false;
-		// Unresolved hologram placeholders (not yet materialized as real quests)
-		if (item.hologram === true || item._hologram?.isHologram === true) return false;
+		// Unresolved hologram placeholders. `_hologram.isHologram === true` marks
+		// a *resolved* hologram (real data sourced via reference) — keep those.
+		if (item.hologram === true) return false;
 		return true;
 	}
 
@@ -176,7 +182,12 @@ class QueryManager {
 	}
 
 	/**
-	 * Subscribe to real-time updates for a holon/lens
+	 * Subscribe to real-time updates for a holon/lens.
+	 *
+	 * Local-first + progressive: emits the cached snapshot synchronously
+	 * (next microtask), then streams in items as Gun's map().on() delivers
+	 * them — local cache first, federated peers as they respond. No blocking
+	 * getAll round-trip on the critical path.
 	 */
 	subscribe(config: QueryConfig): () => void {
 		if (!this.holosphere) {
@@ -194,39 +205,41 @@ class QueryManager {
 			this.subscribers.get(key)!.add(onUpdate);
 		}
 
-		// Set up holosphere subscription if not already active
+		// Ensure cache entry exists so per-item updates have a place to land.
 		let entry = this.cache.get(key);
-		if (!entry?.subscription) {
-			// holosphere.subscribe returns synchronously in the current implementation
-			const subscription = this.holosphere.subscribe(holonId, lens, (item: any) => {
-				if (this.isValidItem(item)) {
-					this.handleUpdate(key, item);
-				}
-			}) as unknown as { unsubscribe: () => void };
-
-			if (entry) {
-				entry.subscription = subscription;
-			} else {
-				this.cache.set(key, {
-					data: new Map(),
-					timestamp: 0,
-					subscription
-				});
-			}
+		if (!entry) {
+			entry = { data: new Map(), timestamp: 0 };
+			this.cache.set(key, entry);
 		}
 
-		// Initial data fetch
-		this.query(holonId, lens)
-			.then((data) => {
-				if (onUpdate) {
-					onUpdate(data);
-				}
-			})
-			.catch((error) => {
-				if (onError) {
-					onError(error);
+		// Emit current cached snapshot immediately so the UI paints what we
+		// already know without waiting on the network.
+		if (onUpdate) {
+			const snapshot = Array.from(entry.data.values());
+			queueMicrotask(() => {
+				try {
+					onUpdate(snapshot);
+				} catch (error) {
+					console.error('QueryManager: initial snapshot callback error:', error);
 				}
 			});
+		}
+
+		// Set up holosphere subscription if not already active. Gun's
+		// map().on() fires per-item — first for whatever is in the local
+		// graph, then again for each peer response as it arrives.
+		// holosphere.subscribe returns `{ unsubscribe }` synchronously now,
+		// so no Promise wrapping or race-handling is needed.
+		if (!entry.subscription) {
+			try {
+				entry.subscription = this.holosphere.subscribe(holonId, lens, (item: any, itemKey?: string) => {
+					this.handleSubscriptionEvent(key, item, itemKey);
+				});
+			} catch (error) {
+				console.error(`QueryManager: subscribe error for ${holonId}/${lens}:`, error);
+				if (onError) onError(error instanceof Error ? error : new Error(String(error)));
+			}
+		}
 
 		// Return unsubscribe function
 		return () => {
@@ -250,28 +263,71 @@ class QueryManager {
 	}
 
 	/**
-	 * Handle real-time update from holosphere
+	 * Handle a single per-item event from holosphere.subscribe.
+	 *
+	 * Treats tombstones (null/_deleted) as removals so the cached snapshot
+	 * stays consistent with the federated graph.
 	 */
-	private handleUpdate(key: string, item: any) {
+	private handleSubscriptionEvent(key: string, item: any, itemKey?: string) {
 		const entry = this.cache.get(key);
 		if (!entry) return;
 
-		// Update cache
+		// Tombstone: item was deleted upstream.
+		if (!item) {
+			if (itemKey && entry.data.delete(itemKey)) {
+				entry.timestamp = Date.now();
+				this.scheduleNotify(key);
+			}
+			return;
+		}
+
+		if (item._deleted) {
+			const removeId = item.id ?? itemKey;
+			if (removeId && entry.data.delete(removeId)) {
+				entry.timestamp = Date.now();
+				this.scheduleNotify(key);
+			}
+			return;
+		}
+
+		if (!this.isValidItem(item)) return;
+
 		entry.data.set(item.id, item);
 		entry.timestamp = Date.now();
+		this.scheduleNotify(key);
+	}
 
-		// Notify subscribers
-		const data = Array.from(entry.data.values());
+	/**
+	 * Coalesce a burst of per-item updates into one subscriber notification
+	 * per microtask. Gun's map().on() can fire hundreds of times in a row
+	 * when local cache hydrates; without this, every subscriber would
+	 * re-render once per item.
+	 */
+	private scheduleNotify(key: string) {
+		this.pendingNotifications.add(key);
+		if (this.notifyScheduled) return;
+		this.notifyScheduled = true;
+		queueMicrotask(() => {
+			this.notifyScheduled = false;
+			const keys = Array.from(this.pendingNotifications);
+			this.pendingNotifications.clear();
+			for (const k of keys) this.notifySubscribers(k);
+		});
+	}
+
+	private notifySubscribers(key: string) {
+		const entry = this.cache.get(key);
+		if (!entry) return;
 		const subs = this.subscribers.get(key);
-		if (subs) {
-			subs.forEach((callback) => {
-				try {
-					callback(data);
-				} catch (error) {
-					console.error('QueryManager: Subscriber callback error:', error);
-				}
-			});
-		}
+		if (!subs || subs.size === 0) return;
+		const data = Array.from(entry.data.values());
+		subs.forEach((callback) => {
+			try {
+				callback(data);
+			} catch (error) {
+				console.error('QueryManager: Subscriber callback error:', error);
+			}
+		});
 	}
 
 	/**

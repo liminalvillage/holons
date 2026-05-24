@@ -12,7 +12,6 @@
 	import type { HoloSphere } from "holosphere";
 	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import { nostrPublicKey } from "../lib/stores/nostr";
-	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
 	const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -137,24 +136,14 @@
 			isFederated
 		});
 
-		// Helper to set up a subscription (federation-aware for federated holons)
-		const setupSubscription = async (lens: string, callback: (item: any) => void) => {
-			if (isFederated && userPubKey) {
-				const unsub = await subscribeWithFederationSupport(
-					holosphere,
-					userPubKey,
-					holonID,
-					lens,
-					callback
-				);
-				return { unsubscribe: unsub };
-			} else {
-				return holosphere.subscribe(holonID, lens, callback);
-			}
-		};
+		// holosphere.subscribe is synchronous and returns the same
+		// `{ unsubscribe }` shape regardless of whether the holon is owned
+		// or federated — no wrapper needed.
+		const setupSubscription = (lens: string, callback: (item: any) => void) =>
+			holosphere.subscribe(holonID, lens, callback);
 
-		// Set up subscriptions in parallel
-		const [questsSub, usersSub, shoppingSub, checklistsSub, rolesSub] = await Promise.all([
+		// Set up subscriptions
+		const [questsSub, usersSub, shoppingSub, checklistsSub, rolesSub] = [
 			setupSubscription("quests", (item: any) => {
 				console.log('[Dashboard] Quests subscription callback:', {
 					holonID,
@@ -211,7 +200,7 @@
 					rolesMap = rolesMap;
 				}
 			})
-		]);
+		];
 
 		subscriptions.push(questsSub, usersSub, shoppingSub, checklistsSub, rolesSub);
 	}

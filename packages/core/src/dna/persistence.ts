@@ -230,10 +230,8 @@ export function subscribeToDNASequence(
     callback(data as DNASequence);
   };
 
-  holosphere.subscribe(holonId, DNA_KEY, handler);
-
-  // Holosphere subscribe doesn't return an unsubscribe handle today; return a no-op.
-  return () => {};
+  const sub = holosphere.subscribe(holonId, DNA_KEY, handler);
+  return () => sub.unsubscribe();
 }
 
 /** Subscribe to chromosome library changes. */
@@ -261,8 +259,8 @@ export function subscribeToChromosomeLibrary(
     }
   };
 
-  holosphere.subscribe(holonId, LIBRARY_KEY, handler);
-  return () => {};
+  const sub = holosphere.subscribe(holonId, LIBRARY_KEY, handler);
+  return () => sub.unsubscribe();
 }
 
 /** Seed a holon's library with the default value/tool/practice chromosomes. */

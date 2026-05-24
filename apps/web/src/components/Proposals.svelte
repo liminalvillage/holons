@@ -82,25 +82,26 @@
             return;
         }
 
-        holosphere.subscribe(
-            holonIdToSubscribe,
-            PROPOSAL_LENS,
-            (newItem: Proposal | null, key?: string) => {
-                if (!key) return;
+        try {
+            const subscription = holosphere.subscribe(
+                holonIdToSubscribe,
+                PROPOSAL_LENS,
+                (newItem: Proposal | null, key?: string) => {
+                    if (!key) return;
 
-                if (newItem && newItem.type === "proposal") {
-                    proposals[key] = newItem;
-                    proposals = proposals;
-                } else if (!newItem && proposals[key]) {
-                    delete proposals[key];
-                    proposals = proposals;
+                    if (newItem && newItem.type === "proposal") {
+                        proposals[key] = newItem;
+                        proposals = proposals;
+                    } else if (!newItem && proposals[key]) {
+                        delete proposals[key];
+                        proposals = proposals;
+                    }
                 }
-            }
-        ).then(subscription => {
+            );
             unsubscribeFromProposals = subscription.unsubscribe;
-        }).catch(error => {
+        } catch (error) {
             console.error("Failed to subscribe to proposals:", error);
-        });
+        }
     }
 
     async function fetchFederatedProposals(holonIdToFetch: string): Promise<void> {
