@@ -115,7 +115,7 @@ describe('publishToFederation', () => {
 		expect(out.publishedTo).toBe(0);
 	});
 
-	it('forwards an existing hologram as-is, without re-wrapping via createHologram', async () => {
+	it('forwards an existing hologram as a soul pointer back to the original source', async () => {
 		const m = mockHolosphere();
 		const forwardedItem = {
 			id: 'q-1',
@@ -123,7 +123,7 @@ describe('publishToFederation', () => {
 			_hologram: {
 				isHologram: true,
 				sourceHolon: 'origin-holon',
-				soul: 'orig-soul-abc',
+				soul: 'app/origin-holon/quests/q-1',
 			},
 		};
 		const out = await publishToFederation(
@@ -131,10 +131,18 @@ describe('publishToFederation', () => {
 			{ kind: 'partner', holonId: 'p1' },
 		);
 
-		// Receiver must see the *original* envelope — same sourceHolon, no
-		// fresh createHologram call rewriting provenance.
+		// The receiver should get the *bare stored hologram shape*
+		// (`{ id, soul }`) pointing at the original source — NOT the full
+		// resolved object (whose `_hologram` envelope would be stripped by
+		// holosphere.put, leaving the receiver with a plain task and no
+		// link back to the source) and NOT a freshly-minted soul pointing
+		// at the forwarder's storage (createHologram's default behaviour
+		// when it doesn't recognise the input as already-a-hologram).
 		expect(m.createHologram).not.toHaveBeenCalled();
-		expect(m.put).toHaveBeenCalledWith('p1', 'quests', forwardedItem);
+		expect(m.put).toHaveBeenCalledWith('p1', 'quests', {
+			id: 'q-1',
+			soul: 'app/origin-holon/quests/q-1',
+		});
 		expect(out.publishedTo).toBe(1);
 	});
 

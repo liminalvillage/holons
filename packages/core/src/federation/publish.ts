@@ -104,15 +104,30 @@ export async function publishToFederation(
 	const { holosphere, holonId, lens, item } = ctx;
 	ensureItemHasId(item);
 
-	// If the item we were handed is already a hologram (a federated copy we
-	// received from someone else), forward the *exact same envelope* — don't
-	// re-wrap it via createHologram. That preserves the original
-	// `_hologram.sourceHolon` / `soul` / signing metadata, so receivers see
-	// the message as if it had federated to them directly from the original
-	// source. Re-wrapping would silently launder attribution.
-	const isAlreadyHologram = !!(item as any)?._hologram?.isHologram;
-	const hologram = isAlreadyHologram
-		? item
+	// What gets persisted on the target holon is the *bare stored form* of a
+	// hologram: `{ id, soul }`. Anything else (`_hologram`, top-level data
+	// fields, `_federation`, …) is read-side metadata that holosphere.put
+	// strips on write, OR full data fields that would turn the receiver's
+	// record into a fully-fledged copy with no link back to the source.
+	//
+	// Two cases:
+	//   • Fresh publish — `createHologram(holon, lens, item)` mints a new
+	//     soul pointing at THIS holon's storage of the item.
+	//   • Forwarding a resolved hologram — the item already carries
+	//     `_hologram.soul` pointing at the original source. We have to
+	//     hand-build the `{ id, soul }` pair from that, because
+	//     holosphere.createHologram only short-circuits on the *bare* stored
+	//     shape (top-level `soul`), not on the resolved shape we get from
+	//     `get()` / `getAll()` (where the soul lives in `_hologram.soul`).
+	//     Without this branch, createHologram falls through and mints a
+	//     fresh soul pointing at the *forwarder's* storage — the receiver
+	//     would then try to resolve back to data we don't actually have,
+	//     and after `put` strips `_hologram` they'd just see a plain task.
+	const resolvedHologramSoul = (item as any)?._hologram?.isHologram
+		? ((item as any)._hologram.soul as string | undefined)
+		: undefined;
+	const hologram = resolvedHologramSoul
+		? { id: (item as any).id, soul: resolvedHologramSoul }
 		: await (holosphere as any).createHologram(holonId, lens, item);
 	const errors: string[] = [];
 	const destinations: string[] = [];
