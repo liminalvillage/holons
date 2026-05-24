@@ -4,6 +4,7 @@
     import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
     import TaskCard from './shared/TaskCard.svelte';
+    import { fileToDownscaledDataURL } from '../utils/imageCompression';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -1335,45 +1336,7 @@
     }
 
     // -------- Image drag-drop + resize --------
-    const MAX_IMAGE_DIMENSION = 1600; // downscale anything larger than this
     const DEFAULT_IMAGE_PLACEMENT = 600; // initial on-canvas max width/height
-
-    async function fileToDownscaledDataURL(file: File): Promise<{ src: string; width: number; height: number } | null> {
-        try {
-            const initialSrc: string = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onerror = () => reject(reader.error);
-                reader.onload = () => resolve(reader.result as string);
-                reader.readAsDataURL(file);
-            });
-            const img: HTMLImageElement = await new Promise((resolve, reject) => {
-                const im = new Image();
-                im.onload = () => resolve(im);
-                im.onerror = reject;
-                im.src = initialSrc;
-            });
-            let w = img.naturalWidth;
-            let h = img.naturalHeight;
-            const maxSide = Math.max(w, h);
-            if (maxSide > MAX_IMAGE_DIMENSION) {
-                const scale = MAX_IMAGE_DIMENSION / maxSide;
-                w = Math.round(w * scale);
-                h = Math.round(h * scale);
-                const off = document.createElement('canvas');
-                off.width = w;
-                off.height = h;
-                const ctx = off.getContext('2d');
-                if (!ctx) return { src: initialSrc, width: img.naturalWidth, height: img.naturalHeight };
-                ctx.drawImage(img, 0, 0, w, h);
-                const downscaled = off.toDataURL('image/jpeg', 0.85);
-                return { src: downscaled, width: w, height: h };
-            }
-            return { src: initialSrc, width: w, height: h };
-        } catch (err) {
-            console.error('Error processing dropped image:', err);
-            return null;
-        }
-    }
 
     async function handleCanvasDrop(event: DragEvent) {
         event.preventDefault();

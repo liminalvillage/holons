@@ -44,6 +44,25 @@
 			document.body.style.overflow = prevOverflow;
 		}
 	});
+
+	/**
+	 * Move the rendered backdrop to `document.body` so it escapes any ancestor
+	 * that establishes a containing block for `position: fixed` (transform,
+	 * filter, container-type, will-change, contain, …). Without this, a modal
+	 * opened from inside a TaskCard / dndzone / flipped row gets clipped to
+	 * that ancestor's box instead of filling the viewport — and you see only
+	 * a sliver of the modal exactly where the trigger was.
+	 */
+	function portalToBody(node: HTMLElement) {
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				if (node.parentNode === document.body) {
+					document.body.removeChild(node);
+				}
+			}
+		};
+	}
 </script>
 
 <svelte:window on:keydown={handleKey} />
@@ -51,6 +70,7 @@
 {#if open}
 	<div
 		class="modal-backdrop"
+		use:portalToBody
 		transition:fade={{ duration: 150 }}
 		on:click={handleBackdrop}
 		on:keydown|stopPropagation

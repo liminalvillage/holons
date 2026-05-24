@@ -104,7 +104,16 @@ export async function publishToFederation(
 	const { holosphere, holonId, lens, item } = ctx;
 	ensureItemHasId(item);
 
-	const hologram = await (holosphere as any).createHologram(holonId, lens, item);
+	// If the item we were handed is already a hologram (a federated copy we
+	// received from someone else), forward the *exact same envelope* — don't
+	// re-wrap it via createHologram. That preserves the original
+	// `_hologram.sourceHolon` / `soul` / signing metadata, so receivers see
+	// the message as if it had federated to them directly from the original
+	// source. Re-wrapping would silently launder attribution.
+	const isAlreadyHologram = !!(item as any)?._hologram?.isHologram;
+	const hologram = isAlreadyHologram
+		? item
+		: await (holosphere as any).createHologram(holonId, lens, item);
 	const errors: string[] = [];
 	const destinations: string[] = [];
 	const single = (t: string) =>

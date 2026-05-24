@@ -43,7 +43,7 @@
 	let settingsHex: string | null = null;
 
 	$: isHologramItem = !!item?._hologram?.isHologram;
-	$: effectiveDisabled = disabled || isHologramItem || !holosphere || !holonId;
+	$: effectiveDisabled = disabled || !holosphere || !holonId;
 	$: alreadyPublished = !!item?.published;
 
 	async function loadFederation() {
@@ -86,26 +86,28 @@
 	// button lives in dense task rows inside scrollable containers where an
 	// absolute popover would otherwise be clipped at the row/card edge.
 	//
-	// We also clamp max-height to the available space on the chosen side so
-	// the popover never overflows the viewport edge (the footer-mounted
+	// We anchor with `left`/`top` (not `right`) and clamp BOTH axes against
+	// the viewport so the popover stays fully onscreen even when the trigger
+	// is near a corner. max-height is also clamped to the chosen side so the
+	// popover never overflows past the viewport edge (the footer-mounted
 	// trigger in TaskModal often has < 400px both above and below it).
 	function repositionPopover() {
-		if (!popoverOpen || !buttonWrapperEl) return;
+		if (!popoverOpen || !buttonWrapperEl || !popoverEl) return;
 		const trigger = buttonWrapperEl.getBoundingClientRect();
-		const popW = popoverEl?.offsetWidth ?? 280;
+		const popW = popoverEl.offsetWidth || 280;
 		// scrollHeight reflects the content's natural height regardless of
 		// any current max-height — needed so we know whether the desired
 		// size fits before deciding which side to drop on.
-		const desiredH = popoverEl?.scrollHeight ?? 320;
+		const desiredH = popoverEl.scrollHeight || 320;
 		const margin = 6;
 		const vpEdge = 8;
 		const minH = 120;
+		const vpW = window.innerWidth;
+		const vpH = window.innerHeight;
 
-		const spaceBelow = window.innerHeight - trigger.bottom - margin - vpEdge;
+		// --- vertical: prefer below; flip above only when below can't fit. ---
+		const spaceBelow = vpH - trigger.bottom - margin - vpEdge;
 		const spaceAbove = trigger.top - margin - vpEdge;
-
-		// Prefer below; flip above only if it actually gives more room and
-		// below can't fit the natural content.
 		let top: number;
 		let maxH: number;
 		if (spaceBelow >= desiredH || spaceBelow >= spaceAbove) {
@@ -113,16 +115,21 @@
 			top = trigger.bottom + margin;
 		} else {
 			maxH = Math.max(minH, spaceAbove);
-			const usedH = Math.min(desiredH, maxH);
-			top = trigger.top - margin - usedH;
+			top = trigger.top - margin - Math.min(desiredH, maxH);
 		}
+		// Final safety: keep at least `minH` of the popover visible.
+		const topMax = Math.max(vpEdge, vpH - vpEdge - minH);
+		top = Math.max(vpEdge, Math.min(topMax, top));
 
-		// Right-align to trigger; clamp if it would overflow the left edge.
-		let right = window.innerWidth - trigger.right;
-		if (right + popW > window.innerWidth - vpEdge) {
-			right = Math.max(vpEdge, window.innerWidth - vpEdge - popW);
-		}
-		popoverStyle = `position: fixed; top: ${top}px; right: ${right}px; max-height: ${maxH}px;`;
+		// --- horizontal: anchor the popover's right edge to the trigger's
+		// right edge, then clamp into the viewport. Using `left` (not `right`)
+		// avoids negative-right values that push the popover offscreen when
+		// the trigger sits past the viewport edge in a scrolled container. ---
+		let left = trigger.right - popW;
+		const leftMax = Math.max(vpEdge, vpW - vpEdge - popW);
+		left = Math.max(vpEdge, Math.min(leftMax, left));
+
+		popoverStyle = `position: fixed; top: ${top}px; left: ${left}px; max-height: ${maxH}px;`;
 	}
 
 	async function openPicker() {
@@ -241,9 +248,31 @@
 		hexPickerOpen = false;
 	}
 
+	/**
+	 * Move the popover element to `document.body` so it escapes any ancestor
+	 * that establishes a containing block for `position: fixed` (transform,
+	 * container-type, filter, etc.). The publish button is rendered inside
+	 * task rows (`animate:flip` sets a transient transform during reorder)
+	 * and TaskCardShell sets `container-type: inline-size` — without the
+	 * portal, `position: fixed` would resolve against those ancestors and
+	 * the popover would land far from where its `left`/`top` math expects.
+	 */
+	function portalToBody(node: HTMLElement) {
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				if (node.parentNode === document.body) {
+					document.body.removeChild(node);
+				}
+			},
+		};
+	}
+
 	function tooltipText(): string {
-		if (isHologramItem) return "Can't publish: this is a hologram from another holon";
 		if (!holosphere || !holonId) return 'Holosphere not ready';
+		if (isHologramItem) {
+			return 'Forward this hologram — the original holon stays the source';
+		}
 		if (alreadyPublished && item.publishedAt) {
 			const when = new Date(item.publishedAt).toLocaleString();
 			return `Published to ${item.publishedTo ?? '?'} location(s) on ${when} — click to publish again`;
@@ -309,6 +338,7 @@
 	{#if popoverOpen}
 		<div
 			class="ptf-popover"
+			use:portalToBody
 			bind:this={popoverEl}
 			style={popoverStyle}
 			role="menu"

@@ -25,6 +25,7 @@
 	let geocoder: any = null;
 	let selectedHex: string = value || '';
 	let mapReady = false;
+	let resizeObserver: ResizeObserver | null = null;
 
 	// Fallback center if no initial value: roughly central Europe (matches Map.svelte default).
 	const DEFAULT_CENTER: [number, number] = [13.7364963, 42.8917537];
@@ -259,9 +260,32 @@
 		map.on('moveend', rebuildGrid);
 		map.on('zoomend', rebuildGrid);
 		map.on('click', handleMapClick);
+
+		// The modal hosting this picker is portal'd to <body> AFTER the
+		// component mounts, so Mapbox can latch onto a container whose layout
+		// (and parent containing-block chain) is still being settled. A
+		// ResizeObserver keeps mapboxgl's internal viewport in sync with the
+		// real on-screen size of the container, so the canvas always paints
+		// at the correct dimensions — instead of inheriting a stale 0×0 from
+		// the pre-portal measurement and showing a blank area.
+		if (typeof ResizeObserver !== 'undefined') {
+			resizeObserver = new ResizeObserver(() => {
+				try { map?.resize(); } catch {}
+			});
+			resizeObserver.observe(mapContainer);
+		}
+		// Also do an immediate resize on the next frame, for browsers / cases
+		// where the observer doesn't fire on the first frame.
+		requestAnimationFrame(() => {
+			try { map?.resize(); } catch {}
+		});
 	});
 
 	onDestroy(() => {
+		try {
+			resizeObserver?.disconnect();
+		} catch {}
+		resizeObserver = null;
 		try {
 			geocoder?.onRemove?.();
 		} catch {}
@@ -374,8 +398,18 @@
 		color: var(--color-text-primary, #fff);
 	}
 
+	/* Children of the modal's flex column would shrink to nothing without an
+	   explicit shrink:0 — that's the "just see a line" bug where the 360px
+	   map collapsed because the picker was taller than the modal body. */
+	.hex-picker__search,
+	.hex-picker__controls,
+	.hex-picker__actions {
+		flex-shrink: 0;
+	}
+
 	.hex-picker__map {
 		width: 100%;
+		flex-shrink: 0;
 		border-radius: 0.75rem;
 		overflow: hidden;
 		border: 1px solid var(--color-border, #374151);

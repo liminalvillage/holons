@@ -115,6 +115,29 @@ describe('publishToFederation', () => {
 		expect(out.publishedTo).toBe(0);
 	});
 
+	it('forwards an existing hologram as-is, without re-wrapping via createHologram', async () => {
+		const m = mockHolosphere();
+		const forwardedItem = {
+			id: 'q-1',
+			title: 'Forwarded',
+			_hologram: {
+				isHologram: true,
+				sourceHolon: 'origin-holon',
+				soul: 'orig-soul-abc',
+			},
+		};
+		const out = await publishToFederation(
+			{ ...ctx(m.holosphere), item: forwardedItem as any },
+			{ kind: 'partner', holonId: 'p1' },
+		);
+
+		// Receiver must see the *original* envelope — same sourceHolon, no
+		// fresh createHologram call rewriting provenance.
+		expect(m.createHologram).not.toHaveBeenCalled();
+		expect(m.put).toHaveBeenCalledWith('p1', 'quests', forwardedItem);
+		expect(out.publishedTo).toBe(1);
+	});
+
 	it('h3 home holon enables propagateToParents', async () => {
 		const m = mockHolosphere({ federated: ['p1'], isH3: true });
 		await publishToFederation(ctx(m.holosphere), { kind: 'all' });

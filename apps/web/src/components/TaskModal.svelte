@@ -9,6 +9,7 @@
     import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
+    import { fileToDownscaledDataURL } from "../utils/imageCompression";
     import {
         type ScoreEquation,
         DEFAULT_EQUATION
@@ -693,10 +694,12 @@
         }
     }
 
-    // Read a chosen image into a base64 data URL and persist it on the quest.
-    // Matches the format telegram-ui uses when it inlines pictures
-    // (`data:${mimeType};base64,…`), so the existing resolveImage() path
-    // renders the result unchanged.
+    // Read a chosen image, downscale + re-encode as JPEG, and persist it on
+    // the quest as a `data:image/jpeg;base64,…` URL. The compression step is
+    // mandatory because the picture replicates through the Holosphere graph
+    // to every peer — uncompressed phone-camera shots would bloat state for
+    // the entire holon. Format stays compatible with telegram-ui inlined
+    // pictures and the existing resolveImage() render path.
     async function handlePictureSelect(event: Event) {
         const input = event.currentTarget as HTMLInputElement;
         const file = input.files?.[0];
@@ -707,24 +710,22 @@
             alert("Please choose an image file.");
             return;
         }
-        // Soft cap: data URLs replicate through the Holosphere graph, so
-        // very large pictures bloat state on every peer. 2MB raw ≈ 2.7MB
-        // base64 — warn before going over.
-        if (file.size > 2 * 1024 * 1024) {
-            const proceed = confirm(
-                "This image is larger than 2MB and will be embedded as base64 on the task. Continue?",
-            );
-            if (!proceed) return;
-        }
         pictureUploading = true;
         try {
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = () => reject(reader.error);
-                reader.readAsDataURL(file);
+            // Task thumbnails render at ~2rem in the card grid, so 1024px is
+            // already overkill — but it keeps the picture usable in the modal
+            // detail view. Always re-encode (even small inputs) so the wire
+            // size on the federation graph is bounded.
+            const processed = await fileToDownscaledDataURL(file, {
+                maxDimension: 1024,
+                quality: 0.8,
+                alwaysReencode: true,
             });
-            await updateQuest({ picture: dataUrl });
+            if (!processed) {
+                alert("Failed to read this image. Try a different file.");
+                return;
+            }
+            await updateQuest({ picture: processed.src });
         } catch (err) {
             console.error("[TaskModal.svelte] Failed to attach picture:", err);
             alert("Failed to attach picture.");
@@ -1166,8 +1167,9 @@
     }
 </style>
 
-            <!-- Main content grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-gray-300 min-h-0">
+            <!-- Main content grid: two columns from sm: up (tablet + desktop);
+                 phone widths (<640px) collapse to a single stacked column. -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-gray-300 min-h-0">
                 <!-- Left column -->
                 <div class="space-y-3 min-h-0">
                 <!-- Picture: upload / display / remove. Stored on the quest

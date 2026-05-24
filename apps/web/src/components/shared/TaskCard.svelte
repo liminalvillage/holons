@@ -260,9 +260,11 @@
 		background-color: rgba(0, 0, 0, 0.1);
 	}
 
+	/* Title row never wraps: the hologram / source badge stays glued to the
+	   end of the title. Title itself truncates with ellipsis when it has to. */
 	.card-title-row {
 		display: flex;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 		align-items: center;
 		gap: 0.25rem;
 		margin-bottom: 0.125rem;
@@ -275,7 +277,7 @@
 		color: #1f2937;
 		line-height: 1.2;
 		margin: 0;
-		flex: 1;
+		flex: 1 1 auto;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -444,7 +446,9 @@
 	/* ---- Responsive layout via container queries on TaskCardShell ---- */
 
 	/* Narrow form factor (kanban column, mobile list rows): even more compact.
-	   Layout stays horizontal so the people column stays pinned right. */
+	   Layout stays horizontal so the people column stays pinned right; the
+	   title keeps `white-space: nowrap` (set above) so it truncates with an
+	   ellipsis and the hologram badge stays glued next to it. */
 	@container (max-width: 320px) {
 		.card-body {
 			gap: 0.375rem;
@@ -454,7 +458,6 @@
 			height: 1.75rem;
 		}
 		.card-title {
-			white-space: normal;
 			font-size: 0.8rem;
 		}
 		.avatar {
