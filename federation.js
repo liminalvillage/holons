@@ -480,7 +480,7 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
  */
 export async function getFederated(holosphere, holon, lens, options = {}) {
     // Set default options and extract queryIds
-    const { 
+    const {
         queryIds = null, // New option
         aggregate = false,
         idField = 'id',
@@ -490,9 +490,16 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         mergeStrategy = null,
         includeLocal = true,
         includeFederated = true,
-        resolveReferences = true, 
+        resolveReferences = true,
         maxFederatedSpaces = -1,
-        timeout = 10000
+        timeout = 10000,
+        // When `resolveReferences` is on, source-soul fetches that fail get
+        // replaced with `{ id, _hologram: { isHologram: false, error } }`
+        // error stubs (federation.js around line 654). By default we filter
+        // those out of the response so consumers never render broken-card
+        // placeholders. Set `includeUnresolvedStubs: true` if you actually
+        // want to surface the failure to the user (e.g. an admin/debug view).
+        includeUnresolvedStubs = false
     } = options;
     
     console.log(`resolveReferences option: ${resolveReferences}`);
@@ -737,14 +744,28 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                 count: group.length,
                 timestamp: Date.now()
             };
-            
+
             return base;
         });
-        
-        return aggregatedData;
+
+        return includeUnresolvedStubs ? aggregatedData : aggregatedData.filter(isResolved);
     }
-    
-    return result;
+
+    return includeUnresolvedStubs ? result : result.filter(isResolved);
+}
+
+/**
+ * True for any record that isn't an unresolved-reference error stub.
+ *
+ * `getFederated` produces stubs of the shape
+ * `{ id, _hologram: { isHologram: false, error, ... } }` when a source
+ * soul can't be resolved (peer offline, federation in flight, etc.).
+ * Default response now filters those out so consumers don't render
+ * broken-card placeholders.
+ */
+function isResolved(item) {
+    if (!item || typeof item !== 'object') return false;
+    return item._hologram?.isHologram !== false;
 }
 
 /**
