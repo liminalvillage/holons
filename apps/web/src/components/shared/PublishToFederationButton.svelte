@@ -85,24 +85,44 @@
 	// lets the popover escape any ancestor `overflow: hidden` — the publish
 	// button lives in dense task rows inside scrollable containers where an
 	// absolute popover would otherwise be clipped at the row/card edge.
+	//
+	// We also clamp max-height to the available space on the chosen side so
+	// the popover never overflows the viewport edge (the footer-mounted
+	// trigger in TaskModal often has < 400px both above and below it).
 	function repositionPopover() {
 		if (!popoverOpen || !buttonWrapperEl) return;
 		const trigger = buttonWrapperEl.getBoundingClientRect();
 		const popW = popoverEl?.offsetWidth ?? 280;
-		const popH = popoverEl?.offsetHeight ?? 320;
+		// scrollHeight reflects the content's natural height regardless of
+		// any current max-height — needed so we know whether the desired
+		// size fits before deciding which side to drop on.
+		const desiredH = popoverEl?.scrollHeight ?? 320;
 		const margin = 6;
-		// Default: drop below, right-aligned to the trigger.
-		let top = trigger.bottom + margin;
+		const vpEdge = 8;
+		const minH = 120;
+
+		const spaceBelow = window.innerHeight - trigger.bottom - margin - vpEdge;
+		const spaceAbove = trigger.top - margin - vpEdge;
+
+		// Prefer below; flip above only if it actually gives more room and
+		// below can't fit the natural content.
+		let top: number;
+		let maxH: number;
+		if (spaceBelow >= desiredH || spaceBelow >= spaceAbove) {
+			maxH = Math.max(minH, spaceBelow);
+			top = trigger.bottom + margin;
+		} else {
+			maxH = Math.max(minH, spaceAbove);
+			const usedH = Math.min(desiredH, maxH);
+			top = trigger.top - margin - usedH;
+		}
+
+		// Right-align to trigger; clamp if it would overflow the left edge.
 		let right = window.innerWidth - trigger.right;
-		// Flip above if the popover would overflow the bottom.
-		if (top + popH > window.innerHeight - 8 && trigger.top - margin - popH > 8) {
-			top = trigger.top - margin - popH;
+		if (right + popW > window.innerWidth - vpEdge) {
+			right = Math.max(vpEdge, window.innerWidth - vpEdge - popW);
 		}
-		// Clamp horizontally if the popover would overflow the left edge.
-		if (right + popW > window.innerWidth - 8) {
-			right = Math.max(8, window.innerWidth - 8 - popW);
-		}
-		popoverStyle = `position: fixed; top: ${top}px; right: ${right}px;`;
+		popoverStyle = `position: fixed; top: ${top}px; right: ${right}px; max-height: ${maxH}px;`;
 	}
 
 	async function openPicker() {
