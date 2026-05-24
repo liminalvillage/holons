@@ -2,6 +2,7 @@
   import { dndzone } from 'svelte-dnd-action';
   import KanbanCard from './KanbanCard.svelte';
   import type { KanbanColumn } from './types';
+  import type { ResolvedHologramMeta } from 'holosphere';
 
   interface Quest {
     id: string;
@@ -19,11 +20,7 @@
     type?: 'task' | 'quest' | 'event' | 'recurring';
     kanbanColumnId?: string;
     kanbanOrderIndex?: number;
-    _hologram?: {
-      isHologram: boolean;
-      soul: string;
-      sourceHolon: string;
-    };
+    _hologram?: ResolvedHologramMeta;
   }
 
   interface CardItem {

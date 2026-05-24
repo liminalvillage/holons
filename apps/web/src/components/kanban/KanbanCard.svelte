@@ -1,5 +1,6 @@
 <script lang="ts">
   import TaskCard from '../shared/TaskCard.svelte';
+  import type { ResolvedHologramMeta, FederationMeta } from 'holosphere';
 
   interface Quest {
     id: string;
@@ -16,8 +17,8 @@
       lastName?: string;
     }>;
     type?: 'task' | 'quest' | 'event' | 'recurring';
-    _hologram?: { isHologram?: boolean; [key: string]: unknown };
-    _federation?: { origin?: string; [key: string]: unknown };
+    _hologram?: ResolvedHologramMeta;
+    _federation?: FederationMeta;
   }
 
   interface Props {

@@ -3,7 +3,7 @@
   import { dndzone } from 'svelte-dnd-action';
   import KanbanColumn from './KanbanColumn.svelte';
   import { DEFAULT_COLUMNS, type KanbanColumn as KanbanColumnType, type KanbanConfig } from './types';
-  import type { HoloSphere } from 'holosphere';
+  import type { HoloSphere, ResolvedHologramMeta } from 'holosphere';
   import { createEventDispatcher } from 'svelte';
 
   interface Quest {
@@ -22,11 +22,7 @@
     type?: 'task' | 'quest' | 'event' | 'recurring';
     kanbanColumnId?: string;
     kanbanOrderIndex?: number;
-    _hologram?: {
-      isHologram: boolean;
-      soul: string;
-      sourceHolon: string;
-    };
+    _hologram?: ResolvedHologramMeta;
   }
 
   interface CardItem {

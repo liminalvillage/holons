@@ -5,7 +5,7 @@
 	import { page } from "$app/stores";
 	import { replaceState, goto } from "$app/navigation";
 	import { fade, slide } from "svelte/transition";
-	import type { HoloSphere } from "holosphere";
+	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
@@ -91,18 +91,9 @@
 			lastName?: string;
 		};
 		created?: string;
-		_hologram?: {
-			isHologram: boolean;
-			soul: string;
-			sourceHolon: string;
-			localOverrides?: string[];
-		};
-		_federation?: {
-			origin?: string;
-			sourceLens?: string;
-			propagatedAt?: number;
-			originalId?: string;
-		};
+		// Envelope shapes exported by holosphere — single source of truth.
+		_hologram?: ResolvedHologramMeta;
+		_federation?: FederationMeta;
 		_deleted?: boolean;
 		// Map of userId -> hours logged against this quest. Written by
 		// TaskModal / Tasks completion flows; consumed by the hour-expense
