@@ -414,8 +414,21 @@
 			// }
 		});
 
-		// Wait for Nostr backend to be ready (async initialization)
-		await holosphere.ready();
+		// Wait for the backend to be ready, but don't hang the splash forever
+		// when offline. holosphere.ready() resolves once Gun has at least one
+		// reachable peer; with no network it never resolves. Time-box it so the
+		// app can hydrate from IndexedDB (radisk) and Gun keeps reconnecting in
+		// the background.
+		const READY_TIMEOUT_MS = 5000;
+		await Promise.race([
+			holosphere.ready(),
+			new Promise<void>((resolve) =>
+				setTimeout(() => {
+					console.warn(`HoloSphere.ready() did not resolve within ${READY_TIMEOUT_MS}ms — continuing with local data (offline?)`);
+					resolve();
+				}, READY_TIMEOUT_MS)
+			)
+		]);
 
 		// Log the public key for verification
 		if (holosphere.client) {
