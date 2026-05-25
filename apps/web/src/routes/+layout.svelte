@@ -54,6 +54,21 @@
 	let isTelegramMappedSession = false;
 	let telegramMappedPublicKey: string | null = null;
 
+	// Race a peer-bound network promise against a timeout. Resolves with
+	// `undefined` if the network never acks — Gun keeps the local write and
+	// replays it when a peer reappears, so the UI doesn't need to block here.
+	function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T | undefined> {
+		return Promise.race([
+			promise,
+			new Promise<undefined>((resolve) =>
+				setTimeout(() => {
+					console.warn(`${label} did not resolve within ${ms}ms — continuing (offline?)`);
+					resolve(undefined);
+				}, ms)
+			)
+		]);
+	}
+
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon(privateKey: string) {
 		if (!holosphere || !holosphere.client?.publicKey) return;
@@ -81,8 +96,14 @@
 			const retryDelay = 300; // ms
 
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
-				// Pass userPublicKey as the key to fetch the specific settings record
-				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey);
+				// Pass userPublicKey as the key to fetch the specific settings record.
+				// Time-bounded so the splash never hangs on a slow/offline peer —
+				// a hit from local radisk returns essentially instantly anyway.
+				existingSettings = (await withTimeout(
+					holosphere.get(userPublicKey, 'settings', userPublicKey),
+					800,
+					'holosphere.get(settings)'
+				)) ?? null;
 				if (existingSettings && existingSettings.name) {
 					console.log('Existing holon found on attempt', attempt + 1, ':', existingSettings.name);
 					break;
@@ -126,9 +147,14 @@
 				resolvedName = existingName!;
 				nameSource = 'settings';
 			} else {
-				// Settings unavailable (slow relay) — try HNS before falling back
+				// Settings unavailable (slow relay) — try HNS before falling back.
+				// Time-bounded for the same reason: HNS reads can hang offline.
 				try {
-					hnsName = await hnsLookup(holosphere, userPublicKey);
+					hnsName = (await withTimeout(
+						hnsLookup(holosphere, userPublicKey),
+						800,
+						'hnsLookup'
+					)) ?? null;
 				} catch (err) {
 					console.warn('HNS lookup failed during init:', err);
 				}
@@ -178,16 +204,27 @@
 			const isFreshTelegramUser = isTelegramMappedSession && !!pendingTelegramUserId && !existingSettings;
 			if (isGenuinelyNewUser || isFreshTelegramUser) {
 				console.log('New user - creating personal holon:', holonName);
-				await holosphere.put(userPublicKey, 'settings', {
-					id: userPublicKey,
-					name: holonName,
-					purpose: 'Personal holon',
-					createdAt: Date.now(),
-					createdBy: userPublicKey
-				});
+				// Fire-and-continue: Gun commits locally to radisk and replays the
+				// network sync when a peer reconnects. Without the timeout, an
+				// offline first-load hangs the splash forever waiting for ack.
+				await withTimeout(
+					holosphere.put(userPublicKey, 'settings', {
+						id: userPublicKey,
+						name: holonName,
+						purpose: 'Personal holon',
+						createdAt: Date.now(),
+						createdBy: userPublicKey
+					}),
+					2000,
+					'holosphere.put(settings)'
+				);
 
 				try {
-					await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
+					await withTimeout(
+						hnsRegister(holosphere, userPublicKey, holonName, privateKey),
+						2000,
+						'hnsRegister'
+					);
 					console.log('Registered holon name in HNS:', holonName);
 				} catch (error) {
 					console.warn('Failed to register holon name in HNS:', error);
@@ -204,13 +241,17 @@
 			// Always update to handle cases where user creates new identity or restores different key
 			if (pendingTelegramUserId) {
 				try {
-					await holosphere.writeGlobal('telegram_mappings', {
-						id: String(pendingTelegramUserId),
-						publicKey: userPublicKey,
-						holonName: holonName,
-						createdAt: Date.now(),
-						updatedAt: Date.now()
-					});
+					await withTimeout(
+						holosphere.writeGlobal('telegram_mappings', {
+							id: String(pendingTelegramUserId),
+							publicKey: userPublicKey,
+							holonName: holonName,
+							createdAt: Date.now(),
+							updatedAt: Date.now()
+						}),
+						2000,
+						'writeGlobal(telegram_mappings)'
+					);
 					console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
 				} catch (err) {
 					console.error('Failed to store Telegram mapping:', err);
