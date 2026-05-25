@@ -41,6 +41,7 @@
 	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { queryManager } from '$lib/holosphere/QueryManager';
+	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
 	interface Expense {
 		id: string;
@@ -154,16 +155,11 @@
 		unsubscribeFunctions.push(expensesOff);
 
 		// Users stream
-		const usersOff = queryManager.subscribe({
+		const usersOff = subscribeHolonUsers({
 			holonId: targetHolon,
-			lens: 'users',
-			onUpdate: (items) => {
+			onUpdate: (next) => {
 				if (subscribedHolonId !== targetHolon) return;
-				const next: Record<string, User> = {};
-				for (const item of items as any[]) {
-					if (item?.id) next[item.id] = item as User;
-				}
-				store = next;
+				store = next as Record<string, User>;
 			},
 			onError: (error) => console.error('[Expenses] users subscribe error:', error)
 		});

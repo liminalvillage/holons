@@ -16,6 +16,7 @@
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { queryManager } from '$lib/holosphere/QueryManager';
+    import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -488,17 +489,11 @@
         queryManager.init(holosphere);
         const targetHolon = $ID;
 
-        usersUnsubscribe = queryManager.subscribe({
+        usersUnsubscribe = subscribeHolonUsers({
             holonId: targetHolon,
-            lens: 'users',
-            onUpdate: (items) => {
+            onUpdate: (next) => {
                 if ($ID !== targetHolon) return; // stale subscription
-                const next: Record<string, any> = {};
-                for (const userData of items as any[]) {
-                    if (!userData?.id) continue;
-                    next[userData.id] = userData;
-                }
-                users = next;
+                users = next as Record<string, User>;
                 // Best-effort per-user profile fetch (silent on missing).
                 for (const id of Object.keys(next)) {
                     if (profileLookupsAttempted.has(id)) continue;

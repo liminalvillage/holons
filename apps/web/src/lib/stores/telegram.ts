@@ -94,10 +94,15 @@ function devTelegramUser(): TelegramUser | null {
 	if (isProd) return null;
 	const idRaw = import.meta.env.VITE_DEV_TELEGRAM_USER_ID;
 	const name = import.meta.env.VITE_DEV_TELEGRAM_USER_NAME;
+	const lastName = import.meta.env.VITE_DEV_TELEGRAM_USER_LAST_NAME;
+	const username = import.meta.env.VITE_DEV_TELEGRAM_USER_USERNAME;
 	if (!idRaw || !name) return null;
 	const id = Number(idRaw);
 	if (!Number.isFinite(id)) return null;
-	return { id, first_name: String(name) };
+	const user: TelegramUser = { id, first_name: String(name) };
+	if (lastName) user.last_name = String(lastName);
+	if (username) user.username = String(username);
+	return user;
 }
 
 // Create the store

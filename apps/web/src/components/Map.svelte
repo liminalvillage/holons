@@ -12,6 +12,9 @@
 	import { ID } from "../dashboard/store";
 	import type { HoloSphere } from "holosphere";
 	import MapSidebar from './MapSidebar.svelte';
+	import MapBrowserWindow from './MapBrowserWindow.svelte';
+	import { toEmbeddableUrl } from '$lib/util/richContent';
+	import { getEffectiveAppName } from '$lib/stores/appName';
 	import type { LensType, LensOption } from '../types/Map';
 
 	let holosphere = getContext('holosphere') as HoloSphere;
@@ -32,6 +35,26 @@
 	let showLensInfo = false;
 	let geocoderContainer: HTMLElement;
 	let geolocateControl: mapboxgl.GeolocateControl;
+
+	// In-map draggable browser window. Driven by the
+	// `open-link-in-map-window` CustomEvent that RichDescription dispatches
+	// from inside MapSidebar (and anywhere else under the Map subtree). Set
+	// `browserUrl` to a non-empty string to show the window.
+	let browserUrl: string | null = null;
+	let browserTitle: string = '';
+
+	function handleOpenLinkInMapWindow(event: Event) {
+		const ce = event as CustomEvent<{ url?: string; title?: string }>;
+		const url = ce.detail?.url;
+		if (!url) return;
+		// Tell the dispatching anchor we're taking over so it skips the
+		// native target="_blank" navigation (see RichDescription's click
+		// handler — it preventDefaults the original click when this returns
+		// false via the event's cancellation).
+		event.preventDefault();
+		browserUrl = toEmbeddableUrl(url);
+		browserTitle = ce.detail?.title ?? '';
+	}
 	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
@@ -43,6 +66,177 @@
 		people: new Set<string>(),
 		holons: new Set<string>()
 	};
+
+	// Per-(lens, hex) presence cache. Stops us refetching the same cell on
+	// every pan/zoom AND survives page refreshes via localStorage so the user
+	// doesn't pay the Gun round-trip on cold start. Each entry stores both
+	// the answer (`has`) and the timestamp so we can re-validate stale rows
+	// after `PRESENCE_CACHE_TTL_MS` while serving the rest instantly.
+	type PresenceEntry = { has: boolean; ts: number };
+	const PRESENCE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+	let presenceCache: Record<LensType, Map<string, PresenceEntry>> = {
+		quests: new Map(),
+		needs: new Map(),
+		offers: new Map(),
+		communities: new Map(),
+		organizations: new Map(),
+		projects: new Map(),
+		currencies: new Map(),
+		people: new Map(),
+		holons: new Map()
+	};
+
+	// Namespace cache by appName so switching between `Holons` and
+	// `HolonsDebug` doesn't surface entries from the other graph as fake
+	// positives. Uses the shared resolver so the BrowserPanel toggle is
+	// honored here too.
+	const cacheAppName: string = getEffectiveAppName();
+	const presenceCacheKey = (lens: string) => `harvest.presence.${cacheAppName}.${lens}`;
+
+	function hydratePresenceCache() {
+		if (!browser) return;
+		const now = Date.now();
+		for (const lens of Object.keys(presenceCache) as LensType[]) {
+			try {
+				const raw = localStorage.getItem(presenceCacheKey(lens));
+				if (!raw) continue;
+				const parsed = JSON.parse(raw) as Record<string, [number, 0 | 1]>;
+				const map = presenceCache[lens];
+				for (const [hex, tuple] of Object.entries(parsed)) {
+					if (!Array.isArray(tuple)) continue;
+					const [ts, hasNum] = tuple;
+					if (typeof ts !== 'number') continue;
+					if (now - ts > PRESENCE_CACHE_TTL_MS) continue;
+					map.set(hex, { has: hasNum === 1, ts });
+				}
+			} catch (err) {
+				console.warn('[Map] failed to hydrate presence cache for', lens, err);
+			}
+		}
+	}
+
+	// Debounced per-lens persist. Writing the whole blob ~once per fetch batch
+	// (rather than per cell) keeps localStorage off the hot path during pan.
+	const persistTimers = new Map<LensType, number>();
+	function schedulePersistPresence(lens: LensType) {
+		if (!browser) return;
+		const existing = persistTimers.get(lens);
+		if (existing) window.clearTimeout(existing);
+		persistTimers.set(
+			lens,
+			window.setTimeout(() => {
+				try {
+					const map = presenceCache[lens];
+					const out: Record<string, [number, 0 | 1]> = {};
+					for (const [hex, entry] of map.entries()) {
+						out[hex] = [entry.ts, entry.has ? 1 : 0];
+					}
+					localStorage.setItem(presenceCacheKey(lens), JSON.stringify(out));
+				} catch (err) {
+					console.warn('[Map] failed to persist presence cache for', lens, err);
+				}
+			}, 400)
+		);
+	}
+
+	// Persist the last-selected lens so a refresh returns to whichever lens
+	// the user was on. Scoped by appName so HolonsDebug and Holons keep
+	// independent preferences. `lensInitialized` gates the auto-persist
+	// reactive block so the very first run (which observes the prop default
+	// 'quests' before onMount hydrates) doesn't overwrite the stored value.
+	const selectedLensStorageKey = `harvest.selectedLens.${cacheAppName}`;
+	const VALID_LENSES: ReadonlyArray<LensType> = [
+		'quests', 'needs', 'offers', 'communities', 'organizations',
+		'projects', 'currencies', 'people', 'holons'
+	];
+	let lensInitialized = false;
+
+	// One live `holosphere.subscribe` per visible (lens, hex) cell. The
+	// subscription callback fires with `(item, key)` for every existing item
+	// AND every future write/delete (item === null), so once a hex is
+	// subscribed its presence stays correct without any further `getAll`
+	// polling. `itemKeys` tracks the per-hex item set so we know when the
+	// hex flips between "empty" and "has content".
+	type HexSubscription = {
+		unsubscribe: () => void;
+		itemKeys: Set<string>;
+	};
+	let subscriptions: Record<LensType, Map<string, HexSubscription>> = {
+		quests: new Map(),
+		needs: new Map(),
+		offers: new Map(),
+		communities: new Map(),
+		organizations: new Map(),
+		projects: new Map(),
+		currencies: new Map(),
+		people: new Map(),
+		holons: new Map()
+	};
+
+	function subscribeHex(lens: LensType, hex: string) {
+		const subs = subscriptions[lens];
+		if (subs.has(hex) || !holosphere) return;
+
+		const itemKeys = new Set<string>();
+		const handle = (holosphere as any).subscribe(hex, lens, (item: unknown, key?: string) => {
+			if (!key || key === '_') return;
+			// Monotonic positives: once we've seen real content at a hex, we
+			// keep it highlighted regardless of subsequent Gun nulls. Gun
+			// emits nulls on reconnects, replays, and missing-key reads — all
+			// noise for a "does this cell contain anything?" indicator. The
+			// trade-off: a genuinely-emptied hex stays highlighted until the
+			// cache entry is cleared (re-validation isn't free here, and the
+			// prototype value of "don't make discovered cells flicker out" is
+			// higher than instant deletion accuracy).
+			if (item == null) return;
+			const had = itemKeys.size > 0;
+			itemKeys.add(key);
+			const has = itemKeys.size > 0;
+
+			// Bump the cache timestamp on every emit so the entry stays warm.
+			presenceCache[lens].set(hex, { has, ts: Date.now() });
+			schedulePersistPresence(lens);
+
+			// First positive observation for this hex: paint it. Subsequent
+			// items can't change `has` (already true), so they short-circuit
+			// the render — no thrashing of source.setData.
+			if (lens === selectedLens && had !== has) {
+				lensData[lens].add(hex);
+				lensData[lens] = lensData[lens]; // Svelte reactivity poke
+				renderHexes(map, lens);
+			}
+		});
+
+		const unsubscribe =
+			handle && typeof handle.unsubscribe === 'function'
+				? () => handle.unsubscribe()
+				: () => {};
+
+		subs.set(hex, { unsubscribe, itemKeys });
+	}
+
+	function unsubscribeHex(lens: LensType, hex: string) {
+		const sub = subscriptions[lens].get(hex);
+		if (!sub) return;
+		try { sub.unsubscribe(); } catch (e) {
+			console.warn('[Map] unsubscribe failed', lens, hex, e);
+		}
+		subscriptions[lens].delete(hex);
+	}
+
+	function unsubscribeAllForLens(lens: LensType) {
+		const subs = subscriptions[lens];
+		for (const sub of subs.values()) {
+			try { sub.unsubscribe(); } catch {}
+		}
+		subs.clear();
+	}
+
+	function unsubscribeAll() {
+		for (const lens of Object.keys(subscriptions) as LensType[]) {
+			unsubscribeAllForLens(lens);
+		}
+	}
 
 	const lensOptions: LensOption[] = [
 		{ value: 'quests', label: 'Tasks' },
@@ -58,19 +252,11 @@
 
 	const dispatch = createEventDispatcher();
 
-	// Keep just the retry counter to prevent infinite loops
-	let fetchRetryCount = 0;
-	const MAX_FETCH_RETRIES = 2;
-
-	// Keep track of movement state
+	// Movement-state plumbing for the move/zoom debounce.
 	let moveTimeout: number;
 	let initTimeout: number; // Track initialization timeout to clean up on unmount
 	let navigationTimeout: number; // Track navigation timeout for cleanup
 	let isMoving = false;
-	
-	// Keep track of last fetch time to implement throttling
-	let lastFetchTime = 0;
-	const THROTTLE_INTERVAL = 2000; // 2 seconds minimum between fetches
 	
 	// Clear any existing timeout
 	function clearMoveTimeout() {
@@ -503,7 +689,22 @@
 		// No need to implement this function as the isLoading variable is no longer used
 	}
 
-	// Update the lens selection to use fetch instead of subscribe
+	// Persist the lens whenever the user changes it. Gated on
+	// `lensInitialized` so the prop's initial default (observed before
+	// onMount hydrates from storage) doesn't blow away the saved value.
+	$: if (browser && lensInitialized && selectedLens) {
+		try {
+			localStorage.setItem(selectedLensStorageKey, selectedLens);
+		} catch (err) {
+			console.warn('[Map] failed to persist selected lens:', err);
+		}
+	}
+
+	// Lens switch: tear down the previous lens's subscriptions (we don't
+	// need real-time updates on lenses the user isn't looking at), seed the
+	// new lens from cache for instant visual feedback, then let
+	// fetchLensData reconcile new subscriptions on the visible viewport.
+	let previousSubscribedLens: LensType | undefined;
 	$: if (map && selectedLens) {
 
 		// Clear only the highlighted hexagons visually
@@ -511,110 +712,161 @@
 			type: "FeatureCollection",
 			features: []
 		});
-		
-		// Cancel any existing fetch timeout
+
+		// Drop the previous lens's live subscriptions. Cache stays intact so
+		// switching back is instant.
+		if (previousSubscribedLens && previousSubscribedLens !== selectedLens) {
+			unsubscribeAllForLens(previousSubscribedLens);
+		}
+		previousSubscribedLens = selectedLens;
+
+		// Reconcile subscriptions for the new lens. Small delay so the
+		// previous lens's unsubscribe Gun calls flush before we attach the
+		// new ones. fetchLensData itself does the cache-seed + render so we
+		// don't duplicate that work here.
 		clearMoveTimeout();
-		
-		// Schedule a fetch after a short delay
 		moveTimeout = window.setTimeout(() => {
-			// Clear only the previous lens data before fetching new data
-			lensData[selectedLens] = new Set<string>();
 			fetchLensData(selectedLens);
-		}, 500);
-		
-		// Don't render hexes immediately since we just cleared the visual data
-		// The fetchLensData call will trigger a render when it has new data
+		}, 100);
 	}
 
-	function fetchLensData(lens: string) {
-		// Implement throttling
-		const now = Date.now();
-		if (now - lastFetchTime < THROTTLE_INTERVAL) {
-			return;
-		}
-		
-		// Update last fetch time
-		lastFetchTime = now;
-
-		// Cancel any pending fetch operations
-		clearMoveTimeout();
-
-		// Get the current map bounds
-		const bounds = map.getBounds();
-		if (!bounds) {
-			return;
-		}
-		
-		// Capture the current lens in a closure to ensure we're still working with the same lens
-		// even if it changes during the async operations
-		const currentLens = lens;
-		
+	// Enumerate the H3 cells covering the visible viewport at the given
+	// resolution. Special-cased at res 0 (only 122 cells globally) so we don't
+	// pay the cost of polygonToCells for the whole sphere — we just take the
+	// res-0 set and keep the ones whose center falls inside the viewport,
+	// plus a small ring so partially-visible cells aren't lost.
+	function enumerateVisibleHexes(
+		bounds: mapboxgl.LngLatBounds,
+		resolution: number
+	): Set<string> {
+		const result = new Set<string>();
 		const west = bounds.getWest();
 		const east = bounds.getEast();
 		const south = bounds.getSouth();
 		const north = bounds.getNorth();
-		
-		// Get current zoom and resolution
-		const currentZoom = map.getZoom();
-		const h3res = getResolution(currentZoom);
-		
-		// Generate hexagons for the visible area - limit the number for better performance
-		const hexagons = new Set<string>();
-		const latStep = (north - south) / 8; // Further reduced sample points
-		const lngStep = (east - west) / 8;
-		
-		for (let lat = south; lat <= north; lat += latStep) {
-			for (let lng = west; lng <= east; lng += lngStep) {
-				hexagons.add(h3.latLngToCell(lat, lng, h3res));
-			}
-		}
 
-		// Create a map to track which hexagons have content
-		const hexagonsWithContent = new Set<string>();
-		
-		// Make non-blocking fetch calls for each hexagon
-		let fetchesInProgress = 0;
-		let fetchesCompleted = 0;
-		
-		// When all fetches are done, update the display
-		const checkAllFetchesComplete = () => {
-			fetchesCompleted++;
-			if (fetchesCompleted === fetchesInProgress) {
-				// Make sure we're still working with the current lens
-				if (currentLens === selectedLens) {
-					// Update lens data with hexagons that have content
-					lensData[currentLens as LensType] = hexagonsWithContent;
-
-					// Render the updated hexes
-					renderHexes(map, currentLens);
+		// Globe view: 122 cells globally — cheap to enumerate, then filter.
+		if (resolution === 0) {
+			for (const cell of h3.getRes0Cells()) {
+				const [lat, lng] = h3.cellToLatLng(cell);
+				// Wrap lng comparisons across the antimeridian. We accept the
+				// occasional "near the edge" cell that doesn't actually touch
+				// the viewport — they'll just resolve to empty content and
+				// won't render.
+				const latIn = lat >= south && lat <= north;
+				let lngIn: boolean;
+				if (west <= east) {
+					lngIn = lng >= west && lng <= east;
+				} else {
+					// Viewport crosses the antimeridian.
+					lngIn = lng >= west || lng <= east;
 				}
+				if (latIn && lngIn) result.add(cell);
 			}
-		};
-		
-		// Process each hexagon
-		let hasStartedFetches = false;
-		for (const hex of hexagons) {
-			fetchesInProgress++;
-			hasStartedFetches = true;
-
-			// Non-blocking call without await
-			holosphere.getAll(hex, lens)
-				.then(items => {
-					// Add to set if content exists
-					if (items && items.length > 0) {
-						hexagonsWithContent.add(hex);
-					}
-					checkAllFetchesComplete();
-				})
-				.catch(error => {
-					console.error(`[Map] Error fetching ${lens} data for ${hex}:`, error);
-					checkAllFetchesComplete();
-				});
+			return result;
 		}
-		
-		// If no fetches started, just update the UI
-		if (!hasStartedFetches) {
-			renderHexes(map, lens);
+
+		// Higher resolutions: use polygonToCells on the viewport rectangle.
+		// h3-js wants [lat, lng] pairs by default (isGeoJson=false). Split the
+		// polygon at the antimeridian when the viewport crosses it so each
+		// piece is well-formed.
+		const polygons: number[][][] = [];
+		if (west <= east) {
+			polygons.push([
+				[south, west],
+				[south, east],
+				[north, east],
+				[north, west],
+				[south, west]
+			]);
+		} else {
+			polygons.push([
+				[south, west],
+				[south, 180],
+				[north, 180],
+				[north, west],
+				[south, west]
+			]);
+			polygons.push([
+				[south, -180],
+				[south, east],
+				[north, east],
+				[north, -180],
+				[south, -180]
+			]);
+		}
+
+		for (const poly of polygons) {
+			try {
+				const cells = h3.polygonToCells(poly, resolution, false);
+				for (const cell of cells) result.add(cell);
+			} catch (err) {
+				console.warn('[Map] polygonToCells failed at res', resolution, err);
+			}
+		}
+
+		return result;
+	}
+
+	// Reconcile live `holosphere.subscribe` listeners against the current
+	// viewport. Newly-visible hexes get a fresh subscription; hexes no longer
+	// in view get unsubscribed (their cache entry survives, so panning back
+	// paints instantly).
+	//
+	// `lensData[lens]` is MONOTONIC — once a hex is highlighted it stays in
+	// the set across all pan/zoom until the lens changes or the component
+	// unmounts. `renderHexes` filters by `currentResolution <= hexResolution`
+	// at draw time so out-of-resolution hexes simply aren't painted; they
+	// remain in the set so zooming back to their level shows them instantly
+	// without waiting for any (re)subscription. Subscriptions then populate
+	// new positives as they arrive, but never remove anything from lensData.
+	function fetchLensData(lens: string) {
+		clearMoveTimeout();
+
+		const bounds = map.getBounds();
+		if (!bounds) return;
+
+		const currentLens = lens as LensType;
+		const h3res = getResolution(map.getZoom());
+
+		// Enumerate every visible cell at the current resolution. Because
+		// auto-propagation writes hologram pointers up the parent chain on
+		// each underlying `put`, presence resolves at the visible cell at
+		// *any* zoom level — we never need to subscribe to deeper-resolution
+		// children to know "this big cell contains something."
+		const visible = enumerateVisibleHexes(bounds, h3res);
+		const cacheForLens = presenceCache[currentLens];
+
+		// Fold EVERY known positive in this lens's cache into lensData (not
+		// just the cells currently in view). Set semantics drop duplicates,
+		// renderHexes filters by resolution at draw time, and lensData is
+		// monotonic — so a cell discovered in a previous session or at a
+		// previous zoom level remains highlighted forever (until lens change
+		// or component unmount). New positives can still arrive via the
+		// subscribe callback once Gun delivers their items.
+		let lensDataChanged = false;
+		for (const [hex, entry] of cacheForLens.entries()) {
+			if (entry.has && !lensData[currentLens].has(hex)) {
+				lensData[currentLens].add(hex);
+				lensDataChanged = true;
+			}
+		}
+		if (currentLens === selectedLens) {
+			if (lensDataChanged) lensData[currentLens] = lensData[currentLens];
+			renderHexes(map, currentLens);
+		}
+
+		// Subscribe to newly-visible hexes.
+		const subs = subscriptions[currentLens];
+		for (const hex of visible) {
+			if (!subs.has(hex)) subscribeHex(currentLens, hex);
+		}
+
+		// Unsubscribe hexes that have scrolled out of view. The cache + the
+		// monotonic lensData keep their last-known presence so panning back
+		// paints instantly while resubscribe re-establishes the live channel.
+		for (const hex of Array.from(subs.keys())) {
+			if (!visible.has(hex)) unsubscribeHex(currentLens, hex);
 		}
 	}
 
@@ -935,8 +1187,16 @@
 					}
 				});
 				
-				// Now that sources are ready, render initial hexes
+				// Now that sources are ready, render initial hexes. Seed
+				// lensData from the hydrated presence cache so the very first
+				// paint already shows last-known highlights before
+				// fetchLensData even fires.
 				if (selectedLens) {
+					const seeded = new Set<string>();
+					for (const [hex, entry] of presenceCache[selectedLens].entries()) {
+						if (entry.has) seeded.add(hex);
+					}
+					lensData[selectedLens] = seeded;
 					renderHexes(map, selectedLens);
 				}
 			} catch (e) {
@@ -945,13 +1205,13 @@
 		});
 
 		map.on("load", () => {
-			// Initial data fetch after map is fully loaded
+			// Reconcile subscriptions on first paint. Short delay so the map
+			// has finalized its bounds, then we subscribe to everything in
+			// view at the current resolution.
 			clearMoveTimeout();
 			moveTimeout = window.setTimeout(() => {
-				if (selectedLens) {
-					fetchLensData(selectedLens);
-				}
-			}, 500);
+				if (selectedLens) fetchLensData(selectedLens);
+			}, 100);
 
 			// Add geocoder to custom container after map is loaded
 			try {
@@ -993,20 +1253,18 @@
 		map.on("zoom", handleMapMove);
 		
 		map.on("moveend", () => {
-			// Movement has ended
 			isMoving = false;
 
-			// Clear any previous timeout
+			// Tight debounce — just enough that successive moveends from a
+			// single pan gesture coalesce into one reconciliation. Gun .on/.off
+			// is cheap so we don't need the long delay the old getAll path
+			// needed.
 			clearMoveTimeout();
-
-			// Schedule data fetch after movement with a delay
 			moveTimeout = window.setTimeout(() => {
-				if (selectedLens) {
-					fetchLensData(selectedLens);
-				}
-			}, 1000); // 1 second delay
-			
-			// Always render hexes with existing data for immediate feedback
+				if (selectedLens) fetchLensData(selectedLens);
+			}, 200);
+
+			// Repaint immediately from cached lensData for instant feedback.
 			renderHexes(map, selectedLens);
 		});
 
@@ -1080,12 +1338,38 @@
 	// Set up resize handler when component is mounted
 	onMount(() => {
 		if (browser) {
+			// Restore the last-selected lens. Doing this before
+			// `hydratePresenceCache` doesn't matter for correctness — both
+			// lenses' caches hydrate — but it does mean the very first paint
+			// after mount already reflects the user's lens choice.
+			try {
+				const stored = localStorage.getItem(selectedLensStorageKey);
+				if (stored && (VALID_LENSES as readonly string[]).includes(stored)) {
+					selectedLens = stored as LensType;
+				}
+			} catch (err) {
+				console.warn('[Map] failed to restore selected lens:', err);
+			}
+			lensInitialized = true;
+
+			// Pull the persisted (appName, lens, hex) presence rows BEFORE the
+			// map starts asking holosphere for content. Hydrating first means
+			// the very first `renderHexes` already has positives to draw, so
+			// refreshes show the last-known highlights instantly instead of
+			// waiting for the Gun round-trip.
+			hydratePresenceCache();
+
 			// Add global mouse move and up listeners (only when in browser)
 			window.addEventListener('mousemove', handleDrag);
 			window.addEventListener('mouseup', handleDragEnd);
 
 			// Add resize listener to ensure sidebar stays visible
 			window.addEventListener('resize', adjustSidebarPosition);
+
+			// Catch `open-link-in-map-window` events bubbling up from any
+			// link rendered under this Map (e.g. RichDescription anchors in
+			// MapSidebar) and route them to the in-map browser window.
+			window.addEventListener('open-link-in-map-window', handleOpenLinkInMapWindow);
 
 			// Add a small delay to ensure container is properly sized
 			scheduleInitialization();
@@ -1096,6 +1380,7 @@
 			window.removeEventListener('mousemove', handleDrag);
 			window.removeEventListener('mouseup', handleDragEnd);
 			window.removeEventListener('resize', adjustSidebarPosition);
+			window.removeEventListener('open-link-in-map-window', handleOpenLinkInMapWindow);
 		};
 	});
 
@@ -1229,13 +1514,18 @@
 	// Reset movement state
 	isMoving = false;
 	
-	// Reset fetch retry counter
-	fetchRetryCount = 0;
-	
 	// Create a fresh map to ensure no references remain
 	holoSubscriptions = new Map();
-	
-	// Clear all lens data to free memory
+
+	// Tear down every live `holosphere.subscribe` so we don't leak Gun
+	// `.map().on()` listeners when the map hides / unmounts. The persistent
+	// presenceCache survives — it's our fast-path for re-mount.
+	unsubscribeAll();
+	previousSubscribedLens = undefined;
+
+	// Clear render-side state. Keep `presenceCache` populated — it's our
+	// fast-path for re-mount (visibility toggle, hot reload) and a wipe
+	// here would force every cell to round-trip through Gun again.
 	for (const key of Object.keys(lensData)) {
 		lensData[key as LensType] = new Set<string>();
 	}
@@ -1512,6 +1802,11 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- In-map draggable browser. Visible whenever `browserUrl` is set;
+	     RichDescription anchor clicks set it via the
+	     `open-link-in-map-window` event handler registered in onMount. -->
+	<MapBrowserWindow bind:url={browserUrl} bind:title={browserTitle} />
 </div>
 
 <style>

@@ -67,50 +67,12 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
-    // Function to add current logged-in user to userStore if not already present
-    function ensureCurrentUserInStore(store: UserStore): UserStore {
-        const telegramState = telegramStore.getState();
-        const telegramUser = telegramState.user;
-        const pubKey = $nostrPublicKey;
-
-        // Check if Telegram user is logged in
-        if (telegramUser) {
-            const telegramId = String(telegramUser.id);
-            // Check if user already exists in store (by telegram ID)
-            const existsById = Object.values(store).some(u => String(u.id) === telegramId);
-            if (!existsById) {
-                // Add telegram user to store
-                const userKey = telegramUser.username || telegramId;
-                store[userKey] = {
-                    id: telegramId,
-                    first_name: telegramUser.first_name,
-                    last_name: telegramUser.last_name,
-                    username: telegramUser.username || telegramId,
-                    picture: telegramUser.photo_url
-                };
-            }
-        }
-        // Check if Nostr user is logged in (and not already covered by telegram)
-        else if (pubKey) {
-            // Check if user already exists in store (by pubKey)
-            const existsByPubKey = Object.values(store).some(u => u.id === pubKey);
-            if (!existsByPubKey) {
-                // Add nostr user to store with pubKey as ID (similar structure to telegram)
-                // Name resolution is automatic via resolvedName()
-                store[pubKey] = {
-                    id: pubKey,
-                    first_name: resolvedName(pubKey, $nameMap),
-                    last_name: '',
-                    username: pubKey  // Use full pubKey as username (like telegram ID)
-                };
-            }
-        }
-
-        return store;
-    }
+    // Logged-in viewer is folded in by the shared `mergeSelfIntoUsers` helper
+    // (see $lib/util/usersWithSelf). The cached store from holonCache already
+    // applies it; re-applying here keeps things consistent after store mutations.
 
     // Use cached data immediately for instant display
-    let userStore: UserStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
+    let userStore: UserStore = getCachedUsersObject(holonId) as UserStore;
     let equation: ScoreEquation = getCachedEquation(holonId);
 
     let showDatePicker = false;
@@ -210,7 +172,7 @@
             // Preload in background (will refresh cache if stale)
             preloadHolon(holosphere, holonId).then(() => {
                 // Update local state from refreshed cache, ensuring current user is included
-                userStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
+                userStore = getCachedUsersObject(holonId) as UserStore;
                 equation = getCachedEquation(holonId);
                 usersLoading = false;
             });

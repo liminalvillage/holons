@@ -18,8 +18,8 @@
 	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
-	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+	import { mergeSelfIntoUsers } from "$lib/util/usersWithSelf";
 
 	// Add offer/request modal state
 	let showAddModal = false;
@@ -117,40 +117,9 @@
 		return false;
 	}
 
-	// Function to add current logged-in user to userStore if not already present
-	function ensureCurrentUserInStore(store: any): any {
-		const telegramState = telegramStore.getState();
-		const telegramUser = telegramState.user;
-		let pubKey: string | null = null;
-		nostrPublicKey.subscribe(v => pubKey = v)();
-
-		// Check if Telegram user is logged in
-		if (telegramUser) {
-			const telegramId = String(telegramUser.id);
-			if (!store[telegramId]) {
-				store[telegramId] = {
-					id: telegramId,
-					first_name: telegramUser.first_name,
-					last_name: telegramUser.last_name,
-					username: telegramUser.username || telegramId
-				};
-			}
-		}
-		// Check if Nostr user is logged in
-		else if (pubKey) {
-			if (!store[pubKey]) {
-				// Name resolution is automatic via resolvedName()
-				store[pubKey] = {
-					id: pubKey,
-					first_name: resolvedName(pubKey, $nameMap),
-					last_name: '',
-					username: pubKey  // Use full pubKey as username (like telegram ID)
-				};
-			}
-		}
-
-		return store;
-	}
+	// Use the shared merge so the logged-in user always appears in the picker,
+	// even on holons where they haven't been added to the `users` lens yet.
+	const ensureCurrentUserInStore = (store: any) => mergeSelfIntoUsers(store);
 
 	// Fetch and subscribe to users for the current holon
 	async function fetchAndSubscribeUsers() {

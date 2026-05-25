@@ -6,6 +6,7 @@
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import { queryManager } from '$lib/holosphere/QueryManager';
+    import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -83,16 +84,11 @@
 
         const targetHolon = holonID;
 
-        usersUnsubscribe = queryManager.subscribe({
+        usersUnsubscribe = subscribeHolonUsers({
             holonId: targetHolon,
-            lens: 'users',
-            onUpdate: (items) => {
+            onUpdate: (next) => {
                 if (subscribedHolonId !== targetHolon) return;
-                const next: Record<string, User> = {};
-                for (const u of items as User[]) {
-                    if (u && u.id) next[u.id] = u;
-                }
-                users = next;
+                users = next as Record<string, User>;
                 isLoading = false;
                 processUsersWithBadges();
             },

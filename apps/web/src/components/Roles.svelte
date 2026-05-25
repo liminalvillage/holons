@@ -25,6 +25,7 @@
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { queryManager } from '$lib/holosphere/QueryManager';
+	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
 	/**
 	 * @type {Record<string, any>}
@@ -167,15 +168,10 @@
 			onError: (e) => console.error(`[Roles.svelte] roles subscribe error:`, e)
 		});
 
-		usersSubscriptionUnsubscribe = queryManager.subscribe({
+		usersSubscriptionUnsubscribe = subscribeHolonUsers({
 			holonId: holonIdToLoad,
-			lens: 'users',
-			onUpdate: (items) => {
+			onUpdate: (next) => {
 				if (activeHolonId !== subscribedHolonId) return;
-				const next: Record<string, any> = {};
-				for (const user of items) {
-					if (user && user.id) next[user.id] = user;
-				}
 				userStore = next;
 				isUserStoreReady = true;
 			},
@@ -322,12 +318,14 @@
 			participants: [],
 			created: new Date().toISOString()
 		};
+		// Open the modal first so the new tile doesn't flash into the grid
+		// before the modal covers it. The put runs in the background; if it
+		// fails we roll the modal back.
+		selectedRole = { key: newRoleId, role: newRole };
 		try {
-			// Save the new role to HoloSphere
 			await holosphere.put(activeHolonId, 'roles', newRole);
-			// Open the modal for editing
-			selectedRole = { key: newRoleId, role: newRole };
 		} catch (error: any) {
+			selectedRole = null;
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
 			} else {

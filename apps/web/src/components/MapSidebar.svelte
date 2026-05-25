@@ -5,6 +5,7 @@
     import type { Writable } from "svelte/store";
     import { ID } from "../dashboard/store";
     import SchemaForm from './SchemaForm.svelte';
+    import RichDescription from './RichDescription.svelte';
     import { schemas, type SchemaName } from '../lib/schemas';
     import type { HoloSphere } from "holosphere";
     import { createEventDispatcher } from 'svelte';
@@ -521,13 +522,22 @@
                             <h3 class="text-white font-medium">
                                 {viewingItem ? 'View' : 'Add New'} {schemaOptions.find(opt => opt.value === selectedLens)?.label.split(' ').slice(1).join(' ')}
                             </h3>
-                            <button 
+                            <button
                                 class="text-gray-400 hover:text-white"
                                 on:click={viewingItem ? closeView : toggleForm}
                             >
                                 ×
                             </button>
                         </div>
+                        {#if viewingItem && viewingItem.description}
+                            <!-- Full-width rich preview above the form. SchemaForm
+                                 will also show the raw description string as a
+                                 view-only field; this gives the user the actual
+                                 inline media (images, YouTube embeds, links). -->
+                            <div class="mb-4">
+                                <RichDescription html={viewingItem.description} />
+                            </div>
+                        {/if}
                         {#if selectedLens}
                             <SchemaForm
                                 schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''}
@@ -569,7 +579,11 @@
                             >
                                 <h4 class="font-medium text-white">{item.title || item.name}</h4>
                                 {#if item.description}
-                                    <p class="text-gray-300 text-sm mt-1 line-clamp-2">{item.description}</p>
+                                    <div class="text-gray-300 mt-2">
+                                        <!-- Cap the preview height so cards stay scannable; the
+                                             full content is visible in the view modal. -->
+                                        <RichDescription html={item.description} maxHeight="14rem" scroll={true} />
+                                    </div>
                                 {/if}
                                 {#if item.tags?.length}
                                     <div class="flex flex-wrap gap-2 mt-2">

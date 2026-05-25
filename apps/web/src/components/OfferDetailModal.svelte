@@ -27,6 +27,8 @@
 	];
 
 	let showAddUserPicker = false;
+	let userSearchQuery = '';
+	$: if (!showAddUserPicker) userSearchQuery = '';
 
 	$: side = item?.type === 'offer' ? 'offer' : 'request';
 	$: availableUsers = (item && userStore)
@@ -34,6 +36,15 @@
 			.filter(([_, u]) => !item.participants?.some((p: any) => String(p.id) === String(u.id)))
 			.map(([_, u]) => u)
 		: [];
+	$: filteredAvailableUsers = (() => {
+		const q = userSearchQuery.trim().toLowerCase();
+		if (!q) return availableUsers;
+		return availableUsers.filter((u: any) => {
+			const name = String(u?.first_name || '') + ' ' + String(u?.last_name || '');
+			const handle = String(u?.username || '');
+			return name.toLowerCase().includes(q) || handle.toLowerCase().includes(q) || String(u?.id || '').toLowerCase().includes(q);
+		});
+	})();
 	$: isHologram = !!item?._hologram?.isHologram;
 
 	function getTransactionLabel(value: string): string {
@@ -158,7 +169,16 @@
 
 				{#if showAddUserPicker && availableUsers.length > 0}
 					<div class="detail__user-picker">
-						{#each availableUsers as user}
+						{#if availableUsers.length > 4}
+							<input
+								type="search"
+								bind:value={userSearchQuery}
+								placeholder="Search users…"
+								class="detail__user-search"
+								autocomplete="off"
+							/>
+						{/if}
+						{#each filteredAvailableUsers as user}
 							<button
 								type="button"
 								class="detail__user-row"
@@ -174,6 +194,9 @@
 								</span>
 							</button>
 						{/each}
+						{#if filteredAvailableUsers.length === 0}
+							<div class="detail__user-empty">No matching users</div>
+						{/if}
 					</div>
 				{/if}
 
@@ -453,6 +476,30 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.detail__user-search {
+		width: 100%;
+		background: #0b0f17;
+		border: 1px solid #374151;
+		border-radius: 0.375rem;
+		color: #f9fafb;
+		font-size: 0.875rem;
+		padding: 0.375rem 0.5rem;
+		outline: none;
+		margin-bottom: 0.25rem;
+	}
+
+	.detail__user-search:focus {
+		border-color: #6366f1;
+		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+	}
+
+	.detail__user-empty {
+		padding: 0.5rem;
+		font-size: 0.75rem;
+		color: #9ca3af;
+		text-align: center;
 	}
 
 	.detail__participants {

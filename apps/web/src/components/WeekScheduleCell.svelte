@@ -15,6 +15,8 @@
 	const dispatch = createEventDispatcher();
 
 	let showDropdown = false;
+	let userSearchQuery = '';
+	$: if (!showDropdown) userSearchQuery = ''; // reset when dropdown closes
 	let cellRef: HTMLDivElement;
 	let triggerRef: HTMLButtonElement;
 	let dropdownRef: HTMLDivElement;
@@ -33,6 +35,16 @@
 	$: availableUsersList = Object.entries(availableUsers).filter(
 		([userId, _user]) => !assignedUsers?.some(a => a.id === userId)
 	);
+
+	$: filteredAvailableUsers = (() => {
+		const q = userSearchQuery.trim().toLowerCase();
+		if (!q) return availableUsersList;
+		return availableUsersList.filter(([uid, u]) => {
+			const name = String(u?.first_name || '') + ' ' + String(u?.last_name || '');
+			const handle = String(u?.username || '');
+			return name.toLowerCase().includes(q) || handle.toLowerCase().includes(q) || String(uid).toLowerCase().includes(q);
+		});
+	})();
 
 	function positionDropdown() {
 		if (!triggerRef) return;
@@ -159,8 +171,19 @@
 				</button>
 				<div class="week-cell__dropdown-divider"></div>
 			{/if}
-			{#if availableUsersList.length > 0}
-				{#each availableUsersList as [userId, user]}
+			{#if availableUsersList.length > 4}
+				<div class="week-cell__dropdown-search">
+					<input
+						type="search"
+						bind:value={userSearchQuery}
+						placeholder="Search users…"
+						autocomplete="off"
+						on:click|stopPropagation
+					/>
+				</div>
+			{/if}
+			{#if filteredAvailableUsers.length > 0}
+				{#each filteredAvailableUsers as [userId, user]}
 					<button
 						class="week-cell__dropdown-item"
 						on:click={() => selectUser(userId, user)}
@@ -180,6 +203,8 @@
 						<span><DisplayName id={user.id || userId} {user} /></span>
 					</button>
 				{/each}
+			{:else if availableUsersList.length > 0}
+				<div class="week-cell__dropdown-empty">No matching users</div>
 			{:else if !hasAssignment}
 				<div class="week-cell__dropdown-empty">No users available</div>
 			{/if}
@@ -372,5 +397,25 @@
 		text-align: center;
 		color: rgba(255, 255, 255, 0.5);
 		font-size: 13px;
+	}
+
+	.week-cell__dropdown-search {
+		padding: 8px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.week-cell__dropdown-search input {
+		width: 100%;
+		background: rgba(0, 0, 0, 0.35);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 4px;
+		color: #f9fafb;
+		font-size: 13px;
+		padding: 4px 8px;
+		outline: none;
+	}
+
+	.week-cell__dropdown-search input:focus {
+		border-color: #6366f1;
 	}
 </style>

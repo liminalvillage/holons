@@ -20,6 +20,22 @@
 	let store = {};
 	let userStore = {};
 	let showDropdown = null;
+	let userSearchQuery = '';
+	$: if (!showDropdown) userSearchQuery = ''; // reset search when dropdown closes
+	$: filteredUserEntries = (() => {
+		const entries = Object.entries(userStore);
+		const q = userSearchQuery.trim().toLowerCase();
+		if (!q) return entries;
+		return entries.filter(([uid, u]: any) => {
+			const name = String(u?.first_name || '') + ' ' + String(u?.last_name || '');
+			const handle = String(u?.username || '');
+			return (
+				name.toLowerCase().includes(q) ||
+				handle.toLowerCase().includes(q) ||
+				String(uid).toLowerCase().includes(q)
+			);
+		});
+	})();
 	$: quests = Object.entries(store);
 
 	// Initialize preferences with default values
@@ -506,10 +522,22 @@
 
 								{#if showDropdown === key}
 									<div
-										class="user-dropdown absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+										class="user-dropdown absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
 									>
-										<div class="py-1">
-											{#each Object.entries(userStore) as [userId, user]}
+										{#if Object.keys(userStore).length > 4}
+											<div class="p-2 border-b border-gray-200">
+												<input
+													type="search"
+													bind:value={userSearchQuery}
+													on:click|stopPropagation
+													placeholder="Search users…"
+													class="w-full text-sm px-2 py-1 border border-gray-300 rounded outline-none focus:border-indigo-500"
+													autocomplete="off"
+												/>
+											</div>
+										{/if}
+										<div class="py-1 max-h-64 overflow-y-auto">
+											{#each filteredUserEntries as [userId, user]}
 												{@const isParticipant =
 													quest.participants?.some(
 														(p) => p.id === userId
@@ -531,6 +559,9 @@
 													{/if}
 												</button>
 											{/each}
+											{#if filteredUserEntries.length === 0}
+												<div class="px-4 py-2 text-xs text-gray-500">No matching users</div>
+											{/if}
 										</div>
 									</div>
 								{/if}
@@ -710,10 +741,22 @@
 
 									{#if showDropdown === key}
 										<div
-											class="user-dropdown absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+											class="user-dropdown absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
 										>
-											<div class="py-1">
-												{#each Object.entries(userStore) as [userId, user]}
+											{#if Object.keys(userStore).length > 4}
+												<div class="p-2 border-b border-gray-200">
+													<input
+														type="search"
+														bind:value={userSearchQuery}
+														on:click|stopPropagation
+														placeholder="Search users…"
+														class="w-full text-sm px-2 py-1 border border-gray-300 rounded outline-none focus:border-indigo-500"
+														autocomplete="off"
+													/>
+												</div>
+											{/if}
+											<div class="py-1 max-h-64 overflow-y-auto">
+												{#each filteredUserEntries as [userId, user]}
 													{@const isParticipant =
 														quest.participants?.some(
 															(p) =>
@@ -736,6 +779,9 @@
 														{/if}
 													</button>
 												{/each}
+												{#if filteredUserEntries.length === 0}
+													<div class="px-4 py-2 text-xs text-gray-500">No matching users</div>
+												{/if}
 											</div>
 										</div>
 									{/if}

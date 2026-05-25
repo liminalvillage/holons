@@ -15,11 +15,30 @@
 	import { ID, sidebarExpanded } from '../store';
 	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
+	import { getEffectiveAppName, setAppNameOverride } from '$lib/stores/appName';
 
 	// Vite `define` rewrites the bare `__COMMIT_HASH__` identifier at build time
 	// (see vite.config.ts and types/global.d.ts). Property-access forms like
 	// `globalThis.__COMMIT_HASH__` are NOT rewritten and silently fall back to "dev".
 	const commitHash: string = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
+
+	// Same resolution as +layout.svelte so the footer always reflects the
+	// actual HoloSphere appName the page connected with (env default unless
+	// a localStorage override is active).
+	const appName: string = getEffectiveAppName();
+	// Only show the prod/debug toggle in dev builds — production builds should
+	// never offer a way to flip away from "Holons" data.
+	const showAppToggle: boolean = import.meta.env.DEV === true;
+
+	function toggleAppName() {
+		const next = appName === 'Holons' ? 'HolonsDebug' : 'Holons';
+		const ok = confirm(
+			`Switch HoloSphere appName to "${next}" and reload? You'll see ${next === 'Holons' ? 'production' : 'debug'} data.`
+		);
+		if (!ok) return;
+		setAppNameOverride(next);
+		location.reload();
+	}
 
 	// Props
 	export let isOpen: boolean = true;
@@ -898,6 +917,17 @@
 
 	<!-- Version footer -->
 	<div class="browser-panel__footer">
+		<span class="browser-panel__app-name" class:browser-panel__app-name--debug={appName !== 'Holons'} title="HoloSphere appName">app: {appName}</span>
+		{#if showAppToggle}
+			<button
+				type="button"
+				class="browser-panel__app-toggle"
+				onclick={toggleAppName}
+				title="Switch to {appName === 'Holons' ? 'HolonsDebug (debug data)' : 'Holons (production data)'} and reload"
+			>
+				⇄ {appName === 'Holons' ? 'debug' : 'prod'}
+			</button>
+		{/if}
 		<span title="Build: {commitHash}">build: {commitHash}</span>
 		<span title="Holosphere version">holosphere: {holosphereVersion}</span>
 	</div>
@@ -1436,6 +1466,36 @@
 		font-family: monospace;
 		color: var(--color-text-muted, #6b7280);
 		opacity: 0.6;
+	}
+
+	.browser-panel__app-name {
+		font-weight: 600;
+		opacity: 0.85 !important;
+	}
+
+	.browser-panel__app-name--debug {
+		color: #f59e0b !important;
+	}
+
+	.browser-panel__app-toggle {
+		display: inline-block;
+		font-size: 10px;
+		font-family: monospace;
+		color: var(--color-text-muted, #6b7280);
+		background: rgba(245, 158, 11, 0.12);
+		border: 1px solid rgba(245, 158, 11, 0.35);
+		border-radius: 3px;
+		padding: 1px 6px;
+		margin-top: 2px;
+		cursor: pointer;
+		opacity: 0.85;
+		width: fit-content;
+		transition: background-color 120ms ease, opacity 120ms ease;
+	}
+
+	.browser-panel__app-toggle:hover {
+		background: rgba(245, 158, 11, 0.22);
+		opacity: 1;
 	}
 
 </style>

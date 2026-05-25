@@ -24,6 +24,7 @@
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './scoring/ContributionScoring';
 import { queryManager } from './holosphere/QueryManager';
+import { mergeSelfIntoUsers } from './util/usersWithSelf';
 
 // Types
 export interface CachedUser {
@@ -121,7 +122,9 @@ export function getCachedUsersObject(holonId: string): Record<string, CachedUser
     for (const [key, user] of users) {
         result[key] = user;
     }
-    return result;
+    // Always include the current viewer, even if they have no record in the
+    // holon yet. Cast through the helper's structural shape.
+    return mergeSelfIntoUsers(result) as Record<string, CachedUser>;
 }
 
 /**

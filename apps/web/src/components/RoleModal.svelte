@@ -2,15 +2,22 @@
     // @ts-nocheck
 
     $: if (role && !role.participants) {
-        console.log("[RoleModal.svelte] Initializing role.participants as [] because it was falsy.");
         role.participants = [];
     }
 
-    import { createEventDispatcher, onMount } from 'svelte';
+    import { createEventDispatcher } from 'svelte';
     import { fade, scale } from 'svelte/transition';
+    import { goto } from '$app/navigation';
+    import {
+        CHECKLIST_TYPES,
+        createChecklistObject,
+    } from '@holons/core/checklists';
     import { notifyWriteDenied } from '../lib/stores/writeNotifications';
-    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName } from '$lib/stores/nameResolver';
+    import { formatDate } from '../utils/date';
     import DisplayName from './shared/DisplayName.svelte';
+    import SourceBadge from './shared/SourceBadge.svelte';
+    import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
 
     export let role: any;
     export let roleId: string;
@@ -18,57 +25,38 @@
     export let holosphere: any;
     export let holonId: string;
 
+    let editingTitle = false;
+    let editingDescription = false;
     let tempTitle = '';
     let tempDescription = '';
+    let userSearchQuery = '';
 
-    // Initialize temp values when role changes
     $: if (role) {
-        tempTitle = role.title || '';
-        tempDescription = role.description || '';
+        if (!editingTitle) tempTitle = role.title || '';
+        if (!editingDescription) tempDescription = role.description || '';
     }
 
-    console.log("[RoleModal.svelte] Script run/init. Role ID:", roleId);
-    console.log("[RoleModal.svelte] Initial role prop:", JSON.parse(JSON.stringify(role || {})));
-    console.log("[RoleModal.svelte] Initial userStore prop:", JSON.parse(JSON.stringify(userStore || {})));
-
-    onMount(() => {
-        console.log("[RoleModal.svelte] Mounted. Role ID:", roleId);
-        console.log("[RoleModal.svelte] role prop onMount:", JSON.parse(JSON.stringify(role || {})));
-        console.log("[RoleModal.svelte] userStore prop onMount:", JSON.parse(JSON.stringify(userStore || {})));
-    });
-
     const dispatch = createEventDispatcher();
-    let showAddParticipants = false;
 
-    // Reactive statement to calculate available users
-    $: availableUsersToList = (() => {
-        if (!userStore || Object.keys(userStore).length === 0) {
-            console.log(`[RoleModal.svelte] No userStore or empty userStore`);
-            return [];
-        }
-        
-        console.log(`[RoleModal.svelte] userStore keys:`, Object.keys(userStore));
-        console.log(`[RoleModal.svelte] role.participants:`, role?.participants);
-        
-        if (!role?.participants) {
-            // If no participants yet, show all users
-            const allUsers = Object.entries(userStore);
-            console.log(`[RoleModal.svelte] No participants yet, showing all users:`, allUsers.map(([key, user]) => ({ key, id: user.id, name: user.first_name })));
-            return allUsers;
-        }
-        
-        // Filter out users who are already participants
-        const availableUsers = Object.entries(userStore).filter(([userId, _user]) => !isUserParticipant(userId));
-        console.log(`[RoleModal.svelte] Filtered available users:`, availableUsers.map(([key, user]) => ({ key, id: user.id, name: user.first_name })));
-        return availableUsers;
+    // Stable Set of participant ids — drives the multi-select check state.
+    $: participantIds = new Set((role?.participants || []).map((p: any) => String(p.id)));
+
+    $: userEntries = Object.entries(userStore || {});
+    $: filteredUserEntries = (() => {
+        const q = userSearchQuery.trim().toLowerCase();
+        if (!q) return userEntries;
+        return userEntries.filter(([userId, user]) => {
+            const name = resolvedName(user?.id || userId, $nameMap, user) || '';
+            const handle = String(user?.username || '');
+            return (
+                name.toLowerCase().includes(q) ||
+                handle.toLowerCase().includes(q)
+            );
+        });
     })();
 
-    // Debug logging when dropdown is shown
-    $: if (showAddParticipants) {
-        console.log("[RoleModal.svelte] Add Participants dropdown opened");
-        console.log("[RoleModal.svelte] userStore keys:", Object.keys(userStore || {}));
-        console.log("[RoleModal.svelte] role.participants:", role?.participants || []);
-        console.log("[RoleModal.svelte] availableUsersToList count:", availableUsersToList.length);
+    function focusOnMount(node: HTMLElement) {
+        node.focus();
     }
 
     async function updateRole(updates: any) {
@@ -86,17 +74,16 @@
     }
 
     async function deleteRole() {
-        if (confirm('Are you sure you want to delete this role?')) {
-            try {
-                await holosphere.delete(holonId, 'roles', roleId);
-                dispatch('deleted', { roleId: roleId });
-                dispatch('close');
-            } catch (error: any) {
-                if (error?.name === 'AuthorizationError') {
-                    notifyWriteDenied('Unable to delete - no write permission for this holon');
-                } else {
-                    console.error('[RoleModal.svelte] Error deleting role:', error);
-                }
+        if (!confirm('Are you sure you want to delete this role?')) return;
+        try {
+            await holosphere.delete(holonId, 'roles', roleId);
+            dispatch('deleted', { roleId });
+            dispatch('close');
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to delete - no write permission for this holon');
+            } else {
+                console.error('[RoleModal.svelte] Error deleting role:', error);
             }
         }
     }
@@ -106,235 +93,402 @@
     }
 
     async function saveTitle() {
-        if (tempTitle.trim() !== role.title) {
+        if (tempTitle.trim() && tempTitle.trim() !== role.title) {
             await updateRole({ title: tempTitle.trim() });
+        }
+        editingTitle = false;
+    }
+
+    function handleTitleKeydown(event: KeyboardEvent) {
+        if (event.key === 'Enter') {
+            saveTitle();
+        } else if (event.key === 'Escape') {
+            tempTitle = role.title || '';
+            editingTitle = false;
         }
     }
 
     async function saveDescription() {
-        if (tempDescription.trim() !== (role.description || '')) {
-            await updateRole({ description: tempDescription.trim() });
+        const next = tempDescription.trim();
+        if (next !== (role.description || '')) {
+            await updateRole({ description: next });
+        }
+        editingDescription = false;
+    }
+
+    function handleDescriptionKeydown(event: KeyboardEvent) {
+        if (event.key === 'Escape') {
+            tempDescription = role.description || '';
+            editingDescription = false;
         }
     }
 
     async function removeParticipant(participantId: string) {
-        const participants = (role.participants || []).filter((p: { id: string }) => p.id !== participantId);
+        const participants = (role.participants || []).filter(
+            (p: { id: string }) => String(p.id) !== String(participantId)
+        );
         await updateRole({ participants });
     }
 
-    async function addParticipant(userId: string) {
-        console.log(`[RoleModal.svelte] addParticipant called with userId: '${userId}'`);
-        console.log(`[RoleModal.svelte] userStore keys:`, Object.keys(userStore || {}));
-        console.log(`[RoleModal.svelte] Looking for user with key: '${userId}'`);
+    async function addParticipant(userKey: string, user: any) {
+        const u = user || userStore?.[userKey];
+        if (!u) return;
 
-        const user = userStore[userId];
-        console.log(`[RoleModal.svelte] Found user:`, user);
-
-        if (!user) {
-            console.error(`[RoleModal.svelte] User not found in userStore with key '${userId}'`);
-            return;
-        }
-
+        const userId = u.id ?? userKey;
         const participants = [...(role.participants || [])];
+        if (participants.some((p: { id: string }) => String(p.id) === String(userId))) return;
 
-        if (!participants.some((p: { id: string }) => p.id === userId)) {
-            const username = user.first_name + (user.last_name ? ' ' + user.last_name : '');
-            const newParticipant = {
-                id: userId,
-                username,
-                isPermanent: true,
-                assigned_at: new Date().toISOString()
-            };
-            console.log(`[RoleModal.svelte] Adding new participant as permanent:`, newParticipant);
+        const username = u.first_name + (u.last_name ? ' ' + u.last_name : '');
+        participants.push({
+            id: userId,
+            username,
+            isPermanent: true,
+            assigned_at: new Date().toISOString(),
+        });
+        await updateRole({ participants });
 
-            participants.push(newParticipant);
-            await updateRole({ participants });
-
-            // Dispatch event to show notification about permanent assignment
-            dispatch('permanentAssignment', {
-                roleName: role.title,
-                userName: username
-            });
-        } else {
-            console.log(`[RoleModal.svelte] User '${userId}' is already a participant`);
-        }
-        showAddParticipants = false;
+        dispatch('permanentAssignment', {
+            roleName: role.title,
+            userName: username,
+        });
     }
 
-    function isUserParticipant(userId: string) {
-        const isParticipant = role.participants?.some((p: { id: string }) => p.id === userId);
-        console.log(`[RoleModal.svelte] isUserParticipant('${userId}'): ${isParticipant}`);
-        if (role.participants) {
-            console.log(`[RoleModal.svelte] Current participants:`, role.participants.map(p => ({ id: p.id, username: p.username })));
+    function toggleUserParticipation(userKey: string, user: any) {
+        const userId = user?.id ?? userKey;
+        if (participantIds.has(String(userId))) {
+            removeParticipant(String(userId));
+        } else {
+            addParticipant(userKey, user);
         }
-        return isParticipant;
+    }
+
+    function navigateToChecklist() {
+        if (role?.checklistId) {
+            goto(`/${holonId}/checklists?checklist=${role.checklistId}`);
+        }
+    }
+
+    // Optimistic: flip the button to "View Checklist" immediately and sync to
+    // HoloSphere in the background — mirrors createChecklistForTask in TaskModal.
+    function createChecklistForRole() {
+        if (!holosphere || !holonId || !roleId) return;
+        if (role.checklistId) return;
+
+        const newChecklist = createChecklistObject(
+            `role_${roleId}_checklist`,
+            CHECKLIST_TYPES.ROLE,
+            {
+                creator: 'Dashboard User',
+                roleId,
+                parentTitle: role?.title,
+                holonId,
+            },
+        );
+
+        const previousRole = role;
+        role = { ...role, checklistId: newChecklist.id };
+
+        Promise.all([
+            holosphere.put(holonId, 'checklists', newChecklist),
+            holosphere.put(holonId, 'roles', role),
+        ]).catch((error: any) => {
+            role = previousRole;
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error('[RoleModal.svelte] Error creating checklist for role:', error);
+            }
+        });
+    }
+
+    function handlePublished() {
+        // No-op — Roles.svelte already re-subscribes via QueryManager.
     }
 </script>
 
 <div
-    class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    data-component="RoleModal"
+    class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-3"
     on:click|self={closeModal}
-    on:keydown={e => e.key === 'Escape' && closeModal()}
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="modal-title"
-    tabindex="-1"
+    on:keydown={(e) => e.key === 'Escape' && closeModal()}
+    role="presentation"
     transition:fade
 >
-    <!-- Cap the modal at the viewport and let its body scroll. Without this,
-         expanding "Add Participant" with many users pushed the modal past the
-         viewport edge and the bottom (Delete / Close) got clipped. -->
     <div
-        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl max-h-[90vh] flex flex-col"
-        transition:scale={{duration: 200, start: 0.95}}
+        class="bg-gray-800 rounded-xl max-w-3xl w-full max-h-[95vh] shadow-2xl relative flex flex-col border border-gray-700 mx-auto lg:mx-0"
+        transition:scale={{ duration: 200, start: 0.95 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabindex="-1"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
     >
-        <div class="p-6 overflow-y-auto">
-            <div class="flex justify-between items-start mb-6">
-                <div class="flex-1 mr-4">
+        <button
+            class="absolute top-4 right-4 text-gray-400 hover:text-white z-10 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
+            on:click={closeModal}
+            aria-label="Close modal"
+            type="button"
+        >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+
+        <!-- Header -->
+        <div class="flex items-center justify-between p-4 border-b border-gray-700">
+            <div class="flex-1 mr-4">
+                {#if editingTitle}
                     <input
                         type="text"
                         bind:value={tempTitle}
+                        class="text-xl font-bold text-white bg-transparent border-b border-gray-500 focus:border-blue-400 px-1 py-1 w-full outline-none"
                         on:blur={saveTitle}
-                        on:keydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                        placeholder="Role title..."
-                        class="w-full text-2xl font-bold text-white bg-transparent border-b border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors pb-1"
-                        aria-label="Role title"
-                        id="modal-title"
+                        on:keydown={handleTitleKeydown}
+                        use:focusOnMount
                     />
+                {:else}
+                    <button
+                        type="button"
+                        id="modal-title"
+                        class="text-xl font-bold text-white hover:text-gray-300 transition-colors w-full text-left"
+                        on:click={() => {
+                            tempTitle = role.title || '';
+                            editingTitle = true;
+                        }}
+                    >
+                        {role.title || 'Untitled role'}
+                    </button>
+                {/if}
+
+                <!-- Compact metadata -->
+                <div class="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                    {#if role.created}
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            {formatDate(role.created)}
+                        </span>
+                    {/if}
+                    <SourceBadge item={role} currentHolonId={holonId} lensRoute="roles" />
                 </div>
-                <button
-                    class="text-gray-400 hover:text-white"
-                    on:click={closeModal}
-                    aria-label="Close modal"
-                >
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
             </div>
+        </div>
 
-            <div class="space-y-6 text-gray-300">
-                <div>
-                    <textarea
-                        bind:value={tempDescription}
-                        on:blur={saveDescription}
-                        placeholder="Add a description for this role..."
-                        rows="2"
-                        class="w-full text-sm text-gray-300 bg-gray-700/50 rounded-lg p-3 border border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors resize-none"
-                        aria-label="Role description"
-                    ></textarea>
-                </div>
-
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h3 class="text-lg font-semibold">Participants</h3>
-                        <button
-                            class="btn btn--sm {showAddParticipants ? 'btn--secondary' : 'btn--primary'}"
-                            on:click={() => showAddParticipants = !showAddParticipants}
-                            disabled={Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
-                        >
-                            {#if Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
-                                Loading Users...
-                            {:else if showAddParticipants}
-                                Cancel
-                            {:else}
-                                + Add Participant
-                            {/if}
-                        </button>
+        <!-- Body -->
+        <div class="p-4 overflow-y-auto flex-1 modal-content scrollbar-thin">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-gray-300 min-h-0">
+                <!-- Left column -->
+                <div class="space-y-3 min-h-0">
+                    <!-- Description -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+                            </svg>
+                            Description
+                        </h4>
+                        {#if editingDescription}
+                            <textarea
+                                bind:value={tempDescription}
+                                class="text-sm text-white bg-gray-800 rounded px-2 py-2 w-full resize-none border border-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                rows="3"
+                                placeholder="Add a description..."
+                                on:blur={saveDescription}
+                                on:keydown={handleDescriptionKeydown}
+                                use:focusOnMount
+                            ></textarea>
+                        {:else if role.description}
+                            <button
+                                class="text-sm whitespace-pre-wrap text-left w-full hover:bg-gray-700/50 p-2 rounded transition-colors"
+                                on:click={() => {
+                                    tempDescription = role.description || '';
+                                    editingDescription = true;
+                                }}
+                                type="button"
+                            >
+                                {role.description}
+                            </button>
+                        {:else}
+                            <button
+                                class="text-sm text-gray-400 hover:text-white p-2 rounded hover:bg-gray-700/50 w-full text-left transition-colors"
+                                on:click={() => {
+                                    tempDescription = '';
+                                    editingDescription = true;
+                                }}
+                                type="button"
+                            >
+                                + Add description
+                            </button>
+                        {/if}
                     </div>
 
                     <!-- Permanent assignment notice -->
-                    <div class="flex items-start gap-2 p-3 bg-amber-900/30 border border-amber-700/50 rounded-lg text-sm">
+                    <div class="bg-amber-900/30 border border-amber-700/50 rounded-lg p-3 flex items-start gap-2 text-sm">
                         <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <line x1="12" y1="8" x2="12" y2="12"></line>
                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
                         </svg>
-                        <span class="text-amber-200/90">Assignments made here are <strong>permanent</strong> and will override the weekly schedule for all days.</span>
+                        <span class="text-amber-200/90">
+                            Assignments made here are <strong>permanent</strong> and override the weekly schedule for all days.
+                        </span>
                     </div>
 
-                    <!-- Current Participants List -->
-                    <div class="space-y-2">
-                        {#if role.participants?.length}
-                            {#each role.participants as participant}
-                                <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
-                                    <div class="flex items-center gap-2">
-                                            <img 
-                                            src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                                alt={participant.username}
-                                            class="w-8 h-8 rounded-full object-cover border border-gray-500"
-                                            on:error={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                                e.currentTarget.nextElementSibling.style.display = 'flex';
-                                            }}
-                                        />
-                                        <div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm font-bold border border-gray-500" style="display: none;">
-                                            {participant.username ? participant.username[0] : '?'}
-                                        </div>
-                                        <span>{participant.username}</span>
-                                    </div>
-                                    <button 
-                                        class="text-red-400 hover:text-red-300"
-                                        on:click={() => removeParticipant(participant.id)}
-                                        aria-label="Remove participant"
-                                    >
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            {/each}
-                        {:else}
-                            <p class="text-gray-500 text-sm">No participants yet</p>
-                        {/if}
-                    </div>
-
-                    <!-- Add Participants Dropdown — caps height so a long user
-                         list scrolls inside the dropdown instead of pushing the
-                         modal footer (Delete / Close) off-screen. -->
-                    {#if showAddParticipants}
-                        <div class="bg-gray-700 rounded-lg overflow-y-auto mt-2 max-h-64">
-                            {#if Object.keys(userStore || {}).length === 0 && holosphere}
-                                <p class="p-3 text-sm text-gray-400">Loading users or no users found in this holon.</p>
-                            {:else if availableUsersToList.length === 0 && Object.keys(userStore || {}).length > 0}
-                                <p class="p-3 text-sm text-gray-400">All available users are already participants or no other users to add.</p>
+                    <!-- Checklist quick action -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            Actions
+                        </h4>
+                        <div class="space-y-1">
+                            {#if role.checklistId}
+                                <button
+                                    class="w-full px-2 py-1 bg-teal-500/20 text-teal-300 rounded text-xs hover:bg-teal-500/30 transition-colors flex items-center gap-2"
+                                    on:click={navigateToChecklist}
+                                    type="button"
+                                >
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    View Checklist
+                                </button>
                             {:else}
-                                {#each availableUsersToList as [userId, user]}
+                                <button
+                                    class="w-full px-2 py-1 bg-gray-600 text-gray-300 rounded text-xs hover:bg-gray-500 transition-colors flex items-center gap-2"
+                                    on:click={createChecklistForRole}
+                                    type="button"
+                                >
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Create Checklist
+                                </button>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right column -->
+                <div class="space-y-3 min-h-0">
+                    <!-- Participants -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                            Participants
+                            {#if role.participants?.length}
+                                <span class="text-xs text-indigo-400">({role.participants.length} assigned)</span>
+                            {/if}
+                        </h4>
+
+                        {#if Object.keys(userStore || {}).length > 4}
+                            <!-- Match TaskModal: search appears once the holon has >4 users. -->
+                            <div class="team-search">
+                                <input
+                                    type="search"
+                                    class="team-search__input"
+                                    placeholder="Search users…"
+                                    bind:value={userSearchQuery}
+                                    autocomplete="off"
+                                    autocorrect="off"
+                                    autocapitalize="off"
+                                    spellcheck="false"
+                                />
+                                {#if userSearchQuery}
                                     <button
-                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
-                                        on:click={() => addParticipant(userId)}
+                                        type="button"
+                                        class="team-search__clear"
+                                        on:click|stopPropagation={() => (userSearchQuery = '')}
+                                        aria-label="Clear search"
+                                    >&times;</button>
+                                {/if}
+                            </div>
+                        {/if}
+
+                        <div class="max-h-64 overflow-y-auto space-y-1 pr-1 overscroll-contain">
+                            {#if Object.keys(userStore || {}).length === 0 && holosphere}
+                                <p class="text-gray-500 text-xs py-2 text-center">Loading users…</p>
+                            {:else if Object.keys(userStore || {}).length === 0}
+                                <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
+                            {:else if filteredUserEntries.length === 0}
+                                <p class="text-gray-500 text-xs py-2 text-center">No matching users</p>
+                            {:else}
+                                {#each filteredUserEntries as [userKey, user] (user.id || userKey)}
+                                    {@const userId = user.id || userKey}
+                                    {@const isSelected = participantIds.has(String(userId))}
+                                    <div
+                                        class="user-row {isSelected ? 'user-row--selected' : ''}"
+                                        role="button"
+                                        tabindex="0"
+                                        aria-pressed={isSelected}
+                                        on:click|stopPropagation={() => toggleUserParticipation(userKey, user)}
+                                        on:keydown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                toggleUserParticipation(userKey, user);
+                                            }
+                                        }}
                                     >
-                                            <img
-                                            src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
-                                                alt={resolvedName(user.id || userId, $nameMap, user)}
-                                            class="w-6 h-6 rounded-full object-cover border border-gray-500"
-                                            on:error={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                                e.currentTarget.nextElementSibling.style.display = 'flex';
-                                            }}
-                                        />
-                                        <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white border border-gray-500" style="display: none;">
-                                            {resolvedInitials(user.id || userId, $nameMap, user)}
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <div class="user-row__check {isSelected ? 'user-row__check--on' : ''}">
+                                                {#if isSelected}
+                                                    <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                                    </svg>
+                                                {/if}
                                             </div>
-                                        <span><DisplayName id={user.id || userId} {user} /></span>
-                                    </button>
+                                            <img
+                                                src={`https://telegram.holons.io/getavatar?user_id=${userId}`}
+                                                alt={resolvedName(userId, $nameMap, user)}
+                                                class="w-7 h-7 rounded-full"
+                                                loading="lazy"
+                                            />
+                                            <div class="text-left min-w-0">
+                                                <div class="text-gray-200 font-medium truncate">
+                                                    <DisplayName id={userId} {user} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 {/each}
                             {/if}
                         </div>
-                    {/if}
+                    </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="flex justify-between pt-6">
-                    <button
-                        class="btn btn--danger"
-                        on:click={deleteRole}
-                    >
-                        Delete Role
-                    </button>
+        <!-- Footer -->
+        <div class="border-t border-gray-700 p-4">
+            <div class="flex gap-2 justify-between">
+                <button
+                    class="px-3 py-2 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 border border-red-500/30 transition-colors text-sm flex items-center gap-2"
+                    on:click={deleteRole}
+                    type="button"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Delete
+                </button>
 
+                <div class="flex gap-2">
+                    <PublishToFederationButton
+                        {holonId}
+                        lens="roles"
+                        item={role}
+                        onPublished={handlePublished}
+                    />
                     <button
-                        class="btn btn--secondary"
+                        class="px-4 py-2 bg-gray-700 text-gray-200 rounded border border-gray-600 hover:bg-gray-600 transition-colors text-sm font-medium"
                         on:click={closeModal}
+                        type="button"
                     >
                         Close
                     </button>
@@ -342,4 +496,112 @@
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+<style>
+    /* Modal scrollbar — matches TaskModal */
+    .modal-content::-webkit-scrollbar {
+        width: 8px;
+    }
+    .modal-content::-webkit-scrollbar-track {
+        background: #374151;
+        border-radius: 4px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+        background: #6b7280;
+        border-radius: 4px;
+    }
+    .modal-content::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+
+    /* Team / participant search box */
+    .team-search {
+        position: relative;
+        margin-bottom: 0.5rem;
+    }
+    .team-search__input {
+        width: 100%;
+        background: #111827;
+        border: 1px solid #374151;
+        border-radius: 0.5rem;
+        color: #f9fafb;
+        font-size: 0.875rem;
+        padding: 0.5rem 2rem 0.5rem 0.75rem;
+        line-height: 1.2;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    .team-search__input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+    .team-search__input::placeholder {
+        color: #6b7280;
+    }
+    .team-search__clear {
+        position: absolute;
+        right: 0.4rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 0.375rem;
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .team-search__clear:hover {
+        background: #374151;
+        color: #fff;
+    }
+
+    /* Selectable user row */
+    .user-row {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.625rem 0.625rem;
+        border-radius: 0.5rem;
+        background: #1f2937;
+        border: 1px solid transparent;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+        transition: background-color 120ms ease, border-color 120ms ease;
+        min-height: 48px;
+    }
+    .user-row:hover {
+        background: #374151;
+    }
+    .user-row:active {
+        background: #4b5563;
+    }
+    .user-row--selected,
+    .user-row--selected:hover {
+        background: rgba(99, 102, 241, 0.18);
+        border-color: rgba(99, 102, 241, 0.5);
+    }
+    .user-row__check {
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 0.375rem;
+        border: 2px solid #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background-color 120ms ease, border-color 120ms ease;
+    }
+    .user-row__check--on {
+        background: #6366f1;
+        border-color: #6366f1;
+    }
+</style>

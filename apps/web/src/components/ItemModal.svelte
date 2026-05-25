@@ -32,7 +32,18 @@
     const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
-    
+    let userSearchQuery = '';
+    $: filteredUserEntries = (() => {
+        const entries = Object.entries(userStore);
+        const q = userSearchQuery.trim().toLowerCase();
+        if (!q) return entries;
+        return entries.filter(([uid, u]: any) => {
+            const name = String(u?.first_name || '') + ' ' + String(u?.last_name || '');
+            const handle = String(u?.username || '');
+            return name.toLowerCase().includes(q) || handle.toLowerCase().includes(q) || String(uid).toLowerCase().includes(q);
+        });
+    })();
+
     // Scheduling interface variables
     let showScheduling = false;
     let tempDate: string;
@@ -366,7 +377,20 @@
                     <!-- User Dropdown -->
                     {#if showDropdown}
                         <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown">
-                            {#each Object.entries(userStore) as [userId, user]}
+                            {#if Object.keys(userStore).length > 4}
+                                <div class="p-2 border-b border-gray-600">
+                                    <input
+                                        type="search"
+                                        bind:value={userSearchQuery}
+                                        on:click|stopPropagation
+                                        placeholder="Search users…"
+                                        class="w-full text-sm px-2 py-1 bg-gray-800 text-white border border-gray-600 rounded outline-none focus:border-indigo-500"
+                                        autocomplete="off"
+                                    />
+                                </div>
+                            {/if}
+                            <div class="max-h-64 overflow-y-auto">
+                            {#each filteredUserEntries as [userId, user]}
                                 <button
                                     class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 {isUserParticipant(userId) ? 'bg-gray-600' : ''}"
                                     on:click|stopPropagation={() => toggleParticipant(userId)}
@@ -393,6 +417,10 @@
                                     {/if}
                                 </button>
                             {/each}
+                            {#if filteredUserEntries.length === 0}
+                                <div class="px-4 py-2 text-xs text-gray-400">No matching users</div>
+                            {/if}
+                            </div>
                         </div>
                     {/if}
                 </div>
