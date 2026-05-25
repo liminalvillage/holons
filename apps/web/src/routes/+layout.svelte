@@ -15,6 +15,7 @@
 	import { addVisitedHolon } from '../utils/localStorage';
 	import { registerName as hnsRegister, lookupName as hnsLookup } from '$lib/hns';
 	import { isValidHolonName, setName } from '$lib/stores/nameResolver';
+	import { getEffectiveAppName } from '$lib/stores/appName';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -30,11 +31,10 @@
 	// Subscribe to holosphere store for reactive updates
 	$: holosphere = $holosphereStore;
 
-	// Single source of truth: VITE_HOLONS_APP from the monorepo root .env.
-	// Falls back to env-mode branching only if the var is unset.
-	let environmentName: string =
-		import.meta.env.VITE_HOLONS_APP ||
-		(import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug");
+	// Single source of truth: $lib/stores/appName.getEffectiveAppName(), which
+	// reads VITE_HOLONS_APP from root .env unless a localStorage override is
+	// active (toggled from the BrowserPanel footer in dev mode).
+	let environmentName: string = getEffectiveAppName();
 
 	console.log("Vite mode:", import.meta.env.MODE)
 	console.log("Environment:", environmentName)
