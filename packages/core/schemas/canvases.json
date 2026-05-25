@@ -1,0 +1,31 @@
+{
+  "title": "canvases",
+  "description": "Records stored at (holonId, 'canvases', <canvasId>). Whiteboard / visual canvas referenced by Quest.canvasId.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object",
+      "description": "Canvas payload (Excalidraw-style scene, tldraw doc, etc. \u2014 shape kept loose since UIs may differ)."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}

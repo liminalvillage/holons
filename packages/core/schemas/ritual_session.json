@@ -1,0 +1,29 @@
+{
+  "title": "ritual_session",
+  "description": "Record stored at (holonId, 'ritual_session', <session_id>). Live ritual session \u2014 advisors, design streams, and the produced artifact.",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "wish_statement": {
+      "type": "string"
+    },
+    "declared_values": {
+      "type": "array"
+    },
+    "advisors": {
+      "type": "array"
+    },
+    "design_streams": {
+      "type": "array"
+    },
+    "ritual_artifact": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "session_id",
+    "wish_statement"
+  ]
+}

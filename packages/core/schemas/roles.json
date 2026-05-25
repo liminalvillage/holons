@@ -1,0 +1,32 @@
+{
+  "title": "roles",
+  "description": "Records stored at (holonId, 'roles', <id>). One record per role; `id` is typically the slugified title.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "description": "Mixed array of user objects and legacy username strings (migration in place)."
+    },
+    "checklistId": {
+      "type": "string",
+      "description": "Optional pointer to a companion checklist."
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "title"
+  ]
+}

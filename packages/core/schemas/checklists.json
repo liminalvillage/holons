@@ -1,0 +1,49 @@
+{
+  "title": "checklists",
+  "description": "Records stored at (holonId, 'checklists', <id>). Holds plain Checklist records AND the singleton ShoppingChecklist at key 'shopping'. The `type` field distinguishes them.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "description": "checklist | agenda | shopping | quest | role"
+    },
+    "title": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "creator": {
+      "type": "string"
+    },
+    "questId": {
+      "type": "string"
+    },
+    "roleId": {
+      "type": "string"
+    },
+    "parentTitle": {
+      "type": "string"
+    },
+    "holonId": {
+      "type": "string"
+    },
+    "_hologram": {
+      "type": "object"
+    },
+    "_federation": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "items"
+  ]
+}

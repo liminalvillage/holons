@@ -1,0 +1,87 @@
+{
+  "title": "events",
+  "description": "Records stored at (holonId, 'events', <id>). Shares the Quest shape \u2014 events are a quest subtype with type: 'event'.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "holon": {
+      "type": "number",
+      "description": "Chat / channel id."
+    },
+    "message_thread_id": {
+      "type": "number"
+    },
+    "initiator": {
+      "type": "object"
+    },
+    "title": {
+      "type": "string"
+    },
+    "picture": {
+      "type": "string",
+      "description": "Telegram file_id or URL."
+    },
+    "type": {
+      "type": "string",
+      "description": "Always 'event' for this lens."
+    },
+    "status": {
+      "type": "string"
+    },
+    "date": {
+      "type": "number"
+    },
+    "participants": {
+      "type": "array"
+    },
+    "appreciation": {
+      "type": "array"
+    },
+    "when": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "until": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "where": {
+      "type": "object",
+      "description": "{ latitude?, longitude?, name? }"
+    },
+    "reminderId": {
+      "type": "string"
+    },
+    "recurringTaskId": {
+      "type": "string"
+    },
+    "frequency": {
+      "type": "string"
+    },
+    "activeHolograms": {
+      "type": "array"
+    },
+    "description": {
+      "type": "string"
+    },
+    "published": {
+      "type": "boolean"
+    },
+    "_hologram": {
+      "type": "object"
+    },
+    "_federation": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "type"
+  ]
+}

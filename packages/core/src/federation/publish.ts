@@ -74,11 +74,38 @@ async function putToTarget(
 	hologram: unknown,
 	destinations: string[],
 	errors: string[],
-	onWriteDenied?: PublishOptions['onWriteDenied']
+	onWriteDenied?: PublishOptions['onWriteDenied'],
+	forwarderRegistration?: { localHolonId: string; lens: string; itemId: string }
 ): Promise<void> {
 	try {
 		await (holosphere as any).put(target, lens, hologram);
 		destinations.push(target);
+
+		// When forwarding an existing hologram (i.e. we're not the original
+		// source), also register the new hop in OUR OWN `_holograms` set on
+		// our local hologram of this item. holosphere.put already tries to
+		// register at the source's `_holograms` set, but that write is
+		// cross-holon and relies on Gun gossip making it across — which
+		// often doesn't in real meshes. Adding the entry to our own local
+		// set is a *local* write we control, and the cascade walk in
+		// holosphere's put (which now also runs for hologram updates) will
+		// pick it up so updates flow A → us → target on every hop.
+		if (forwarderRegistration) {
+			try {
+				const { localHolonId, lens: regLens, itemId } = forwarderRegistration;
+				const appname = (holosphere as any).appname;
+				const ourSoul = `${appname}/${localHolonId}/${regLens}/${itemId}`;
+				const newHopSoul = `${appname}/${target}/${regLens}/${itemId}`;
+				(holosphere as any)
+					.getNodeRef(ourSoul)
+					.get('_holograms')
+					.get(newHopSoul)
+					.put(true);
+			} catch {
+				// Best-effort: cascade is a backup channel for the source-side
+				// registration. If this fails the forward still went through.
+			}
+		}
 	} catch (err: any) {
 		if (err?.name === 'AuthorizationError' || err?.message?.includes('Write access denied')) {
 			const message = `Unable to publish to ${target.slice(0, 12)}… — no write permission for ${lens}`;
@@ -131,8 +158,23 @@ export async function publishToFederation(
 		: await (holosphere as any).createHologram(holonId, lens, item);
 	const errors: string[] = [];
 	const destinations: string[] = [];
+	// Only forwards (re-publishing an existing hologram) need the local
+	// `_holograms` cascade registration — fresh publishes already register
+	// at the source's `_holograms` set on the same local instance.
+	const forwarderRegistration = resolvedHologramSoul
+		? { localHolonId: holonId, lens, itemId: item.id }
+		: undefined;
 	const single = (t: string) =>
-		putToTarget(holosphere, t, lens, hologram, destinations, errors, opts.onWriteDenied);
+		putToTarget(
+			holosphere,
+			t,
+			lens,
+			hologram,
+			destinations,
+			errors,
+			opts.onWriteDenied,
+			forwarderRegistration
+		);
 
 	if (target.kind === 'partner') {
 		await single(target.holonId);

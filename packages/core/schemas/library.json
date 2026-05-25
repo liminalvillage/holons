@@ -1,0 +1,68 @@
+{
+  "title": "library",
+  "description": "Records stored at (holonId, 'library', <id>). One record per library item.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "description": "tool | book | equipment | other"
+    },
+    "borrowed": {
+      "type": "boolean"
+    },
+    "createdBy": {
+      "type": "string"
+    },
+    "createdByUsername": {
+      "type": "string"
+    },
+    "borrower": {
+      "type": "string"
+    },
+    "borrowerId": {
+      "type": "string"
+    },
+    "borrowerInitials": {
+      "type": "string"
+    },
+    "borrowedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "returnBy": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "returnedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "category": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "value": {
+      "type": "number"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ratings": {
+      "type": "array"
+    },
+    "issues": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "category"
+  ]
+}

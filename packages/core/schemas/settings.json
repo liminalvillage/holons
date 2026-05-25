@@ -1,0 +1,52 @@
+{
+  "title": "settings",
+  "description": "Singleton record stored at (holonId, 'settings', <holonId>). Holon-wide configuration.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number"
+    },
+    "admin": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "theme": {
+      "type": "string"
+    },
+    "hex": {
+      "type": "string",
+      "description": "H3 cell address for geographic federation."
+    },
+    "maxTasks": {
+      "type": "number"
+    },
+    "federation": {
+      "type": "array"
+    },
+    "lensConfig": {
+      "type": "object"
+    },
+    "flowManagement": {
+      "type": "object"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ]
+}

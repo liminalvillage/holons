@@ -1,0 +1,38 @@
+{
+  "title": "users",
+  "description": "Records stored at (holonId, 'users', <userId>). One record per holon member.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Telegram user id (stringified) or web auth uid."
+    },
+    "version": {
+      "type": "string",
+      "description": "Profile schema version (currently '0.3')."
+    },
+    "username": {
+      "type": "string"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "values": {
+      "type": "array"
+    },
+    "needs": {
+      "type": "array"
+    },
+    "participated": {
+      "type": "object",
+      "description": "Per-message RSVP / participation state keyed by message id."
+    }
+  },
+  "required": [
+    "id",
+    "username"
+  ]
+}

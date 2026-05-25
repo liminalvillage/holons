@@ -1,0 +1,39 @@
+{
+  "title": "appreciations",
+  "description": "Records stored at (holonId, 'appreciations', <id>). Peer-to-peer thanks / credit transfers.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Date.now().toString()."
+    },
+    "from": {
+      "type": "object",
+      "description": "Telegram user object: { id, first_name?, username?, last_name? }."
+    },
+    "to": {
+      "type": "object",
+      "description": "Telegram user object: { id, first_name?, username?, last_name? }."
+    },
+    "amount": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "date": {
+      "type": "number",
+      "description": "Wall-clock ms."
+    },
+    "holonId": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "from",
+    "to",
+    "amount",
+    "date"
+  ]
+}

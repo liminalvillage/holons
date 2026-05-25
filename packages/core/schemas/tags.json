@@ -1,0 +1,19 @@
+{
+  "title": "tags",
+  "description": "Records stored at (holonId, 'tags', <tagName>). One record per tag; `id` is the tag name.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Tag name (used as both key and id)."
+    },
+    "content": {
+      "type": "array",
+      "description": "Array of TagEntry objects: { holonId, messageId, messageContent? }."
+    }
+  },
+  "required": [
+    "id",
+    "content"
+  ]
+}

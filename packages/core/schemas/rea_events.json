@@ -1,0 +1,36 @@
+{
+  "title": "rea_events",
+  "description": "Records stored at (holonId, 'rea_events', <id>). Resource-Event-Agent events. Intentionally loose \u2014 UIs add fields freely.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Wall-clock ms."
+    },
+    "resource": {
+      "type": "object"
+    },
+    "provider": {
+      "type": "object"
+    },
+    "receiver": {
+      "type": "object"
+    },
+    "context": {
+      "type": "object"
+    },
+    "eventType": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "timestamp"
+  ]
+}

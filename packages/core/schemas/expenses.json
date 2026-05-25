@@ -1,0 +1,49 @@
+{
+  "title": "expenses",
+  "description": "Records stored at (holonId, 'expenses', <id>). One record per expense.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Telegram message id (stringified) or web uuid."
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string",
+      "description": "Normalized (lowercase, singular, a-z only)."
+    },
+    "description": {
+      "type": "string"
+    },
+    "paidBy": {
+      "type": "string"
+    },
+    "splitWith": {
+      "type": "array",
+      "description": "IDs of agents that share the cost."
+    },
+    "picture": {
+      "type": "string",
+      "description": "Optional Telegram file_id for an attached receipt."
+    },
+    "_hologram": {
+      "type": "object"
+    },
+    "_federation": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "created",
+    "amount",
+    "currency",
+    "paidBy"
+  ]
+}
