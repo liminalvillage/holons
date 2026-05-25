@@ -1,0 +1,15 @@
+{
+  "title": "announcements",
+  "description": "Records stored at (holonId, 'announcements', <messageId>). One record per published announcement.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "Telegram message_id of the original /announce command (stringified)." },
+    "user": { "type": "object", "description": "Telegram `from` user object." },
+    "date": { "type": "string", "format": "date-time" },
+    "content": { "type": "string", "description": "Announcement body text." },
+    "chat": { "type": "number", "description": "Originating chat id (holonId)." },
+    "_hologram": { "type": "object" },
+    "_federation": { "type": "object" }
+  },
+  "required": ["id", "user", "content"]
+}

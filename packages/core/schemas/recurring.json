@@ -1,0 +1,19 @@
+{
+  "title": "recurring",
+  "description": "Records stored in the GLOBAL 'recurring' table (written via putGlobal, not per-holon put). One record per recurring task; companion 'recurringlookup' entries map (holonId, questId) -> taskID.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "Quest id this task is scheduled from." },
+    "holonId": { "type": "string", "description": "Holon that owns the originating quest." },
+    "title": { "type": "string" },
+    "frequency": {
+      "type": "string",
+      "description": "daily | weekly | monthly | quarterly | yearly",
+      "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"]
+    },
+    "when": { "type": "string", "format": "date-time", "description": "ISO start time (Date is stringified for Nostr serialization)." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "initiator": { "type": "object", "description": "Telegram `from` user object." }
+  },
+  "required": ["id", "holonId", "title", "frequency", "when"]
+}

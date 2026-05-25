@@ -49,10 +49,14 @@ await hs.setSchema('quests', questsSchema);
 | [`ritual_session`](ritual_session.json) | `session_id` | `session_id`, `wish_statement` | |
 | [`settings`](settings.json) | singleton (holonId) | `id`, `name` | |
 | [`canvases`](canvases.json) | per-canvas `id` | `id` | Referenced by `Quest.canvasId`. |
+| [`offers`](offers.json) | Telegram `message_id` | `id` | Holds both Murmurations-style offers (`exchange_type`/`item_type`) and simpler `/offer`/`/want` requests. |
+| [`announcements`](announcements.json) | Telegram `message_id` | `id`, `user`, `content` | Federated to partner chats. |
+| [`summaries`](summaries.json) | `'<user>_<partner>'` | `id`, `user`, `partner`, `summary` | 1:1 conversation summaries from `/summary`. |
+| [`recurring`](recurring.json) | quest `id` | `id`, `holonId`, `title`, `frequency`, `when` | **Global table** — written via `putGlobal('recurring', task)`, not the per-holon `put` path. `setSchema` still applies. |
 
 ## Not included (no write sites in repo)
 
-`offers`, `announcements`, `recurring`, `council_values`, `summaries`,
-`profile` (holon-level), `design_session_<id>`, `previous_ritual_<id>` —
-either dead code, type-only declarations, or per-id keys that aren't
-generic lenses. Add a schema here when a real write site appears.
+`council_values`, holon-level `profile`, `design_session_<id>`,
+`previous_ritual_<id>` — either dead code, type-only declarations, or
+per-id keys that aren't generic lenses. Add a schema here when a real
+write site appears.

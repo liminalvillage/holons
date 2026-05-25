@@ -1,0 +1,12 @@
+{
+  "title": "summaries",
+  "description": "Records stored at (holonId, 'summaries', '<user>_<partner>'). One record per 1:1 conversation summary produced by /summary in speed-dating sessions.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "'<user>_<partner>' — composite key." },
+    "user": { "type": "string", "description": "Reporter's telegram username." },
+    "partner": { "type": "string", "description": "Conversation partner's telegram username." },
+    "summary": { "type": "string", "description": "Free-form summary text." }
+  },
+  "required": ["id", "user", "partner", "summary"]
+}

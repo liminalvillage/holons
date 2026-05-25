@@ -1,0 +1,24 @@
+{
+  "title": "offers",
+  "description": "Records stored at (holonId, 'offers', <messageId>). Holds two shapes: full Murmurations-style offers (exchange_type/item_type) and simpler /offer or /want requests (title/requester/status). Both keyed by Telegram message_id.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "Telegram message_id (stringified)." },
+    "title": { "type": "string" },
+    "requester": { "type": "object", "description": "Telegram `from` user object." },
+    "type": { "type": "string", "description": "'offer' | 'want' on simple requests." },
+    "status": { "type": "string", "description": "requested | offered | claimed | fulfilled" },
+    "exchange_type": { "type": "string", "description": "Murmurations: 'offer' | 'want'." },
+    "item_type": { "type": "string", "description": "Murmurations: 'good' | 'service'." },
+    "transaction_type": { "type": "array" },
+    "geographic_scope": { "type": "string" },
+    "geohash": { "type": "string" },
+    "expires_at": { "type": "number" },
+    "tags": { "type": "array" },
+    "description": { "type": "string" },
+    "contact_details": { "type": "object" },
+    "_hologram": { "type": "object" },
+    "_federation": { "type": "object" }
+  },
+  "required": ["id"]
+}
