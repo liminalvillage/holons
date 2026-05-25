@@ -5,8 +5,8 @@
 
 import h3 from 'h3-js';
 import 'gun/lib/then.js';
-import offerschema from '../schemas/offers_wants_schema-v0.0.2.json' with { type: "json" };
-import holonsschema from '../schemas/holons_schema-v0.0.1.json' with { type: "json" };
+import offerschema from '@holons/core/schemas/murmurations/offers_wants_schema-v0.0.2.json' with { type: "json" };
+import holonsschema from '@holons/core/schemas/murmurations/holons_schema-v0.0.1.json' with { type: "json" };
 import { createHash } from "crypto";
 import { markAsUntransferable } from 'worker_threads';
 import { parse } from 'path';

@@ -7,6 +7,7 @@
   "license": "AGPL-3.0-or-later",
   "exports": {
     ".": "./src/index.ts",
+    "./schemas/*": "./schemas/*",
     "./*": {
       "types": "./src/*/index.ts",
       "import": "./dist/*/index.js",

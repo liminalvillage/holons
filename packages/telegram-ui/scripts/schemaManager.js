@@ -165,7 +165,7 @@ const commands = {
             console.log(JSON.stringify(schema, null, 2));
 
             // Optionally save to file
-            const outputPath = path.join(__dirname, '..', 'schemas', \`\${schemaName}_downloaded.json\`);
+            const outputPath = path.join(__dirname, '..', '..', 'core', 'schemas', \`\${schemaName}_downloaded.json\`);
             fs.writeFileSync(outputPath, JSON.stringify(schema, null, 2));
             console.log(\`\\n💾 Schema saved to: \${outputPath}\`);
 
@@ -302,7 +302,9 @@ const commands = {
             }
 
             // Get local schema
-            const localPath = path.join(__dirname, '..', 'schemas', \`\${schemaName}.json\`);
+            const corePath = path.join(__dirname, '..', '..', 'core', 'schemas', \`\${schemaName}.json\`);
+            const murmurationsPath = path.join(__dirname, '..', '..', 'core', 'schemas', 'murmurations', \`\${schemaName}.json\`);
+            const localPath = fs.existsSync(corePath) ? corePath : murmurationsPath;
             if (!fs.existsSync(localPath)) {
                 console.log(\`❌ Local schema file not found: \${localPath}\`);
                 return;
@@ -356,7 +358,7 @@ Examples:
   node schemaManager.js list
   node schemaManager.js get quest
   node schemaManager.js validate user ./test-user.json
-  node schemaManager.js update ./schemas/quest.json
+  node schemaManager.js update ../../core/schemas/quests.json
   node schemaManager.js compare expense
 
 📚 Documentation: See CLAUDE.md for more information

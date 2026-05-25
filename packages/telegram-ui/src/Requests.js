@@ -6,7 +6,7 @@
 import { Markup } from 'telegraf';
 
 import Validator from 'jsonschema';
-import schema from './schemas/offers_wants_prototype-v0.0.2.json' with { type: "json" };
+import schema from '@holons/core/schemas/murmurations/offers_wants_prototype-v0.0.2.json' with { type: "json" };
 
 /** @type {Validator.Validator} JSON Schema validator instance */
 var v = new Validator.Validator();

@@ -28,7 +28,7 @@ export interface ShoppingItem {
   _hologram?: ResolvedHologramMeta;
   _federation?: FederationMeta;
   _deleted?: boolean;
-  // Allow forward-compatible fields (priority, quantity, notes — see schemas/shopping.json).
+  // Allow forward-compatible fields (priority, quantity, notes).
   [key: string]: unknown;
 }
 
