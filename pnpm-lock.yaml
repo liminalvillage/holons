@@ -57,9 +57,6 @@ importers:
       fontawesome:
         specifier: ^5.6.3
         version: 5.6.3
-      gun:
-        specifier: ^0.2020.1241
-        version: 0.2020.1241
       h3-js:
         specifier: ^4.4.0
         version: 4.4.0
@@ -105,6 +102,9 @@ importers:
       svelte-preprocess:
         specifier: ^6.0.3
         version: 6.0.3(postcss-load-config@3.1.4(postcss@8.5.14))(postcss@8.5.14)(sass@1.99.0)(svelte@5.55.5(@typescript-eslint/types@8.59.2))(typescript@5.9.3)
+      ws:
+        specifier: ^8.20.0
+        version: 8.20.0
     devDependencies:
       '@sveltejs/adapter-netlify':
         specifier: ^4.4.2
@@ -5085,7 +5085,7 @@ snapshots:
       '@vladfrangu/async_event_emitter': 2.4.7
       discord-api-types: 0.38.47
       tslib: 2.8.1
-      ws: 8.17.1
+      ws: 8.20.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
