@@ -656,10 +656,6 @@
 	});
 </script>
 
-<svelte:head>
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-</svelte:head>
-
 <!-- Show splash screen for identity setup -->
 {#if showSplash}
 	<Splash on:authenticated={handleAuthenticated} on:skip={handleSkip} />

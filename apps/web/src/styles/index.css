@@ -2,6 +2,11 @@
    Harvest Design System - Main Entry Point
    ========================================================================== */
 
+/* Bundle Font Awesome locally so icons render offline and the service
+   worker can precache the glyph fonts. Replaces the cdnjs CDN link that
+   used to live in +layout.svelte's <svelte:head>. */
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+
 /* Import theme variables first */
 @import './theme.css';
 

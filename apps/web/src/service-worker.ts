@@ -20,7 +20,16 @@ import { build, files, version } from '$service-worker';
 declare const self: ServiceWorkerGlobalScope;
 
 const CACHE = `holons-cache-${version}`;
+const AVATAR_CACHE = 'holons-avatars-v1'; // version-independent: avatars are content-stable per user_id
 const PRECACHE_URLS = [...build, ...files];
+
+// User avatars come from `https://telegram.holons.io/getavatar?user_id=...`
+// across the app (offers, roles, modals). Cache them stale-while-revalidate
+// so they render instantly on revisit and survive offline. Versioned cache
+// name stays separate from the build precache so a new release doesn't
+// evict the user's avatar history.
+const AVATAR_HOSTS = new Set(['telegram.holons.io']);
+const AVATAR_PATHS = ['/getavatar'];
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(
@@ -36,7 +45,9 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
 			for (const key of await caches.keys()) {
-				if (key !== CACHE) await caches.delete(key);
+				// Drop old per-version build caches but keep the avatar cache
+				// across releases — those entries are still useful.
+				if (key !== CACHE && key !== AVATAR_CACHE) await caches.delete(key);
 			}
 			await self.clients.claim();
 		})()
@@ -49,6 +60,12 @@ self.addEventListener('fetch', (event) => {
 
 	const url = new URL(request.url);
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+	// User-avatar cross-origin requests: stale-while-revalidate.
+	if (AVATAR_HOSTS.has(url.hostname) && AVATAR_PATHS.some((p) => url.pathname.startsWith(p))) {
+		event.respondWith(staleWhileRevalidate(request, AVATAR_CACHE));
+		return;
+	}
 
 	const sameOrigin = url.origin === self.location.origin;
 	if (!sameOrigin) return;
@@ -72,6 +89,25 @@ async function cacheFirst(request: Request): Promise<Response> {
 	const response = await fetch(request);
 	if (response.ok) cache.put(request, response.clone());
 	return response;
+}
+
+// Return the cached response immediately (if any) while refreshing in the
+// background. Falls back to a network fetch on the first miss. Suits user
+// avatars: the URL is content-stable per user_id, occasional staleness is
+// fine, and on revisit (especially offline) the image just appears.
+async function staleWhileRevalidate(request: Request, cacheName: string): Promise<Response> {
+	const cache = await caches.open(cacheName);
+	const cached = await cache.match(request);
+	const fetchAndUpdate = fetch(request)
+		.then((response) => {
+			// Only cache successful 200s — telegram.holons.io returns 404s
+			// for missing avatars, and caching those would pin the empty
+			// state for the lifetime of the cache.
+			if (response.ok) cache.put(request, response.clone());
+			return response;
+		})
+		.catch(() => undefined);
+	return cached ?? (await fetchAndUpdate) ?? new Response('', { status: 504 });
 }
 
 async function navigationHandler(request: Request): Promise<Response> {
