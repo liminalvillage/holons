@@ -17,9 +17,16 @@
 	import { registerName as hnsRegister, lookupName as hnsLookup } from '$lib/hns';
 	import { isValidHolonName, setName } from '$lib/stores/nameResolver';
 	import { getEffectiveAppName } from '$lib/stores/appName';
+	import { installQuietLogs } from '$lib/quietLogs';
 
 	// Import global design system styles
 	import '../styles/index.css';
+
+	// Mute a small allowlist of known-noisy third-party console messages
+	// (holosphere internals, mapbox fingerprinting warning). Installed as
+	// early as possible so the filter is in place before holosphere boots
+	// and starts emitting its "Fetching ALL items" trail.
+	if (browser) installQuietLogs();
 
 	// Accept data from layout load function (includes URL private key parameter)
 	export let data: { urlPrivateKey: string | null };
