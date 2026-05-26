@@ -1,5 +1,6 @@
 db/*
 images/*
+!images/.gitkeep
 templates/*
 .env
 yarn.lock

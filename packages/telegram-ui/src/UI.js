@@ -1744,6 +1744,18 @@ class UI {
       browserAvailable = true;
     }
 
+    // Puppeteer will not create parent dirs for `path:`. Different launchers
+    // (root vs. package cwd) put `./images` in different places, so make it
+    // here rather than relying on a checked-in folder.
+    const lastSlash = pathToSave.lastIndexOf('/');
+    if (lastSlash > 0) {
+      try {
+        fs.mkdirSync(pathToSave.slice(0, lastSlash), { recursive: true });
+      } catch (e) {
+        console.warn('Could not create screenshot directory:', e.message);
+      }
+    }
+
     const klass = viewportClassFor(onElement);
     const page = await acquirePage(klass);
     if (!page) return null;
