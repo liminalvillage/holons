@@ -26,7 +26,7 @@
     "seed:kml-projects": "node scripts/seed-kml-projects.mjs"
   },
   "dependencies": {
-    "holosphere": "1.3.0-alpha5",
+    "holosphere": "1.3.0-alpha7",
     "ical.js": "^2.2.1"
   },
   "devDependencies": {
