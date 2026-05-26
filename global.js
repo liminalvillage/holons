@@ -1,14 +1,37 @@
 // holo_global.js
 
 /**
+ * Default deadline (ms) for the put-path's Gun ack callback. See
+ * `WRITE_TIMEOUT_MS` in content.js for the rationale — same hang, same
+ * fix, kept local here so global.js doesn't depend on content.js's
+ * internals.
+ */
+const WRITE_TIMEOUT_MS = 5000;
+
+function withWriteTimeout(promise, timeoutMs, queuedResult) {
+    if (!timeoutMs || timeoutMs <= 0) return promise;
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const finish = (fn, val) => { if (!done) { done = true; fn(val); } };
+        promise.then(
+            (v) => finish(resolve, v),
+            (e) => finish(reject, e)
+        );
+        setTimeout(() => finish(resolve, queuedResult), timeoutMs);
+    });
+}
+
+/**
  * Stores data in a global (non-holon-specific) table.
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {string} tableName - The table name to store data in.
  * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
  * @param {string} [password] - Optional password for private holon.
+ * @param {object} [options] - Additional options
+ * @param {number} [options.timeout=5000] - Ack deadline in ms; resolves anyway after this so an offline mesh can't hang the caller. Pass `0` to disable.
  * @returns {Promise<void>}
  */
-export async function putGlobal(holoInstance, tableName, data, password = null) {
+export async function putGlobal(holoInstance, tableName, data, password = null, options = {}) {
     try {
         if (!tableName || !data) {
             throw new Error('Table name and data are required');
@@ -63,7 +86,9 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
             });
         }
 
-        return new Promise((resolve, reject) => {
+        const writeTimeoutMs = options.timeout !== undefined ? options.timeout : WRITE_TIMEOUT_MS;
+
+        const ackPromise = new Promise((resolve, reject) => {
             try {
                 // Create a copy of data, stripping read-side envelopes that
                 // must never be persisted (they're attached at resolution time).
@@ -142,6 +167,23 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
             } catch (error) {
                 reject(error);
             }
+        });
+
+        // Bound the wait on Gun's put ack so an offline mesh doesn't hang
+        // the caller forever. Gun keeps the write locally and replays it
+        // when a peer reappears. We tag the ack-arrived branch with a
+        // unique sentinel so we can warn (once) when the timeout fired
+        // and still keep the public Promise<void> contract.
+        const ACK_OK = Symbol('ackOk');
+        return withWriteTimeout(
+            ackPromise.then(() => ACK_OK),
+            writeTimeoutMs,
+            undefined
+        ).then((result) => {
+            if (result !== ACK_OK) {
+                console.warn(`putGlobal: no ack within ${writeTimeoutMs}ms for table=${tableName} — write queued locally, will replay on reconnect`);
+            }
+            return undefined;
         });
     } catch (error) {
         console.error('Error in putGlobal:', error);

@@ -15,6 +15,23 @@ interface PutOptions {
   disableHologramRedirection?: boolean;
   actingAs?: string;
   password?: string | null;
+  /**
+   * Per-put deadline (ms) for Gun's ack callback. When the deadline fires,
+   * the returned promise resolves with `{ success: true, queued: true, ... }`
+   * so an offline/partitioned mesh can't hang the caller — Gun keeps the
+   * write locally and replays it on reconnect. Default 5000. Pass `0` to
+   * disable and wait for ack indefinitely.
+   */
+  timeout?: number;
+}
+
+interface PutGlobalOptions {
+  /**
+   * Per-put deadline (ms) for Gun's ack callback. The promise still
+   * resolves to `undefined` (its public contract); on timeout a warning
+   * is logged. Default 5000. Pass `0` to disable.
+   */
+  timeout?: number;
 }
 
 interface GetOptions {
@@ -181,6 +198,16 @@ interface PutResult {
   pathKey: string;
   propagationResult?: PropagationResult | null;
   error?: string;
+  /**
+   * `true` when the ack deadline fired before Gun confirmed the write
+   * (offline/partitioned mesh). The write is still committed locally
+   * via radisk and Gun replays it whenever a peer reappears; subscriber
+   * notification, hologram cascade, and federation propagation run at
+   * that point. Absent or `false` when the put was acknowledged.
+   */
+  queued?: boolean;
+  /** Holograms whose `updated` timestamp was bumped by this put (empty when the put timed out). */
+  updatedHolograms?: Array<{ soul: string; holon: string; lens: string; key: string }>;
 }
 
 interface CanWriteResult {
@@ -239,8 +266,8 @@ declare class HoloSphere {
     deleteNode(holon: string, lens: string, key: string): Promise<boolean>;
 
     // Global
-    putGlobal(tableName: string, data: object, password?: string | null): Promise<void>;
-    writeGlobal(tableName: string, data: object): Promise<void>;
+    putGlobal(tableName: string, data: object, password?: string | null, options?: PutGlobalOptions): Promise<void>;
+    writeGlobal(tableName: string, data: object, options?: PutGlobalOptions): Promise<void>;
     getGlobal(tableName: string, key: string, password?: string | null): Promise<any | null>;
     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;

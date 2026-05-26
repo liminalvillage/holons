@@ -236,15 +236,15 @@ class HoloSphere {
 
     // ================================ GLOBAL FUNCTIONS ================================
 
-    async putGlobal(tableName, data, password = null) {
-        return GlobalOps.putGlobal(this, tableName, data, password);
+    async putGlobal(tableName, data, password = null, options = {}) {
+        return GlobalOps.putGlobal(this, tableName, data, password, options);
     }
 
     /**
      * v2-compatible alias for putGlobal (no password param)
      */
-    async writeGlobal(tableName, data) {
-        return GlobalOps.putGlobal(this, tableName, data, null);
+    async writeGlobal(tableName, data, options = {}) {
+        return GlobalOps.putGlobal(this, tableName, data, null, options);
     }
 
     async getGlobal(tableName, key, password = null) {

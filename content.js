@@ -14,6 +14,24 @@
 const READ_TIMEOUT_MS = 8000;
 
 /**
+ * Default deadline (ms) for the put-path's Gun ack callback. Gun fires the
+ * ack only after the local commit + at least one peer ack chain — with no
+ * reachable peer (cold start, offline, partitioned mesh) it never fires
+ * and the consumer's `await holosphere.put(...)` hangs forever. UIs
+ * worked around this by racing every `put` against their own timeout;
+ * owning the deadline here makes every consumer local-first by default.
+ *
+ * On timeout the returned promise resolves with a `queued: true` sentinel
+ * (see `put` return shape) — Gun keeps the write in its local queue and
+ * the ack callback's side effects (subscriber notification, hologram
+ * cascade, federation propagation) run later when a peer reappears.
+ *
+ * Pick `WRITE_TIMEOUT_MS = 0` (or pass `{ timeout: 0 }`) to opt out of
+ * the fallback and keep the historical "wait for ack" behaviour.
+ */
+const WRITE_TIMEOUT_MS = 5000;
+
+/**
  * `.once()` wrapped in a deadline. Resolves with the value when Gun fires
  * back, or `null` after `timeoutMs` if it hasn't. Pass `timeoutMs <= 0` to
  * disable the deadline.
@@ -29,6 +47,28 @@ function onceWithTimeout(node, timeoutMs = READ_TIMEOUT_MS) {
         if (timeoutMs > 0) {
             setTimeout(() => finish(null), timeoutMs);
         }
+    });
+}
+
+/**
+ * Race a put-result promise against a deadline. If the underlying Gun
+ * ack never arrives, resolve with `queuedResult` so the caller stops
+ * waiting; Gun keeps the write in its local queue and replays it when
+ * a peer is available.
+ *
+ * The first responder wins — both branches are idempotent so the late
+ * ack-driven resolution after timeout is harmlessly ignored.
+ */
+function withWriteTimeout(promise, timeoutMs, queuedResult) {
+    if (!timeoutMs || timeoutMs <= 0) return promise;
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const finish = (fn, val) => { if (!done) { done = true; fn(val); } };
+        promise.then(
+            (v) => finish(resolve, v),
+            (e) => finish(reject, e)
+        );
+        setTimeout(() => finish(resolve, queuedResult), timeoutMs);
     });
 }
 
@@ -118,7 +158,11 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         throw new Error('put: Missing required holon or lens parameters:', holon, lens);
     }
 
-    const { disableHologramRedirection = false } = options; // Extract new option
+    const {
+        disableHologramRedirection = false,
+        timeout: writeTimeoutOverride
+    } = options;
+    const writeTimeoutMs = writeTimeoutOverride !== undefined ? writeTimeoutOverride : WRITE_TIMEOUT_MS;
 
     let targetHolon = holon;
     let targetLens = lens;
@@ -231,7 +275,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
             });
         }
 
-        return new Promise((resolve, reject) => {
+        const ackPromise = new Promise((resolve, reject) => {
             try {
                 // Sanitize before serialization so undefined/NaN/Infinity etc.
                 // can never produce a malformed payload like `"initiated":,`
@@ -444,6 +488,22 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
             } catch (error) {
                 reject(error);
             }
+        });
+
+        // Bound the wait on Gun's put ack so an offline/partitioned mesh
+        // doesn't hang the caller forever. Gun keeps the local write and
+        // its eventual ack callback (subscriber notify, hologram cascade,
+        // propagation) still runs when a peer reappears — we just stop
+        // blocking the awaiting consumer in the meantime.
+        return withWriteTimeout(ackPromise, writeTimeoutMs, {
+            success: true,
+            queued: true,
+            isHologramAtPath: isHologram,
+            pathHolon: targetHolon,
+            pathLens: targetLens,
+            pathKey: targetKey,
+            propagationResult: null,
+            updatedHolograms: []
         });
     } catch (error) {
         console.error('Error in put:', error);
