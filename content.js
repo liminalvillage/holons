@@ -290,22 +290,38 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         }
                         // --- End: Hologram Tracking Logic ---
                         
-                        // --- Start: Active Hologram Update Logic (for actual data being stored) ---
+                        // --- Start: Active Hologram Update Logic ---
+                        //
+                        // Walks this node's `_holograms` set and stamps every
+                        // registered hologram with `updated: now` so consumers
+                        // re-resolve and see the latest source data.
+                        //
+                        // Runs for BOTH original-data puts and hologram-update
+                        // puts so updates cascade through multi-hop forwards
+                        // (A → B → C → …) even when the second hop's
+                        // cross-holon registration on the original source
+                        // can't be relied on to make it across the Gun mesh.
+                        // Each hop maintains its own local `_holograms` set
+                        // tracking the next hops, and we walk that set on
+                        // every put — cycle-protected via
+                        // `options._cascadeVisited`.
                         let updatedHolograms = [];
-                        if (!isHologram && !options.isHologramUpdate) {
+                        const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
+                        const cascadeVisited = new Set(options._cascadeVisited || []);
+                        if (!cascadeVisited.has(currentDataSoul)) {
+                            cascadeVisited.add(currentDataSoul);
                             try {
-                                const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
                                 const currentNodeRef = holoInstance.getNodeRef(currentDataSoul);
-                                
-                                // Get the _holograms set for this data
+
+                                // Get the _holograms set for this node
                                 await new Promise((resolveHologramUpdate) => {
                                     currentNodeRef.get('_holograms').once(async (hologramsSet) => {
                                         if (hologramsSet) {
-                                            const hologramSouls = Object.keys(hologramsSet).filter(k => 
-                                                k !== '_' && hologramsSet[k] === true // Only active holograms (deleted ones are null/removed)
+                                            const hologramSouls = Object.keys(hologramsSet).filter(k =>
+                                                k !== '_' && hologramsSet[k] === true && !cascadeVisited.has(k)
                                             );
-                                            
-                                                                        if (hologramSouls.length > 0) {
+
+                                            if (hologramSouls.length > 0) {
                                 // Update each active hologram with an 'updated' timestamp
                                                 const updatePromises = hologramSouls.map(async (hologramSoul) => {
                                                     try {
@@ -319,26 +335,31 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                                                                 null,
                                                                 { resolveHolograms: false }
                                                             );
-                                                            
+
                                                             if (currentHologram) {
                                                                 // Update the hologram with an 'updated' timestamp
                                                                 const updatedHologram = {
                                                                     ...currentHologram,
                                                                     updated: Date.now()
                                                                 };
-                                                                
+
                                                                 await holoInstance.put(
                                                                     hologramSoulInfo.holon,
                                                                     hologramSoulInfo.lens,
                                                                     updatedHologram,
                                                                     null,
-                                                                    { 
+                                                                    {
                                                                         autoPropagate: false, // Don't auto-propagate hologram updates
                                                                         disableHologramRedirection: true, // Prevent redirection when updating holograms
-                                                                        isHologramUpdate: true // Prevent recursive hologram updates
+                                                                        isHologramUpdate: true,
+                                                                        // Carry the visited set forward so the
+                                                                        // recursive put keeps cascading through
+                                                                        // this hop's `_holograms` set without
+                                                                        // looping back through us.
+                                                                        _cascadeVisited: cascadeVisited
                                                                     }
                                                                 );
-                                                                
+
                                                                                                                 // Add to the list of updated holograms
                                                                 updatedHolograms.push({
                                                                     soul: hologramSoul,
@@ -354,7 +375,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                                                         console.warn(`Error updating hologram ${hologramSoul}:`, hologramUpdateError);
                                                     }
                                                 });
-                                                
+
                                                 await Promise.all(updatePromises);
                                             }
                                         }
