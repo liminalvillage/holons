@@ -69,7 +69,6 @@
 	"dependencies": {
 		"@fortawesome/fontawesome-free": "^7.2.0",
 		"@holons/core": "workspace:*",
-		"@mapbox/mapbox-gl-geocoder": "^5.0.3",
 		"@mapbox/search-js-web": "^1.0.0-beta.21",
 		"@noble/curves": "^1.9.7",
 		"@noble/hashes": "^1.8.0",

@@ -7,8 +7,6 @@
 declare const __COMMIT_HASH__: string | undefined;
 declare const __HOLOSPHERE_VERSION__: string | undefined;
 
-declare module '@mapbox/mapbox-gl-geocoder';
-
 declare namespace mapboxgl {
     export type Map = import('mapbox-gl').Map;
     export type MapMouseEvent = import('mapbox-gl').MapMouseEvent;

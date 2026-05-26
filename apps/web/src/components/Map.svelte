@@ -7,12 +7,11 @@
 	import "mapbox-gl/dist/mapbox-gl.css";
 	// @ts-ignore - Fix for h3-js module error
 	import * as h3 from "h3-js";
-	import MapboxGeocoder from "@mapbox/mapbox-gl-geocoder";
-	import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
 	import { ID } from "../dashboard/store";
 	import type { HoloSphere } from "holosphere";
 	import MapSidebar from './MapSidebar.svelte';
 	import MapBrowserWindow from './MapBrowserWindow.svelte';
+	import PlacesSearch from './shared/PlacesSearch.svelte';
 	import { toEmbeddableUrl } from '$lib/util/richContent';
 	import { getEffectiveAppName } from '$lib/stores/appName';
 	import type { LensType, LensOption } from '../types/Map';
@@ -33,8 +32,17 @@
 	let dragOffset = { x: 0, y: 0 };
 	let lastSidebarPosition: { x: number, y: number } | null = null;
 	let showLensInfo = false;
-	let geocoderContainer: HTMLElement;
 	let geolocateControl: mapboxgl.GeolocateControl;
+
+	// Picked from PlacesSearch (Google Places Autocomplete). Flies the map
+	// to the chosen location at a reasonable street-level zoom so the user
+	// sees the place's H3 cell, not the whole country.
+	function handlePlaceResult(event: CustomEvent<{ lng: number; lat: number; label: string }>) {
+		if (!map) return;
+		const { lng, lat } = event.detail;
+		if (typeof lng !== 'number' || typeof lat !== 'number') return;
+		map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 14), essential: true });
+	}
 
 	// In-map draggable browser window. Driven by the
 	// `open-link-in-map-window` CustomEvent that RichDescription dispatches
@@ -64,7 +72,16 @@
 		projects: new Set<string>(),
 		currencies: new Set<string>(),
 		people: new Set<string>(),
-		holons: new Set<string>()
+		holons: new Set<string>(),
+		events: new Set<string>(),
+		library: new Set<string>(),
+		roles: new Set<string>(),
+		announcements: new Set<string>(),
+		expenses: new Set<string>(),
+		checklists: new Set<string>(),
+		appreciations: new Set<string>(),
+		rea_events: new Set<string>(),
+		canvases: new Set<string>()
 	};
 
 	// Per-(lens, hex) presence cache. Stops us refetching the same cell on
@@ -83,7 +100,16 @@
 		projects: new Map(),
 		currencies: new Map(),
 		people: new Map(),
-		holons: new Map()
+		holons: new Map(),
+		events: new Map(),
+		library: new Map(),
+		roles: new Map(),
+		announcements: new Map(),
+		expenses: new Map(),
+		checklists: new Map(),
+		appreciations: new Map(),
+		rea_events: new Map(),
+		canvases: new Map()
 	};
 
 	// Namespace cache by appName so switching between `Holons` and
@@ -147,7 +173,9 @@
 	const selectedLensStorageKey = `harvest.selectedLens.${cacheAppName}`;
 	const VALID_LENSES: ReadonlyArray<LensType> = [
 		'quests', 'needs', 'offers', 'communities', 'organizations',
-		'projects', 'currencies', 'people', 'holons'
+		'projects', 'currencies', 'people', 'holons',
+		'events', 'library', 'roles', 'announcements', 'expenses',
+		'checklists', 'appreciations', 'rea_events', 'canvases'
 	];
 	let lensInitialized = false;
 
@@ -170,7 +198,16 @@
 		projects: new Map(),
 		currencies: new Map(),
 		people: new Map(),
-		holons: new Map()
+		holons: new Map(),
+		events: new Map(),
+		library: new Map(),
+		roles: new Map(),
+		announcements: new Map(),
+		expenses: new Map(),
+		checklists: new Map(),
+		appreciations: new Map(),
+		rea_events: new Map(),
+		canvases: new Map()
 	};
 
 	function subscribeHex(lens: LensType, hex: string) {
@@ -247,7 +284,16 @@
 		{ value: 'projects', label: 'Projects' },
 		{ value: 'currencies', label: 'Currencies' },
 		{ value: 'people', label: 'People' },
-		{ value: 'holons', label: 'Holons' }
+		{ value: 'holons', label: 'Holons' },
+		{ value: 'events', label: 'Events' },
+		{ value: 'library', label: 'Library' },
+		{ value: 'roles', label: 'Roles' },
+		{ value: 'announcements', label: 'Announcements' },
+		{ value: 'expenses', label: 'Expenses' },
+		{ value: 'checklists', label: 'Checklists' },
+		{ value: 'appreciations', label: 'Appreciations' },
+		{ value: 'rea_events', label: 'REA Events' },
+		{ value: 'canvases', label: 'Canvases' }
 	];
 
 	const dispatch = createEventDispatcher();
@@ -391,6 +437,42 @@
 			case 'holons':
 				highlightedHexes = lensData.holons;
 				highlightColor = '#ff5722';
+				break;
+			case 'events':
+				highlightedHexes = lensData.events;
+				highlightColor = '#fbc02d';
+				break;
+			case 'library':
+				highlightedHexes = lensData.library;
+				highlightColor = '#00bcd4';
+				break;
+			case 'roles':
+				highlightedHexes = lensData.roles;
+				highlightColor = '#795548';
+				break;
+			case 'announcements':
+				highlightedHexes = lensData.announcements;
+				highlightColor = '#ffc107';
+				break;
+			case 'expenses':
+				highlightedHexes = lensData.expenses;
+				highlightColor = '#8bc34a';
+				break;
+			case 'checklists':
+				highlightedHexes = lensData.checklists;
+				highlightColor = '#009688';
+				break;
+			case 'appreciations':
+				highlightedHexes = lensData.appreciations;
+				highlightColor = '#f06292';
+				break;
+			case 'rea_events':
+				highlightedHexes = lensData.rea_events;
+				highlightColor = '#673ab7';
+				break;
+			case 'canvases':
+				highlightedHexes = lensData.canvases;
+				highlightColor = '#455a64';
 				break;
 		}
 
@@ -1213,30 +1295,9 @@
 				if (selectedLens) fetchLensData(selectedLens);
 			}, 100);
 
-			// Add geocoder to custom container after map is loaded
-			try {
-				const geocoder = new MapboxGeocoder({
-					accessToken: mapboxgl.accessToken,
-					mapboxgl: mapboxgl,
-					marker: false,
-					placeholder: "Search location...",
-					types: "poi,address,place,locality,neighborhood,region,country,postcode",
-				});
-
-				// Add the geocoder to our custom container
-				if (geocoderContainer) {
-					// Clear any existing content first
-					geocoderContainer.innerHTML = '';
-					const geocoderElement = geocoder.onAdd(map);
-					console.log('[Map] Adding geocoder element:', geocoderElement);
-					geocoderContainer.appendChild(geocoderElement);
-					console.log('[Map] Geocoder container children:', geocoderContainer.children.length);
-				} else {
-					console.warn('[Map] geocoderContainer not found');
-				}
-			} catch (error) {
-				console.error('[Map] Error adding geocoder:', error);
-			}
+			// Search box is rendered via <PlacesSearch> in the control bar —
+			// no Mapbox geocoder to attach here. The Google Places SDK is
+			// loaded lazily by that component on first mount.
 
 			mapInitialized = true;
 		});
@@ -1668,8 +1729,10 @@
 			<!-- Divider -->
 			<div class="control-divider"></div>
 
-			<!-- Geocoder Search -->
-			<div bind:this={geocoderContainer} class="geocoder-container-embedded"></div>
+			<!-- Place search (Google Places Autocomplete) -->
+			<div class="geocoder-container-embedded">
+				<PlacesSearch placeholder="Search location…" on:result={handlePlaceResult} />
+			</div>
 
 			<!-- Divider -->
 			<div class="control-divider"></div>
@@ -1765,6 +1828,69 @@
 						<div>
 							<strong>Holons</strong>
 							<span class="lens-desc">Organizational units</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #fbc02d;"></span>
+						<div>
+							<strong>Events</strong>
+							<span class="lens-desc">Scheduled gatherings</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #00bcd4;"></span>
+						<div>
+							<strong>Library</strong>
+							<span class="lens-desc">Shared tools & books</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #795548;"></span>
+						<div>
+							<strong>Roles</strong>
+							<span class="lens-desc">Holon responsibilities</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #ffc107;"></span>
+						<div>
+							<strong>Announcements</strong>
+							<span class="lens-desc">Local broadcasts</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #8bc34a;"></span>
+						<div>
+							<strong>Expenses</strong>
+							<span class="lens-desc">Shared costs</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #009688;"></span>
+						<div>
+							<strong>Checklists</strong>
+							<span class="lens-desc">Shared lists</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #f06292;"></span>
+						<div>
+							<strong>Appreciations</strong>
+							<span class="lens-desc">Peer thanks & credit</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #673ab7;"></span>
+						<div>
+							<strong>REA Events</strong>
+							<span class="lens-desc">Resource flows</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #455a64;"></span>
+						<div>
+							<strong>Canvases</strong>
+							<span class="lens-desc">Visual whiteboards</span>
 						</div>
 					</div>
 				</div>
@@ -2231,85 +2357,14 @@
 		pointer-events: none !important;
 	}
 
-	/* Style for geocoder embedded in control bar */
+	/* Slot the place-search component into the control bar at flex:1 so it
+	   fills the available width between the lens selector and the geolocate
+	   button. <PlacesSearch> owns its own input styling. */
 	.geocoder-container-embedded {
 		flex: 1;
 		min-width: 0;
 		display: flex;
 		align-items: center;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder) {
-		width: 100% !important;
-		max-width: none !important;
-		min-width: 0 !important;
-		box-shadow: none !important;
-		background: transparent !important;
-		border: none !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input) {
-		pointer-events: auto !important;
-		background: rgba(55, 65, 81, 0.5) !important;
-		border: 1px solid rgba(255, 255, 255, 0.1) !important;
-		border-radius: 12px !important;
-		color: #f9fafb !important;
-		font-size: 14px !important;
-		font-weight: 500 !important;
-		padding: 8px 12px 8px 36px !important;
-		transition: all 0.2s ease !important;
-		width: 100% !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input:focus) {
-		border-color: rgba(96, 165, 250, 0.4) !important;
-		background: rgba(55, 65, 81, 0.7) !important;
-		outline: 2px solid rgba(96, 165, 250, 0.4) !important;
-		outline-offset: 2px !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input::placeholder) {
-		color: #9ca3af !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions) {
-		background: rgba(17, 24, 39, 0.98) !important;
-		border: 1px solid rgba(255, 255, 255, 0.1) !important;
-		border-radius: 12px !important;
-		margin-top: 8px !important;
-		backdrop-filter: blur(24px) !important;
-		-webkit-backdrop-filter: blur(24px) !important;
-		z-index: 25 !important;
-		position: absolute !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a) {
-		color: #f9fafb !important;
-		padding: 10px 14px !important;
-		transition: all 0.15s ease !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > .active > a),
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a:hover) {
-		background-color: rgba(96, 165, 250, 0.2) !important;
-		color: #60a5fa !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-search) {
-		fill: #9ca3af !important;
-		left: 12px !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-close) {
-		fill: #f9fafb !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--button) {
-		background: transparent !important;
-	}
-
-	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-loading) {
-		fill: #60a5fa !important;
 	}
 
 	/* Keep zoom controls visible with dark theme */

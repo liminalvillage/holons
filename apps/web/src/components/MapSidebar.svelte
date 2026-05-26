@@ -58,10 +58,55 @@
             label: 'People', 
             schema: 'person_schema-v0.2.0' as SchemaName
         },
-        { 
-            value: 'holons' as LensType, 
-            label: 'Holons', 
+        {
+            value: 'holons' as LensType,
+            label: 'Holons',
             schema: 'holons_schema-v0.0.1' as SchemaName
+        },
+        {
+            value: 'events' as LensType,
+            label: 'Events',
+            schema: 'events' as SchemaName
+        },
+        {
+            value: 'library' as LensType,
+            label: 'Library',
+            schema: 'library' as SchemaName
+        },
+        {
+            value: 'roles' as LensType,
+            label: 'Roles',
+            schema: 'roles' as SchemaName
+        },
+        {
+            value: 'announcements' as LensType,
+            label: 'Announcements',
+            schema: 'announcements' as SchemaName
+        },
+        {
+            value: 'expenses' as LensType,
+            label: 'Expenses',
+            schema: 'expenses' as SchemaName
+        },
+        {
+            value: 'checklists' as LensType,
+            label: 'Checklists',
+            schema: 'checklists' as SchemaName
+        },
+        {
+            value: 'appreciations' as LensType,
+            label: 'Appreciations',
+            schema: 'appreciations' as SchemaName
+        },
+        {
+            value: 'rea_events' as LensType,
+            label: 'REA Events',
+            schema: 'rea_events' as SchemaName
+        },
+        {
+            value: 'canvases' as LensType,
+            label: 'Canvases',
+            schema: 'canvases' as SchemaName
         }
     ];
  

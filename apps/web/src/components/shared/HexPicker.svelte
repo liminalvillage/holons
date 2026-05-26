@@ -4,8 +4,7 @@
 	import 'mapbox-gl/dist/mapbox-gl.css';
 	// @ts-ignore — h3-js has no published types in this repo's tsconfig
 	import * as h3 from 'h3-js';
-	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
-	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
+	import PlacesSearch from './PlacesSearch.svelte';
 	import { Check, X, Crosshair } from 'svelte-feathers';
 
 	const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
@@ -20,9 +19,7 @@
 	}>();
 
 	let mapContainer: HTMLElement;
-	let geocoderContainer: HTMLElement;
 	let map: mapboxgl.Map | null = null;
-	let geocoder: any = null;
 	let selectedHex: string = value || '';
 	let mapReady = false;
 	let resizeObserver: ResizeObserver | null = null;
@@ -47,8 +44,8 @@
 		}
 	}
 
-	// Map h3 resolution → reasonable zoom so the grid looks good when the
-	// resolution slider changes. Mirrors Map.svelte's bands roughly inverted.
+	// Map h3 resolution → reasonable zoom so the initial centering matches the
+	// incoming `value`'s cell size. Mirrors Map.svelte's bands roughly inverted.
 	function resolutionToZoom(res: number): number {
 		const map: Record<number, number> = {
 			0: 2.5,
@@ -66,6 +63,50 @@
 			12: 18
 		};
 		return map[res] ?? 5;
+	}
+
+	// Inverse of resolutionToZoom: derive the h3 resolution we should use from
+	// the map's current zoom. Mirrors Map.svelte's getResolution so the grid
+	// the picker draws lines up cell-for-cell with the main map.
+	function zoomToResolution(zoom: number): number {
+		const bands: Array<[number, number]> = [
+			[3.0, 0],
+			[4.4, 1],
+			[5.7, 2],
+			[7.1, 3],
+			[8.4, 4],
+			[9.8, 5],
+			[11.4, 6],
+			[12.7, 7],
+			[14.1, 8],
+			[15.5, 9],
+			[16.8, 10],
+			[18.2, 11],
+			[19.5, 12]
+		];
+		for (const [z, r] of bands) {
+			if (zoom <= z) return r;
+		}
+		return 12;
+	}
+
+	// Pull `resolution` from the live map zoom. Called from the zoom listener
+	// after every user-driven zoom so the grid + selection follow the viewport
+	// instead of needing an explicit slider.
+	function syncResolutionToZoom() {
+		if (!map) return;
+		const newRes = zoomToResolution(map.getZoom());
+		if (newRes === resolution) return;
+		resolution = newRes;
+		// Re-derive the selected cell at the new resolution so the highlight
+		// matches the grid the user can now see, matching the previous
+		// slider behaviour.
+		if (selectedHex && isValidHex(selectedHex)) {
+			try {
+				const [lat, lng] = h3.cellToLatLng(selectedHex);
+				selectedHex = h3.latLngToCell(lat, lng, resolution);
+			} catch {}
+		}
 	}
 
 	function rebuildHighlight() {
@@ -195,27 +236,9 @@
 			'top-right'
 		);
 
-		// Search box. Geocoder writes its own DOM into the container we provide.
-		try {
-			geocoder = new MapboxGeocoder({
-				accessToken: MAPBOX_TOKEN,
-				mapboxgl: mapboxgl as any,
-				marker: false,
-				placeholder: 'Search a place…',
-				flyTo: { speed: 1.4 }
-			});
-			geocoder.addTo(geocoderContainer);
-			geocoder.on('result', (ev: any) => {
-				const coords = ev?.result?.center as [number, number] | undefined;
-				if (!coords) return;
-				try {
-					selectedHex = h3.latLngToCell(coords[1], coords[0], resolution);
-					rebuildHighlight();
-				} catch {}
-			});
-		} catch (err) {
-			console.warn('[HexPicker] Geocoder unavailable', err);
-		}
+		// Search box is the <PlacesSearch> component below — its `result`
+		// event flies the map and (re)derives the selected cell. Nothing to
+		// initialize here.
 
 		map.on('load', () => {
 			if (!map) return;
@@ -258,7 +281,15 @@
 		});
 
 		map.on('moveend', rebuildGrid);
-		map.on('zoomend', rebuildGrid);
+		map.on('zoomend', () => {
+			// Zoom drives resolution: every settled zoom updates `resolution`,
+			// pulls the selected cell to the new level, then rebuilds the
+			// grid + highlight so the picker stays consistent without an
+			// explicit slider.
+			syncResolutionToZoom();
+			rebuildGrid();
+			rebuildHighlight();
+		});
 		map.on('click', handleMapClick);
 
 		// The modal hosting this picker is portal'd to <body> AFTER the
@@ -287,29 +318,23 @@
 		} catch {}
 		resizeObserver = null;
 		try {
-			geocoder?.onRemove?.();
-		} catch {}
-		try {
 			map?.remove();
 		} catch {}
 		map = null;
-		geocoder = null;
 	});
 
-	function changeResolution(r: number) {
-		resolution = Math.max(0, Math.min(12, r));
-		// Re-derive the selected cell at the new resolution so the highlight
-		// matches the grid the user can now see.
-		if (selectedHex && isValidHex(selectedHex)) {
-			try {
-				const [lat, lng] = h3.cellToLatLng(selectedHex);
-				selectedHex = h3.latLngToCell(lat, lng, resolution);
-			} catch {}
-		}
+	// Place picked in the search box (Google Places). Fly there and snap the
+	// selected cell to the chosen location at the current resolution so the
+	// user sees their pick immediately framed by an H3 cell.
+	function handlePlaceResult(event: CustomEvent<{ lng: number; lat: number; label: string }>) {
+		const { lng, lat } = event.detail;
+		if (typeof lng !== 'number' || typeof lat !== 'number') return;
+		try {
+			selectedHex = h3.latLngToCell(lat, lng, resolution);
+		} catch {}
 		if (map) {
-			map.easeTo({ zoom: resolutionToZoom(resolution), duration: 250 });
+			map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), resolutionToZoom(resolution)), essential: true });
 		}
-		rebuildGrid();
 		rebuildHighlight();
 	}
 
@@ -329,23 +354,17 @@
 </script>
 
 <div class="hex-picker">
-	<div class="hex-picker__search" bind:this={geocoderContainer}></div>
+	<div class="hex-picker__search">
+		<PlacesSearch placeholder="Search a place…" on:result={handlePlaceResult} />
+	</div>
 
 	<div class="hex-picker__map" style="height: {height};" bind:this={mapContainer}></div>
 
 	<div class="hex-picker__controls">
-		<label class="hex-picker__res">
+		<span class="hex-picker__res" title="Hex resolution follows the map zoom">
 			<span class="hex-picker__res-label">Resolution</span>
-			<input
-				type="range"
-				min="1"
-				max="12"
-				step="1"
-				value={resolution}
-				on:input={(e) => changeResolution(Number((e.target as HTMLInputElement).value))}
-			/>
 			<span class="hex-picker__res-value">{resolution}</span>
-		</label>
+		</span>
 
 		<div class="hex-picker__selection">
 			<Crosshair size="14" />
@@ -376,28 +395,6 @@
 		min-width: 0;
 	}
 
-	/* Tame the geocoder so it sits on a single row above the map. */
-	.hex-picker__search :global(.mapboxgl-ctrl-geocoder) {
-		max-width: 100%;
-		width: 100%;
-		min-width: 0;
-		box-shadow: none;
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
-		border-radius: 0.5rem;
-		color: var(--color-text-primary, #fff);
-	}
-
-	.hex-picker__search :global(.mapboxgl-ctrl-geocoder--input) {
-		color: var(--color-text-primary, #fff);
-		height: 2.25rem;
-	}
-
-	.hex-picker__search :global(.suggestions) {
-		background: var(--color-bg-secondary, #1f2937);
-		color: var(--color-text-primary, #fff);
-	}
-
 	/* Children of the modal's flex column would shrink to nothing without an
 	   explicit shrink:0 — that's the "just see a line" bug where the 360px
 	   map collapsed because the picker was taller than the modal body. */
@@ -426,14 +423,13 @@
 	.hex-picker__res {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.375rem;
 		font-size: 0.8125rem;
 		color: var(--color-text-secondary, #d1d5db);
-	}
-
-	.hex-picker__res input[type='range'] {
-		accent-color: var(--color-accent, #6366f1);
-		width: 9rem;
+		padding: 0.25rem 0.5rem;
+		background: var(--color-bg-primary, #111827);
+		border: 1px solid var(--color-border, #374151);
+		border-radius: 0.375rem;
 	}
 
 	.hex-picker__res-value {
@@ -441,6 +437,7 @@
 		text-align: right;
 		color: var(--color-text-primary, #fff);
 		font-variant-numeric: tabular-nums;
+		font-weight: 600;
 	}
 
 	.hex-picker__selection {
