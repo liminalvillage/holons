@@ -3,7 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import { HoloSphere, handshake } from "holosphere"
+	import { handshake } from "holosphere"
+	import { createHoloSphere } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -54,6 +55,25 @@
 	let isTelegramMappedSession = false;
 	let telegramMappedPublicKey: string | null = null;
 
+	// Splash UX deadline. The library's correctness timeouts are 5s (writes)
+	// and 8s (reads) — fine for general code paths but too long for the splash,
+	// which must feel responsive. Use this to race calls that don't accept a
+	// per-call `{ timeout }` option yet (notably hnsLookup / hnsRegister, which
+	// go through holosphere.getGlobal / writeGlobal). Local radisk hits
+	// resolve in <100ms so 1s here is generous.
+	const SPLASH_OP_TIMEOUT_MS = 1000;
+	function withSplashTimeout<T>(promise: Promise<T>, label: string): Promise<T | undefined> {
+		return Promise.race([
+			promise,
+			new Promise<undefined>((resolve) =>
+				setTimeout(() => {
+					console.warn(`${label} exceeded ${SPLASH_OP_TIMEOUT_MS}ms in splash — continuing`);
+					resolve(undefined);
+				}, SPLASH_OP_TIMEOUT_MS)
+			)
+		]);
+	}
+
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon(privateKey: string) {
 		if (!holosphere || !holosphere.client?.publicKey) return;
@@ -81,8 +101,11 @@
 			const retryDelay = 300; // ms
 
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
-				// Pass userPublicKey as the key to fetch the specific settings record
-				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey);
+				// holosphere.get is bounded by READ_TIMEOUT_MS in the library
+				// (8s default), but the splash needs to feel fast: a local
+				// radisk hit returns in <100ms, so cap each attempt at 1s
+				// and let the retry/HNS/fallback chain take over from there.
+				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey, null, { timeout: 1000 });
 				if (existingSettings && existingSettings.name) {
 					console.log('Existing holon found on attempt', attempt + 1, ':', existingSettings.name);
 					break;
@@ -126,9 +149,12 @@
 				resolvedName = existingName!;
 				nameSource = 'settings';
 			} else {
-				// Settings unavailable (slow relay) — try HNS before falling back
+				// Settings unavailable (slow relay) — try HNS before falling back.
+				// hnsLookup goes through holosphere.getGlobal, which doesn't
+				// yet accept a per-call timeout; race it explicitly for the
+				// splash so a cold lookup doesn't add seconds to first paint.
 				try {
-					hnsName = await hnsLookup(holosphere, userPublicKey);
+					hnsName = (await withSplashTimeout(hnsLookup(holosphere, userPublicKey), 'hnsLookup')) ?? null;
 				} catch (err) {
 					console.warn('HNS lookup failed during init:', err);
 				}
@@ -178,16 +204,21 @@
 			const isFreshTelegramUser = isTelegramMappedSession && !!pendingTelegramUserId && !existingSettings;
 			if (isGenuinelyNewUser || isFreshTelegramUser) {
 				console.log('New user - creating personal holon:', holonName);
+				// Library default is 5s; splash needs faster. Local radisk
+				// ack returns in <100ms.
 				await holosphere.put(userPublicKey, 'settings', {
 					id: userPublicKey,
 					name: holonName,
 					purpose: 'Personal holon',
 					createdAt: Date.now(),
 					createdBy: userPublicKey
-				});
+				}, { timeout: SPLASH_OP_TIMEOUT_MS });
 
 				try {
-					await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
+					await withSplashTimeout(
+						hnsRegister(holosphere, userPublicKey, holonName, privateKey),
+						'hnsRegister'
+					);
 					console.log('Registered holon name in HNS:', holonName);
 				} catch (error) {
 					console.warn('Failed to register holon name in HNS:', error);
@@ -210,7 +241,7 @@
 						holonName: holonName,
 						createdAt: Date.now(),
 						updatedAt: Date.now()
-					});
+					}, { timeout: SPLASH_OP_TIMEOUT_MS });
 					console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
 				} catch (err) {
 					console.error('Failed to store Telegram mapping:', err);
@@ -403,19 +434,17 @@
 		}
 
 		console.log('Initializing HoloSphere with user key...');
-		holosphere = new HoloSphere({
+		// Build the instance through @holons/core/holosphere — the single
+		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
+		// render). `awaitReady: true` returns the instance after ready()
+		// has resolved, which is a no-op in alpha7 but keeps the contract.
+		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
-			// Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
-			// Holosphere 2: uncomment below to use Nostr relay instead
-			// backend: 'nostr',
-			// nostr: {
-			// 	peers: ['wss://relay.holons.io'],
-			// }
+			awaitReady: true,
+			// Holosphere 2: pass `backend: 'nostr'` + `extra: { nostr: { peers: [...] } }`
+			// once the Nostr backend lands.
 		});
-
-		// Wait for Nostr backend to be ready (async initialization)
-		await holosphere.ready();
 
 		// Log the public key for verification
 		if (holosphere.client) {
@@ -626,10 +655,6 @@
 		}
 	});
 </script>
-
-<svelte:head>
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-</svelte:head>
 
 <!-- Show splash screen for identity setup -->
 {#if showSplash}

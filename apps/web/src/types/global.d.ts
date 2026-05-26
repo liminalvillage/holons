@@ -1,12 +1,11 @@
 /// <reference types="@types/mapbox-gl" />
 /// <reference types="svelte" />
 
-// Vite `define` replaces this bare identifier at build time (see vite.config.ts).
+// Vite `define` replaces these bare identifiers at build time (see vite.config.ts).
 // Must be the bare identifier, not a property access — Vite won't rewrite
 // `globalThis.__COMMIT_HASH__`, so that form silently falls back to the dev default.
 declare const __COMMIT_HASH__: string | undefined;
-
-declare module '@mapbox/mapbox-gl-geocoder';
+declare const __HOLOSPHERE_VERSION__: string | undefined;
 
 declare namespace mapboxgl {
     export type Map = import('mapbox-gl').Map;

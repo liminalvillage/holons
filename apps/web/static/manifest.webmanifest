@@ -1,0 +1,25 @@
+{
+  "name": "Holons",
+  "short_name": "Holons",
+  "description": "Agent-centric, federated group coordination.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1f2937",
+  "theme_color": "#1f2937",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

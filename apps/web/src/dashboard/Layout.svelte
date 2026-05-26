@@ -12,6 +12,7 @@
 	import BrowserPanel from './browser/BrowserPanel.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
 	import WriteNotificationToast from '../components/WriteNotificationToast.svelte';
+	import OfflineBanner from '../components/OfflineBanner.svelte';
 
 
 	// Browser panel state (replaces sidebar for holon browsing)
@@ -139,6 +140,9 @@
 		<div class="app-layout__main">
 			<!-- TopBar as tab navigation -->
 			<TopBar on:toggleBrowser={toggleBrowser} />
+
+			<!-- Offline indicator (only rendered when navigator.onLine is false) -->
+			<OfflineBanner />
 
 			<!-- Main content area -->
 			<main class="app-layout__content">
