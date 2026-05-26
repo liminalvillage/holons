@@ -6,5 +6,5 @@ export {
   findInvalidReferences,
   validateChromosome,
   validateDNA,
-  validateDNASequence
-} from '@holons/core/dna';
+  validateDNASequence,
+} from "@holons/core/dna";

@@ -1,4 +1,4 @@
-import type { ComponentType } from 'svelte';
+import type { ComponentType } from "svelte";
 
 export interface SidebarItem {
   name: string;

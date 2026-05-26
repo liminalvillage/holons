@@ -32,7 +32,7 @@ Behavior lives in `@holons/core`, never in a UI. Explore the domains:
 
 ```bash
 ls packages/core/src
-# scoring  tasks  council  expenses  federation  users  calendar
+# scoring  tasks  expenses  federation  users  calendar
 # library  checklists  shopping  settings  dna  categories  commands  rea ...
 ```
 

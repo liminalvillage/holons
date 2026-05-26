@@ -12,7 +12,7 @@ export {
   parseHolonSettings,
   removeFederationLink,
   saveSettings,
-} from '@holons/core/settings';
+} from "@holons/core/settings";
 
 export type {
   FederationLink,
@@ -23,4 +23,4 @@ export type {
   HolonSettings,
   LensConfig,
   LensType,
-} from '@holons/core/settings';
+} from "@holons/core/settings";

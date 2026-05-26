@@ -33,7 +33,7 @@ await hs.setSchema('quests', questsSchema);
 
 | Lens | Key strategy | Required | Notes |
 | --- | --- | --- | --- |
-| [`quests`](quests.json) | per-record `id` | `id`, `title`, `type` | `oneOf`: proposals (`type: "proposal"`) require `participants`+`stoppers`; quests/events/recurring require `status`. |
+| [`quests`](quests.json) | per-record `id` | `id`, `title`, `type`, `status` | Holds Quest, Event, and recurring-task records. |
 | [`expenses`](expenses.json) | per-record `id` | `id`, `created`, `amount`, `currency`, `paidBy` | |
 | [`users`](users.json) | per-user `id` | `id`, `username` | Profile schema v0.3. |
 | [`checklists`](checklists.json) | per-record `id`; singleton key `'shopping'` holds the ShoppingChecklist | `id`, `items` | One lens, two shapes — `type` distinguishes. |
@@ -43,10 +43,6 @@ await hs.setSchema('quests', questsSchema);
 | [`events`](events.json) | per-event `id` | `id`, `title`, `type` | Quest subtype (`type: "event"`). Distinct lens from `quests` in the bot. |
 | [`rea_events`](rea_events.json) | per-event `id` | `id`, `timestamp` | Intentionally loose — UIs add fields freely. |
 | [`appreciations`](appreciations.json) | `Date.now().toString()` | `id`, `from`, `to`, `amount`, `date` | |
-| [`advisor_library`](advisor_library.json) | slugified name | `id`, `name`, `type`, `lens`, `characterSpec` | `oneOf` on `type`: archetype / real / mythic, each requires different `characterSpec` keys. |
-| [`previous_rituals`](previous_rituals.json) | per-ritual `id` | `id`, `title`, `date` | |
-| [`ritual_origin`](ritual_origin.json) | singleton (holonId) | `origin_ritual`, `wish`, `values`, `advisors`, `created` | |
-| [`ritual_session`](ritual_session.json) | `session_id` | `session_id`, `wish_statement` | |
 | [`settings`](settings.json) | singleton (holonId) | `id`, `name` | |
 | [`canvases`](canvases.json) | per-canvas `id` | `id` | Referenced by `Quest.canvasId`. |
 | [`offers`](offers.json) | Telegram `message_id` | `id` | Holds both Murmurations-style offers (`exchange_type`/`item_type`) and simpler `/offer`/`/want` requests. |
@@ -56,7 +52,6 @@ await hs.setSchema('quests', questsSchema);
 
 ## Not included (no write sites in repo)
 
-`council_values`, holon-level `profile`, `design_session_<id>`,
-`previous_ritual_<id>` — either dead code, type-only declarations, or
-per-id keys that aren't generic lenses. Add a schema here when a real
-write site appears.
+Holon-level `profile` and other per-id keys that aren't generic lenses
+are intentionally omitted. Add a schema here when a real write site
+appears.

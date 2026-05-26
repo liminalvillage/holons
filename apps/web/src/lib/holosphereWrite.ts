@@ -7,23 +7,25 @@
  * denials are surfaced via `notifyWriteDenied`.
  */
 
-import { get } from 'svelte/store';
-import type { HoloSphere } from 'holosphere';
+import { get } from "svelte/store";
+import type { HoloSphere } from "holosphere";
 import {
   writeWithIdentity as coreWriteWithIdentity,
   canWriteToHolon as coreCanWriteToHolon,
   createHolonWriter as coreCreateHolonWriter,
   type WriteDeniedInfo,
-} from '@holons/core/holosphere';
-import { activeHolonIdentity } from './stores/activeHolonIdentity';
-import { notifyWriteDenied } from './stores/writeNotifications';
+} from "@holons/core/holosphere";
+import { activeHolonIdentity } from "./stores/activeHolonIdentity";
+import { notifyWriteDenied } from "./stores/writeNotifications";
 
 /** Resolve the current acting-as identity from the Svelte store. */
 const actingAsFromStore = () => get(activeHolonIdentity);
 
 /** Default denial handler — show a toast notification. */
 const defaultOnDenied = (info: WriteDeniedInfo): void => {
-  notifyWriteDenied(`Unable to save - no write permission for this holon's ${info.lensName}`);
+  notifyWriteDenied(
+    `Unable to save - no write permission for this holon's ${info.lensName}`,
+  );
 };
 
 /**
@@ -36,7 +38,7 @@ export function writeWithIdentity(
   holonId: string,
   lensName: string,
   data: any,
-  options: { silent?: boolean } = {}
+  options: { silent?: boolean } = {},
 ): Promise<boolean> {
   return coreWriteWithIdentity(holosphere, holonId, lensName, data, {
     actingAs: actingAsFromStore,
@@ -51,7 +53,7 @@ export function writeWithIdentity(
 export function canWriteToHolon(
   holosphere: HoloSphere,
   holonId: string,
-  lensName: string
+  lensName: string,
 ): Promise<boolean> {
   return coreCanWriteToHolon(holosphere, holonId, lensName, actingAsFromStore);
 }

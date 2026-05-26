@@ -18,9 +18,7 @@
         "pattern": "^https?://.*"
       }
     },
-    "required": [
-      "url"
-    ]
+    "required": ["url"]
   },
   "uniqueItems": true,
   "metadata": {
@@ -32,9 +30,7 @@
       "name": "urls",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/url"
-    ],
+    "context": ["https://schema.org/url"],
     "purpose": "URLs can be used to link the named entity to its presence on the web. In the case of an item or service, URLs can provide further information."
   }
 }

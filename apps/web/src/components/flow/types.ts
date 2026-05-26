@@ -1,11 +1,11 @@
-import type { HolonBundle, FlowConfig } from '../../lib/holons/HolonsContract';
+import type { HolonBundle, FlowConfig } from "../../lib/holons/HolonsContract";
 
 export interface ZonedHolon {
   id: string;
   name: string;
-  zone: number;        // -1 = drawer (unassigned), 1-N = assigned zone
-  angle: number;       // Position angle in zone ring (radians)
-  status: 'active' | 'pending' | 'inactive';
+  zone: number; // -1 = drawer (unassigned), 1-N = assigned zone
+  angle: number; // Position angle in zone ring (radians)
+  status: "active" | "pending" | "inactive";
   splitterAddress?: string;
 }
 
@@ -29,7 +29,7 @@ export interface InteriorMember {
 
 export interface ZoneInfo {
   zone: number;
-  percentage: number;  // Flow percentage based on steepness
+  percentage: number; // Flow percentage based on steepness
   holons: ZonedHolon[];
   innerRadius: number;
   outerRadius: number;
@@ -53,36 +53,39 @@ export interface OriginalValues {
 
 // Color palette for pie chart slices
 export const COLOR_PALETTE = [
-  '#3B82F6', // Blue
-  '#8B5CF6', // Purple
-  '#EC4899', // Pink
-  '#F59E0B', // Amber
-  '#10B981', // Emerald
-  '#06B6D4', // Cyan
-  '#EF4444', // Red
-  '#84CC16', // Lime
-  '#F97316', // Orange
-  '#6366F1', // Indigo
-  '#14B8A6', // Teal
-  '#A855F7', // Violet
+  "#3B82F6", // Blue
+  "#8B5CF6", // Purple
+  "#EC4899", // Pink
+  "#F59E0B", // Amber
+  "#10B981", // Emerald
+  "#06B6D4", // Cyan
+  "#EF4444", // Red
+  "#84CC16", // Lime
+  "#F97316", // Orange
+  "#6366F1", // Indigo
+  "#14B8A6", // Teal
+  "#A855F7", // Violet
 ];
 
 // Zone colors (from innermost to outermost)
 export const ZONE_COLORS = [
-  '#3B82F6', // Zone 1 - Blue
-  '#8B5CF6', // Zone 2 - Purple
-  '#F59E0B', // Zone 3 - Amber
-  '#10B981', // Zone 4 - Emerald
-  '#EC4899', // Zone 5 - Pink
-  '#06B6D4', // Zone 6 - Cyan
-  '#EF4444', // Zone 7 - Red
-  '#84CC16', // Zone 8 - Lime
-  '#F97316', // Zone 9 - Orange
-  '#6366F1', // Zone 10 - Indigo
+  "#3B82F6", // Zone 1 - Blue
+  "#8B5CF6", // Zone 2 - Purple
+  "#F59E0B", // Zone 3 - Amber
+  "#10B981", // Zone 4 - Emerald
+  "#EC4899", // Zone 5 - Pink
+  "#06B6D4", // Zone 6 - Cyan
+  "#EF4444", // Zone 7 - Red
+  "#84CC16", // Zone 8 - Lime
+  "#F97316", // Zone 9 - Orange
+  "#6366F1", // Zone 10 - Indigo
 ];
 
 // Calculate zone percentages based on steepness
-export function calculateZonePercentages(steepness: number, nzones: number): number[] {
+export function calculateZonePercentages(
+  steepness: number,
+  nzones: number,
+): number[] {
   if (nzones <= 0) return [];
 
   // steepness: 0-100, represents decay factor (higher = more even distribution)
@@ -102,7 +105,7 @@ export function calculateZonePercentages(steepness: number, nzones: number): num
     return weights.map(() => 100 / nzones);
   }
 
-  return weights.map(w => (w / total) * 100);
+  return weights.map((w) => (w / total) * 100);
 }
 
 // Convert steepness from UI value (0-100) to contract value (BigInt)
@@ -119,7 +122,7 @@ export function steepnessToContract(uiValue: number): bigint {
 
 // Convert steepness from contract value (BigInt) to UI value (0-100)
 export function steepnessFromContract(contractValue: bigint): number {
-  return Number(contractValue * 100n / BigInt(1e18));
+  return Number((contractValue * 100n) / BigInt(1e18));
 }
 
 export type { HolonBundle, FlowConfig };

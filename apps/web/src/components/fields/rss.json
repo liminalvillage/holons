@@ -13,8 +13,6 @@
       "name": "rss",
       "version": "0.0.1"
     },
-    "context": [
-      "https://en.wikipedia.org/wiki/RSS"
-    ]
+    "context": ["https://en.wikipedia.org/wiki/RSS"]
   }
 }

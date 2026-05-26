@@ -11,9 +11,7 @@
       "name": "last_name",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/familyName"
-    ],
+    "context": ["https://schema.org/familyName"],
     "purpose": "The shared name given to a person, usually at birth (e.g., Smith or Doe)."
   }
 }

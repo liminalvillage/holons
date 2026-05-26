@@ -13,7 +13,6 @@ const DOMAINS = [
   'scoring',
   'calendar',
   'users',
-  'council',
   'checklists',
   'dna',
   'library',

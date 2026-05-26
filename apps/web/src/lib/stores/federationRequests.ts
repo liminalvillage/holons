@@ -5,16 +5,16 @@
  * Persisted to localStorage for resilience across page reloads.
  */
 
-import { writable, derived, get } from 'svelte/store';
-import { browser } from '$app/environment';
+import { writable, derived, get } from "svelte/store";
+import { browser } from "$app/environment";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type RequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
-export type RequestType = 'incoming' | 'outgoing';
-export type UpdateType = 'incoming_update' | 'outgoing_update';
+export type RequestStatus = "pending" | "accepted" | "rejected" | "expired";
+export type RequestType = "incoming" | "outgoing";
+export type UpdateType = "incoming_update" | "outgoing_update";
 
 export interface PendingRequest {
   id: string;
@@ -37,7 +37,7 @@ export interface PendingRequest {
 }
 
 export interface PendingUpdate {
-  id: string;  // updateId
+  id: string; // updateId
   type: UpdateType;
   partnerPubKey: string;
   partnerNpub: string;
@@ -58,7 +58,7 @@ export interface PendingUpdate {
 // Constants
 // ============================================================================
 
-const STORAGE_KEY_PREFIX = 'federation_requests_';
+const STORAGE_KEY_PREFIX = "federation_requests_";
 const EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ============================================================================
@@ -90,12 +90,12 @@ function createFederationRequestsStore() {
         // Filter out expired requests
         const now = Date.now();
         return requests.filter((r) => {
-          if (r.status !== 'pending') return true; // Keep non-pending for history
+          if (r.status !== "pending") return true; // Keep non-pending for history
           return now - r.timestamp < EXPIRATION_MS;
         });
       }
     } catch (error) {
-      console.error('Error loading federation requests from storage:', error);
+      console.error("Error loading federation requests from storage:", error);
     }
     return [];
   };
@@ -109,7 +109,7 @@ function createFederationRequestsStore() {
     try {
       localStorage.setItem(storageKey, JSON.stringify(requests));
     } catch (error) {
-      console.error('Error saving federation requests to storage:', error);
+      console.error("Error saving federation requests to storage:", error);
     }
   };
 
@@ -144,7 +144,7 @@ function createFederationRequestsStore() {
       update((requests) => {
         // Check for duplicate by id
         if (requests.some((r) => r.id === request.id)) {
-          console.warn('Duplicate federation request ignored:', request.id);
+          console.warn("Duplicate federation request ignored:", request.id);
           return requests;
         }
         const updated = [...requests, request];
@@ -159,7 +159,7 @@ function createFederationRequestsStore() {
     updateStatus: (requestId: string, status: RequestStatus) => {
       update((requests) => {
         const updated = requests.map((r) =>
-          r.id === requestId ? { ...r, status } : r
+          r.id === requestId ? { ...r, status } : r,
         );
         saveToStorage(updated);
         return updated;
@@ -190,7 +190,9 @@ function createFederationRequestsStore() {
      */
     getIncomingPending: (): PendingRequest[] => {
       const requests = get({ subscribe });
-      return requests.filter((r) => r.type === 'incoming' && r.status === 'pending');
+      return requests.filter(
+        (r) => r.type === "incoming" && r.status === "pending",
+      );
     },
 
     /**
@@ -198,7 +200,9 @@ function createFederationRequestsStore() {
      */
     getOutgoingPending: (): PendingRequest[] => {
       const requests = get({ subscribe });
-      return requests.filter((r) => r.type === 'outgoing' && r.status === 'pending');
+      return requests.filter(
+        (r) => r.type === "outgoing" && r.status === "pending",
+      );
     },
 
     /**
@@ -208,8 +212,8 @@ function createFederationRequestsStore() {
       const requests = get({ subscribe });
       return requests.some(
         (r) =>
-          r.status === 'pending' &&
-          (r.senderPubKey === pubKey || r.recipientPubKey === pubKey)
+          r.status === "pending" &&
+          (r.senderPubKey === pubKey || r.recipientPubKey === pubKey),
       );
     },
 
@@ -221,9 +225,9 @@ function createFederationRequestsStore() {
       update((requests) => {
         let changed = false;
         const updated = requests.map((r) => {
-          if (r.status === 'pending' && now - r.timestamp >= EXPIRATION_MS) {
+          if (r.status === "pending" && now - r.timestamp >= EXPIRATION_MS) {
             changed = true;
-            return { ...r, status: 'expired' as RequestStatus };
+            return { ...r, status: "expired" as RequestStatus };
           }
           return r;
         });
@@ -243,7 +247,7 @@ function createFederationRequestsStore() {
       if (browser && storageKey) {
         localStorage.removeItem(storageKey);
       }
-    }
+    },
   };
 }
 
@@ -258,7 +262,9 @@ export const pendingFederationRequests = createFederationRequestsStore();
  */
 export const federationNotifications = derived(
   pendingFederationRequests,
-  ($requests) => $requests.filter((r) => r.type === 'incoming' && r.status === 'pending').length
+  ($requests) =>
+    $requests.filter((r) => r.type === "incoming" && r.status === "pending")
+      .length,
 );
 
 /**
@@ -266,7 +272,8 @@ export const federationNotifications = derived(
  */
 export const incomingRequests = derived(
   pendingFederationRequests,
-  ($requests) => $requests.filter((r) => r.type === 'incoming' && r.status === 'pending')
+  ($requests) =>
+    $requests.filter((r) => r.type === "incoming" && r.status === "pending"),
 );
 
 /**
@@ -274,7 +281,8 @@ export const incomingRequests = derived(
  */
 export const outgoingRequests = derived(
   pendingFederationRequests,
-  ($requests) => $requests.filter((r) => r.type === 'outgoing' && r.status === 'pending')
+  ($requests) =>
+    $requests.filter((r) => r.type === "outgoing" && r.status === "pending"),
 );
 
 // ============================================================================
@@ -292,12 +300,14 @@ export function createIncomingRequest(
   senderHolonName: string,
   lensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
   capabilities: any[],
-  message?: string
+  message?: string,
 ): PendingRequest {
-  const lenses = lensConfig.lenses || [...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])])];
+  const lenses = lensConfig.lenses || [
+    ...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])]),
+  ];
   return {
     id: requestId,
-    type: 'incoming',
+    type: "incoming",
     senderPubKey,
     senderNpub,
     senderHolonId,
@@ -305,8 +315,8 @@ export function createIncomingRequest(
     lensConfig: { lenses },
     capabilities,
     timestamp: Date.now(),
-    status: 'pending',
-    message
+    status: "pending",
+    message,
   };
 }
 
@@ -324,12 +334,14 @@ export function createOutgoingRequest(
   lensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
   capabilities: any[],
   message?: string,
-  recipientHolonName?: string
+  recipientHolonName?: string,
 ): PendingRequest {
-  const lenses = lensConfig.lenses || [...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])])];
+  const lenses = lensConfig.lenses || [
+    ...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])]),
+  ];
   return {
     id: requestId,
-    type: 'outgoing',
+    type: "outgoing",
     senderPubKey,
     senderNpub,
     senderHolonId,
@@ -340,8 +352,8 @@ export function createOutgoingRequest(
     lensConfig: { lenses },
     capabilities,
     timestamp: Date.now(),
-    status: 'pending',
-    message
+    status: "pending",
+    message,
   };
 }
 
@@ -349,7 +361,7 @@ export function createOutgoingRequest(
 // Pending Updates Store (for lens config renegotiation)
 // ============================================================================
 
-const UPDATES_STORAGE_KEY_PREFIX = 'federation_updates_';
+const UPDATES_STORAGE_KEY_PREFIX = "federation_updates_";
 
 function createPendingUpdatesStore() {
   const { subscribe, set, update } = writable<PendingUpdate[]>([]);
@@ -371,12 +383,12 @@ function createPendingUpdatesStore() {
         const updates = JSON.parse(stored) as PendingUpdate[];
         const now = Date.now();
         return updates.filter((u) => {
-          if (u.status !== 'pending') return true;
+          if (u.status !== "pending") return true;
           return now - u.timestamp < EXPIRATION_MS;
         });
       }
     } catch (error) {
-      console.error('Error loading pending updates from storage:', error);
+      console.error("Error loading pending updates from storage:", error);
     }
     return [];
   };
@@ -389,7 +401,7 @@ function createPendingUpdatesStore() {
     try {
       localStorage.setItem(storageKey, JSON.stringify(updates));
     } catch (error) {
-      console.error('Error saving pending updates to storage:', error);
+      console.error("Error saving pending updates to storage:", error);
     }
   };
 
@@ -414,7 +426,7 @@ function createPendingUpdatesStore() {
     add: (pendingUpdate: PendingUpdate) => {
       update((updates) => {
         if (updates.some((u) => u.id === pendingUpdate.id)) {
-          console.warn('Duplicate update request ignored:', pendingUpdate.id);
+          console.warn("Duplicate update request ignored:", pendingUpdate.id);
           return updates;
         }
         const updated = [...updates, pendingUpdate];
@@ -426,7 +438,7 @@ function createPendingUpdatesStore() {
     updateStatus: (updateId: string, status: RequestStatus) => {
       update((updates) => {
         const updated = updates.map((u) =>
-          u.id === updateId ? { ...u, status } : u
+          u.id === updateId ? { ...u, status } : u,
         );
         saveToStorage(updated);
         return updated;
@@ -448,12 +460,16 @@ function createPendingUpdatesStore() {
 
     getByPartnerPubKey: (partnerPubKey: string): PendingUpdate | undefined => {
       const updates = get({ subscribe });
-      return updates.find((u) => u.partnerPubKey === partnerPubKey && u.status === 'pending');
+      return updates.find(
+        (u) => u.partnerPubKey === partnerPubKey && u.status === "pending",
+      );
     },
 
     hasPendingForPartner: (partnerPubKey: string): boolean => {
       const updates = get({ subscribe });
-      return updates.some((u) => u.partnerPubKey === partnerPubKey && u.status === 'pending');
+      return updates.some(
+        (u) => u.partnerPubKey === partnerPubKey && u.status === "pending",
+      );
     },
 
     clear: () => {
@@ -462,7 +478,7 @@ function createPendingUpdatesStore() {
       if (browser && storageKey) {
         localStorage.removeItem(storageKey);
       }
-    }
+    },
   };
 }
 
@@ -471,17 +487,19 @@ export const pendingUpdates = createPendingUpdatesStore();
 /**
  * Incoming update requests only
  */
-export const incomingUpdates = derived(
-  pendingUpdates,
-  ($updates) => $updates.filter((u) => u.type === 'incoming_update' && u.status === 'pending')
+export const incomingUpdates = derived(pendingUpdates, ($updates) =>
+  $updates.filter(
+    (u) => u.type === "incoming_update" && u.status === "pending",
+  ),
 );
 
 /**
  * Outgoing update requests only
  */
-export const outgoingUpdates = derived(
-  pendingUpdates,
-  ($updates) => $updates.filter((u) => u.type === 'outgoing_update' && u.status === 'pending')
+export const outgoingUpdates = derived(pendingUpdates, ($updates) =>
+  $updates.filter(
+    (u) => u.type === "outgoing_update" && u.status === "pending",
+  ),
 );
 
 /**
@@ -493,15 +511,29 @@ export function createIncomingUpdate(
   partnerNpub: string,
   partnerHolonId: string,
   partnerHolonName: string,
-  currentLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  currentLensConfig: {
+    lenses?: string[];
+    inbound?: string[];
+    outbound?: string[];
+  },
   newLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
-  message?: string
+  message?: string,
 ): PendingUpdate {
-  const curLenses = currentLensConfig.lenses || [...new Set([...(currentLensConfig.inbound || []), ...(currentLensConfig.outbound || [])])];
-  const newLenses = newLensConfig.lenses || [...new Set([...(newLensConfig.inbound || []), ...(newLensConfig.outbound || [])])];
+  const curLenses = currentLensConfig.lenses || [
+    ...new Set([
+      ...(currentLensConfig.inbound || []),
+      ...(currentLensConfig.outbound || []),
+    ]),
+  ];
+  const newLenses = newLensConfig.lenses || [
+    ...new Set([
+      ...(newLensConfig.inbound || []),
+      ...(newLensConfig.outbound || []),
+    ]),
+  ];
   return {
     id: updateId,
-    type: 'incoming_update',
+    type: "incoming_update",
     partnerPubKey,
     partnerNpub,
     partnerHolonId,
@@ -509,8 +541,8 @@ export function createIncomingUpdate(
     currentLensConfig: { lenses: curLenses },
     newLensConfig: { lenses: newLenses },
     timestamp: Date.now(),
-    status: 'pending',
-    message
+    status: "pending",
+    message,
   };
 }
 
@@ -523,15 +555,29 @@ export function createOutgoingUpdate(
   partnerNpub: string,
   partnerHolonId: string,
   partnerHolonName: string,
-  currentLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  currentLensConfig: {
+    lenses?: string[];
+    inbound?: string[];
+    outbound?: string[];
+  },
   newLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
-  message?: string
+  message?: string,
 ): PendingUpdate {
-  const curLenses = currentLensConfig.lenses || [...new Set([...(currentLensConfig.inbound || []), ...(currentLensConfig.outbound || [])])];
-  const newLenses = newLensConfig.lenses || [...new Set([...(newLensConfig.inbound || []), ...(newLensConfig.outbound || [])])];
+  const curLenses = currentLensConfig.lenses || [
+    ...new Set([
+      ...(currentLensConfig.inbound || []),
+      ...(currentLensConfig.outbound || []),
+    ]),
+  ];
+  const newLenses = newLensConfig.lenses || [
+    ...new Set([
+      ...(newLensConfig.inbound || []),
+      ...(newLensConfig.outbound || []),
+    ]),
+  ];
   return {
     id: updateId,
-    type: 'outgoing_update',
+    type: "outgoing_update",
     partnerPubKey,
     partnerNpub,
     partnerHolonId,
@@ -539,7 +585,7 @@ export function createOutgoingUpdate(
     currentLensConfig: { lenses: curLenses },
     newLensConfig: { lenses: newLenses },
     timestamp: Date.now(),
-    status: 'pending',
-    message
+    status: "pending",
+    message,
   };
 }

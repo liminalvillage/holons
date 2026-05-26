@@ -1,6 +1,6 @@
 {
   "title": "quests",
-  "description": "Records stored at (holonId, 'quests', <id>). Holds Quest, Event, recurring-task, and Proposal records \u2014 they share this lens. Proposals have type: 'proposal'; everything else is some flavour of Quest.",
+  "description": "Records stored at (holonId, 'quests', <id>). Holds Quest, Event, and recurring-task records — they share this lens.",
   "type": "object",
   "properties": {
     "id": {
@@ -12,7 +12,7 @@
     },
     "type": {
       "type": "string",
-      "description": "Discriminator. 'proposal' selects the council branch; everything else is a quest/event/recurring."
+      "description": "Discriminator (task / quest / event / recurring)."
     },
     "status": {
       "type": "string"
@@ -26,10 +26,6 @@
     },
     "participants": {
       "type": "array"
-    },
-    "stoppers": {
-      "type": "array",
-      "description": "Proposal vetoes (only on proposal records)."
     },
     "appreciation": {
       "type": "array"
@@ -76,31 +72,7 @@
   "required": [
     "id",
     "title",
-    "type"
-  ],
-  "oneOf": [
-    {
-      "properties": {
-        "type": {
-          "const": "proposal"
-        }
-      },
-      "required": [
-        "participants",
-        "stoppers"
-      ]
-    },
-    {
-      "properties": {
-        "type": {
-          "not": {
-            "const": "proposal"
-          }
-        }
-      },
-      "required": [
-        "status"
-      ]
-    }
+    "type",
+    "status"
   ]
 }

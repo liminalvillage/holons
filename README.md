@@ -42,7 +42,7 @@ where it already is.
             │                       @holons/core                         │
             │  scoring · tasks · federation · holosphere · shopping ·     │
             │  settings · dna · users · expenses · calendar · library ·  │
-            │  checklists · council · categories · commands · rea         │
+            │  checklists · categories · commands · rea                   │
             └───────────────────────────────────────────────────────────┘
                 ▲            ▲            ▲            ▲            ▲
                 │            │            │            │            │
@@ -63,7 +63,7 @@ details in [`docs/architecture.md`](./docs/architecture.md).
 
 | Package | Path | What it owns |
 | --- | --- | --- |
-| `@holons/core` | `packages/core/` | UI-agnostic domain logic: scoring, tasks, federation, Holosphere I/O, shopping, settings, DNA, users, expenses, calendar, library, checklists, council, categories, commands, REA event store. |
+| `@holons/core` | `packages/core/` | UI-agnostic domain logic: scoring, tasks, federation, Holosphere I/O, shopping, settings, DNA, users, expenses, calendar, library, checklists, categories, commands, REA event store. |
 | `harvest-web` | `apps/web/` | Svelte 5 / SvelteKit web dashboard — the primary UI (maps, governance, federation, expenses). |
 | `@holons/telegram-ui` | `packages/telegram-ui/` | Telegraf Telegram bot. Stateful chat interface over `@holons/core`. |
 | `@holons/text-ui` | `packages/text-ui/` | Framework-agnostic CLI/REPL renderer over `@holons/core/commands`. |

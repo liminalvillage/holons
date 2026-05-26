@@ -6,7 +6,7 @@ A decentralized community coordination platform built as a Telegram bot, enablin
 
 HolonsBot transforms Telegram groups into self-organizing communities (called "holons") with tools for:
 
-- **Collective Task Management** - Create quests, tasks, and proposals that members can join, complete, and track
+- **Collective Task Management** - Create quests and tasks that members can join, complete, and track
 - **Resource Coordination** - Share offers, needs, and track contributions using REA (Resource-Event-Agent) accounting
 - **Expense Splitting** - Track shared expenses and automatically calculate balances between members
 - **Community Governance** - Define roles, values, and manage member contributions
@@ -20,7 +20,6 @@ All data is stored on a decentralized network using HoloSphere/Nostr, meaning co
 Create and manage various types of collaborative tasks:
 - **Tasks** (`/task`) - Work items that need doing
 - **Events** (`/event`) - Scheduled gatherings or activities
-- **Proposals** (`/proposal`) - Ideas for community decision
 - **Offers** (`/offer`) - Resources or skills being offered
 - **Requests** (`/request`) - Needs the community can help with
 
@@ -176,7 +175,6 @@ NODE_ENV=development             # Environment mode
 |---------|-------------|
 | `/quest`, `/task` | Create a new quest/task |
 | `/event` | Create an event |
-| `/proposal` | Create a proposal |
 | `/offer` | Create an offer |
 | `/request` | Create a request |
 | `/tasks`, `/todos` | View all tasks |

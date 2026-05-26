@@ -44,7 +44,7 @@ packages/mcp-ui/       Model Context Protocol server
 docs/                  architecture, realtime-sync, user guide, federation
 ```
 
-`@holons/core/src/<domain>/` holds the ~17 domains (scoring, tasks, council,
+`@holons/core/src/<domain>/` holds the ~16 domains (scoring, tasks,
 expenses, federation, users, calendar, library, …). Each is reached via a
 subpath import: `import { ... } from '@holons/core/<domain>'`.
 

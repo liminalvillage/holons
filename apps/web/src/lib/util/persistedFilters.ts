@@ -15,7 +15,7 @@
  *   $: saveFilters('shopping', filters);  // re-persist whenever filters changes
  */
 
-const PREFIX = 'harvest_filters_';
+const PREFIX = "harvest_filters_";
 
 function storageKey(feature: string): string {
   return `${PREFIX}${feature}`;
@@ -23,14 +23,14 @@ function storageKey(feature: string): string {
 
 export function loadFilters<T extends Record<string, unknown>>(
   feature: string,
-  defaults: T
+  defaults: T,
 ): T {
-  if (typeof localStorage === 'undefined') return { ...defaults };
+  if (typeof localStorage === "undefined") return { ...defaults };
   try {
     const raw = localStorage.getItem(storageKey(feature));
     if (!raw) return { ...defaults };
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return { ...defaults };
+    if (!parsed || typeof parsed !== "object") return { ...defaults };
     // Only adopt keys that exist in defaults — ignores legacy/unknown fields.
     const merged: Record<string, unknown> = { ...defaults };
     for (const k of Object.keys(defaults)) {
@@ -44,9 +44,9 @@ export function loadFilters<T extends Record<string, unknown>>(
 
 export function saveFilters<T extends Record<string, unknown>>(
   feature: string,
-  state: T
+  state: T,
 ): void {
-  if (typeof localStorage === 'undefined') return;
+  if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(storageKey(feature), JSON.stringify(state));
   } catch {

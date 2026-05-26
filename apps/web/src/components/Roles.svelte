@@ -636,7 +636,7 @@
 	sampleJson={`[
   {
     "title": "Facilitator",
-    "description": "Runs the weekly council meeting.",
+    "description": "Runs the weekly community meeting.",
     "participants": []
   },
   {

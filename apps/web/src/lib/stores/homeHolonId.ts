@@ -1,5 +1,5 @@
-import { derived, writable, type Readable, type Writable } from 'svelte/store';
-import { nostrPublicKey } from './nostr';
+import { derived, writable, type Readable, type Writable } from "svelte/store";
+import { nostrPublicKey } from "./nostr";
 
 /**
  * The currently authenticated user's "own" holon id — independent of which
@@ -18,6 +18,6 @@ import { nostrPublicKey } from './nostr';
 export const homeHolonIdOverride: Writable<string | null> = writable(null);
 
 export const homeHolonId: Readable<string | null> = derived(
-	[homeHolonIdOverride, nostrPublicKey],
-	([override, pubKey]) => override || pubKey || null
+  [homeHolonIdOverride, nostrPublicKey],
+  ([override, pubKey]) => override || pubKey || null,
 );

@@ -1,0 +1,9 @@
+# Vendored third-party assets — linting must not touch them.
+public/assets/
+static/
+
+# Generated output.
+.svelte-kit/
+build/
+dist/
+.netlify/

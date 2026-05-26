@@ -8,7 +8,6 @@ export { default as Announcements } from '../src/Announcements.js';
 export { default as Bigtalk } from '../src/Bigtalk.js';
 export { default as CapitalGame } from '../src/CapitalGame.js';
 export { default as Checklists } from '../src/Checklists.js';
-export { default as Council } from '../src/Council.js';
 export { default as Expenses } from '../src/Expenses.js';
 export { default as H3 } from '../src/H3.js';
 export { default as Holons } from '../src/Holons.js';
@@ -50,7 +49,6 @@ export const questModules = {
 
 export const communityModules = {
   Holons,
-  Council,
   Roles,
   Announcements,
   OneOnOne,

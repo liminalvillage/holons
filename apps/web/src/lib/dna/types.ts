@@ -5,5 +5,5 @@ export type {
   ChromosomeType,
   DNASequence,
   DNAValidationError,
-  ValidationResult
-} from '@holons/core/dna';
+  ValidationResult,
+} from "@holons/core/dna";

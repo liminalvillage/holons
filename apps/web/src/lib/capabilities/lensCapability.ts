@@ -6,26 +6,27 @@
  * with configurable expiration.
  */
 
-import { bech32 } from '@scure/base';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import { nostrUtils } from 'holosphere';
+import { bech32 } from "@scure/base";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { nostrUtils } from "holosphere";
 
 // Re-export utility functions for local use
-const { generateNonce, hexToNpub, parseNpubOrHex, shortenNpub, shortenPubKey } = nostrUtils;
+const { generateNonce, hexToNpub, parseNpubOrHex, shortenNpub, shortenPubKey } =
+  nostrUtils;
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ExpirationPreset = 'permanent' | '30days' | '1year' | 'custom';
+export type ExpirationPreset = "permanent" | "30days" | "1year" | "custom";
 
-export type Permission = 'read' | 'write' | 'delete';
+export type Permission = "read" | "write" | "delete";
 
 export interface LensCapabilityToken {
   /** Unique identifier: {issuerPubKey}_{recipientPubKey}_{holonId}_{lensName} */
   id: string;
   /** Token type marker */
-  type: 'lens_capability';
+  type: "lens_capability";
   /** Nostr public key of the grantor (hex format) */
   issuerPubKey: string;
   /** Nostr public key of the recipient (hex format) */
@@ -80,18 +81,18 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 export function getExpirationTimestamp(
   preset: ExpirationPreset,
-  customDate?: string
+  customDate?: string,
 ): number | null {
   const now = Date.now();
 
   switch (preset) {
-    case 'permanent':
+    case "permanent":
       return null;
-    case '30days':
-      return now + (30 * MILLISECONDS_PER_DAY);
-    case '1year':
-      return now + (365 * MILLISECONDS_PER_DAY);
-    case 'custom':
+    case "30days":
+      return now + 30 * MILLISECONDS_PER_DAY;
+    case "1year":
+      return now + 365 * MILLISECONDS_PER_DAY;
+    case "custom":
       if (customDate) {
         const date = new Date(customDate);
         // Set to end of day in local timezone
@@ -122,20 +123,20 @@ export function isCapabilityValid(token: LensCapabilityToken): boolean {
  */
 export function formatExpiration(expiresAt: number | null): string {
   if (expiresAt === null) {
-    return 'permanent';
+    return "permanent";
   }
 
   const now = Date.now();
   const diff = expiresAt - now;
 
   if (diff <= 0) {
-    return 'expired';
+    return "expired";
   }
 
   const days = Math.ceil(diff / MILLISECONDS_PER_DAY);
 
   if (days <= 1) {
-    return '< 1d';
+    return "< 1d";
   }
   if (days <= 30) {
     return `${days}d`;
@@ -154,12 +155,12 @@ export function formatExpiration(expiresAt: number | null): string {
  */
 export function getExpirationDescription(expiresAt: number | null): string {
   if (expiresAt === null) {
-    return 'Never expires';
+    return "Never expires";
   }
 
   const now = Date.now();
   if (expiresAt <= now) {
-    return 'Expired';
+    return "Expired";
   }
 
   const date = new Date(expiresAt);
@@ -177,7 +178,7 @@ export function generateCapabilityId(
   issuerPubKey: string,
   recipientPubKey: string,
   holonId: string,
-  lensName: string
+  lensName: string,
 ): string {
   return `${issuerPubKey}_${recipientPubKey}_${holonId}_${lensName}`;
 }
@@ -195,13 +196,13 @@ export function createCapabilityRecord(
   lensName: string,
   permissions: Permission[],
   expirationPreset: ExpirationPreset,
-  customExpirationDate?: string
-): Omit<LensCapabilityToken, 'signature'> {
+  customExpirationDate?: string,
+): Omit<LensCapabilityToken, "signature"> {
   const now = Date.now();
 
   return {
     id: generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName),
-    type: 'lens_capability',
+    type: "lens_capability",
     issuerPubKey,
     recipientPubKey,
     holonId,
@@ -210,7 +211,7 @@ export function createCapabilityRecord(
     issuedAt: now,
     expiresAt: getExpirationTimestamp(expirationPreset, customExpirationDate),
     expirationPreset,
-    nonce: generateNonce()
+    nonce: generateNonce(),
   };
 }
 
@@ -225,15 +226,15 @@ export interface ExpirationOption {
 }
 
 export const EXPIRATION_OPTIONS: ExpirationOption[] = [
-  { value: 'permanent', label: 'Permanent', description: 'Never expires' },
-  { value: '30days', label: '30 Days', description: 'Expires in 30 days' },
-  { value: '1year', label: '1 Year', description: 'Expires in 1 year' },
-  { value: 'custom', label: 'Custom', description: 'Choose a specific date' }
+  { value: "permanent", label: "Permanent", description: "Never expires" },
+  { value: "30days", label: "30 Days", description: "Expires in 30 days" },
+  { value: "1year", label: "1 Year", description: "Expires in 1 year" },
+  { value: "custom", label: "Custom", description: "Choose a specific date" },
 ];
 
 /**
  * Get minimum date for custom expiration (today)
  */
 export function getMinExpirationDate(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split("T")[0];
 }

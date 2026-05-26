@@ -1,8 +1,8 @@
 // Svelte stores for DNA Editor state management
 // Feature: 001-holon-dna-editor
 
-import { writable, derived } from 'svelte/store';
-import type { Chromosome, DNASequence } from '$lib/dna/types';
+import { writable, derived } from "svelte/store";
+import type { Chromosome, DNASequence } from "$lib/dna/types";
 
 export interface DNAEditorState {
   // Current DNA sequence being edited
@@ -12,7 +12,7 @@ export interface DNAEditorState {
   library: Chromosome[];
 
   // Selected category filter (null = all)
-  selectedCategory: 'value' | 'tool' | 'practice' | null;
+  selectedCategory: "value" | "tool" | "practice" | null;
 
   // Loading states
   isLoadingLibrary: boolean;
@@ -43,70 +43,60 @@ const initialState: DNAEditorState = {
   isSyncing: false,
   showLibrary: true,
   validationErrors: [],
-  saveError: null
+  saveError: null,
 };
 
 // Main DNA editor store
 export const dnaEditorState = writable<DNAEditorState>(initialState);
 
 // Derived store: filtered library by category
-export const filteredLibrary = derived(
-  dnaEditorState,
-  ($state) => {
-    if (!$state.selectedCategory) {
-      return $state.library;
-    }
-    return $state.library.filter(c => c.type === $state.selectedCategory);
+export const filteredLibrary = derived(dnaEditorState, ($state) => {
+  if (!$state.selectedCategory) {
+    return $state.library;
   }
-);
+  return $state.library.filter((c) => c.type === $state.selectedCategory);
+});
 
 // Derived store: chromosomes grouped by type
-export const libraryByType = derived(
-  dnaEditorState,
-  ($state) => {
-    const grouped: Record<string, Chromosome[]> = {
-      value: [],
-      tool: [],
-      practice: []
-    };
+export const libraryByType = derived(dnaEditorState, ($state) => {
+  const grouped: Record<string, Chromosome[]> = {
+    value: [],
+    tool: [],
+    practice: [],
+  };
 
-    $state.library.forEach(chromosome => {
-      grouped[chromosome.type].push(chromosome);
-    });
+  $state.library.forEach((chromosome) => {
+    grouped[chromosome.type].push(chromosome);
+  });
 
-    return grouped;
-  }
-);
+  return grouped;
+});
 
 // Derived store: whether DNA sequence can be saved
-export const canSave = derived(
-  dnaEditorState,
-  ($state) => {
-    return !$state.isSaving &&
-           $state.validationErrors.length === 0 &&
-           $state.currentSequence.length > 0 &&
-           $state.currentSequence.length <= 20;
-  }
-);
+export const canSave = derived(dnaEditorState, ($state) => {
+  return (
+    !$state.isSaving &&
+    $state.validationErrors.length === 0 &&
+    $state.currentSequence.length > 0 &&
+    $state.currentSequence.length <= 20
+  );
+});
 
 // Derived store: count of chromosomes by type in current sequence
-export const sequenceStats = derived(
-  dnaEditorState,
-  ($state) => {
-    const stats = {
-      total: $state.currentSequence.length,
-      value: 0,
-      tool: 0,
-      practice: 0
-    };
+export const sequenceStats = derived(dnaEditorState, ($state) => {
+  const stats = {
+    total: $state.currentSequence.length,
+    value: 0,
+    tool: 0,
+    practice: 0,
+  };
 
-    $state.currentSequence.forEach(chromosome => {
-      stats[chromosome.type]++;
-    });
+  $state.currentSequence.forEach((chromosome) => {
+    stats[chromosome.type]++;
+  });
 
-    return stats;
-  }
-);
+  return stats;
+});
 
 // Actions
 
@@ -114,10 +104,10 @@ export const sequenceStats = derived(
  * Set the chromosome library
  */
 export function setLibrary(library: Chromosome[]) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
     library,
-    isLoadingLibrary: false
+    isLoadingLibrary: false,
   }));
 }
 
@@ -125,11 +115,11 @@ export function setLibrary(library: Chromosome[]) {
  * Set the current DNA sequence
  */
 export function setCurrentSequence(chromosomes: Chromosome[]) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
     currentSequence: chromosomes,
     isLoadingSequence: false,
-    validationErrors: [] // Clear errors when setting new sequence
+    validationErrors: [], // Clear errors when setting new sequence
   }));
 }
 
@@ -137,9 +127,9 @@ export function setCurrentSequence(chromosomes: Chromosome[]) {
  * Add a chromosome to the current sequence
  */
 export function addChromosomeToSequence(chromosome: Chromosome) {
-  dnaEditorState.update(state => {
+  dnaEditorState.update((state) => {
     // Check if already in sequence
-    if (state.currentSequence.find(c => c.id === chromosome.id)) {
+    if (state.currentSequence.find((c) => c.id === chromosome.id)) {
       return state;
     }
 
@@ -147,14 +137,14 @@ export function addChromosomeToSequence(chromosome: Chromosome) {
     if (state.currentSequence.length >= 20) {
       return {
         ...state,
-        validationErrors: ['Maximum 20 chromosomes allowed']
+        validationErrors: ["Maximum 20 chromosomes allowed"],
       };
     }
 
     return {
       ...state,
       currentSequence: [...state.currentSequence, chromosome],
-      validationErrors: []
+      validationErrors: [],
     };
   });
 }
@@ -163,10 +153,10 @@ export function addChromosomeToSequence(chromosome: Chromosome) {
  * Remove a chromosome from the current sequence
  */
 export function removeChromosomeFromSequence(chromosomeId: string) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    currentSequence: state.currentSequence.filter(c => c.id !== chromosomeId),
-    validationErrors: []
+    currentSequence: state.currentSequence.filter((c) => c.id !== chromosomeId),
+    validationErrors: [],
   }));
 }
 
@@ -174,19 +164,19 @@ export function removeChromosomeFromSequence(chromosomeId: string) {
  * Reorder chromosomes in the sequence
  */
 export function reorderSequence(newOrder: Chromosome[]) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    currentSequence: newOrder
+    currentSequence: newOrder,
   }));
 }
 
 /**
  * Set the category filter
  */
-export function setCategory(category: 'value' | 'tool' | 'practice' | null) {
-  dnaEditorState.update(state => ({
+export function setCategory(category: "value" | "tool" | "practice" | null) {
+  dnaEditorState.update((state) => ({
     ...state,
-    selectedCategory: category
+    selectedCategory: category,
   }));
 }
 
@@ -194,9 +184,9 @@ export function setCategory(category: 'value' | 'tool' | 'practice' | null) {
  * Toggle library sidebar visibility
  */
 export function toggleLibrary() {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    showLibrary: !state.showLibrary
+    showLibrary: !state.showLibrary,
   }));
 }
 
@@ -204,9 +194,9 @@ export function toggleLibrary() {
  * Set saving state
  */
 export function setSaving(isSaving: boolean) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    isSaving
+    isSaving,
   }));
 }
 
@@ -214,9 +204,9 @@ export function setSaving(isSaving: boolean) {
  * Set online/offline status
  */
 export function setOnlineStatus(isOnline: boolean) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    isOnline
+    isOnline,
   }));
 }
 
@@ -224,9 +214,9 @@ export function setOnlineStatus(isOnline: boolean) {
  * Set syncing status
  */
 export function setSyncingStatus(isSyncing: boolean) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    isSyncing
+    isSyncing,
   }));
 }
 
@@ -234,9 +224,9 @@ export function setSyncingStatus(isSyncing: boolean) {
  * Set validation errors
  */
 export function setValidationErrors(errors: string[]) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    validationErrors: errors
+    validationErrors: errors,
   }));
 }
 
@@ -244,9 +234,9 @@ export function setValidationErrors(errors: string[]) {
  * Set save error
  */
 export function setSaveError(error: string | null) {
-  dnaEditorState.update(state => ({
+  dnaEditorState.update((state) => ({
     ...state,
-    saveError: error
+    saveError: error,
   }));
 }
 

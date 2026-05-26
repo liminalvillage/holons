@@ -12,7 +12,7 @@ actions every other UI performs.
 export ANTHROPIC_API_KEY=sk-ant-...            # required
 pnpm -F @holons/ai-ui build
 pnpm -F @holons/ai-ui exec holons-ai "create a task to fix the roof"
-echo "tally the open proposals" | pnpm -F @holons/ai-ui start   # stdin also works
+echo "list open tasks" | pnpm -F @holons/ai-ui start   # stdin also works
 ```
 
 Dev (watch rebuild): `pnpm -F @holons/ai-ui dev`.

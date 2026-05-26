@@ -19,50 +19,74 @@
  * The output is safe to drop into a Svelte `{@html …}` block.
  */
 
-import DOMPurify from 'dompurify';
+import DOMPurify from "dompurify";
 
 // Origins we trust to host iframe embeds the author intentionally pasted.
 // Each entry is a string prefix that the iframe `src` must start with;
 // anything else is dropped by the DOMPurify hook below.
 const ALLOWED_IFRAME_SRC_PREFIXES = [
-	'https://www.youtube.com/embed/',
-	'https://youtube.com/embed/',
-	'https://www.youtube-nocookie.com/embed/',
-	'https://youtube-nocookie.com/embed/',
-	'https://player.vimeo.com/video/',
-	'https://www.loom.com/embed/',
-	'https://w.soundcloud.com/player/',
-	'https://open.spotify.com/embed/'
+  "https://www.youtube.com/embed/",
+  "https://youtube.com/embed/",
+  "https://www.youtube-nocookie.com/embed/",
+  "https://youtube-nocookie.com/embed/",
+  "https://player.vimeo.com/video/",
+  "https://www.loom.com/embed/",
+  "https://w.soundcloud.com/player/",
+  "https://open.spotify.com/embed/",
 ];
 
 function isAllowedIframeSrc(src: string): boolean {
-	return ALLOWED_IFRAME_SRC_PREFIXES.some((p) => src.startsWith(p));
+  return ALLOWED_IFRAME_SRC_PREFIXES.some((p) => src.startsWith(p));
 }
 
 // DOMPurify hook: allow `<iframe>` only when `src` matches the embed
 // allowlist. Installed once at module-load so it's active for every call.
 let hookInstalled = false;
 function installPurifyHook(): void {
-	if (hookInstalled || typeof window === 'undefined') return;
-	DOMPurify.addHook('uponSanitizeElement', (node, data) => {
-		if (data.tagName !== 'iframe') return;
-		const src = (node as Element).getAttribute('src') ?? '';
-		if (!isAllowedIframeSrc(src)) (node as Element).parentNode?.removeChild(node);
-	});
-	hookInstalled = true;
+  if (hookInstalled || typeof window === "undefined") return;
+  DOMPurify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName !== "iframe") return;
+    const src = (node as Element).getAttribute("src") ?? "";
+    if (!isAllowedIframeSrc(src))
+      (node as Element).parentNode?.removeChild(node);
+  });
+  hookInstalled = true;
 }
 
 const PURIFY_CONFIG = {
-	ALLOWED_TAGS: [
-		'a', 'b', 'br', 'div', 'em', 'i', 'img', 'iframe', 'li', 'ol',
-		'p', 'pre', 'span', 'strong', 'u', 'ul'
-	],
-	ALLOWED_ATTR: [
-		'href', 'target', 'rel',
-		'src', 'alt', 'title', 'width', 'height',
-		'allow', 'allowfullscreen', 'frameborder', 'loading',
-		'class'
-	]
+  ALLOWED_TAGS: [
+    "a",
+    "b",
+    "br",
+    "div",
+    "em",
+    "i",
+    "img",
+    "iframe",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "span",
+    "strong",
+    "u",
+    "ul",
+  ],
+  ALLOWED_ATTR: [
+    "href",
+    "target",
+    "rel",
+    "src",
+    "alt",
+    "title",
+    "width",
+    "height",
+    "allow",
+    "allowfullscreen",
+    "frameborder",
+    "loading",
+    "class",
+  ],
 };
 
 /**
@@ -71,48 +95,53 @@ const PURIFY_CONFIG = {
  * (DOMPurify is a DOM-based library), and the result is also empty so
  * server-rendered output doesn't leak unsanitized markup.
  */
-export function sanitizeRichDescription(html: string | null | undefined): string {
-	if (!html || typeof html !== 'string') return '';
-	if (typeof window === 'undefined') return '';
+export function sanitizeRichDescription(
+  html: string | null | undefined,
+): string {
+  if (!html || typeof html !== "string") return "";
+  if (typeof window === "undefined") return "";
 
-	installPurifyHook();
+  installPurifyHook();
 
-	const cleaned = DOMPurify.sanitize(html, PURIFY_CONFIG);
+  const cleaned = DOMPurify.sanitize(html, PURIFY_CONFIG);
 
-	// Post-sanitization pass:
-	//   - Linkify any bare `http(s)://…` URL that appears in plain text but
-	//     wasn't already inside an anchor. Without this, descriptions like
-	//     "see https://example.org for more" render the URL as inert text.
-	//   - Force every anchor to `target="_blank" rel="noopener noreferrer"`
-	//     so the system browser opens them in a new tab/window and the new
-	//     context can't reach back into our window.
-	//   - Wrap surviving iframes in a 16:9 responsive box + `loading="lazy"`.
-	try {
-		const doc = new DOMParser().parseFromString(`<div id="r">${cleaned}</div>`, 'text/html');
-		const root = doc.getElementById('r');
-		if (root) {
-			linkifyTextNodes(root, doc);
+  // Post-sanitization pass:
+  //   - Linkify any bare `http(s)://…` URL that appears in plain text but
+  //     wasn't already inside an anchor. Without this, descriptions like
+  //     "see https://example.org for more" render the URL as inert text.
+  //   - Force every anchor to `target="_blank" rel="noopener noreferrer"`
+  //     so the system browser opens them in a new tab/window and the new
+  //     context can't reach back into our window.
+  //   - Wrap surviving iframes in a 16:9 responsive box + `loading="lazy"`.
+  try {
+    const doc = new DOMParser().parseFromString(
+      `<div id="r">${cleaned}</div>`,
+      "text/html",
+    );
+    const root = doc.getElementById("r");
+    if (root) {
+      linkifyTextNodes(root, doc);
 
-			for (const a of Array.from(root.querySelectorAll('a'))) {
-				a.setAttribute('target', '_blank');
-				a.setAttribute('rel', 'noopener noreferrer');
-			}
-			for (const f of Array.from(root.querySelectorAll('iframe'))) {
-				if (!f.hasAttribute('loading')) f.setAttribute('loading', 'lazy');
-				// Wrap each iframe in a 16:9 responsive box so it scales with
-				// the sidebar width. Idempotent: skip if already wrapped.
-				if (f.parentElement?.classList.contains('rich-embed')) continue;
-				const wrap = doc.createElement('div');
-				wrap.className = 'rich-embed';
-				f.replaceWith(wrap);
-				wrap.appendChild(f);
-			}
-			return root.innerHTML;
-		}
-	} catch {
-		// Best effort — fall back to the cleaned string as-is.
-	}
-	return cleaned;
+      for (const a of Array.from(root.querySelectorAll("a"))) {
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+      }
+      for (const f of Array.from(root.querySelectorAll("iframe"))) {
+        if (!f.hasAttribute("loading")) f.setAttribute("loading", "lazy");
+        // Wrap each iframe in a 16:9 responsive box so it scales with
+        // the sidebar width. Idempotent: skip if already wrapped.
+        if (f.parentElement?.classList.contains("rich-embed")) continue;
+        const wrap = doc.createElement("div");
+        wrap.className = "rich-embed";
+        f.replaceWith(wrap);
+        wrap.appendChild(f);
+      }
+      return root.innerHTML;
+    }
+  } catch {
+    // Best effort — fall back to the cleaned string as-is.
+  }
+  return cleaned;
 }
 
 // Match a bare http/https URL inside a text node. We exclude common trailing
@@ -123,51 +152,53 @@ export function sanitizeRichDescription(html: string | null | undefined): string
 const BARE_URL_RE = /(https?:\/\/[^\s<>"]+?)(?=[.,;:!?)]?(?:\s|$))/g;
 
 function linkifyTextNodes(root: Element, doc: Document): void {
-	const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-	const textNodes: Text[] = [];
-	let node: Node | null = walker.nextNode();
-	while (node) {
-		textNodes.push(node as Text);
-		node = walker.nextNode();
-	}
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    textNodes.push(node as Text);
+    node = walker.nextNode();
+  }
 
-	for (const textNode of textNodes) {
-		// Don't double-link content already inside an anchor.
-		if (textNode.parentElement?.closest('a')) continue;
-		const content = textNode.textContent ?? '';
-		if (!content.includes('http')) continue;
+  for (const textNode of textNodes) {
+    // Don't double-link content already inside an anchor.
+    if (textNode.parentElement?.closest("a")) continue;
+    const content = textNode.textContent ?? "";
+    if (!content.includes("http")) continue;
 
-		BARE_URL_RE.lastIndex = 0;
-		let match = BARE_URL_RE.exec(content);
-		if (!match) continue;
+    BARE_URL_RE.lastIndex = 0;
+    let match = BARE_URL_RE.exec(content);
+    if (!match) continue;
 
-		const frag = doc.createDocumentFragment();
-		let cursor = 0;
-		while (match) {
-			const url = match[1];
-			if (match.index > cursor) {
-				frag.appendChild(doc.createTextNode(content.slice(cursor, match.index)));
-			}
-			const a = doc.createElement('a');
-			a.setAttribute('href', url);
-			a.setAttribute('target', '_blank');
-			a.setAttribute('rel', 'noopener noreferrer');
-			a.textContent = url;
-			frag.appendChild(a);
-			cursor = match.index + url.length;
-			match = BARE_URL_RE.exec(content);
-		}
-		if (cursor < content.length) {
-			frag.appendChild(doc.createTextNode(content.slice(cursor)));
-		}
-		textNode.parentNode?.replaceChild(frag, textNode);
-	}
+    const frag = doc.createDocumentFragment();
+    let cursor = 0;
+    while (match) {
+      const url = match[1];
+      if (match.index > cursor) {
+        frag.appendChild(
+          doc.createTextNode(content.slice(cursor, match.index)),
+        );
+      }
+      const a = doc.createElement("a");
+      a.setAttribute("href", url);
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+      a.textContent = url;
+      frag.appendChild(a);
+      cursor = match.index + url.length;
+      match = BARE_URL_RE.exec(content);
+    }
+    if (cursor < content.length) {
+      frag.appendChild(doc.createTextNode(content.slice(cursor)));
+    }
+    textNode.parentNode?.replaceChild(frag, textNode);
+  }
 }
 
 /** True when `html` looks like it contains any HTML markup at all. */
 export function looksLikeHtml(html: string | null | undefined): boolean {
-	if (!html) return false;
-	return /<[a-zA-Z][^>]*>/.test(html);
+  if (!html) return false;
+  return /<[a-zA-Z][^>]*>/.test(html);
 }
 
 // Capture the 11-char video id from any common YouTube URL shape — used by
@@ -175,13 +206,15 @@ export function looksLikeHtml(html: string | null | undefined): boolean {
 // an inline player) and by the in-map browser window to rewrite watch /
 // share URLs into embed URLs that actually play inside an iframe.
 const YT_URL_RE =
-	/(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^\s"']*&)?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+  /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^\s"']*&)?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 
 /** Returns the 11-char video id from any common YouTube URL shape, or null. */
-export function extractYoutubeId(url: string | null | undefined): string | null {
-	if (!url) return null;
-	const m = url.match(YT_URL_RE);
-	return m?.[1] ?? null;
+export function extractYoutubeId(
+  url: string | null | undefined,
+): string | null {
+  if (!url) return null;
+  const m = url.match(YT_URL_RE);
+  return m?.[1] ?? null;
 }
 
 /**
@@ -194,7 +227,7 @@ export function extractYoutubeId(url: string | null | undefined): string | null 
  * and gives users inline playback inside the draggable window.
  */
 export function toEmbeddableUrl(url: string): string {
-	const id = extractYoutubeId(url);
-	if (id) return `https://www.youtube.com/embed/${id}`;
-	return url;
+  const id = extractYoutubeId(url);
+  if (id) return `https://www.youtube.com/embed/${id}`;
+  return url;
 }

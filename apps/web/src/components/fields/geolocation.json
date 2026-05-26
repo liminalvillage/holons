@@ -10,10 +10,7 @@
       "$ref": "../fields/longitude.json"
     }
   },
-  "required": [
-    "lat",
-    "lon"
-  ],
+  "required": ["lat", "lon"],
   "metadata": {
     "creator": {
       "name": "Murmurations Network",

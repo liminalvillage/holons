@@ -5,33 +5,33 @@
 // Record<id, Expense> rather than the Expense[] core works with, and the
 // legacy `unit` field needs to be folded into `currency` before delegating.
 import {
-    computeCreditMatrix,
-    computeUserCurrencyBalance,
-    normalizeCurrency as coreNormalizeCurrency,
-    type Expense as CoreExpense,
-    type User as CoreUser,
-} from '@holons/core/expenses';
+  computeCreditMatrix,
+  computeUserCurrencyBalance,
+  normalizeCurrency as coreNormalizeCurrency,
+  type Expense as CoreExpense,
+  type User as CoreUser,
+} from "@holons/core/expenses";
 
 interface Expense {
-    id: string;
-    amount: number;
-    currency: string;
-    /** Legacy field used by older time-tracking entries; treated as `currency`. */
-    unit?: string;
-    description: string;
-    paidBy: string;
-    splitWith: string[];
-    /** Canonical creation timestamp (ISO). */
-    created: string;
+  id: string;
+  amount: number;
+  currency: string;
+  /** Legacy field used by older time-tracking entries; treated as `currency`. */
+  unit?: string;
+  description: string;
+  paidBy: string;
+  splitWith: string[];
+  /** Canonical creation timestamp (ISO). */
+  created: string;
 }
 
 interface User {
-    id: number | string;
-    first_name: string;
+  id: number | string;
+  first_name: string;
 }
 
 export function normalizeCurrency(c: string): string {
-    return coreNormalizeCurrency(c);
+  return coreNormalizeCurrency(c);
 }
 
 /**
@@ -40,7 +40,7 @@ export function normalizeCurrency(c: string): string {
  * older time-tracking entries (currency: 'hour').
  */
 export function expenseCurrency(e: Expense): string {
-    return coreNormalizeCurrency((e?.currency || e?.unit || '') as string);
+  return coreNormalizeCurrency((e?.currency || e?.unit || "") as string);
 }
 
 /**
@@ -48,32 +48,36 @@ export function expenseCurrency(e: Expense): string {
  * `currency`) sees the same value `expenseCurrency()` would return.
  */
 function toCoreExpenses(expenses: Record<string, Expense>): CoreExpense[] {
-    return Object.values(expenses)
-        .filter((e): e is Expense => Boolean(e))
-        .map((e) => ({
-            ...(e as unknown as CoreExpense),
-            currency: e.currency || e.unit || '',
-        }));
+  return Object.values(expenses)
+    .filter((e): e is Expense => Boolean(e))
+    .map((e) => ({
+      ...(e as unknown as CoreExpense),
+      currency: e.currency || e.unit || "",
+    }));
 }
 
 export function calculateCurrencyBalance(
-    userId: string | number,
-    currency: string,
-    expenses: Record<string, Expense>,
-    users: User[]
+  userId: string | number,
+  currency: string,
+  expenses: Record<string, Expense>,
+  users: User[],
 ): number {
-    if (!currency || !userId || users.length === 0) return 0;
-    if (!users.some((u) => String(u.id) === String(userId))) return 0;
-    return computeUserCurrencyBalance(toCoreExpenses(expenses), userId, currency);
+  if (!currency || !userId || users.length === 0) return 0;
+  if (!users.some((u) => String(u.id) === String(userId))) return 0;
+  return computeUserCurrencyBalance(toCoreExpenses(expenses), userId, currency);
 }
 
 export function calculateCreditMatrix(
-    currency: string,
-    expenses: Record<string, Expense>,
-    users: User[]
+  currency: string,
+  expenses: Record<string, Expense>,
+  users: User[],
 ): number[][] {
-    if (!currency || users.length === 0) return [];
-    const coreUsers: CoreUser[] = users.map((u) => ({ id: u.id }));
-    const { creditMatrix } = computeCreditMatrix(toCoreExpenses(expenses), coreUsers, currency);
-    return creditMatrix;
+  if (!currency || users.length === 0) return [];
+  const coreUsers: CoreUser[] = users.map((u) => ({ id: u.id }));
+  const { creditMatrix } = computeCreditMatrix(
+    toCoreExpenses(expenses),
+    coreUsers,
+    currency,
+  );
+  return creditMatrix;
 }

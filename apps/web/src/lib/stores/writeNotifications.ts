@@ -5,7 +5,7 @@
  * Notifications auto-dismiss after a configurable timeout.
  */
 
-import { writable } from 'svelte/store';
+import { writable } from "svelte/store";
 
 // ============================================================================
 // Types
@@ -43,14 +43,14 @@ function createWriteNotificationsStore() {
       const notification: WriteNotification = {
         id,
         message,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
-      update(notifications => [...notifications, notification]);
+      update((notifications) => [...notifications, notification]);
 
       // Auto-dismiss after timeout
       setTimeout(() => {
-        update(notifications => notifications.filter(n => n.id !== id));
+        update((notifications) => notifications.filter((n) => n.id !== id));
       }, AUTO_DISMISS_MS);
     },
 
@@ -58,7 +58,7 @@ function createWriteNotificationsStore() {
      * Dismiss a specific notification by ID
      */
     dismiss: (id: string): void => {
-      update(notifications => notifications.filter(n => n.id !== id));
+      update((notifications) => notifications.filter((n) => n.id !== id));
     },
 
     /**
@@ -66,7 +66,7 @@ function createWriteNotificationsStore() {
      */
     clear: (): void => {
       set([]);
-    }
+    },
   };
 }
 

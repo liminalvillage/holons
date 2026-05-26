@@ -79,7 +79,7 @@ This checklist tracks the implementation of features and tasks for the HolonsBot
 | Define and plan `CapitalGame.js` functionality                                                    | Not Started   | Could-have | -            |                     |
 | Define and plan `Bigtalk.js` functionality                                                        | Not Started   | Could-have | -            |                     |
 | Define and plan `Shopping.js` functionality                                                       | Not Started   | Could-have | -            |                     |
-| Define and plan `Council.js` & `Roles.js` functionality                                           | Not Started   | Could-have | -            |                     |
+| Define and plan `Roles.js` functionality                                                          | Not Started   | Could-have | -            |                     |
 | Test existing functionality of these modules if any                                                 | Not Started   | Could-have | -            |                     |
 |-----------------------------------------------------------------------------------------------------|---------------|------------|--------------|---------------------|
 | **General Refactoring & Code Quality**                                                              |               |            |              |                     |

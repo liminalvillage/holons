@@ -2,12 +2,12 @@
 // Feature: 001-holon-dna-editor
 
 export enum DNAErrorType {
-  VALIDATION_ERROR = 'validation_error',
-  NOT_FOUND = 'not_found',
-  PERMISSION_DENIED = 'permission_denied',
-  NETWORK_ERROR = 'network_error',
-  CONFLICT = 'conflict',
-  UNKNOWN = 'unknown'
+  VALIDATION_ERROR = "validation_error",
+  NOT_FOUND = "not_found",
+  PERMISSION_DENIED = "permission_denied",
+  NETWORK_ERROR = "network_error",
+  CONFLICT = "conflict",
+  UNKNOWN = "unknown",
 }
 
 export interface DNAError {
@@ -23,20 +23,23 @@ export interface DNAError {
 export function createError(
   type: DNAErrorType,
   message: string,
-  details?: any
+  details?: any,
 ): DNAError {
   return {
     type,
     message,
     details,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   };
 }
 
 /**
  * Create a validation error
  */
-export function createValidationError(message: string, errors: string[]): DNAError {
+export function createValidationError(
+  message: string,
+  errors: string[],
+): DNAError {
   return createError(DNAErrorType.VALIDATION_ERROR, message, { errors });
 }
 
@@ -50,7 +53,10 @@ export function createPermissionError(message: string): DNAError {
 /**
  * Create a network error
  */
-export function createNetworkError(message: string, queued: boolean = false): DNAError {
+export function createNetworkError(
+  message: string,
+  queued: boolean = false,
+): DNAError {
   return createError(DNAErrorType.NETWORK_ERROR, message, { queued });
 }
 
@@ -58,17 +64,19 @@ export function createNetworkError(message: string, queued: boolean = false): DN
  * Create a not found error
  */
 export function createNotFoundError(resource: string, id: string): DNAError {
-  return createError(
-    DNAErrorType.NOT_FOUND,
-    `${resource} not found: ${id}`,
-    { resource, id }
-  );
+  return createError(DNAErrorType.NOT_FOUND, `${resource} not found: ${id}`, {
+    resource,
+    id,
+  });
 }
 
 /**
  * Create a conflict error
  */
-export function createConflictError(message: string, currentVersion?: number): DNAError {
+export function createConflictError(
+  message: string,
+  currentVersion?: number,
+): DNAError {
   return createError(DNAErrorType.CONFLICT, message, { currentVersion });
 }
 
@@ -82,7 +90,7 @@ export function handleError(error: DNAError | Error): string {
 
   switch (error.type) {
     case DNAErrorType.VALIDATION_ERROR:
-      return `Validation failed: ${error.details?.errors?.join(', ') || error.message}`;
+      return `Validation failed: ${error.details?.errors?.join(", ") || error.message}`;
 
     case DNAErrorType.NOT_FOUND:
       return `Resource not found: ${error.message}`;
@@ -123,12 +131,16 @@ export function shouldRetry(error: DNAError): boolean {
  * Format error for logging
  */
 export function formatErrorForLogging(error: DNAError): string {
-  return JSON.stringify({
-    type: error.type,
-    message: error.message,
-    details: error.details,
-    timestamp: error.timestamp
-  }, null, 2);
+  return JSON.stringify(
+    {
+      type: error.type,
+      message: error.message,
+      details: error.details,
+      timestamp: error.timestamp,
+    },
+    null,
+    2,
+  );
 }
 
 /**
@@ -153,7 +165,7 @@ export function emitError(error: DNAError) {
     globalErrorHandler(error);
   } else {
     // Fallback to console
-    console.error('[DNA Editor Error]', formatErrorForLogging(error));
+    console.error("[DNA Editor Error]", formatErrorForLogging(error));
   }
 }
 
@@ -162,15 +174,16 @@ export function emitError(error: DNAError) {
  */
 export function withErrorHandling<T extends any[], R>(
   fn: (...args: T) => Promise<R>,
-  errorType: DNAErrorType = DNAErrorType.UNKNOWN
+  errorType: DNAErrorType = DNAErrorType.UNKNOWN,
 ): (...args: T) => Promise<R> {
   return async (...args: T): Promise<R> => {
     try {
       return await fn(...args);
     } catch (err) {
-      const error = err instanceof Error
-        ? createError(errorType, err.message)
-        : createError(errorType, 'An unknown error occurred', err);
+      const error =
+        err instanceof Error
+          ? createError(errorType, err.message)
+          : createError(errorType, "An unknown error occurred", err);
 
       emitError(error);
       throw error;

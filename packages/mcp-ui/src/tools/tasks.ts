@@ -24,7 +24,7 @@ import { REAEventStore } from '@holons/core/rea';
 import { DEFAULT_EQUATION, loadEquation } from '@holons/core/scoring';
 import type { ToolDeps } from './index.js';
 
-const TASK_TYPE = z.enum(['task', 'quest', 'proposal', 'bounty']);
+const TASK_TYPE = z.enum(['task', 'quest', 'bounty']);
 
 // --- helpers -------------------------------------------------------------
 

@@ -16,7 +16,6 @@ Depend on it with `"@holons/core": "workspace:*"` and import per domain via
 ```ts
 import { calculateUserScore } from '@holons/core/scoring';
 import { createTask }  from '@holons/core/tasks';
-import { tallyVotes }        from '@holons/core/council';
 ```
 
 Each domain's public API is its `src/<domain>/index.ts`. The package's wildcard
@@ -28,7 +27,6 @@ subpath export makes new domains importable without editing a central file.
 | --- | --- |
 | `scoring` | Contribution scoring: value equations, REA aggregation, per-user scores. |
 | `tasks` | Quest/task types, creation, persistence, lifecycle. |
-| `council` | Proposal lifecycle, voting tally, consensus (no LLM logic). |
 | `expenses` | Balance accounting, currency normalization, credit matrix. |
 | `federation` | UI-agnostic publishing/identity/relay routing between holons. |
 | `holosphere` | The single Holosphere I/O factory + identity-aware read/write. |

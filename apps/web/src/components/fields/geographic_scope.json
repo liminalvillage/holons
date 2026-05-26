@@ -2,18 +2,8 @@
   "title": "Geographic Scope",
   "description": "The geographic scope of the entity is defined by the geographic extent of the entity's activities or the availability of an item",
   "type": "string",
-  "enum": [
-    "local",
-    "regional",
-    "national",
-    "international"
-  ],
-  "enumNames": [
-    "Local",
-    "Regional",
-    "National",
-    "International"
-  ],
+  "enum": ["local", "regional", "national", "international"],
+  "enumNames": ["Local", "Regional", "National", "International"],
   "metadata": {
     "creator": {
       "name": "Murmurations Network",

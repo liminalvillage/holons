@@ -169,8 +169,8 @@ class H3 {
 
                 // Configure lens settings for the hex
                 fedInfo.lensConfig[hex] = {
-                    inbound: ['quests', 'events', 'proposals'],
-                    outbound: ['quests', 'events', 'proposals'],
+                    inbound: ['quests', 'events'],
+                    outbound: ['quests', 'events'],
                     timestamp: Date.now()
                 };
 

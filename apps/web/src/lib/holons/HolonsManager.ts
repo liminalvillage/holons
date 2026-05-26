@@ -1,24 +1,36 @@
-import EventEmitter from 'eventemitter3';
-import { ethers } from 'ethers';
-import type { HoloSphere } from 'holosphere';
-import { HolonsContract, type HolonBundle, type HolonMember, type TokenBalance, type HolonType, type FlowConfig } from './HolonsContract.js';
-import { FlowSettings, type HolonSettings, type FlowVisualizationData, type LensType } from './FlowSettings.js';
+import EventEmitter from "eventemitter3";
+import { ethers } from "ethers";
+import type { HoloSphere } from "holosphere";
+import {
+  HolonsContract,
+  type HolonBundle,
+  type HolonMember,
+  type TokenBalance,
+  type HolonType,
+  type FlowConfig,
+} from "./HolonsContract.js";
+import {
+  FlowSettings,
+  type HolonSettings,
+  type FlowVisualizationData,
+  type LensType,
+} from "./FlowSettings.js";
 
 export interface HolonsManagerEvents {
-  'wallet:connected': (address: string) => void;
-  'wallet:disconnected': () => void;
-  'holon:created': (bundle: HolonBundle) => void;
-  'holon:updated': (holonId: string, data: any) => void;
-  'transaction:pending': (data: any) => void;
-  'transaction:submitted': (data: any) => void;
-  'transaction:success': (data: any) => void;
-  'transaction:failed': (data: any) => void;
-  'transaction:error': (data: any) => void;
-  'flow:updated': (holonId: string, config: any) => void;
-  'federation:added': (holonId: string, targetId: string) => void;
-  'federation:removed': (holonId: string, targetId: string) => void;
-  'members:added': (holonId: string, members: string[]) => void;
-  'settings:updated': (holonId: string, settings: HolonSettings) => void;
+  "wallet:connected": (address: string) => void;
+  "wallet:disconnected": () => void;
+  "holon:created": (bundle: HolonBundle) => void;
+  "holon:updated": (holonId: string, data: any) => void;
+  "transaction:pending": (data: any) => void;
+  "transaction:submitted": (data: any) => void;
+  "transaction:success": (data: any) => void;
+  "transaction:failed": (data: any) => void;
+  "transaction:error": (data: any) => void;
+  "flow:updated": (holonId: string, config: any) => void;
+  "federation:added": (holonId: string, targetId: string) => void;
+  "federation:removed": (holonId: string, targetId: string) => void;
+  "members:added": (holonId: string, members: string[]) => void;
+  "settings:updated": (holonId: string, settings: HolonSettings) => void;
 }
 
 /**
@@ -90,7 +102,7 @@ export class HolonsManager extends EventEmitter {
     // Create a separate EventEmitter for the contract to avoid circular references
     const contractEventEmitter = new EventEmitter();
     this.contract = new HolonsContract(provider, contractEventEmitter);
-    this.flowSettings = new FlowSettings('');
+    this.flowSettings = new FlowSettings("");
     this.holosphere = holosphere;
 
     // Forward contract events
@@ -106,11 +118,16 @@ export class HolonsManager extends EventEmitter {
    */
   private setupEventForwarding(contractEventEmitter: EventEmitter): void {
     const events = [
-      'wallet:connected', 'wallet:disconnected', 'transaction:pending',
-      'transaction:submitted', 'transaction:success', 'transaction:failed', 'transaction:error'
+      "wallet:connected",
+      "wallet:disconnected",
+      "transaction:pending",
+      "transaction:submitted",
+      "transaction:success",
+      "transaction:failed",
+      "transaction:error",
     ];
-    
-    events.forEach(event => {
+
+    events.forEach((event) => {
       contractEventEmitter.on(event, (data: any) => {
         // Forward the event from contract to manager listeners
         this.emit(event as any, data);
@@ -168,21 +185,27 @@ export class HolonsManager extends EventEmitter {
     creatorUserId: string,
     name: string,
     steepness?: bigint,
-    nzones?: number
+    nzones?: number,
   ): Promise<{ transaction: ethers.TransactionResponse; holonId: string }> {
     const holonId = name;
 
-    const tx = await this.contract.createHolon(type, creatorUserId, holonId, steepness, nzones);
+    const tx = await this.contract.createHolon(
+      type,
+      creatorUserId,
+      holonId,
+      steepness,
+      nzones,
+    );
 
     // Wait for transaction and emit event
     this.contract.waitForTransaction(tx, `Bundle holon created`).then(() => {
-      this.emit('holon:created', {
-        address: '',
+      this.emit("holon:created", {
+        address: "",
         creatorUserId,
         name: holonId,
         timestamp: Date.now(),
-        steepness: steepness || BigInt('500000000000000000'),
-        nzones: nzones || 6
+        steepness: steepness || BigInt("500000000000000000"),
+        nzones: nzones || 6,
       } as HolonBundle);
     });
 
@@ -220,17 +243,23 @@ export class HolonsManager extends EventEmitter {
     const config = await this.checkRegistryConfiguration();
 
     if (!config.isConfigured) {
-      console.log('[HolonsManager] Registry not configured. Missing:', config.missingItems);
-      console.log('[HolonsManager] Attempting to configure registry...');
+      console.log(
+        "[HolonsManager] Registry not configured. Missing:",
+        config.missingItems,
+      );
+      console.log("[HolonsManager] Attempting to configure registry...");
 
       const result = await this.configureRegistry();
 
       if (!result.success) {
-        console.error('[HolonsManager] Failed to configure registry:', result.errors);
+        console.error(
+          "[HolonsManager] Failed to configure registry:",
+          result.errors,
+        );
         return false;
       }
 
-      console.log('[HolonsManager] Registry configured successfully');
+      console.log("[HolonsManager] Registry configured successfully");
     }
 
     return true;
@@ -252,21 +281,30 @@ export class HolonsManager extends EventEmitter {
     creatorUserId: string,
     holonName: string,
     steepness?: bigint,
-    nzones?: number
-  ): Promise<{ transaction: ethers.TransactionResponse; holonId: string; address?: string }> {
+    nzones?: number,
+  ): Promise<{
+    transaction: ethers.TransactionResponse;
+    holonId: string;
+    address?: string;
+  }> {
     // Use direct deployment - simpler and doesn't need registry configuration
-    console.log('[HolonsManager] Using direct Bundle deployment...');
+    console.log("[HolonsManager] Using direct Bundle deployment...");
 
-    const result = await this.contract.deployBundleDirect(creatorUserId, holonName, steepness, nzones);
+    const result = await this.contract.deployBundleDirect(
+      creatorUserId,
+      holonName,
+      steepness,
+      nzones,
+    );
 
     // Cache the result immediately
     this.holonCache.set(holonName, result.bundle);
-    this.emit('holon:created', result.bundle);
+    this.emit("holon:created", result.bundle);
 
     return {
       transaction: result.transaction,
       holonId: holonName,
-      address: result.address
+      address: result.address,
     };
   }
 
@@ -284,9 +322,14 @@ export class HolonsManager extends EventEmitter {
     creatorUserId: string,
     holonName: string,
     steepness?: bigint,
-    nzones?: number
+    nzones?: number,
   ) {
-    return this.contract.deployBundleDirect(creatorUserId, holonName, steepness, nzones);
+    return this.contract.deployBundleDirect(
+      creatorUserId,
+      holonName,
+      steepness,
+      nzones,
+    );
   }
 
   /**
@@ -302,12 +345,12 @@ export class HolonsManager extends EventEmitter {
     if (this.holonCache.has(holonId)) {
       return this.holonCache.get(holonId)!;
     }
-    
+
     const bundle = await this.contract.getHolonBundle(holonId);
     if (bundle) {
       this.holonCache.set(holonId, bundle);
     }
-    
+
     return bundle;
   }
 
@@ -321,17 +364,22 @@ export class HolonsManager extends EventEmitter {
    * @fires HolonsManager#members:added
    * @throws {Error} If bundle not found
    */
-  async addMembersToInternal(holonId: string, userIds: string[]): Promise<ethers.TransactionResponse> {
+  async addMembersToInternal(
+    holonId: string,
+    userIds: string[],
+  ): Promise<ethers.TransactionResponse> {
     const bundle = await this.getHolonBundle(holonId);
     if (!bundle || !bundle.address) {
-      throw new Error('Bundle not found');
+      throw new Error("Bundle not found");
     }
 
     const tx = await this.contract.addMembersToManaged(bundle.address, userIds);
 
-    this.contract.waitForTransaction(tx, `Added ${userIds.length} members to Bundle`).then(() => {
-      this.emit('members:added', holonId, userIds);
-    });
+    this.contract
+      .waitForTransaction(tx, `Added ${userIds.length} members to Bundle`)
+      .then(() => {
+        this.emit("members:added", holonId, userIds);
+      });
 
     return tx;
   }
@@ -346,17 +394,22 @@ export class HolonsManager extends EventEmitter {
    * @fires HolonsManager#holon:updated
    * @throws {Error} If bundle not found
    */
-  async addHolonsToExternal(holonId: string, holonIds: string[]): Promise<ethers.TransactionResponse> {
+  async addHolonsToExternal(
+    holonId: string,
+    holonIds: string[],
+  ): Promise<ethers.TransactionResponse> {
     const bundle = await this.getHolonBundle(holonId);
     if (!bundle || !bundle.address) {
-      throw new Error('Bundle not found');
+      throw new Error("Bundle not found");
     }
 
     const tx = await this.contract.addHolonsToZoned(bundle.address, holonIds);
 
-    this.contract.waitForTransaction(tx, `Added ${holonIds.length} holons to exterior`).then(() => {
-      this.emit('holon:updated', holonId, { type: 'holons_added', holonIds });
-    });
+    this.contract
+      .waitForTransaction(tx, `Added ${holonIds.length} holons to exterior`)
+      .then(() => {
+        this.emit("holon:updated", holonId, { type: "holons_added", holonIds });
+      });
 
     return tx;
   }
@@ -370,12 +423,23 @@ export class HolonsManager extends EventEmitter {
    * @returns {Promise<ethers.TransactionResponse>} The transaction response
    * @fires HolonsManager#flow:updated
    */
-  async updateFlowSplit(bundleAddress: string, interiorPercent: number): Promise<ethers.TransactionResponse> {
+  async updateFlowSplit(
+    bundleAddress: string,
+    interiorPercent: number,
+  ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.setFlowSplit(bundleAddress, interiorPercent);
 
-    this.contract.waitForTransaction(tx, `Flow split updated to ${interiorPercent}% interior`).then(() => {
-      this.emit('flow:updated', bundleAddress, { interiorPercent, exteriorPercent: 100 - interiorPercent });
-    });
+    this.contract
+      .waitForTransaction(
+        tx,
+        `Flow split updated to ${interiorPercent}% interior`,
+      )
+      .then(() => {
+        this.emit("flow:updated", bundleAddress, {
+          interiorPercent,
+          exteriorPercent: 100 - interiorPercent,
+        });
+      });
 
     return tx;
   }
@@ -389,11 +453,14 @@ export class HolonsManager extends EventEmitter {
    * @returns {Promise<ethers.TransactionResponse>} The transaction response
    * @fires HolonsManager#flow:updated
    */
-  async setSteepness(bundleAddress: string, steepness: bigint): Promise<ethers.TransactionResponse> {
+  async setSteepness(
+    bundleAddress: string,
+    steepness: bigint,
+  ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.setSteepness(bundleAddress, steepness);
 
-    this.contract.waitForTransaction(tx, 'Steepness updated').then(() => {
-      this.emit('flow:updated', bundleAddress, { steepness });
+    this.contract.waitForTransaction(tx, "Steepness updated").then(() => {
+      this.emit("flow:updated", bundleAddress, { steepness });
     });
 
     return tx;
@@ -408,11 +475,14 @@ export class HolonsManager extends EventEmitter {
    * @returns {Promise<ethers.TransactionResponse>} The transaction response
    * @fires HolonsManager#flow:updated
    */
-  async setNzones(bundleAddress: string, nzones: number): Promise<ethers.TransactionResponse> {
+  async setNzones(
+    bundleAddress: string,
+    nzones: number,
+  ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.setNzones(bundleAddress, nzones);
 
-    this.contract.waitForTransaction(tx, 'Zones updated').then(() => {
-      this.emit('flow:updated', bundleAddress, { nzones });
+    this.contract.waitForTransaction(tx, "Zones updated").then(() => {
+      this.emit("flow:updated", bundleAddress, { nzones });
     });
 
     return tx;
@@ -428,16 +498,22 @@ export class HolonsManager extends EventEmitter {
    */
   async updateInteriorMembers(
     bundleAddress: string,
-    members: Array<{ userId: string; sharePercent: number }>
+    members: Array<{ userId: string; sharePercent: number }>,
   ): Promise<ethers.TransactionResponse> {
-    const userIds = members.map(m => m.userId);
-    const percentages = members.map(m => m.sharePercent);
+    const userIds = members.map((m) => m.userId);
+    const percentages = members.map((m) => m.sharePercent);
 
-    const tx = await this.contract.setInteriorSplit(bundleAddress, userIds, percentages);
+    const tx = await this.contract.setInteriorSplit(
+      bundleAddress,
+      userIds,
+      percentages,
+    );
 
-    this.contract.waitForTransaction(tx, 'Interior members updated').then(() => {
-      this.emit('members:updated', bundleAddress, { members });
-    });
+    this.contract
+      .waitForTransaction(tx, "Interior members updated")
+      .then(() => {
+        this.emit("members:updated", bundleAddress, { members });
+      });
 
     return tx;
   }
@@ -453,12 +529,12 @@ export class HolonsManager extends EventEmitter {
    */
   async addInteriorMembers(
     bundleAddress: string,
-    userIds: string[]
+    userIds: string[],
   ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.addInteriorMembers(bundleAddress, userIds);
 
-    this.contract.waitForTransaction(tx, 'Members added').then(() => {
-      this.emit('members:added', bundleAddress, { userIds });
+    this.contract.waitForTransaction(tx, "Members added").then(() => {
+      this.emit("members:added", bundleAddress, { userIds });
     });
 
     return tx;
@@ -475,12 +551,12 @@ export class HolonsManager extends EventEmitter {
    */
   async addMember(
     bundleAddress: string,
-    userId: string
+    userId: string,
   ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.addMember(bundleAddress, userId);
 
-    this.contract.waitForTransaction(tx, 'Member added').then(() => {
-      this.emit('member:added', bundleAddress, { userId });
+    this.contract.waitForTransaction(tx, "Member added").then(() => {
+      this.emit("member:added", bundleAddress, { userId });
     });
 
     return tx;
@@ -499,13 +575,15 @@ export class HolonsManager extends EventEmitter {
   async assignToZone(
     bundleAddress: string,
     userId: string,
-    zone: number
+    zone: number,
   ): Promise<ethers.TransactionResponse> {
     const tx = await this.contract.assignToZone(bundleAddress, userId, zone);
 
-    this.contract.waitForTransaction(tx, `Member assigned to zone ${zone}`).then(() => {
-      this.emit('member:zoneAssigned', bundleAddress, { userId, zone });
-    });
+    this.contract
+      .waitForTransaction(tx, `Member assigned to zone ${zone}`)
+      .then(() => {
+        this.emit("member:zoneAssigned", bundleAddress, { userId, zone });
+      });
 
     return tx;
   }
@@ -521,16 +599,22 @@ export class HolonsManager extends EventEmitter {
    */
   async assignMembersToZones(
     bundleAddress: string,
-    assignments: Array<{ userId: string; zone: number }>
+    assignments: Array<{ userId: string; zone: number }>,
   ): Promise<ethers.TransactionResponse> {
-    const userIds = assignments.map(a => a.userId);
-    const zones = assignments.map(a => a.zone);
+    const userIds = assignments.map((a) => a.userId);
+    const zones = assignments.map((a) => a.zone);
 
-    const tx = await this.contract.assignMembersToZones(bundleAddress, userIds, zones);
+    const tx = await this.contract.assignMembersToZones(
+      bundleAddress,
+      userIds,
+      zones,
+    );
 
-    this.contract.waitForTransaction(tx, `${assignments.length} members assigned to zones`).then(() => {
-      this.emit('members:zonesAssigned', bundleAddress, { assignments });
-    });
+    this.contract
+      .waitForTransaction(tx, `${assignments.length} members assigned to zones`)
+      .then(() => {
+        this.emit("members:zonesAssigned", bundleAddress, { assignments });
+      });
 
     return tx;
   }
@@ -553,17 +637,19 @@ export class HolonsManager extends EventEmitter {
   async syncAll(
     bundleAddress: string,
     params: {
-      interiorPercent: number;  // 0-100
-      steepness: bigint;        // WAD scale
+      interiorPercent: number; // 0-100
+      steepness: bigint; // WAD scale
       nzones: number;
-      interiorMembers: Array<{ userId: string; percentage: number }>;  // percentage 0-100
+      interiorMembers: Array<{ userId: string; percentage: number }>; // percentage 0-100
       exteriorMembers: Array<{ userId: string; zone: number }>;
-    }
+    },
   ): Promise<ethers.TransactionResponse> {
     const exteriorPercent = 100 - params.interiorPercent;
 
     // Filter out members with 0 or negative percentage
-    const validInteriorMembers = params.interiorMembers.filter(m => m.percentage > 0);
+    const validInteriorMembers = params.interiorMembers.filter(
+      (m) => m.percentage > 0,
+    );
 
     // Convert interior percentages to basis points (must sum to 10000)
     let interiorUserIds: string[] = [];
@@ -571,14 +657,26 @@ export class HolonsManager extends EventEmitter {
 
     if (validInteriorMembers.length > 0) {
       // Normalize percentages to sum to 10000 basis points
-      const totalPercentage = validInteriorMembers.reduce((sum, m) => sum + m.percentage, 0);
+      const totalPercentage = validInteriorMembers.reduce(
+        (sum, m) => sum + m.percentage,
+        0,
+      );
       if (totalPercentage > 0) {
-        interiorUserIds = validInteriorMembers.map(m => m.userId);
+        interiorUserIds = validInteriorMembers.map((m) => m.userId);
         interiorPercentages = validInteriorMembers.map((m, i, arr) => {
           if (i === arr.length - 1) {
             // Last one gets the remainder to ensure exact sum of 10000
-            const sumSoFar = arr.slice(0, i).reduce((sum, _, j) =>
-              sum + Math.round((validInteriorMembers[j].percentage / totalPercentage) * 10000), 0);
+            const sumSoFar = arr
+              .slice(0, i)
+              .reduce(
+                (sum, _, j) =>
+                  sum +
+                  Math.round(
+                    (validInteriorMembers[j].percentage / totalPercentage) *
+                      10000,
+                  ),
+                0,
+              );
             return 10000 - sumSoFar;
           }
           return Math.round((m.percentage / totalPercentage) * 10000);
@@ -587,9 +685,11 @@ export class HolonsManager extends EventEmitter {
     }
 
     // Filter out exterior members with invalid zones
-    const validExteriorMembers = params.exteriorMembers.filter(m => m.zone >= 1);
-    const exteriorUserIds = validExteriorMembers.map(m => m.userId);
-    const exteriorZones = validExteriorMembers.map(m => m.zone);
+    const validExteriorMembers = params.exteriorMembers.filter(
+      (m) => m.zone >= 1,
+    );
+    const exteriorUserIds = validExteriorMembers.map((m) => m.userId);
+    const exteriorZones = validExteriorMembers.map((m) => m.zone);
 
     const tx = await this.contract.syncAll(bundleAddress, {
       interiorPercent: params.interiorPercent,
@@ -599,11 +699,11 @@ export class HolonsManager extends EventEmitter {
       interiorUserIds,
       interiorPercentages,
       exteriorUserIds,
-      exteriorZones
+      exteriorZones,
     });
 
-    this.contract.waitForTransaction(tx, 'Bundle synced').then(() => {
-      this.emit('bundle:synced', bundleAddress);
+    this.contract.waitForTransaction(tx, "Bundle synced").then(() => {
+      this.emit("bundle:synced", bundleAddress);
     });
 
     return tx;
@@ -616,7 +716,9 @@ export class HolonsManager extends EventEmitter {
    * @param {string} bundleAddress - The address of the Bundle contract
    * @returns {Promise<FlowConfig | null>} The flow configuration or null if not found
    */
-  async getFlowConfiguration(bundleAddress: string): Promise<FlowConfig | null> {
+  async getFlowConfiguration(
+    bundleAddress: string,
+  ): Promise<FlowConfig | null> {
     if (!bundleAddress) {
       return null;
     }
@@ -624,7 +726,7 @@ export class HolonsManager extends EventEmitter {
     try {
       return await this.contract.getFlowConfig(bundleAddress);
     } catch (error) {
-      console.error('Error getting flow configuration:', error);
+      console.error("Error getting flow configuration:", error);
       return null;
     }
   }
@@ -644,10 +746,16 @@ export class HolonsManager extends EventEmitter {
     holonId: string,
     targetId: string,
     targetName: string,
-    relationship: 'federated' | 'notifies'
+    relationship: "federated" | "notifies",
   ): Promise<void> {
-    await this.flowSettings.addFederationLink(this.holosphere, holonId, targetId, targetName, relationship);
-    this.emit('federation:added', holonId, targetId);
+    await this.flowSettings.addFederationLink(
+      this.holosphere,
+      holonId,
+      targetId,
+      targetName,
+      relationship,
+    );
+    this.emit("federation:added", holonId, targetId);
   }
 
   /**
@@ -660,8 +768,12 @@ export class HolonsManager extends EventEmitter {
    * @fires HolonsManager#federation:removed
    */
   async removeFederationLink(holonId: string, targetId: string): Promise<void> {
-    await this.flowSettings.removeFederationLink(this.holosphere, holonId, targetId);
-    this.emit('federation:removed', holonId, targetId);
+    await this.flowSettings.removeFederationLink(
+      this.holosphere,
+      holonId,
+      targetId,
+    );
+    this.emit("federation:removed", holonId, targetId);
   }
 
   /**
@@ -679,12 +791,21 @@ export class HolonsManager extends EventEmitter {
     holonId: string,
     targetId: string,
     lensType: LensType,
-    relationship: 'federate' | 'notify'
+    relationship: "federate" | "notify",
   ): Promise<void> {
-    await this.flowSettings.toggleLens(this.holosphere, holonId, targetId, lensType, relationship);
+    await this.flowSettings.toggleLens(
+      this.holosphere,
+      holonId,
+      targetId,
+      lensType,
+      relationship,
+    );
 
-    const settings = await this.flowSettings.loadSettings(this.holosphere, holonId);
-    this.emit('settings:updated', holonId, settings);
+    const settings = await this.flowSettings.loadSettings(
+      this.holosphere,
+      holonId,
+    );
+    this.emit("settings:updated", holonId, settings);
   }
 
   /**
@@ -711,7 +832,10 @@ export class HolonsManager extends EventEmitter {
    * @param {string[]} tokenAddresses - Array of ERC20 token addresses to check
    * @returns {Promise<TokenBalance[]>} Array of token balances
    */
-  async getHolonBalances(holonId: string, tokenAddresses: string[]): Promise<TokenBalance[]> {
+  async getHolonBalances(
+    holonId: string,
+    tokenAddresses: string[],
+  ): Promise<TokenBalance[]> {
     const bundle = await this.getHolonBundle(holonId);
     if (!bundle || !bundle.address) {
       return [];
@@ -728,27 +852,34 @@ export class HolonsManager extends EventEmitter {
    * @param {string} holonId - The unique identifier of the holon
    * @returns {Promise<Array<{userId: string, share: bigint, sharePercent: number, etherBalance: bigint, etherFormatted: string}>>}
    */
-  async getInteriorMembersWithBalances(holonId: string): Promise<{
-    userId: string;
-    share: bigint;
-    sharePercent: number;
-    etherBalance: bigint;
-    etherFormatted: string;
-  }[]> {
+  async getInteriorMembersWithBalances(holonId: string): Promise<
+    {
+      userId: string;
+      share: bigint;
+      sharePercent: number;
+      etherBalance: bigint;
+      etherFormatted: string;
+    }[]
+  > {
     const bundle = await this.getHolonBundle(holonId);
     if (!bundle || !bundle.address) {
       return [];
     }
 
-    const members = await this.contract.getInteriorMembersWithBalances(bundle.address);
+    const members = await this.contract.getInteriorMembersWithBalances(
+      bundle.address,
+    );
 
     // Calculate total shares for percentage
     const totalShares = members.reduce((sum, m) => sum + m.share, BigInt(0));
 
-    return members.map(m => ({
+    return members.map((m) => ({
       ...m,
-      sharePercent: totalShares > 0 ? Number((m.share * BigInt(10000)) / totalShares) / 100 : 0,
-      etherFormatted: ethers.formatEther(m.etherBalance)
+      sharePercent:
+        totalShares > 0
+          ? Number((m.share * BigInt(10000)) / totalShares) / 100
+          : 0,
+      etherFormatted: ethers.formatEther(m.etherBalance),
     }));
   }
 
@@ -760,25 +891,32 @@ export class HolonsManager extends EventEmitter {
    * @returns {Promise<FlowVisualizationData>} The flow visualization data
    * @throws {Error} If holon bundle not found
    */
-  async generateFlowVisualization(holonId: string): Promise<FlowVisualizationData> {
+  async generateFlowVisualization(
+    holonId: string,
+  ): Promise<FlowVisualizationData> {
     const [bundle, members, settings] = await Promise.all([
       this.getHolonBundle(holonId),
       this.getHolonMembers(holonId),
-      this.flowSettings.loadSettings(this.holosphere, holonId)
+      this.flowSettings.loadSettings(this.holosphere, holonId),
     ]);
-    
+
     if (!bundle) {
-      throw new Error('Holon bundle not found');
+      throw new Error("Holon bundle not found");
     }
-    
+
     // Get token balances for visualization
     const commonTokens = [
-      process.env.VITE_TEST_TOKEN_ADDRESS || '0x...'
-    ].filter(addr => addr !== '0x...');
-    
+      process.env.VITE_TEST_TOKEN_ADDRESS || "0x...",
+    ].filter((addr) => addr !== "0x...");
+
     const tokenBalances = await this.getHolonBalances(holonId, commonTokens);
-    
-    return this.flowSettings.generateFlowVisualization(holonId, bundle, members, tokenBalances);
+
+    return this.flowSettings.generateFlowVisualization(
+      holonId,
+      bundle,
+      members,
+      tokenBalances,
+    );
   }
 
   /**
@@ -793,7 +931,10 @@ export class HolonsManager extends EventEmitter {
       return this.settingsCache.get(holonId)!;
     }
 
-    const settings = await this.flowSettings.loadSettings(this.holosphere, holonId);
+    const settings = await this.flowSettings.loadSettings(
+      this.holosphere,
+      holonId,
+    );
     this.settingsCache.set(holonId, settings);
 
     return settings;
@@ -808,13 +949,16 @@ export class HolonsManager extends EventEmitter {
    * @returns {Promise<void>}
    * @fires HolonsManager#settings:updated
    */
-  async updateHolonSettings(holonId: string, updates: Partial<HolonSettings>): Promise<void> {
+  async updateHolonSettings(
+    holonId: string,
+    updates: Partial<HolonSettings>,
+  ): Promise<void> {
     await this.flowSettings.saveSettings(this.holosphere, holonId, updates);
 
     const updatedSettings = await this.getHolonSettings(holonId);
     this.settingsCache.set(holonId, updatedSettings);
 
-    this.emit('settings:updated', holonId, updatedSettings);
+    this.emit("settings:updated", holonId, updatedSettings);
   }
 
   /**
@@ -899,32 +1043,32 @@ export class HolonsManager extends EventEmitter {
     visualization: FlowVisualizationData;
   }> {
     console.log(`[HolonsManager] Getting holon status for: ${holonId}`);
-    
+
     const [bundle, members, settings, flowConfig] = await Promise.all([
       this.getHolonBundle(holonId),
       this.getHolonMembers(holonId),
       this.getHolonSettings(holonId),
-      this.getFlowConfiguration(holonId)
+      this.getFlowConfiguration(holonId),
     ]);
-    
+
     console.log(`[HolonsManager] Bundle result:`, bundle);
     console.log(`[HolonsManager] Members result:`, members);
     console.log(`[HolonsManager] Settings result:`, settings);
-    
+
     const balances = bundle ? await this.getHolonBalances(holonId, []) : [];
     const visualization = await this.generateFlowVisualization(holonId);
-    
+
     const status = {
       bundle,
       members,
       settings,
       balances,
       flowConfig,
-      visualization
+      visualization,
     };
-    
+
     console.log(`[HolonsManager] Final holon status:`, status);
-    
+
     return status;
   }
 }

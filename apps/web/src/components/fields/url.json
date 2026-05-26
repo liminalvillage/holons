@@ -13,9 +13,7 @@
       "name": "url",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/url"
-    ],
+    "context": ["https://schema.org/url"],
     "purpose": "A URL can be used to link the named entity to its presence on the web, or in the case of an item or service it can provide further information."
   }
 }

@@ -237,7 +237,6 @@ export default class Quests {
         const commandGroups = {
             task: ['quest', 'mission', 'task', 'todo', 'missione', 'compito', 'fare'],
             // event commands now handled by Events.js
-            proposal: ['proposal', 'propose', 'proposta', 'propongo'],
             request: ['need', 'request', 'want', 'wish', 'richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'],
             offer: ['offer', 'give', 'have', 'gift', 'offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'],
             any: ['idea', 'lesson', 'quote', 'tip', 'fact', 'joke', 'story', 'thought', 'question', 
@@ -785,7 +784,6 @@ export default class Quests {
         const buttons = [];
         // event type now handled by Events.js
         const isTask = ['task', 'quest', 'todo', 'mission', 'compito', 'recurring'].includes(quest.type);
-        const isProposal = quest.type === 'proposal';
         const isOfferRequest = ['offer', 'request'].includes(quest.type);
 
         if (quest.status === "completed") {
@@ -808,13 +806,6 @@ export default class Quests {
                                           `schedule_quest_${questHolon}_${quest.id}`)
                 ]
             );
-        } else if (isProposal) {
-            buttons.push([
-                Markup.button.callback(i18next.t('agree', { lng: language }),
-                                      `participate_quest_${questHolon}_${quest.id}`),
-                Markup.button.callback(i18next.t('stop', { lng: language }),
-                                      `stop_quest_${questHolon}_${quest.id}`)
-            ]);
         } else if (isOfferRequest) {
             buttons.push([
                 Markup.button.callback(i18next.t('accept', { lng: language }),
@@ -829,7 +820,7 @@ export default class Quests {
             ]);
         }
 
-        if (quest.status !== "completed" && (isTask || isProposal || isOfferRequest)) {
+        if (quest.status !== "completed" && (isTask || isOfferRequest)) {
             buttons.push([
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }),
                                       `more_actions_${questHolon}_${quest.id}`)
@@ -903,17 +894,6 @@ export default class Quests {
                 ]
             );
         // event type now handled by Events.js
-        } else if (quest.type === 'proposal') {
-            buttons.push(
-                [
-                    Markup.button.callback(i18next.t('agree', { lng: language }),
-                                          `participate_quest_${questHolon}_${quest.id}`),
-                    Markup.button.callback(i18next.t('stop', { lng: language }),
-                                          `stop_quest_${questHolon}_${quest.id}`)
-                ],
-                [Markup.button.callback(i18next.t('appreciate', { lng: language }),
-                                       `appreciate_quest_${questHolon}_${quest.id}`)]
-            );
         } else {
             buttons.push(
                 [Markup.button.callback(i18next.t('appreciate', { lng: language }),

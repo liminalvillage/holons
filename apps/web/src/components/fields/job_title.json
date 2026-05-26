@@ -11,9 +11,7 @@
       "name": "job_title",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/jobTitle"
-    ],
+    "context": ["https://schema.org/jobTitle"],
     "purpose": "A title that describes the role filled by a person in an organization."
   }
 }

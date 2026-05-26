@@ -20,7 +20,6 @@ import Library from './Library.js';
 import Users from './Users.js';
 import Tags from './Tags.js';
 import Participation from './RSVP.js';
-import Council from './Council.js';
 import Roles from './Roles.js';
 import * as request from './Requests.js';
 
@@ -70,7 +69,6 @@ class HolonsBot {
     this.h3 = null;
     this.tags = null;
     this.participation = null;
-    this.council = null;
     this.roles = null;
   }
 
@@ -121,7 +119,6 @@ class HolonsBot {
     this.h3 = new H3(this.bot, this.db);
     this.tags = new Tags(this.bot, this.db);
     this.participation = new Participation(this.bot, this.db);
-    this.council = new Council(this.bot, this.db);
     this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
     this.quests = new Quests(this.bot, this.db, this.users, this.settings);
     this.settings.setQuestsInstance(this.quests);

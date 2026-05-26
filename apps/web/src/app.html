@@ -1,41 +1,54 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
-		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
-		<meta name="theme-color" content="#1f2937" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <head>
+    <meta charset="utf-8" />
+    <link
+      rel="icon"
+      href="%sveltekit.assets%/favicon.svg"
+      type="image/svg+xml"
+    />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
+    <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+    <meta name="theme-color" content="#1f2937" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
 
-		<!-- Suppress Google Translate logging errors (blocked by ad blockers).
+    <!-- Suppress Google Translate logging errors (blocked by ad blockers).
 		     Inline so it intercepts console.error before any other script can
 		     emit one. Trivially small; moving to a file would defeat the point. -->
-		<script>
-			(function() {
-				const originalError = console.error;
-				console.error = function(...args) {
-					const str = args.join(' ');
-					if (str.includes('translate.google') || str.includes('ERR_BLOCKED_BY_CLIENT')) {
-						return;
-					}
-					originalError.apply(console, args);
-				};
-			})();
-		</script>
+    <script>
+      (function () {
+        const originalError = console.error;
+        console.error = function (...args) {
+          const str = args.join(" ");
+          if (
+            str.includes("translate.google") ||
+            str.includes("ERR_BLOCKED_BY_CLIENT")
+          ) {
+            return;
+          }
+          originalError.apply(console, args);
+        };
+      })();
+    </script>
 
-		<!-- Telegram WebApp SDK - Must be loaded first -->
-		<script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Telegram WebApp SDK - Must be loaded first -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-		<!-- Google Translate widget bootstrap. Local script defines
+    <!-- Google Translate widget bootstrap. Local script defines
 		     `googleTranslateElementInit` before element.js loads async. -->
-		<link rel="stylesheet" href="%sveltekit.assets%/google-translate.css" />
-		<script src="%sveltekit.assets%/google-translate.js"></script>
-		<script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async></script>
+    <link rel="stylesheet" href="%sveltekit.assets%/google-translate.css" />
+    <script src="%sveltekit.assets%/google-translate.js"></script>
+    <script
+      src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
+      async
+    ></script>
 
-		%sveltekit.head%
-	</head>
-	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">%sveltekit.body%</div>
-	</body>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
 </html>

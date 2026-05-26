@@ -5,5 +5,5 @@ export {
   defaultValues,
   getAllDefaultChromosomes,
   getDefaultChromosomesByType,
-  type SeedChromosome
-} from '@holons/core/dna';
+  type SeedChromosome,
+} from "@holons/core/dna";

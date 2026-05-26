@@ -22,7 +22,7 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
-		type?: 'task' | 'quest' | 'event' | 'proposal' | 'recurring';
+		type?: 'task' | 'quest' | 'event' | 'recurring';
 		orderIndex?: number;
 		position?: { x: number; y: number };
 		dependsOn?: string[];

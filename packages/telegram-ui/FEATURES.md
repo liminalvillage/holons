@@ -7,14 +7,13 @@ A decentralized community coordination platform built as a Telegram bot.
 ## Quest System
 1. **Create Tasks** - Work items that need doing (`/task`)
 2. **Create Events** - Scheduled gatherings or activities (`/event`)
-3. **Create Proposals** - Ideas for community decision-making (`/proposal`)
-4. **Create Offers** - Resources or skills being offered (`/offer`)
-5. **Create Requests** - Needs the community can help with (`/request`)
-6. **Join/Leave Quests** - Participate in community quests
-7. **Time Logging** - Track hours contributed to quests
-8. **Quest Completion** - Mark quests done with appreciation prompts
-9. **Recurring Tasks** - Create repeating quests (daily, weekly, custom)
-10. **Quest Reminders** - Automatic notifications before deadlines
+3. **Create Offers** - Resources or skills being offered (`/offer`)
+4. **Create Requests** - Needs the community can help with (`/request`)
+5. **Join/Leave Quests** - Participate in community quests
+6. **Time Logging** - Track hours contributed to quests
+7. **Quest Completion** - Mark quests done with appreciation prompts
+8. **Recurring Tasks** - Create repeating quests (daily, weekly, custom)
+9. **Quest Reminders** - Automatic notifications before deadlines
 
 ## Visual Display
 11. **Image Mode** - Rich visual quest cards with status indicators

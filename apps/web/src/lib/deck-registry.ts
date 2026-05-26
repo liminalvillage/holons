@@ -1,13 +1,13 @@
-import type { HoloSphere } from 'holosphere';
+import type { HoloSphere } from "holosphere";
 
-const DECK_REGISTRY_TABLE = 'deck_registry';
+const DECK_REGISTRY_TABLE = "deck_registry";
 
 export interface DeckRegistryEntry {
   deckId: string;
   holonId: string;
-  createdBy: string;      // pubkey of creator
-  createdAt: string;      // ISO timestamp
-  name?: string;          // optional deck name
+  createdBy: string; // pubkey of creator
+  createdAt: string; // ISO timestamp
+  name?: string; // optional deck name
 }
 
 /**
@@ -17,15 +17,15 @@ export async function registerDeck(
   holosphere: HoloSphere,
   deckId: string,
   holonId: string,
-  name?: string
+  name?: string,
 ): Promise<void> {
   const entry = {
     id: deckId,
     deckId,
     holonId,
-    createdBy: holosphere.client?.publicKey || 'anonymous',
+    createdBy: holosphere.client?.publicKey || "anonymous",
     createdAt: new Date().toISOString(),
-    name
+    name,
   };
   await holosphere.writeGlobal(DECK_REGISTRY_TABLE, entry);
 }
@@ -35,7 +35,7 @@ export async function registerDeck(
  */
 export async function getHolonIdForDeck(
   holosphere: HoloSphere,
-  deckId: string
+  deckId: string,
 ): Promise<string | null> {
   const entry = await holosphere.getGlobal(DECK_REGISTRY_TABLE, deckId);
   return entry?.holonId || null;

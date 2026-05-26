@@ -153,8 +153,8 @@ class UI {
     this.bot.command(['fiorini','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
 
     // Set up a command to display the quests
-    this.bot.command(['tasks', 'todos', 'proposals'],  (ctx) =>  this.questboard(ctx))
-    this.bot.command(['compiti', 'missioni', 'proposte'], (ctx) => this.questboard(ctx))
+    this.bot.command(['tasks', 'todos'],  (ctx) =>  this.questboard(ctx))
+    this.bot.command(['compiti', 'missioni'], (ctx) => this.questboard(ctx))
 
     // Set up a command to display the requests
     this.bot.command(['requests', 'wishes'], (ctx) => this.requestsboard(ctx))
@@ -855,7 +855,6 @@ class UI {
       'task': '📋',
       'quest': '⚔️',
       'event': '📅',
-      'proposal': '💭',
       'offer': '🎁',
       'request': '🙏',
       'todo': '✔️',

@@ -15,23 +15,26 @@
  *   WEB3PROVIDER - Custom RPC URL (optional, uses default for network)
  */
 
-import { ethers } from 'ethers';
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { ethers } from "ethers";
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
 
 // Load .env file
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const envPath = path.join(__dirname, '../.env');
+const envPath = path.join(__dirname, "../.env");
 
 if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf-8');
-  envContent.split('\n').forEach(line => {
+  const envContent = fs.readFileSync(envPath, "utf-8");
+  envContent.split("\n").forEach((line) => {
     const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const [key, ...valueParts] = trimmed.split('=');
-      const value = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
+    if (trimmed && !trimmed.startsWith("#")) {
+      const [key, ...valueParts] = trimmed.split("=");
+      const value = valueParts
+        .join("=")
+        .trim()
+        .replace(/^["']|["']$/g, "");
       if (key && value && !process.env[key.trim()]) {
         process.env[key.trim()] = value;
       }
@@ -40,34 +43,37 @@ if (fs.existsSync(envPath)) {
 }
 
 // Contract artifacts directory
-const CONTRACTS_DIR = path.join(__dirname, '../src/lib/contracts');
-const DEPLOYMENTS_FILE = path.join(CONTRACTS_DIR, 'deployments.ts');
+const CONTRACTS_DIR = path.join(__dirname, "../src/lib/contracts");
+const DEPLOYMENTS_FILE = path.join(CONTRACTS_DIR, "deployments.ts");
 
 // Network configurations
 const NETWORKS = {
-  localhost: { chainId: 31337, rpcUrl: 'http://127.0.0.1:8545' },
-  hardhat: { chainId: 31337, rpcUrl: 'http://127.0.0.1:8545' },
-  sepolia: { chainId: 11155111, rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com' },
-  goerli: { chainId: 5, rpcUrl: 'https://rpc.goerli.mudit.blog' },
-  mainnet: { chainId: 1, rpcUrl: 'https://eth.llamarpc.com' },
-  homestead: { chainId: 1, rpcUrl: 'https://eth.llamarpc.com' },
-  gnosis: { chainId: 100, rpcUrl: 'https://rpc.gnosischain.com' },
-  polygon: { chainId: 137, rpcUrl: 'https://polygon-rpc.com' },
-  arbitrum: { chainId: 42161, rpcUrl: 'https://arb1.arbitrum.io/rpc' },
-  optimism: { chainId: 10, rpcUrl: 'https://mainnet.optimism.io' },
-  base: { chainId: 8453, rpcUrl: 'https://mainnet.base.org' },
+  localhost: { chainId: 31337, rpcUrl: "http://127.0.0.1:8545" },
+  hardhat: { chainId: 31337, rpcUrl: "http://127.0.0.1:8545" },
+  sepolia: {
+    chainId: 11155111,
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+  },
+  goerli: { chainId: 5, rpcUrl: "https://rpc.goerli.mudit.blog" },
+  mainnet: { chainId: 1, rpcUrl: "https://eth.llamarpc.com" },
+  homestead: { chainId: 1, rpcUrl: "https://eth.llamarpc.com" },
+  gnosis: { chainId: 100, rpcUrl: "https://rpc.gnosischain.com" },
+  polygon: { chainId: 137, rpcUrl: "https://polygon-rpc.com" },
+  arbitrum: { chainId: 42161, rpcUrl: "https://arb1.arbitrum.io/rpc" },
+  optimism: { chainId: 10, rpcUrl: "https://mainnet.optimism.io" },
+  base: { chainId: 8453, rpcUrl: "https://mainnet.base.org" },
 };
 
 // Contracts that can be deployed (in order of dependencies)
 const DEPLOYABLE_CONTRACTS = [
-  'ManagedFactory',
-  'ZonedFactory',
-  'SplitterFactory',
-  'AppreciativeFactory',
-  'Holons',
-  'TestToken',
-  'Splitter',
-  'Bundle',
+  "ManagedFactory",
+  "ZonedFactory",
+  "SplitterFactory",
+  "AppreciativeFactory",
+  "Holons",
+  "TestToken",
+  "Splitter",
+  "Bundle",
 ];
 
 function loadContractArtifact(contractName) {
@@ -79,22 +85,22 @@ function loadContractArtifact(contractName) {
     return null;
   }
 
-  const artifact = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const artifact = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 
   // Handle different artifact formats
   let bytecode = artifact.bytecode;
-  if (typeof bytecode === 'object' && bytecode.object) {
+  if (typeof bytecode === "object" && bytecode.object) {
     bytecode = bytecode.object;
   }
 
   // Ensure bytecode starts with 0x
-  if (bytecode && !bytecode.startsWith('0x')) {
-    bytecode = '0x' + bytecode;
+  if (bytecode && !bytecode.startsWith("0x")) {
+    bytecode = "0x" + bytecode;
   }
 
   return {
     abi: artifact.abi,
-    bytecode: bytecode || '',
+    bytecode: bytecode || "",
   };
 }
 
@@ -106,15 +112,23 @@ async function deployContract(signer, contractName, constructorArgs = []) {
     throw new Error(`Contract artifact not found for ${contractName}`);
   }
 
-  if (!artifact.bytecode || artifact.bytecode === '0x') {
+  if (!artifact.bytecode || artifact.bytecode === "0x") {
     throw new Error(`No bytecode found for ${contractName}`);
   }
 
-  const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, signer);
+  const factory = new ethers.ContractFactory(
+    artifact.abi,
+    artifact.bytecode,
+    signer,
+  );
 
-  console.log(`  Constructor args: ${JSON.stringify(constructorArgs, (_, v) => typeof v === 'bigint' ? v.toString() : v)}`);
+  console.log(
+    `  Constructor args: ${JSON.stringify(constructorArgs, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+  );
 
-  const contract = await factory.deploy(...constructorArgs, { gasLimit: 15000000 });
+  const contract = await factory.deploy(...constructorArgs, {
+    gasLimit: 15000000,
+  });
   const tx = contract.deploymentTransaction();
 
   console.log(`  Transaction hash: ${tx?.hash}`);
@@ -127,7 +141,7 @@ async function deployContract(signer, contractName, constructorArgs = []) {
 
   return {
     address,
-    txHash: tx?.hash || '',
+    txHash: tx?.hash || "",
     deployer: await signer.getAddress(),
     deployedAt: Date.now(),
   };
@@ -136,14 +150,20 @@ async function deployContract(signer, contractName, constructorArgs = []) {
 function updateDeploymentsFile(networkKey, chainId, contractName, deployment) {
   console.log(`\nUpdating deployments.ts for ${networkKey}/${contractName}...`);
 
-  let content = fs.readFileSync(DEPLOYMENTS_FILE, 'utf-8');
+  let content = fs.readFileSync(DEPLOYMENTS_FILE, "utf-8");
 
   // Check if network exists in DEPLOYMENTS
-  const networkPattern = new RegExp(`${networkKey}:\\s*\\{[^}]*contracts:\\s*\\{`, 's');
+  const networkPattern = new RegExp(
+    `${networkKey}:\\s*\\{[^}]*contracts:\\s*\\{`,
+    "s",
+  );
 
   if (!networkPattern.test(content)) {
     // Add new network
-    const insertPoint = content.indexOf('};', content.lastIndexOf('export const DEPLOYMENTS'));
+    const insertPoint = content.indexOf(
+      "};",
+      content.lastIndexOf("export const DEPLOYMENTS"),
+    );
     const newNetwork = `
   ${networkKey}: {
     chainId: ${chainId},
@@ -157,7 +177,11 @@ function updateDeploymentsFile(networkKey, chainId, contractName, deployment) {
       },
     }
   },`;
-    content = content.slice(0, insertPoint) + newNetwork + '\n' + content.slice(insertPoint);
+    content =
+      content.slice(0, insertPoint) +
+      newNetwork +
+      "\n" +
+      content.slice(insertPoint);
   } else {
     // Update existing network
     const contractEntry = `${contractName}: {
@@ -170,7 +194,7 @@ function updateDeploymentsFile(networkKey, chainId, contractName, deployment) {
     // Check if contract already exists in this network
     const contractPattern = new RegExp(
       `(${networkKey}:[^}]*contracts:\\s*\\{[^}]*)${contractName}:\\s*\\{[^}]*\\}`,
-      's'
+      "s",
     );
 
     if (contractPattern.test(content)) {
@@ -178,7 +202,10 @@ function updateDeploymentsFile(networkKey, chainId, contractName, deployment) {
       content = content.replace(contractPattern, `$1${contractEntry}`);
     } else {
       // Add new contract to existing network
-      const insertPattern = new RegExp(`(${networkKey}:[^}]*contracts:\\s*\\{)`, 's');
+      const insertPattern = new RegExp(
+        `(${networkKey}:[^}]*contracts:\\s*\\{)`,
+        "s",
+      );
       content = content.replace(insertPattern, `$1\n      ${contractEntry},`);
     }
   }
@@ -190,35 +217,35 @@ function updateDeploymentsFile(networkKey, chainId, contractName, deployment) {
 function getConstructorArgs(contractName, deployer, existingDeployments) {
   // Define constructor arguments for each contract type
   switch (contractName) {
-    case 'ManagedFactory':
-    case 'ZonedFactory':
-    case 'SplitterFactory':
-    case 'AppreciativeFactory':
-    case 'Holons':
+    case "ManagedFactory":
+    case "ZonedFactory":
+    case "SplitterFactory":
+    case "AppreciativeFactory":
+    case "Holons":
       return []; // These contracts have no constructor args
 
-    case 'TestToken':
+    case "TestToken":
       // TestToken(uint256 initialSupply)
-      return ['1000000000000000000000000'];
+      return ["1000000000000000000000000"];
 
-    case 'Splitter':
+    case "Splitter":
       // Splitter(address owner, string creatorUserId, string name, uint256 parameter, address managedFactory, address zonedFactory)
       return [
         deployer,
-        'deployer',
-        'DefaultSplitter',
+        "deployer",
+        "DefaultSplitter",
         0,
         existingDeployments.ManagedFactory || ethers.ZeroAddress,
         existingDeployments.ZonedFactory || ethers.ZeroAddress,
       ];
 
-    case 'Bundle':
+    case "Bundle":
       // Bundle(address owner, string creatorUserId, string name, uint256 steepness, uint256 nzones)
       return [
         deployer,
-        'deployer',
-        'DefaultBundle',
-        BigInt('500000000000000000'), // 0.5e18 = 50% decay (steepness)
+        "deployer",
+        "DefaultBundle",
+        BigInt("500000000000000000"), // 0.5e18 = 50% decay (steepness)
         6, // nzones
       ];
 
@@ -231,58 +258,62 @@ async function main() {
   const args = process.argv.slice(2);
 
   // Parse arguments
-  let networkKey = '';
-  let contractName = '';
+  let networkKey = "";
+  let contractName = "";
   let deployAll = false;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--network' && args[i + 1]) {
+    if (args[i] === "--network" && args[i + 1]) {
       networkKey = args[i + 1];
       i++;
-    } else if (args[i] === '--contract' && args[i + 1]) {
+    } else if (args[i] === "--contract" && args[i + 1]) {
       contractName = args[i + 1];
       i++;
-    } else if (args[i] === '--all') {
+    } else if (args[i] === "--all") {
       deployAll = true;
     }
   }
 
   // Use NETWORK from .env as default if not specified
   if (!networkKey) {
-    networkKey = process.env.NETWORK || '';
+    networkKey = process.env.NETWORK || "";
     if (networkKey) {
       console.log(`Using network from .env: ${networkKey}`);
     }
   }
 
   if (!networkKey) {
-    console.log('Usage: node scripts/deploy.mjs --network <network> [--contract <name>] [--all]');
-    console.log('\nAvailable networks:', Object.keys(NETWORKS).join(', '));
-    console.log('\nDeployable contracts:', DEPLOYABLE_CONTRACTS.join(', '));
-    console.log('\nOr set NETWORK in your .env file to use as default');
+    console.log(
+      "Usage: node scripts/deploy.mjs --network <network> [--contract <name>] [--all]",
+    );
+    console.log("\nAvailable networks:", Object.keys(NETWORKS).join(", "));
+    console.log("\nDeployable contracts:", DEPLOYABLE_CONTRACTS.join(", "));
+    console.log("\nOr set NETWORK in your .env file to use as default");
     process.exit(1);
   }
 
   const network = NETWORKS[networkKey];
   if (!network) {
     console.error(`Unknown network: ${networkKey}`);
-    console.log('Available networks:', Object.keys(NETWORKS).join(', '));
+    console.log("Available networks:", Object.keys(NETWORKS).join(", "));
     process.exit(1);
   }
 
   // Get private key from WEB3KEY env var
   const privateKey = process.env.WEB3KEY;
   if (!privateKey) {
-    console.error('WEB3KEY environment variable not set');
-    console.log('Set it in your .env file: WEB3KEY=0x...');
+    console.error("WEB3KEY environment variable not set");
+    console.log("Set it in your .env file: WEB3KEY=0x...");
     process.exit(1);
   }
 
   // Setup provider and signer
   // Only use WEB3PROVIDER if network matches NETWORK env var (i.e., using default network)
-  const envNetwork = process.env.NETWORK || '';
+  const envNetwork = process.env.NETWORK || "";
   const useEnvProvider = networkKey === envNetwork && process.env.WEB3PROVIDER;
-  const rpcUrl = useEnvProvider ? process.env.WEB3PROVIDER : (process.env.RPC_URL || network.rpcUrl);
+  const rpcUrl = useEnvProvider
+    ? process.env.WEB3PROVIDER
+    : process.env.RPC_URL || network.rpcUrl;
 
   if (useEnvProvider) {
     console.log(`Using WEB3PROVIDER from .env for ${networkKey}`);
@@ -300,7 +331,7 @@ async function main() {
   console.log(`Balance: ${ethers.formatEther(balance)} ETH`);
 
   if (balance === 0n) {
-    console.error('Deployer has no balance!');
+    console.error("Deployer has no balance!");
     process.exit(1);
   }
 
@@ -315,21 +346,24 @@ async function main() {
       : [];
 
   if (contractsToDeploy.length === 0) {
-    console.log('No contracts specified. Use --contract <name> or --all');
+    console.log("No contracts specified. Use --contract <name> or --all");
     process.exit(1);
   }
 
-  console.log(`\nContracts to deploy: ${contractsToDeploy.join(', ')}`);
+  console.log(`\nContracts to deploy: ${contractsToDeploy.join(", ")}`);
 
   // Deploy contracts
   for (const name of contractsToDeploy) {
     try {
-      const constructorArgs = getConstructorArgs(name, deployerAddress, deployedContracts);
+      const constructorArgs = getConstructorArgs(
+        name,
+        deployerAddress,
+        deployedContracts,
+      );
       const result = await deployContract(signer, name, constructorArgs);
 
       deployedContracts[name] = result.address;
       updateDeploymentsFile(networkKey, network.chainId, name, result);
-
     } catch (error) {
       console.error(`Failed to deploy ${name}:`, error.message);
       if (!deployAll) {
@@ -338,14 +372,14 @@ async function main() {
     }
   }
 
-  console.log('\n=== Deployment Summary ===');
+  console.log("\n=== Deployment Summary ===");
   for (const [name, address] of Object.entries(deployedContracts)) {
     console.log(`${name}: ${address}`);
   }
-  console.log('\nDeployment complete!');
+  console.log("\nDeployment complete!");
 }
 
 main().catch((error) => {
-  console.error('Deployment failed:', error);
+  console.error("Deployment failed:", error);
   process.exit(1);
 });

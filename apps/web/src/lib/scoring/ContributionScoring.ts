@@ -10,4 +10,4 @@
  * keep resolving without changes.
  */
 
-export * from '@holons/core/scoring';
+export * from "@holons/core/scoring";

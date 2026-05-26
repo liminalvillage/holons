@@ -7,13 +7,13 @@
  * Uses a global table for public accessibility (no federation required to read).
  */
 
-import { schnorr } from '@noble/curves/secp256k1';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import { sha256 } from '@noble/hashes/sha256';
-import type { HoloSphere } from 'holosphere';
+import { schnorr } from "@noble/curves/secp256k1";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { sha256 } from "@noble/hashes/sha256";
+import type { HoloSphere } from "holosphere";
 
 // Registry lens name
-const HNS_LENS = 'hns';
+const HNS_LENS = "hns";
 
 // Cache for verified names
 const hnsCache = new Map<string, HNSEntry>();
@@ -44,7 +44,11 @@ export function getRegistryHolonId(): string | null {
 /**
  * Create a hash of the entry data for signing
  */
-function hashEntry(holonId: string, name: string, timestamp: number): Uint8Array {
+function hashEntry(
+  holonId: string,
+  name: string,
+  timestamp: number,
+): Uint8Array {
   const message = `hns:${holonId}:${name}:${timestamp}`;
   return sha256(new TextEncoder().encode(message));
 }
@@ -56,7 +60,7 @@ export function signEntry(
   holonId: string,
   name: string,
   timestamp: number,
-  privateKey: string
+  privateKey: string,
 ): string {
   const messageHash = hashEntry(holonId, name, timestamp);
   const signature = schnorr.sign(messageHash, privateKey);
@@ -73,7 +77,7 @@ export function verifyEntry(entry: HNSEntry): boolean {
     const publicKeyBytes = hexToBytes(entry.holonId);
     return schnorr.verify(signatureBytes, messageHash, publicKeyBytes);
   } catch (error) {
-    console.error('HNS signature verification failed:', error);
+    console.error("HNS signature verification failed:", error);
     return false;
   }
 }
@@ -86,29 +90,43 @@ export async function registerName(
   holosphere: HoloSphere,
   holonId: string,
   name: string,
-  privateKey: string
+  privateKey: string,
 ): Promise<boolean> {
   try {
     // Validate name before registration
-    const RESERVED_NAMES = new Set(['no', 'yes', 'true', 'false', 'null', 'undefined', 'none', 'n/a', 'na', 'nil']);
-    if (!name || typeof name !== 'string') {
-      console.warn('HNS: Invalid name type, skipping registration');
+    const RESERVED_NAMES = new Set([
+      "no",
+      "yes",
+      "true",
+      "false",
+      "null",
+      "undefined",
+      "none",
+      "n/a",
+      "na",
+      "nil",
+    ]);
+    if (!name || typeof name !== "string") {
+      console.warn("HNS: Invalid name type, skipping registration");
       return false;
     }
     const trimmedName = name.trim();
     if (trimmedName.length < 2) {
-      console.warn('HNS: Name too short, skipping registration:', trimmedName);
+      console.warn("HNS: Name too short, skipping registration:", trimmedName);
       return false;
     }
     if (RESERVED_NAMES.has(trimmedName.toLowerCase())) {
-      console.warn('HNS: Reserved word as name, skipping registration:', trimmedName);
+      console.warn(
+        "HNS: Reserved word as name, skipping registration:",
+        trimmedName,
+      );
       return false;
     }
 
     // Verify the private key matches the holon ID
     const derivedPubKey = bytesToHex(schnorr.getPublicKey(privateKey));
     if (derivedPubKey !== holonId) {
-      console.error('HNS: Private key does not match holon ID');
+      console.error("HNS: Private key does not match holon ID");
       return false;
     }
 
@@ -120,7 +138,7 @@ export async function registerName(
       holonId,
       name: trimmedName,
       timestamp,
-      signature
+      signature,
     };
 
     // Write to global HNS table (publicly readable, no federation needed)
@@ -129,10 +147,12 @@ export async function registerName(
     // Update local cache
     hnsCache.set(holonId, entry);
 
-    console.log(`HNS: Registered name "${trimmedName}" for holon ${holonId.slice(0, 8)}...`);
+    console.log(
+      `HNS: Registered name "${trimmedName}" for holon ${holonId.slice(0, 8)}...`,
+    );
     return true;
   } catch (error) {
-    console.error('HNS: Failed to register name:', error);
+    console.error("HNS: Failed to register name:", error);
     return false;
   }
 }
@@ -143,7 +163,7 @@ export async function registerName(
  */
 export async function lookupName(
   holosphere: HoloSphere,
-  holonId: string
+  holonId: string,
 ): Promise<string | null> {
   // Check cache first
   const cached = hnsCache.get(holonId);
@@ -169,7 +189,9 @@ export async function lookupName(
 
       // Verify the signature
       if (!verifyEntry(entry)) {
-        console.warn(`HNS: Invalid signature for holon ${holonId.slice(0, 8)}...`);
+        console.warn(
+          `HNS: Invalid signature for holon ${holonId.slice(0, 8)}...`,
+        );
         return null;
       }
 
@@ -195,7 +217,7 @@ export async function lookupName(
  */
 export async function lookupNames(
   holosphere: HoloSphere,
-  holonIds: string[]
+  holonIds: string[],
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
@@ -216,7 +238,9 @@ export async function lookupNames(
         continue;
       }
 
-      const entry = entries.find((e: any) => e?.holonId === holonId) as HNSEntry | undefined;
+      const entry = entries.find((e: any) => e?.holonId === holonId) as
+        | HNSEntry
+        | undefined;
 
       if (entry && verifyEntry(entry)) {
         hnsCache.set(holonId, entry);

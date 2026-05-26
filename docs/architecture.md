@@ -13,7 +13,7 @@ UIs            web · telegram · text · ai · mcp
                           │  (call into)
 @holons/core   scoring · tasks · federation · holosphere · users ·
                expenses · calendar · shopping · settings · dna ·
-               library · checklists · council · categories ·
+               library · checklists · categories ·
                commands · rea
                           │  (reads/writes through)
 Holosphere     identity-aware HoloSphere instance
@@ -69,7 +69,7 @@ import { createHoloSphere } from '@holons/core/holosphere';
 Each domain lives at `packages/core/src/<domain>/index.ts`. Current domains:
 `scoring`, `tasks`, `federation`, `holosphere`, `users`, `expenses`,
 `calendar`, `shopping`, `settings`, `dna`, `library`, `checklists`,
-`council`, `categories`, `commands`, `rea`. The `package.json` wildcard
+`categories`, `commands`, `rea`. The `package.json` wildcard
 export (`"./*"`) makes a new domain folder importable immediately — no edit
 to the barrel needed.
 

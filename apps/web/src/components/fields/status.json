@@ -2,20 +2,8 @@
   "title": "Status",
   "description": "The current state of the entity.",
   "type": "string",
-  "enum": [
-    "active",
-    "completed",
-    "cancelled",
-    "on_hold",
-    "in_planning"
-  ],
-  "enumNames": [
-    "Active",
-    "Completed",
-    "Cancelled",
-    "On hold",
-    "In planning"
-  ],
+  "enum": ["active", "completed", "cancelled", "on_hold", "in_planning"],
+  "enumNames": ["Active", "Completed", "Cancelled", "On hold", "In planning"],
   "metadata": {
     "creator": {
       "name": "Murmurations Network",

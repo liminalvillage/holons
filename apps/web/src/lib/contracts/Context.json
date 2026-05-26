@@ -14,9 +14,7 @@
   "ast": {
     "absolutePath": "@openzeppelin/contracts/utils/Context.sol",
     "exportedSymbols": {
-      "Context": [
-        719
-      ]
+      "Context": [719]
     },
     "id": 720,
     "license": "MIT",
@@ -24,12 +22,7 @@
     "nodes": [
       {
         "id": 691,
-        "literals": [
-          "solidity",
-          "^",
-          "0.8",
-          ".0"
-        ],
+        "literals": ["solidity", "^", "0.8", ".0"],
         "nodeType": "PragmaDirective",
         "src": "101:23:3"
       },
@@ -46,9 +39,7 @@
         },
         "fullyImplemented": true,
         "id": 719,
-        "linearizedBaseContracts": [
-          719
-        ],
+        "linearizedBaseContracts": [719],
         "name": "Context",
         "nodeType": "ContractDefinition",
         "nodes": [

@@ -11,9 +11,7 @@
       "name": "telephone",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/telephone"
-    ],
+    "context": ["https://schema.org/telephone"],
     "purpose": "A phone number that can be used to contact a person or organization. The number should be provided in international dialing format (e.g., the US telephone number (212) 555-1212 should be formatted as +1 212 555 1212)."
   }
 }

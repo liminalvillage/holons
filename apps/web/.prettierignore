@@ -1,0 +1,12 @@
+# Vendored third-party assets — formatting/linting must not touch them.
+public/assets/
+static/
+
+# Generated output.
+.svelte-kit/
+build/
+dist/
+.netlify/
+
+# Lockfiles.
+pnpm-lock.yaml

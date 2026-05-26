@@ -9,5 +9,5 @@ export {
   seedChromosomeLibrary,
   subscribeToChromosomeLibrary,
   subscribeToDNASequence,
-  updateChromosome
-} from '@holons/core/dna';
+  updateChromosome,
+} from "@holons/core/dna";

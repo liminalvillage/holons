@@ -5,12 +5,12 @@ declare namespace svelte.JSX {
     // Allow any attribute on HTML elements
     [name: string]: any;
   }
-  
+
   interface SVGAttributes<T> {
     // Allow any attribute on SVG elements
     [name: string]: any;
   }
-  
+
   interface DOMAttributes<T> {
     // Allow any attribute for DOM elements
     [name: string]: any;
@@ -22,11 +22,11 @@ declare namespace svelteHTML {
   interface HTMLAttributes<T> {
     [key: string]: any;
   }
-  
+
   interface SVGAttributes<T> {
     [name: string]: any;
   }
-  
+
   interface DOMAttributes<T> {
     [name: string]: any;
   }
@@ -42,4 +42,4 @@ declare module "$app/environment" {
 // Fix mapbox-gl module import error
 declare module "mapbox-gl" {
   export default any;
-} 
+}

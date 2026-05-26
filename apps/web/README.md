@@ -15,25 +15,23 @@ A decentralized holonic platform for organizational governance, resource distrib
 
 Harvest is an advanced, decentralized holonic platform built on Svelte 5 and TypeScript that enables organizations to manage themselves as **holons** - self-organizing units that are simultaneously whole and part of larger wholes.
 
-The platform integrates blockchain smart contracts, federated data sharing, AI-powered advisory councils, and real-time collaborative features to create a comprehensive ecosystem for:
+The platform integrates blockchain smart contracts, federated data sharing, and real-time collaborative features to create a comprehensive ecosystem for:
 
-- **Organizational Governance** - Decentralized decision-making with council advisors
-- **Task & Project Management** - Quests, proposals, and collaborative workflows
+- **Task & Project Management** - Quests and collaborative workflows
 - **Resource Distribution** - Smart contract-based flow management
-- **Wisdom Aggregation** - AI-powered councils with archetypal, historical, and mythic advisors
 - **Federation** - Connect holons across organizations with capability-based access control
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | Svelte 5, TypeScript, Tailwind CSS |
-| Build | Vite, SvelteKit |
-| Data | HoloSphere (decentralized), Nostr, GunDB |
-| Blockchain | Ethers.js v6, ERC20 tokens |
-| Maps | Mapbox GL, H3-JS hexagonal indexing |
-| Visualization | D3.js |
-| AI/LLM | OpenAI, Anthropic, Groq |
+| Layer         | Technology                               |
+| ------------- | ---------------------------------------- |
+| Frontend      | Svelte 5, TypeScript, Tailwind CSS       |
+| Build         | Vite, SvelteKit                          |
+| Data          | HoloSphere (decentralized), Nostr, GunDB |
+| Blockchain    | Ethers.js v6, ERC20 tokens               |
+| Maps          | Mapbox GL, H3-JS hexagonal indexing      |
+| Visualization | D3.js                                    |
+| AI/LLM        | OpenAI, Anthropic, Groq                  |
 
 ## Getting Started
 
@@ -59,17 +57,17 @@ npm run dev
 
 ### Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build |
-| `npm run check` | Run type checking |
-| `npm run lint` | Run linter |
-| `npm run format` | Format code with Prettier |
-| `npm run deploy:localhost` | Deploy contracts to localhost |
-| `npm run deploy:sepolia` | Deploy contracts to Sepolia testnet |
-| `npm run deploy:gnosis` | Deploy contracts to Gnosis chain |
+| Command                    | Description                         |
+| -------------------------- | ----------------------------------- |
+| `npm run dev`              | Start development server            |
+| `npm run build`            | Build for production                |
+| `npm run preview`          | Preview production build            |
+| `npm run check`            | Run type checking                   |
+| `npm run lint`             | Run linter                          |
+| `npm run format`           | Format code with Prettier           |
+| `npm run deploy:localhost` | Deploy contracts to localhost       |
+| `npm run deploy:sepolia`   | Deploy contracts to Sepolia testnet |
+| `npm run deploy:gnosis`    | Deploy contracts to Gnosis chain    |
 
 ## Top 30 Features
 
@@ -97,9 +95,7 @@ npm run dev
 
 10. **Schedule Widget** - Integrated scheduling view with time-based task assignment and visual timeline representation
 
-11. **Proposal System** - Create consensus-based proposals with participant agreement tracking and blocker/stopper management
-
-12. **Checklist Management** - Create and track multi-item checklists with completion status and progress visualization
+11. **Checklist Management** - Create and track multi-item checklists with completion status and progress visualization
 
 ### Data Management
 
@@ -112,16 +108,6 @@ npm run dev
 16. **Tag Management** - Flexible tagging system for categorizing and organizing all holon content
 
 17. **Database Viewer (DB Panel)** - Direct view and manipulation of raw HoloSphere data for administrative purposes
-
-### AI & LLM Features
-
-18. **Council Advisor System** - AI-powered advisors with three types (Archetype, Real Historical Person, Mythic) that can be seated in councils and provide wisdom
-
-19. **Multi-Provider LLM Integration** - Support for OpenAI, Anthropic, and Groq with configurable models, temperature, and max token settings
-
-20. **AI Chat Modal** - Real-time chat interface with typing animations, message formatting, conversation history, and role-based responses
-
-21. **Vision Clarification Service** - LLM-powered service for understanding user intent and clarifying organizational visions through AI analysis
 
 ### Blockchain & Smart Contracts
 
@@ -164,37 +150,31 @@ src/
 │   └── contracts/       # Smart contract ABIs and bytecode
 ├── routes/              # SvelteKit routes
 ├── services/            # Business logic services
-│   └── AdvisorService   # Council advisor management
 ├── stores/              # Svelte stores for state management
 ├── types/               # TypeScript type definitions
 └── utils/               # Utility functions and services
-    ├── llm-service      # Multi-provider LLM integration
-    ├── sessionManager   # Session lifecycle management
-    └── ...
 ```
 
 ## Key Services
 
-| Service | Description |
-|---------|-------------|
-| `AdvisorService` | Manages council advisors with caching and validation |
-| `LLMService` | Unified interface for OpenAI, Anthropic, Groq providers |
-| `FlowSettings` | Holon configuration, federation, and flow management |
-| `HolonsManager` | Smart contract interaction and event handling |
-| `HolonsContract` | Low-level blockchain contract operations |
-| `QueryManager` | Centralized HoloSphere data queries with caching |
-| `SessionManager` | Design Streams session lifecycle management |
-| `QRActionService` | QR code action processing and dispatch |
+| Service           | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `FlowSettings`    | Holon configuration, federation, and flow management |
+| `HolonsManager`   | Smart contract interaction and event handling        |
+| `HolonsContract`  | Low-level blockchain contract operations             |
+| `QueryManager`    | Centralized HoloSphere data queries with caching     |
+| `SessionManager`  | Design Streams session lifecycle management          |
+| `QRActionService` | QR code action processing and dispatch               |
 
 ## Smart Contract Types
 
-| Contract | Purpose |
-|----------|---------|
-| Bundle | Primary contract with interior/exterior zones and member management |
-| Managed | Simpler contract with basic member and flow management |
-| Zoned | Contract with multiple configurable zones |
-| Splitter | Flow distribution contract for payment splitting |
-| Appreciative | Appreciative-based resource allocation |
+| Contract     | Purpose                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| Bundle       | Primary contract with interior/exterior zones and member management |
+| Managed      | Simpler contract with basic member and flow management              |
+| Zoned        | Contract with multiple configurable zones                           |
+| Splitter     | Flow distribution contract for payment splitting                    |
+| Appreciative | Appreciative-based resource allocation                              |
 
 ## Quick Start for Users
 
@@ -210,12 +190,12 @@ For detailed user journeys, see the [User Guide](docs/USER_GUIDE.md).
 
 ## Documentation
 
-| Resource | Description |
-|----------|-------------|
-| [GitBook Documentation](https://liminalvillage.gitbook.io/harvest) | Full platform documentation |
-| [User Guide](docs/USER_GUIDE.md) | User journeys and tutorials |
-| [Architecture Guide](docs/ARCHITECTURE.md) | Technical architecture details |
-| [Quick Reference](docs/QUICK_REFERENCE.md) | Key files and data flow |
+| Resource                                                           | Description                    |
+| ------------------------------------------------------------------ | ------------------------------ |
+| [GitBook Documentation](https://liminalvillage.gitbook.io/harvest) | Full platform documentation    |
+| [User Guide](docs/USER_GUIDE.md)                                   | User journeys and tutorials    |
+| [Architecture Guide](docs/ARCHITECTURE.md)                         | Technical architecture details |
+| [Quick Reference](docs/QUICK_REFERENCE.md)                         | Key files and data flow        |
 
 ---
 

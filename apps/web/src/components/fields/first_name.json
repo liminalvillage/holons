@@ -11,9 +11,7 @@
       "name": "first_name",
       "version": "0.0.1"
     },
-    "context": [
-      "https://schema.org/givenName"
-    ],
+    "context": ["https://schema.org/givenName"],
     "purpose": "The name given to a person, usually at birth (e.g., John or Jane)."
   }
 }

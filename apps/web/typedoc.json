@@ -5,11 +5,7 @@
     "src/lib/holons/HolonsContract.ts",
     "src/lib/holons/FlowSettings.ts",
     "src/lib/holosphere/QueryManager.ts",
-    "src/services/AdvisorService.ts",
-    "src/utils/llm-service.ts",
-    "src/utils/sessionManager.ts",
-    "src/utils/qr-action-service.ts",
-    "src/utils/visionClarificationService.ts"
+    "src/utils/qr-action-service.ts"
   ],
   "out": "docs/api",
   "name": "Harvest API Documentation",
