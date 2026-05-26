@@ -13,6 +13,8 @@
 	import RouteTransition from '../components/RouteTransition.svelte';
 	import WriteNotificationToast from '../components/WriteNotificationToast.svelte';
 	import OfflineBanner from '../components/OfflineBanner.svelte';
+	import BetaDisclaimer from '../components/BetaDisclaimer.svelte';
+	import FeedbackButton from '../components/FeedbackButton.svelte';
 
 
 	// Browser panel state (replaces sidebar for holon browsing)
@@ -115,6 +117,9 @@
 			</RouteTransition>
 		</main>
 	</div>
+	<!-- Feedback overlay rides along even on the bare QR route — beta
+	     disclaimer skipped here so the QR view stays distraction-free. -->
+	<FeedbackButton />
 {:else}
 	<!-- New layout: Sidebar full height on left, TopBar + Content on right -->
 	<div class="app-layout" on:mousemove={handleMouseMove} role="presentation">
@@ -141,6 +146,9 @@
 			<!-- TopBar as tab navigation -->
 			<TopBar on:toggleBrowser={toggleBrowser} />
 
+			<!-- Beta disclaimer (dismissible — persists via localStorage) -->
+			<BetaDisclaimer />
+
 			<!-- Offline indicator (only rendered when navigator.onLine is false) -->
 			<OfflineBanner />
 
@@ -154,6 +162,9 @@
 
 		<!-- Write permission denied notifications -->
 		<WriteNotificationToast />
+
+		<!-- Always-on feedback shortcut — links out to the @HolonicDAO TG -->
+		<FeedbackButton />
 	</div>
 {/if}
 
