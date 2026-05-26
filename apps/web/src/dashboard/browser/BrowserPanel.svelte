@@ -8,7 +8,7 @@
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
 	import { homeHolonId } from '$lib/stores/homeHolonId';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
-	import { handshake, version as holosphereVersion } from 'holosphere';
+	import { handshake } from 'holosphere';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 
@@ -21,6 +21,10 @@
 	// (see vite.config.ts and types/global.d.ts). Property-access forms like
 	// `globalThis.__COMMIT_HASH__` are NOT rewritten and silently fall back to "dev".
 	const commitHash: string = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
+	// Same pattern for the pinned holosphere version. Renders the full
+	// alpha/beta/rc suffix (e.g. "1.3.0-alpha7"), not just holosphere.js's
+	// HOLOSPHERE_VERSION constant which stops at "1.3.0".
+	const holosphereVersion: string = typeof __HOLOSPHERE_VERSION__ !== 'undefined' ? __HOLOSPHERE_VERSION__ : 'unknown';
 
 	// Same resolution as +layout.svelte so the footer always reflects the
 	// actual HoloSphere appName the page connected with (env default unless
