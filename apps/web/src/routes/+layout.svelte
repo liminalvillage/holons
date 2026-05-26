@@ -3,7 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import { HoloSphere, handshake } from "holosphere"
+	import { handshake } from "holosphere"
+	import { createHoloSphere } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -408,21 +409,17 @@
 		}
 
 		console.log('Initializing HoloSphere with user key...');
-		holosphere = new HoloSphere({
+		// Build the instance through @holons/core/holosphere — the single
+		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
+		// render). `awaitReady: true` returns the instance after ready()
+		// has resolved, which is a no-op in alpha7 but keeps the contract.
+		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
-			// Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
-			// Holosphere 2: uncomment below to use Nostr relay instead
-			// backend: 'nostr',
-			// nostr: {
-			// 	peers: ['wss://relay.holons.io'],
-			// }
+			awaitReady: true,
+			// Holosphere 2: pass `backend: 'nostr'` + `extra: { nostr: { peers: [...] } }`
+			// once the Nostr backend lands.
 		});
-
-		// Wait for the backend to be ready. alpha7's ready() is a no-op
-		// (resolves immediately) and writes are bounded internally, so
-		// offline init no longer hangs here.
-		await holosphere.ready();
 
 		// Log the public key for verification
 		if (holosphere.client) {
