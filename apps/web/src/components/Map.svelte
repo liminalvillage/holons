@@ -1682,14 +1682,17 @@
 </script>
 
 <div class="w-full h-full relative" class:hidden={!isVisible}>
-	<div 
-		bind:this={mapContainer} 
+	<div
+		bind:this={mapContainer}
 		class="map w-full h-full"
-	>
-		{#if hexId}
-			<div class="hex-info">Selected Hexagon: {hexId}</div>
-		{/if}
-	</div>
+	></div>
+
+	<!-- hex-info lives as a sibling of the Mapbox container (not a child)
+	     because mapboxgl warns when its host element has children. Absolute
+	     positioning still pins it to the bottom-left of the wrapper. -->
+	{#if hexId}
+		<div class="hex-info">Selected Hexagon: {hexId}</div>
+	{/if}
 
 	<!-- Embedded Map Control Bar -->
 	<div class="map-control-bar">
