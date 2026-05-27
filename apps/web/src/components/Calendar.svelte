@@ -13,6 +13,7 @@
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
     import { goto } from '$app/navigation';
     import SourceBadge from './shared/SourceBadge.svelte';
+    import TaskCard from './shared/TaskCard.svelte';
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { queryManager } from '$lib/holosphere/QueryManager';
@@ -857,9 +858,9 @@
             }));
     }
 
-    // Unscheduled tasks (no 'when' date) — available for drag/drop onto calendar
+    // Unscheduled tasks (no 'when' date, not yet completed) — available for drag/drop onto calendar
     $: unassignedTasks = Object.entries(tasks)
-        .filter(([_, task]) => !task.when)
+        .filter(([_, task]) => !task.when && task.status !== 'completed')
         .map(([key, task]) => ({ key, ...task }));
 
     function handleTaskClick(key: string, task: any) {
@@ -2362,7 +2363,7 @@
             <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
                 {#each unassignedTasks as task (task.key)}
                     <div
-                        class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors select-none"
+                        class="mb-1 cursor-move select-none"
                         class:opacity-50={draggedTask?.key === task.key}
                         style="-webkit-touch-callout:none;-webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                         draggable={!isTouchDevice}
@@ -2373,15 +2374,17 @@
                         onpointerup={onTaskTouchPointerUp}
                         onpointercancel={onTaskTouchPointerCancel}
                         oncontextmenu={(e) => isTouchDevice && e.preventDefault()}
-                        onclick={() => handleTaskClick(task.key, task)}
-                        onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
-                        role="button"
-                        tabindex="0"
                     >
-                        <div class="font-bold truncate">{task.title || 'Untitled'}</div>
-                        {#if task.type}
-                            <div class="text-gray-400 mt-0.5">{task.type}</div>
-                        {/if}
+                        <TaskCard
+                            quest={task}
+                            variant="list"
+                            holonID={$ID ?? ''}
+                            onclick={() => handleTaskClick(task.key, task)}
+                            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleTaskClick(task.key, task)}
+                            role="button"
+                            tabindex={0}
+                            ariaLabel={`Open: ${task.title || 'Untitled'}`}
+                        />
                     </div>
                 {/each}
                 {#if unassignedTasks.length === 0}
