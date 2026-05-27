@@ -237,10 +237,13 @@ class UI {
   // Get optimized Puppeteer launch options for emoji support
   getPuppeteerLaunchOptions() {
     return {
-          headless: true,
-          protocolTimeout: 30000,
+          headless: 'new',
+          // Fast-fail on stuck CDP commands so the existing recovery path
+          // (discard page, relaunch browser) kicks in quickly. Screenshots of
+          // our cards should complete in well under a second.
+          protocolTimeout: 8000,
           args: [
-            '--no-sandbox', 
+            '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
@@ -249,7 +252,6 @@ class UI {
         // Emoji and font rendering support
         '--font-render-hinting=none',
         '--disable-font-subpixel-positioning',
-        '--disable-features=VizDisplayCompositor',
         // Enable emoji fonts
         '--enable-features=FontAccess',
         '--disable-web-security', // Allow access to system fonts
@@ -1775,6 +1777,11 @@ class UI {
 
       page.setDefaultTimeout(5000);
       await page.setViewport(initialViewport);
+      // Reset the frame tree before loading new content. Reused pages can
+      // otherwise carry in-flight fetches, pending animation frames, or stale
+      // compositor state from the previous screenshot, which is a known cause
+      // of Page.captureScreenshot hanging until protocolTimeout.
+      await page.goto('about:blank');
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
       try {
