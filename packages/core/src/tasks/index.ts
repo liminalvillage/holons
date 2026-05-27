@@ -8,3 +8,4 @@ export * from './participants.js';
 export * from './completion.js';
 export * from './completion-plan.js';
 export * from './completion-execute.js';
+export * from './deletion.js';

@@ -33,6 +33,7 @@
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
+        deleteTaskWithCascade,
     } from "@holons/core/tasks";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
@@ -332,7 +333,17 @@
 
         if (confirm("Are you sure you want to delete this task?")) {
             try {
-                await holosphere.delete(holonId, "quests", questId);
+                // Cascade-delete every published forward of this task too,
+                // so dangling holograms don't sit in users' personal holons
+                // emitting "did not resolve" warnings on every getAll.
+                const result = await deleteTaskWithCascade(
+                    holosphere as any,
+                    holonId,
+                    questId,
+                );
+                if (!result.sourceDeleted) {
+                    throw new Error("Source delete failed");
+                }
                 // Synchronously drop from the shared cache so the next
                 // snapshot emission doesn't flash the deleted card back
                 // into any list view that hasn't received Gun's null
