@@ -57,7 +57,18 @@ export default [
   },
   {
     ignores: [
+      // Flat config (ESLint 9) does NOT read .gitignore/.eslintignore, so
+      // every vendored/generated/data dir must be listed here explicitly.
+      // Without these, eslint parses html/ (710 minified vendor bundles incl.
+      // pdfmake.min.js, apexcharts.min.js) and effectively hangs.
       'node_modules/**',
+      'dist/**',
+      'html/**',
+      'logs/**',
+      'contracts/**',
+      'holosphere/**',
+      'themes/**',
+      'fields/**',
       'radata/**',
       'data/**',
       'images/**',
