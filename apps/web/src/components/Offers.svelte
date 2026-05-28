@@ -19,7 +19,8 @@
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
-	import { mergeSelfIntoUsers } from "$lib/util/usersWithSelf";
+	import { mergeSelfIntoUsers, getSelfInitiator } from "$lib/util/usersWithSelf";
+	import { classifyMarketItem, createMarketItem } from "@holons/core/tasks";
 
 	// Add offer/request modal state
 	let showAddModal = false;
@@ -70,12 +71,12 @@
 	}
 
 	$: offers = Object.values(store).filter((item) => {
-		if (classifyTask(item) !== 'offer') return false;
+		if (classifyMarketItem(item) !== 'offer') return false;
 		if (!matchesVisibility(item)) return false;
 		return matchesSearch(item, filters.searchQueryOffers);
 	});
 	$: needs = Object.values(store).filter((item) => {
-		const t = classifyTask(item);
+		const t = classifyMarketItem(item);
 		if (t !== 'request' && t !== 'need') return false;
 		if (!matchesVisibility(item)) return false;
 		return matchesSearch(item, filters.searchQueryRequests);
@@ -570,19 +571,6 @@
 		return side === 'offer' ? entry.offerLabel : entry.requestLabel;
 	}
 
-	// Function to classify a task as offer or request
-	function classifyTask(item) {
-		if (!item) return null;
-		
-		// Only accept items that are explicitly marked as offers or requests
-		if (item.type === "offer" || item.type === "request" || item.type === "need") {
-			return item.type;
-		}
-		
-		// If it's not explicitly an offer/request/need, return null (filtered out)
-		return null;
-	}
-
 	// Function to get item background color
 	function getItemBackgroundColor(itemType) {
 		if (itemType === 'offer') {
@@ -802,19 +790,20 @@
 			? new Date(newItemExpiresAtLocal).getTime()
 			: undefined;
 
-		const newItem: Record<string, any> = {
-			id: crypto.randomUUID(),
-			type: addModalType,
-			exchange_type: addModalType === 'offer' ? 'offer' : 'want',
+		// Core owns the marketplace item shape; the web only supplies inputs +
+		// an id (the bot uses the Telegram message id instead).
+		const newItem = createMarketItem({
+			holonId: holonID,
+			initiator: getSelfInitiator() ?? undefined,
+			kind: addModalType,
 			title: newItemTitle.trim(),
 			description: newItemDescription.trim(),
-			transaction_type: [...newItemTransactionTypes],
-			participants: [],
-			created: new Date().toISOString()
-		};
-		if (newItemItemType) newItem.item_type = newItemItemType;
-		if (newItemTags.length > 0) newItem.tags = [...newItemTags];
-		if (expiresAtMs && !Number.isNaN(expiresAtMs)) newItem.expires_at = expiresAtMs;
+			itemType: newItemItemType || undefined,
+			transactionTypes: newItemTransactionTypes,
+			tags: newItemTags,
+			expiresAt: expiresAtMs,
+		});
+		newItem.id = crypto.randomUUID();
 
 		try {
 			await holosphere.put(holonID, 'quests', newItem);

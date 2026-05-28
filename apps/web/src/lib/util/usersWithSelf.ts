@@ -62,6 +62,27 @@ function buildSelfUser(): { key: string; user: UserLike } | null {
 }
 
 /**
+ * The logged-in user as a Quest/marketplace `initiator` (id + name fields),
+ * or null if no identity is available. Single source for "who is creating
+ * this" on the web side.
+ */
+export function getSelfInitiator(): {
+  id: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+} | null {
+  const self = buildSelfUser();
+  if (!self) return null;
+  return {
+    id: String(self.user.id),
+    username: self.user.username || String(self.user.id),
+    firstName: self.user.first_name || "",
+    lastName: self.user.last_name || "",
+  };
+}
+
+/**
  * Returns a userStore that includes the logged-in user when not already
  * present. Returns the original reference if no merge was needed, so
  * downstream reactivity only triggers on actual changes.

@@ -574,6 +574,85 @@ function buildEvents() {
 }
 
 // ---------------------------------------------------------------------------
+// Marketplace items — offers and requests. They share the `quests` lens with
+// tasks and events, distinguished by `type` ('offer' | 'request'), so the web
+// Offers & Requests page and the bot's /offer + /request commands all read one
+// store (see @holons/core/tasks createMarketItem / classifyMarketItem). Kept
+// out of the REA derivation: a marketplace listing isn't a quest a member
+// "initiated", so it must not inflate scoring.
+// ---------------------------------------------------------------------------
+
+// One offer per member, hand-picked from their values so the board has variety.
+const OFFERS = {
+	mira: 'Pruning know-how for fruit trees',
+	jonas: 'Workshop repairs Tuesdays + Fridays',
+	ananya: 'Story circles for kids on request',
+	theo: 'Permaculture design consultations',
+	lina: 'NVC coaching sessions, sliding scale',
+	pawel: 'Help wiring 12V solar setups',
+	sora: 'Ferment-of-the-week starter cultures',
+	noah: 'Double-bass lessons for beginners',
+	frida: 'Seeds from the 2025 library, swap welcome',
+	omar: 'Mesh node setup + first-month hosting',
+	kate: 'Facilitation for small-group meetings',
+	rafa: 'Carpentry and bee-yard apprenticeship'
+};
+
+function buildMarketItems() {
+	const items = [];
+
+	// Mirrors createTask()'s default field set + the marketplace fields, so a
+	// seeded item is shaped exactly like one the bot/web produce via
+	// createMarketItem. Stable ids keep re-seeds idempotent.
+	function marketItem(id, kind, title, initiatorUsername, createdDaysAgo) {
+		return {
+			id,
+			version: '0.1',
+			holon: undefined, // filled per-holon at write time
+			message_thread_id: null,
+			initiator: pickUser(initiatorUsername),
+			title,
+			description: '',
+			picture: null,
+			type: kind,
+			exchange_type: kind === 'offer' ? 'offer' : 'want',
+			status: 'ongoing',
+			created: isoOffsetDays(createdDaysAgo, 10),
+			participants: [],
+			appreciation: [],
+			stoppers: [],
+			dependencies: [],
+			frequency: null,
+			recurringTaskId: null,
+			timeTracking: {},
+			checklistId: null,
+			reminderId: null,
+			activeHolograms: [],
+			category: '',
+			document: '',
+			where: { latitude: '', longitude: '' },
+			when: '',
+			until: '',
+			completed: ''
+		};
+	}
+
+	// Offers — one per member.
+	Object.entries(OFFERS).forEach(([username, offer]) => {
+		items.push(marketItem(`offer-${username}`, 'offer', offer, username, -20));
+	});
+
+	// Requests — derived 1:1 from each member's profile `needs`.
+	for (const u of USERS) {
+		(u.needs ?? []).forEach((need, i) => {
+			items.push(marketItem(`request-${u.username}-${i}`, 'request', need, u.username, -(30 + i)));
+		});
+	}
+
+	return items;
+}
+
+// ---------------------------------------------------------------------------
 // Checklists — agenda, shopping (separate lens but written via checklists
 // pattern below), plus a couple of task-linked subtask checklists.
 // ---------------------------------------------------------------------------
@@ -1364,53 +1443,6 @@ function buildREAEvents(holonId, tasks, events, expenses, libraryItems) {
 		});
 	}
 
-	// --- Wants — derived 1:1 from each user's `needs` array. Lets the
-	//     Statistics / Navigator wants surface have something to display.
-	for (const u of USERS) {
-		(u.needs ?? []).forEach((want, i) => {
-			out.push({
-				id: `${holonId}_want_${u.id}_${i}`,
-				timestamp: NOW - (30 + i) * DAY,
-				resource: { type: 'appreciation', quantity: 1, unit: 'want' },
-				provider: userAgentById(u.id),
-				receiver: holonAgent(holonId),
-				context: { holonId: String(holonId), note: want },
-				eventType: 'want:declared',
-				status: 'confirmed'
-			});
-		});
-	}
-
-	// --- Offers — one offer per user, hand-picked from their values so each
-	//     member has at least one offer visible alongside their wants.
-	const OFFERS = {
-		mira: 'Pruning know-how for fruit trees',
-		jonas: 'Workshop repairs Tuesdays + Fridays',
-		ananya: 'Story circles for kids on request',
-		theo: 'Permaculture design consultations',
-		lina: 'NVC coaching sessions, sliding scale',
-		pawel: 'Help wiring 12V solar setups',
-		sora: 'Ferment-of-the-week starter cultures',
-		noah: 'Double-bass lessons for beginners',
-		frida: 'Seeds from the 2025 library, swap welcome',
-		omar: 'Mesh node setup + first-month hosting',
-		kate: 'Facilitation for small-group meetings',
-		rafa: 'Carpentry and bee-yard apprenticeship'
-	};
-	Object.entries(OFFERS).forEach(([username, offer]) => {
-		const u = USERS.find((x) => x.username === username);
-		out.push({
-			id: `${holonId}_offer_${u.id}`,
-			timestamp: NOW - 20 * DAY,
-			resource: { type: 'appreciation', quantity: 1, unit: 'offer' },
-			provider: userAgentById(u.id),
-			receiver: holonAgent(holonId),
-			context: { holonId: String(holonId), note: offer },
-			eventType: 'offer:declared',
-			status: 'confirmed'
-		});
-	});
-
 	// --- Mutual credit: a handful of credit issuances + transfers.
 	const CREDITS = [
 		{ from: 'kate', to: 'sora', amount: 12, note: 'Kitchen rota leadership' },
@@ -1532,9 +1564,11 @@ async function main() {
 	const tasks = buildQuests().map((q) => ({ ...q, holon: holonId }));
 	await putAll(holosphere, holonId, 'quests', tasks, flags.timeoutMs, flags.concurrency);
 
-	console.log('\n[4/9] Calendar events …');
+	console.log('\n[4/9] Calendar events + marketplace offers/requests …');
 	const events = buildEvents();
 	await putAll(holosphere, holonId, 'quests', events, flags.timeoutMs, flags.concurrency);
+	const marketItems = buildMarketItems().map((m) => ({ ...m, holon: holonId }));
+	await putAll(holosphere, holonId, 'quests', marketItems, flags.timeoutMs, flags.concurrency);
 
 	// 4) Checklists (including agenda + per-task subtask checklists)
 	console.log('\n[5/9] Checklists …');

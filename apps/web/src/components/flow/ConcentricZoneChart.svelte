@@ -507,14 +507,6 @@
               <span>Collaboration:</span>
               <span>{member.breakdown.collaboration}</span>
             </div>
-            <div class="breakdown-row">
-              <span>Wants:</span>
-              <span>{member.breakdown.wants}</span>
-            </div>
-            <div class="breakdown-row">
-              <span>Offers:</span>
-              <span>{member.breakdown.offers}</span>
-            </div>
           </div>
         {/if}
         <div class="tooltip-footer">

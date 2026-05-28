@@ -21,7 +21,6 @@ import Users from './Users.js';
 import Tags from './Tags.js';
 import Participation from './RSVP.js';
 import Roles from './Roles.js';
-import * as request from './Requests.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {

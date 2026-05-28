@@ -22,8 +22,6 @@ export interface InteriorMember {
     received: number;
     hours: number;
     collaboration: number;
-    wants: number;
-    offers: number;
   };
 }
 

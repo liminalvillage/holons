@@ -8,8 +8,6 @@
  *         + aggregates.sent          * equation.sent
  *         + aggregates.received      * equation.received
  *         + aggregates.collaboration * equation.collaboration
- *         + aggregates.wants         * equation.wants
- *         + aggregates.offers        * equation.offers
  *         + Σ currencyBalances[c]    * equation.currencies[c]
  *
  * Hours: when `equation.currencies.hour` is set, the hour contribution comes
@@ -30,8 +28,6 @@ export interface ScoreBreakdown {
   /** @deprecated Use `currencies.hour` (or read `breakdown.currencies['hour']`). */
   hours: number;
   collaboration: number;
-  wants: number;
-  offers: number;
   /** Collaboration-signal contributions: aggregate × weight. */
   participation: number;
   coParticipants: number;
@@ -50,9 +46,7 @@ export interface ActionScore {
     | 'sent'
     | 'received'
     | 'hours'
-    | 'collaboration'
-    | 'wants'
-    | 'offers';
+    | 'collaboration';
   points: number;
   description: string;
 }
@@ -99,8 +93,6 @@ export function calculateUserScore(
   if (equation.sent) score += aggregates.sent * equation.sent;
   if (equation.received) score += aggregates.received * equation.received;
   if (equation.collaboration) score += aggregates.collaboration * equation.collaboration;
-  if (equation.wants) score += aggregates.wants * equation.wants;
-  if (equation.offers) score += aggregates.offers * equation.offers;
   if (equation.participation)   score += (aggregates.participation   ?? 0) * equation.participation;
   if (equation.coParticipants)  score += (aggregates.coParticipants  ?? 0) * equation.coParticipants;
   if (equation.activity)        score += (aggregates.activity        ?? 0) * equation.activity;
@@ -168,8 +160,6 @@ export function getScoreBreakdown(
     received: aggregates.received * (equation.received ?? 0),
     hours,
     collaboration: aggregates.collaboration * (equation.collaboration ?? 0),
-    wants: aggregates.wants * (equation.wants ?? 0),
-    offers: aggregates.offers * (equation.offers ?? 0),
     participation:  (aggregates.participation  ?? 0) * (equation.participation  ?? 0),
     coParticipants: (aggregates.coParticipants ?? 0) * (equation.coParticipants ?? 0),
     activity:       (aggregates.activity       ?? 0) * (equation.activity       ?? 0),
@@ -186,8 +176,6 @@ export function getScoreBreakdown(
     breakdown.received +
     legacyHours +
     breakdown.collaboration +
-    breakdown.wants +
-    breakdown.offers +
     breakdown.participation +
     breakdown.coParticipants +
     breakdown.activity +

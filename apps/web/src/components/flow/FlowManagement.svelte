@@ -70,8 +70,6 @@
     received?: number;
     hours?: number;
     collaboration?: number;
-    wants?: string[];
-    offers?: string[];
   }
   let holosphereUsers: HolosphereUser[] = [];
   // REA-derived aggregates per user; zero-filled while requests are in flight.
@@ -310,10 +308,10 @@
     if (!holosphere) {
       // Mock data for development
       holosphereUsers = [
-        { id: 'user-1', username: 'Alice', initiated: ['t1', 't2'], completed: ['t3'], sent: 5, received: 3, hours: 10, collaboration: 2, wants: ['design'], offers: ['coding'] },
-        { id: 'user-2', username: 'Bob', initiated: ['t4'], completed: ['t1', 't5'], sent: 3, received: 7, hours: 15, collaboration: 4, wants: ['coding'], offers: ['design', 'testing'] },
-        { id: 'user-3', username: 'Carol', initiated: [], completed: ['t2', 't4'], sent: 8, received: 2, hours: 8, collaboration: 3, wants: [], offers: ['writing'] },
-        { id: 'user-4', username: 'Dave', initiated: ['t6', 't7', 't8'], completed: [], sent: 2, received: 5, hours: 20, collaboration: 1, wants: ['management'], offers: [] },
+        { id: 'user-1', username: 'Alice', initiated: ['t1', 't2'], completed: ['t3'], sent: 5, received: 3, hours: 10, collaboration: 2 },
+        { id: 'user-2', username: 'Bob', initiated: ['t4'], completed: ['t1', 't5'], sent: 3, received: 7, hours: 15, collaboration: 4 },
+        { id: 'user-3', username: 'Carol', initiated: [], completed: ['t2', 't4'], sent: 8, received: 2, hours: 8, collaboration: 3 },
+        { id: 'user-4', username: 'Dave', initiated: ['t6', 't7', 't8'], completed: [], sent: 2, received: 5, hours: 20, collaboration: 1 },
       ];
       await calculateInteriorMembers();
       return;

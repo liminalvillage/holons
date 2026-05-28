@@ -453,44 +453,6 @@ export class REAEventFactory {
     return events;
   }
 
-  // ==================== Offer/Want Events ====================
-
-  /** Offer declared event. */
-  static offerDeclared(
-    holonId: string | number,
-    user: UserLike,
-    offer: string,
-  ): REAEvent {
-    return {
-      id: this.generateId(holonId),
-      timestamp: Date.now(),
-      resource: { type: 'appreciation', quantity: 1, unit: 'offer' },
-      provider: this.createUserAgent(user),
-      receiver: this.createHolonAgent(holonId),
-      context: { holonId: String(holonId), note: offer },
-      eventType: 'offer:declared',
-      status: 'confirmed',
-    };
-  }
-
-  /** Want declared event. */
-  static wantDeclared(
-    holonId: string | number,
-    user: UserLike,
-    want: string,
-  ): REAEvent {
-    return {
-      id: this.generateId(holonId),
-      timestamp: Date.now(),
-      resource: { type: 'appreciation', quantity: 1, unit: 'want' },
-      provider: this.createUserAgent(user),
-      receiver: this.createHolonAgent(holonId),
-      context: { holonId: String(holonId), note: want },
-      eventType: 'want:declared',
-      status: 'confirmed',
-    };
-  }
-
   // ==================== Credit Events ====================
 
   /** Credit issued event (mutual-credit systems). */

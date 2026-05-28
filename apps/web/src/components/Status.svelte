@@ -25,8 +25,6 @@
         received: number;
         hours: number;
         collaboration: number;
-        wants: string[];
-        offers: string[];
     }
 
     type Equation = ScoreEquation;
@@ -72,8 +70,6 @@
         sent: 1,
         received: 1,
         collaboration: 1,
-        wants: 1,
-        offers: 1,
         currencies: { hour: 1 }
     });
 
@@ -131,8 +127,6 @@
                 sent:           toNumber(editingEquation.sent),
                 received:       toNumber(editingEquation.received),
                 collaboration:  toNumber(editingEquation.collaboration),
-                wants:          toNumber(editingEquation.wants),
-                offers:         toNumber(editingEquation.offers),
                 participation:  toNumber(editingEquation.participation),
                 coParticipants: toNumber(editingEquation.coParticipants),
                 activity:       toNumber(editingEquation.activity),
@@ -714,8 +708,6 @@
             ['Appreciations sent', a.sent, eq.sent, row.breakdown.sent],
             ['Appreciations received', a.received, eq.received, row.breakdown.received],
             ['Collaboration events', a.collaboration, eq.collaboration, row.breakdown.collaboration],
-            ['Wants', a.wants, eq.wants, row.breakdown.wants],
-            ['Offers', a.offers, eq.offers, row.breakdown.offers],
             ['Participation (quests)', a.participation ?? 0, eq.participation ?? 0, row.breakdown.participation],
             ['Co-participants', a.coParticipants ?? 0, eq.coParticipants ?? 0, row.breakdown.coParticipants],
             ['Activity (events)', a.activity ?? 0, eq.activity ?? 0, row.breakdown.activity],
@@ -791,8 +783,6 @@
             sent: agg.sent,
             received: agg.received,
             collaboration: agg.collaboration,
-            wants: agg.wants,
-            offers: agg.offers,
             currencies: {} as Record<string, number>
         };
 
@@ -1424,90 +1414,6 @@
                                 {/if}
                                 <div class="text-xs {equation.collaboration !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per collaboration</div>
                                 {#if equation.collaboration === 0}
-                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
-                                {/if}
-                            </div>
-
-                            <!-- Wants -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.wants !== 0 ? '' : 'opacity-50'}">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.wants !== 0 ? 'text-gray-300' : 'text-gray-400'}">Wants</span>
-                                    <span class="text-xs {equation.wants !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
-                                </div>
-                                {#if isEditingEquation}
-                                    <div class="flex items-center gap-2">
-                                        <button 
-                                            onclick={() => adjustValue('wants', -1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Decrease wants weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
-                                            </svg>
-                                        </button>
-                                        <input 
-                                            type="number" 
-                                            bind:value={editingEquation.wants}
-                                            step="0.1"
-                                            class="w-16 text-center bg-gray-700 text-pink-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-pink-400 focus:outline-none"
-                                        />
-                                        <button 
-                                            onclick={() => adjustValue('wants', 1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Increase wants weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                {:else}
-                                    <div class="text-2xl font-bold {equation.wants !== 0 ? 'text-pink-400' : 'text-gray-500'}">{equation.wants}</div>
-                                {/if}
-                                <div class="text-xs {equation.wants !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per want</div>
-                                {#if equation.wants === 0}
-                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
-                                {/if}
-                            </div>
-
-                            <!-- Offers -->
-                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.offers !== 0 ? '' : 'opacity-50'}">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium {equation.offers !== 0 ? 'text-gray-300' : 'text-gray-400'}">Offers</span>
-                                    <span class="text-xs {equation.offers !== 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
-                                </div>
-                                {#if isEditingEquation}
-                                    <div class="flex items-center gap-2">
-                                        <button 
-                                            onclick={() => adjustValue('offers', -1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Decrease offers weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
-                                            </svg>
-                                        </button>
-                                        <input 
-                                            type="number" 
-                                            bind:value={editingEquation.offers}
-                                            step="0.1"
-                                            class="w-16 text-center bg-gray-700 text-indigo-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-indigo-400 focus:outline-none"
-                                        />
-                                        <button 
-                                            onclick={() => adjustValue('offers', 1)}
-                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
-                                            aria-label="Increase offers weight"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                        </svg>
-                                    </button>
-                                    </div>
-                                {:else}
-                                    <div class="text-2xl font-bold {equation.offers !== 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>
-                                {/if}
-                                <div class="text-xs {equation.offers !== 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per offer</div>
-                                {#if equation.offers === 0}
                                     <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
                                 {/if}
                             </div>

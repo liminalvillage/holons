@@ -19,8 +19,6 @@ export interface ScoreEquation {
    */
   hours?: number;
   collaboration: number;
-  wants: number;
-  offers: number;
   /**
    * Collaboration signals (REA-derived):
    *  - participation: # distinct quests touched
@@ -51,8 +49,6 @@ export const DEFAULT_EQUATION: ScoreEquation = {
   sent: 1,
   received: 1,
   collaboration: 1,
-  wants: 1,
-  offers: 1,
   // Collaboration signals default to 0 so a fresh holon's scores match the
   // pre-feature behaviour exactly. Holons that want to reward teamwork
   // raise these via the equation editor.
@@ -64,6 +60,9 @@ export const DEFAULT_EQUATION: ScoreEquation = {
   currencies: { hour: 1 },
 };
 
+// 'hours', 'wants', and 'offers' are retired weights kept here so a saved
+// equation carrying them is recognized as a built-in field (and stripped on
+// migration) rather than mistaken for a currency code.
 const BUILT_IN_EQUATION_KEYS = new Set<string>([
   'initiated',
   'completed',
@@ -138,6 +137,10 @@ export function migrateEquation(raw: any): ScoreEquation {
   // hour weight is `currencies.hour`. Leaving it would let stale data
   // round-trip back into settings on save.
   delete (cleanRawObj as Record<string, unknown>).hours;
+  // Strip retired wants/offers weights so saved equations from older clients
+  // don't round-trip them back into settings.
+  delete (cleanRawObj as Record<string, unknown>).wants;
+  delete (cleanRawObj as Record<string, unknown>).offers;
 
   return {
     ...DEFAULT_EQUATION_NO_HOURS,

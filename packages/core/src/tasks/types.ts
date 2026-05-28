@@ -46,7 +46,9 @@ export interface Quest {
     | 'stopped'
     | string;
 
-  type?: 'task' | 'quest' | 'event' | 'recurring' | string;
+  // 'offer' | 'request' | 'need' mark marketplace items (see marketplace.ts);
+  // the rest are tasks/events/recurring quests. All share the `quests` lens.
+  type?: 'task' | 'quest' | 'event' | 'recurring' | 'offer' | 'request' | 'need' | string;
   category?: string;
 
   // Web-style schedule fields.

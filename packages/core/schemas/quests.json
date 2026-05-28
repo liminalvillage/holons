@@ -1,6 +1,6 @@
 {
   "title": "quests",
-  "description": "Records stored at (holonId, 'quests', <id>). Holds Quest, Event, and recurring-task records — they share this lens.",
+  "description": "Records stored at (holonId, 'quests', <id>). Holds Quest, Event, recurring-task, and marketplace offer/request/need records — they share this lens.",
   "type": "object",
   "properties": {
     "id": {
@@ -12,7 +12,7 @@
     },
     "type": {
       "type": "string",
-      "description": "Discriminator (task / quest / event / recurring)."
+      "description": "Discriminator (task / quest / event / recurring / offer / request / need). offer|request|need mark marketplace items."
     },
     "status": {
       "type": "string"

@@ -1489,8 +1489,10 @@ class UI {
       const userId = user.id;
       userMap.set(userId, {
         user: user,
-        profileWants: user.wants || [],
-        profileOffers: user.offers || [],
+        // A member's profile "wants" are their declared needs; there is no
+        // profile-offers field — offers come from quests (type 'offer').
+        profileWants: user.needs || [],
+        profileOffers: [],
         questRequests: [],
         questOffers: [],
       });

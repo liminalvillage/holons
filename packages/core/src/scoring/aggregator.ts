@@ -27,10 +27,6 @@ export interface UserAggregates {
   hours: number;
   /** Count of time-logging events. */
   collaboration: number;
-  /** Count of wants declared. */
-  wants: number;
-  /** Count of offers declared. */
-  offers: number;
   /**
    * Count of distinct quests this user has any event in. Quest is identified
    * by `context.questId`; events with no quest context don't contribute.
@@ -69,8 +65,6 @@ export const ZERO_USER_AGGREGATES: UserAggregates = {
   received: 0,
   hours: 0,
   collaboration: 0,
-  wants: 0,
-  offers: 0,
   participation: 0,
   coParticipants: 0,
   activity: 0,
@@ -96,12 +90,6 @@ export function toAggregates(userData: any): UserAggregates {
     hours: typeof userData.hours === 'number' ? userData.hours : 0,
     collaboration:
       typeof userData.collaboration === 'number' ? userData.collaboration : 0,
-    wants: Array.isArray(userData.wants)
-      ? userData.wants.length
-      : userData.wants || 0,
-    offers: Array.isArray(userData.offers)
-      ? userData.offers.length
-      : userData.offers || 0,
     // Collaboration aggregates: legacy flat user records don't carry these,
     // so default to 0. The REAAggregator path produces them from events.
     participation:
@@ -215,14 +203,6 @@ export class REAAggregator {
 
       collaboration: events.filter(
         (e) => e.eventType === 'quest:time_logged' && String(e.provider?.id) === userIdStr,
-      ).length,
-
-      wants: events.filter(
-        (e) => e.eventType === 'want:declared' && String(e.provider?.id) === userIdStr,
-      ).length,
-
-      offers: events.filter(
-        (e) => e.eventType === 'offer:declared' && String(e.provider?.id) === userIdStr,
       ).length,
 
       participation,

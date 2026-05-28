@@ -25,8 +25,6 @@ describe('DEFAULT_EQUATION', () => {
       sent: 1,
       received: 1,
       collaboration: 1,
-      wants: 1,
-      offers: 1,
       participation: 0,
       coParticipants: 0,
       activity: 0,
@@ -50,11 +48,17 @@ describe('migrateEquation', () => {
       received: 1,
       hours: 3,
       collaboration: 1,
-      wants: 1,
-      offers: 1,
     });
     expect(migrated.currencies.hour).toBe(3);
     expect('hours' in migrated).toBe(false);
+  });
+
+  it('strips retired wants/offers weights without turning them into currencies', () => {
+    const migrated = migrateEquation({ collaboration: 1, wants: 1, offers: 2 });
+    expect('wants' in migrated).toBe(false);
+    expect('offers' in migrated).toBe(false);
+    expect(migrated.currencies.wants).toBeUndefined();
+    expect(migrated.currencies.offers).toBeUndefined();
   });
 
   it('is idempotent', () => {
@@ -83,8 +87,6 @@ describe('migrateEquation', () => {
       received: 1,
       hours: 1,
       collaboration: 1,
-      wants: 1,
-      offers: 1,
       euro: 3,
       usd: 5,
     });
@@ -114,8 +116,6 @@ describe('toAggregates', () => {
         received: 2,
         hours: 10,
         collaboration: 1,
-        wants: ['a'],
-        offers: 0,
       }),
     ).toEqual({
       initiated: 3,
@@ -124,8 +124,6 @@ describe('toAggregates', () => {
       received: 2,
       hours: 10,
       collaboration: 1,
-      wants: 1,
-      offers: 0,
       participation: 0,
       coParticipants: 0,
       activity: 0,
@@ -142,8 +140,6 @@ describe('toAggregates', () => {
       received: 0,
       hours: 0,
       collaboration: 0,
-      wants: 0,
-      offers: 0,
       participation: 0,
       coParticipants: 0,
       activity: 0,
@@ -162,8 +158,6 @@ describe('calculateUserScore', () => {
       received: 0,
       hours: 5,
       collaboration: 1,
-      wants: 0,
-      offers: 0,
     };
     // 3*1 + 2*2 + 5*1 + 1*1 = 3 + 4 + 5 + 1 = 13
     expect(calculateUserScore(aggregates, DEFAULT_EQUATION)).toBe(13);
@@ -177,8 +171,6 @@ describe('calculateUserScore', () => {
       received: 1,
       hours: 1,
       collaboration: 1,
-      wants: 1,
-      offers: 1,
     };
     expect(
       calculateUserScore(aggregates, {
@@ -188,8 +180,6 @@ describe('calculateUserScore', () => {
         received: 0,
         hours: 10,
         collaboration: 0,
-        wants: 0,
-        offers: 0,
         currencies: {},
       }),
     ).toBe(10);
@@ -203,14 +193,12 @@ describe('calculateUserScore', () => {
       received: 0,
       hours: 0,
       collaboration: 0,
-      wants: 0,
-      offers: 0,
     };
     const equation = {
       ...DEFAULT_EQUATION,
       // Clear everything except the currency weights so the test is focused.
       initiated: 0, completed: 0, sent: 0, received: 0, hours: 0,
-      collaboration: 0, wants: 0, offers: 0,
+      collaboration: 0,
       currencies: { hour: 2, eur: 3 },
     };
     expect(
@@ -221,7 +209,7 @@ describe('calculateUserScore', () => {
   it('falls back to aggregates.hours when currencies.hour is set but balance is not', () => {
     const aggregates: UserAggregates = {
       initiated: 0, completed: 0, sent: 0, received: 0,
-      hours: 4, collaboration: 0, wants: 0, offers: 0,
+      hours: 4, collaboration: 0,
     };
     // Migrated equation: currencies.hour = 2, hours mirrored to 2.
     const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
@@ -232,7 +220,7 @@ describe('calculateUserScore', () => {
   it('does not double-count hours when both currencies.hour and equation.hours are set', () => {
     const aggregates: UserAggregates = {
       initiated: 0, completed: 0, sent: 0, received: 0,
-      hours: 4, collaboration: 0, wants: 0, offers: 0,
+      hours: 4, collaboration: 0,
     };
     const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
     // Explicit hour balance wins; aggregates.hours fallback is suppressed.
@@ -261,8 +249,6 @@ describe('getScoreBreakdown', () => {
         received: 0,
         hours: 4,
         collaboration: 1,
-        wants: 0,
-        offers: 0,
       },
       DEFAULT_EQUATION,
     );
@@ -454,8 +440,6 @@ describe('REAAggregator', () => {
         },
         { eventType: 'appreciation:sent', provider: { id: 'u1' }, resource: {} },
         { eventType: 'appreciation:received', receiver: { id: 'u1' }, resource: {} },
-        { eventType: 'want:declared', provider: { id: 'u1' }, resource: {} },
-        { eventType: 'offer:declared', provider: { id: 'u1' }, resource: {} },
       ]),
     );
 
@@ -467,13 +451,11 @@ describe('REAAggregator', () => {
       received: 1,
       hours: 4,
       collaboration: 2,
-      wants: 1,
-      offers: 1,
       // No `context.questId` on any of the fixture events, so the
       // collaboration signals all land at 0.
       participation: 0,
       coParticipants: 0,
-      activity: 9,
+      activity: 7,
       groupSize: 0,
       variance: 0,
     });

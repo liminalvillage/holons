@@ -80,8 +80,6 @@ interface UserInfoWithAggregates extends UserProfile {
   received: number;
   hours: number;
   collaboration: unknown;
-  wants: string[];
-  offers: string[];
   actions: unknown[];
 }
 
@@ -222,8 +220,6 @@ class LocalUsersService implements UsersServiceLike {
       received: number;
       hours: number;
       collaboration: unknown;
-      wants: number;
-      offers: number;
     };
 
     return {
@@ -234,8 +230,6 @@ class LocalUsersService implements UsersServiceLike {
       received: aggregates.received,
       hours: aggregates.hours,
       collaboration: aggregates.collaboration,
-      wants: Array(aggregates.wants).fill(''),
-      offers: Array(aggregates.offers).fill(''),
       actions: [],
     };
   }

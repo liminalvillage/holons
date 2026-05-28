@@ -2007,8 +2007,6 @@ export default class Holons {
         received: user.received || 0,
         hours: user.hours || 0,
         collaboration: user.collaboration || 0,
-        wants: user.wants?.length || 0,
-        offers: user.offers?.length || 0,
       });
     });
 

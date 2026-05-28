@@ -5,6 +5,7 @@
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from "@holons/core/scoring";
+    import { classifyMarketItem } from "@holons/core/tasks";
     import { getEventStore } from "../lib/rea/eventStore";
 
     export let userId: string;
@@ -22,8 +23,6 @@
         initiated: any[];
         received: number;
         sent: number;
-        wants: string[];
-        offers: string[];
         needs: string[];
         values: string[];
         appreciated: any[];
@@ -50,6 +49,15 @@
     let activity: any[] = [];
     let activityLoaded = false;
 
+    // This member's marketplace items (offers / requests / needs) — quests in
+    // the `quests` lens classified by core and authored by this user.
+    let marketItems: any[] = [];
+    $: userOffers = marketItems.filter((m) => classifyMarketItem(m) === 'offer');
+    $: userRequests = marketItems.filter((m) => {
+        const kind = classifyMarketItem(m);
+        return kind === 'request' || kind === 'need';
+    });
+
     onMount(async () => {
         if (userData) {
             user = userData;
@@ -58,8 +66,21 @@
             await loadUserData();
         }
         // Name resolution is now automatic via resolvedName()
-        await Promise.all([loadAggregates(), loadActivity()]);
+        await Promise.all([loadAggregates(), loadActivity(), loadMarketItems()]);
     });
+
+    async function loadMarketItems() {
+        if (!holosphere || !holonId || !userId) return;
+        try {
+            const quests = (await holosphere.getAll(holonId, "quests")) ?? [];
+            marketItems = (quests as any[]).filter(
+                (q) => classifyMarketItem(q) !== null && String(q?.initiator?.id) === String(userId),
+            );
+        } catch (error) {
+            console.error("[User.svelte] Error loading marketplace items:", error);
+            marketItems = [];
+        }
+    }
 
     async function loadUserData() {
         if (!holosphere || !holonId || !userId) {
@@ -120,8 +141,6 @@
             case 'quest:time_logged':       return 'Logged time';
             case 'appreciation:sent':       return 'Appreciation sent';
             case 'appreciation:received':   return 'Appreciation received';
-            case 'offer:declared':          return 'Offer';
-            case 'want:declared':           return 'Want';
             case 'expense:paid':            return 'Expense paid';
             case 'expense:share':           return 'Expense share';
             case 'transfer:direct':         return 'Transfer';
@@ -990,28 +1009,28 @@
                             {/if}
                         </div>
 
-                        <!-- Wants & Offers -->
+                        <!-- Offers & Requests — this member's marketplace items -->
                         <div class="grid md:grid-cols-2 gap-6">
-                            {#if user.wants && user.wants.length > 0}
+                            {#if userOffers.length > 0}
                                 <div class="bg-gray-700 rounded-xl p-6">
-                                    <h3 class="text-xl font-semibold text-white mb-4">Wants</h3>
+                                    <h3 class="text-xl font-semibold text-white mb-4">Offers</h3>
                                     <div class="space-y-2">
-                                        {#each user.wants as want}
-                                            <div class="bg-red-900 bg-opacity-30 rounded-lg p-3">
-                                                <span class="text-red-300">{want}</span>
+                                        {#each userOffers as offer}
+                                            <div class="bg-green-900 bg-opacity-30 rounded-lg p-3">
+                                                <span class="text-green-300">{offer.title}</span>
                                             </div>
                                         {/each}
                                     </div>
                                 </div>
                             {/if}
 
-                            {#if user.offers && user.offers.length > 0}
+                            {#if userRequests.length > 0}
                                 <div class="bg-gray-700 rounded-xl p-6">
-                                    <h3 class="text-xl font-semibold text-white mb-4">Offers</h3>
+                                    <h3 class="text-xl font-semibold text-white mb-4">Requests</h3>
                                     <div class="space-y-2">
-                                        {#each user.offers as offer}
-                                            <div class="bg-green-900 bg-opacity-30 rounded-lg p-3">
-                                                <span class="text-green-300">{offer}</span>
+                                        {#each userRequests as request}
+                                            <div class="bg-red-900 bg-opacity-30 rounded-lg p-3">
+                                                <span class="text-red-300">{request.title}</span>
                                             </div>
                                         {/each}
                                     </div>

@@ -248,11 +248,12 @@ class MultiBot extends Telegraf {
         let k = 0;
 
         for (const holonId of chats) {
-            let users = await this.db.getAll(holonId.toString(), 'users');
-            for (const user of users) {
-                for (let j = 0; j < user.offers.length; j++) {
-                    offers.push({ id: k++, title: user.offers[j], description: user.username, price: '$10' });
-                }
+            // Offers are marketplace items in the `quests` lens (type 'offer').
+            let quests = await this.db.getAll(holonId.toString(), 'quests');
+            for (const quest of quests) {
+                if (quest?.type !== 'offer') continue;
+                const author = quest.initiator?.username || quest.initiator?.firstName || '';
+                offers.push({ id: k++, title: quest.title, description: author, price: '$10' });
             }
         }
 

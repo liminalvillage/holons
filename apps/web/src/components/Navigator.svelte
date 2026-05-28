@@ -6,6 +6,7 @@
     import { ID } from "../dashboard/store";
     import { awaitName } from '$lib/stores/nameResolver';
     import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+    import { classifyMarketItem } from "@holons/core/tasks";
 
     interface Holon {
         name: string;
@@ -561,24 +562,29 @@
                 // Try HoloSphere getAll first for accurate data
                 const tryHoloSphereGetAll = async () => {
                     try {
-                        const [users, quests, shopping, offers] = await Promise.allSettled([
+                        const [users, quests, shopping] = await Promise.allSettled([
                             holosphere.getAll(holonId, "users"),
                             holosphere.getAll(holonId, "quests"),
-                            holosphere.getAll(holonId, "shopping"),
-                            holosphere.getAll(holonId, "offers")
+                            holosphere.getAll(holonId, "shopping")
                         ]);
-                        
+
                         // holosphere.getAll is guaranteed to resolve to Array<T>.
                         const userCount = (users.status === 'fulfilled' ? users.value : []).length;
                         const questsArray: any[] = quests.status === 'fulfilled' ? quests.value : [];
                         const shoppingCount = (shopping.status === 'fulfilled' ? shopping.value : []).length;
-                        const offersCount = (offers.status === 'fulfilled' ? offers.value : []).length;
-                        
+
+                        // Offers and requests/needs are marketplace items in the
+                        // `quests` lens, classified by core (not a separate lens).
+                        const offersCount = questsArray.filter((item: any) => classifyMarketItem(item) === "offer").length;
+                        const needs = questsArray.filter((item: any) => {
+                            const kind = classifyMarketItem(item);
+                            return kind === "request" || kind === "need";
+                        }).length;
+
                         // Process quests safely
                         const actualTasks = questsArray.filter((item: any) => item && (!item.type || item.type === "task"));
                         const completedTasks = actualTasks.filter((task: any) => task && task.status === "completed").length;
                         const openTasks = actualTasks.filter((task: any) => task && task.status !== "completed").length;
-                        const needs = questsArray.filter((item: any) => item && (item.type === "need" || item.type === "want")).length;
                         
                         return {
                             userCount,

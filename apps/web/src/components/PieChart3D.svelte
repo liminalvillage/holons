@@ -15,8 +15,6 @@
             received: number;
             hours: number;
             collaboration: number;
-            wants: number;
-            offers: number;
             currencies: Record<string, number>;
         };
         avatarUrl?: string;
@@ -434,18 +432,6 @@
                         <div class="flex justify-between">
                             <span class="text-gray-400">Collaboration</span>
                             <span class="text-teal-400">${user.breakdown.collaboration}</span>
-                        </div>
-                    ` : ''}
-                    ${user.breakdown.wants > 0 ? `
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Wants</span>
-                            <span class="text-pink-400">${user.breakdown.wants}</span>
-                        </div>
-                    ` : ''}
-                    ${user.breakdown.offers > 0 ? `
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Offers</span>
-                            <span class="text-indigo-400">${user.breakdown.offers}</span>
                         </div>
                     ` : ''}
                     ${Object.entries(user.breakdown.currencies || {}).filter(([_, v]) => v !== 0).map(([currency, value]) => `

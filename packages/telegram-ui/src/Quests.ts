@@ -20,6 +20,7 @@ import { Scenes } from 'telegraf';
 import { log } from '../utils/logger.js';
 import {
     createTask,
+    createMarketItem,
     saveTasksToHolon,
     planTaskCompletion,
     executeCompletionPlan,
@@ -237,7 +238,9 @@ export default class Quests {
         const commandGroups = {
             task: ['quest', 'mission', 'task', 'todo', 'missione', 'compito', 'fare'],
             // event commands now handled by Events.js
-            request: ['need', 'request', 'want', 'wish', 'richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'],
+            // 'need'/'ineed'/'weneed' are reserved for the profile-needs command
+            // (Users.ts addNeedToProfile); marketplace requests use the rest.
+            request: ['request', 'want', 'wish', 'richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'],
             offer: ['offer', 'give', 'have', 'gift', 'offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'],
             any: ['idea', 'lesson', 'quote', 'tip', 'fact', 'joke', 'story', 'thought', 'question', 
                   'challenge', 'trigger', 'projection', 'assumption', 'observation', 'rule', 
@@ -361,17 +364,15 @@ export default class Quests {
             }
         }
         
-        // Create quest object via the shared core/tasks factory so the bot
-        // and the web app produce the same default-field set.
-        const quest = createTask({
-            holonId,
-            initiator: sender,
-            title,
-            type,
-            category: this.getCategory(ctx),
-            picture,
-            messageThreadId: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
-        });
+        // Create the record via the shared core/tasks factories so the bot and
+        // the web app produce the same shape. Offers/requests are marketplace
+        // items (carry exchange_type); everything else is a plain task/quest.
+        const messageThreadId = ctx.message?.is_topic_message ? ctx.message.message_thread_id : null;
+        const category = this.getCategory(ctx);
+        const quest =
+            type === 'offer' || type === 'request'
+                ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture, messageThreadId })
+                : createTask({ holonId, initiator: sender, title, type, category, picture, messageThreadId });
         
         // Send message and save quest
         const showAsImage = this.shouldShowQuestsAsImages();
