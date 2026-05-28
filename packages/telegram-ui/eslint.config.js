@@ -91,10 +91,6 @@ export default [
       'src/HolonsMultiBot.js',
       // Dead test referencing a module (WeQuestBot) that no longer exists.
       'tests/questest.js',
-      // Ad-hoc one-off GUN/federation debugging scripts in the package root
-      // (check-*, find-*, map-*, write-*, etc.): not imported, not in
-      // package.json, kept only as throwaway investigation tooling.
-      '*.cjs',
       // Flat config (ESLint 9) does NOT read .gitignore/.eslintignore, so
       // every vendored/generated/data dir must be listed here explicitly.
       // Without these, eslint parses html/ (710 minified vendor bundles incl.
