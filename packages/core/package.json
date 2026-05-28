@@ -23,7 +23,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run",
-    "seed:kml-projects": "node scripts/seed-kml-projects.mjs"
+    "seed:kml-projects": "node scripts/seed-kml-projects.mjs",
+    "seed:demo-holon": "node scripts/seed-demo-holon.mjs"
   },
   "dependencies": {
     "holosphere": "1.3.0-alpha7",
