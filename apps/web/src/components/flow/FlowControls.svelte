@@ -4,7 +4,6 @@
 
   export let steepness: number = 50;
   export let nzones: number = 6;
-  export let interiorPercent: number = 50;
   export let hasChanges: boolean = false;
   export let syncing: boolean = false;
   export let hasBundleDeployed: boolean = false;
@@ -12,14 +11,12 @@
   const dispatch = createEventDispatcher<{
     steepnessChange: number;
     nzonesChange: number;
-    interiorChange: number;
     sync: void;
     reset: void;
     deploy: void;
     redeploy: void;
   }>();
 
-  $: exteriorPercent = 100 - interiorPercent;
   $: zonePercentages = calculateZonePercentages(steepness, nzones);
 
   function handleSteepnessChange(e: Event) {
@@ -32,11 +29,6 @@
     if (value >= 1 && value <= 10) {
       dispatch('nzonesChange', value);
     }
-  }
-
-  function handleInteriorChange(e: Event) {
-    const value = parseInt((e.target as HTMLInputElement).value);
-    dispatch('interiorChange', value);
   }
 
   function incrementZones() {
@@ -53,31 +45,6 @@
 </script>
 
 <div class="flow-controls">
-  <!-- Prominent Flow Distribution Bar -->
-  <div class="flow-distribution-bar">
-    <div class="distribution-header">
-      <span class="distribution-title">Flow Distribution</span>
-      <span class="distribution-values">{interiorPercent}% Internal / {exteriorPercent}% External</span>
-    </div>
-    <div class="distribution-track">
-      <div class="distribution-interior" style="width: {interiorPercent}%;">
-        <span class="distribution-segment-label">Interior</span>
-      </div>
-      <div class="distribution-exterior" style="width: {exteriorPercent}%;">
-        <span class="distribution-segment-label">Exterior</span>
-      </div>
-    </div>
-    <input
-      type="range"
-      min="0"
-      max="100"
-      step="1"
-      value={interiorPercent}
-      on:input={handleInteriorChange}
-      class="distribution-slider"
-    />
-  </div>
-
   <div class="control-section">
     <div class="control-group">
       <label class="control-label" for="steepness-slider">
@@ -200,107 +167,6 @@
     padding: 1rem;
     background: rgba(30, 41, 59, 0.5);
     border-radius: 0.5rem;
-  }
-
-  /* Prominent Flow Distribution Bar */
-  .flow-distribution-bar {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 1rem;
-    background: rgba(15, 23, 42, 0.6);
-    border-radius: 0.5rem;
-    border: 1px solid rgba(71, 85, 105, 0.5);
-  }
-
-  .distribution-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .distribution-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #e2e8f0;
-  }
-
-  .distribution-values {
-    font-size: 0.875rem;
-    font-family: monospace;
-    color: #60a5fa;
-    font-weight: 500;
-  }
-
-  .distribution-track {
-    display: flex;
-    height: 32px;
-    border-radius: 0.375rem;
-    overflow: hidden;
-    background: #1e293b;
-  }
-
-  .distribution-interior {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #475569 0%, #64748b 100%);
-    transition: width 0.2s ease;
-    min-width: 40px;
-  }
-
-  .distribution-exterior {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    transition: width 0.2s ease;
-    min-width: 40px;
-  }
-
-  .distribution-segment-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.9;
-  }
-
-  .distribution-slider {
-    width: 100%;
-    height: 6px;
-    border-radius: 3px;
-    background: transparent;
-    appearance: none;
-    cursor: pointer;
-    margin-top: 0.25rem;
-  }
-
-  .distribution-slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    cursor: pointer;
-    border: 3px solid #1e293b;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: transform 0.15s;
-  }
-
-  .distribution-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
-  }
-
-  .distribution-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    cursor: pointer;
-    border: 3px solid #1e293b;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .control-section {

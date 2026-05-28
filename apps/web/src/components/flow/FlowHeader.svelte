@@ -1,22 +1,78 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+  import { dndzone } from 'svelte-dnd-action';
+  import { flip } from 'svelte/animate';
   import { calculateZonePercentages, ZONE_COLORS } from './types';
+  import type { ZonedHolon } from './types';
 
   export let bundleAddress: string | null = null;
   export let networkName: string = 'Unknown';
   export let interiorPercent: number = 50;
   export let steepness: number = 50;
   export let nzones: number = 6;
+  export let federatedHolons: ZonedHolon[] = [];
+
+  const dispatch = createEventDispatcher<{
+    interiorChange: number;
+    holonDropped: { holonId: string; zone: number };
+  }>();
 
   let copied = false;
+  const flipDurationMs = 150;
 
   $: exteriorPercent = 100 - interiorPercent;
   $: zonePercentages = calculateZonePercentages(steepness, nzones);
+  // Share of the whole bar each exterior zone occupies.
+  $: zoneShares = zonePercentages.map((p) => (exteriorPercent * p) / 100);
+
+  // Holons grouped by their assigned zone (1..nzones).
+  $: holonsByZone = (() => {
+    const map: Record<number, ZonedHolon[]> = {};
+    for (let z = 1; z <= nzones; z++) map[z] = [];
+    for (const h of federatedHolons) {
+      if (h.zone >= 1 && h.zone <= nzones) map[h.zone].push(h);
+    }
+    return map;
+  })();
+
+  // Local DnD copies per zone; synced from holonsByZone unless a drag is active.
+  let dndByZone: Record<number, ZonedHolon[]> = {};
+  let draggingZone: number | null = null;
+  $: if (draggingZone === null) {
+    const next: Record<number, ZonedHolon[]> = {};
+    for (let z = 1; z <= nzones; z++) next[z] = [...(holonsByZone[z] || [])];
+    dndByZone = next;
+  }
+
+  function handleConsider(zone: number, e: CustomEvent<{ items: ZonedHolon[] }>) {
+    draggingZone = zone;
+    dndByZone[zone] = e.detail.items;
+    dndByZone = { ...dndByZone };
+  }
+
+  function handleFinalize(zone: number, e: CustomEvent<{ items: ZonedHolon[] }>) {
+    dndByZone[zone] = e.detail.items;
+    dndByZone = { ...dndByZone };
+    draggingZone = null;
+
+    // A holon that's now in this zone but wasn't before was just dropped here.
+    const moved = e.detail.items.find(
+      (h) => !(holonsByZone[zone] || []).some((x) => x.id === h.id)
+    );
+    if (moved && moved.zone !== zone) {
+      dispatch('holonDropped', { holonId: moved.id, zone });
+    }
+  }
+
+  function handleInteriorInput(e: Event) {
+    dispatch('interiorChange', parseInt((e.target as HTMLInputElement).value));
+  }
 
   function copyAddress() {
     if (bundleAddress) {
       navigator.clipboard.writeText(bundleAddress);
       copied = true;
-      setTimeout(() => copied = false, 2000);
+      setTimeout(() => (copied = false), 2000);
     }
   }
 
@@ -52,42 +108,78 @@
     {/if}
   </div>
 
-  <div class="flow-breakdown">
-    <div class="breakdown-label">Flow Distribution</div>
-    <div class="breakdown-bar">
-      <div
-        class="interior-segment"
-        style="width: {interiorPercent}%"
-        title="Interior: {interiorPercent}%"
-      >
-        <span class="segment-label">Interior {interiorPercent}%</span>
+  <div class="flow-distribution">
+    <div class="distribution-header">
+      <span class="distribution-title">Flow Distribution</span>
+      <span class="distribution-hint">Drag federated holons onto a zone</span>
+    </div>
+
+    <div class="distribution-bar">
+      <!-- Z0 = interior; not a holon drop target. -->
+      <div class="zone-segment z0" style="width: {interiorPercent}%" title="Z0: {interiorPercent}%">
+        <span class="segment-head">Z0</span>
+        <span class="segment-pct">{interiorPercent}%</span>
       </div>
-      {#each zonePercentages as percent, i}
+
+      {#each Array(nzones) as _, i}
+        {@const zone = i + 1}
+        {@const share = zoneShares[i] || 0}
+        {@const color = ZONE_COLORS[i % ZONE_COLORS.length]}
         <div
           class="zone-segment"
-          style="width: {(exteriorPercent * percent / 100)}%; background-color: {ZONE_COLORS[i % ZONE_COLORS.length]}"
-          title="Zone {i + 1}: {(exteriorPercent * percent / 100).toFixed(1)}%"
+          style="width: {share}%; --zone-color: {color}; background-color: {color}"
+          title="Z{zone}: {share.toFixed(1)}%"
         >
-          {#if (exteriorPercent * percent / 100) > 8}
-            <span class="segment-label">Z{i + 1}</span>
+          <span class="segment-head">Z{zone}</span>
+          {#if share > 5}
+            <span class="segment-pct">{share.toFixed(0)}%</span>
           {/if}
+          <div
+            class="zone-drop"
+            use:dndzone={{
+              items: dndByZone[zone] || [],
+              flipDurationMs,
+              dropTargetStyle: { outline: '2px dashed rgba(255,255,255,0.9)' }
+            }}
+            on:consider={(e) => handleConsider(zone, e)}
+            on:finalize={(e) => handleFinalize(zone, e)}
+          >
+            {#each dndByZone[zone] || [] as holon (holon.id)}
+              <div
+                class="holon-chip"
+                title={holon.name}
+                animate:flip={{ duration: flipDurationMs }}
+              >
+                {holon.name.slice(0, 2).toUpperCase()}
+              </div>
+            {/each}
+          </div>
         </div>
       {/each}
     </div>
+
+    <input
+      type="range"
+      min="0"
+      max="100"
+      step="1"
+      value={interiorPercent}
+      on:input={handleInteriorInput}
+      class="distribution-slider"
+      aria-label="Z0 share"
+    />
   </div>
 </div>
 
 <style>
   .flow-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.75rem;
     padding: 0.75rem 1rem;
     background: rgba(30, 41, 59, 0.5);
     border-radius: 0.5rem;
     margin-bottom: 1rem;
-    gap: 1rem;
-    flex-wrap: wrap;
   }
 
   .bundle-info {
@@ -146,64 +238,133 @@
     text-transform: capitalize;
   }
 
-  .flow-breakdown {
-    flex: 1;
-    min-width: 200px;
-    max-width: 400px;
-  }
-
-  .breakdown-label {
-    font-size: 0.75rem;
-    color: #94a3b8;
-    margin-bottom: 0.25rem;
-  }
-
-  .breakdown-bar {
+  .flow-distribution {
     display: flex;
-    height: 24px;
-    border-radius: 0.25rem;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .distribution-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .distribution-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+
+  .distribution-hint {
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .distribution-bar {
+    display: flex;
+    min-height: 64px;
+    border-radius: 0.375rem;
     overflow: hidden;
     background: #1e293b;
   }
 
-  .interior-segment {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #334155 0%, #475569 100%);
-    color: #e2e8f0;
-    font-size: 0.75rem;
-    font-weight: 500;
-    min-width: 0;
-    transition: width 0.3s ease;
-  }
-
   .zone-segment {
     display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    padding: 0.25rem 0;
+    color: white;
+    transition: width 0.25s ease;
+    border-right: 1px solid rgba(15, 23, 42, 0.4);
+  }
+
+  .zone-segment:last-child {
+    border-right: none;
+  }
+
+  .zone-segment.z0 {
+    background: linear-gradient(135deg, #334155 0%, #475569 100%);
+    color: #e2e8f0;
+  }
+
+  .segment-head {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+
+  .segment-pct {
+    font-size: 0.625rem;
+    font-family: monospace;
+    opacity: 0.9;
+  }
+
+  .zone-drop {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: center;
+    gap: 2px;
+    padding: 2px;
+    min-height: 26px;
+  }
+
+  .holon-chip {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1.5px solid rgba(255, 255, 255, 0.7);
+    color: #fff;
+    display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    font-size: 0.625rem;
+    font-size: 0.6rem;
     font-weight: 600;
-    min-width: 0;
-    transition: width 0.3s ease;
+    cursor: grab;
+    flex-shrink: 0;
   }
 
-  .segment-label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 0 0.25rem;
+  .holon-chip:active {
+    cursor: grabbing;
   }
 
-  @media (max-width: 640px) {
-    .flow-header {
-      flex-direction: column;
-      align-items: stretch;
-    }
+  .distribution-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #334155;
+    appearance: none;
+    cursor: pointer;
+  }
 
-    .flow-breakdown {
-      max-width: none;
-    }
+  .distribution-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    cursor: pointer;
+    border: 3px solid #1e293b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s;
+  }
+
+  .distribution-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  .distribution-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    cursor: pointer;
+    border: 3px solid #1e293b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 </style>

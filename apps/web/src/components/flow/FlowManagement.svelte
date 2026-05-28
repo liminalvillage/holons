@@ -688,6 +688,9 @@
       {interiorPercent}
       {steepness}
       {nzones}
+      {federatedHolons}
+      on:interiorChange={handleInteriorChange}
+      on:holonDropped={handleHolonDropped}
     />
   </div>
 
@@ -701,13 +704,11 @@
     <FlowControls
       {steepness}
       {nzones}
-      {interiorPercent}
       hasChanges={!!hasChanges}
       syncing={syncing || deploying}
       hasBundleDeployed={!!existingBundle}
       on:steepnessChange={handleSteepnessChange}
       on:nzonesChange={handleNzonesChange}
-      on:interiorChange={handleInteriorChange}
       on:sync={syncToContract}
       on:reset={resetChanges}
       on:deploy={deployBundle}
@@ -734,6 +735,7 @@
         holons={federatedHolons}
         isOpen={drawerOpen}
         on:toggle={() => drawerOpen = !drawerOpen}
+        on:holonDropped={handleHolonDropped}
       />
     </div>
   {/if}

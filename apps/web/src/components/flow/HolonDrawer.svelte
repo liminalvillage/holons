@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { dndzone } from 'svelte-dnd-action';
+  import { flip } from 'svelte/animate';
   import type { ZonedHolon } from './types';
 
   export let holons: ZonedHolon[] = [];
@@ -9,46 +11,37 @@
     toggle: void;
     holonClick: { holonId: string };
     holonRemove: { holonId: string };
+    holonDropped: { holonId: string; zone: number };
   }>();
+
+  const flipDurationMs = 150;
 
   // Filter to unassigned holons (zone === -1)
   $: unassignedHolons = holons.filter(h => h.zone === -1 || h.zone === 0);
   $: assignedCount = holons.filter(h => h.zone >= 1).length;
 
-  function handleDragStart(e: DragEvent, holon: ZonedHolon) {
-    if (e.dataTransfer) {
-      e.dataTransfer.setData('holonId', holon.id);
-      e.dataTransfer.effectAllowed = 'move';
-
-      // Create a custom drag image
-      const dragImage = document.createElement('div');
-      dragImage.className = 'drag-ghost';
-      dragImage.textContent = holon.name.slice(0, 2).toUpperCase();
-      dragImage.style.cssText = `
-        position: absolute;
-        top: -1000px;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #334155;
-        border: 2px solid #60a5fa;
-        color: #e2e8f0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 12px;
-      `;
-      document.body.appendChild(dragImage);
-      e.dataTransfer.setDragImage(dragImage, 20, 20);
-
-      // Clean up after drag
-      setTimeout(() => dragImage.remove(), 0);
-    }
+  // Local DnD copy; synced from unassignedHolons unless a drag is active.
+  let dndHolons: ZonedHolon[] = [];
+  let isDragging = false;
+  $: if (!isDragging) {
+    dndHolons = [...unassignedHolons];
   }
 
-  function handleDragEnd(e: DragEvent) {
-    // Clean up any drag state if needed
+  function handleConsider(e: CustomEvent<{ items: ZonedHolon[] }>) {
+    isDragging = true;
+    dndHolons = e.detail.items;
+  }
+
+  function handleFinalize(e: CustomEvent<{ items: ZonedHolon[] }>) {
+    dndHolons = e.detail.items;
+    isDragging = false;
+    // A holon that's now here but wasn't unassigned before was dropped back.
+    const moved = e.detail.items.find(
+      h => !unassignedHolons.some(x => x.id === h.id)
+    );
+    if (moved && moved.zone >= 1) {
+      dispatch('holonDropped', { holonId: moved.id, zone: -1 });
+    }
   }
 
   function toggleDrawer() {
@@ -87,51 +80,57 @@
       Drag holons to zones or click to select
     </div>
 
-    <div class="holon-list">
-      {#if unassignedHolons.length === 0}
-        <div class="empty-state">
-          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 12h8M12 8v8" />
-          </svg>
-          <span>No unassigned holons</span>
-          <span class="empty-hint">Add federated holons from the Federation tab</span>
-        </div>
-      {:else}
-        {#each unassignedHolons as holon (holon.id)}
-          <div
-            class="holon-card"
-            draggable="true"
-            on:dragstart={(e) => handleDragStart(e, holon)}
-            on:dragend={handleDragEnd}
-            on:click={() => handleHolonClick(holon.id)}
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleHolonClick(holon.id); }}
-            role="button"
-            tabindex="0"
-          >
-            <div class="holon-avatar">
-              {holon.name.slice(0, 2).toUpperCase()}
-            </div>
-            <div class="holon-info">
-              <span class="holon-name">{holon.name}</span>
-              <span class="holon-status" class:active={holon.status === 'active'} class:pending={holon.status === 'pending'}>
-                {holon.status}
-              </span>
-            </div>
-            <div class="drag-handle" title="Drag to assign to zone">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="9" cy="6" r="1.5" />
-                <circle cx="15" cy="6" r="1.5" />
-                <circle cx="9" cy="12" r="1.5" />
-                <circle cx="15" cy="12" r="1.5" />
-                <circle cx="9" cy="18" r="1.5" />
-                <circle cx="15" cy="18" r="1.5" />
-              </svg>
-            </div>
+    <div
+      class="holon-list"
+      use:dndzone={{
+        items: dndHolons,
+        flipDurationMs,
+        dropTargetStyle: { outline: '2px dashed #60a5fa', 'border-radius': '0.5rem' }
+      }}
+      on:consider={handleConsider}
+      on:finalize={handleFinalize}
+    >
+      {#each dndHolons as holon (holon.id)}
+        <div
+          class="holon-card"
+          on:click={() => handleHolonClick(holon.id)}
+          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleHolonClick(holon.id); }}
+          role="button"
+          tabindex="0"
+          animate:flip={{ duration: flipDurationMs }}
+        >
+          <div class="holon-avatar">
+            {holon.name.slice(0, 2).toUpperCase()}
           </div>
-        {/each}
-      {/if}
+          <div class="holon-info">
+            <span class="holon-name">{holon.name}</span>
+            <span class="holon-status" class:active={holon.status === 'active'} class:pending={holon.status === 'pending'}>
+              {holon.status}
+            </span>
+          </div>
+          <div class="drag-handle" title="Drag to assign to zone">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="9" cy="6" r="1.5" />
+              <circle cx="15" cy="6" r="1.5" />
+              <circle cx="9" cy="12" r="1.5" />
+              <circle cx="15" cy="12" r="1.5" />
+              <circle cx="9" cy="18" r="1.5" />
+              <circle cx="15" cy="18" r="1.5" />
+            </svg>
+          </div>
+        </div>
+      {/each}
     </div>
+    {#if dndHolons.length === 0}
+      <div class="empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 12h8M12 8v8" />
+        </svg>
+        <span>No unassigned holons</span>
+        <span class="empty-hint">Drag holons here to unassign, or add more from the Federation tab</span>
+      </div>
+    {/if}
 
     {#if assignedCount > 0}
       <div class="assigned-section">
