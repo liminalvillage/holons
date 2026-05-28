@@ -915,6 +915,18 @@ class Library {
 
             // Extract items using AI
             const result = await extractItemsFromImage(imageBuffer);
+
+            if (result.error) {
+                await ctx.reply(
+                    `⚠️ ${result.error}\n\nThis is not a problem with your photo. Please try again later, or reach out so we can help:`,
+                    Markup.inlineKeyboard([
+                        [Markup.button.url('💬 Support & Feedback (HolonicDAO)', 'https://t.me/HolonicDAO')]
+                    ])
+                );
+                this.pendingPhotoItems.delete(holonId);
+                return true;
+            }
+
             const items = result.items || [];
 
             if (items.length === 0) {

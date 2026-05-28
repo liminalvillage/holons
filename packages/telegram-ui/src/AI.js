@@ -292,7 +292,7 @@ export async function text2speech(prompt, filename) {
  * Extract items from an image using GPT-4o vision API
  * @param {Buffer} imageBuffer - The image buffer to analyze
  * @param {string} itemType - Type hint for items (e.g., 'tools', 'books', 'any')
- * @returns {Promise<{items: Array<{name: string, value: number}>}>} - Object with array of items with names and estimated values
+ * @returns {Promise<{items: Array<{name: string, value: number}>, error?: string}>} - Items with names and estimated values, or an `error` message if analysis failed
  */
 export async function extractItemsFromImage(imageBuffer, itemType = 'any') {
   const base64Image = imageBuffer.toString('base64');
@@ -331,6 +331,17 @@ export async function extractItemsFromImage(imageBuffer, itemType = 'any') {
     return result;
   } catch (error) {
     console.error('Error extracting items from image:', error);
-    return { items: [] };
+    const status = error?.status;
+    const code = error?.code;
+    let message = 'The image analysis service is temporarily unavailable.';
+    if (
+      status === 429 ||
+      code === 'insufficient_quota' ||
+      code === 'rate_limit_exceeded'
+    ) {
+      message =
+        'The image analysis service has reached its usage limit and is unavailable right now.';
+    }
+    return { items: [], error: message };
   }
 }
