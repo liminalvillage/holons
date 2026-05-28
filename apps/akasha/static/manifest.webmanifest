@@ -1,0 +1,20 @@
+{
+  "name": "Akasha",
+  "short_name": "Akasha",
+  "description": "Calendar, tasks, and the library of things for the hub.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#f7f4ec",
+  "theme_color": "#0e6b66",
+  "icons": [
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
