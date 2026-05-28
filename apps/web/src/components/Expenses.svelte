@@ -73,7 +73,15 @@
 	let holonID = '';
 	let expenses: Record<string, Expense> = {};
 	let store: Record<string, User> = {};
-	let availableCurrencies: string[] = [];
+	// Currency sources, unioned reactively into `availableCurrencies` so the
+	// dropdown always lists every token that appears anywhere: configured in
+	// settings, declared in the REA money stream, or used by an expense.
+	let settingsCurrencies: string[] = [];
+	let reaCurrencies: string[] = [];
+	// User ids seen in the REA stream — merged with the `users` lens so the
+	// matrix and pickers include everyone who has any economic activity, even
+	// members missing from the (often incomplete) users lens.
+	let reaUserIds: string[] = [];
 	let creditMatrix: number[][] = [];
 	let isLoading = true;
 	let connectionReady = false;
@@ -94,19 +102,47 @@
 		filters.currency = selectedCurrency;
 	}
 
-	// Real users from store (excluding the holon)
-	$: realUsers = Object.values(store);
+	// Real users: the `users` lens (authoritative names) unioned with every
+	// agent seen in the REA stream, so the matrix and pickers cover the full
+	// membership even when the users lens is incomplete. REA-only ids resolve
+	// their name via the global name map, falling back to the id.
+	$: realUsers = (() => {
+		const byId = new Map<string, User>();
+		for (const u of Object.values(store)) byId.set(String(u.id), u);
+		for (const id of reaUserIds) {
+			if (id === holonID || byId.has(id)) continue;
+			byId.set(id, { id, first_name: resolvedName(id, $nameMap, null, id) });
+		}
+		return [...byId.values()];
+	})();
 	// Include "This Holon" as a virtual participant
 	$: thisHolonUser = holonID ? { id: holonID as any, first_name: 'This Holon' } : null;
 	$: users = thisHolonUser
 		? [thisHolonUser, ...realUsers]
 		: realUsers;
 
+	// Distinct currencies actually used by loaded expenses.
+	$: expenseCurrencyList = Array.from(
+		new Set(Object.values(expenses).map((e) => expenseCurrency(e as any)).filter(Boolean)),
+	);
+	// Union of every currency source (normalized) so the dropdown never misses
+	// a token — configured in settings, declared in REA, or used by an expense.
+	$: availableCurrencies = Array.from(
+		new Set(
+			[
+				...settingsCurrencies.map((c) => normalizeCurrency(c)),
+				...reaCurrencies,
+				...expenseCurrencyList,
+			].filter(Boolean),
+		),
+	);
+
 	// Subscription cleanup — populated by queryManager.subscribe and the
 	// direct holosphere.subscribe used for the settings doc.
 	let unsubscribeFunctions: (() => void)[] = [];
 	let subscribedHolonId: string | null = null;
 	let subscribedFedFlag: boolean | null = null;
+	let reaRefreshTimer: ReturnType<typeof setTimeout>;
 
 	function cleanupSubscriptions() {
 		unsubscribeFunctions.forEach(unsub => {
@@ -135,6 +171,8 @@
 		subscribedFedFlag = targetFed;
 		isLoading = true;
 		expenses = {};
+		reaUserIds = [];
+		reaCurrencies = [];
 
 		// Expenses stream
 		const expensesOff = queryManager.subscribe({
@@ -175,13 +213,28 @@
 		});
 		unsubscribeFunctions.push(usersOff);
 
+		// REA stream → the complete participant + token sets. One-shot load now,
+		// then refresh (debounced) on each rea_events write, mirroring how
+		// Status.svelte keeps its REA aggregates live.
+		void loadReaDerived(targetHolon);
+		const reaSub = holosphere.subscribe(targetHolon, 'rea_events', () => {
+			if (subscribedHolonId !== targetHolon) return;
+			if (reaRefreshTimer) clearTimeout(reaRefreshTimer);
+			reaRefreshTimer = setTimeout(() => void loadReaDerived(targetHolon), 250);
+		}) as unknown as { unsubscribe?: () => void } | (() => void);
+		if (typeof reaSub === 'function') {
+			unsubscribeFunctions.push(reaSub);
+		} else if (reaSub && typeof reaSub === 'object' && 'unsubscribe' in reaSub && reaSub.unsubscribe) {
+			unsubscribeFunctions.push(reaSub.unsubscribe);
+		}
+
 		// Settings is a single document — keep the direct subscribe (no
 		// collection-empty hang risk: a per-key subscribe either has the
 		// doc or doesn't, no map().on() with no children).
 		const settingsSub = holosphere.subscribe(holonID, 'settings', (settings: any) => {
 			if (subscribedHolonId !== targetHolon) return;
 			if (settings?.currencies && Array.isArray(settings.currencies)) {
-				availableCurrencies = settings.currencies.filter((c: unknown) => typeof c === 'string');
+				settingsCurrencies = settings.currencies.filter((c: unknown) => typeof c === 'string');
 			}
 		}) as unknown as { unsubscribe?: () => void } | (() => void);
 		if (typeof settingsSub === 'function') {
@@ -198,7 +251,7 @@
 			const stored: string[] = Array.isArray(settingsData?.currencies)
 				? settingsData.currencies.filter((c: unknown) => typeof c === 'string')
 				: [];
-			availableCurrencies = [...stored];
+			settingsCurrencies = [...stored];
 			void maybeAutoMergeOrphanCurrencies(settingsData || {});
 		}).catch((err: unknown) => console.error('[Expenses] settings fetch error:', err));
 
@@ -246,21 +299,41 @@
 				id: holonID,
 				currencies: merged
 			});
-			availableCurrencies = merged;
+			settingsCurrencies = merged;
 		} catch (e: any) {
 			// No write permission — fall back to displaying the union locally
 			// so this user can still operate, but settings stays as-is.
-			availableCurrencies = merged;
+			settingsCurrencies = merged;
 			console.warn('[Expenses] Could not auto-merge currencies into settings (likely no write permission):', e?.message);
 		}
 	}
 
-	function calculateCredits(currency: string) {
-		if (!currency || users.length === 0) {
-			creditMatrix = [];
-			return;
+	// Derive the full participant + token sets from the REA event stream so the
+	// matrix/pickers cover everyone with economic activity and the dropdown
+	// lists every money token in use — independent of the users lens / settings.
+	async function loadReaDerived(targetHolon: string) {
+		try {
+			const events = await getEventStore(holosphere).getAll(targetHolon);
+			if (subscribedHolonId !== targetHolon) return;
+			const ids = new Set<string>();
+			const currencies = new Set<string>();
+			for (const e of events as any[]) {
+				for (const agent of [e?.provider, e?.receiver]) {
+					if (!agent || agent.id == null) continue;
+					if (agent.type === 'holon' || agent.type === 'external') continue;
+					const id = String(agent.id);
+					if (id && id !== targetHolon) ids.add(id);
+				}
+				if (e?.resource?.type === 'money' && e?.resource?.unit) {
+					const c = normalizeCurrency(String(e.resource.unit));
+					if (c) currencies.add(c);
+				}
+			}
+			reaUserIds = [...ids];
+			reaCurrencies = [...currencies];
+		} catch (err: any) {
+			console.warn('[Expenses] REA derive failed:', err?.message ?? err);
 		}
-		creditMatrix = calculateCreditMatrix(currency, expenses, users);
 	}
 
 	function formatAmount(amount: number): string {
@@ -271,26 +344,30 @@
 		return Math.abs(amount).toFixed(2);
 	}
 
-	// Reactive: always keep a valid currency selected. Prefer the current/
+	// Reactive: always keep a valid, normalized currency selected. Prefer the
 	// remembered selection when it's available; otherwise pick the first
-	// available currency. Fall back to USD so the toolbar and add flow are
-	// usable on fresh holons that don't have currencies configured yet. The
-	// ADD sentinel is transient — leave it alone so the add-new prompt can run.
+	// available currency. Fall back to 'usd' so the toolbar and add flow are
+	// usable on fresh holons with no currencies yet. The ADD sentinel is
+	// transient — leave it alone so the add-new prompt can run.
 	$: if (selectedCurrency !== ADD_CURRENCY_SENTINEL) {
+		const cur = normalizeCurrency(selectedCurrency);
 		if (availableCurrencies.length === 0) {
-			if (!selectedCurrency) {
-				selectedCurrency = 'USD';
-				availableCurrencies = ['USD'];
-			}
-		} else if (!selectedCurrency || !availableCurrencies.includes(selectedCurrency)) {
+			if (!selectedCurrency) selectedCurrency = 'usd';
+		} else if (!cur || !availableCurrencies.includes(cur)) {
 			selectedCurrency = availableCurrencies[0];
+		} else if (cur !== selectedCurrency) {
+			selectedCurrency = cur; // normalize a remembered value to canonical form
 		}
 	}
 
-	// Reactive: calculate credits when currency or users change
-	$: if (selectedCurrency && users.length > 0) {
-		calculateCredits(selectedCurrency);
-	}
+	// Reactive: recompute the credit matrix whenever the currency, the
+	// participant set, OR the expenses change. (Previously an imperative call
+	// that didn't track `expenses`, so the matrix never refreshed when the
+	// expenses subscription delivered data after the currency/users were set.)
+	$: creditMatrix =
+		selectedCurrency && selectedCurrency !== ADD_CURRENCY_SENTINEL && users.length > 0
+			? calculateCreditMatrix(selectedCurrency, expenses, users)
+			: [];
 
 	$: filteredExpenses = (() => {
 		const want = normalizeCurrency(selectedCurrency || '');
@@ -332,17 +409,19 @@
 	async function handleCurrencyChange() {
 		if (selectedCurrency !== ADD_CURRENCY_SENTINEL) return;
 
-		const previous = availableCurrencies[0] || 'USD';
+		const previous = availableCurrencies[0] || 'usd';
 		const raw = typeof window !== 'undefined' ? window.prompt('New currency code (e.g., euro, yen, btc):') : null;
-		const cleaned = (raw ?? '').trim().toLowerCase();
+		const cleaned = normalizeCurrency((raw ?? '').trim());
 
 		if (!cleaned) {
 			selectedCurrency = previous;
 			return;
 		}
 
-		if (!availableCurrencies.includes(cleaned)) {
-			availableCurrencies = [...availableCurrencies, cleaned];
+		// `availableCurrencies` is derived; seed the new code into the settings
+		// source so the union picks it up, and persist it for other clients.
+		if (!settingsCurrencies.map((c) => normalizeCurrency(c)).includes(cleaned)) {
+			settingsCurrencies = [...settingsCurrencies, cleaned];
 			await persistCurrencyToSettings(cleaned);
 		}
 		selectedCurrency = cleaned;
