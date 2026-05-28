@@ -18,33 +18,33 @@
  * handler.registerCommand('hello', (ctx) => ctx.reply('Hello!'));
  * await handler.handleCommand(ctx, 'hello', []);
  */
-class CommandHandler {
-    constructor() {
-        /** @type {Object.<string, Function>} */
-        this.commands = {};
-    }
+export class CommandHandler {
+  constructor() {
+    /** @type {Object.<string, Function>} */
+    this.commands = {};
+  }
 
-    /**
-     * Register a command handler
-     * @param {string} command - Command name
-     * @param {Function} handler - Handler function
-     */
-    registerCommand(command, handler) {
-        this.commands[command] = handler;
-    }
+  /**
+   * Register a command handler
+   * @param {string} command - Command name
+   * @param {Function} handler - Handler function
+   */
+  registerCommand(command, handler) {
+    this.commands[command] = handler;
+  }
 
-    /**
-     * Execute a registered command
-     * @param {Object} ctx - Telegraf context
-     * @param {string} commandName - Command to execute
-     * @param {Array} args - Command arguments
-     * @returns {Promise<void>}
-     */
-    async handleCommand(ctx, commandName, args) {
-        if (this.commands[commandName]) {
-            await this.commands[commandName](ctx, ...args);
-        } else {
-            console.error(`Command ${commandName} not found.`);
-        }
+  /**
+   * Execute a registered command
+   * @param {Object} ctx - Telegraf context
+   * @param {string} commandName - Command to execute
+   * @param {Array} args - Command arguments
+   * @returns {Promise<void>}
+   */
+  async handleCommand(ctx, commandName, args) {
+    if (this.commands[commandName]) {
+      await this.commands[commandName](ctx, ...args);
+    } else {
+      console.error(`Command ${commandName} not found.`);
     }
+  }
 }

@@ -6,7 +6,7 @@ export default [
   js.configs.recommended,
   {
     languageOptions: {
-      ecmaVersion: 2022,
+      ecmaVersion: 'latest',
       sourceType: 'module',
       globals: {
         console: 'readonly',
@@ -15,26 +15,41 @@ export default [
         __dirname: 'readonly',
         __filename: 'readonly',
         global: 'readonly',
+        require: 'readonly',
+        module: 'writable',
+        exports: 'writable',
+        fetch: 'readonly',
+        URL: 'readonly',
+        crypto: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
         clearTimeout: 'readonly',
-        clearInterval: 'readonly'
-      }
+        clearInterval: 'readonly',
+      },
     },
     plugins: {
-      prettier
+      prettier,
     },
     rules: {
       ...prettierConfig.rules,
       'prettier/prettier': 'error',
       'no-console': 'warn',
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': [
+        'error',
+        {
+          args: 'none',
+          caughtErrors: 'none',
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
       'no-var': 'error',
       'prefer-const': 'error',
       'no-duplicate-imports': 'error',
       'no-unreachable': 'error',
-      'no-undef': 'error'
-    }
+      'no-undef': 'error',
+    },
   },
   {
     files: ['tests/**/*.js', '**/*.test.js', '**/*.spec.js'],
@@ -48,15 +63,38 @@ export default [
         afterEach: 'readonly',
         beforeAll: 'readonly',
         afterAll: 'readonly',
-        jest: 'readonly'
-      }
+        jest: 'readonly',
+      },
     },
     rules: {
-      'no-console': 'off'
-    }
+      'no-console': 'off',
+    },
+  },
+  {
+    // src/UI.js runs code inside Puppeteer page.evaluate(), so those callbacks
+    // execute in a browser context with the DOM available.
+    files: ['src/UI.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        requestAnimationFrame: 'readonly',
+      },
+    },
   },
   {
     ignores: [
+      // Legacy/abandoned alternate bot implementations: not imported anywhere
+      // and depend on uninstalled packages (@discordjs/voice, prism-media,
+      // ipfs). Excluded until they are revived or removed.
+      'src/MultiBot.js',
+      'src/HolonsMultiBot.js',
+      // Dead test referencing a module (WeQuestBot) that no longer exists.
+      'tests/questest.js',
+      // Ad-hoc one-off GUN/federation debugging scripts in the package root
+      // (check-*, find-*, map-*, write-*, etc.): not imported, not in
+      // package.json, kept only as throwaway investigation tooling.
+      '*.cjs',
       // Flat config (ESLint 9) does NOT read .gitignore/.eslintignore, so
       // every vendored/generated/data dir must be listed here explicitly.
       // Without these, eslint parses html/ (710 minified vendor bundles incl.
@@ -74,7 +112,7 @@ export default [
       'images/**',
       'certs/**',
       'coverage/**',
-      'public/**'
-    ]
-  }
+      'public/**',
+    ],
+  },
 ];

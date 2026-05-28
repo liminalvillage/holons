@@ -14,9 +14,12 @@ import os from 'os';
  * Get key storage directory
  */
 function getKeyDir() {
-  const configDir = process.env.XDG_CONFIG_HOME ||
+  const configDir =
+    process.env.XDG_CONFIG_HOME ||
     (process.platform === 'win32'
-      ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'))
+      ? path.join(
+          process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
+        )
       : path.join(os.homedir(), '.config'));
 
   return path.join(configDir, 'holosphere', 'keys');
@@ -169,7 +172,8 @@ export function listHolonKeys(appName) {
     return [];
   }
 
-  return fs.readdirSync(dir)
+  return fs
+    .readdirSync(dir)
     .filter(file => file.endsWith('.key'))
     .map(file => file.replace('.key', ''));
 }

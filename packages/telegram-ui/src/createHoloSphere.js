@@ -18,8 +18,8 @@ import KeyManager from './KeyManager.js';
  * @returns {string} Hex-encoded private key
  */
 function generatePrivateKey() {
-    const secretKey = generateSecretKey();
-    return Buffer.from(secretKey).toString('hex');
+  const secretKey = generateSecretKey();
+  return Buffer.from(secretKey).toString('hex');
 }
 
 /**
@@ -46,23 +46,30 @@ function generatePrivateKey() {
  * await holosphere.put(holonId, 'quests', questData);
  */
 export default function createHoloSphere(appName, options = {}) {
-    const resolvedAppName = appName || process.env.APPNAME || 'Holons';
-    const { privateKey: pkOverride, backend, logLevel, relays: _ignoredRelays, ...extra } = options;
-    const privateKey = pkOverride
-        || process.env.HOLOSPHERE_PRIVATE_KEY
-        || getOrCreateKey(resolvedAppName, generatePrivateKey);
+  const resolvedAppName = appName || process.env.APPNAME || 'Holons';
+  const {
+    privateKey: pkOverride,
+    backend,
+    logLevel,
+    relays: _ignoredRelays,
+    ...extra
+  } = options;
+  const privateKey =
+    pkOverride ||
+    process.env.HOLOSPHERE_PRIVATE_KEY ||
+    getOrCreateKey(resolvedAppName, generatePrivateKey);
 
-    // NOTE: `relays` here is intentionally NOT forwarded — holosphere 1.3
-    // ignores top-level `relays` and only consumes `nostr.relays`. The bot
-    // historically passed it as a hint and ran on Gun's default peer; pass
-    // `extra: { nostr: { relays: [...] } }` if/when migrating to nostr.
-    return coreCreateHoloSphere({
-        appName: resolvedAppName,
-        privateKey,
-        backend: backend || 'nostr',
-        logLevel: logLevel || 'INFO',
-        extra,
-    });
+  // NOTE: `relays` here is intentionally NOT forwarded — holosphere 1.3
+  // ignores top-level `relays` and only consumes `nostr.relays`. The bot
+  // historically passed it as a hint and ran on Gun's default peer; pass
+  // `extra: { nostr: { relays: [...] } }` if/when migrating to nostr.
+  return coreCreateHoloSphere({
+    appName: resolvedAppName,
+    privateKey,
+    backend: backend || 'nostr',
+    logLevel: logLevel || 'INFO',
+    extra,
+  });
 }
 
 /**
@@ -89,21 +96,21 @@ export default function createHoloSphere(appName, options = {}) {
  * await keyManager.federateHolons(chatA, chatB, 'quests');
  */
 export function createKeyManager(appName, options = {}) {
-    const resolvedAppName = appName || process.env.APPNAME || 'Holons';
+  const resolvedAppName = appName || process.env.APPNAME || 'Holons';
 
-    // Create master HoloSphere (bot's identity)
-    const masterHolosphere = createHoloSphere(resolvedAppName, options);
+  // Create master HoloSphere (bot's identity)
+  const masterHolosphere = createHoloSphere(resolvedAppName, options);
 
-    // Add self-reference for backward compatibility
-    masterHolosphere.holosphere = masterHolosphere;
+  // Add self-reference for backward compatibility
+  masterHolosphere.holosphere = masterHolosphere;
 
-    // Create KeyManager with master holosphere
-    const keyManager = new KeyManager(resolvedAppName, masterHolosphere, {
-        relays: options.relays || ['wss://relay.holons.io/'],
-        logLevel: options.logLevel || 'INFO',
-    });
+  // Create KeyManager with master holosphere
+  const keyManager = new KeyManager(resolvedAppName, masterHolosphere, {
+    relays: options.relays || ['wss://relay.holons.io/'],
+    logLevel: options.logLevel || 'INFO',
+  });
 
-    return keyManager;
+  return keyManager;
 }
 
 // Re-export createHologram for convenience

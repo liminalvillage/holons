@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { Telegraf, Scenes, session } from 'telegraf';
-import { Client, GatewayIntentBits } from 'discord.js';
 import i18next from 'i18next';
 
 // Import all modules
@@ -81,16 +80,16 @@ export const serviceDefinitions = {
             log.debug('Loaded locale file', { language: lang });
           } else {
             resources[lang] = { translation: {} };
-            log.warn('Locale file not found, using empty translations', { 
-              language: lang, 
-              path: filePath 
+            log.warn('Locale file not found, using empty translations', {
+              language: lang,
+              path: filePath,
             });
           }
         } catch (error) {
-          log.error('Error loading locale file', { 
-            language: lang, 
-            path: filePath, 
-            error: error.message 
+          log.error('Error loading locale file', {
+            language: lang,
+            path: filePath,
+            error: error.message,
           });
           resources[lang] = { translation: {} };
         }
@@ -99,7 +98,9 @@ export const serviceDefinitions = {
       await i18next.init({
         resources,
         fallbackLng: 'en',
-        debug: process.env.LOG_LEVEL === 'debug' && process.env.I18N_DEBUG === 'true',
+        debug:
+          process.env.LOG_LEVEL === 'debug' &&
+          process.env.I18N_DEBUG === 'true',
         interpolation: {
           escapeValue: false,
         },
@@ -152,14 +153,17 @@ export const serviceDefinitions = {
         const fs = await import('fs');
         const path = await import('path');
         const radDir = path.resolve(process.cwd(), 'holosphere');
-        let stat = null, files = [];
+        let stat = null,
+          files = [];
         try {
           stat = fs.statSync(radDir);
           files = fs.readdirSync(radDir).map(name => {
             try {
               const s = fs.statSync(path.join(radDir, name));
               return { name, size: s.size, mtime: s.mtime.toISOString() };
-            } catch { return { name, error: 'stat-failed' }; }
+            } catch {
+              return { name, error: 'stat-failed' };
+            }
           });
         } catch (e) {
           stat = { missing: true, error: e.message };
@@ -192,20 +196,32 @@ export const serviceDefinitions = {
         // Identity passthrough: the chat ID *is* the public identity in stub
         // mode. This keeps callers that round-trip through getPublicKey/
         // getTelegramId working without a real keypair.
-        getPublicKey: async (holonId) => String(holonId),
-        getTelegramId: async (pubkey) => String(pubkey),
+        getPublicKey: async holonId => String(holonId),
+        getTelegramId: async pubkey => String(pubkey),
 
         async setupFederation(sourceHolonId, targetHolonId, options = {}) {
-          const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } = options;
+          const {
+            lensConfig = { inbound: [], outbound: [] },
+            partnerName = null,
+          } = options;
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
-          if (source === target) throw new Error('Cannot federate a holon with itself');
+          if (source === target)
+            throw new Error('Cannot federate a holon with itself');
 
           const success = await holosphere.federate(
-            source, target, null, null, true,
+            source,
+            target,
+            null,
+            null,
+            true,
             {
-              inbound:  Array.isArray(lensConfig.inbound)  ? lensConfig.inbound  : [],
-              outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : []
+              inbound: Array.isArray(lensConfig.inbound)
+                ? lensConfig.inbound
+                : [],
+              outbound: Array.isArray(lensConfig.outbound)
+                ? lensConfig.outbound
+                : [],
             }
           );
 
@@ -218,12 +234,17 @@ export const serviceDefinitions = {
                 await holosphere.putGlobal('federation', fedInfo);
               }
             } catch (e) {
-              log.warn('[setupFederation] Failed to store partner name', { error: e.message });
+              log.warn('[setupFederation] Failed to store partner name', {
+                error: e.message,
+              });
             }
           }
 
           holosphere.clearCache?.('federation');
-          const federationData = await holosphere.getGlobal('federation', source);
+          const federationData = await holosphere.getGlobal(
+            'federation',
+            source
+          );
           return { success, federationData };
         },
 
@@ -231,20 +252,31 @@ export const serviceDefinitions = {
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
           if (source === target) return true;
-          const success = await holosphere.unfederate(source, target, null, null);
+          const success = await holosphere.unfederate(
+            source,
+            target,
+            null,
+            null
+          );
           holosphere.clearCache?.('federation');
           return success;
         },
 
         // Older API kept for compatibility — sets up a single-lens federation.
-        async federateHolons(sourceHolonId, targetHolonId, lensName, options = {}) {
+        async federateHolons(
+          sourceHolonId,
+          targetHolonId,
+          lensName,
+          options = {}
+        ) {
           const direction = options.direction || 'outbound';
-          const lensConfig = direction === 'inbound'
-            ? { inbound:  [lensName], outbound: [] }
-            : { outbound: [lensName], inbound:  [] };
+          const lensConfig =
+            direction === 'inbound'
+              ? { inbound: [lensName], outbound: [] }
+              : { outbound: [lensName], inbound: [] };
           return this.setupFederation(sourceHolonId, targetHolonId, {
             ...options,
-            lensConfig
+            lensConfig,
           });
         },
       };
@@ -309,8 +341,15 @@ export const serviceDefinitions = {
 
       // Add middleware to track user interactions (skip bots)
       telebot.use((ctx, next) => {
-        if (ctx.callbackQuery && !ctx.callbackQuery.from?.is_bot && ctx.callbackQuery.message?.chat?.id) {
-          users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message.chat.id);
+        if (
+          ctx.callbackQuery &&
+          !ctx.callbackQuery.from?.is_bot &&
+          ctx.callbackQuery.message?.chat?.id
+        ) {
+          users.getUserInfo(
+            ctx.callbackQuery.from,
+            ctx.callbackQuery.message.chat.id
+          );
         }
         if (ctx.message && !ctx.message.from?.is_bot) {
           users.getUserInfo(ctx.message.from, ctx.message.chat.id);
@@ -348,7 +387,7 @@ export const serviceDefinitions = {
   holons: {
     factory: ({ telebot, database, settings, expenses, ui }) => {
       const holons = new Holons(telebot, database, settings);
-      
+
       // Set cross-references
       holons.setExpensesInstance(expenses);
       if (typeof holons.setUIInstance === 'function') {
@@ -375,7 +414,7 @@ export const serviceDefinitions = {
   roles: {
     factory: ({ telebot, database, ui, settings, checklists }) => {
       const roles = new Roles(telebot, database, ui, settings);
-      
+
       // Set cross-references
       roles.setChecklists(checklists);
       checklists.setRolesInstance(roles);
@@ -388,7 +427,16 @@ export const serviceDefinitions = {
 
   // Quests (depends on many services)
   quests: {
-    factory: ({ telebot, database, users, settings, checklists, ui, expenses, signalManager }) => {
+    factory: ({
+      telebot,
+      database,
+      users,
+      settings,
+      checklists,
+      ui,
+      expenses,
+      signalManager,
+    }) => {
       const quests = new Quests(telebot, database, users, settings);
 
       // Set cross-references
@@ -415,7 +463,16 @@ export const serviceDefinitions = {
       return quests;
     },
     singleton: true,
-    dependencies: ['telebot', 'database', 'users', 'settings', 'checklists', 'ui', 'expenses', 'signalManager'],
+    dependencies: [
+      'telebot',
+      'database',
+      'users',
+      'settings',
+      'checklists',
+      'ui',
+      'expenses',
+      'signalManager',
+    ],
   },
 
   // Events
@@ -450,7 +507,8 @@ export const serviceDefinitions = {
   },
 
   shopping: {
-    factory: ({ telebot, database, settings }) => new Shopping(telebot, database, settings),
+    factory: ({ telebot, database, settings }) =>
+      new Shopping(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
   },
@@ -468,7 +526,8 @@ export const serviceDefinitions = {
   },
 
   h3: {
-    factory: ({ telebot, database, settings }) => new H3(telebot, database, settings),
+    factory: ({ telebot, database, settings }) =>
+      new H3(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
   },
@@ -486,7 +545,8 @@ export const serviceDefinitions = {
   },
 
   rounds: {
-    factory: ({ telebot, database, settings }) => new OneOnOne(telebot, database, settings),
+    factory: ({ telebot, database, settings }) =>
+      new OneOnOne(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
   },
@@ -506,7 +566,8 @@ export const serviceDefinitions = {
   },
 
   bookingSystem: {
-    factory: ({ telebot, database }) => new BookingSystem(telebot, database, './data/booking.json'),
+    factory: ({ telebot, database }) =>
+      new BookingSystem(telebot, database, './data/booking.json'),
     singleton: true,
     dependencies: ['telebot', 'database'],
   },
@@ -520,10 +581,23 @@ export const serviceDefinitions = {
   // Web Server (should be last to avoid port conflicts during development)
   server: {
     factory: ({ telebot, quests, expenses, events, database, settings }) => {
-      return new Server(telebot, { quests, expenses, events, database, settings });
+      return new Server(telebot, {
+        quests,
+        expenses,
+        events,
+        database,
+        settings,
+      });
     },
     singleton: true,
-    dependencies: ['telebot', 'quests', 'expenses', 'events', 'database', 'settings'],
+    dependencies: [
+      'telebot',
+      'quests',
+      'expenses',
+      'events',
+      'database',
+      'settings',
+    ],
   },
 };
 
@@ -536,20 +610,20 @@ export const postInitHooks = {
     if (signalManager) {
       // Validate that required signals are registered
       const validation = signalManager.validateSignals(REQUIRED_SIGNALS);
-      
+
       if (!validation.valid) {
         log.warn('Signal validation failed:', validation);
       }
-      
+
       // Log diagnostics if in debug mode
       if (process.env.SIGNAL_DEBUG === 'true') {
         const diagnostics = signalManager.getDiagnostics();
         log.debug('Signal Manager Diagnostics:', {
           totalSignals: diagnostics.totalSignals,
           moduleCount: Object.keys(diagnostics.byModule).length,
-          conflictCount: diagnostics.conflicts.length
+          conflictCount: diagnostics.conflicts.length,
         });
-        
+
         if (diagnostics.conflicts.length > 0) {
           log.warn('Signal conflicts detected:', diagnostics.conflicts);
         }

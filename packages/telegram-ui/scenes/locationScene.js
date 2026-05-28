@@ -1,10 +1,10 @@
-import { Scenes, Markup } from 'telegraf';
+import { Scenes } from 'telegraf';
 
 // Create a scene for location input - using InputScene pattern
 const locationScene = new Scenes.BaseScene('location');
 
 // Entry point for the scene
-locationScene.enter((ctx) => {
+locationScene.enter(ctx => {
   // Use InputScene for location input
   ctx.scene.enter('input_scene', {
     promptText: 'Please share your location using the paperclip icon below',
@@ -16,11 +16,16 @@ locationScene.enter((ctx) => {
 
       if (!ctx.session.wizard) {
         // save the new data to the database
-        ctx.session.db.gun.get(ctx.from.id.toString()).get('location').put(ctx.session.location);
+        ctx.session.db.gun
+          .get(ctx.from.id.toString())
+          .get('location')
+          .put(ctx.session.location);
         if (ctx.session.sceneStack) {
           ctx.session.sceneStack.pop();
           if (ctx.session.sceneStack.length > 0) {
-            ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
+            ctx.scene.enter(
+              ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
+            );
           }
         }
         return;
@@ -37,15 +42,17 @@ locationScene.enter((ctx) => {
         ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
       }
     },
-    onCancel: async (ctx) => {
+    onCancel: async ctx => {
       // Handle cancellation - return to previous scene or leave
       if (ctx.session.sceneStack && ctx.session.sceneStack.length > 0) {
         ctx.session.sceneStack.pop();
         if (ctx.session.sceneStack.length > 0) {
-          ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
+          ctx.scene.enter(
+            ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
+          );
         }
       }
-    }
+    },
   });
 });
 

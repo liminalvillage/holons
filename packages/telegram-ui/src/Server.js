@@ -9,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import https from 'https';
-import crypto from 'crypto';
 import { log } from '../utils/logger.js';
 
 /**
@@ -62,11 +61,13 @@ class Server {
     this.setupSecurityMiddleware(app);
 
     // Setup static file serving with security
-    app.use(express.static('public', {
-      dotfiles: 'deny',
-      index: false,
-      maxAge: '1h'
-    }));
+    app.use(
+      express.static('public', {
+        dotfiles: 'deny',
+        index: false,
+        maxAge: '1h',
+      })
+    );
 
     // Setup avatar endpoints
     this.setupAvatarEndpoints(app);
@@ -94,18 +95,21 @@ class Server {
         // SSL certificate configuration with error handling
         const sslOptions = this.getSSLOptions();
         if (!sslOptions) {
-          log.warn('SSL certificates not found, server will not start in production mode');
+          log.warn(
+            'SSL certificates not found, server will not start in production mode'
+          );
           return;
         }
 
-        this.serverInstance = https.createServer(sslOptions, app)
+        this.serverInstance = https
+          .createServer(sslOptions, app)
           .listen(port, () => {
             console.log(`HTTPS Server running on port ${port}`);
             this.isRunning = true;
           });
       }
 
-      this.serverInstance.on('error', (error) => {
+      this.serverInstance.on('error', error => {
         this.handleServerError(error, port, isDebug);
       });
 
@@ -113,7 +117,6 @@ class Server {
         console.log(`Server successfully started on port ${port}`);
         this.isRunning = true;
       });
-
     } catch (error) {
       console.error('Failed to create server instance:', error.message);
       this.isRunning = false;
@@ -125,11 +128,15 @@ class Server {
 
     // CORS — required so browsers can preflight POST /refresh/* from harvest.
     // In debug, allow any origin; in production, restrict via CORS_ORIGIN.
-    app.use(cors({
-      origin: isDebug ? true : (process.env.CORS_ORIGIN || 'https://dashboard.holons.io'),
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-    }));
+    app.use(
+      cors({
+        origin: isDebug
+          ? true
+          : process.env.CORS_ORIGIN || 'https://dashboard.holons.io',
+        methods: ['GET', 'POST', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+      })
+    );
 
     // Start periodic cleanup of rate limiting cache to prevent memory leaks
     this.startRateLimitCleanup();
@@ -147,7 +154,10 @@ class Server {
           const oldestKey = this.requestCounts.keys().next().value;
           this.requestCounts.delete(oldestKey);
         }
-        this.requestCounts.set(clientIP, { count: 0, resetTime: now + windowMs });
+        this.requestCounts.set(clientIP, {
+          count: 0,
+          resetTime: now + windowMs,
+        });
       }
 
       const clientData = this.requestCounts.get(clientIP);
@@ -171,7 +181,10 @@ class Server {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-XSS-Protection', '1; mode=block');
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      res.setHeader(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains'
+      );
       res.setHeader('Content-Security-Policy', "default-src 'self'");
       next();
     });
@@ -197,7 +210,7 @@ class Server {
     if (!this.signalHandlersSet) {
       this.signalHandlersSet = true;
 
-      const shutdownHandler = (signal) => {
+      const shutdownHandler = signal => {
         console.log(`${signal} received, shutting down gracefully`);
         this.stopServer();
       };
@@ -220,7 +233,8 @@ class Server {
     this.rateLimitCleanupInterval = setInterval(() => {
       const now = Date.now();
       for (const [ip, data] of this.requestCounts.entries()) {
-        if (now > data.resetTime + 60000) { // Keep entries for 1 extra minute after expiry
+        if (now > data.resetTime + 60000) {
+          // Keep entries for 1 extra minute after expiry
           this.requestCounts.delete(ip);
         }
       }
@@ -249,25 +263,36 @@ class Server {
 
   handleServerError(error, port, isDebug) {
     if (error.code === 'EADDRINUSE') {
-      console.error(`\n🚫 Port ${port} is already in use. Server will not start.`);
+      console.error(
+        `\n🚫 Port ${port} is already in use. Server will not start.`
+      );
       console.error(`\nPossible solutions:`);
       console.error(`  • Stop the process using port ${port}:`);
       console.error(`    - On macOS/Linux: lsof -ti:${port} | xargs kill -9`);
       console.error(`    - On Windows: netstat -ano | findstr :${port}`);
       console.error(`  • Use a different port:`);
-      console.error(`    - Set PORT environment variable: PORT=3000 node your-app.js`);
+      console.error(
+        `    - Set PORT environment variable: PORT=3000 node your-app.js`
+      );
       console.error(`    - Or modify the default port in the code`);
       console.error(`  • Wait for the port to become available`);
       console.error(`\nServer startup aborted.\n`);
     } else if (error.code === 'EACCES') {
       console.error(`\n🚫 Permission denied. Cannot bind to port ${port}.`);
       console.error(`\nPossible solutions:`);
-      console.error(`  • Use a port above 1024 (ports below 1024 require root privileges)`);
+      console.error(
+        `  • Use a port above 1024 (ports below 1024 require root privileges)`
+      );
       console.error(`  • Run with sudo (not recommended for production)`);
-      console.error(`  • Set PORT environment variable to a higher port number`);
+      console.error(
+        `  • Set PORT environment variable to a higher port number`
+      );
       console.error(`\nServer startup aborted.\n`);
     } else {
-      console.error(`\n🚫 Failed to start ${isDebug ? 'HTTP' : 'HTTPS'} server:`, error.message);
+      console.error(
+        `\n🚫 Failed to start ${isDebug ? 'HTTP' : 'HTTPS'} server:`,
+        error.message
+      );
       console.error(`\nServer startup aborted.\n`);
     }
     this.serverInstance = null;
@@ -284,7 +309,8 @@ class Server {
     return {
       isRunning: this.isRunning,
       hasInstance: this.serverInstance !== null,
-      port: process.env.PORT || (process.env.NODE_ENV === 'development' ? 80 : 443)
+      port:
+        process.env.PORT || (process.env.NODE_ENV === 'development' ? 80 : 443),
     };
   }
 
@@ -315,28 +341,27 @@ class Server {
     if (!inputPath || typeof inputPath !== 'string') {
       return null;
     }
-    
+
     // Remove any path traversal attempts
     const sanitized = inputPath.replace(/\.\./g, '').replace(/\/\//g, '/');
-    
+
     // Ensure path is within allowed directories
     const resolvedPath = path.resolve(sanitized);
     const publicDir = path.resolve(process.cwd(), 'public');
-    
+
     if (!resolvedPath.startsWith(publicDir)) {
       return null;
     }
-    
+
     return resolvedPath;
   }
-
 
   // Security: Validate file ID format
   validateFileId(fileId) {
     if (!fileId || typeof fileId !== 'string') {
       return false;
     }
-    
+
     // Telegram file IDs are typically alphanumeric and may contain underscores
     const fileIdPattern = /^[a-zA-Z0-9_-]+$/;
     return fileIdPattern.test(fileId) && fileId.length <= 255;
@@ -347,7 +372,7 @@ class Server {
     if (!userId || typeof userId !== 'string') {
       return false;
     }
-    
+
     // Telegram user IDs are numeric
     const userIdPattern = /^\d+$/;
     return userIdPattern.test(userId) && userId.length <= 20;
@@ -360,9 +385,17 @@ class Server {
         fs.mkdirSync(this.avatarsDir, { recursive: true });
       }
 
-      this.defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+      this.defaultAvatarPath = path.join(
+        process.cwd(),
+        'public',
+        'default-avatar.png'
+      );
       if (!fs.existsSync(this.defaultAvatarPath)) {
-        const defaultTemplate = path.join(process.cwd(), 'templates', 'default-avatar.png');
+        const defaultTemplate = path.join(
+          process.cwd(),
+          'templates',
+          'default-avatar.png'
+        );
         if (fs.existsSync(defaultTemplate)) {
           fs.copyFileSync(defaultTemplate, this.defaultAvatarPath);
         }
@@ -378,7 +411,7 @@ class Server {
 
           const localAvatarPath = path.join(this.avatarsDir, `${userId}.jpg`);
           const sanitizedPath = this.sanitizePath(localAvatarPath);
-          
+
           if (!sanitizedPath) {
             return res.sendFile(this.defaultAvatarPath);
           }
@@ -499,9 +532,17 @@ class Server {
       }
 
       // Default image for fallback
-      this.defaultImagePath = path.join(process.cwd(), 'public', 'default-image.png');
+      this.defaultImagePath = path.join(
+        process.cwd(),
+        'public',
+        'default-image.png'
+      );
       if (!fs.existsSync(this.defaultImagePath)) {
-        const defaultTemplate = path.join(process.cwd(), 'templates', 'default-image.png');
+        const defaultTemplate = path.join(
+          process.cwd(),
+          'templates',
+          'default-image.png'
+        );
         if (fs.existsSync(defaultTemplate)) {
           fs.copyFileSync(defaultTemplate, this.defaultImagePath);
         }
@@ -523,7 +564,10 @@ class Server {
             const sanitizedPath = this.sanitizePath(imagePath);
             if (sanitizedPath && fs.existsSync(sanitizedPath)) {
               res.setHeader('Cache-Control', 'public, max-age=31536000');
-              res.setHeader('Content-Type', this.getImageContentType(sanitizedPath));
+              res.setHeader(
+                'Content-Type',
+                this.getImageContentType(sanitizedPath)
+              );
               res.sendFile(sanitizedPath);
             } else {
               this.sendDefaultImage(res);
@@ -601,10 +645,13 @@ class Server {
       this.refreshTimers.delete(key);
       try {
         if (kind === 'quest') await this.refreshQuestMessage(holon, id);
-        else if (kind === 'expense') await this.refreshExpenseMessage(holon, id);
+        else if (kind === 'expense')
+          await this.refreshExpenseMessage(holon, id);
         else if (kind === 'event') await this.refreshEventMessage(holon, id);
       } catch (err) {
-        log.warn(`refresh ${kind} ${holon}/${id} failed: ${err?.message || err}`);
+        log.warn(
+          `refresh ${kind} ${holon}/${id} failed: ${err?.message || err}`
+        );
       }
     }, this.refreshDebounceMs);
     this.refreshTimers.set(key, timer);
@@ -614,7 +661,8 @@ class Server {
     const { quests, settings } = this.services;
     if (!quests) throw new Error('quests service not available');
 
-    const language = (await settings?.getLanguage(holon).catch(() => null)) || 'en';
+    const language =
+      (await settings?.getLanguage(holon).catch(() => null)) || 'en';
     const holonDB = await quests.getHolonDB(holon);
     let quest = await holonDB.get(holon, 'quests', questId);
     if (!quest) {
@@ -629,14 +677,28 @@ class Server {
     // none exists yet. That makes /refresh/quest the canonical way for
     // harvest to bootstrap a Telegram representation for a brand-new task.
     const markupConfig = quests.markup(quest, language);
-    const messageId = await quests.ensureMainTelegramMessage(quest, holon, language, markupConfig);
+    const messageId = await quests.ensureMainTelegramMessage(
+      quest,
+      holon,
+      language,
+      markupConfig
+    );
     if (messageId == null) {
-      log.info(`refresh: could not create or resolve Telegram message for quest ${questId} in holon ${holon}`);
+      log.info(
+        `refresh: could not create or resolve Telegram message for quest ${questId} in holon ${holon}`
+      );
       return;
     }
     const fakeCtx = { telegram: this.bot.telegram };
     const updatedMessages = new Set();
-    await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);
+    await quests.updateQuestMessage(
+      fakeCtx,
+      quest,
+      holon,
+      messageId,
+      language,
+      markupConfig
+    );
     updatedMessages.add(`${holon}_${messageId}`);
 
     // Bootstrap Telegram messages for federated holons that don't have one
@@ -644,9 +706,13 @@ class Server {
     // _meta.activeHolograms (HoloSphere propagation) and sends new messages
     // to any numeric chat ID without one, pushing them into
     // quest.activeHolograms.
-    await quests.handleFederatedMessages(fakeCtx, quest, language).catch((err) => {
-      log.warn(`refresh: handleFederatedMessages failed for quest ${questId} in ${holon}: ${err?.message || err}`);
-    });
+    await quests
+      .handleFederatedMessages(fakeCtx, quest, language)
+      .catch(err => {
+        log.warn(
+          `refresh: handleFederatedMessages failed for quest ${questId} in ${holon}: ${err?.message || err}`
+        );
+      });
 
     // Re-read so we pick up any entries handleFederatedMessages just added
     // (it mutates a re-fetched copy and persists with autoPropagate:false).
@@ -656,17 +722,28 @@ class Server {
     // main + personal holograms + federated). updatedMessages dedupes the
     // home main we already edited above.
     const hologramsToUpdate = quest.activeHolograms || [];
-    log.info(`refresh: quest ${questId} in ${holon} → main + ${hologramsToUpdate.length} holograms (already edited: ${updatedMessages.size})`);
+    log.info(
+      `refresh: quest ${questId} in ${holon} → main + ${hologramsToUpdate.length} holograms (already edited: ${updatedMessages.size})`
+    );
     if (hologramsToUpdate.length > 0) {
-      await quests.updateHolograms(fakeCtx, quest, language, markupConfig, hologramsToUpdate, updatedMessages);
+      await quests.updateHolograms(
+        fakeCtx,
+        quest,
+        language,
+        markupConfig,
+        hologramsToUpdate,
+        updatedMessages
+      );
     }
   }
 
   async refreshEventMessage(holon, eventId) {
     const { events, settings, database } = this.services;
-    if (!events || !database) throw new Error('events/database service not available');
+    if (!events || !database)
+      throw new Error('events/database service not available');
 
-    const language = (await settings?.getLanguage(holon).catch(() => null)) || 'en';
+    const language =
+      (await settings?.getLanguage(holon).catch(() => null)) || 'en';
     const event = await database.get(holon, 'events', eventId);
     if (!event) {
       log.info(`refresh: event ${eventId} not found in holon ${holon}`);
@@ -674,25 +751,47 @@ class Server {
     }
 
     const markupConfig = events.markup(event, language);
-    const messageId = await events.ensureMainTelegramMessage(event, holon, language, markupConfig);
+    const messageId = await events.ensureMainTelegramMessage(
+      event,
+      holon,
+      language,
+      markupConfig
+    );
     if (messageId == null) {
-      log.info(`refresh: could not create or resolve Telegram message for event ${eventId} in holon ${holon}`);
+      log.info(
+        `refresh: could not create or resolve Telegram message for event ${eventId} in holon ${holon}`
+      );
       return;
     }
     const fakeCtx = { telegram: this.bot.telegram };
     const updatedMessages = new Set();
-    await events.updateEventMessage(fakeCtx, event, holon, messageId, language, markupConfig);
+    await events.updateEventMessage(
+      fakeCtx,
+      event,
+      holon,
+      messageId,
+      language,
+      markupConfig
+    );
     updatedMessages.add(`${holon}_${messageId}`);
     // Fan out to federated copies tracked in _meta.activeHolograms (HoloSphere propagation).
     const metaHolograms = event._meta?.activeHolograms || [];
     if (metaHolograms.length > 0) {
-      await events.updateHologramsFromMeta(fakeCtx, event, language, markupConfig, metaHolograms, updatedMessages);
+      await events.updateHologramsFromMeta(
+        fakeCtx,
+        event,
+        language,
+        markupConfig,
+        metaHolograms,
+        updatedMessages
+      );
     }
   }
 
   async refreshExpenseMessage(holon, expenseId) {
     const { expenses, database } = this.services;
-    if (!expenses || !database) throw new Error('expenses/database service not available');
+    if (!expenses || !database)
+      throw new Error('expenses/database service not available');
 
     const expense = await database.get(holon, 'expenses', expenseId);
     if (!expense) {
@@ -703,9 +802,16 @@ class Server {
     const text = await expenses.createMessage(holon, expense);
     const reply_markup = {
       inline_keyboard: [
-        [{ text: '🔀 Split', callback_data: `split:${expense.id}` },
-         { text: '🔀 Split All', callback_data: `splitall:${expense.id}` }],
-        [{ text: '👥 Select participants', callback_data: `select_participants:${expense.id}` }],
+        [
+          { text: '🔀 Split', callback_data: `split:${expense.id}` },
+          { text: '🔀 Split All', callback_data: `splitall:${expense.id}` },
+        ],
+        [
+          {
+            text: '👥 Select participants',
+            callback_data: `select_participants:${expense.id}`,
+          },
+        ],
       ],
     };
     const messageId = Number(expenseId);
@@ -727,18 +833,18 @@ class Server {
         method: 'GET',
         responseType: 'stream',
         timeout: 10000, // 10 second timeout
-        maxContentLength: 10 * 1024 * 1024 // 10MB limit
+        maxContentLength: 10 * 1024 * 1024, // 10MB limit
       });
 
       const filePath = path.join(this.avatarsDir, `${String(userId)}.jpg`);
       const sanitizedPath = this.sanitizePath(filePath);
-      
+
       if (!sanitizedPath) {
         throw new Error('Invalid file path');
       }
-      
+
       const writer = fs.createWriteStream(sanitizedPath);
-      
+
       return new Promise((resolve, reject) => {
         response.data.pipe(writer);
         writer.on('finish', () => resolve(sanitizedPath));
@@ -769,7 +875,7 @@ class Server {
       }
     } catch (error) {
       console.error('Error retrieving the profile photo:', error);
-      return ''; 
+      return '';
     }
   }
 
@@ -784,7 +890,9 @@ class Server {
         return null;
       }
 
-      const fileExtension = this.getFileExtension(fileInfo.file_path || fileName);
+      const fileExtension = this.getFileExtension(
+        fileInfo.file_path || fileName
+      );
       const uniqueFileName = `${fileId}_${this.sanitizeFileName(fileName)}${fileExtension}`;
       const localFilePath = path.join(this.filesDir, uniqueFileName);
       const sanitizedPath = this.sanitizePath(localFilePath);
@@ -821,7 +929,9 @@ class Server {
         return null;
       }
 
-      const fileExtension = this.getFileExtension(fileInfo.file_path || 'photo');
+      const fileExtension = this.getFileExtension(
+        fileInfo.file_path || 'photo'
+      );
       const uniqueFileName = `${fileId}_photo${fileExtension}`;
       const localFilePath = path.join(this.filesDir, uniqueFileName);
       const sanitizedPath = this.sanitizePath(localFilePath);
@@ -864,7 +974,12 @@ class Server {
         return null;
       }
 
-      const imageFileName = this.generateImageFileName(fileId, size, format, fileExtension);
+      const imageFileName = this.generateImageFileName(
+        fileId,
+        size,
+        format,
+        fileExtension
+      );
       const localImagePath = path.join(this.imagesDir, imageFileName);
       const sanitizedPath = this.sanitizePath(localImagePath);
 
@@ -913,7 +1028,7 @@ class Server {
         file_extension: fileExtension,
         mime_type: this.getImageMimeType(fileExtension),
         is_image: true,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
     } catch (error) {
       console.error('Error retrieving image info:', error);
@@ -938,7 +1053,7 @@ class Server {
         file_size: fileInfo.file_size,
         file_path: fileInfo.file_path,
         file_extension: this.getFileExtension(fileInfo.file_path || ''),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
     } catch (error) {
       console.error('Error retrieving file info:', error);
@@ -953,11 +1068,11 @@ class Server {
         method: 'GET',
         responseType: 'stream',
         timeout: 30000, // 30 second timeout
-        maxContentLength: 100 * 1024 * 1024 // 100MB limit
+        maxContentLength: 100 * 1024 * 1024, // 100MB limit
       });
-      
+
       const writer = fs.createWriteStream(filePath);
-      
+
       return new Promise((resolve, reject) => {
         response.data.pipe(writer);
         writer.on('finish', () => resolve(filePath));
@@ -977,11 +1092,11 @@ class Server {
         method: 'GET',
         responseType: 'stream',
         timeout: 30000, // 30 second timeout
-        maxContentLength: 50 * 1024 * 1024 // 50MB limit for images
+        maxContentLength: 50 * 1024 * 1024, // 50MB limit for images
       });
-      
+
       const writer = fs.createWriteStream(imagePath);
-      
+
       return new Promise((resolve, reject) => {
         response.data.pipe(writer);
         writer.on('finish', () => resolve(imagePath));
@@ -1001,7 +1116,16 @@ class Server {
   }
 
   isImageFile(extension) {
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tga'];
+    const imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.bmp',
+      '.webp',
+      '.tiff',
+      '.tga',
+    ];
     return imageExtensions.includes(extension.toLowerCase());
   }
 
@@ -1028,7 +1152,7 @@ class Server {
     if (!fileName || typeof fileName !== 'string') {
       return 'file';
     }
-    
+
     // Remove any potentially dangerous characters
     return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
   }
@@ -1043,7 +1167,7 @@ class Server {
       '.bmp': 'image/bmp',
       '.webp': 'image/webp',
       '.tiff': 'image/tiff',
-      '.tga': 'image/tga'
+      '.tga': 'image/tga',
     };
     return mimeTypes[extension] || 'image/jpeg';
   }
@@ -1053,4 +1177,4 @@ class Server {
   }
 }
 
-export default Server; 
+export default Server;

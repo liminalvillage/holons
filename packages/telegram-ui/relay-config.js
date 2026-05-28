@@ -10,12 +10,12 @@
 export const RELAY_CONFIG = {
   // Production relays - Using holons.io relay
   production: [
-    'wss://relay.holons.io',          // Primary holons relay
+    'wss://relay.holons.io', // Primary holons relay
   ],
 
   // Development relays - Using holons.io relay
   development: [
-    'wss://relay.holons.io',          // Primary holons relay
+    'wss://relay.holons.io', // Primary holons relay
   ],
 
   // Local only - No network sync (for offline testing)

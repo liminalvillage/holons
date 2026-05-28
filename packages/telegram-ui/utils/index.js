@@ -4,10 +4,11 @@
  */
 
 // Core utilities
-export { log } from './logger.js';
+import { log } from './logger.js';
+import ErrorHandler from './errorHandler.js';
+export { log, ErrorHandler };
 export { config } from './config.js';
 export * as validation from './validation.js';
-export { default as ErrorHandler } from './errorHandler.js';
 export { default as SecurityMiddleware } from './security.js';
 
 // Domain-specific utilities
@@ -21,7 +22,7 @@ export { normalizeHolonId, getHolonName } from './holon.js';
 export { safeReadFile, safeWriteFile, fileExists } from './fileOperations.js';
 
 // String utilities (extracted from original utilities.js)
-export const capitalize = (string) => {
+export const capitalize = string => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 };
 
@@ -29,30 +30,21 @@ export const capitalize = (string) => {
  * Generate avatar URL for a user
  * Optimized for fast rendering by using default avatar
  */
-export const getAvatarUrl = (user) => {
+export const getAvatarUrl = user => {
   // For screenshot performance, just use default avatar for now
   // This avoids file system checks and loading delays
   return `file://${process.cwd()}/public/default-avatar.png`;
-  
+
   // TODO: Implement base64 encoding or caching for better performance
 };
 
 // Compatibility exports (for gradual migration)
-export { 
-  getUserId as getUser,  // Note: original getUser returned object, this returns ID
-  getholonId,
-  getUserName,
-  getAvatarUrl,
-  capitalize,
+export {
+  getUserId as getUser, // Note: original getUser returned object, this returns ID
 } from './telegram.js';
 
-export {
-  normalizeHolonId,
-  getHolonName,
-} from './holon.js';
-
 // Common patterns and helpers
-export const createAsyncHandler = (handler) => {
+export const createAsyncHandler = handler => {
   return async (...args) => {
     try {
       return await handler(...args);
@@ -62,11 +54,11 @@ export const createAsyncHandler = (handler) => {
   };
 };
 
-export const createTelegramHandler = (handler) => {
+export const createTelegramHandler = handler => {
   return ErrorHandler.telegramAsyncWrapper(handler);
 };
 
-export const createDiscordHandler = (handler) => {
+export const createDiscordHandler = handler => {
   return ErrorHandler.discordAsyncWrapper(handler);
 };
 
@@ -93,18 +85,18 @@ export const memoize = (fn, ttlMs = 60000) => {
   return async (...args) => {
     const key = JSON.stringify(args);
     const now = Date.now();
-    
+
     if (cache.has(key)) {
       const timestamp = cacheTimestamps.get(key);
       if (now - timestamp < ttlMs) {
         return cache.get(key);
       }
     }
-    
+
     const result = await fn(...args);
     cache.set(key, result);
     cacheTimestamps.set(key, now);
-    
+
     return result;
   };
 };

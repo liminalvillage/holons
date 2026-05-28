@@ -7,16 +7,11 @@ export default defineConfig({
     include: [
       '**/tests/**/*.test.js',
       '**/tests/**/*.spec.js',
-      '**/__tests__/**/*.js'
+      '**/__tests__/**/*.js',
     ],
     coverage: {
       reporter: ['text', 'lcov', 'html'],
-      include: [
-        '*.js',
-        'core/**/*.js',
-        'utils/**/*.js',
-        'modules/**/*.js'
-      ],
+      include: ['*.js', 'core/**/*.js', 'utils/**/*.js', 'modules/**/*.js'],
       exclude: [
         'node_modules/**',
         'coverage/**',
@@ -25,8 +20,8 @@ export default defineConfig({
         'radata/**',
         'data/**',
         'images/**',
-        'certs/**'
-      ]
-    }
-  }
+        'certs/**',
+      ],
+    },
+  },
 });

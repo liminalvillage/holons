@@ -4,7 +4,7 @@ export default {
   testMatch: [
     '**/tests/**/*.test.js',
     '**/tests/**/*.spec.js',
-    '**/__tests__/**/*.js'
+    '**/__tests__/**/*.js',
   ],
   collectCoverageFrom: [
     '*.js',
@@ -14,10 +14,10 @@ export default {
     '!radata/**',
     '!data/**',
     '!images/**',
-    '!certs/**'
+    '!certs/**',
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testTimeout: 10000
+  testTimeout: 10000,
 };

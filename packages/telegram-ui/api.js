@@ -17,9 +17,14 @@ import http from 'http';
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 const APP = process.env.HOLONS_APP || 'HolonsDebug';
-const PORT = parseInt(process.argv[process.argv.indexOf('--port') + 1] || '3101');
+const PORT = parseInt(
+  process.argv[process.argv.indexOf('--port') + 1] || '3101'
+);
 
-if (!BOT_TOKEN) { console.error('BOT_TOKEN required in .env'); process.exit(1); }
+if (!BOT_TOKEN) {
+  console.error('BOT_TOKEN required in .env');
+  process.exit(1);
+}
 
 let hs;
 async function getHS() {
@@ -33,10 +38,14 @@ async function getHS() {
 async function tgSend(chatId, text, replyMarkup) {
   const body = { chat_id: chatId, text, parse_mode: 'HTML' };
   if (replyMarkup) body.reply_markup = replyMarkup;
-  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(
+    `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
   return res.json();
 }
 
@@ -48,14 +57,22 @@ function formatQuest(quest) {
   if (quest.when) {
     try {
       const d = new Date(quest.when);
-      lines.push(`| 📅 ${d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
-    } catch { lines.push(`| 📅 ${quest.when}`); }
+      lines.push(
+        `| 📅 ${d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      );
+    } catch {
+      lines.push(`| 📅 ${quest.when}`);
+    }
   }
   if (quest.until) {
     try {
       const d = new Date(quest.until);
-      lines.push(`| 🔚 ${d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
-    } catch { lines.push(`| 🔚 ${quest.until}`); }
+      lines.push(
+        `| 🔚 ${d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      );
+    } catch {
+      lines.push(`| 🔚 ${quest.until}`);
+    }
   }
   return lines.join('\n');
 }
@@ -71,42 +88,57 @@ function questButtons(questId) {
         { text: '✅ complete', callback_data: `complete_quest_${questId}` },
         { text: '📅 schedule', callback_data: `schedule_quest_${questId}` },
       ],
-      [
-        { text: '⚙️ more actions', callback_data: `more_actions_${questId}` },
-      ],
-    ]
+      [{ text: '⚙️ more actions', callback_data: `more_actions_${questId}` }],
+    ],
   };
 }
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  
+
   if (req.method === 'POST' && req.url === '/quest') {
     let body = '';
-    req.on('data', c => body += c);
+    req.on('data', c => (body += c));
     req.on('end', async () => {
       try {
-        const { chatId, title, description, type, category, when, until } = JSON.parse(body);
+        const { chatId, title, description, type, category, when, until } =
+          JSON.parse(body);
         if (!chatId || !title) {
-          res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and title required' })); return;
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'chatId and title required' }));
+          return;
         }
         const h = await getHS();
         const holon = String(chatId);
         const quest = {
           id: h.generateId ? h.generateId() : `q_${Date.now()}`,
-          version: '0.1', holon, title, description: description || '',
-          type: type || 'task', status: 'ongoing', created: new Date().toISOString(),
-          participants: [], appreciation: [], category: category || '',
-          when: when || '', until: until || '',
+          version: '0.1',
+          holon,
+          title,
+          description: description || '',
+          type: type || 'task',
+          status: 'ongoing',
+          created: new Date().toISOString(),
+          participants: [],
+          appreciation: [],
+          category: category || '',
+          when: when || '',
+          until: until || '',
           initiator: { id: chatId, first_name: 'Atlas', username: 'atlas_ai' },
         };
-        
+
         await h.put(holon, 'quests', quest);
         const text = formatQuest(quest);
         const tgResult = await tgSend(chatId, text, questButtons(quest.id));
-        
+
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, questId: quest.id, telegram: tgResult }));
+        res.end(
+          JSON.stringify({
+            success: true,
+            questId: quest.id,
+            telegram: tgResult,
+          })
+        );
       } catch (err) {
         res.writeHead(500);
         res.end(JSON.stringify({ error: err.message }));
@@ -115,7 +147,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.end(JSON.stringify({ name: 'holonsbot-task-api', usage: 'POST /quest {chatId, title, description?, type?, category?, when?, until?}' }));
+  res.end(
+    JSON.stringify({
+      name: 'holonsbot-task-api',
+      usage:
+        'POST /quest {chatId, title, description?, type?, category?, when?, until?}',
+    })
+  );
 });
 
 server.listen(PORT, () => console.log(`HolonsBot Task API on port ${PORT}`));

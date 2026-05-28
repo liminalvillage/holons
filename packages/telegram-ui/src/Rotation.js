@@ -17,13 +17,13 @@
  * @example
  * const rotation = new Rotation(bot, db);
  */
-class Rotation {
-    /**
-     * @param {Object} bot - Telegraf bot instance
-     * @param {DB} db - Database instance
-     */
-    constructor(bot, db) {
-        this.bot = bot;
-        this.db = db;
-    }
+export class Rotation {
+  /**
+   * @param {Object} bot - Telegraf bot instance
+   * @param {DB} db - Database instance
+   */
+  constructor(bot, db) {
+    this.bot = bot;
+    this.db = db;
+  }
 }

@@ -44,7 +44,7 @@ describe('Integration Tests', () => {
     it.skip('should initialize with minimal setup', async () => {
       const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
       const bot = new HolonsBot();
-      
+
       // Would need extensive mocking for this to work
       await bot.init('TestBot');
       expect(bot.isInitialized).toBe(true);
@@ -59,17 +59,24 @@ describe('Integration Tests', () => {
     });
 
     it('should have basic service definitions', async () => {
-      const { serviceDefinitions } = await import('../core/ServiceDefinitions.js');
-      
+      const { serviceDefinitions } =
+        await import('../core/ServiceDefinitions.js');
+
       // Should have some core services
       const serviceNames = Object.keys(serviceDefinitions);
       expect(serviceNames.length).toBeGreaterThan(0);
-      
+
       // Check for some expected services
-      const hasDB = serviceNames.some(name => name.toLowerCase().includes('db'));
-      const hasServer = serviceNames.some(name => name.toLowerCase().includes('server'));
-      const hasConfig = serviceNames.some(name => name.toLowerCase().includes('config'));
-      
+      const hasDB = serviceNames.some(name =>
+        name.toLowerCase().includes('db')
+      );
+      const hasServer = serviceNames.some(name =>
+        name.toLowerCase().includes('server')
+      );
+      const hasConfig = serviceNames.some(name =>
+        name.toLowerCase().includes('config')
+      );
+
       expect(hasDB || hasServer || hasConfig).toBe(true);
     });
   });

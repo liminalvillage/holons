@@ -1,35 +1,37 @@
-import {
-  Scenes,
-  Markup
-} from 'telegraf';
-import { summarize } from "../src/AI.js";
+import { Scenes } from 'telegraf';
+import { summarize } from '../src/AI.js';
 
-let summarizeScene = new Scenes.BaseScene('summarize');
+const summarizeScene = new Scenes.BaseScene('summarize');
 
 summarizeScene.enter(ctx => {
   ctx.session.messages = ''; // Initialize the messages string
-  ctx.reply('Chat normally, I will summarize it when you are done (type /done to finish)');
+  ctx.reply(
+    'Chat normally, I will summarize it when you are done (type /done to finish)'
+  );
 });
-
-
 
 summarizeScene.command('done', async ctx => {
   console.log('done detected');
   try {
     const summary = await summarize(ctx.session.messages);
-    ctx.session.summary = summary
-    if (!ctx.session.wizard) { 
+    ctx.session.summary = summary;
+    if (!ctx.session.wizard) {
       // save the new data to the database
-      ctx.session.db.gun.get(ctx.from.id.toString()).get('summary').put(summary);
+      ctx.session.db.gun
+        .get(ctx.from.id.toString())
+        .get('summary')
+        .put(summary);
       ctx.reply(summary);
       ctx.scene.leave();
 
-      if (ctx.session.sceneStack){
+      if (ctx.session.sceneStack) {
         ctx.session.sceneStack.pop();
-        ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+        ctx.scene.enter(
+          ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
+        );
       }
-      
-      return
+
+      return;
     }
 
     ctx.reply(summary);
@@ -40,8 +42,7 @@ summarizeScene.command('done', async ctx => {
     } else {
       if (ctx.session.sequence)
         ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-      else
-        ctx.scene.leave();
+      else ctx.scene.leave();
     }
   } catch (error) {
     console.error('Error in summarizing:', error);

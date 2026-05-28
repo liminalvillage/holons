@@ -11,7 +11,6 @@ import compression from 'compression';
 import { body, validationResult } from 'express-validator';
 import { log } from './logger.js';
 import { config } from './config.js';
-import ErrorHandler, { ValidationError } from './errorHandler.js';
 
 /**
  * Comprehensive security middleware for Express applications.
@@ -35,29 +34,33 @@ export class SecurityMiddleware {
     app.use(compression());
 
     // Helmet for security headers
-    app.use(helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          scriptSrc: ["'self'"],
-          imgSrc: ["'self'", "data:", "https:"],
-          fontSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          mediaSrc: ["'self'"],
-          frameSrc: ["'none'"],
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", 'data:', 'https:'],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+          },
         },
-      },
-      crossOriginEmbedderPolicy: false, // Allow for Telegram web apps
-    }));
+        crossOriginEmbedderPolicy: false, // Allow for Telegram web apps
+      })
+    );
 
     // CORS configuration
-    app.use(cors({
-      origin: config.isDevelopment ? '*' : config.corsOrigin,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    }));
+    app.use(
+      cors({
+        origin: config.isDevelopment ? '*' : config.corsOrigin,
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      })
+    );
 
     // Rate limiting
     const limiter = rateLimit({
@@ -87,7 +90,9 @@ export class SecurityMiddleware {
     const authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
       max: 5, // 5 attempts per window
-      message: { error: 'Too many authentication attempts, please try again later.' },
+      message: {
+        error: 'Too many authentication attempts, please try again later.',
+      },
       skipSuccessfulRequests: true,
     });
 
@@ -99,7 +104,7 @@ export class SecurityMiddleware {
     // Request logging middleware
     app.use((req, res, next) => {
       const startTime = Date.now();
-      
+
       res.on('finish', () => {
         const duration = Date.now() - startTime;
         log.info('HTTP Request', {
@@ -117,18 +122,22 @@ export class SecurityMiddleware {
     });
 
     // Body parsing with size limits
-    app.use(express.json({ 
-      limit: config.maxFileSize,
-      verify: (req, res, buf) => {
-        // Store raw body for webhook verification if needed
-        req.rawBody = buf;
-      }
-    }));
-    
-    app.use(express.urlencoded({ 
-      extended: true, 
-      limit: config.maxFileSize 
-    }));
+    app.use(
+      express.json({
+        limit: config.maxFileSize,
+        verify: (req, res, buf) => {
+          // Store raw body for webhook verification if needed
+          req.rawBody = buf;
+        },
+      })
+    );
+
+    app.use(
+      express.urlencoded({
+        extended: true,
+        limit: config.maxFileSize,
+      })
+    );
 
     // Input sanitization middleware
     app.use(this.sanitizeInput);
@@ -168,23 +177,29 @@ export class SecurityMiddleware {
   static securityHeaders(req, res, next) {
     // Prevent MIME type sniffing
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    
+
     // Prevent clickjacking
     res.setHeader('X-Frame-Options', 'DENY');
-    
+
     // XSS protection
     res.setHeader('X-XSS-Protection', '1; mode=block');
-    
+
     // HSTS (only in production with HTTPS)
     if (config.isProduction) {
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+      res.setHeader(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains; preload'
+      );
     }
-    
+
     // Referrer policy
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    
+
     // Permissions policy
-    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    res.setHeader(
+      'Permissions-Policy',
+      'geolocation=(), microphone=(), camera=()'
+    );
 
     next();
   }
@@ -194,20 +209,23 @@ export class SecurityMiddleware {
    */
   static fileUploadSecurity(allowedMimeTypes = [], maxFileSize = null) {
     const maxSize = maxFileSize || config.maxFileSize;
-    
+
     return (req, res, next) => {
       if (req.file) {
         // Check file size
         if (req.file.size > maxSize) {
           return res.status(413).json({
-            error: `File too large. Maximum size: ${Math.ceil(maxSize / (1024 * 1024))}MB`
+            error: `File too large. Maximum size: ${Math.ceil(maxSize / (1024 * 1024))}MB`,
           });
         }
 
         // Check MIME type
-        if (allowedMimeTypes.length > 0 && !allowedMimeTypes.includes(req.file.mimetype)) {
+        if (
+          allowedMimeTypes.length > 0 &&
+          !allowedMimeTypes.includes(req.file.mimetype)
+        ) {
           return res.status(415).json({
-            error: `File type not allowed. Allowed types: ${allowedMimeTypes.join(', ')}`
+            error: `File type not allowed. Allowed types: ${allowedMimeTypes.join(', ')}`,
           });
         }
 
@@ -252,27 +270,27 @@ export class SecurityMiddleware {
     telegramUserId: body('userId')
       .isInt({ min: 1 })
       .withMessage('User ID must be a positive integer'),
-    
+
     telegramholonId: body('holonId')
       .isInt()
       .withMessage('Holon ID must be an integer'),
-    
+
     questId: body('questId')
       .isLength({ min: 1, max: 100 })
       .trim()
       .escape()
       .withMessage('Quest ID must be 1-100 characters'),
-    
+
     message: body('message')
       .isLength({ min: 1, max: 4096 })
       .trim()
       .withMessage('Message must be 1-4096 characters'),
-    
+
     email: body('email')
       .isEmail()
       .normalizeEmail()
       .withMessage('Must be a valid email address'),
-    
+
     url: body('url')
       .isURL({ protocols: ['http', 'https'] })
       .withMessage('Must be a valid HTTP/HTTPS URL'),
@@ -287,7 +305,9 @@ export class SecurityMiddleware {
 
     if (!validApiKey) {
       log.warn('API key authentication attempted but no key configured');
-      return res.status(500).json({ error: 'API authentication not configured' });
+      return res
+        .status(500)
+        .json({ error: 'API authentication not configured' });
     }
 
     if (!apiKey || apiKey !== validApiKey) {
@@ -307,7 +327,7 @@ export class SecurityMiddleware {
   static verifyTelegramWebhook(req, res, next) {
     const token = config.botToken;
     const secretPath = `/webhook_${crypto.createHash('sha256').update(token).digest('hex')}`;
-    
+
     if (req.path !== secretPath) {
       log.security('Invalid webhook path accessed', null, req.ip, {
         path: req.path,
@@ -325,7 +345,7 @@ export class SecurityMiddleware {
   static ipWhitelist(allowedIPs = []) {
     return (req, res, next) => {
       const clientIP = req.ip || req.connection.remoteAddress;
-      
+
       if (allowedIPs.length > 0 && !allowedIPs.includes(clientIP)) {
         log.security('IP not in whitelist', null, clientIP, {
           userAgent: req.get('User-Agent'),

@@ -22,26 +22,28 @@ const logger = winston.createLogger({
     }),
     winston.format.errors({ stack: true }),
     winston.format.colorize(),
-    winston.format.printf(({ level, message, timestamp, stack, ...metadata }) => {
-      // Remove winston-added fields from metadata
-      delete metadata.timestamp;
-      delete metadata.level;
-      delete metadata.message;
+    winston.format.printf(
+      ({ level, message, timestamp, stack, ...metadata }) => {
+        // Remove winston-added fields from metadata
+        delete metadata.timestamp;
+        delete metadata.level;
+        delete metadata.message;
 
-      let logMessage = `${timestamp} [${level}]: ${message}`;
+        let logMessage = `${timestamp} [${level}]: ${message}`;
 
-      if (stack) {
-        logMessage += `\n${stack}`;
+        if (stack) {
+          logMessage += `\n${stack}`;
+        }
+
+        // Add metadata if present and not empty
+        const metaKeys = Object.keys(metadata);
+        if (metaKeys.length > 0) {
+          logMessage += ` ${JSON.stringify(metadata)}`;
+        }
+
+        return logMessage;
       }
-
-      // Add metadata if present and not empty
-      const metaKeys = Object.keys(metadata);
-      if (metaKeys.length > 0) {
-        logMessage += ` ${JSON.stringify(metadata)}`;
-      }
-
-      return logMessage;
-    })
+    )
   ),
   transports: [
     // Console transport
@@ -80,15 +82,15 @@ export const log = {
   error: (message, meta = {}) => {
     logger.error(message, { ...meta, timestamp: new Date().toISOString() });
   },
-  
+
   warn: (message, meta = {}) => {
     logger.warn(message, { ...meta, timestamp: new Date().toISOString() });
   },
-  
+
   info: (message, meta = {}) => {
     logger.info(message, { ...meta, timestamp: new Date().toISOString() });
   },
-  
+
   debug: (message, meta = {}) => {
     logger.debug(message, { ...meta, timestamp: new Date().toISOString() });
   },

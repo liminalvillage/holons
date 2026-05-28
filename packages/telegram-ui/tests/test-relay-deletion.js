@@ -17,7 +17,7 @@ const colors = {
   red: '\x1b[31m',
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
-  cyan: '\x1b[36m'
+  cyan: '\x1b[36m',
 };
 
 function log(message, color = 'reset') {
@@ -38,12 +38,12 @@ async function testRelayDeletion() {
     const testQuest1 = {
       id: 'quest-1',
       title: 'Test Quest 1',
-      description: 'This is a test quest'
+      description: 'This is a test quest',
     };
     const testQuest2 = {
       id: 'quest-2',
       title: 'Test Quest 2',
-      description: 'This is another test quest'
+      description: 'This is another test quest',
     };
 
     await holosphere.put(testHolonId, 'quests', testQuest1);
@@ -87,7 +87,11 @@ async function testRelayDeletion() {
     }
 
     // Verify quest-2 still exists
-    const remainingQuest = await holosphere.get(testHolonId, 'quests', 'quest-2');
+    const remainingQuest = await holosphere.get(
+      testHolonId,
+      'quests',
+      'quest-2'
+    );
     if (remainingQuest && !remainingQuest._deleted) {
       log('✅ Quest 2 still exists (correct)', 'green');
     } else {
@@ -106,7 +110,11 @@ async function testRelayDeletion() {
     log('\nStep 6: Verifying all quests are deleted...', 'blue');
     const allQuests = await holosphere.getAll(testHolonId, 'quests');
 
-    if (!allQuests || allQuests.length === 0 || allQuests.every(q => q._deleted === true)) {
+    if (
+      !allQuests ||
+      allQuests.length === 0 ||
+      allQuests.every(q => q._deleted === true)
+    ) {
       log('✅ All quests successfully deleted from relay', 'green');
     } else {
       log('❌ Some quests still exist on relay!', 'red');
@@ -116,20 +124,31 @@ async function testRelayDeletion() {
     // Step 7: Check relay configuration
     log('\nStep 7: Checking relay configuration...', 'blue');
     log(`  Relay URL: ${holosphere.config.relays[0]}`, 'cyan');
-    log(`  Public Key: ${holosphere.client?.publicKey || holosphere.publicKey}`, 'cyan');
+    log(
+      `  Public Key: ${holosphere.client?.publicKey || holosphere.publicKey}`,
+      'cyan'
+    );
 
     // Summary
     log('\n=== Test Complete ===\n', 'cyan');
     log('If deletions are showing as failed:', 'yellow');
-    log('1. Check the console logs for "NIP-09 deletion event" messages', 'yellow');
+    log(
+      '1. Check the console logs for "NIP-09 deletion event" messages',
+      'yellow'
+    );
     log('2. The relay might not support NIP-09 deletion events', 'yellow');
     log('3. The external dashboard might be caching old data', 'yellow');
     log('4. There might be a timing delay for relay propagation', 'yellow');
     log('\nRecommendation:', 'cyan');
-    log('- If relay deletions are failing, the external dashboard may be reading cached data', 'cyan');
+    log(
+      '- If relay deletions are failing, the external dashboard may be reading cached data',
+      'cyan'
+    );
     log('- Try refreshing the dashboard or clearing its cache', 'cyan');
-    log('- Check if the relay properly supports NIP-09 (kind 5) deletion events', 'cyan');
-
+    log(
+      '- Check if the relay properly supports NIP-09 (kind 5) deletion events',
+      'cyan'
+    );
   } catch (error) {
     log('\n❌ Test failed with error:', 'red');
     console.error(error);

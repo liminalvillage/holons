@@ -220,13 +220,15 @@ export class ErrorHandler {
     // Send user-friendly message to Discord
     if (interaction && interaction.reply) {
       const userMessage = this.getUserFriendlyMessage(error);
-      interaction.reply({ content: userMessage, ephemeral: true }).catch(replyError => {
-        log.error('Failed to send error message to user', {
-          originalError: error.message,
-          replyError: replyError.message,
-          ...context,
+      interaction
+        .reply({ content: userMessage, ephemeral: true })
+        .catch(replyError => {
+          log.error('Failed to send error message to user', {
+            originalError: error.message,
+            replyError: replyError.message,
+            ...context,
+          });
         });
-      });
     }
 
     return result;
@@ -255,23 +257,23 @@ export class ErrorHandler {
     if (error instanceof ValidationError) {
       return `❌ Invalid input: ${error.message}`;
     }
-    
+
     if (error instanceof AuthenticationError) {
       return '🔒 Authentication required. Please try again.';
     }
-    
+
     if (error instanceof AuthorizationError) {
-      return '⛔ You don\'t have permission to perform this action.';
+      return "⛔ You don't have permission to perform this action.";
     }
-    
+
     if (error instanceof NotFoundError) {
       return '❓ The requested resource was not found.';
     }
-    
+
     if (error instanceof DatabaseError) {
       return '💾 Database error. Please try again later.';
     }
-    
+
     if (error instanceof ExternalServiceError) {
       return `🌐 External service error${error.service ? ` (${error.service})` : ''}. Please try again later.`;
     }
@@ -310,7 +312,7 @@ export class ErrorHandler {
    * Create async error wrapper for Discord handlers
    */
   static discordAsyncWrapper(fn) {
-    return async (interaction) => {
+    return async interaction => {
       try {
         return await fn(interaction);
       } catch (error) {
@@ -324,7 +326,7 @@ export class ErrorHandler {
  * Global error handlers for uncaught exceptions
  */
 export function setupGlobalErrorHandlers() {
-  process.on('uncaughtException', (error) => {
+  process.on('uncaughtException', error => {
     log.error('Uncaught Exception - Bot will continue running', {
       error: error.message,
       stack: error.stack,
@@ -365,17 +367,17 @@ export function setupGlobalErrorHandlers() {
 function isFatalError(error) {
   // Only exit for critical system-level errors
   const fatalPatterns = [
-    'EADDRINUSE',     // Port already in use
+    'EADDRINUSE', // Port already in use
     'MODULE_NOT_FOUND', // Critical module missing (only at startup)
-    'EACCES',         // Permission denied for critical resources
-    'ENOSPC',         // No space left on device
+    'EACCES', // Permission denied for critical resources
+    'ENOSPC', // No space left on device
   ];
 
   const errorMessage = error.message || '';
   const errorCode = error.code || '';
 
-  return fatalPatterns.some(pattern =>
-    errorMessage.includes(pattern) || errorCode === pattern
+  return fatalPatterns.some(
+    pattern => errorMessage.includes(pattern) || errorCode === pattern
   );
 }
 

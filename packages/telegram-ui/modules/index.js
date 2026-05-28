@@ -4,29 +4,52 @@
  */
 
 // Core business modules
-export { default as Announcements } from '../src/Announcements.js';
-export { default as Bigtalk } from '../src/Bigtalk.js';
-export { default as CapitalGame } from '../src/CapitalGame.js';
-export { default as Checklists } from '../src/Checklists.js';
-export { default as Expenses } from '../src/Expenses.js';
-export { default as H3 } from '../src/H3.js';
-export { default as Holons } from '../src/Holons.js';
-export { default as Library } from '../src/Library.js';
-export { default as Lunation } from '../src/Lunation.js';
-export { default as Onboarding } from '../src/Onboarding.js';
-export { default as OneOnOne } from '../src/OneOnOne.js';
-export { default as Quests } from '../src/Quests.js';
-export { default as Roles } from '../src/Roles.js';
-export { default as Scheduler } from '../src/Scheduler.js';
-export { default as Server } from '../src/Server.js';
-export { default as Settings } from '../src/Settings.js';
-export { default as Shopping } from '../src/Shopping.js';
-export { default as Tags } from '../src/Tags.js';
-export { default as UI } from '../src/UI.js';
-export { default as Users } from '../Users.js';
-
+import Announcements from '../src/Announcements.js';
+import Bigtalk from '../src/Bigtalk.js';
+import CapitalGame from '../src/CapitalGame.js';
+import Checklists from '../src/Checklists.js';
+import Expenses from '../src/Expenses.js';
+import H3 from '../src/H3.js';
+import Holons from '../src/Holons.js';
+import Library from '../src/Library.js';
+import Lunation from '../src/Lunation.js';
+import Onboarding from '../src/Onboarding.js';
+import OneOnOne from '../src/OneOnOne.js';
+import Quests from '../src/Quests.js';
+import Roles from '../src/Roles.js';
+import Scheduler from '../src/Scheduler.js';
+import Server from '../src/Server.js';
+import Settings from '../src/Settings.js';
+import Shopping from '../src/Shopping.js';
+import Tags from '../src/Tags.js';
+import UI from '../src/UI.js';
+import Users from '../Users.js';
 // RSVP/Participation (exported with more descriptive name)
-export { default as Participation } from '../src/RSVP.js';
+import Participation from '../src/RSVP.js';
+
+export {
+  Announcements,
+  Bigtalk,
+  CapitalGame,
+  Checklists,
+  Expenses,
+  H3,
+  Holons,
+  Library,
+  Lunation,
+  Onboarding,
+  OneOnOne,
+  Quests,
+  Roles,
+  Scheduler,
+  Server,
+  Settings,
+  Shopping,
+  Tags,
+  UI,
+  Users,
+  Participation,
+};
 
 // Request handlers
 export * as Requests from '../src/Requests.js';
@@ -72,7 +95,7 @@ export const gameModules = {
 /**
  * Get modules by category
  */
-export const getModulesByCategory = (category) => {
+export const getModulesByCategory = category => {
   switch (category) {
     case 'core':
       return coreModules;

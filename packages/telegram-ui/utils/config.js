@@ -140,7 +140,10 @@ class Config {
 
   // Server Configuration
   get port() {
-    return this.getNumber('PORT', process.env.NODE_ENV === 'production' ? 443 : 8080);
+    return this.getNumber(
+      'PORT',
+      process.env.NODE_ENV === 'production' ? 443 : 8080
+    );
   }
 
   get nodeEnv() {
@@ -181,7 +184,10 @@ class Config {
 
   // Security Configuration
   get sessionSecret() {
-    return this.getString('SESSION_SECRET', 'holonsbot-secret-key-change-in-production');
+    return this.getString(
+      'SESSION_SECRET',
+      'holonsbot-secret-key-change-in-production'
+    );
   }
 
   get corsOrigin() {

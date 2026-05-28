@@ -8,54 +8,62 @@ import { ValidationError } from './errorHandler.js';
 /**
  * Get user ID from Telegram context
  */
-export const getUserId = (ctx) => {
-  return ctx?.update?.message?.from?.id || 
-         ctx?.update?.callback_query?.from?.id || 
-         ctx?.from?.id || 
-         0;
+export const getUserId = ctx => {
+  return (
+    ctx?.update?.message?.from?.id ||
+    ctx?.update?.callback_query?.from?.id ||
+    ctx?.from?.id ||
+    0
+  );
 };
 
 /**
  * Get user object from Telegram context
  */
-export const getUser = (ctx) => {
-  return ctx?.update?.message?.from || 
-         ctx?.update?.callback_query?.from || 
-         ctx?.from || 
-         null;
+export const getUser = ctx => {
+  return (
+    ctx?.update?.message?.from ||
+    ctx?.update?.callback_query?.from ||
+    ctx?.from ||
+    null
+  );
 };
 
 /**
  * Get holon ID from Telegram context
  */
-export const getholonId = (ctx) => {
-  return ctx?.chat?.id || 
-         ctx?.update?.message?.chat?.id || 
-         ctx?.update?.callback_query?.message?.chat?.id || 
-         0;
+export const getholonId = ctx => {
+  return (
+    ctx?.chat?.id ||
+    ctx?.update?.message?.chat?.id ||
+    ctx?.update?.callback_query?.message?.chat?.id ||
+    0
+  );
 };
 
 /**
  * Get message ID from Telegram context
  */
-export const getMessageId = (ctx) => {
-  return ctx?.message?.message_id || 
-         ctx?.update?.message?.message_id || 
-         ctx?.update?.callback_query?.message?.message_id || 
-         0;
+export const getMessageId = ctx => {
+  return (
+    ctx?.message?.message_id ||
+    ctx?.update?.message?.message_id ||
+    ctx?.update?.callback_query?.message?.message_id ||
+    0
+  );
 };
 
 /**
  * Get user input text from Telegram context
  */
-export const getUserInput = (ctx) => {
+export const getUserInput = ctx => {
   return ctx?.update?.message?.text || ctx?.message?.text;
 };
 
 /**
  * Get parameters from command (everything after the first word)
  */
-export const getParameters = (ctx) => {
+export const getParameters = ctx => {
   const text = getUserInput(ctx);
   if (!text) return '';
   return text.split(' ').slice(1).join(' ');
@@ -64,7 +72,7 @@ export const getParameters = (ctx) => {
 /**
  * Get callback data (used with inline keyboards)
  */
-export const getCallbackData = (ctx) => {
+export const getCallbackData = ctx => {
   if (ctx.match && ctx.match[0]) {
     return ctx.match[0].split('_')[1];
   }
@@ -74,7 +82,7 @@ export const getCallbackData = (ctx) => {
 /**
  * Get comprehensive user name from various context sources
  */
-export const getUserName = (ctx) => {
+export const getUserName = ctx => {
   const sources = [
     ctx?.from?.first_name,
     ctx?.chat?.first_name,
@@ -104,7 +112,7 @@ export const getUserName = (ctx) => {
 /**
  * Get display name for a user (formatted for UI)
  */
-export const getDisplayName = (user) => {
+export const getDisplayName = user => {
   if (!user) return 'Unknown';
 
   const firstName = user.first_name || '';
@@ -131,8 +139,10 @@ export const getChatName = async (ctx, holonId) => {
     }
   } catch (err) {
     // Handle specific "chat not found" error more gracefully
-    if (err.response?.error_code === 400 && 
-        err.response?.description?.includes('chat not found')) {
+    if (
+      err.response?.error_code === 400 &&
+      err.response?.description?.includes('chat not found')
+    ) {
       log.warn('Chat not found', { holonId, error: err.response.description });
       return null; // Return null to indicate chat not accessible
     } else {
@@ -148,7 +158,9 @@ export const getChatName = async (ctx, holonId) => {
 export const isAdmin = async (ctxOrUserId, holonId) => {
   // Handle case where first parameter is userId and second is holonId
   if (typeof ctxOrUserId === 'number' && holonId) {
-    log.warn('isAdmin called with userId and holonId - this needs telegram instance');
+    log.warn(
+      'isAdmin called with userId and holonId - this needs telegram instance'
+    );
     return false; // Default to false for this case until we can properly handle it
   }
 
@@ -156,16 +168,21 @@ export const isAdmin = async (ctxOrUserId, holonId) => {
   const ctx = ctxOrUserId;
   if (ctx.telegram) {
     try {
-      const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
-      const isAdminStatus = ['administrator', 'creator'].includes(chatMember.status);
+      const chatMember = await ctx.telegram.getChatMember(
+        ctx.chat.id,
+        ctx.from.id
+      );
+      const isAdminStatus = ['administrator', 'creator'].includes(
+        chatMember.status
+      );
       const isPrivateChat = ctx.chat.type === 'private';
-      
+
       return isAdminStatus || isPrivateChat;
     } catch (error) {
-      log.error('Error checking admin status', { 
-        userId: ctx.from.id, 
-        holonId: ctx.chat.id, 
-        error: error.message 
+      log.error('Error checking admin status', {
+        userId: ctx.from.id,
+        holonId: ctx.chat.id,
+        error: error.message,
       });
       return false;
     }
@@ -176,7 +193,7 @@ export const isAdmin = async (ctxOrUserId, holonId) => {
 /**
  * Check if the bot has admin rights in the current chat
  */
-export const isBotAdmin = async (ctx) => {
+export const isBotAdmin = async ctx => {
   try {
     const holonId = getholonId(ctx);
 
@@ -191,8 +208,10 @@ export const isBotAdmin = async (ctx) => {
       const botMember = await ctx.telegram.getChatMember(holonId, botId);
 
       // Check if bot is admin/creator and has necessary permissions
-      const hasAdminStatus = botMember && 
-        (botMember.status === 'administrator' || botMember.status === 'creator');
+      const hasAdminStatus =
+        botMember &&
+        (botMember.status === 'administrator' ||
+          botMember.status === 'creator');
       const canDeleteMessages = botMember.can_delete_messages === true;
 
       return hasAdminStatus && canDeleteMessages;
@@ -200,9 +219,9 @@ export const isBotAdmin = async (ctx) => {
 
     return false;
   } catch (error) {
-    log.error('Error checking bot admin status', { 
-      holonId: getholonId(ctx), 
-      error: error.message 
+    log.error('Error checking bot admin status', {
+      holonId: getholonId(ctx),
+      error: error.message,
     });
     return false;
   }
@@ -212,14 +231,14 @@ export const isBotAdmin = async (ctx) => {
  * HTML formatting helpers
  */
 export const getParseModeHTML = () => ({ parse_mode: 'HTML' });
-export const bold = (text) => `<b>${text}</b>`;
-export const italic = (text) => `<i>${text}</i>`;
-export const underline = (text) => `<u>${text}</u>`;
+export const bold = text => `<b>${text}</b>`;
+export const italic = text => `<i>${text}</i>`;
+export const underline = text => `<u>${text}</u>`;
 
 /**
  * Parse comma-separated list from user input
  */
-export const parseList = (text) => {
+export const parseList = text => {
   // Split by comma
   text = text.split(' ').slice(1).join(' ');
   const items = text.split(',').map(item => item.trim());
@@ -239,7 +258,7 @@ export const createPaddedCaption = (text = '') => {
 /**
  * Validate Telegram context
  */
-export const validateTelegramContext = (ctx) => {
+export const validateTelegramContext = ctx => {
   if (!ctx) {
     throw new ValidationError('Telegram context is required');
   }

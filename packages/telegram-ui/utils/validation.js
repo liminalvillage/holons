@@ -149,7 +149,9 @@ export function validateFilePath(filePath, allowedExtensions = []) {
   if (allowedExtensions.length > 0) {
     const extension = filePath.split('.').pop().toLowerCase();
     if (!allowedExtensions.includes(extension)) {
-      throw new Error(`File extension not allowed. Allowed: ${allowedExtensions.join(', ')}`);
+      throw new Error(
+        `File extension not allowed. Allowed: ${allowedExtensions.join(', ')}`
+      );
     }
   }
 
@@ -176,7 +178,7 @@ export function validateJSON(jsonString) {
  */
 export function validateNumber(value, options = {}) {
   const num = parseFloat(value);
-  
+
   if (isNaN(num)) {
     throw new Error('Value must be a valid number');
   }
@@ -234,23 +236,23 @@ export function validateDate(dateInput) {
  * Validation middleware for common patterns
  */
 export const validators = {
-  telegramMessage: (text) => validateTelegramInput(text),
-  userId: (id) => validateUserId(id),
-  holonId: (id) => validateholonId(id),
-  url: (url) => validateUrl(url),
-  email: (email) => validateEmail(email),
+  telegramMessage: text => validateTelegramInput(text),
+  userId: id => validateUserId(id),
+  holonId: id => validateholonId(id),
+  url: url => validateUrl(url),
+  email: email => validateEmail(email),
   filePath: (path, extensions) => validateFilePath(path, extensions),
-  json: (str) => validateJSON(str),
+  json: str => validateJSON(str),
   number: (val, opts) => validateNumber(val, opts),
-  command: (cmd) => validateCommand(cmd),
-  date: (date) => validateDate(date),
+  command: cmd => validateCommand(cmd),
+  date: date => validateDate(date),
 };
 
 /**
  * Create a validation wrapper that logs validation errors
  */
 export function createValidationWrapper(validatorFn, context = '') {
-  return function(input, ...args) {
+  return function (input, ...args) {
     try {
       return validatorFn(input, ...args);
     } catch (error) {

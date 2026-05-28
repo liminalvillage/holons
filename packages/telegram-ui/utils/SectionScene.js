@@ -30,83 +30,81 @@ import { Scenes, Markup } from 'telegraf';
 import fs from 'fs';
 
 export default class SectionScene {
-    constructor(bot) {
-        this.bot = bot;
-        this.scene = new Scenes.BaseScene('section_scene');
-        this.setupScene();
-        this.bot.stage.register(this.scene);
-    }
+  constructor(bot) {
+    this.bot = bot;
+    this.scene = new Scenes.BaseScene('section_scene');
+    this.setupScene();
+    this.bot.stage.register(this.scene);
+  }
 
-    setupScene() {
-        this.scene.enter(async (ctx) => {
-            try {
-                const state = ctx.scene.state;
+  setupScene() {
+    this.scene.enter(async ctx => {
+      try {
+        const state = ctx.scene.state;
 
-                const title = state.title || 'Section';
-                const description = state.description || '';
-                const icon = state.icon || '📌';
-                const continueText = state.continueText || 'Continue →';
+        const title = state.title || 'Section';
+        const description = state.description || '';
+        const icon = state.icon || '📌';
+        const continueText = state.continueText || 'Continue →';
 
-                // Build the message
-                let message = `${icon} *${this.escapeMarkdown(title)}*`;
-                if (description) {
-                    message += `\n\n${this.escapeMarkdown(description)}`;
-                }
+        // Build the message
+        let message = `${icon} *${this.escapeMarkdown(title)}*`;
+        if (description) {
+          message += `\n\n${this.escapeMarkdown(description)}`;
+        }
 
-                const keyboard = Markup.inlineKeyboard([
-                    [Markup.button.callback(continueText, 'section_continue')]
-                ]);
+        const keyboard = Markup.inlineKeyboard([
+          [Markup.button.callback(continueText, 'section_continue')],
+        ]);
 
-                // Send with or without image
-                if (state.image && fs.existsSync(state.image)) {
-                    await ctx.replyWithPhoto(
-                        { source: fs.createReadStream(state.image) },
-                        {
-                            caption: message,
-                            parse_mode: 'Markdown',
-                            ...keyboard
-                        }
-                    );
-                } else {
-                    await ctx.reply(message, {
-                        parse_mode: 'Markdown',
-                        ...keyboard
-                    });
-                }
-
-            } catch (error) {
-                console.error('SectionScene enter error:', error);
-                await ctx.reply('An error occurred. Please try again.');
-                return ctx.scene.leave();
+        // Send with or without image
+        if (state.image && fs.existsSync(state.image)) {
+          await ctx.replyWithPhoto(
+            { source: fs.createReadStream(state.image) },
+            {
+              caption: message,
+              parse_mode: 'Markdown',
+              ...keyboard,
             }
-        });
+          );
+        } else {
+          await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            ...keyboard,
+          });
+        }
+      } catch (error) {
+        console.error('SectionScene enter error:', error);
+        await ctx.reply('An error occurred. Please try again.');
+        return ctx.scene.leave();
+      }
+    });
 
-        this.scene.action('section_continue', async (ctx) => {
-            try {
-                await ctx.answerCbQuery();
-                const state = ctx.scene.state;
+    this.scene.action('section_continue', async ctx => {
+      try {
+        await ctx.answerCbQuery();
+        const state = ctx.scene.state;
 
-                if (state.onContinue && typeof state.onContinue === 'function') {
-                    await state.onContinue(ctx);
-                }
+        if (state.onContinue && typeof state.onContinue === 'function') {
+          await state.onContinue(ctx);
+        }
 
-                return ctx.scene.leave();
+        return ctx.scene.leave();
+      } catch (error) {
+        console.error('SectionScene continue error:', error);
+        await ctx.answerCbQuery('Error continuing').catch(() => {});
+      }
+    });
+  }
 
-            } catch (error) {
-                console.error('SectionScene continue error:', error);
-                await ctx.answerCbQuery('Error continuing').catch(() => {});
-            }
-        });
-    }
-
-    /**
-     * Escape special Markdown characters
-     * @param {string} text - Text to escape
-     * @returns {string} - Escaped text
-     */
-    escapeMarkdown(text) {
-        if (!text) return '';
-        // Escape Markdown special characters for Telegram
-        return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
-    }
+  /**
+   * Escape special Markdown characters
+   * @param {string} text - Text to escape
+   * @returns {string} - Escaped text
+   */
+  escapeMarkdown(text) {
+    if (!text) return '';
+    // Escape Markdown special characters for Telegram
+    return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+  }
 }

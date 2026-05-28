@@ -23,18 +23,18 @@ const unlink = promisify(fs.unlink);
 export const safeReadFile = async (filePath, options = {}) => {
   try {
     validateFilePath(filePath);
-    
+
     const data = await readFile(filePath, options.encoding || 'utf8');
-    
+
     log.debug('File read successfully', { filePath });
     return data;
   } catch (error) {
     log.error('Error reading file', { filePath, error: error.message });
-    
+
     if (options.defaultValue !== undefined) {
       return options.defaultValue;
     }
-    
+
     throw error;
   }
 };
@@ -45,13 +45,13 @@ export const safeReadFile = async (filePath, options = {}) => {
 export const safeWriteFile = async (filePath, data, options = {}) => {
   try {
     validateFilePath(filePath);
-    
+
     // Ensure directory exists
     const dir = path.dirname(filePath);
     await ensureDirectoryExists(dir);
-    
+
     await writeFile(filePath, data, options.encoding || 'utf8');
-    
+
     log.debug('File written successfully', { filePath, size: data.length });
     return true;
   } catch (error) {
@@ -63,7 +63,7 @@ export const safeWriteFile = async (filePath, data, options = {}) => {
 /**
  * Check if a file exists asynchronously
  */
-export const fileExists = async (filePath) => {
+export const fileExists = async filePath => {
   try {
     await access(filePath, fs.constants.F_OK);
     return true;
@@ -75,7 +75,7 @@ export const fileExists = async (filePath) => {
 /**
  * Ensure a directory exists, create it if it doesn't
  */
-export const ensureDirectoryExists = async (dirPath) => {
+export const ensureDirectoryExists = async dirPath => {
   try {
     await access(dirPath, fs.constants.F_OK);
     return true;
@@ -94,7 +94,7 @@ export const ensureDirectoryExists = async (dirPath) => {
 /**
  * Get file stats asynchronously
  */
-export const getFileStats = async (filePath) => {
+export const getFileStats = async filePath => {
   try {
     const stats = await stat(filePath);
     return {
@@ -116,10 +116,10 @@ export const getFileStats = async (filePath) => {
 export const listDirectory = async (dirPath, options = {}) => {
   try {
     const items = await readdir(dirPath);
-    
+
     if (options.withStats) {
       const itemsWithStats = await Promise.all(
-        items.map(async (item) => {
+        items.map(async item => {
           const fullPath = path.join(dirPath, item);
           try {
             const stats = await getFileStats(fullPath);
@@ -131,7 +131,7 @@ export const listDirectory = async (dirPath, options = {}) => {
       );
       return itemsWithStats;
     }
-    
+
     return items.map(item => path.join(dirPath, item));
   } catch (error) {
     log.error('Error listing directory', { dirPath, error: error.message });
@@ -142,16 +142,16 @@ export const listDirectory = async (dirPath, options = {}) => {
 /**
  * Safely delete a file
  */
-export const safeDeleteFile = async (filePath) => {
+export const safeDeleteFile = async filePath => {
   try {
     validateFilePath(filePath);
-    
+
     if (await fileExists(filePath)) {
       await unlink(filePath);
       log.debug('File deleted successfully', { filePath });
       return true;
     }
-    
+
     log.warn('File does not exist for deletion', { filePath });
     return false;
   } catch (error) {
@@ -172,12 +172,12 @@ export const readJSONFile = async (filePath, defaultValue = {}) => {
       log.debug('JSON file not found, using default value', { filePath });
       return defaultValue;
     }
-    
+
     if (error instanceof SyntaxError) {
       log.error('Invalid JSON in file', { filePath, error: error.message });
       throw new Error(`Invalid JSON in file ${filePath}: ${error.message}`);
     }
-    
+
     throw error;
   }
 };
@@ -203,19 +203,23 @@ export const copyFile = async (sourcePath, destPath) => {
   try {
     validateFilePath(sourcePath);
     validateFilePath(destPath);
-    
+
     const data = await readFile(sourcePath);
-    
+
     // Ensure destination directory exists
     const destDir = path.dirname(destPath);
     await ensureDirectoryExists(destDir);
-    
+
     await writeFile(destPath, data);
-    
+
     log.debug('File copied successfully', { sourcePath, destPath });
     return true;
   } catch (error) {
-    log.error('Error copying file', { sourcePath, destPath, error: error.message });
+    log.error('Error copying file', {
+      sourcePath,
+      destPath,
+      error: error.message,
+    });
     throw error;
   }
 };
@@ -227,11 +231,15 @@ export const moveFile = async (sourcePath, destPath) => {
   try {
     await copyFile(sourcePath, destPath);
     await safeDeleteFile(sourcePath);
-    
+
     log.debug('File moved successfully', { sourcePath, destPath });
     return true;
   } catch (error) {
-    log.error('Error moving file', { sourcePath, destPath, error: error.message });
+    log.error('Error moving file', {
+      sourcePath,
+      destPath,
+      error: error.message,
+    });
     throw error;
   }
 };
@@ -239,20 +247,26 @@ export const moveFile = async (sourcePath, destPath) => {
 /**
  * Read file with timeout to prevent hanging operations
  */
-export const readFileWithTimeout = async (filePath, timeoutMs = 5000, options = {}) => {
-  return new Promise(async (resolve, reject) => {
+export const readFileWithTimeout = async (
+  filePath,
+  timeoutMs = 5000,
+  options = {}
+) => {
+  return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error(`File read timeout after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    try {
-      const result = await safeReadFile(filePath, options);
-      clearTimeout(timeout);
-      resolve(result);
-    } catch (error) {
-      clearTimeout(timeout);
-      reject(error);
-    }
+    (async () => {
+      try {
+        const result = await safeReadFile(filePath, options);
+        clearTimeout(timeout);
+        resolve(result);
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    })();
   });
 };
 
@@ -292,7 +306,10 @@ export const watchFile = (filePath, callback) => {
 
     return watcher;
   } catch (error) {
-    log.error('Error setting up file watcher', { filePath, error: error.message });
+    log.error('Error setting up file watcher', {
+      filePath,
+      error: error.message,
+    });
     throw error;
   }
 };

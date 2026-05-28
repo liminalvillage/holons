@@ -4,14 +4,20 @@
  */
 import puppeteer from 'puppeteer';
 import i18next from 'i18next';
-import * as utils from './utilities.js'
+import * as utils from './utilities.js';
 import fs from 'fs';
 import { Markup } from 'telegraf';
-import { getDisplayName, getAvatarUrl, getHolonName, createPaddedCaption, getQuestHolon } from './utilities.js';
+import {
+  getDisplayName,
+  getHolonName,
+  createPaddedCaption,
+  getQuestHolon,
+} from './utilities.js';
 import QRCode from 'qrcode';
 import { colorFromCategory } from '@holons/core/categories';
 
-const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
+const DASHBOARD_ADDRESS =
+  process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 let browser = null;
 let browserAvailable = false;
@@ -30,7 +36,6 @@ function escapeHtml(s) {
 // similar work. One page per class (max=1) bounds memory and serializes
 // concurrent screenshot calls of the same class — no two callers ever drive
 // the same page at the same time. Different classes run in parallel.
-const PAGE_POOL_MAX_PER_CLASS = 1;
 const pagePools = new Map(); // class -> { page, busy, queue: [resolve...] }
 
 function getPool(klass) {
@@ -46,7 +51,7 @@ async function acquirePage(klass) {
   const pool = getPool(klass);
   if (pool.busy) {
     // Same-class request in flight — queue and wait.
-    return new Promise((resolve) => pool.queue.push(resolve));
+    return new Promise(resolve => pool.queue.push(resolve));
   }
   pool.busy = true;
   if (pool.page && !pool.page.isClosed()) {
@@ -88,7 +93,9 @@ function releasePage(klass, { discard = false } = {}) {
 async function closePagePool() {
   for (const pool of pagePools.values()) {
     if (pool.page) {
-      try { await pool.page.close(); } catch {}
+      try {
+        await pool.page.close();
+      } catch {}
     }
     pool.page = null;
     pool.queue = [];
@@ -99,11 +106,13 @@ async function closePagePool() {
 
 function viewportClassFor(onElement) {
   if (onElement.includes('quest-card')) return 'quest-card';
-  if (onElement.includes('table-container') ||
-      onElement.includes('quest-list') ||
-      onElement.includes('status-table') ||
-      onElement === 'table' ||
-      onElement.includes('modern-table')) {
+  if (
+    onElement.includes('table-container') ||
+    onElement.includes('quest-list') ||
+    onElement.includes('status-table') ||
+    onElement === 'table' ||
+    onElement.includes('modern-table')
+  ) {
     return 'table';
   }
   return 'default';
@@ -140,43 +149,74 @@ class UI {
   constructor(bot, db, settings) {
     this.bot = bot;
     this.db = db;
-    this.settings = settings
+    this.settings = settings;
     this.expensesInstance = null;
 
     this.holonNameCache = new Map();
     this.holonNameCacheExpiry = 10 * 60 * 1000;
-    this.cacheCleanupInterval = setInterval(() => this.cleanupHolonNameCache(), 5 * 60 * 1000);
+    this.cacheCleanupInterval = setInterval(
+      () => this.cleanupHolonNameCache(),
+      5 * 60 * 1000
+    );
     //=========== UI COMMANDS ===============
 
     //Set up a command to display the appreciation score for each user
-    this.bot.command(['leaderboard', 'appreciation', 'credits', 'scores', 'score', 'points', 'rank', 'status'], async (ctx) => this.leaderboard(ctx))
-    this.bot.command(['fiorini','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
+    this.bot.command(
+      [
+        'leaderboard',
+        'appreciation',
+        'credits',
+        'scores',
+        'score',
+        'points',
+        'rank',
+        'status',
+      ],
+      async ctx => this.leaderboard(ctx)
+    );
+    this.bot.command(
+      [
+        'fiorini',
+        'apprezzamento',
+        'crediti',
+        'punti',
+        'punteggio',
+        'punteggi',
+        'classifica',
+        'stato',
+      ],
+      async ctx => this.leaderboard(ctx)
+    );
 
     // Set up a command to display the quests
-    this.bot.command(['tasks', 'todos'],  (ctx) =>  this.questboard(ctx))
-    this.bot.command(['compiti', 'missioni'], (ctx) => this.questboard(ctx))
+    this.bot.command(['tasks', 'todos'], ctx => this.questboard(ctx));
+    this.bot.command(['compiti', 'missioni'], ctx => this.questboard(ctx));
 
     // Set up a command to display the requests
-    this.bot.command(['requests', 'wishes'], (ctx) => this.requestsboard(ctx))
-    this.bot.command('offers', (ctx) => this.offersboard(ctx))
+    this.bot.command(['requests', 'wishes'], ctx => this.requestsboard(ctx));
+    this.bot.command('offers', ctx => this.offersboard(ctx));
 
-    this.bot.command(['richieste', 'sogni', 'bisogni'], (ctx) => this.requestsboard(ctx))
-    this.bot.command('offerte', (ctx) => this.offersboard(ctx))
+    this.bot.command(['richieste', 'sogni', 'bisogni'], ctx =>
+      this.requestsboard(ctx)
+    );
+    this.bot.command('offerte', ctx => this.offersboard(ctx));
 
-    this.bot.command(['bulletin', 'billboard', 'board'], (ctx) => this.bulletinboard(ctx))
-    this.bot.command(['bacheca', 'lavagna'], (ctx) => this.bulletinboard(ctx))
+    this.bot.command(['bulletin', 'billboard', 'board'], ctx =>
+      this.bulletinboard(ctx)
+    );
+    this.bot.command(['bacheca', 'lavagna'], ctx => this.bulletinboard(ctx));
 
     // Event board command
-    this.bot.command(['eventboard', 'calendario'], (ctx) => this.eventboard(ctx))
+    this.bot.command(['eventboard', 'calendario'], ctx => this.eventboard(ctx));
 
-    this.bot.command('values', (ctx) => this.valuescloud(ctx))
-    this.bot.command('needs', (ctx) => this.needscloud(ctx))
-    this.bot.command('cloud', (ctx) => this.valuescloud(ctx))
- 
-    this.bot.command('dashboard', async (ctx) => {
-      let holonId = ctx.message.chat.id
-      const userId = ctx.from?.id
-      const language = await this.settings.getLanguage(holonId)
+    this.bot.command('values', ctx => this.valuescloud(ctx));
+    this.bot.command('needs', ctx => this.needscloud(ctx));
+    this.bot.command('cloud', ctx => this.valuescloud(ctx));
+
+    this.bot.command('dashboard', async ctx => {
+      const holonId = ctx.message.chat.id;
+      const userId = ctx.from?.id;
+      const language = await this.settings.getLanguage(holonId);
 
       // Get public key from keyManager if available
       let dashboardHolonId = holonId;
@@ -189,65 +229,73 @@ class UI {
         }
       }
 
-      const dashboardUrl = `${DASHBOARD_ADDRESS}/${dashboardHolonId}/?user=${userId}`
-      
+      const dashboardUrl = `${DASHBOARD_ADDRESS}/${dashboardHolonId}/?user=${userId}`;
+
       try {
         // Generate QR code
-        const qrCodePath = `./temp/qr_dashboard_${holonId}.png`
-        
+        const qrCodePath = `./temp/qr_dashboard_${holonId}.png`;
+
         // Ensure temp directory exists
         if (!fs.existsSync('./temp')) {
-          fs.mkdirSync('./temp', { recursive: true })
+          fs.mkdirSync('./temp', { recursive: true });
         }
-        
+
         // Generate QR code as PNG
         await QRCode.toFile(qrCodePath, dashboardUrl, {
           width: 300,
           margin: 2,
           color: {
             dark: '#000000',
-            light: '#FFFFFF'
-          }
-        })
-        
+            light: '#FFFFFF',
+          },
+        });
+
         // Send QR code image with caption and button
         await ctx.replyWithPhoto(
           { source: fs.createReadStream(qrCodePath) },
           {
             caption: createPaddedCaption(''),
             reply_markup: Markup.inlineKeyboard([
-              Markup.button.url(i18next.t('Open Dashboard', { lng: language }), dashboardUrl)
-            ]).reply_markup
+              Markup.button.url(
+                i18next.t('Open Dashboard', { lng: language }),
+                dashboardUrl
+              ),
+            ]).reply_markup,
           }
-        )
-        
+        );
+
         // Clean up the temporary QR code file
-        fs.unlinkSync(qrCodePath)
-        
+        fs.unlinkSync(qrCodePath);
       } catch (error) {
-        console.error('Error generating QR code:', error)
+        console.error('Error generating QR code:', error);
         // Fallback to original behavior if QR generation fails
-        ctx.reply('Holonic Dashboard', Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), dashboardUrl)
-        ]))
+        ctx.reply(
+          'Holonic Dashboard',
+          Markup.inlineKeyboard([
+            Markup.button.url(
+              i18next.t('Open Dashboard', { lng: language }),
+              dashboardUrl
+            ),
+          ])
+        );
       }
-    })
+    });
   }
 
   // Get optimized Puppeteer launch options for emoji support
   getPuppeteerLaunchOptions() {
     return {
-          headless: 'new',
-          // Fast-fail on stuck CDP commands so the existing recovery path
-          // (discard page, relaunch browser) kicks in quickly. Screenshots of
-          // our cards should complete in well under a second.
-          protocolTimeout: 8000,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
+      headless: 'new',
+      // Fast-fail on stuck CDP commands so the existing recovery path
+      // (discard page, relaunch browser) kicks in quickly. Screenshots of
+      // our cards should complete in well under a second.
+      protocolTimeout: 8000,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
         // '--disable-images', // Disabled: breaks emoji rendering
         // Emoji and font rendering support
         '--font-render-hinting=none',
@@ -260,8 +308,8 @@ class UI {
         '--force-color-profile=srgb',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
-      ]
+        '--disable-renderer-backgrounding',
+      ],
     };
   }
 
@@ -281,7 +329,9 @@ class UI {
       }
     } catch (error) {
       browserAvailable = false;
-      console.warn('⚠️  Browser initialization failed - running in text-only mode');
+      console.warn(
+        '⚠️  Browser initialization failed - running in text-only mode'
+      );
       console.warn('   Image generation features will be disabled.');
       console.warn('   Reason:', error.message);
     }
@@ -309,49 +359,64 @@ class UI {
     }
   }
 
-
-
-
   async leaderboard(ctx) {
-    let holonId = ctx.message.chat.id
-    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
-    const language = await this.settings.getLanguage(holonId)
+    const holonId = ctx.message.chat.id;
+    const users = await this.db.holosphere.getAll(holonId.toString(), 'users');
+    const language = await this.settings.getLanguage(holonId);
 
     // Assuming Expenses class instance is available via this.bot.expenses
     // If not, this needs to be instantiated or passed to UI class constructor
     const expensesInstance = this.expensesInstance;
     if (!expensesInstance) {
-        console.error('Expenses instance not available in UI.js for leaderboard calculation.');
-        ctx.reply('Error calculating leaderboard: Expenses module not accessible.');
-        return;
+      console.error(
+        'Expenses instance not available in UI.js for leaderboard calculation.'
+      );
+      ctx.reply(
+        'Error calculating leaderboard: Expenses module not accessible.'
+      );
+      return;
     }
 
     // Calculate user scores using the Settings class method
-    this.getRankTable(users, holonId, expensesInstance).then((path) => {
-      if (path) {
-        ctx.replyWithPhoto(
-          { source: fs.createReadStream(path) },
-          {
-            caption: createPaddedCaption(''),
-            ...Markup.inlineKeyboard([
-              Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-                `${DASHBOARD_ADDRESS}/${holonId}/status`)
-            ])
-          }
-        ).catch(err => console.error('Error sending leaderboard photo:', err));
-      } else {
-        ctx.reply(i18next.t('leaderboardgenerror', {lng: language}) || 'Could not generate leaderboard image.');
-      }
-    }).catch(err => {
+    this.getRankTable(users, holonId, expensesInstance)
+      .then(path => {
+        if (path) {
+          ctx
+            .replyWithPhoto(
+              { source: fs.createReadStream(path) },
+              {
+                caption: createPaddedCaption(''),
+                ...Markup.inlineKeyboard([
+                  Markup.button.url(
+                    i18next.t('Open Dashboard', { lng: language }),
+                    `${DASHBOARD_ADDRESS}/${holonId}/status`
+                  ),
+                ]),
+              }
+            )
+            .catch(err =>
+              console.error('Error sending leaderboard photo:', err)
+            );
+        } else {
+          ctx.reply(
+            i18next.t('leaderboardgenerror', { lng: language }) ||
+              'Could not generate leaderboard image.'
+          );
+        }
+      })
+      .catch(err => {
         console.error('Error in getRankTable promise chain:', err);
-        ctx.reply(i18next.t('leaderboarderror', {lng: language}) || 'An error occurred while generating the leaderboard.');
-    });
+        ctx.reply(
+          i18next.t('leaderboarderror', { lng: language }) ||
+            'An error occurred while generating the leaderboard.'
+        );
+      });
     return;
   }
 
   async getRankTable(users, holonId, expensesInstance) {
-    const language = await this.settings.getLanguage(holonId)
-    const rows = []
+    const language = await this.settings.getLanguage(holonId);
+    const rows = [];
 
     // Get currencies from settings
     const settings = await this.settings.getSettings(holonId);
@@ -361,34 +426,49 @@ class UI {
     // (calculateUserScores → computeHolonUserScores). `percentage` is already
     // strictly positive, monotonic and sums to 100% — identical to the web
     // leaderboard and the flow/splitter distribution. No re-normalizing here.
-    const sortedUsers = await this.settings.calculateUserScores(users, holonId, expensesInstance);
+    const sortedUsers = await this.settings.calculateUserScores(
+      users,
+      holonId,
+      expensesInstance
+    );
 
     for (let i = 0; i < sortedUsers.length; i++) {
-      const user = sortedUsers[i]
-      const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+      const user = sortedUsers[i];
+      const rankIcon =
+        i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
       const scoreClass = i < 3 ? 'top-performer' : '';
-      
+
       // Get currency balances for this user
       const currencyBalances = [];
       if (currencies.length > 0 && expensesInstance) {
         for (const currency of currencies) {
           try {
-            const balance = await expensesInstance.getUserCurrencyBalance(holonId, user.id, currency);
+            const balance = await expensesInstance.getUserCurrencyBalance(
+              holonId,
+              user.id,
+              currency
+            );
             currencyBalances.push(balance);
           } catch (e) {
-            console.error(`Error getting balance for ${currency} for user ${user.id}:`, e);
+            console.error(
+              `Error getting balance for ${currency} for user ${user.id}:`,
+              e
+            );
             currencyBalances.push(0);
           }
         }
       }
-      
+
       // Build currency cells HTML
-      const currencyCells = currencyBalances.map(balance => 
-        `<td class="currency-cell">
+      const currencyCells = currencyBalances
+        .map(
+          balance =>
+            `<td class="currency-cell">
           <span class="stat-value">${balance.toFixed(2)}</span>
         </td>`
-      ).join('');
-      
+        )
+        .join('');
+
       // Score is already calculated and part of the user object in sortedUsers
       const row = `<tr class="${scoreClass}">
         <td class="rank-cell">
@@ -423,15 +503,15 @@ class UI {
         <td class="score-cell">
           <span class="score-value">${(user.percentage ?? 0).toFixed(1)}%</span>
         </td>
-      </tr>`
+      </tr>`;
 
-      rows.push(row)
+      rows.push(row);
     }
 
     // Build currency headers
-    const currencyHeaders = currencies.map(currency => 
-      `<th class="stat-header">${currency.toUpperCase()}</th>`
-    ).join('');
+    const currencyHeaders = currencies
+      .map(currency => `<th class="stat-header">${currency.toUpperCase()}</th>`)
+      .join('');
 
     const element = `<div class="status-table-container">
       <div class="table-wrapper">
@@ -454,113 +534,153 @@ class UI {
           </tbody>
         </table>
       </div>
-    </div>`
+    </div>`;
 
-    const path = './images/rank' + holonId + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId))
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container')
-    return _ssResult !== null ? path : null
+    const path = './images/rank' + holonId + '.png';
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
+    return _ssResult !== null ? path : null;
   }
   async bulletinboard(ctx) {
-    if (!this.db) return
-    
-    try {
-    let holonId = ctx.message.chat.id
-    let language = await this.settings.getLanguage(holonId)
-    const isTopic = ctx.message.is_topic_message;
-    const threadId = isTopic ? ctx.message.message_thread_id : null;
-    
-    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
-    let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
+    if (!this.db) return;
 
-    // If in a topic, filter quests by message_thread_id
-    if (isTopic && threadId) {
-      quests = quests.filter(quest => quest.message_thread_id === threadId);
-    }
-    
+    try {
+      const holonId = ctx.message.chat.id;
+      const language = await this.settings.getLanguage(holonId);
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
+
+      const users = await this.db.holosphere.getAll(
+        holonId.toString(),
+        'users'
+      );
+      let quests = await this.db.holosphere.getAll(
+        holonId.toString(),
+        'quests'
+      );
+
+      // If in a topic, filter quests by message_thread_id
+      if (isTopic && threadId) {
+        quests = quests.filter(quest => quest.message_thread_id === threadId);
+      }
+
       // Wait for the table image to be generated
       const path = await this.getBulletinTable(users, quests, holonId);
-      
+
       if (!path) {
-        ctx.reply(i18next.t('bulletinboardgenerror', {lng: language}) || 'Could not generate bulletin board image.');
+        ctx.reply(
+          i18next.t('bulletinboardgenerror', { lng: language }) ||
+            'Could not generate bulletin board image.'
+        );
         return;
       }
-      
+
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open in Holons', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers`)
-          ])
+            Markup.button.url(
+              i18next.t('Open in Holons', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/offers`
+            ),
+          ]),
         }
       );
-      
     } catch (err) {
       console.error('Error in bulletinboard:', err);
-      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
-      ctx.reply(i18next.t('bulletinboardgenerror', {lng: language}) || 'Could not generate bulletin board image.');
+      const language = await this.settings
+        .getLanguage(ctx.message.chat.id)
+        .catch(() => 'en');
+      ctx.reply(
+        i18next.t('bulletinboardgenerror', { lng: language }) ||
+          'Could not generate bulletin board image.'
+      );
     }
   }
 
   async valuescloud(ctx) {
-    let holonId = ctx.message.chat.id
-    let values = [] // = this.getFederatedValues(holonId)
-    const language = await this.settings.getLanguage(holonId)
-   
-    const entities = ctx.message.entities;
-    let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
-    mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
+    const holonId = ctx.message.chat.id;
+    let values = []; // = this.getFederatedValues(holonId)
+    const language = await this.settings.getLanguage(holonId);
 
-    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
+    const entities = ctx.message.entities;
+    let mentions = entities.filter(
+      entity => entity.type === 'mention' || entity.type === 'text_mention'
+    );
+    mentions = mentions.map(entity =>
+      ctx.message.text.substring(
+        entity.offset + 1,
+        entity.offset + entity.length
+      )
+    );
+
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users');
     //only select the mentioned users
 
     if (mentions.length > 0)
-      users = users.filter(user => mentions.includes(user.username))
+      users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      values = values.concat(users[i].values)
+      values = values.concat(users[i].values);
     }
 
     if (!this.isBrowserAvailable()) {
-      await ctx.reply(i18next.t('Image generation is not available. Please try the dashboard.', { lng: language }));
+      await ctx.reply(
+        i18next.t(
+          'Image generation is not available. Please try the dashboard.',
+          { lng: language }
+        )
+      );
       return;
     }
 
     let page = null;
     try {
       page = await browser.newPage();
-      let path = './images/valuecloud' + utils.getholonId(ctx) + '.png'
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
+      const path = './images/valuecloud' + utils.getholonId(ctx) + '.png';
+      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(values)};
             window.myWordCloud.update(getWords(words));
-        `
+        `,
       });
 
-      await page.waitForSelector('svg')
+      await page.waitForSelector('svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
       await svgElement.screenshot({
-        path: path
+        path: path,
       });
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/values/`)
-          ])
+            Markup.button.url(
+              i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/values/`
+            ),
+          ]),
         }
-      )
+      );
     } catch (error) {
       console.error('Error generating values cloud:', error);
-      await ctx.reply(i18next.t('Error generating values cloud. Please try again.', { lng: language }));
+      await ctx.reply(
+        i18next.t('Error generating values cloud. Please try again.', {
+          lng: language,
+        })
+      );
     } finally {
       if (page) {
         try {
@@ -572,59 +692,77 @@ class UI {
     }
   }
   async needscloud(ctx) {
-    let needs = [] // = this.getFederatedValues(holonId)
+    let needs = []; // = this.getFederatedValues(holonId)
     const holonId = ctx.message.chat.id;
-    const language = await this.settings.getLanguage(holonId)
+    const language = await this.settings.getLanguage(holonId);
     const entities = ctx.message.entities;
-    let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
-    mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
+    let mentions = entities.filter(
+      entity => entity.type === 'mention' || entity.type === 'text_mention'
+    );
+    mentions = mentions.map(entity =>
+      ctx.message.text.substring(
+        entity.offset + 1,
+        entity.offset + entity.length
+      )
+    );
 
-    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users');
     //only select the mentioned users
 
     if (mentions.length > 0)
-      users = users.filter(user => mentions.includes(user.username))
+      users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      needs = needs.concat(users[i].needs)
+      needs = needs.concat(users[i].needs);
     }
 
     if (!this.isBrowserAvailable()) {
-      await ctx.reply(i18next.t('Image generation is not available. Please try the dashboard.', { lng: language }));
+      await ctx.reply(
+        i18next.t(
+          'Image generation is not available. Please try the dashboard.',
+          { lng: language }
+        )
+      );
       return;
     }
 
     let page = null;
     try {
       page = await browser.newPage();
-      let path = './images/needscloud' + utils.getholonId(ctx) + '.png'
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
+      const path = './images/needscloud' + utils.getholonId(ctx) + '.png';
+      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(needs)};
             window.myWordCloud.update(getWords(words));
-        `
+        `,
       });
-      await page.waitForSelector('svg')
+      await page.waitForSelector('svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
       await svgElement.screenshot({
-        path: path
+        path: path,
       });
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/needs/`)
-          ])
+            Markup.button.url(
+              i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/needs/`
+            ),
+          ]),
         }
-      )
+      );
     } catch (error) {
       console.error('Error generating needs cloud:', error);
-      await ctx.reply(i18next.t('Error generating needs cloud. Please try again.', { lng: language }));
+      await ctx.reply(
+        i18next.t('Error generating needs cloud. Please try again.', {
+          lng: language,
+        })
+      );
     } finally {
       if (page) {
         try {
@@ -636,53 +774,76 @@ class UI {
     }
   }
 
-
   // Set up a command to display the quests
   async questboard(ctx) {
-    if (!this.db) return
-    
-    try {
-    // Get a list of incomplete quests
-    let holonId = ctx.message.chat.id
-    const language = await this.settings.getLanguage(holonId)
-    const isTopic = ctx.message.is_topic_message;
-    const threadId = isTopic ? ctx.message.message_thread_id : null;
+    if (!this.db) return;
 
-    // holosphere.getAll resolves to Array<T>.
-    let quests = (await this.db.holosphere.getAll(holonId.toString(), 'quests')) ?? [];
+    try {
+      // Get a list of incomplete quests
+      const holonId = ctx.message.chat.id;
+      const language = await this.settings.getLanguage(holonId);
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
+
+      // holosphere.getAll resolves to Array<T>.
+      let quests =
+        (await this.db.holosphere.getAll(holonId.toString(), 'quests')) ?? [];
 
       // Filter by type and status. Federated holograms (source holon !==
       // current) are kept — they render with the cyan-glow style so they're
       // visually distinct from local tasks (matches harvest's Tasks view).
-      quests = quests.filter(quest =>
-        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
-        (quest.status === 'ongoing' || quest.status === 'scheduled')
-      )
+      quests = quests.filter(
+        quest =>
+          (quest.type === 'task' ||
+            quest.type === 'hologram' ||
+            quest.type === 'recurring') &&
+          (quest.status === 'ongoing' || quest.status === 'scheduled')
+      );
 
-    // If in a topic, filter further by message_thread_id
-    if (isTopic && threadId) {
-      quests = quests.filter(quest => quest.message_thread_id === threadId);
-    }
+      // If in a topic, filter further by message_thread_id
+      if (isTopic && threadId) {
+        quests = quests.filter(quest => quest.message_thread_id === threadId);
+      }
 
       // Check if there are any quests to display
       if (!quests || quests.length === 0) {
-        await ctx.reply(i18next.t('noquests', {lng: language}) || 'No tasks to display.');
+        await ctx.reply(
+          i18next.t('noquests', { lng: language }) || 'No tasks to display.'
+        );
         return;
       }
 
       // Create inline keyboard buttons
       const inline_keyboard_buttons = quests.map(quest => {
-        const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
+        const title =
+          typeof quest.title === 'string'
+            ? quest.title.substring(0, 50)
+            : 'Untitled Quest';
         // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.holon/chat, fallback to holonId
-        const sourceHolon = quest._hologram?.sourceHolon || getQuestHolon(quest) || holonId;
+        const sourceHolon =
+          quest._hologram?.sourceHolon || getQuestHolon(quest) || holonId;
         const cbData = 'view_original_quest_' + sourceHolon + '_' + quest.id;
-        if (cbData.length > 64) return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + String(quest.id).slice(0, 64 - ('view_original_quest_' + sourceHolon + '_').length))];
+        if (cbData.length > 64)
+          return [
+            Markup.button.callback(
+              title,
+              'view_original_quest_' +
+                sourceHolon +
+                '_' +
+                String(quest.id).slice(
+                  0,
+                  64 - ('view_original_quest_' + sourceHolon + '_').length
+                )
+            ),
+          ];
         return [Markup.button.callback(title, cbData)];
       });
 
       inline_keyboard_buttons.push([
-        Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-          `${DASHBOARD_ADDRESS}/${holonId}/tasks`)
+        Markup.button.url(
+          i18next.t('Open Dashboard', { lng: language }),
+          `${DASHBOARD_ADDRESS}/${holonId}/tasks`
+        ),
       ]);
 
       // Try to generate the table image
@@ -695,13 +856,13 @@ class UI {
             { source: fs.createReadStream(path) },
             {
               caption: createPaddedCaption(''),
-              ...Markup.inlineKeyboard(inline_keyboard_buttons)
+              ...Markup.inlineKeyboard(inline_keyboard_buttons),
             }
           );
         } else {
           // Image generation failed, send just the buttons
           await ctx.reply(
-            i18next.t('questboard', {lng: language}) || 'Task Board:',
+            i18next.t('questboard', { lng: language }) || 'Task Board:',
             Markup.inlineKeyboard(inline_keyboard_buttons)
           );
         }
@@ -709,165 +870,198 @@ class UI {
         console.error('Error generating quest board image:', imageError);
         // Image generation failed, send just the buttons
         await ctx.reply(
-          i18next.t('questboard', {lng: language}) || 'Task Board:',
+          i18next.t('questboard', { lng: language }) || 'Task Board:',
           Markup.inlineKeyboard(inline_keyboard_buttons)
         );
       }
-      
     } catch (err) {
       console.error('Error in questboard:', err);
-      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
-      ctx.reply(i18next.t('questboardgenerror', {lng: language}) || 'Could not generate quest board image.');
+      const language = await this.settings
+        .getLanguage(ctx.message.chat.id)
+        .catch(() => 'en');
+      ctx.reply(
+        i18next.t('questboardgenerror', { lng: language }) ||
+          'Could not generate quest board image.'
+      );
     }
   }
 
   async requestsboard(ctx) {
-    if (!this.db) return
-    
+    if (!this.db) return;
+
     try {
-    // Get a list of requests
-    let holonId = ctx.message.chat.id
-    const language = await this.settings.getLanguage(holonId)
-    const isTopic = ctx.message.is_topic_message;
-    const threadId = isTopic ? ctx.message.message_thread_id : null;
+      // Get a list of requests
+      const holonId = ctx.message.chat.id;
+      const language = await this.settings.getLanguage(holonId);
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get requests from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(holonId.toString(), 'quests') || []
-    let requests = allQuests.filter(quest => quest.type === 'request')
+      const allQuests =
+        (await this.db.holosphere.getAll(holonId.toString(), 'quests')) || [];
+      let requests = allQuests.filter(quest => quest.type === 'request');
 
-    // If in a topic, filter further by message_thread_id
-    if (isTopic && threadId) {
-      requests = requests.filter(quest => quest.message_thread_id === threadId);
-    }
+      // If in a topic, filter further by message_thread_id
+      if (isTopic && threadId) {
+        requests = requests.filter(
+          quest => quest.message_thread_id === threadId
+        );
+      }
 
       // Wait for the table image to be generated
       const path = await this.getRequestsTable(requests, holonId);
-      
+
       if (!path) {
-        ctx.reply(i18next.t('requestsboardgenerror', {lng: language}) || 'Could not generate requests board image.');
+        ctx.reply(
+          i18next.t('requestsboardgenerror', { lng: language }) ||
+            'Could not generate requests board image.'
+        );
         return;
       }
-      
+
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers`)
-          ])
+            Markup.button.url(
+              i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/offers`
+            ),
+          ]),
         }
       );
-      
     } catch (err) {
       console.error('Error in requestsboard:', err);
-      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
-      ctx.reply(i18next.t('requestsboardgenerror', {lng: language}) || 'Could not generate requests board image.');
+      const language = await this.settings
+        .getLanguage(ctx.message.chat.id)
+        .catch(() => 'en');
+      ctx.reply(
+        i18next.t('requestsboardgenerror', { lng: language }) ||
+          'Could not generate requests board image.'
+      );
     }
   }
 
   async offersboard(ctx) {
-    if (!this.db) return
-    
+    if (!this.db) return;
+
     try {
-    // Get a list of offers
-    let holonId = ctx.message.chat.id
-    const language = await this.settings.getLanguage(holonId)
-    const isTopic = ctx.message.is_topic_message;
-    const threadId = isTopic ? ctx.message.message_thread_id : null;
+      // Get a list of offers
+      const holonId = ctx.message.chat.id;
+      const language = await this.settings.getLanguage(holonId);
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get offers from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(holonId.toString(), 'quests') || []
-    let offers = allQuests.filter(quest => quest.type === 'offer')
+      const allQuests =
+        (await this.db.holosphere.getAll(holonId.toString(), 'quests')) || [];
+      let offers = allQuests.filter(quest => quest.type === 'offer');
 
-    // If in a topic, filter further by message_thread_id
-    if (isTopic && threadId) {
-      offers = offers.filter(quest => quest.message_thread_id === threadId);
-    }
+      // If in a topic, filter further by message_thread_id
+      if (isTopic && threadId) {
+        offers = offers.filter(quest => quest.message_thread_id === threadId);
+      }
 
       // Wait for the table image to be generated
       const path = await this.getOffersTable(offers, holonId);
-      
+
       if (!path) {
-        ctx.reply(i18next.t('offersboardgenerror', {lng: language}) || 'Could not generate offers board image.');
+        ctx.reply(
+          i18next.t('offersboardgenerror', { lng: language }) ||
+            'Could not generate offers board image.'
+        );
         return;
       }
-      
+
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers/`)
-          ])
+            Markup.button.url(
+              i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/offers/`
+            ),
+          ]),
         }
       );
-      
     } catch (err) {
       console.error('Error in offersboard:', err);
-      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
-      ctx.reply(i18next.t('offersboardgenerror', {lng: language}) || 'Could not generate offers board image.');
+      const language = await this.settings
+        .getLanguage(ctx.message.chat.id)
+        .catch(() => 'en');
+      ctx.reply(
+        i18next.t('offersboardgenerror', { lng: language }) ||
+          'Could not generate offers board image.'
+      );
     }
   }
 
   // Fast quest image generation with aggressive optimizations
   async getQuestImage(quest, holonId, isHologram = false) {
     // PERFORMANCE OPTIMIZATION: Skip heavy operations for faster generation
-    const useSimplifiedMode = process.env.QUEST_IMAGE_FAST_MODE === 'true' || false;
-    
+    const useSimplifiedMode =
+      process.env.QUEST_IMAGE_FAST_MODE === 'true' || false;
+
     if (useSimplifiedMode) {
       return this.getSimplifiedQuestImage(quest, holonId, isHologram);
     }
-    
+
     // Cache frequently used data to avoid repeated database calls
-    const cachedLanguage = this.languageCache?.get(holonId) || await this.settings.getLanguage(holonId);
+    const cachedLanguage =
+      this.languageCache?.get(holonId) ||
+      (await this.settings.getLanguage(holonId));
     if (!this.languageCache) this.languageCache = new Map();
     this.languageCache.set(holonId, cachedLanguage);
-    
+
     // Check if this is a hologram by examining the quest's origin
     const questHolonId = getQuestHolon(quest);
-    if (!isHologram && questHolonId && questHolonId.toString() !== holonId.toString()) {
+    if (
+      !isHologram &&
+      questHolonId &&
+      questHolonId.toString() !== holonId.toString()
+    ) {
       isHologram = true;
     }
     // Also check for meta information indicating it's from another chat
     if (!isHologram && quest._meta && quest._meta.origin_chat_name) {
       isHologram = true;
     }
-    
+
     // OPTIMIZED: Simple date formatting without timezone complexity
-    const formatDate = (timestamp) => {
+    const formatDate = timestamp => {
       if (!timestamp) return '';
       const date = new Date(timestamp);
       return date.toLocaleDateString(cachedLanguage, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
       });
     };
 
     // Status icon mapping
     const statusIcons = {
-      'ongoing': '🔄',
-      'completed': '✅', 
-      'scheduled': '📅',
-      'stopped': '🛑'
+      ongoing: '🔄',
+      completed: '✅',
+      scheduled: '📅',
+      stopped: '🛑',
     };
 
     // Type icon mapping
     const typeIcons = {
-      'task': '📋',
-      'quest': '⚔️',
-      'event': '📅',
-      'offer': '🎁',
-      'request': '🙏',
-      'todo': '✔️',
-      'mission': '🎯',
-      'hologram': '👻',
-      'recurring': '🔄'
+      task: '📋',
+      quest: '⚔️',
+      event: '📅',
+      offer: '🎁',
+      request: '🙏',
+      todo: '✔️',
+      mission: '🎯',
+      hologram: '👻',
+      recurring: '🔄',
     };
 
     const statusIcon = statusIcons[quest.status] || '❓';
@@ -893,7 +1087,10 @@ class UI {
         // BAAL, ...). Treat anything that isn't already an http(s) or
         // data: URL as a file_id and resolve it via getFileLink — the
         // browser can't render a raw file_id in <img src>.
-        if (/^https?:\/\//i.test(quest.picture) || quest.picture.startsWith('data:')) {
+        if (
+          /^https?:\/\//i.test(quest.picture) ||
+          quest.picture.startsWith('data:')
+        ) {
           imageDataUrl = quest.picture;
         } else {
           const fileUrl = await this.bot.telegram.getFileLink(quest.picture);
@@ -905,7 +1102,12 @@ class UI {
           imageDataUrl = `data:${mimeType};base64,${base64}`;
         }
       } catch (error) {
-        console.log('Failed to convert quest image:', error?.message || error, 'picture prefix:', String(quest.picture).slice(0, 16));
+        console.log(
+          'Failed to convert quest image:',
+          error?.message || error,
+          'picture prefix:',
+          String(quest.picture).slice(0, 16)
+        );
         imageDataUrl = null;
       }
     }
@@ -925,11 +1127,13 @@ class UI {
     }
 
     // PERFORMANCE: Only add essential sections to reduce HTML complexity
-    
+
     // Description if available (truncate for performance)
     if (quest.description) {
-      const truncatedDesc = quest.description.length > 100 ? 
-        quest.description.substring(0, 100) + '...' : quest.description;
+      const truncatedDesc =
+        quest.description.length > 100
+          ? quest.description.substring(0, 100) + '...'
+          : quest.description;
       infoRows += `
         <div class="quest-section">
           <div class="section-label">📝</div>
@@ -941,18 +1145,25 @@ class UI {
     // Participants (show names with time tracking, limit for performance)
     if (quest.participants && quest.participants.length > 0) {
       const maxParticipantsToShow = 5; // Limit for performance
-      const participantsToShow = quest.participants.slice(0, maxParticipantsToShow);
-      const participantBadges = participantsToShow.map(u => {
-        const hours = quest.timeTracking && quest.timeTracking[u.id];
-        if (hours && hours > 0) {
-          return `<span class="participant-name">${getDisplayName(u)} (${hours.toFixed(2)}h)</span>`;
-        }
-        return `<span class="participant-name">${getDisplayName(u)}</span>`;
-      }).join(' ');
-      
-      const extraCount = quest.participants.length > maxParticipantsToShow ? 
-        ` +${quest.participants.length - maxParticipantsToShow} more` : '';
-      
+      const participantsToShow = quest.participants.slice(
+        0,
+        maxParticipantsToShow
+      );
+      const participantBadges = participantsToShow
+        .map(u => {
+          const hours = quest.timeTracking && quest.timeTracking[u.id];
+          if (hours && hours > 0) {
+            return `<span class="participant-name">${getDisplayName(u)} (${hours.toFixed(2)}h)</span>`;
+          }
+          return `<span class="participant-name">${getDisplayName(u)}</span>`;
+        })
+        .join(' ');
+
+      const extraCount =
+        quest.participants.length > maxParticipantsToShow
+          ? ` +${quest.participants.length - maxParticipantsToShow} more`
+          : '';
+
       infoRows += `
         <div class="quest-section">
           <div class="section-label">🙋‍♂</div>
@@ -964,14 +1175,19 @@ class UI {
     // Appreciation (show names, limit for performance)
     if (quest.appreciation && quest.appreciation.length > 0) {
       const maxAppreciationsToShow = 5; // Limit for performance
-      const appreciationsToShow = quest.appreciation.slice(0, maxAppreciationsToShow);
-      const appreciationBadges = appreciationsToShow.map(u => 
-        `<span class="participant-name">${getDisplayName(u)}</span>`
-      ).join(' ');
-      
-      const extraCount = quest.appreciation.length > maxAppreciationsToShow ? 
-        ` +${quest.appreciation.length - maxAppreciationsToShow} more` : '';
-      
+      const appreciationsToShow = quest.appreciation.slice(
+        0,
+        maxAppreciationsToShow
+      );
+      const appreciationBadges = appreciationsToShow
+        .map(u => `<span class="participant-name">${getDisplayName(u)}</span>`)
+        .join(' ');
+
+      const extraCount =
+        quest.appreciation.length > maxAppreciationsToShow
+          ? ` +${quest.appreciation.length - maxAppreciationsToShow} more`
+          : '';
+
       infoRows += `
         <div class="quest-section">
           <div class="section-label">👍</div>
@@ -1034,11 +1250,11 @@ class UI {
     // Determine CSS classes based on quest status
     let containerClasses = 'quest-card-container';
     containerClasses += ` ${quest.status}`;
-    
+
     if (quest.participants && quest.participants.length > 0) {
       containerClasses += ' has-participants';
     }
-    
+
     if (quest.type === 'hologram' || isHologram) {
       containerClasses += ' hologram';
     }
@@ -1047,7 +1263,7 @@ class UI {
     let hologramBadge = '';
     if (isHologram) {
       let hologramSource = '';
-      
+
       // First try meta information
       if (quest._meta && quest._meta.origin_chat_name) {
         hologramSource = quest._meta.origin_chat_name;
@@ -1068,17 +1284,23 @@ class UI {
               const holonNamePromise = getHolonName(this.db, holonSrcId, null);
 
               const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Holon name lookup timeout')), 2000)
+                setTimeout(
+                  () => reject(new Error('Holon name lookup timeout')),
+                  2000
+                )
               );
 
               // Use the utility function result directly, it has its own fallback logic
-              const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
+              const nameFromUtil = await Promise.race([
+                holonNamePromise,
+                timeoutPromise,
+              ]);
               hologramSource = nameFromUtil || 'Unknown Holon';
 
               // Cache the result with expiry timestamp (no individual setTimeout)
               this.holonNameCache.set(cacheKey, {
                 value: hologramSource,
-                expires: Date.now() + this.holonNameCacheExpiry
+                expires: Date.now() + this.holonNameCacheExpiry,
               });
             }
           } catch (e) {
@@ -1086,13 +1308,15 @@ class UI {
           }
         }
       }
-      
+
       // Show badge for meaningful holon names (not generic fallbacks or chat IDs)
-      if (hologramSource && 
-          hologramSource.trim() !== '' && 
-          !hologramSource.startsWith('Holon ') &&
-          hologramSource !== 'Unknown Holon' &&
-          hologramSource !== 'External Holon') {
+      if (
+        hologramSource &&
+        hologramSource.trim() !== '' &&
+        !hologramSource.startsWith('Holon ') &&
+        hologramSource !== 'Unknown Holon' &&
+        hologramSource !== 'External Holon'
+      ) {
         hologramBadge = `<div class="hologram-badge">📡 ${hologramSource}</div>`;
       }
     }
@@ -1115,14 +1339,19 @@ class UI {
     const sourceIdentifier = holonId ? holonId.toString() : 'unknown';
     const hologramSuffix = isHologram ? '_hologram' : '';
     const path = `./images/quest${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
-    
+
     // PERFORMANCE: Cache theme data to avoid repeated lookups
-    const cachedTheme = this.themeCache?.get(holonId) || await this.settings.getTheme(holonId);
+    const cachedTheme =
+      this.themeCache?.get(holonId) || (await this.settings.getTheme(holonId));
     if (!this.themeCache) this.themeCache = new Map();
     this.themeCache.set(holonId, cachedTheme);
-    
+
     const html = await this.generateHtml(element, cachedTheme);
-    const _ssResult = await this.screenshotHtml(html, path, '.quest-card-container');
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.quest-card-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1145,20 +1374,30 @@ class UI {
 
       return `<div class="simple-picture"><img src="${imageDataUrl}" alt="Quest image" class="simple-quest-image" /></div>`;
     } catch (error) {
-      console.log('Failed to convert simple quest image:', error?.message || error, 'picture prefix:', String(picture).slice(0, 16));
+      console.log(
+        'Failed to convert simple quest image:',
+        error?.message || error,
+        'picture prefix:',
+        String(picture).slice(0, 16)
+      );
       return '';
     }
   }
 
   // Ultra-fast simplified quest image for immediate updates
   async getSimplifiedQuestImage(quest, holonId, isHologram = false) {
-    const statusIcon = quest.status === 'completed' ? '✅' : 
-                       quest.status === 'stopped' ? '🛑' : 
-                       quest.status === 'scheduled' ? '📅' : '🔄';
-    
-    const typeIcon = quest.type === 'task' ? '📋' : 
-                     quest.type === 'event' ? '📅' : '⚔️';
-    
+    const statusIcon =
+      quest.status === 'completed'
+        ? '✅'
+        : quest.status === 'stopped'
+          ? '🛑'
+          : quest.status === 'scheduled'
+            ? '📅'
+            : '🔄';
+
+    const typeIcon =
+      quest.type === 'task' ? '📋' : quest.type === 'event' ? '📅' : '⚔️';
+
     // Minimal HTML for maximum speed
     const element = `
       <div class="simple-quest-card">
@@ -1180,7 +1419,7 @@ class UI {
     const sourceIdentifier = holonId ? holonId.toString() : 'unknown';
     const hologramSuffix = isHologram ? '_hologram' : '';
     const path = `./images/quest_simple_${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
-    
+
     // Use minimal CSS for speed
     const simpleCss = `
       .simple-quest-card {
@@ -1220,9 +1459,13 @@ class UI {
         color: #95a5a6;
       }
     `;
-    
+
     const html = await this.generateHtml(element, simpleCss);
-    const _ssResult = await this.screenshotHtml(html, path, '.simple-quest-card');
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.simple-quest-card'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1231,26 +1474,30 @@ class UI {
     const rows = [];
 
     // Get quest-based offers and requests
-    const questOffers = quests.filter(quest => quest.type === 'offer' && quest.status !== 'completed');
-    const questRequests = quests.filter(quest => quest.type === 'request' && quest.status !== 'completed');
+    const questOffers = quests.filter(
+      quest => quest.type === 'offer' && quest.status !== 'completed'
+    );
+    const questRequests = quests.filter(
+      quest => quest.type === 'request' && quest.status !== 'completed'
+    );
 
     // Create a map to combine user profile data with quest data
     const userMap = new Map();
 
     // First, add users from user profiles
-    for (let user of users) {
+    for (const user of users) {
       const userId = user.id;
       userMap.set(userId, {
         user: user,
         profileWants: user.wants || [],
         profileOffers: user.offers || [],
         questRequests: [],
-        questOffers: []
+        questOffers: [],
       });
     }
 
     // Then, add quest-based offers and requests
-    for (let quest of questOffers) {
+    for (const quest of questOffers) {
       if (quest.initiator && quest.initiator.id) {
         const userId = quest.initiator.id;
         if (!userMap.has(userId)) {
@@ -1259,14 +1506,14 @@ class UI {
             profileWants: [],
             profileOffers: [],
             questRequests: [],
-            questOffers: []
+            questOffers: [],
           });
         }
         userMap.get(userId).questOffers.push(quest.title);
       }
     }
 
-    for (let quest of questRequests) {
+    for (const quest of questRequests) {
       if (quest.initiator && quest.initiator.id) {
         const userId = quest.initiator.id;
         if (!userMap.has(userId)) {
@@ -1275,7 +1522,7 @@ class UI {
             profileWants: [],
             profileOffers: [],
             questRequests: [],
-            questOffers: []
+            questOffers: [],
           });
         }
         userMap.get(userId).questRequests.push(quest.title);
@@ -1283,22 +1530,36 @@ class UI {
     }
 
     // Generate rows for users who have any wants or offers
-    for (let [userId, userData] of userMap) {
-      const totalWants = userData.profileWants.length + userData.questRequests.length;
-      const totalOffers = userData.profileOffers.length + userData.questOffers.length;
+    for (const [, userData] of userMap) {
+      const totalWants =
+        userData.profileWants.length + userData.questRequests.length;
+      const totalOffers =
+        userData.profileOffers.length + userData.questOffers.length;
 
       if (totalWants > 0 || totalOffers > 0) {
         // Combine profile wants and quest requests
         const allWants = [...userData.profileWants, ...userData.questRequests];
-        const wantsList = allWants.length > 0 ? 
-          allWants.map(want => `<span class="item-text" style="font-size: 18px;">${want}</span>`).join('<br/>') : 
-          '<span class="no-items" style="font-size: 18px;">-</span>';
-        
+        const wantsList =
+          allWants.length > 0
+            ? allWants
+                .map(
+                  want =>
+                    `<span class="item-text" style="font-size: 18px;">${want}</span>`
+                )
+                .join('<br/>')
+            : '<span class="no-items" style="font-size: 18px;">-</span>';
+
         // Combine profile offers and quest offers
         const allOffers = [...userData.profileOffers, ...userData.questOffers];
-        const offersList = allOffers.length > 0 ? 
-          allOffers.map(offer => `<span class="item-text" style="font-size: 18px;">${offer}</span>`).join('<br/>') : 
-          '<span class="no-items" style="font-size: 18px;">-</span>';
+        const offersList =
+          allOffers.length > 0
+            ? allOffers
+                .map(
+                  offer =>
+                    `<span class="item-text" style="font-size: 18px;">${offer}</span>`
+                )
+                .join('<br/>')
+            : '<span class="no-items" style="font-size: 18px;">-</span>';
 
         const row = `<tr class="bulletin-row">
           <td class="name-cell-compact">
@@ -1317,7 +1578,7 @@ class UI {
             </div>
           </td>
         </tr>`;
-        
+
         rows.push(row);
       }
     }
@@ -1354,8 +1615,15 @@ class UI {
     </div>`;
 
     const path = './images/offersneeds' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1363,12 +1631,20 @@ class UI {
     const language = await this.settings.getLanguage(holonId);
     const rows = [];
     userArray.forEach((user, index) => {
-      const credits = creditMatrix[index].map((credit, creditIndex) => {
-        const color = credit > 0 ? 'color: #28a745;' : credit < 0 ? 'color: #dc3545;' : '';
-        return `<td style="text-align: center; white-space: normal; word-wrap: break-word; ${color}">${credit.toFixed(2)}</td>`;
-      }).join('');
+      const credits = creditMatrix[index]
+        .map((credit, creditIndex) => {
+          const color =
+            credit > 0
+              ? 'color: #28a745;'
+              : credit < 0
+                ? 'color: #dc3545;'
+                : '';
+          return `<td style="text-align: center; white-space: normal; word-wrap: break-word; ${color}">${credit.toFixed(2)}</td>`;
+        })
+        .join('');
       const total = creditMatrix[index].reduce((a, b) => a + b, 0);
-      const totalColor = total > 0 ? 'color: #28a745;' : total < 0 ? 'color: #dc3545;' : '';
+      const totalColor =
+        total > 0 ? 'color: #28a745;' : total < 0 ? 'color: #dc3545;' : '';
       const row = `<tr>
           <td style="text-align: center; white-space: normal; word-wrap: break-word;">${user}</td>
           ${credits}
@@ -1376,8 +1652,13 @@ class UI {
         </tr>`;
       rows.push(row);
     });
-  
-    const headers = userArray.map((user, index) => `<th scope="col" style="writing-mode: vertical-rl; text-orientation: mixed; text-align: center; white-space: normal; word-wrap: break-word;">${user}</th>`).join('');
+
+    const headers = userArray
+      .map(
+        (user, index) =>
+          `<th scope="col" style="writing-mode: vertical-rl; text-orientation: mixed; text-align: center; white-space: normal; word-wrap: break-word;">${user}</th>`
+      )
+      .join('');
     const element = `<div class="status-table-container">
       <div class="table-wrapper">
         <table class="status-table">
@@ -1394,10 +1675,17 @@ class UI {
         </table>
       </div>
     </div>`;
-  
+
     const path = './images/creditMatrix' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1410,7 +1698,7 @@ class UI {
     // with indigo accent; light keeps the prior light look.
     const p = isDark
       ? {
-          bg: '#111827',          // page surface (gray-900)
+          bg: '#111827', // page surface (gray-900)
           cardBorder: 'rgba(255,255,255,0.06)',
           cardShadow: '0 1px 3px rgba(0,0,0,0.4)',
           titleColor: '#ffffff',
@@ -1450,11 +1738,13 @@ class UI {
       // Source holon: prefer the resolver-attached _hologram.sourceHolon,
       // then _meta.origin_chat_name, then the legacy holon/chat fields.
       const sourceHolonId =
-        quest._hologram?.sourceHolon ??
-        getQuestHolon(quest);
+        quest._hologram?.sourceHolon ?? getQuestHolon(quest);
 
-      if (quest._hologram?.isHologram || quest._meta?.origin_chat_name ||
-          (sourceHolonId && sourceHolonId.toString() !== holonId.toString())) {
+      if (
+        quest._hologram?.isHologram ||
+        quest._meta?.origin_chat_name ||
+        (sourceHolonId && sourceHolonId.toString() !== holonId.toString())
+      ) {
         isHologram = true;
         if (quest._meta?.origin_chat_name) {
           provenanceText = quest._meta.origin_chat_name;
@@ -1465,17 +1755,26 @@ class UI {
           // origin the user actually wants to see.
           let resolved = '';
           try {
-            resolved = await utils.getHolonName(this.db, sourceHolonId, ctx) || '';
+            resolved =
+              (await utils.getHolonName(this.db, sourceHolonId, ctx)) || '';
           } catch (e) {
-            console.warn(`Could not get holon name for holon ${sourceHolonId}:`, e);
+            console.warn(
+              `Could not get holon name for holon ${sourceHolonId}:`,
+              e
+            );
           }
-          const isGenericFallback = !resolved.trim() ||
-            resolved === 'External Holon' || resolved === 'Unknown Holon';
+          const isGenericFallback =
+            !resolved.trim() ||
+            resolved === 'External Holon' ||
+            resolved === 'Unknown Holon';
           provenanceText = isGenericFallback
             ? `${i18next.t('holon_prefix', { lng: language, defaultValue: 'Holon' })} ${sourceHolonId}`
             : resolved;
         } else {
-          provenanceText = i18next.t('hologram', { lng: language, defaultValue: 'Hologram' });
+          provenanceText = i18next.t('hologram', {
+            lng: language,
+            defaultValue: 'Hologram',
+          });
         }
       }
 
@@ -1485,9 +1784,9 @@ class UI {
       const checkboxFg = completed ? '#ffffff' : p.checkboxIdleFg;
       const checkIcon = completed
         ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
-        : (quest.type === 'event' || quest.when)
+        : quest.type === 'event' || quest.when
           ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
-          : (quest.type === 'recurring' || quest.status === 'recurring')
+          : quest.type === 'recurring' || quest.status === 'recurring'
             ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>'
             : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
 
@@ -1506,9 +1805,15 @@ class UI {
       const participantCount = quest.participants?.length || 0;
       const appreciationCount = quest.appreciation?.length || 0;
       const counts = [
-        participantCount ? `<span style="white-space:nowrap;">👥 ${participantCount}</span>` : '',
-        appreciationCount ? `<span style="white-space:nowrap;">👍 ${appreciationCount}</span>` : ''
-      ].filter(Boolean).join('');
+        participantCount
+          ? `<span style="white-space:nowrap;">👥 ${participantCount}</span>`
+          : '',
+        appreciationCount
+          ? `<span style="white-space:nowrap;">👍 ${appreciationCount}</span>`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('');
 
       const description = quest.description
         ? `<div style="font-size:14px;color:${p.descColor};line-height:1.4;max-height:2.8em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:4px;">${escapeHtml(quest.description)}</div>`
@@ -1537,15 +1842,22 @@ class UI {
 </div>`;
 
     const path = './images/quests' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.quest-list-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.quest-list-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
   async getRolesTable(roles, holonId) {
     const language = await this.settings.getLanguage(holonId);
     const rows = [];
-    
+
     if (roles.length === 0) {
       // Handle empty case
       rows.push(`<tr class="empty-row">
@@ -1556,10 +1868,16 @@ class UI {
     } else {
       for (let i = 0; i < roles.length; i++) {
         const role = roles[i];
-        const participantsList = role.participants && role.participants.length > 0 ? 
-          role.participants.map(participant => `<span class="participant-name" style="font-size: 18px;">${getDisplayName(participant)}</span>`).join(' ') : 
-          '<span class="no-participants" style="font-size: 18px;">-</span>';
-        
+        const participantsList =
+          role.participants && role.participants.length > 0
+            ? role.participants
+                .map(
+                  participant =>
+                    `<span class="participant-name" style="font-size: 18px;">${getDisplayName(participant)}</span>`
+                )
+                .join(' ')
+            : '<span class="no-participants" style="font-size: 18px;">-</span>';
+
         const row = `<tr class="role-row">
             <td class="role-cell">
               <div class="role-info" style="font-size: 18px; text-align: center;">
@@ -1595,17 +1913,23 @@ class UI {
     </div>`;
 
     const path = './images/roles' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
     return _ssResult !== null ? path : null;
   }
-
 
   async getRequestsTable(requests, holonId) {
     const language = await this.settings.getLanguage(holonId);
 
     const rows = [];
-    
+
     if (requests.length === 0) {
       // Handle empty case
       rows.push(`<tr class="empty-row">
@@ -1653,8 +1977,15 @@ class UI {
     </div>`;
 
     const path = './images/requests' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1662,7 +1993,7 @@ class UI {
     const language = await this.settings.getLanguage(holonId);
 
     const rows = [];
-    
+
     if (offers.length === 0) {
       // Handle empty case
       rows.push(`<tr class="empty-row">
@@ -1710,8 +2041,15 @@ class UI {
     </div>`;
 
     const path = './images/offers' + holonId + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    const html = await this.generateHtml(
+      element,
+      await this.settings.getTheme(holonId)
+    );
+    const _ssResult = await this.screenshotHtml(
+      html,
+      path,
+      '.status-table-container'
+    );
     return _ssResult !== null ? path : null;
   }
 
@@ -1725,17 +2063,20 @@ class UI {
         transition: none !important;
       }
     `;
-    return `<!DOCTYPE html>
+    return (
+      `<!DOCTYPE html>
       <html>
       <head>
-      <style>`
-      + theme + killMotion +
+      <style>` +
+      theme +
+      killMotion +
       `</style>
       </head>
-      <body>`
-      + element.toString() +
+      <body>` +
+      element.toString() +
       `</body>
       </html>`
+    );
   }
 
   async screenshotHtml(html, pathToSave, onElement) {
@@ -1797,19 +2138,22 @@ class UI {
       }
 
       try {
-        await page.evaluate(() => Promise.all(
-          Array.from(document.images).map(img => {
-            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-            const ready = img.decode
-              ? img.decode().catch(() => {})
-              : new Promise(res => {
-                  img.addEventListener('load', res, { once: true });
-                  img.addEventListener('error', res, { once: true });
-                });
-            const timeout = new Promise(res => setTimeout(res, 1500));
-            return Promise.race([ready, timeout]);
-          })
-        ));
+        await page.evaluate(() =>
+          Promise.all(
+            Array.from(document.images).map(img => {
+              if (img.complete && img.naturalWidth > 0)
+                return Promise.resolve();
+              const ready = img.decode
+                ? img.decode().catch(() => {})
+                : new Promise(res => {
+                    img.addEventListener('load', res, { once: true });
+                    img.addEventListener('error', res, { once: true });
+                  });
+              const timeout = new Promise(res => setTimeout(res, 1500));
+              return Promise.race([ready, timeout]);
+            })
+          )
+        );
       } catch {
         // best-effort: proceed even if some images fail to decode
       }
@@ -1822,11 +2166,11 @@ class UI {
         type: 'jpeg',
         quality: 85,
         omitBackground: false,
-        captureBeyondViewport: false
+        captureBeyondViewport: false,
       };
 
       try {
-        const elementInfo = await page.evaluate((selector) => {
+        const elementInfo = await page.evaluate(selector => {
           const element = document.querySelector(selector);
           if (!element) return null;
           const rect = element.getBoundingClientRect();
@@ -1836,35 +2180,52 @@ class UI {
             width: rect.width,
             height: rect.height,
             scrollWidth: element.scrollWidth || rect.width,
-            scrollHeight: element.scrollHeight || rect.height
+            scrollHeight: element.scrollHeight || rect.height,
           };
         }, onElement);
 
         if (elementInfo && elementInfo.width > 0 && elementInfo.height > 0) {
-          const shouldResize = elementInfo.scrollHeight > initialViewport.height ||
-                              elementInfo.scrollWidth > initialViewport.width;
+          const shouldResize =
+            elementInfo.scrollHeight > initialViewport.height ||
+            elementInfo.scrollWidth > initialViewport.width;
 
           if (shouldResize) {
             const newViewport = {
-              width: Math.max(initialViewport.width, Math.ceil(elementInfo.scrollWidth + 100)),
-              height: Math.max(initialViewport.height, Math.ceil(elementInfo.scrollHeight + 100))
+              width: Math.max(
+                initialViewport.width,
+                Math.ceil(elementInfo.scrollWidth + 100)
+              ),
+              height: Math.max(
+                initialViewport.height,
+                Math.ceil(elementInfo.scrollHeight + 100)
+              ),
             };
 
             const MAX_VIEWPORT_HEIGHT = 5000;
             const MAX_VIEWPORT_WIDTH = 5000;
 
-            if (newViewport.height > MAX_VIEWPORT_HEIGHT || newViewport.width > MAX_VIEWPORT_WIDTH) {
-              console.log(`Viewport too large (${newViewport.width}x${newViewport.height}), skipping image generation`);
+            if (
+              newViewport.height > MAX_VIEWPORT_HEIGHT ||
+              newViewport.width > MAX_VIEWPORT_WIDTH
+            ) {
+              console.log(
+                `Viewport too large (${newViewport.width}x${newViewport.height}), skipping image generation`
+              );
               return null;
             }
 
-            console.log(`Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`);
+            console.log(
+              `Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`
+            );
             await page.setViewport(newViewport);
-            await page.evaluate(() => new Promise(res =>
-              requestAnimationFrame(() => requestAnimationFrame(res))
-            ));
+            await page.evaluate(
+              () =>
+                new Promise(res =>
+                  requestAnimationFrame(() => requestAnimationFrame(res))
+                )
+            );
 
-            const updatedElementInfo = await page.evaluate((selector) => {
+            const updatedElementInfo = await page.evaluate(selector => {
               const element = document.querySelector(selector);
               if (!element) return null;
               const rect = element.getBoundingClientRect();
@@ -1872,7 +2233,7 @@ class UI {
                 x: Math.max(0, rect.left),
                 y: Math.max(0, rect.top),
                 width: rect.width,
-                height: rect.height
+                height: rect.height,
               };
             }, onElement);
 
@@ -1881,7 +2242,7 @@ class UI {
                 x: updatedElementInfo.x,
                 y: updatedElementInfo.y,
                 width: updatedElementInfo.width,
-                height: updatedElementInfo.height
+                height: updatedElementInfo.height,
               };
             }
           } else {
@@ -1889,26 +2250,30 @@ class UI {
               x: elementInfo.x,
               y: elementInfo.y,
               width: elementInfo.width,
-              height: elementInfo.height
+              height: elementInfo.height,
             };
           }
         }
       } catch (clipError) {
-        console.warn('Element clipping failed, using full page screenshot:', clipError.message);
+        console.warn(
+          'Element clipping failed, using full page screenshot:',
+          clipError.message
+        );
       }
 
       await page.screenshot(screenshotOptions);
-
     } catch (error) {
       console.error('Screenshot error:', error);
 
       // Connection-level errors mean the browser/page is unusable.
       // Mark the page as broken so the pool will discard it, and tear
       // down the browser so the next call relaunches.
-      if (error.message?.includes('Protocol error') ||
-          error.message?.includes('Connection closed') ||
-          error.message?.includes('Target closed') ||
-          error.message?.includes('timed out')) {
+      if (
+        error.message?.includes('Protocol error') ||
+        error.message?.includes('Connection closed') ||
+        error.message?.includes('Target closed') ||
+        error.message?.includes('timed out')
+      ) {
         pageBroken = true;
         console.log('Browser connection lost, attempting quick restart...');
         try {
@@ -1925,55 +2290,63 @@ class UI {
   }
 
   async getZoneDistributionChart(a, b, c, nzones = 6, holonId) {
-    const language = await this.settings.getLanguage(holonId);
-    
     // Calculate zone weights and percentages
     let totalWeight = 0;
     const zoneData = [];
     let maxWeight = 0;
-    
+
     for (let zone = 0; zone < nzones; zone++) {
       const weight = Math.max(0, a * zone * zone + b * zone + c);
       totalWeight += weight;
       maxWeight = Math.max(maxWeight, weight);
       zoneData.push({ zone, weight });
     }
-    
+
     // Generate SVG chart
     const chartWidth = 1200;
     const chartHeight = 500;
     const padding = 80;
-    const barWidth = (chartWidth - 2 * padding) / nzones * 0.8;
+    const barWidth = ((chartWidth - 2 * padding) / nzones) * 0.8;
     const maxBarHeight = chartHeight - 2 * padding;
-    
+
     // Generate bars and function curve
     const bars = [];
     const curvePoints = [];
     const labels = [];
-    
+
     for (let i = 0; i < zoneData.length; i++) {
       const zoneInfo = zoneData[i];
-      const percentage = totalWeight > 0 ? ((zoneInfo.weight / totalWeight) * 100).toFixed(1) : '0.0';
-      const barHeight = maxWeight > 0 ? (zoneInfo.weight / maxWeight) * maxBarHeight : 0;
-      const x = padding + i * (chartWidth - 2 * padding) / nzones + (chartWidth - 2 * padding) / nzones / 2;
+      const percentage =
+        totalWeight > 0
+          ? ((zoneInfo.weight / totalWeight) * 100).toFixed(1)
+          : '0.0';
+      const barHeight =
+        maxWeight > 0 ? (zoneInfo.weight / maxWeight) * maxBarHeight : 0;
+      const x =
+        padding +
+        (i * (chartWidth - 2 * padding)) / nzones +
+        (chartWidth - 2 * padding) / nzones / 2;
       const y = chartHeight - padding - barHeight;
-      
+
       // Generate gradient colors
       const hue = 240 + (i / nzones) * 120; // Blue to cyan spectrum
       const saturation = 70 + (zoneInfo.weight / maxWeight) * 30;
       const lightness = 50 + (zoneInfo.weight / maxWeight) * 20;
-      
+
       bars.push(`
-        <rect x="${x - barWidth/2}" y="${y}" width="${barWidth}" height="${barHeight}" 
+        <rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${barHeight}" 
               fill="hsl(${hue}, ${saturation}%, ${lightness}%)" 
               stroke="rgba(255,255,255,0.3)" stroke-width="1"
               rx="4" ry="4" class="bar-rect"/>
       `);
-      
+
       // Function curve points
-      const curveY = maxWeight > 0 ? chartHeight - padding - (zoneInfo.weight / maxWeight) * maxBarHeight : chartHeight - padding;
+      const curveY =
+        maxWeight > 0
+          ? chartHeight - padding - (zoneInfo.weight / maxWeight) * maxBarHeight
+          : chartHeight - padding;
       curvePoints.push(`${x},${curveY}`);
-      
+
       // Labels
       labels.push(`
         <text x="${x}" y="${chartHeight - padding + 25}" text-anchor="middle" 
@@ -1982,24 +2355,24 @@ class UI {
               fill="#a0a0a0" font-size="12">${percentage}%</text>
       `);
     }
-    
+
     // Generate smooth curve path
     const curvePath = `M ${curvePoints.join(' L ')}`;
-    
+
     // Generate grid lines
     const gridLines = [];
     for (let i = 0; i <= 5; i++) {
       const y = padding + (maxBarHeight / 5) * i;
-      const percentage = ((5 - i) / 5 * 100).toFixed(0);
+      const percentage = (((5 - i) / 5) * 100).toFixed(0);
       gridLines.push(`
         <line x1="${padding}" y1="${y}" x2="${chartWidth - padding}" y2="${y}" 
               stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="5,5"/>
         <text x="${padding - 10}" y="${y + 4}" text-anchor="end" fill="#808080" font-size="12">${percentage}%</text>
       `);
     }
-    
+
     const formulaDisplay = `f(x) = ${a}x² + ${b}x + ${c}`;
-    
+
     const element = `
       <div class="chart-container">
         <div class="header">
@@ -2033,20 +2406,22 @@ class UI {
                 stroke-width="4" filter="url(#glow)"/>
           
           <!-- Curve points -->
-          ${curvePoints.map((point, i) => {
-            const [x, y] = point.split(',');
-            return `<circle cx="${x}" cy="${y}" r="6" fill="#ffffff" stroke="url(#curveGradient)" 
+          ${curvePoints
+            .map((point, i) => {
+              const [x, y] = point.split(',');
+              return `<circle cx="${x}" cy="${y}" r="6" fill="#ffffff" stroke="url(#curveGradient)" 
                            stroke-width="3"/>`;
-          }).join('')}
+            })
+            .join('')}
           
           <!-- Labels -->
           ${labels.join('')}
           
           <!-- Axis labels -->
-          <text x="${chartWidth/2}" y="${chartHeight - 15}" text-anchor="middle" 
+          <text x="${chartWidth / 2}" y="${chartHeight - 15}" text-anchor="middle" 
                 fill="#ffffff" font-size="16" font-weight="bold">Zone Index</text>
-          <text x="25" y="${chartHeight/2}" text-anchor="middle" 
-                fill="#ffffff" font-size="16" font-weight="bold" transform="rotate(-90, 25, ${chartHeight/2})">Reward Weight</text>
+          <text x="25" y="${chartHeight / 2}" text-anchor="middle" 
+                fill="#ffffff" font-size="16" font-weight="bold" transform="rotate(-90, 25, ${chartHeight / 2})">Reward Weight</text>
         </svg>
         
         <div class="stats-grid">
@@ -2063,7 +2438,7 @@ class UI {
             <div class="stat-label">Max Weight</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${totalWeight > 0 ? (maxWeight / totalWeight * 100).toFixed(1) : 0}%</div>
+            <div class="stat-value">${totalWeight > 0 ? ((maxWeight / totalWeight) * 100).toFixed(1) : 0}%</div>
             <div class="stat-label">Peak Share</div>
           </div>
         </div>
@@ -2153,27 +2528,36 @@ class UI {
 
     const path = `./images/zone_distribution_${holonId}.png`;
     const html = await this.generateHtml(element, chartTheme);
-    
+
     // Retry logic for screenshot generation
     const maxRetries = 3;
     let lastError = null;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const _ssResult = await this.screenshotHtml(html, path, '.chart-container');
+        const _ssResult = await this.screenshotHtml(
+          html,
+          path,
+          '.chart-container'
+        );
         return _ssResult !== null ? path : null;
       } catch (error) {
         lastError = error;
-        console.error(`Screenshot attempt ${attempt}/${maxRetries} failed:`, error.message);
-        
+        console.error(
+          `Screenshot attempt ${attempt}/${maxRetries} failed:`,
+          error.message
+        );
+
         if (attempt < maxRetries) {
           console.log(`Retrying in 2 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
     }
-    
-    throw new Error(`Failed to generate chart after ${maxRetries} attempts: ${lastError.message}`);
+
+    throw new Error(
+      `Failed to generate chart after ${maxRetries} attempts: ${lastError.message}`
+    );
   }
 
   // ==================== Event Rendering Methods ====================
@@ -2187,11 +2571,14 @@ class UI {
   async createEventMessage(event, language) {
     const lines = [
       `| ${i18next.t('Event', { lng: language, defaultValue: 'Event' })}${event.recurringTaskId ? ' 🔄' : ''}: ${event.title.padEnd(200)}`,
-      `| 💡 ${i18next.t('by', { lng: language, defaultValue: 'by' })}: ${getDisplayName(event.initiator)}`
+      `| 💡 ${i18next.t('by', { lng: language, defaultValue: 'by' })}: ${getDisplayName(event.initiator)}`,
     ];
 
     if (event.description) lines.push(`| 📝 ${event.description}`);
-    if (event.frequency) lines.push(`| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(event.frequency, { lng: language, defaultValue: event.frequency })}`);
+    if (event.frequency)
+      lines.push(
+        `| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(event.frequency, { lng: language, defaultValue: event.frequency })}`
+      );
 
     if (event.participants?.length) {
       const names = event.participants.map(u => getDisplayName(u));
@@ -2199,20 +2586,29 @@ class UI {
     }
 
     if (event.appreciation?.length) {
-      lines.push(`| 👍: ${event.appreciation.map(u => getDisplayName(u)).join(', ')}`);
+      lines.push(
+        `| 👍: ${event.appreciation.map(u => getDisplayName(u)).join(', ')}`
+      );
     }
 
     // Event-specific date/time fields
     const eventHolon = event.holon || event.chat;
-    for (const [field, emoji] of [['when', '📅'], ['until', '🔚']]) {
+    for (const [field, emoji] of [
+      ['when', '📅'],
+      ['until', '🔚'],
+    ]) {
       if (event[field]) {
         const date = new Date(event[field]);
-        const timezone = await this.settings.getTimezone(eventHolon) || 'UTC';
+        const timezone = (await this.settings.getTimezone(eventHolon)) || 'UTC';
         try {
           const dateStr = date.toLocaleDateString(language, {
-            weekday: 'long', month: 'long', day: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-            timeZone: timezone, timeZoneName: 'short'
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: timezone,
+            timeZoneName: 'short',
           });
           lines.push(`| ${emoji}: ${dateStr}`);
         } catch {
@@ -2223,13 +2619,19 @@ class UI {
 
     // Location
     if (event.where?.latitude) {
-      const locationName = event.where.name || `${event.where.latitude}, ${event.where.longitude}`;
+      const locationName =
+        event.where.name || `${event.where.latitude}, ${event.where.longitude}`;
       lines.push(`| 📍: ${locationName}`);
     }
 
-    lines.push(`| 🚥: ${i18next.t(event.status, { lng: language, defaultValue: event.status })}`);
+    lines.push(
+      `| 🚥: ${i18next.t(event.status, { lng: language, defaultValue: event.status })}`
+    );
 
-    if (event.published) lines.push(`| 📢 ${i18next.t('published', { lng: language, defaultValue: 'Published' })}`);
+    if (event.published)
+      lines.push(
+        `| 📢 ${i18next.t('published', { lng: language, defaultValue: 'Published' })}`
+      );
 
     return lines.join('\n') + '\n';
   }
@@ -2248,13 +2650,16 @@ class UI {
       const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get events from events collection
-      let events = await this.db.holosphere.getAll(holonId.toString(), 'events') || [];
+      let events =
+        (await this.db.holosphere.getAll(holonId.toString(), 'events')) || [];
 
       // Filter for ongoing/scheduled events
       events = events.filter(event => {
         const eventHolonId = event.holon || event.chat;
-        return (event.status === 'ongoing' || event.status === 'scheduled') &&
-          (!eventHolonId || eventHolonId.toString() === holonId.toString());
+        return (
+          (event.status === 'ongoing' || event.status === 'scheduled') &&
+          (!eventHolonId || eventHolonId.toString() === holonId.toString())
+        );
       });
 
       // If in a topic, filter by message_thread_id
@@ -2271,32 +2676,58 @@ class UI {
       });
 
       if (!events || events.length === 0) {
-        await ctx.reply(i18next.t('noevents', { lng: language, defaultValue: 'No upcoming events.' }));
+        await ctx.reply(
+          i18next.t('noevents', {
+            lng: language,
+            defaultValue: 'No upcoming events.',
+          })
+        );
         return;
       }
 
       // Create inline keyboard buttons
       const inline_keyboard_buttons = events.map(event => {
-        const title = typeof event.title === 'string' ? event.title.substring(0, 50) : 'Untitled Event';
+        const title =
+          typeof event.title === 'string'
+            ? event.title.substring(0, 50)
+            : 'Untitled Event';
         const sourceHolon = event.holon || event.chat || holonId;
-        const dateStr = event.when ? ` (${new Date(event.when).toLocaleDateString()})` : '';
-        return [Markup.button.callback(title + dateStr, 'view_event_' + sourceHolon + '_' + event.id)];
+        const dateStr = event.when
+          ? ` (${new Date(event.when).toLocaleDateString()})`
+          : '';
+        return [
+          Markup.button.callback(
+            title + dateStr,
+            'view_event_' + sourceHolon + '_' + event.id
+          ),
+        ];
       });
 
       inline_keyboard_buttons.push([
-        Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-          `${DASHBOARD_ADDRESS}/${holonId}/events`)
+        Markup.button.url(
+          i18next.t('Open Dashboard', { lng: language }),
+          `${DASHBOARD_ADDRESS}/${holonId}/events`
+        ),
       ]);
 
       await ctx.reply(
-        i18next.t('eventboard', { lng: language, defaultValue: 'Upcoming Events:' }),
+        i18next.t('eventboard', {
+          lng: language,
+          defaultValue: 'Upcoming Events:',
+        }),
         Markup.inlineKeyboard(inline_keyboard_buttons)
       );
-
     } catch (err) {
       console.error('Error in eventboard:', err);
-      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
-      ctx.reply(i18next.t('eventboardgenerror', { lng: language, defaultValue: 'Could not display event board.' }));
+      const language = await this.settings
+        .getLanguage(ctx.message.chat.id)
+        .catch(() => 'en');
+      ctx.reply(
+        i18next.t('eventboardgenerror', {
+          lng: language,
+          defaultValue: 'Could not display event board.',
+        })
+      );
     }
   }
 

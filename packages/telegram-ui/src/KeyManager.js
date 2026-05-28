@@ -86,7 +86,11 @@ class KeyManager {
     }
 
     // Get or create private key for this holon
-    const privateKey = getOrCreateHolonKey(this.appName, holonIdStr, generatePrivateKey);
+    const privateKey = getOrCreateHolonKey(
+      this.appName,
+      holonIdStr,
+      generatePrivateKey
+    );
 
     // Create HoloSphere instance with holon's key
     const holosphere = new HoloSphere({
@@ -111,12 +115,18 @@ class KeyManager {
     // Register holon -> pubkey mapping (for auto-capability resolution)
     // This enables read() to find data written by this holon's key
     this.masterHolosphere.registerHolon(holonIdStr, publicKey).catch(err => {
-      console.warn(`[KeyManager] Failed to register holon ${holonIdStr}:`, err.message);
+      console.warn(
+        `[KeyManager] Failed to register holon ${holonIdStr}:`,
+        err.message
+      );
     });
 
     // Register in global key registry (async, don't await)
     this._updateRegistry(holonIdStr, publicKey).catch(err => {
-      console.warn(`[KeyManager] Failed to update registry for ${holonIdStr}:`, err.message);
+      console.warn(
+        `[KeyManager] Failed to update registry for ${holonIdStr}:`,
+        err.message
+      );
     });
 
     return holosphere;
@@ -141,7 +151,11 @@ class KeyManager {
     }
 
     // Get or create key and derive public key
-    const privateKey = getOrCreateHolonKey(this.appName, holonIdStr, generatePrivateKey);
+    const privateKey = getOrCreateHolonKey(
+      this.appName,
+      holonIdStr,
+      generatePrivateKey
+    );
     const publicKey = getPublicKeyHex(privateKey);
 
     // Cache it (bidirectional)
@@ -177,7 +191,10 @@ class KeyManager {
         }
       }
     } catch (err) {
-      console.warn(`[KeyManager] Failed to lookup telegramId for pubkey:`, err.message);
+      console.warn(
+        `[KeyManager] Failed to lookup telegramId for pubkey:`,
+        err.message
+      );
     }
 
     return null;
@@ -305,7 +322,10 @@ class KeyManager {
     const targetPublicKey = await this.getPublicKey(targetHolonId);
 
     // Check for self-federation by comparing public keys (handles case where target is source's pubkey)
-    if (String(sourceHolonId) === String(targetHolonId) || sourcePublicKey === targetPublicKey) {
+    if (
+      String(sourceHolonId) === String(targetHolonId) ||
+      sourcePublicKey === targetPublicKey
+    ) {
       throw new Error('Cannot federate a holon with itself');
     }
 
@@ -341,7 +361,10 @@ class KeyManager {
     const targetPublicKey = await this.getPublicKey(targetHolonId);
 
     // Check for self-unfederation (shouldn't happen, but be consistent)
-    if (String(sourceHolonId) === String(targetHolonId) || sourcePublicKey === targetPublicKey) {
+    if (
+      String(sourceHolonId) === String(targetHolonId) ||
+      sourcePublicKey === targetPublicKey
+    ) {
       return true; // Nothing to unfederate from self
     }
 
@@ -372,7 +395,8 @@ class KeyManager {
    * @returns {Promise<Object>} Federation result
    */
   async setupFederation(sourceHolonId, targetHolonId, options = {}) {
-    const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } = options;
+    const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } =
+      options;
 
     // Get public keys (used for capability-based access and self-federation check).
     const sourcePubKey = await this.getPublicKey(sourceHolonId);
@@ -393,27 +417,36 @@ class KeyManager {
       null,
       true, // bidirectional: mirror with inverted directions onto target
       {
-        inbound:  Array.isArray(lensConfig.inbound)  ? lensConfig.inbound  : [],
-        outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : []
+        inbound: Array.isArray(lensConfig.inbound) ? lensConfig.inbound : [],
+        outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : [],
       }
     );
 
     if (success && partnerName) {
       try {
-        const fedInfo = await this.masterHolosphere.getGlobal('federation', source);
+        const fedInfo = await this.masterHolosphere.getGlobal(
+          'federation',
+          source
+        );
         if (fedInfo) {
           if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
           fedInfo.partnerNames[target] = partnerName;
           await this.masterHolosphere.putGlobal('federation', fedInfo);
         }
       } catch (e) {
-        console.warn('[setupFederation] Failed to store partner name:', e.message);
+        console.warn(
+          '[setupFederation] Failed to store partner name:',
+          e.message
+        );
       }
     }
 
     this.masterHolosphere.clearCache?.('federation');
 
-    const federationData = await this.masterHolosphere.getGlobal('federation', source);
+    const federationData = await this.masterHolosphere.getGlobal(
+      'federation',
+      source
+    );
     return { success, federationData };
   }
 
@@ -438,7 +471,12 @@ class KeyManager {
 
     // Delegate to holosphere — handles federated/inbound/outbound + lensConfig
     // cleanup, and mirrors the removal onto the partner.
-    const success = await this.masterHolosphere.unfederate(source, target, null, null);
+    const success = await this.masterHolosphere.unfederate(
+      source,
+      target,
+      null,
+      null
+    );
     this.masterHolosphere.clearCache?.('federation');
 
     return success;
@@ -481,7 +519,10 @@ class KeyManager {
           await holosphere.disconnect();
         }
       } catch (err) {
-        console.warn(`[KeyManager] Error closing holosphere for ${holonId}:`, err.message);
+        console.warn(
+          `[KeyManager] Error closing holosphere for ${holonId}:`,
+          err.message
+        );
       }
     }
     this.holonInstances.clear();

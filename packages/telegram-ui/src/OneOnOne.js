@@ -35,11 +35,13 @@ class OneOnOne {
     this.pairings = new Set(); // To track unique pairings
     this.scheduledJobs = new Map(); // Track scheduled jobs per holon to prevent memory leaks
 
-    bot.command(['round'], async (ctx) => {
-      let holonId = ctx.chat.id;
-      let participants = await this.db.getAll(`${holonId}/users`);
+    bot.command(['round'], async ctx => {
+      const holonId = ctx.chat.id;
+      const participants = await this.db.getAll(`${holonId}/users`);
       if (participants.length < 2) {
-        ctx.reply('Not enough participants for this. Please invite more people to join.');
+        ctx.reply(
+          'Not enough participants for this. Please invite more people to join.'
+        );
         return;
       }
 
@@ -58,13 +60,18 @@ class OneOnOne {
       ctx.reply('Scheduled speed dating rounds.');
     });
 
-    bot.command(['summary'], async (ctx) => {
+    bot.command(['summary'], async ctx => {
       const user = ctx.from.username;
       const summary = ctx.message.text.split('/summary ')[1];
       if (this.conversations[user]) {
         const { partner, holonId } = this.conversations[user];
         // Store the summary in the database
-        await this.db.put(holonId.toString(), 'summaries', { id: `${user}_${partner}`, user, partner, summary });
+        await this.db.put(holonId.toString(), 'summaries', {
+          id: `${user}_${partner}`,
+          user,
+          partner,
+          summary,
+        });
         ctx.reply('Thank you for your summary!');
         delete this.conversations[user]; // Remove the conversation after reporting
       } else {
@@ -94,7 +101,10 @@ class OneOnOne {
       }
 
       if (newPairings.length === 0) {
-        this.bot.telegram.sendMessage(holonId, 'All participants have been paired. Resetting pairs.');
+        this.bot.telegram.sendMessage(
+          holonId,
+          'All participants have been paired. Resetting pairs.'
+        );
         this.pairings.clear();
         await this.startRound(participants, holonId); // Start a new round with cleared pairs
       } else {
@@ -103,7 +113,10 @@ class OneOnOne {
         }
       }
     } else {
-      this.bot.telegram.sendMessage(holonId, 'Not enough participants for this session. Please wait for the next round.');
+      this.bot.telegram.sendMessage(
+        holonId,
+        'Not enough participants for this session. Please wait for the next round.'
+      );
     }
   }
 
@@ -121,10 +134,16 @@ class OneOnOne {
       this.conversations[user2.username] = { partner: user1.username, holonId };
 
       // Notify users in the main chat
-      this.bot.telegram.sendMessage(holonId, `@${user1.username} and @${user2.username}, you have been paired for a private conversation! Please check your direct messages.`);
+      this.bot.telegram.sendMessage(
+        holonId,
+        `@${user1.username} and @${user2.username}, you have been paired for a private conversation! Please check your direct messages.`
+      );
     } catch (error) {
       console.error('Error creating conversation:', error);
-      this.bot.telegram.sendMessage(holonId, `An error occurred while pairing @${user1.username} and @${user2.username}.`);
+      this.bot.telegram.sendMessage(
+        holonId,
+        `An error occurred while pairing @${user1.username} and @${user2.username}.`
+      );
     }
   }
 
@@ -146,7 +165,7 @@ class OneOnOne {
    * Cancel all scheduled jobs and cleanup resources
    */
   shutdown() {
-    for (const [holonId, job] of this.scheduledJobs) {
+    for (const [, job] of this.scheduledJobs) {
       job.cancel();
     }
     this.scheduledJobs.clear();
