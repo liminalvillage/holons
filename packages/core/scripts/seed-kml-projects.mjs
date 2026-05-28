@@ -40,7 +40,10 @@
  *     [--concurrency=4] [--timeout-ms=30000] [--no-skip-existing]
  *
  *   Env:
- *     HOLOSPHERE_PRIVATE_KEY  hex-encoded private key (required unless --dry-run)
+ *     HOLOSPHERE_PRIVATE_KEY  hex-encoded private key (optional — only needed
+ *                             if you want writes attributable to a specific
+ *                             pubkey; cell-based public puts go through GUN
+ *                             without it)
  *     HOLONS_APP              fallback for --app-name (defaults to "HolonsDebug")
  */
 
@@ -204,17 +207,18 @@ async function main() {
 		return;
 	}
 
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY;
-	if (!privateKey) {
-		console.error(
-			'Missing HOLOSPHERE_PRIVATE_KEY env var (hex-encoded). Pass --dry-run to skip writes.'
-		);
-		exit(2);
-	}
+	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
 
-	console.log(`Connecting to HoloSphere appName="${appName}" …`);
-	const holosphere = new HoloSphere({ appName, privateKey, logLevel: 'WARN' });
+	console.log(
+		`Connecting to HoloSphere appName="${appName}"` +
+			(privateKey ? ' with provided privateKey …' : ' anonymously (no privateKey) …')
+	);
+	const holosphere = new HoloSphere({
+		appName,
+		...(privateKey ? { privateKey } : {}),
+		logLevel: 'WARN'
+	});
 	await holosphere.ready();
 
 	const total = slice.length;
