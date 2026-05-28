@@ -20,7 +20,7 @@
  */
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './equation.js';
-import { toAggregates, type UserAggregates } from './aggregator.js';
+import { toAggregates, ZERO_USER_AGGREGATES, type UserAggregates } from './aggregator.js';
 
 export interface ScoreBreakdown {
   initiated: number;
@@ -313,14 +313,60 @@ export function calculateTaskCompletionScores(
 }
 
 /**
- * Calculate percentage share of total score (used for flow distribution).
+ * Normalize a set of (possibly negative) scores into percentage shares.
+ *
+ * Single source of truth for "what slice of the pie does each member get" —
+ * used by the web leaderboard (Status), the flow/contract distribution
+ * (FlowManagement → on-chain splitter), and the MCP scoring tools, so every
+ * surface splits the pie identically.
+ *
+ * Algorithm: shift every score by `min(0, lowest)` so the distribution is
+ * non-negative, then divide by the shifted total. The shift only kicks in
+ * when something is negative — when every score is ≥ 0 this reduces to plain
+ * proportional `score / Σscore`. When the shift leaves a member at 0 weight
+ * (some score ≤ 0), lift every weight by a small uniform floor so that
+ * member still gets a positive slice. This is the only transform that gives
+ * all four properties at once:
+ *   1. monotonic — a higher score is always a higher share, so a member in
+ *      debt can never outrank one who isn't. (Raw `score/Σscore` breaks when
+ *      the value equation weights signed currency balances and Σscore ≈ 0,
+ *      making the percentage explode; using `|score|` breaks monotonicity by
+ *      inflating large debtors.)
+ *   2. strictly positive — every share is > 0, so a pie always renders and
+ *      the on-chain splitter allocates a positive slice to every member (a
+ *      0 share would exclude them; a negative one is invalid).
+ *   3. sums to 100% — including members in debt, who get a small share rather
+ *      than a negative or oversized one.
+ *   4. proportional when there's no debt — if every score is ≥ 0 the floor
+ *      never engages, so the result is exactly `score / Σscore`.
+ *
+ * The floor is `FLOOR_RATIO` of the mean weight, added uniformly and then
+ * renormalized — uniform addition preserves ordering (monotonic) and keeps
+ * the sum at 100%. Degenerate inputs: an empty list yields `[]`; a list whose
+ * shifted weights are all 0 (every score equal) splits the pie evenly.
+ *
+ * Returns shares in the same order as the input.
  */
-export function calculatePercentageShare(
-  userScore: number,
-  totalScore: number,
-): number {
-  if (totalScore <= 0) return 0;
-  return (userScore / totalScore) * 100;
+const FLOOR_RATIO = 0.05;
+
+export function normalizeShares(scores: number[]): number[] {
+  const n = scores.length;
+  if (n === 0) return [];
+  const offset = Math.min(0, ...scores);
+  const weights = scores.map((v) => v - offset); // ≥ 0; unchanged when all ≥ 0
+  const shiftedTotal = weights.reduce((sum, w) => sum + w, 0);
+
+  // Strictly-positive floor: a member sits at exactly 0 weight only when some
+  // score ≤ 0. Lift everyone by a small uniform pseudo-weight so that member
+  // gets a positive slice. All-positive inputs have no 0 weight → no floor →
+  // exactly proportional.
+  if (weights.some((w) => w === 0)) {
+    const floor = shiftedTotal > 0 ? (shiftedTotal / n) * FLOOR_RATIO : 1;
+    for (let i = 0; i < n; i++) weights[i] += floor;
+  }
+
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  return weights.map((w) => (w / total) * 100);
 }
 
 /**
@@ -353,10 +399,120 @@ export function calculateAllUserScores(
     };
   });
 
-  const totalScore = usersWithScores.reduce((sum, u) => sum + u.score, 0);
+  const shares = normalizeShares(usersWithScores.map((u) => u.score));
 
-  return usersWithScores.map((u) => ({
+  return usersWithScores.map((u, i) => ({
     ...u,
-    percentage: calculatePercentageShare(u.score, totalScore),
+    percentage: shares[i],
   }));
+}
+
+// ===========================================================================
+// Holon scores + shares — THE single pipeline every surface uses.
+//
+// Web (Status leaderboard, Flow distribution) and the Telegram bot all derive
+// per-user scores and pie shares from this code, so the numbers are identical
+// everywhere. Each surface used to carry its own fetch/score/normalize glue
+// and drifted; this consolidates it. Inputs always come from the REA event
+// stream (aggregates + currency balances), so there is one source of truth.
+// ===========================================================================
+
+/** Minimal REA aggregator surface used to pull a user's scoring inputs.
+ *  Structural (not a class import) to avoid a score.ts ↔ aggregator.ts cycle. */
+export interface ScoringAggregator {
+  getUserAggregates(holonId: string, userId: string): Promise<UserAggregates>;
+  getCurrencyBalance(holonId: string, userId: string, currency: string): Promise<number>;
+}
+
+/** A user's REA-sourced scoring inputs: aggregates + money balances. */
+export interface HolonUserData {
+  userId: string;
+  aggregates: UserAggregates;
+  /** Money-currency balances (code → balance). `hour` is omitted — the scorer
+   *  derives it from `aggregates.hours`. */
+  balances: Record<string, number>;
+}
+
+/** A scored user: inputs + breakdown + score + normalized share (0–100). */
+export interface ScoredHolonUser extends HolonUserData {
+  breakdown: ScoreBreakdown;
+  score: number;
+  percentage: number;
+}
+
+/**
+ * Async: pull each user's scoring inputs from the REA store — aggregates plus
+ * the balance of every code in `currencyCodes` (money; `hour` is skipped, the
+ * scorer derives it from aggregates.hours).
+ *
+ * Kept separate from {@link scoreHolonUsers} so UIs with a live equation
+ * editor can re-score (pure, sync) without re-fetching on every weight tweak.
+ */
+export async function loadHolonUserData(
+  aggregator: ScoringAggregator,
+  holonId: string | number,
+  users: Array<{ id: string | number }>,
+  currencyCodes: string[] = [],
+): Promise<HolonUserData[]> {
+  const hid = String(holonId);
+  const money = currencyCodes.filter((c) => c && c !== 'hour');
+  return Promise.all(
+    users.map(async (u) => {
+      const userId = String(u.id);
+      let aggregates: UserAggregates;
+      try {
+        aggregates = await aggregator.getUserAggregates(hid, userId);
+      } catch {
+        aggregates = { ...ZERO_USER_AGGREGATES };
+      }
+      const balances: Record<string, number> = {};
+      await Promise.all(
+        money.map(async (c) => {
+          try {
+            balances[c] = await aggregator.getCurrencyBalance(hid, userId, c);
+          } catch {
+            balances[c] = 0;
+          }
+        }),
+      );
+      return { userId, aggregates, balances };
+    }),
+  );
+}
+
+/**
+ * Pure: score every loaded user under `equation` and assign normalized shares
+ * (monotonic, strictly positive, summing to 100 — see {@link normalizeShares}).
+ * This is the one place "scores + shares for a holon" is computed; results are
+ * returned in the same order as `loaded`.
+ */
+export function scoreHolonUsers(
+  loaded: HolonUserData[],
+  equation: ScoreEquation = DEFAULT_EQUATION,
+): ScoredHolonUser[] {
+  const scored = loaded.map((d) => {
+    const breakdown = getScoreBreakdown(d.aggregates, equation, d.balances);
+    return { ...d, breakdown, score: breakdown.total, percentage: 0 };
+  });
+  const shares = normalizeShares(scored.map((s) => s.score));
+  scored.forEach((s, i) => {
+    s.percentage = shares[i];
+  });
+  return scored;
+}
+
+/**
+ * Convenience: {@link loadHolonUserData} + {@link scoreHolonUsers} in one call.
+ * For surfaces with no live equation editing (the bot). Balances are pulled
+ * for every currency the equation weights.
+ */
+export async function computeHolonUserScores(
+  aggregator: ScoringAggregator,
+  holonId: string | number,
+  users: Array<{ id: string | number }>,
+  equation: ScoreEquation = DEFAULT_EQUATION,
+): Promise<ScoredHolonUser[]> {
+  const codes = Object.keys(equation.currencies ?? {});
+  const loaded = await loadHolonUserData(aggregator, holonId, users, codes);
+  return scoreHolonUsers(loaded, equation);
 }

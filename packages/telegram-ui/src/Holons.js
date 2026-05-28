@@ -22,6 +22,7 @@ import * as holons from '../contracts/Holons.json' with { type: "json" };
 // "TestToken": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
 
 import { createHolonBundle, createBundleContracts } from '../utils/holonOperations.js';
+import { normalizeShares } from '@holons/core/scoring';
 
 /**
  * Holon management class for blockchain-based holon operations.
@@ -1377,22 +1378,29 @@ export default class Holons {
     let userids = users.map((user) => user.id.toString());
     console.log("User IDs for contract:", userids);
     
-    // Step 7: Format scores for contract with adjustments
+    // Step 7: Format scores for contract with adjustments.
+    // Apply manual adjustments to the (possibly negative) calculated scores,
+    // then run them through the one shared normalizer (@holons/core/scoring).
+    // It returns strictly-positive shares that sum to 100% — so the splitter
+    // always gets a positive weight per member (never 0, never negative),
+    // identical to the web flow distribution and the leaderboard. Shares are
+    // scaled to integer basis points to preserve resolution on-chain.
     console.log("\n--- STEP 7: Formatting scores for contract with manual adjustments ---");
-    let contractScores = users.map((user) => {
+    const adjustedScores = users.map((user) => {
       const calculatedScore = Math.floor(userScoreMap[user.id] || 0);
       const adjustment = memberAdjustments[user.id.toString()] || 0;
-      const finalScore = Math.max(0, calculatedScore + adjustment);
-      
-      console.log(`User ${user.id}:`);
-      console.log(`  - Calculated score: ${calculatedScore}`);
-      console.log(`  - Manual adjustment: ${adjustment}`);
-      console.log(`  - Final score: ${finalScore}`);
-      
-      return ethers.toBigInt(finalScore);
+      return calculatedScore + adjustment;
     });
-    
-    console.log("Final contract scores (BigInt):", contractScores.map(s => s.toString()));
+    const shares = normalizeShares(adjustedScores);
+    let contractScores = users.map((user, i) => {
+      const finalWeight = Math.max(1, Math.round(shares[i] * 100)); // basis points, ≥ 1
+      console.log(`User ${user.id}:`);
+      console.log(`  - Adjusted score: ${adjustedScores[i]}`);
+      console.log(`  - Share: ${shares[i].toFixed(2)}% → ${finalWeight} bps`);
+      return ethers.toBigInt(finalWeight);
+    });
+
+    console.log("Final contract scores (BigInt, basis points):", contractScores.map(s => s.toString()));
     
     // Step 8: Get holon contract
     console.log("\n--- STEP 8: Getting holon contract ---");
@@ -3108,6 +3116,17 @@ export default class Holons {
           const settings = await this.getSettings(holonId);
           const memberAdjustments = settings.memberAdjustments || {};
 
+          // Local flow shares via the one shared normalizer
+          // (@holons/core/scoring): strictly positive, monotonic, sums to
+          // 100% — the same split the contract sync feeds on-chain. Keyed by
+          // member id so the display loop can look each up.
+          const localShareById = {};
+          {
+            const adjusted = memberData.map(m => m.calculatedScore + (memberAdjustments[m.id] || 0));
+            const localShares = normalizeShares(adjusted);
+            memberData.forEach((m, i) => { localShareById[m.id] = localShares[i]; });
+          }
+
           // Display members with scores and percentages
           for (const member of memberData) {
             // Apply manual adjustments to the current calculated score (from value equation)
@@ -3121,7 +3140,7 @@ export default class Holons {
               keyboard.push([{ text: buttonText, callback_data: callbackData }]);
             } else {
               // Interactive score adjustment mode
-              const percentage = totalCalculatedScore > 0 ? Math.round((adjustedScore / (totalCalculatedScore + Object.values(memberAdjustments).reduce((a, b) => a + b, 0))) * 100) : 0;
+              const percentage = Math.round(localShareById[member.id] ?? 0);
               const contractPercentage = totalContractScore > 0 ? Math.round((member.contractScore / totalContractScore) * 100) : 0;
               
               // Member name with both percentages

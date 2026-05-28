@@ -11,12 +11,12 @@ import { z } from 'zod';
 import {
   DEFAULT_EQUATION,
   calculateAllUserScores,
-  calculatePercentageShare,
   calculateTaskCompletionScores,
   calculateUserScore,
   getActionScore,
   getScoreBreakdown,
   loadEquation,
+  normalizeShares,
   toAggregates,
   type ScoreEquation,
   type UserAggregates,
@@ -133,17 +133,17 @@ export function registerScoringTools(server: McpServer, deps: ToolDeps): void {
           };
         });
 
-        const totalScore = scored.reduce((sum, u) => sum + u.breakdown.total, 0);
+        const shares = normalizeShares(scored.map((u) => u.breakdown.total));
         const out: Record<string, unknown> = {};
-        for (const u of scored) {
+        scored.forEach((u, i) => {
           out[u.userId] = {
             username: u.username,
             score: u.breakdown.total,
-            percentage: calculatePercentageShare(u.breakdown.total, totalScore),
+            percentage: shares[i],
             aggregates: u.aggregates,
             breakdown: u.breakdown,
           };
-        }
+        });
         return ok({ holon, scores: out });
       } catch (e: any) {
         return err(e?.message ?? String(e));

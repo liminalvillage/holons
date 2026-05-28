@@ -3,7 +3,6 @@ import {
   DEFAULT_EQUATION,
   REAAggregator,
   calculateAllUserScores,
-  calculatePercentageShare,
   calculateScoreFromUserData,
   calculateTaskCompletionScores,
   calculateUserScore,
@@ -11,6 +10,8 @@ import {
   getCachedEquation,
   getScoreBreakdown,
   migrateEquation,
+  normalizeShares,
+  scoreHolonUsers,
   toAggregates,
   type REAEventStoreLike,
   type UserAggregates,
@@ -304,13 +305,86 @@ describe('calculateTaskCompletionScores', () => {
   });
 });
 
-describe('calculatePercentageShare', () => {
-  it('returns 0 for an empty pool', () => {
-    expect(calculatePercentageShare(5, 0)).toBe(0);
+describe('normalizeShares', () => {
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+  it('returns [] for an empty pool', () => {
+    expect(normalizeShares([])).toEqual([]);
   });
 
-  it('returns the percentage of the pool', () => {
-    expect(calculatePercentageShare(25, 100)).toBe(25);
+  it('gives a single member the whole pie', () => {
+    expect(normalizeShares([42])).toEqual([100]);
+  });
+
+  it('is plain proportional when every score is non-negative', () => {
+    expect(normalizeShares([3, 2])).toEqual([60, 40]);
+    expect(normalizeShares([1, 1, 2])).toEqual([25, 25, 50]);
+  });
+
+  it('splits evenly when all scores are equal', () => {
+    expect(normalizeShares([5, 5, 5, 5])).toEqual([25, 25, 25, 25]);
+    // ...even when the equal value is negative or zero.
+    expect(normalizeShares([0, 0])).toEqual([50, 50]);
+    const thirds = normalizeShares([-3, -3, -3]);
+    thirds.forEach((s) => expect(s).toBeCloseTo(100 / 3));
+    expect(sum(thirds)).toBeCloseTo(100);
+  });
+
+  it('shifts negatives so every share is strictly positive and sums to 100', () => {
+    const shares = normalizeShares([317.8, 271.7, 30.3, -6.2, -47.3]);
+    // Strictly positive — the splitter must allocate something to everyone.
+    expect(Math.min(...shares)).toBeGreaterThan(0);
+    expect(sum(shares)).toBeCloseTo(100);
+    // The most-indebted member gets the smallest (but nonzero) slice.
+    expect(shares[shares.length - 1]).toBe(Math.min(...shares));
+  });
+
+  it('is monotonic — a debtor never outranks a non-debtor', () => {
+    // scores: a=10, b=-2 (debt), c=5
+    const [a, b, c] = normalizeShares([10, -2, 5]);
+    expect(a).toBeGreaterThan(c);
+    expect(c).toBeGreaterThan(b);
+    expect(b).toBeGreaterThan(0); // the debtor still gets a positive slice
+  });
+
+  it('does not explode when signed balances sum to zero', () => {
+    // Mutual-credit ledger where Σscore = 0 — the raw score/Σscore form blew
+    // up here (division by ~0); the shift keeps it finite and well-formed.
+    const shares = normalizeShares([50, -50]);
+    expect(sum(shares)).toBeCloseTo(100);
+    expect(shares[0]).toBeGreaterThan(shares[1]);
+    expect(shares[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('scoreHolonUsers', () => {
+  const eq = { ...DEFAULT_EQUATION, currencies: { hour: 1, eur: 1 } };
+  const loaded = [
+    { userId: 'a', aggregates: { ...toAggregates({ initiated: [1], completed: [1] }) }, balances: { eur: 100 } },
+    { userId: 'b', aggregates: { ...toAggregates({ initiated: [1] }) }, balances: { eur: -100 } },
+    { userId: 'c', aggregates: { ...toAggregates({ completed: [1] }) }, balances: { eur: 0 } },
+  ];
+
+  it('scores from aggregates + balances and assigns shares summing to 100', () => {
+    const rows = scoreHolonUsers(loaded, eq);
+    // a: initiated 1 + completed 2 + eur 100 = 103
+    expect(rows[0].score).toBeCloseTo(103);
+    // b: initiated 1 + eur -100 = -99
+    expect(rows[1].score).toBeCloseTo(-99);
+    // c: completed 2 = 2
+    expect(rows[2].score).toBeCloseTo(2);
+    const sum = rows.reduce((s, r) => s + r.percentage, 0);
+    expect(sum).toBeCloseTo(100);
+    // strictly positive + monotonic with score
+    expect(Math.min(...rows.map((r) => r.percentage))).toBeGreaterThan(0);
+    expect(rows[0].percentage).toBeGreaterThan(rows[2].percentage);
+    expect(rows[2].percentage).toBeGreaterThan(rows[1].percentage);
+  });
+
+  it('returns rows in input order with breakdown attached', () => {
+    const rows = scoreHolonUsers(loaded, eq);
+    expect(rows.map((r) => r.userId)).toEqual(['a', 'b', 'c']);
+    expect(rows[0].breakdown.total).toBeCloseTo(rows[0].score);
   });
 });
 
@@ -325,6 +399,7 @@ describe('calculateAllUserScores', () => {
     );
     expect(result[0].score).toBe(3); // 1 + 2
     expect(result[1].score).toBe(2); // 2 + 0
+    // All scores non-negative → proportional share.
     expect(result[0].percentage).toBeCloseTo(60);
     expect(result[1].percentage).toBeCloseTo(40);
   });

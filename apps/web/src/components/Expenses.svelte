@@ -4,6 +4,8 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
+	import { REAEventFactory } from "@holons/core/rea";
+	import { getEventStore } from "../lib/rea/eventStore";
 
 	// Canonical creation timestamp is `created: ISO string` across every
 	// shape. Older records may carry the bot's legacy `date` (ms / numeric
@@ -412,6 +414,20 @@
 		};
 	}
 
+	// Mirror the bot (Expenses.ts): every expense write also emits its REA
+	// events (expense:paid + expense:share) so the REA stream is the complete
+	// economic log both UIs and scoring read from. Stable ids keyed on
+	// expense.id make this idempotent on re-save.
+	async function writeExpenseEvents(expense: Expense) {
+		try {
+			const store = getEventStore(holosphere);
+			const events = REAEventFactory.expenseEvents(holonID, expense as any);
+			await Promise.all(events.map((e) => store.put(holonID, e)));
+		} catch (e: any) {
+			console.warn('[Expenses] Failed to write REA events for', expense.id, e?.message ?? e);
+		}
+	}
+
 	async function saveExpense() {
 		if (!holonID || !newExpense.description || !newExpense.amount) return;
 
@@ -426,6 +442,7 @@
 		};
 
 		await holosphere.put(holonID, 'expenses', expense);
+		await writeExpenseEvents(expense);
 		showAddExpense = false;
 	}
 
@@ -454,6 +471,7 @@
 					created: raw.created ?? raw.date ?? new Date().toISOString()
 				};
 				await holosphere.put(holonID, 'expenses', expense);
+				await writeExpenseEvents(expense);
 			}
 			showImportModal = false;
 		} catch (error: any) {

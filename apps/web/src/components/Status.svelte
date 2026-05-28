@@ -7,9 +7,9 @@
     import { ethers } from 'ethers';
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
-    import { calculateCurrencyBalance, expenseCurrency } from "../utils/expenseCalculations";
+    import { expenseCurrency } from "../utils/expenseCalculations";
     import { migrateEquation, type ScoreEquation } from "$lib/scoring/ContributionScoring";
-    import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from "@holons/core/scoring";
+    import { REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
@@ -52,7 +52,6 @@
     let showUserModal = false;
     let currenciesLoaded = false;
     let expensesLoaded = false;
-    let currencyBalanceCache: Record<string, number> = {};
     // REA-derived aggregates keyed by user.id. Falls back to zero while
     // the per-user query is in flight (table keeps rendering).
     let aggregatesByUser: Record<string, UserAggregates> = {};
@@ -643,32 +642,41 @@
 
     // Per-user REA aggregates fetched in parallel.
     let aggregatesLoaded = false;
-    async function loadAggregatesForUsers() {
+    // Per-user money balances from the REA store, keyed userId → currency →
+    // balance. Populated by loadScoringData alongside aggregates.
+    let balancesByUser: Record<string, Record<string, number>> = {};
+
+    // One async load of every user's scoring inputs from the REA store —
+    // aggregates + money balances — through the shared core helper
+    // (loadHolonUserData). Currency set = union of displayed and
+    // equation-weighted currencies so no weighted currency is missed.
+    async function loadScoringData() {
         if (!holosphere || !holonID) return;
-        const aggregator = new REAAggregator(getEventStore(holosphere));
         const entries = Object.entries(store);
         if (entries.length === 0) {
             aggregatesByUser = {};
+            balancesByUser = {};
             aggregatesLoaded = true;
             return;
         }
-        const next: Record<string, UserAggregates> = {};
-        await Promise.all(entries.map(async ([key, user]) => {
-            const id = String(user.id || key);
-            try {
-                next[id] = await aggregator.getUserAggregates(String(holonID), id);
-            } catch (err) {
-                console.error("[Status.svelte] REA aggregates fetch failed for", id, err);
-                next[id] = ZERO_USER_AGGREGATES;
-            }
-        }));
-        aggregatesByUser = next;
+        const aggregator = new REAAggregator(getEventStore(holosphere));
+        const codes = [...new Set([...availableCurrencies, ...Object.keys(equation.currencies ?? {})])];
+        const users = entries.map(([key, u]) => ({ id: (u as any).id ?? key }));
+        const data = await loadHolonUserData(aggregator, holonID, users, codes);
+        const aggs: Record<string, UserAggregates> = {};
+        const bals: Record<string, Record<string, number>> = {};
+        for (const d of data) {
+            aggs[d.userId] = d.aggregates;
+            bals[d.userId] = d.balances;
+        }
+        aggregatesByUser = aggs;
+        balancesByUser = bals;
         aggregatesLoaded = true;
-        // 'hour' should appear once declared hours exist, even with no hour expenses yet.
+        // 'hour' should appear once declared hours exist.
         applyCurrentCurrencyList();
     }
 
-    $: if (store && holonID) loadAggregatesForUsers();
+    $: if (store && holonID && availableCurrencies && equation) loadScoringData();
 
     // Live refresh: re-fetch aggregates whenever a rea_events write lands.
     // Debounced because a single task completion writes several events in
@@ -683,7 +691,7 @@
             holosphere.subscribe(holonID, 'rea_events', () => {
                 if (reaRefreshTimer) clearTimeout(reaRefreshTimer);
                 reaRefreshTimer = setTimeout(() => {
-                    loadAggregatesForUsers();
+                    loadScoringData();
                 }, 250);
             });
         } catch (e: any) {
@@ -695,90 +703,72 @@
 
     type BreakdownLine = { label: string; count: number; weight: number; points: number };
 
-    // Per-user score breakdown — used both for the score itself and for the
-    // popover that explains "why is the score that?".
-    function getBreakdown(user: User, userKey: string): { lines: BreakdownLine[]; total: number } {
-        const userId = user.id || userKey;
+    // Build the popover's display lines (label/count/weight/points) from a
+    // core-scored row. Display-only — the authoritative score is row.score.
+    function toBreakdownLines(row: ScoredHolonUser, eq: Equation): BreakdownLine[] {
+        const a = row.aggregates;
         const lines: BreakdownLine[] = [];
-        // Counts come from REA aggregates, not the flat user.\* arrays.
-        const agg = userAggregates(user, userKey);
-        const initiatedCount = agg.initiated;
-        const completedCount = agg.completed;
-        const wantsCount = agg.wants;
-        const offersCount = agg.offers;
-        const sentCount = agg.sent;
-        const receivedCount = agg.received;
-        const collaborationCount = agg.collaboration;
-
-        // Use the live edit buffer while the user is editing the equation
-        // so the table, pie chart and breakdown popover all preview the
-        // weights they're about to save. Cancel reverts; Save persists.
-        const eq = isEditingEquation ? editingEquation : equation;
-
-        const flat: Array<[string, number, number]> = [
-            ['Tasks initiated', initiatedCount, eq.initiated],
-            ['Tasks completed', completedCount, eq.completed],
-            ['Appreciations sent', sentCount, eq.sent],
-            ['Appreciations received', receivedCount, eq.received],
-            ['Collaboration events', collaborationCount, eq.collaboration],
-            ['Wants', wantsCount, eq.wants],
-            ['Offers', offersCount, eq.offers],
-            ['Participation (quests)', agg.participation ?? 0, eq.participation ?? 0],
-            ['Co-participants', agg.coParticipants ?? 0, eq.coParticipants ?? 0],
-            ['Activity (events)', agg.activity ?? 0, eq.activity ?? 0],
-            ['Group size (avg)', agg.groupSize ?? 0, eq.groupSize ?? 0],
-            ['Group-size variance', agg.variance ?? 0, eq.variance ?? 0],
+        const flat: Array<[string, number, number, number]> = [
+            ['Tasks initiated', a.initiated, eq.initiated, row.breakdown.initiated],
+            ['Tasks completed', a.completed, eq.completed, row.breakdown.completed],
+            ['Appreciations sent', a.sent, eq.sent, row.breakdown.sent],
+            ['Appreciations received', a.received, eq.received, row.breakdown.received],
+            ['Collaboration events', a.collaboration, eq.collaboration, row.breakdown.collaboration],
+            ['Wants', a.wants, eq.wants, row.breakdown.wants],
+            ['Offers', a.offers, eq.offers, row.breakdown.offers],
+            ['Participation (quests)', a.participation ?? 0, eq.participation ?? 0, row.breakdown.participation],
+            ['Co-participants', a.coParticipants ?? 0, eq.coParticipants ?? 0, row.breakdown.coParticipants],
+            ['Activity (events)', a.activity ?? 0, eq.activity ?? 0, row.breakdown.activity],
+            ['Group size (avg)', a.groupSize ?? 0, eq.groupSize ?? 0, row.breakdown.groupSize],
+            ['Group-size variance', a.variance ?? 0, eq.variance ?? 0, row.breakdown.variance],
         ];
-        for (const [label, count, weight] of flat) {
+        for (const [label, count, weight, points] of flat) {
             if (!weight || !count) continue;
-            lines.push({ label, count, weight, points: count * weight });
+            lines.push({ label, count, weight, points });
         }
-
-        for (const currency of availableCurrencies) {
+        for (const [currency, points] of Object.entries(row.breakdown.currencies)) {
             const weight = eq.currencies?.[currency] || 0;
-            if (!weight) continue;
-            const balance = getCurrencyAmount(userId, currency);
-            if (!balance) continue;
+            const balance = currency === 'hour' ? (a.hours ?? 0) : (row.balances[currency] ?? 0);
             lines.push({
                 label: currency === 'hour' ? 'Declared hours' : `${currency.toUpperCase()} balance`,
                 count: balance,
                 weight,
-                points: balance * weight
+                points,
             });
         }
-
-        const total = lines.reduce((s, l) => s + l.points, 0);
-        return { lines, total };
+        return lines;
     }
 
-    function calculateScore(user: User, userKey: string): number {
-        return getBreakdown(user, userKey).total;
-    }
-
-    // Compute every user's score exactly once per reactive tick. All the
-    // downstream derivations (sort, totals, pie chart, table rows, footer)
-    // read from this map instead of re-invoking calculateScore — which used
-    // to walk the breakdown 5–6 times per user per render.
-    // aggregatesByUser is in the dep list so loading REA aggregates after
-    // initial render triggers a recompute (otherwise scores stay 0 even
-    // after the REA query returns).
-    // Compute breakdown + total per user in one reactive pass. The popover
-    // reads breakdownByKey directly so it stays in sync with the live edit
-    // buffer without needing its own subscription wiring.
-    $: breakdownByKey = (() => {
-        equation; editingEquation; isEditingEquation;
-        availableCurrencies; expenseStore; store; aggregatesByUser;
-        const map: Record<string, { lines: BreakdownLine[]; total: number }> = {};
-        for (const [key, user] of Object.entries(store)) {
-            map[key] = getBreakdown(user, key);
-        }
+    // Score every user through the one shared core pipeline (scoreHolonUsers):
+    // REA aggregates + REA balances + equation + normalized shares — identical
+    // to Flow and the bot. Live equation edits re-score instantly (pure, no
+    // refetch) via editingEquation; the async data load is separate.
+    $: scoredByKey = (() => {
+        aggregatesByUser; balancesByUser; equation; editingEquation; isEditingEquation; store;
+        const eq = isEditingEquation ? editingEquation : equation;
+        const keys = Object.keys(store);
+        const loaded = keys.map((k) => ({
+            userId: k,
+            aggregates: aggregatesByUser[k] ?? ZERO_USER_AGGREGATES,
+            balances: balancesByUser[k] ?? {},
+        }));
+        const rows = scoreHolonUsers(loaded, eq);
+        const map: Record<string, ScoredHolonUser> = {};
+        keys.forEach((k, i) => { map[k] = rows[i]; });
         return map;
     })();
-    $: scoreByKey = (() => {
-        breakdownByKey;
-        const map: Record<string, number> = {};
-        for (const [key, bd] of Object.entries(breakdownByKey)) {
-            map[key] = bd.total;
+
+    $: scoreByKey = Object.fromEntries(
+        Object.entries(scoredByKey).map(([k, r]) => [k, r.score])
+    ) as Record<string, number>;
+    $: percentageByKey = Object.fromEntries(
+        Object.entries(scoredByKey).map(([k, r]) => [k, r.percentage])
+    ) as Record<string, number>;
+    $: breakdownByKey = (() => {
+        const eq = isEditingEquation ? editingEquation : equation;
+        const map: Record<string, { lines: BreakdownLine[]; total: number }> = {};
+        for (const [k, r] of Object.entries(scoredByKey)) {
+            map[k] = { lines: toBreakdownLines(r, eq), total: r.score };
         }
         return map;
     })();
@@ -788,12 +778,11 @@
     );
 
     $: maxScore = sortedUsers.length > 0 ? (scoreByKey[sortedUsers[0][0]] ?? 0) : 0;
-    $: totalScore = Object.values(scoreByKey).reduce((sum, v) => sum + v, 0);
 
     // Prepare data for the 3D pie chart
     $: pieChartData = sortedUsers.map(([userId, user]) => {
         const score = scoreByKey[userId] ?? 0;
-        const percentage = totalScore > 0 ? (score / totalScore) * 100 : 0;
+        const percentage = percentageByKey[userId] ?? 0;
 
         const agg = userAggregates(user, userId);
         const breakdown = {
@@ -826,23 +815,13 @@
         };
     }).filter(user => user.percentage > 0); // Only include users with a non-zero percentage
     
-    // Simple cache invalidation when data changes
-    $: if (availableCurrencies || expenseStore) {
-        currencyBalanceCache = {};
-    }
-
     $: dataReady = valueEquationLoaded && currenciesLoaded && expensesLoaded;
 
-    function calculatePercentage(score: number): number {
-        if (totalScore === 0) return 0;
-        return (score / totalScore) * 100;
-    }
-
     // Resolve the "amount" used for currency-weighted scoring per user.
-    // For 'hour', source from REA-aggregated declared hours (agg.hours from
-    // quest:time_logged events) so the score reflects work declared, not
-    // expense settlements. All other currencies still come from the expense
-    // ledger via getCurrencyBalance.
+    // Everything comes from the REA store: 'hour' from REA-aggregated declared
+    // hours (quest:time_logged), money currencies from REA expense events
+    // (expense:share) via balancesByUser. The expenses lens is the write-side
+    // ledger; the REA stream is the single read-side source for scoring.
     function getCurrencyAmount(userId: string, currency: string): number {
         if (currency === 'hour') {
             const id = String(userId);
@@ -851,30 +830,10 @@
         return getCurrencyBalance(userId, currency);
     }
 
-    // Wrapper function to handle caching and data conversion for the shared utility
+    // Money balance from the REA store (loaded by loadBalancesForUsers).
     function getCurrencyBalance(userId: string, currency: string): number {
         if (!currency || !userId) return 0;
-
-        // Create cache key
-        const expenseCount = Object.keys(expenseStore).length;
-        const cacheKey = `${userId}-${currency}-${expenseCount}`;
-        
-        if (currencyBalanceCache[cacheKey] !== undefined) {
-            return currencyBalanceCache[cacheKey];
-        }
-        
-        // Convert user data to match utility function interface
-        const usersForCalculation = Object.values(store).map(user => ({
-            id: user.id ? parseInt(user.id.toString()) : parseInt(Object.keys(store).find(key => store[key] === user) || '0'),
-            first_name: user.first_name
-        }));
-        
-        // Call the shared utility function
-        const balance = calculateCurrencyBalance(userId, currency, expenseStore, usersForCalculation);
-        
-        // Cache and return the result
-        currencyBalanceCache[cacheKey] = balance;
-        return balance;
+        return balancesByUser[String(userId)]?.[currency] ?? 0;
     }
 
     // Format currency amounts
@@ -984,7 +943,7 @@
                             <tbody>
                                 {#each sortedUsers as [userId, user], index}
                                     {@const score = scoreByKey[userId] ?? 0}
-                                    {@const percentage = calculatePercentage(score)}
+                                    {@const percentage = percentageByKey[userId] ?? 0}
                                     <tr class="border-b border-gray-600/50 hover:bg-gray-600/20 transition-all duration-200">
                                         <td class="p-2 text-center">
                                             {#if index === 0}

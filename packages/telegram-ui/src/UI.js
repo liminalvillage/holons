@@ -357,7 +357,10 @@ class UI {
     const settings = await this.settings.getSettings(holonId);
     const currencies = settings.currencies || [];
 
-    // Calculate and sort user scores using the Settings class method
+    // Scores + normalized shares come from the one shared core pipeline
+    // (calculateUserScores → computeHolonUserScores). `percentage` is already
+    // strictly positive, monotonic and sums to 100% — identical to the web
+    // leaderboard and the flow/splitter distribution. No re-normalizing here.
     const sortedUsers = await this.settings.calculateUserScores(users, holonId, expensesInstance);
 
     for (let i = 0; i < sortedUsers.length; i++) {
@@ -402,20 +405,23 @@ class UI {
           </div>
         </td>
         <td class="stat-cell">
-          <span class="stat-value">${user.initiated && user.initiated.length || 0}</span>
+          <span class="stat-value">${user.aggregates?.initiated ?? (user.initiated?.length || 0)}</span>
         </td>
         <td class="stat-cell">
-          <span class="stat-value">${user.completed && user.completed.length || 0}</span>
+          <span class="stat-value">${user.aggregates?.completed ?? (user.completed?.length || 0)}</span>
         </td>
         <td class="stat-cell">
-          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.sent || 0}</span>
+          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.aggregates?.sent ?? (user.sent || 0)}</span>
         </td>
         <td class="stat-cell">
-          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.received || 0}</span>
+          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.aggregates?.received ?? (user.received || 0)}</span>
         </td>
         ${currencyCells}
         <td class="score-cell">
           <span class="score-value">${user.score.toFixed(1)}</span>
+        </td>
+        <td class="score-cell">
+          <span class="score-value">${(user.percentage ?? 0).toFixed(1)}%</span>
         </td>
       </tr>`
 
@@ -440,6 +446,7 @@ class UI {
               <th class="stat-header" style="white-space: normal; word-wrap: break-word;">${i18next.t('appreciation_received', { lng: language, defaultValue: 'Appreciation Received' })}</th>
               ${currencyHeaders}
               <th class="score-header">${i18next.t('score', { lng: language })}</th>
+              <th class="score-header">${i18next.t('share', { lng: language, defaultValue: 'Share' })}</th>
             </tr>
           </thead>
           <tbody>

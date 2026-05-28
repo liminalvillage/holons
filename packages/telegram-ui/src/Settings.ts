@@ -21,10 +21,11 @@ import {
 } from '@holons/core/settings';
 import {
     DEFAULT_EQUATION,
-    calculateUserScore,
+    REAAggregator,
+    computeHolonUserScores,
     migrateEquation,
-    toAggregates,
 } from '@holons/core/scoring';
+import { REAEventStore } from '@holons/core/rea';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -2467,7 +2468,10 @@ export default class Settings {
 
     async setValueEquation(holonId, equation) {
         let settings = await this.getSettings(holonId)
-        settings.valueEquation = equation
+        // Persist the migrated (canonical) shape only: no top-level `hours`,
+        // no flat per-currency keys — they're folded into `currencies`. Keeps
+        // settings clean and identical to what the web writes.
+        settings.valueEquation = migrateEquation(equation)
         await this.db.put(holonId.toString(), 'settings', settings)
     }
 
@@ -2476,39 +2480,33 @@ export default class Settings {
         return settings.valueEquation
     }
 
-    async calculateUserScores(users, holonId, expensesInstance) {
+    async calculateUserScores(users, holonId, _expensesInstance) {
         const settings = await this.getSettings(holonId);
-        const equation = settings.valueEquation ?? DEFAULT_EQUATION;
-        const currencies = settings.currencies || [];
-        const currencyWeights = equation?.currencies ?? {};
+        // Migrate the persisted equation so it always carries the canonical
+        // shape (e.g. `currencies.hour`) — identical to the web.
+        const equation = migrateEquation(settings.valueEquation ?? settings.equation);
 
-        const userScores = [];
-        for (const userId in users) {
-            const user = users[userId];
-            if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
+        // The ONE shared pipeline (@holons/core/scoring → computeHolonUserScores):
+        // REA aggregates + REA balances + equation + normalized shares. The web
+        // (Status, Flow) runs the exact same function, so scores and pie shares
+        // are identical across every surface. The flat `user.initiated[]` arrays
+        // on the profile are not the source of truth — REA events are.
+        const aggregator = new REAAggregator(new REAEventStore(this.db));
+        const userList = Object.values(users).filter((u: any) => u && u.id !== undefined);
+        const scored = await computeHolonUserScores(aggregator, holonId, userList as any, equation);
+        const byId = new Map(scored.map((s) => [s.userId, s]));
 
-            // Fetch per-currency balances so core/scoring can apply the
-            // equation's currency weights uniformly.
-            const currencyBalances = {};
-            if (currencies.length > 0 && expensesInstance) {
-                for (const currencyName of currencies) {
-                    const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                    if (!currencyKey || currencyWeights[currencyKey] === undefined) continue;
-                    try {
-                        currencyBalances[currencyKey] = await expensesInstance.getUserCurrencyBalance(
-                            holonId,
-                            user.id,
-                            currencyKey,
-                        );
-                    } catch (e) {
-                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
-                    }
-                }
-            }
-
-            const score = calculateUserScore(toAggregates(user), equation, currencyBalances);
-            userScores.push({ ...user, score });
-        }
+        // Re-attach onto the full user objects: score, normalized share (%),
+        // and REA aggregates (so the leaderboard renders matching counts).
+        const userScores = userList.map((u: any) => {
+            const s = byId.get(String(u.id));
+            return {
+                ...u,
+                score: s?.score ?? 0,
+                percentage: s?.percentage ?? 0,
+                aggregates: s?.aggregates,
+            };
+        });
 
         return userScores.sort((a, b) => b.score - a.score);
     }

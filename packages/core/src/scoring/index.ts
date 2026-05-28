@@ -26,12 +26,18 @@ export {
 
 export {
   calculateAllUserScores,
-  calculatePercentageShare,
   calculateScoreFromUserData,
   calculateTaskCompletionScores,
   calculateUserScore,
+  computeHolonUserScores,
   getActionScore,
   getScoreBreakdown,
+  loadHolonUserData,
+  normalizeShares,
+  scoreHolonUsers,
   type ActionScore,
+  type HolonUserData,
   type ScoreBreakdown,
+  type ScoredHolonUser,
+  type ScoringAggregator,
 } from './score.js';

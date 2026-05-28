@@ -250,10 +250,18 @@ export class REAEventFactory {
 
   // ==================== Expense Events ====================
 
-  /** Expense events: one `expense:paid` plus one `expense:share` per non-payer. */
+  /**
+   * Expense events: one `expense:paid` plus one `expense:share` per non-payer.
+   *
+   * Ids are stable, keyed on `expense.id` (`<holon>_expense_<id>_paid` /
+   * `_share_<index>`), so re-emitting the same expense — on edit, on a second
+   * write from another UI, or during a backfill — upserts in place instead of
+   * appending duplicates that would double-count balances. Falls back to a
+   * random base id only when `expense.id` is missing.
+   */
   static expenseEvents(holonId: string | number, expense: ExpenseLike): REAEvent[] {
     const events: REAEvent[] = [];
-    const baseId = this.generateId(holonId);
+    const baseId = this.stableEventId(holonId, 'expense', expense.id);
     // Read either the canonical `created` (ISO) or legacy `date` (ms / ISO string) for back-compat.
     const timestamp = (() => {
       const c = (expense as any).created;
