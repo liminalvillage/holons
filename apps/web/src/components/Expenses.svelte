@@ -73,7 +73,6 @@
 	let holonID = '';
 	let expenses: Record<string, Expense> = {};
 	let store: Record<string, User> = {};
-	let selectedCurrency = '';
 	let availableCurrencies: string[] = [];
 	let creditMatrix: number[][] = [];
 	let isLoading = true;
@@ -83,8 +82,17 @@
 	// see $lib/stores/lensFilters.
 	let filters = loadFilters('expenses', {
 		searchQuery: '',
+		currency: '',
 	});
 	$: saveFilters('expenses', filters);
+
+	// Restore the last-used currency across reloads. The reactive selection
+	// block falls back to the first available currency if this one isn't
+	// configured for the current holon.
+	let selectedCurrency = filters.currency || '';
+	$: if (selectedCurrency && selectedCurrency !== ADD_CURRENCY_SENTINEL && filters.currency !== selectedCurrency) {
+		filters.currency = selectedCurrency;
+	}
 
 	// Real users from store (excluding the holon)
 	$: realUsers = Object.values(store);
@@ -263,14 +271,19 @@
 		return Math.abs(amount).toFixed(2);
 	}
 
-	// Reactive: set initial currency. Fall back to USD so the toolbar and add
-	// flow are usable on fresh holons that don't have currencies configured yet.
-	$: if (!selectedCurrency) {
-		if (availableCurrencies.length > 0) {
+	// Reactive: always keep a valid currency selected. Prefer the current/
+	// remembered selection when it's available; otherwise pick the first
+	// available currency. Fall back to USD so the toolbar and add flow are
+	// usable on fresh holons that don't have currencies configured yet. The
+	// ADD sentinel is transient — leave it alone so the add-new prompt can run.
+	$: if (selectedCurrency !== ADD_CURRENCY_SENTINEL) {
+		if (availableCurrencies.length === 0) {
+			if (!selectedCurrency) {
+				selectedCurrency = 'USD';
+				availableCurrencies = ['USD'];
+			}
+		} else if (!selectedCurrency || !availableCurrencies.includes(selectedCurrency)) {
 			selectedCurrency = availableCurrencies[0];
-		} else {
-			selectedCurrency = 'USD';
-			availableCurrencies = ['USD'];
 		}
 	}
 
