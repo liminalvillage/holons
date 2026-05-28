@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import https from 'https';
+import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
 
 /**
@@ -378,6 +379,16 @@ class Server {
     return userIdPattern.test(userId) && userId.length <= 20;
   }
 
+  // Deterministic identicon for ids with no Telegram photo — real photo-less
+  // users and the seeded demo members (synthetic ids like 100001 have no
+  // Telegram account). Served inline as SVG: no rasterization, no disk write,
+  // content-stable per id, and cacheable.
+  sendIdenticon(res, seed) {
+    const svg = identiconSvg(`holon-user-${seed}`, 200);
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.type('image/svg+xml').send(svg);
+  }
+
   setupAvatarEndpoints(app) {
     try {
       this.avatarsDir = path.join(process.cwd(), 'public', 'avatars');
@@ -425,7 +436,8 @@ class Server {
             await this.downloadAndSaveAvatar(fileUrl, userId);
             res.sendFile(sanitizedPath);
           } else {
-            res.sendFile(this.defaultAvatarPath);
+            // No Telegram photo for this id → deterministic identicon.
+            this.sendIdenticon(res, userId);
           }
         } catch (error) {
           console.error('Error in getavatar endpoint:', error);

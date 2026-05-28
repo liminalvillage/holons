@@ -44,6 +44,7 @@
     "http-proxy": "^1.18.1",
     "i18next": "^22.5.1",
     "i18next-fs-backend": "^2.6.0",
+    "jdenticon": "^3.3.0",
     "jsonschema": "^1.4.1",
     "julian": "^0.2.0",
     "lune": "^0.4.0",
