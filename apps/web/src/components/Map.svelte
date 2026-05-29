@@ -2700,6 +2700,72 @@
 	:global(.mapboxgl-ctrl-icon) {
 		filter: brightness(0) invert(1) !important;
 	}
+
+	/* ==========================================================================
+	   Whiteboard skin overrides
+	   --------------------------------------------------------------------------
+	   The control bar, info tooltip and Mapbox native controls are hardcoded
+	   dark glass (gradients + white borders), so they stay dark on the light
+	   map. Repaint them as light paper under the whiteboard scope. Accent
+	   (blue) icon colours read fine on the light surface and are left as-is.
+	   ========================================================================== */
+	:global(html[data-skin="whiteboard"]) .control-bar-inner {
+		background: linear-gradient(135deg, rgba(251, 248, 240, 0.96) 0%, rgba(243, 239, 228, 0.94) 100%);
+		border-color: rgba(32, 48, 47, 0.12);
+		box-shadow:
+			0 10px 40px rgba(32, 48, 47, 0.15),
+			0 4px 12px rgba(32, 48, 47, 0.1),
+			inset 0 1px 0 rgba(255, 255, 255, 0.7);
+	}
+	:global(html[data-skin="whiteboard"]) .control-bar-inner:hover {
+		box-shadow:
+			0 12px 50px rgba(32, 48, 47, 0.2),
+			0 6px 16px rgba(32, 48, 47, 0.12),
+			inset 0 1px 0 rgba(255, 255, 255, 0.8);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-select-embedded {
+		background-color: rgba(236, 231, 216, 0.85);
+		color: var(--color-text-primary);
+		border-color: rgba(32, 48, 47, 0.15);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-select-embedded:hover {
+		background-color: rgba(236, 231, 216, 1);
+	}
+	:global(html[data-skin="whiteboard"]) .control-divider {
+		background: linear-gradient(to bottom, rgba(32, 48, 47, 0), rgba(32, 48, 47, 0.18), rgba(32, 48, 47, 0));
+	}
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded,
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded::before {
+		background: linear-gradient(135deg, rgba(251, 248, 240, 0.99) 0%, rgba(243, 239, 228, 0.97) 100%);
+		border-color: rgba(32, 48, 47, 0.12);
+		color: var(--color-text-primary);
+	}
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded {
+		box-shadow:
+			0 20px 60px rgba(32, 48, 47, 0.2),
+			0 10px 30px rgba(32, 48, 47, 0.12),
+			inset 0 1px 0 rgba(255, 255, 255, 0.7);
+	}
+	:global(html[data-skin="whiteboard"]) .tooltip-header h3 {
+		color: var(--color-text-primary);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-option-item {
+		background: rgba(236, 231, 216, 0.6);
+		border-color: rgba(32, 48, 47, 0.08);
+	}
+
+	/* Mapbox native zoom/geolocate group: light glass + dark (un-inverted) icons.
+	   The mapbox classes are global, so the whole selector goes inside :global(). */
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-group) {
+		background: rgba(251, 248, 240, 0.96) !important;
+		border-color: rgba(32, 48, 47, 0.12) !important;
+	}
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-group > button:hover) {
+		background: rgba(236, 231, 216, 1) !important;
+	}
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-icon) {
+		filter: none !important;
+	}
 </style>
 
 
