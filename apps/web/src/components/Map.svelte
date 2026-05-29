@@ -223,7 +223,14 @@
 					resolveReferences: false,
 					aggregate: false
 				});
-				if (Array.isArray(data) && data.length > 0) {
+				// Quests lens: ignore federated quests that are completed, to
+				// match the local presence rule.
+				const hasContent = Array.isArray(data) && (
+					lens === 'quests'
+						? data.some((it: any) => it?.status !== 'completed')
+						: data.length > 0
+				);
+				if (hasContent) {
 					fedLensData[lens].add(hex);
 					if (lens === selectedLens && $showFederated) {
 						fedLensData[lens] = fedLensData[lens];
@@ -290,11 +297,22 @@
 			if (item == null) return;
 			const had = itemKeys.size > 0;
 			const hadNative = nativeKeys.size > 0;
-			itemKeys.add(key);
-			// A holographic item carries `_hologram.isHologram` — same flag the
-			// lens views gate on (see passesLensFilters). Everything else counts
-			// as native content authored at this cell.
-			if (item?._hologram?.isHologram !== true) nativeKeys.add(key);
+			// Completed quests don't count as presence — a cell whose only
+			// quests are done shouldn't stay highlighted (mirrors MapSidebar's
+			// list filter). Applies to native quests AND quest holograms, both
+			// of which carry `status`. A re-emit flipping to 'completed'
+			// actively un-counts the key, so a cell un-lights when its last
+			// open quest is completed.
+			if (lens === 'quests' && item?.status === 'completed') {
+				itemKeys.delete(key);
+				nativeKeys.delete(key);
+			} else {
+				itemKeys.add(key);
+				// A holographic item carries `_hologram.isHologram` — same flag
+				// the lens views gate on (see passesLensFilters). Everything
+				// else counts as native content authored at this cell.
+				if (item?._hologram?.isHologram !== true) nativeKeys.add(key);
+			}
 			const has = itemKeys.size > 0;
 			const hasNative = nativeKeys.size > 0;
 
@@ -302,12 +320,12 @@
 			presenceCache[lens].set(hex, { has, ts: Date.now() });
 			schedulePersistPresence(lens);
 
-			// First positive (or first native) observation for this hex: paint
-			// it. Once both are already true, subsequent items short-circuit the
-			// render — no thrashing of source.setData.
+			// Repaint when presence (or native presence) flips in either
+			// direction — including the completion case above that can drop a
+			// cell back to empty.
 			if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
-				if (has) lensData[lens].add(hex);
-				if (hasNative) nativeLensData[lens].add(hex);
+				if (has) lensData[lens].add(hex); else lensData[lens].delete(hex);
+				if (hasNative) nativeLensData[lens].add(hex); else nativeLensData[lens].delete(hex);
 				lensData[lens] = lensData[lens]; // Svelte reactivity poke
 				nativeLensData[lens] = nativeLensData[lens];
 				renderHexes(map, lens);
