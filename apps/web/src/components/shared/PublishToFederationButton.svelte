@@ -389,6 +389,13 @@
 				</span>
 				<span class="ptf-row__label">Pick a location…</span>
 			</button>
+			<!-- Applies to a location publish: also propagate up so it shows at
+			     wider zoom levels. The label sits inside the popover, so the
+			     outside-click handler leaves the menu open while toggling. -->
+			<label class="ptf-toggle-row">
+				<input type="checkbox" bind:checked={upcastOnPublish} />
+				<span class="ptf-toggle-row__label">Upcast — show at wider zoom levels</span>
+			</label>
 		</div>
 	{/if}
 
@@ -563,6 +570,26 @@
 		margin-top: 0.25rem;
 		color: var(--color-text-muted);
 		font-size: 0.75rem;
+	}
+
+	.ptf-toggle-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.625rem;
+		margin-top: 0.125rem;
+		cursor: pointer;
+		border-radius: 0.375rem;
+	}
+	.ptf-toggle-row:hover {
+		background: var(--color-bg-tertiary, rgba(255, 255, 255, 0.05));
+	}
+	.ptf-toggle-row input {
+		flex-shrink: 0;
+	}
+	.ptf-toggle-row__label {
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.ptf-upcast {
