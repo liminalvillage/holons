@@ -132,6 +132,30 @@
 				{#if showCreated && quest.created}
 					<span class="card-created">Created {formatDate(quest.created)}</span>
 				{/if}
+
+				{#if quest.when || quest.location}
+					<div class="card-title-meta">
+						{#if quest.when}
+							<span class="card-when" class:is-overdue={isOverdue}>
+								<svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+									<rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/>
+									<line x1="16" y1="2" x2="16" y2="6" stroke-width="2"/>
+									<line x1="8" y1="2" x2="8" y2="6" stroke-width="2"/>
+									<line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/>
+								</svg>
+								<span>
+									{formatDate(quest.when)}
+									<span class="card-when-time">@ {formatTime(quest.when)}{#if quest.ends}–{formatTime(quest.ends)}{/if}</span>
+								</span>
+							</span>
+						{/if}
+						{#if quest.location}
+							<span class="card-location" title={quest.location}>
+								📍 {quest.location.split(',')[0]}
+							</span>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 			{#if quest.category}
@@ -165,29 +189,6 @@
 				</div>
 			{/if}
 
-			<div class="card-footer">
-				<div class="card-meta">
-					{#if quest.when}
-						<span class="card-when" class:is-overdue={isOverdue}>
-							<svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-								<rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/>
-								<line x1="16" y1="2" x2="16" y2="6" stroke-width="2"/>
-								<line x1="8" y1="2" x2="8" y2="6" stroke-width="2"/>
-								<line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/>
-							</svg>
-							<span>
-								{formatDate(quest.when)}
-								<span class="card-when-time">@ {formatTime(quest.when)}{#if quest.ends}–{formatTime(quest.ends)}{/if}</span>
-							</span>
-						</span>
-					{/if}
-					{#if quest.location}
-						<span class="card-location" title={quest.location}>
-							📍 {quest.location.split(',')[0]}
-						</span>
-					{/if}
-				</div>
-			</div>
 		</div>
 
 		<!-- People column is a sibling of card-main so it pins to the right
@@ -261,7 +262,8 @@
 	}
 
 	/* Title row never wraps: the hologram / source badge stays glued to the
-	   end of the title. Title itself truncates with ellipsis when it has to. */
+	   end of the title text, while the scheduled time + location pin to the
+	   right of the same line. The title truncates with ellipsis when it has to. */
 	.card-title-row {
 		display: flex;
 		flex-wrap: nowrap;
@@ -277,11 +279,24 @@
 		color: #1f2937;
 		line-height: 1.2;
 		margin: 0;
-		flex: 1 1 auto;
+		/* Take only the title's content width (shrinking/truncating when long)
+		   so the badge sits right after the text instead of being pushed to the
+		   far right by a growing title box. */
+		flex: 0 1 auto;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Scheduled time + location, pinned to the right edge of the title row. */
+	.card-title-meta {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-shrink: 0;
+		padding-left: 0.5rem;
 	}
 
 	.card-created {
@@ -343,22 +358,6 @@
 		background-color: rgba(0, 0, 0, 0.08);
 		color: var(--color-text-muted);
 		cursor: default;
-	}
-
-	.card-footer {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.375rem;
-		margin-top: 0.125rem;
-	}
-
-	.card-meta {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.375rem;
-		min-width: 0;
 	}
 
 	/* Pinned to the right edge of the card-body row at its natural size —
