@@ -220,7 +220,9 @@
 				const data = await (holosphere as any).getFederated(hex, lens, {
 					includeLocal: false,
 					includeFederated: true,
-					resolveReferences: false,
+					// Quests need the resolved record to read `status`; other
+					// lenses only need a presence count, so skip the resolve cost.
+					resolveReferences: lens === 'quests',
 					aggregate: false
 				});
 				// Quests lens: ignore federated quests that are completed, to
@@ -278,6 +280,69 @@
 		canvases: new Map()
 	};
 
+	// Apply one item's contribution to a hex's presence sets, then repaint if
+	// the cell's (native) presence flipped. `isOpen=false` removes the key —
+	// used for completed quests so a cell un-lights when its last open quest is
+	// done. Gun nulls (deletes/replays) never reach here (filtered upstream),
+	// so non-quest presence stays monotonic; only explicit completion removes.
+	function applyPresence(
+		lens: LensType,
+		hex: string,
+		key: string,
+		isHologram: boolean,
+		isOpen: boolean,
+		itemKeys: Set<string>,
+		nativeKeys: Set<string>
+	) {
+		const had = itemKeys.size > 0;
+		const hadNative = nativeKeys.size > 0;
+		if (isOpen) {
+			itemKeys.add(key);
+			// A holographic item carries `_hologram.isHologram` — same flag the
+			// lens views gate on (see passesLensFilters). Everything else counts
+			// as native content authored at this cell.
+			if (!isHologram) nativeKeys.add(key);
+		} else {
+			itemKeys.delete(key);
+			nativeKeys.delete(key);
+		}
+		const has = itemKeys.size > 0;
+		const hasNative = nativeKeys.size > 0;
+
+		// Bump the cache timestamp on every emit so the entry stays warm.
+		presenceCache[lens].set(hex, { has, ts: Date.now() });
+		schedulePersistPresence(lens);
+
+		if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
+			if (has) lensData[lens].add(hex); else lensData[lens].delete(hex);
+			if (hasNative) nativeLensData[lens].add(hex); else nativeLensData[lens].delete(hex);
+			lensData[lens] = lensData[lens]; // Svelte reactivity poke
+			nativeLensData[lens] = nativeLensData[lens];
+			renderHexes(map, lens);
+		}
+	}
+
+	// Is this quests item still open (not completed)? A native quest carries
+	// `status` directly, but the parent-chain UPCAST is a bare { soul } hologram
+	// pointer whose status lives at the origin — so resolve the soul to read it
+	// (mirrors MapSidebar). We don't cache the resolved status: completing a
+	// quest re-emits the pointer, and a stale cache would keep the cell lit.
+	// Unknown/unresolvable → treated as open (don't hide what we can't classify).
+	async function questIsOpen(item: any): Promise<boolean> {
+		if (typeof item?.status === 'string') return item.status !== 'completed';
+		const soul = item?.soul;
+		if (typeof soul === 'string' && soul) {
+			try {
+				const resolved = await (holosphere as any).getNodeBySoul(soul);
+				const parsed = typeof resolved === 'string' ? JSON.parse(resolved) : resolved;
+				if (typeof parsed?.status === 'string') return parsed.status !== 'completed';
+			} catch {
+				// fall through → treat as open
+			}
+		}
+		return true;
+	}
+
 	function subscribeHex(lens: LensType, hex: string) {
 		const subs = subscriptions[lens];
 		if (subs.has(hex) || !holosphere) return;
@@ -286,49 +351,24 @@
 		const nativeKeys = new Set<string>();
 		const handle = (holosphere as any).subscribe(hex, lens, (item: any, key?: string) => {
 			if (!key || key === '_') return;
-			// Monotonic positives: once we've seen real content at a hex, we
-			// keep it highlighted regardless of subsequent Gun nulls. Gun
-			// emits nulls on reconnects, replays, and missing-key reads — all
-			// noise for a "does this cell contain anything?" indicator. The
-			// trade-off: a genuinely-emptied hex stays highlighted until the
-			// cache entry is cleared (re-validation isn't free here, and the
-			// prototype value of "don't make discovered cells flicker out" is
-			// higher than instant deletion accuracy).
+			// Gun emits nulls on reconnects, replays, and missing-key reads —
+			// all noise for a "does this cell contain anything?" indicator, so
+			// we ignore them (a genuinely-emptied hex stays highlighted until
+			// the cache entry is cleared). Completion is handled explicitly
+			// below, since that's the one case we DO want to un-light.
 			if (item == null) return;
-			const had = itemKeys.size > 0;
-			const hadNative = nativeKeys.size > 0;
-			// Completed quests don't count as presence — a cell whose only
-			// quests are done shouldn't stay highlighted (mirrors MapSidebar's
-			// list filter). Applies to native quests AND quest holograms, both
-			// of which carry `status`. A re-emit flipping to 'completed'
-			// actively un-counts the key, so a cell un-lights when its last
-			// open quest is completed.
-			if (lens === 'quests' && item?.status === 'completed') {
-				itemKeys.delete(key);
-				nativeKeys.delete(key);
+			const isHologram = item?._hologram?.isHologram === true;
+			if (lens === 'quests') {
+				// Completed quests don't count as presence (mirrors MapSidebar).
+				// Resolve open-ness first, since the upcast pointer carries no
+				// status of its own. Guard against the viewport moving on while
+				// the soul resolved.
+				void questIsOpen(item).then((open) => {
+					if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
+					applyPresence('quests', hex, key, isHologram, open, itemKeys, nativeKeys);
+				});
 			} else {
-				itemKeys.add(key);
-				// A holographic item carries `_hologram.isHologram` — same flag
-				// the lens views gate on (see passesLensFilters). Everything
-				// else counts as native content authored at this cell.
-				if (item?._hologram?.isHologram !== true) nativeKeys.add(key);
-			}
-			const has = itemKeys.size > 0;
-			const hasNative = nativeKeys.size > 0;
-
-			// Bump the cache timestamp on every emit so the entry stays warm.
-			presenceCache[lens].set(hex, { has, ts: Date.now() });
-			schedulePersistPresence(lens);
-
-			// Repaint when presence (or native presence) flips in either
-			// direction — including the completion case above that can drop a
-			// cell back to empty.
-			if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
-				if (has) lensData[lens].add(hex); else lensData[lens].delete(hex);
-				if (hasNative) nativeLensData[lens].add(hex); else nativeLensData[lens].delete(hex);
-				lensData[lens] = lensData[lens]; // Svelte reactivity poke
-				nativeLensData[lens] = nativeLensData[lens];
-				renderHexes(map, lens);
+				applyPresence(lens, hex, key, isHologram, true, itemKeys, nativeKeys);
 			}
 		});
 
