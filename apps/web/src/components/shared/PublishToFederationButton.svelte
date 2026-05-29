@@ -13,6 +13,8 @@
 	import { awaitName } from '$lib/stores/nameResolver';
 	import Modal from './Modal.svelte';
 	import HexPicker from './HexPicker.svelte';
+	// @ts-ignore — h3-js has no published types in this repo's tsconfig
+	import * as h3 from 'h3-js';
 
 	export let holonId: string;
 	export let lens: string;
@@ -33,6 +35,9 @@
 	let outcome: PublishOutcome | null = null;
 
 	let popoverOpen = false;
+	// When publishing to a picked location, also propagate the hologram up the
+	// parent chain so it surfaces at wider zoom levels (not just the exact spot).
+	let upcastOnPublish = true;
 	let popoverEl: HTMLDivElement | null = null;
 	let buttonWrapperEl: HTMLDivElement | null = null;
 	let popoverStyle = '';
@@ -191,7 +196,10 @@
 		openPicker();
 	}
 
-	async function runPublish(target: PublishTarget) {
+	async function runPublish(
+		target: PublishTarget,
+		extraOpts: { upcast?: boolean; upcastLevels?: number } = {}
+	) {
 		if (!holosphere) return;
 		closePicker();
 		phase = 'publishing';
@@ -199,7 +207,8 @@
 		try {
 			const result = await publishToFederation(
 				{ holosphere, holonId, lens, item },
-				target
+				target,
+				extraOpts
 			);
 			outcome = result;
 			if (result.publishedTo > 0) {
@@ -242,7 +251,11 @@
 	}
 	function onHexSelect(e: CustomEvent<{ hex: string }>) {
 		hexPickerOpen = false;
-		runPublish({ kind: 'hex', cell: e.detail.hex });
+		const cell = e.detail.hex;
+		// Climb every level above the picked cell so it shows at all zooms.
+		let upcastLevels: number | undefined;
+		try { upcastLevels = h3.getResolution(cell); } catch { /* leave default */ }
+		runPublish({ kind: 'hex', cell }, { upcast: upcastOnPublish, upcastLevels });
 	}
 	function onHexCancel() {
 		hexPickerOpen = false;
@@ -357,7 +370,7 @@
 			{#if partners.length === 0}
 				<div class="ptf-empty">
 					No federated partners.<br />
-					<span class="ptf-empty__hint">Pick an H3 cell below, or set up federation in Settings.</span>
+					<span class="ptf-empty__hint">Pick a location below, or set up federation in Settings.</span>
 				</div>
 			{:else}
 				{#each partners as p (p.id)}
@@ -374,7 +387,7 @@
 				<span class="ptf-row__icon">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
 				</span>
-				<span class="ptf-row__label">Pick an H3 cell…</span>
+				<span class="ptf-row__label">Pick a location…</span>
 			</button>
 		</div>
 	{/if}
@@ -384,8 +397,15 @@
 	{/if}
 </div>
 
-<Modal open={hexPickerOpen} title="Publish to H3 cell" size="lg" on:close={onHexCancel}>
+<Modal open={hexPickerOpen} title="Publish to a location" size="lg" on:close={onHexCancel}>
 	{#if hexPickerOpen}
+		<label class="ptf-upcast">
+			<input type="checkbox" bind:checked={upcastOnPublish} />
+			<span class="ptf-upcast__text">
+				<span class="ptf-upcast__title">Upcast</span>
+				<span class="ptf-upcast__hint">Also surface this at wider zoom levels, not only at the exact spot.</span>
+			</span>
+		</label>
 		<HexPicker on:select={onHexSelect} on:cancel={onHexCancel} />
 	{/if}
 </Modal>
@@ -543,6 +563,37 @@
 		margin-top: 0.25rem;
 		color: var(--color-text-muted);
 		font-size: 0.75rem;
+	}
+
+	.ptf-upcast {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+		padding: 0.625rem 0.75rem;
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
+		border-radius: 0.5rem;
+		background: var(--color-bg-primary, rgba(0, 0, 0, 0.15));
+		cursor: pointer;
+	}
+	.ptf-upcast input {
+		margin-top: 0.15rem;
+		flex-shrink: 0;
+	}
+	.ptf-upcast__text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		min-width: 0;
+	}
+	.ptf-upcast__title {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text-primary, #fff);
+	}
+	.ptf-upcast__hint {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
 	}
 
 	.ptf-status {

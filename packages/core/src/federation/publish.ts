@@ -43,6 +43,19 @@ export interface PublishOptions {
 	 * (AuthorizationError / "Write access denied"). UIs can surface a toast.
 	 */
 	onWriteDenied?: (info: { target: string; lens: string; message: string }) => void;
+	/**
+	 * For the `hex` target only: also propagate the hologram UP the parent cell
+	 * chain so the item surfaces at coarser map zoom levels, not just the exact
+	 * cell. Without this, a hex publish lands at a single cell and is invisible
+	 * until the viewer zooms all the way in. Default false.
+	 */
+	upcast?: boolean;
+	/**
+	 * How many parent levels to climb when `upcast` is set. Defaults to a full
+	 * climb to the top. Callers that know the target cell's level can pass it so
+	 * the hologram reaches every coarser level above it.
+	 */
+	upcastLevels?: number;
 }
 
 export interface PublishOutcome {
@@ -75,10 +88,17 @@ async function putToTarget(
 	destinations: string[],
 	errors: string[],
 	onWriteDenied?: PublishOptions['onWriteDenied'],
-	forwarderRegistration?: { localHolonId: string; lens: string; itemId: string }
+	forwarderRegistration?: { localHolonId: string; lens: string; itemId: string },
+	putOptions?: object
 ): Promise<void> {
 	try {
-		await (holosphere as any).put(target, lens, hologram);
+		// Keep the common path a 3-arg put; only pass options when upcasting so
+		// we don't perturb callers/tests that match the bare signature.
+		if (putOptions) {
+			await (holosphere as any).put(target, lens, hologram, putOptions);
+		} else {
+			await (holosphere as any).put(target, lens, hologram);
+		}
 		destinations.push(target);
 
 		// When forwarding an existing hologram (i.e. we're not the original
@@ -182,7 +202,31 @@ export async function publishToFederation(
 	}
 
 	if (target.kind === 'hex') {
-		await single(target.cell);
+		if (opts.upcast) {
+			// Climb the parent chain so the hologram is discoverable at coarser
+			// zoom levels, the same way a federation publish auto-propagates to
+			// parents. maxParentLevels defaults to a full climb to the top.
+			await putToTarget(
+				holosphere,
+				target.cell,
+				lens,
+				hologram,
+				destinations,
+				errors,
+				opts.onWriteDenied,
+				forwarderRegistration,
+				{
+					autoPropagate: true,
+					propagationOptions: {
+						useHolograms: true,
+						propagateToParents: true,
+						maxParentLevels: opts.upcastLevels ?? 15
+					}
+				}
+			);
+		} else {
+			await single(target.cell);
+		}
 		return { publishedTo: destinations.length, destinations, errors, usedHolograms: true };
 	}
 
