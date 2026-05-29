@@ -198,6 +198,9 @@
 	let nativeLensData: Record<LensType, Set<string>> = emptyLensSets();
 	let fedLensData: Record<LensType, Set<string>> = emptyLensSets();
 	const fedProbed: Record<LensType, Set<string>> = emptyLensSets();
+	// (lens,hex) pairs we've already revalidated against the DB this session, so
+	// panning doesn't re-issue getAll for the same cache-seeded cell repeatedly.
+	const revalidated: Record<LensType, Set<string>> = emptyLensSets();
 
 	// Cap per pass so a wide, dense viewport doesn't fire thousands of
 	// getFederated round-trips at once. Local presence subscribes to all
@@ -348,6 +351,57 @@
 			return 'show';
 		} catch {
 			return 'unknown';
+		}
+	}
+
+	// Drop a cell's presence entirely: remove it from the rendered sets and
+	// mark the persisted cache not-lit, so a stale positive can't resurrect it.
+	// The live subscription's view is reset too, so a genuine future write can
+	// still re-light the cell cleanly.
+	function purgeHex(lens: LensType, hex: string) {
+		const wasLit = lensData[lens].delete(hex);
+		nativeLensData[lens].delete(hex);
+		presenceCache[lens].set(hex, { has: false, ts: Date.now() });
+		schedulePersistPresence(lens);
+		const sub = subscriptions[lens].get(hex);
+		if (sub) { sub.itemKeys.clear(); sub.nativeKeys.clear(); }
+		if (wasLit && lens === selectedLens) {
+			lensData[lens] = lensData[lens];
+			nativeLensData[lens] = nativeLensData[lens];
+			renderHexes(map, lens);
+		}
+	}
+
+	// Revalidate a cell that is lit ONLY from the persisted cache (no live items
+	// observed this session). Direct-DB or remote deletes/completions emit
+	// nothing through `subscribe`, so a stale cached positive would otherwise
+	// keep the cell lit until the 7-day TTL. We read the authoritative,
+	// tombstone-filtered set and purge cells with no ACTIVE content. A false
+	// purge (cold read) self-heals: the still-active subscription re-lights the
+	// cell when real data finally arrives.
+	async function revalidateCachedHex(lens: LensType, hex: string) {
+		try {
+			const items: any[] = await (holosphere as any).getAll(hex, lens);
+			// The subscription may have delivered real items while we read — if
+			// so, trust the live channel and don't purge.
+			if ((subscriptions[lens].get(hex)?.itemKeys.size ?? 0) > 0) return;
+
+			let active = Array.isArray(items) && items.length > 0;
+			if (active && lens === 'quests') {
+				// getAll already drops tombstones; also drop completed quests,
+				// resolving pointers that carry no inline status.
+				const verdicts = await Promise.all(
+					items.map((it: any) =>
+						typeof it?.status === 'string'
+							? Promise.resolve(it.status !== 'completed' && it._deleted !== true)
+							: resolveQuestPresence(hex, String(it?.id ?? it?.key ?? '')).then((v) => v !== 'hide')
+					)
+				);
+				active = verdicts.some(Boolean);
+			}
+			if (!active) purgeHex(lens, hex);
+		} catch {
+			// leave as-is on read failure
 		}
 	}
 
@@ -1107,6 +1161,17 @@
 		// paints instantly while resubscribe re-establishes the live channel.
 		for (const hex of Array.from(subs.keys())) {
 			if (!visible.has(hex)) unsubscribeHex(currentLens, hex);
+		}
+
+		// Revalidate visible cells lit only from the cache (no live items yet),
+		// once per session each. Clears positives left behind by deletes or
+		// completions that never emitted to this client (direct-DB / remote).
+		const seen = revalidated[currentLens];
+		for (const hex of visible) {
+			if (!lensData[currentLens].has(hex) || seen.has(hex)) continue;
+			if ((subs.get(hex)?.itemKeys.size ?? 0) > 0) continue;
+			seen.add(hex);
+			void revalidateCachedHex(currentLens, hex);
 		}
 
 		// Federated presence overlay: probe the freshly-visible cells for
