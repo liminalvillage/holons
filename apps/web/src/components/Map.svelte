@@ -225,11 +225,11 @@
 					resolveReferences: lens === 'quests',
 					aggregate: false
 				});
-				// Quests lens: ignore federated quests that are completed, to
-				// match the local presence rule.
+				// Quests lens: only count federated quests that are open — not
+				// completed and not tombstoned — to match the local rule.
 				const hasContent = Array.isArray(data) && (
 					lens === 'quests'
-						? data.some((it: any) => it?.status !== 'completed')
+						? data.some((it: any) => it && it.status !== 'completed' && it._deleted !== true)
 						: data.length > 0
 				);
 				if (hasContent) {
@@ -322,24 +322,32 @@
 		}
 	}
 
-	// Resolve a quest hologram pointer's origin and report whether it's
-	// completed. The parent-chain UPCAST is a bare { soul } pointer with no
-	// status of its own, so we follow the soul (mirrors MapSidebar). Wrapped in
-	// a timeout because Gun cold reads for not-yet-replicated souls never fire —
-	// without it the promise would hang forever. Timeout / failure / missing
-	// status → reported as NOT completed, so the cell stays lit. Status is not
-	// cached: completing a quest re-emits the pointer and a stale cache would
-	// keep the cell lit.
-	async function resolveQuestCompleted(soul: string): Promise<boolean> {
+	// Sentinel distinguishing a timed-out cold read from a genuine null.
+	const QUEST_READ_TIMEOUT = Symbol('quest-read-timeout');
+
+	// Authoritative, sanitized check of a quest's presence at a cell. `get`
+	// resolves the upcast hologram pointer to its origin AND filters tombstones
+	// by default, so this is the single source of truth for "should this cell
+	// be lit for this quest". Wrapped in a timeout because Gun cold reads for
+	// not-yet-replicated keys never fire.
+	//   'hide'    → completed, or gone (deleted / tombstoned origin)
+	//   'show'    → confirmed open
+	//   'unknown' → couldn't confirm (timed out) → leave as-is
+	async function resolveQuestPresence(hex: string, key: string): Promise<'hide' | 'show' | 'unknown'> {
 		try {
-			const resolved = await Promise.race([
-				(holosphere as any).getNodeBySoul(soul),
-				new Promise((res) => window.setTimeout(() => res(undefined), 4000))
+			const rec: any = await Promise.race([
+				// resolveHolograms: follow the upcast pointer to its origin so we
+				// read the real status (no-op if get already resolves by default).
+				// Tombstones are filtered (includeDeleted defaults false) → null.
+				(holosphere as any).get(hex, 'quests', key, null, { resolveHolograms: true }),
+				new Promise((res) => window.setTimeout(() => res(QUEST_READ_TIMEOUT), 4000))
 			]);
-			const parsed = typeof resolved === 'string' ? JSON.parse(resolved) : resolved;
-			return parsed?.status === 'completed';
+			if (rec === QUEST_READ_TIMEOUT) return 'unknown';
+			if (rec == null) return 'hide';
+			if (rec.status === 'completed' || rec._deleted === true) return 'hide';
+			return 'show';
 		} catch {
-			return false;
+			return 'unknown';
 		}
 	}
 
@@ -351,37 +359,37 @@
 		const nativeKeys = new Set<string>();
 		const handle = (holosphere as any).subscribe(hex, lens, (item: any, key?: string) => {
 			if (!key || key === '_') return;
-			// Gun emits nulls on reconnects, replays, and missing-key reads —
-			// all noise for a "does this cell contain anything?" indicator, so
-			// we ignore them (a genuinely-emptied hex stays highlighted until
-			// the cache entry is cleared). Completion is handled explicitly
-			// below, since that's the one case we DO want to un-light.
-			if (item == null) return;
 			const isHologram = item?._hologram?.isHologram === true;
+
 			if (lens === 'quests') {
-				// Completed quests don't count as presence (mirrors MapSidebar).
-				// A native quest carries `status` inline → decide synchronously.
-				if (typeof item?.status === 'string') {
-					applyPresence('quests', hex, key, isHologram, item.status !== 'completed', itemKeys, nativeKeys);
-				} else {
-					// An upcast hologram pointer has no status of its own. Light
-					// the cell NOW (optimistic) so freshly-published tasks show
-					// immediately, then resolve the soul in the background and
-					// only un-light if it turns out completed. Never blocks on the
-					// (possibly hanging) soul read.
-					applyPresence('quests', hex, key, isHologram, true, itemKeys, nativeKeys);
-					const soul = item?.soul;
-					if (typeof soul === 'string' && soul) {
-						void resolveQuestCompleted(soul).then((completed) => {
-							if (!completed) return;
-							if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
-							applyPresence('quests', hex, key, isHologram, false, itemKeys, nativeKeys);
-						});
-					}
+				// Quests get sanitized: completed AND deleted/tombstoned must not
+				// light a cell. The emitted item can lag the origin (a stale-open
+				// upcast pointer over a completed/deleted source) or be a Gun null
+				// (a delete), so we never trust it alone.
+				if (item != null) {
+					// Optimistic: light immediately on inline-open so a freshly
+					// published task appears without waiting on a cold read. Hide
+					// at once if the record itself says completed/deleted.
+					const hideNow = item._deleted === true || item.status === 'completed';
+					applyPresence('quests', hex, key, isHologram, !hideNow, itemKeys, nativeKeys);
+					if (hideNow) return;
 				}
-			} else {
-				applyPresence(lens, hex, key, isHologram, true, itemKeys, nativeKeys);
+				// Reconcile against the authoritative, tombstone-filtered read.
+				// Acts only on a definite verdict, so Gun's noise nulls don't
+				// cause flicker and a fresh task stays lit until truly resolved.
+				void resolveQuestPresence(hex, key).then((verdict) => {
+					if (verdict === 'unknown') return;
+					if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
+					applyPresence('quests', hex, key, false, verdict === 'show', itemKeys, nativeKeys);
+				});
+				return;
 			}
+
+			// Non-quest lenses: ignore Gun nulls (reconnect/replay noise) and
+			// count any item — presence here is just "does this cell contain
+			// anything for this lens".
+			if (item == null) return;
+			applyPresence(lens, hex, key, isHologram, true, itemKeys, nativeKeys);
 		});
 
 		const unsubscribe =
