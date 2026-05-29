@@ -228,13 +228,23 @@
 		});
 
 		map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
-		map.addControl(
-			new mapboxgl.GeolocateControl({
-				positionOptions: { enableHighAccuracy: true },
-				trackUserLocation: false
-			}),
-			'top-right'
-		);
+		const geolocate = new mapboxgl.GeolocateControl({
+			positionOptions: { enableHighAccuracy: true },
+			trackUserLocation: false
+		});
+		map.addControl(geolocate, 'top-right');
+		// "Locate me" should pick the cell at the detected position, not just
+		// re-center — mirror the place-search flow so the user's current
+		// location lands a selected hex they can confirm directly.
+		geolocate.on('geolocate', (pos: any) => {
+			const lat = pos?.coords?.latitude;
+			const lng = pos?.coords?.longitude;
+			if (typeof lat !== 'number' || typeof lng !== 'number') return;
+			try {
+				selectedHex = h3.latLngToCell(lat, lng, resolution);
+			} catch {}
+			rebuildHighlight();
+		});
 
 		// Search box is the <PlacesSearch> component below — its `result`
 		// event flies the map and (re)derives the selected cell. Nothing to
