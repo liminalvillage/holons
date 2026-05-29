@@ -322,25 +322,25 @@
 		}
 	}
 
-	// Is this quests item still open (not completed)? A native quest carries
-	// `status` directly, but the parent-chain UPCAST is a bare { soul } hologram
-	// pointer whose status lives at the origin — so resolve the soul to read it
-	// (mirrors MapSidebar). We don't cache the resolved status: completing a
-	// quest re-emits the pointer, and a stale cache would keep the cell lit.
-	// Unknown/unresolvable → treated as open (don't hide what we can't classify).
-	async function questIsOpen(item: any): Promise<boolean> {
-		if (typeof item?.status === 'string') return item.status !== 'completed';
-		const soul = item?.soul;
-		if (typeof soul === 'string' && soul) {
-			try {
-				const resolved = await (holosphere as any).getNodeBySoul(soul);
-				const parsed = typeof resolved === 'string' ? JSON.parse(resolved) : resolved;
-				if (typeof parsed?.status === 'string') return parsed.status !== 'completed';
-			} catch {
-				// fall through → treat as open
-			}
+	// Resolve a quest hologram pointer's origin and report whether it's
+	// completed. The parent-chain UPCAST is a bare { soul } pointer with no
+	// status of its own, so we follow the soul (mirrors MapSidebar). Wrapped in
+	// a timeout because Gun cold reads for not-yet-replicated souls never fire —
+	// without it the promise would hang forever. Timeout / failure / missing
+	// status → reported as NOT completed, so the cell stays lit. Status is not
+	// cached: completing a quest re-emits the pointer and a stale cache would
+	// keep the cell lit.
+	async function resolveQuestCompleted(soul: string): Promise<boolean> {
+		try {
+			const resolved = await Promise.race([
+				(holosphere as any).getNodeBySoul(soul),
+				new Promise((res) => window.setTimeout(() => res(undefined), 4000))
+			]);
+			const parsed = typeof resolved === 'string' ? JSON.parse(resolved) : resolved;
+			return parsed?.status === 'completed';
+		} catch {
+			return false;
 		}
-		return true;
 	}
 
 	function subscribeHex(lens: LensType, hex: string) {
@@ -360,13 +360,25 @@
 			const isHologram = item?._hologram?.isHologram === true;
 			if (lens === 'quests') {
 				// Completed quests don't count as presence (mirrors MapSidebar).
-				// Resolve open-ness first, since the upcast pointer carries no
-				// status of its own. Guard against the viewport moving on while
-				// the soul resolved.
-				void questIsOpen(item).then((open) => {
-					if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
-					applyPresence('quests', hex, key, isHologram, open, itemKeys, nativeKeys);
-				});
+				// A native quest carries `status` inline → decide synchronously.
+				if (typeof item?.status === 'string') {
+					applyPresence('quests', hex, key, isHologram, item.status !== 'completed', itemKeys, nativeKeys);
+				} else {
+					// An upcast hologram pointer has no status of its own. Light
+					// the cell NOW (optimistic) so freshly-published tasks show
+					// immediately, then resolve the soul in the background and
+					// only un-light if it turns out completed. Never blocks on the
+					// (possibly hanging) soul read.
+					applyPresence('quests', hex, key, isHologram, true, itemKeys, nativeKeys);
+					const soul = item?.soul;
+					if (typeof soul === 'string' && soul) {
+						void resolveQuestCompleted(soul).then((completed) => {
+							if (!completed) return;
+							if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
+							applyPresence('quests', hex, key, isHologram, false, itemKeys, nativeKeys);
+						});
+					}
+				}
 			} else {
 				applyPresence(lens, hex, key, isHologram, true, itemKeys, nativeKeys);
 			}
