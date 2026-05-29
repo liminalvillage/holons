@@ -6,6 +6,11 @@
 	export let icon: ComponentType | null = null;
 	export let loading: boolean = false;
 	export let disabled: boolean = false;
+	/** Hover/aria text. Defaults to the label; pass a fuller sentence to
+	 *  explain what toggling actually does. */
+	export let tooltip: string = '';
+
+	$: hint = tooltip || label;
 
 	const dispatch = createEventDispatcher<{ change: boolean }>();
 
@@ -20,8 +25,8 @@
 	class="toggle-chip"
 	class:toggle-chip--disabled={disabled}
 	class:toggle-chip--loading={loading}
-	title={label}
-	aria-label={label}
+	title={hint}
+	aria-label={hint}
 >
 	<input
 		type="checkbox"

@@ -12,6 +12,9 @@
 	import MapSidebar from './MapSidebar.svelte';
 	import MapBrowserWindow from './MapBrowserWindow.svelte';
 	import PlacesSearch from './shared/PlacesSearch.svelte';
+	import ToggleChip from './shared/ToggleChip.svelte';
+	import { Globe, Eye } from 'svelte-feathers';
+	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
 	import { toEmbeddableUrl } from '$lib/util/richContent';
 	import { getEffectiveAppName } from '$lib/stores/appName';
 	import type { LensType, LensOption } from '../types/Map';
@@ -179,6 +182,60 @@
 	];
 	let lensInitialized = false;
 
+	// Lens-filter overlays (driven by the shared Holograms/Federated toggles).
+	//
+	//  • nativeLensData — cells with NATIVE (non-hologram) content, derived from
+	//    live subscriptions. When the Holograms toggle is OFF we render this
+	//    instead of lensData so cells lit only by holographic pointers drop out.
+	//    (Cold-start caveat: it fills in as live subscriptions confirm cells,
+	//    since the persisted presence cache can't tell native from hologram.)
+	//  • fedLensData — cells that have content in FEDERATION-LINKED holons,
+	//    discovered via getFederated. Folded in only while Federated is ON.
+	//  • fedProbed — (lens,hex) pairs already probed federated, so panning
+	//    doesn't re-issue the same getFederated call.
+	const emptyLensSets = (): Record<LensType, Set<string>> =>
+		Object.fromEntries(VALID_LENSES.map((l) => [l, new Set<string>()])) as Record<LensType, Set<string>>;
+	let nativeLensData: Record<LensType, Set<string>> = emptyLensSets();
+	let fedLensData: Record<LensType, Set<string>> = emptyLensSets();
+	const fedProbed: Record<LensType, Set<string>> = emptyLensSets();
+
+	// Cap per pass so a wide, dense viewport doesn't fire thousands of
+	// getFederated round-trips at once. Local presence subscribes to all
+	// visible cells, but federated probing is a network read per cell.
+	const FED_PROBE_CAP = 512;
+
+	// For each not-yet-probed visible cell, ask whether any federation partner
+	// of that cell (as a holon) has content for this lens. A non-empty result
+	// lights the cell when the Federated toggle is on.
+	async function probeFederatedPresence(lens: LensType, hexes: Set<string>) {
+		if (!holosphere || typeof (holosphere as any).getFederated !== 'function') return;
+		const probed = fedProbed[lens];
+		let issued = 0;
+		for (const hex of hexes) {
+			if (probed.has(hex)) continue;
+			if (issued >= FED_PROBE_CAP) break;
+			probed.add(hex);
+			issued++;
+			try {
+				const data = await (holosphere as any).getFederated(hex, lens, {
+					includeLocal: false,
+					includeFederated: true,
+					resolveReferences: false,
+					aggregate: false
+				});
+				if (Array.isArray(data) && data.length > 0) {
+					fedLensData[lens].add(hex);
+					if (lens === selectedLens && $showFederated) {
+						fedLensData[lens] = fedLensData[lens];
+						renderHexes(map, lens);
+					}
+				}
+			} catch {
+				// Per-cell federated read failures are non-fatal — just skip.
+			}
+		}
+	}
+
 	// One live `holosphere.subscribe` per visible (lens, hex) cell. The
 	// subscription callback fires with `(item, key)` for every existing item
 	// AND every future write/delete (item === null), so once a hex is
@@ -188,6 +245,10 @@
 	type HexSubscription = {
 		unsubscribe: () => void;
 		itemKeys: Set<string>;
+		// Subset of itemKeys that are NATIVE (locally-authored) items, i.e. not
+		// holographic pointers projected in from elsewhere. Lets the "Holograms"
+		// toggle hide cells that are lit only by holograms.
+		nativeKeys: Set<string>;
 	};
 	let subscriptions: Record<LensType, Map<string, HexSubscription>> = {
 		quests: new Map(),
@@ -215,7 +276,8 @@
 		if (subs.has(hex) || !holosphere) return;
 
 		const itemKeys = new Set<string>();
-		const handle = (holosphere as any).subscribe(hex, lens, (item: unknown, key?: string) => {
+		const nativeKeys = new Set<string>();
+		const handle = (holosphere as any).subscribe(hex, lens, (item: any, key?: string) => {
 			if (!key || key === '_') return;
 			// Monotonic positives: once we've seen real content at a hex, we
 			// keep it highlighted regardless of subsequent Gun nulls. Gun
@@ -227,19 +289,27 @@
 			// higher than instant deletion accuracy).
 			if (item == null) return;
 			const had = itemKeys.size > 0;
+			const hadNative = nativeKeys.size > 0;
 			itemKeys.add(key);
+			// A holographic item carries `_hologram.isHologram` — same flag the
+			// lens views gate on (see passesLensFilters). Everything else counts
+			// as native content authored at this cell.
+			if (item?._hologram?.isHologram !== true) nativeKeys.add(key);
 			const has = itemKeys.size > 0;
+			const hasNative = nativeKeys.size > 0;
 
 			// Bump the cache timestamp on every emit so the entry stays warm.
 			presenceCache[lens].set(hex, { has, ts: Date.now() });
 			schedulePersistPresence(lens);
 
-			// First positive observation for this hex: paint it. Subsequent
-			// items can't change `has` (already true), so they short-circuit
-			// the render — no thrashing of source.setData.
-			if (lens === selectedLens && had !== has) {
-				lensData[lens].add(hex);
+			// First positive (or first native) observation for this hex: paint
+			// it. Once both are already true, subsequent items short-circuit the
+			// render — no thrashing of source.setData.
+			if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
+				if (has) lensData[lens].add(hex);
+				if (hasNative) nativeLensData[lens].add(hex);
 				lensData[lens] = lensData[lens]; // Svelte reactivity poke
+				nativeLensData[lens] = nativeLensData[lens];
 				renderHexes(map, lens);
 			}
 		});
@@ -249,7 +319,7 @@
 				? () => handle.unsubscribe()
 				: () => {};
 
-		subs.set(hex, { unsubscribe, itemKeys });
+		subs.set(hex, { unsubscribe, itemKeys, nativeKeys });
 	}
 
 	function unsubscribeHex(lens: LensType, hex: string) {
@@ -474,6 +544,16 @@
 				highlightedHexes = lensData.canvases;
 				highlightColor = '#455a64';
 				break;
+		}
+
+		// Apply the shared lens-filter toggles. Holograms OFF → only cells with
+		// native content (drop hologram-only cells). Federated ON → also light
+		// cells that have content in federation-linked holons. The color picked
+		// by the switch above is preserved.
+		const lensKey = lens as LensType;
+		highlightedHexes = new Set($showHolograms ? lensData[lensKey] : nativeLensData[lensKey]);
+		if ($showFederated) {
+			for (const hex of fedLensData[lensKey]) highlightedHexes.add(hex);
 		}
 
 		// Filter highlighted hexes based on resolution
@@ -949,6 +1029,30 @@
 		// paints instantly while resubscribe re-establishes the live channel.
 		for (const hex of Array.from(subs.keys())) {
 			if (!visible.has(hex)) unsubscribeHex(currentLens, hex);
+		}
+
+		// Federated presence overlay: probe the freshly-visible cells for
+		// federation-partner content when the toggle is on.
+		if ($showFederated) void probeFederatedPresence(currentLens, visible);
+	}
+
+	// Re-render (and, for Federated, probe the current viewport) whenever the
+	// user flips a lens-filter toggle. Reads both stores so Svelte tracks them
+	// as dependencies.
+	$: {
+		const _holograms = $showHolograms;
+		const _federated = $showFederated;
+		if (map && selectedLens) {
+			if (_federated && typeof map.getBounds === 'function') {
+				const b = map.getBounds();
+				if (b) {
+					void probeFederatedPresence(
+						selectedLens,
+						enumerateVisibleHexes(b, getResolution(map.getZoom()))
+					);
+				}
+			}
+			renderHexes(map, selectedLens);
 		}
 	}
 
@@ -1756,6 +1860,29 @@
 				</svg>
 			</button>
 
+			<!-- Divider -->
+			<div class="control-divider"></div>
+
+			<!-- Lens-filter toggles — same Holograms/Federated model as the lens
+			     views. Holograms gates hologram-only cells; Federated lights
+			     cells with content in federation-linked holons. -->
+			<div class="lens-toggles-embedded">
+				<ToggleChip
+					checked={$showHolograms}
+					label="Holograms"
+					icon={Eye}
+					tooltip="Holograms: include cells lit only by holographic pointers projected in from elsewhere. Off → show only cells with native content authored here."
+					on:change={(e) => showHolograms.set(e.detail)}
+				/>
+				<ToggleChip
+					checked={$showFederated}
+					label="Federated"
+					icon={Globe}
+					tooltip="Federated: also light cells that have content in the holons this map's cells are federated with — not just the local graph. Off by default."
+					on:change={(e) => showFederated.set(e.detail)}
+				/>
+			</div>
+
 		</div>
 
 		<!-- Info Tooltip -->
@@ -2127,6 +2254,13 @@
 			rgba(255, 255, 255, 0.15),
 			rgba(255, 255, 255, 0)
 		);
+		flex-shrink: 0;
+	}
+
+	.lens-toggles-embedded {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
 		flex-shrink: 0;
 	}
 
