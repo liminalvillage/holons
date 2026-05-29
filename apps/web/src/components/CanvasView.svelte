@@ -160,6 +160,32 @@
         return null;
     }
 
+    // Point on a rectangle's border along the ray from its centre toward
+    // (targetX, targetY). Used to anchor dependency arrows edge-to-edge: each
+    // end leaves/lands on the side of the card that faces the other card, so
+    // the arrow always takes the shortest path between the two rectangles
+    // regardless of their relative position (left/right/above/below).
+    function borderPoint(
+        rectX: number,
+        rectY: number,
+        width: number,
+        height: number,
+        targetX: number,
+        targetY: number,
+    ): { x: number; y: number } {
+        const cx = rectX + width / 2;
+        const cy = rectY + height / 2;
+        const dx = targetX - cx;
+        const dy = targetY - cy;
+        if (dx === 0 && dy === 0) return { x: cx, y: cy };
+        // Scale the centre→target vector until it hits the nearest edge; the
+        // smaller of the horizontal/vertical scales is the one that wins.
+        const scaleX = dx !== 0 ? width / 2 / Math.abs(dx) : Infinity;
+        const scaleY = dy !== 0 ? height / 2 / Math.abs(dy) : Infinity;
+        const scale = Math.min(scaleX, scaleY);
+        return { x: cx + dx * scale, y: cy + dy * scale };
+    }
+
 
 
     // Measure positions of all known cards after each paint so arrows stay in sync with pan/zoom/drag
@@ -935,13 +961,224 @@
         
         const centerX = totalX / (questCards.length + 1); // +1 for inbox
         const centerY = totalY / (questCards.length + 1);
-        
+
         // Center the view on the calculated center
         const containerRect = viewContainer.getBoundingClientRect();
         pan = {
             x: -(centerX * zoom) + containerRect.width / 2,
             y: -(centerY * zoom) + containerRect.height / 2
         };
+    }
+
+    // Persist one card's computed position the same way a drag does — a
+    // full-quest put (HoloSphere.put replaces the whole node, never merges),
+    // plus the optimistic dispatch so it renders immediately.
+    function persistCardPosition(id: string, position: { x: number; y: number }) {
+        const card = questCards.find((c) => c.key === id);
+        if (!card) return;
+        positionAssignments.add(id);
+        pendingPositionSaves.set(id, position);
+        generatedInboxPositions.delete(id);
+
+        if (card.quest._hologram?.isHologram) {
+            // Holograms are read-only; their layout lives in localStorage.
+            hologramPositions.set(id, position);
+            saveHologramPositions();
+            pendingPositionSaves.delete(id);
+        } else if (holonID) {
+            const updatedQuest = { ...card.quest, id, position };
+            dispatch('questPositionChanged', { key: id, position });
+            holosphere
+                .put(holonID, 'quests', updatedQuest)
+                .then(() => pendingPositionSaves.delete(id))
+                .catch((error: unknown) => {
+                    console.error('Auto-arrange save failed:', error);
+                    pendingPositionSaves.delete(id);
+                });
+        }
+    }
+
+    // Isotonic regression (pool-adjacent-violators): given target values in
+    // order, return the nearest non-decreasing sequence (least squares). Used
+    // to remove horizontal overlaps while staying as close as possible to each
+    // node's desired x — no left/right bias, unlike a single sweep.
+    function isotonic(targets: number[]): number[] {
+        const mean: number[] = [];
+        const weight: number[] = [];
+        const count: number[] = [];
+        for (const t of targets) {
+            let m = t;
+            let w = 1;
+            let c = 1;
+            while (mean.length > 0 && mean[mean.length - 1] >= m) {
+                const pm = mean.pop()!;
+                const pw = weight.pop()!;
+                const pc = count.pop()!;
+                m = (m * w + pm * pw) / (w + pw);
+                w += pw;
+                c += pc;
+            }
+            mean.push(m);
+            weight.push(w);
+            count.push(c);
+        }
+        const out: number[] = [];
+        for (let k = 0; k < mean.length; k++) {
+            for (let j = 0; j < count[k]; j++) out.push(mean[k]);
+        }
+        return out;
+    }
+
+    // Auto-arrange cards into a layered (Sugiyama-style) dependency graph:
+    // depth (longest path from a root) sets the vertical level so time flows
+    // top→bottom, then nodes are ordered within each level to minimise edge
+    // crossings and given x-coordinates that pull them toward their neighbours
+    // so edges run as straight as possible.
+    function autoArrangeByDependencies() {
+        if (!holonID || questCards.length === 0) return;
+
+        const byId = new Map(questCards.map((c) => [c.key, c]));
+        const ids = questCards.map((c) => c.key);
+        const parentsOf = (id: string): string[] =>
+            (byId.get(id)?.quest?.dependencies ?? []).filter(
+                (d: string) => d !== id && byId.has(d),
+            );
+
+        // --- 1. Layer assignment: longest path from a root → depth. ---
+        const depthCache = new Map<string, number>();
+        const visiting = new Set<string>();
+        const depthOf = (id: string): number => {
+            if (depthCache.has(id)) return depthCache.get(id)!;
+            if (visiting.has(id)) return 0; // break any dependency cycle
+            const ps = parentsOf(id);
+            if (ps.length === 0) {
+                depthCache.set(id, 0);
+                return 0;
+            }
+            visiting.add(id);
+            const d = 1 + Math.max(...ps.map(depthOf));
+            visiting.delete(id);
+            depthCache.set(id, d);
+            return d;
+        };
+
+        const childrenOf = new Map<string, string[]>(ids.map((id) => [id, []]));
+        for (const id of ids) {
+            for (const p of parentsOf(id)) childrenOf.get(p)!.push(id);
+        }
+
+        const layers = new Map<number, string[]>();
+        for (const id of ids) {
+            const d = depthOf(id);
+            if (!layers.has(d)) layers.set(d, []);
+            layers.get(d)!.push(id);
+        }
+        const depths = [...layers.keys()].sort((a, b) => a - b);
+
+        const orderIndex = new Map<string, number>();
+        const reindex = () => {
+            for (const d of depths) {
+                layers.get(d)!.forEach((id, i) => orderIndex.set(id, i));
+            }
+        };
+        reindex();
+
+        // --- 2. Crossing reduction: median-heuristic sweeps. ---
+        const median = (arr: number[]): number => {
+            if (arr.length === 0) return -1;
+            const s = [...arr].sort((a, b) => a - b);
+            const m = Math.floor(s.length / 2);
+            return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+        };
+        for (let it = 0; it < 8; it++) {
+            const downward = it % 2 === 0; // alternate: order by parents, then children
+            const seq = downward ? depths : [...depths].reverse();
+            for (const d of seq) {
+                const layer = layers.get(d)!;
+                const keyed = layer.map((id, i) => {
+                    const ns = (downward ? parentsOf(id) : childrenOf.get(id)!).map(
+                        (n) => orderIndex.get(n) ?? 0,
+                    );
+                    const key = median(ns);
+                    // Nodes with no neighbours keep their current slot.
+                    return { id, key: key < 0 ? i : key, fallback: i };
+                });
+                keyed.sort((a, b) => a.key - b.key || a.fallback - b.fallback);
+                layers.set(d, keyed.map((k) => k.id));
+                reindex();
+            }
+        }
+
+        // --- 3. X-coordinates: pull each node to its neighbours' barycentre,
+        // then remove overlaps with isotonic regression. Card width is fixed
+        // (w-80), so a uniform horizontal slot guarantees no overlap. ---
+        const MIN_HGAP = 60;
+        const SLOT = CARD_WIDTH + MIN_HGAP;
+        const x = new Map<string, number>();
+        for (const d of depths) {
+            layers.get(d)!.forEach((id, i) => x.set(id, i * SLOT));
+        }
+        const neighboursOf = (id: string) => [...parentsOf(id), ...childrenOf.get(id)!];
+        for (let it = 0; it < 16; it++) {
+            for (const d of depths) {
+                const layer = layers.get(d)!;
+                const desired = layer.map((id) => {
+                    const ns = neighboursOf(id).map((n) => x.get(n)!);
+                    return ns.length
+                        ? ns.reduce((a, b) => a + b, 0) / ns.length
+                        : x.get(id)!;
+                });
+                // Shift desired into a non-decreasing space, fit, shift back.
+                const fitted = isotonic(desired.map((v, i) => v - i * SLOT));
+                layer.forEach((id, i) => x.set(id, fitted[i] + i * SLOT));
+            }
+        }
+
+        // --- 4. Y-coordinates: pack levels top→bottom by measured height. ---
+        const MIN_VGAP = 80;
+        const DEFAULT_CARD_HEIGHT = 220;
+        const BASE_Y = 120;
+        const CENTER_X = 600;
+        // Measured rects are screen-space (canvas size × zoom); divide by zoom
+        // to get the canvas-space height our positions are stored in.
+        const measuredHeight = (id: string): number => {
+            const m = getCardPosition(id);
+            return m ? m.height / (zoom || 1) : DEFAULT_CARD_HEIGHT;
+        };
+        const yOf = new Map<number, number>();
+        let cursorY = BASE_Y;
+        for (const d of depths) {
+            yOf.set(d, cursorY);
+            const levelMaxH = Math.max(
+                ...layers.get(d)!.map((id) => measuredHeight(id)),
+            );
+            cursorY += levelMaxH + MIN_VGAP;
+        }
+
+        // --- 5. Centre the whole graph horizontally on CENTER_X, then persist. ---
+        const allX = [...x.values()];
+        const graphCentre = (Math.min(...allX) + Math.max(...allX)) / 2;
+        const shift = CENTER_X - graphCentre;
+        for (const d of depths) {
+            const y = yOf.get(d)!;
+            for (const id of layers.get(d)!) {
+                persistCardPosition(id, { x: x.get(id)! + shift, y });
+            }
+        }
+
+        // Bring the freshly arranged graph into view (centred in the viewport).
+        if (viewContainer) {
+            const rect = viewContainer.getBoundingClientRect();
+            const graphMidY = (BASE_Y + (cursorY - MIN_VGAP)) / 2;
+            pan = {
+                x: -(CENTER_X * zoom) + rect.width / 2,
+                y: -(graphMidY * zoom) + rect.height / 2,
+            };
+        }
+
+        // Nudge reactivity so optimistic positions render immediately.
+        pendingPositionSaves = pendingPositionSaves;
+        positionAssignments = positionAssignments;
     }
 
     // Add these state variables at the top
@@ -1718,26 +1955,15 @@
         {/if}
         
         {#if !isStandalone}
-            <!-- Go to Inbox button -->
-            <button
-                class="p-2 bg-blue-800 bg-opacity-70 hover:bg-blue-700 rounded-lg text-white text-opacity-90 hover:text-white transition-colors"
-                on:click={goToInbox}
-                aria-label="Go to inbox area"
-                title="Go to new task inbox"
-            >
-                📥
-            </button>
-
-            <!-- Center on Tasks button -->
+            <!-- Auto-arrange by dependencies button -->
             <button
                 class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
-                on:click={centerOnTasks}
-                aria-label="Center view on tasks"
-                title="Center view on tasks"
+                on:click={autoArrangeByDependencies}
+                aria-label="Auto-arrange by dependencies"
+                title="Auto-arrange by dependencies (left → right)"
             >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 01-1.125-1.125v-3.75zM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-8.25zM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-2.25z" />
                 </svg>
             </button>
         {/if}
@@ -2037,24 +2263,6 @@
             </div>
         {/if}
 
-        <!-- New Task Inbox Area -->
-        {#if !isStandalone}
-            <div
-                class="absolute border-2 border-dashed border-blue-400 border-opacity-50 rounded-lg bg-blue-400 bg-opacity-10 flex items-center justify-center"
-                style="left: {INBOX_CENTER.x - INBOX_WIDTH/2}px;
-                       top: {INBOX_CENTER.y - INBOX_HEIGHT/2}px;
-                       width: {INBOX_WIDTH}px;
-                       height: {INBOX_HEIGHT}px;"
-            >
-                <div class="text-blue-300 text-opacity-70 text-lg font-medium text-center pointer-events-none select-none">
-                    📥 New Tasks<br/>
-                    <span class="text-sm opacity-60">Drag to organize</span>
-                </div>
-            </div>
-        {/if}
-
-        
-
         {#if !isStandalone}
         {#each questCards as card (card.key)}
             <div
@@ -2106,8 +2314,8 @@
     >
         <defs>
             {#each questCards as card (card.key)}
-                {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
-                    {#each card.quest.dependsOn as dependencyId}
+                {#if card.quest.dependencies && card.quest.dependencies.length > 0}
+                    {#each card.quest.dependencies as dependencyId}
                         <marker 
                             id="arrowhead-{card.key}-{dependencyId}"
                             markerWidth="10" 
@@ -2130,8 +2338,8 @@
         <!-- Force reactivity on pan, zoom, and drag -->
         {#key `${pan.x}-${pan.y}-${zoom}-${draggedCardVisuals?.key}-${draggedCardVisuals?.x}-${draggedCardVisuals?.y}-${measuredCardRects.size}`}
             {#each questCards as card (card.key)}
-                {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
-                    {#each card.quest.dependsOn as dependencyId}
+                {#if card.quest.dependencies && card.quest.dependencies.length > 0}
+                    {#each card.quest.dependencies as dependencyId}
                         {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
                         {#if dependencyCard}
                             <!-- Get actual DOM positions with drag updates -->
@@ -2145,25 +2353,38 @@
                                 {@const cardX = cardMeasured.x}
                                 {@const cardY = cardMeasured.y}
                                 
-                                <!-- Simple DOM coordinate arrows -->
-                                {@const startX = depX + depMeasured.width / 2}
-                                {@const startY = depY + depMeasured.height}
-                                {@const endX = cardX + cardMeasured.width / 2}
-                                {@const endY = cardY}
-                                
-                                <!-- Simple curved arrow -->
-                                {@const deltaY = Math.abs(endY - startY)}
-                                {@const controlOffset = Math.max(30, Math.min(80, deltaY / 3))}
-                                {@const control1X = startX}
-                                {@const control1Y = startY + controlOffset}
-                                {@const control2X = endX}
-                                {@const control2Y = endY - controlOffset}
+                                <!-- Centres of both cards -->
+                                {@const depCX = depX + depMeasured.width / 2}
+                                {@const depCY = depY + depMeasured.height / 2}
+                                {@const cardCX = cardX + cardMeasured.width / 2}
+                                {@const cardCY = cardY + cardMeasured.height / 2}
 
-                                <path 
-                                    d="M {startX} {startY} C {control1X} {control1Y}, {control2X} {control2Y}, {endX} {endY}"
-                                    stroke="#3B82F6" 
-                                    stroke-width="2" 
-                                    fill="none" 
+                                <!-- Anchor each end at the border point facing
+                                     the other card, so the arrow runs from the
+                                     closest edge of the dependency to the closest
+                                     edge of the dependent. -->
+                                {@const start = borderPoint(depX, depY, depMeasured.width, depMeasured.height, cardCX, cardCY)}
+                                {@const end = borderPoint(cardX, cardY, cardMeasured.width, cardMeasured.height, depCX, depCY)}
+
+                                <!-- Curved arrow: control points are offset
+                                     along the dominant axis of separation so the
+                                     line leaves/enters perpendicular to the
+                                     facing edge for a smooth flow. -->
+                                {@const dx = end.x - start.x}
+                                {@const dy = end.y - start.y}
+                                {@const dist = Math.hypot(dx, dy)}
+                                {@const offset = Math.max(40, Math.min(120, dist / 2.5))}
+                                {@const horizontal = Math.abs(dx) > Math.abs(dy)}
+                                {@const c1x = horizontal ? start.x + Math.sign(dx) * offset : start.x}
+                                {@const c1y = horizontal ? start.y : start.y + Math.sign(dy) * offset}
+                                {@const c2x = horizontal ? end.x - Math.sign(dx) * offset : end.x}
+                                {@const c2y = horizontal ? end.y : end.y - Math.sign(dy) * offset}
+
+                                <path
+                                    d="M {start.x} {start.y} C {c1x} {c1y}, {c2x} {c2y}, {end.x} {end.y}"
+                                    stroke="#3B82F6"
+                                    stroke-width="2"
+                                    fill="none"
                                     opacity="0.8"
                                     marker-end="url(#arrowhead-{card.key}-{dependencyId})"
                                 />

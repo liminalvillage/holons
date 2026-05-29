@@ -34,7 +34,7 @@
 		picture?: string;
 		type?: string;
 		status?: string;
-		dependsOn?: string[];
+		dependencies?: string[];
 		participants?: Participant[];
 		appreciation?: unknown[];
 		_hologram?: { isHologram?: boolean };
@@ -76,7 +76,7 @@
 	}: Props = $props();
 
 	const showDependencies = $derived(
-		!!resolveDependencyTitle && !!quest.dependsOn && quest.dependsOn.length > 0,
+		!!resolveDependencyTitle && !!quest.dependencies && quest.dependencies.length > 0,
 	);
 
 	const overdueDays = $derived.by(() => {
@@ -171,7 +171,7 @@
 			{#if showDependencies}
 				<div class="card-dependencies">
 					<span class="dep-label" aria-hidden="true">📌</span>
-					{#each quest.dependsOn! as depId}
+					{#each quest.dependencies! as depId}
 						{@const depTitle = resolveDependencyTitle!(depId)}
 						{#if depTitle}
 							<button

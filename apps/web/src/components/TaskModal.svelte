@@ -34,6 +34,7 @@
         planTaskCompletion,
         executeCompletionPlan,
         deleteTaskWithCascade,
+        wouldCreateDependencyCycle,
     } from "@holons/core/tasks";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
@@ -84,7 +85,8 @@
 
     // Dependency management
     let showDependencyEditor = false;
-    let availableTasks: Array<{id: string, title: string}> = [];
+    let availableTasks: Array<{id: string, title: string, dependencies: string[]}> = [];
+    let dependencyError = '';
 
     // Recurring task management
     let showRecurringEditor = false;
@@ -183,7 +185,7 @@
                 const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any) => {
                     if (updatedQuest?.id && updatedQuest.id !== questId) {
                         const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
-                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task' };
+                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task', dependencies: (updatedQuest.dependencies ?? []).map(String) };
                         if (existingIndex >= 0) {
                             availableTasks[existingIndex] = newTask;
                             availableTasks = availableTasks;
@@ -203,7 +205,7 @@
             holosphere.getAll(holonId, "quests").then((quests: any[]) => {
                 availableTasks = (quests ?? [])
                     .filter((q: any) => q?.id && q.id !== questId)
-                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
+                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task', dependencies: (q.dependencies ?? []).map(String) }));
             }).catch(() => {});
         }
 
@@ -776,18 +778,31 @@
     // Dependency management functions
     async function addDependency(taskId: string) {
         if (!taskId) return;
-        
-        const currentDependencies = quest.dependsOn || [];
-        if (!currentDependencies.includes(taskId)) {
-            const updatedDependencies = [...currentDependencies, taskId];
-            await updateQuest({ dependsOn: updatedDependencies });
+
+        const currentDependencies = quest.dependencies || [];
+        if (currentDependencies.includes(taskId)) return;
+
+        // Keep the dependency graph acyclic so it stays a sequence (top→bottom).
+        // Reject any edge whose target already depends on this task.
+        const graph = [
+            { id: String(quest.id), dependencies: currentDependencies },
+            ...availableTasks.map((t) => ({ id: t.id, dependencies: t.dependencies })),
+        ];
+        if (wouldCreateDependencyCycle(graph as any, String(quest.id), taskId)) {
+            const dep = availableTasks.find((t) => t.id === taskId);
+            dependencyError = `Can't depend on "${dep?.title ?? taskId}" — it would create a cycle.`;
+            return;
         }
+
+        dependencyError = '';
+        const updatedDependencies = [...currentDependencies, taskId];
+        await updateQuest({ dependencies: updatedDependencies });
     }
 
     async function removeDependency(index: number) {
-        const currentDependencies = quest.dependsOn || [];
+        const currentDependencies = quest.dependencies || [];
         const updatedDependencies = currentDependencies.filter((_, i) => i !== index);
-        await updateQuest({ dependsOn: updatedDependencies });
+        await updateQuest({ dependencies: updatedDependencies });
     }
 
     async function saveRecurringSettings() {
@@ -1276,16 +1291,19 @@
                                         }}
                                     >
                                     <option value="default">+ Add dependency...</option>
-                                        {#each availableTasks.filter(task => !quest.dependsOn?.includes(task.id)) as task}
+                                        {#each availableTasks.filter(task => !quest.dependencies?.includes(task.id)) as task}
                                             <option value={task.id}>{task.title}</option>
                                         {/each}
                                     </select>
+                                    {#if dependencyError}
+                                        <p class="text-red-400 text-xs mt-1">{dependencyError}</p>
+                                    {/if}
                                 </div>
                         {/if}
                             
-                            {#if quest.dependsOn && quest.dependsOn.length > 0}
+                            {#if quest.dependencies && quest.dependencies.length > 0}
                             <div class="space-y-1">
-                                        {#each quest.dependsOn as depId, index}
+                                        {#each quest.dependencies as depId, index}
                                             {@const depTask = availableTasks.find(t => t.id === depId)}
                                     <div class="flex items-center justify-between bg-gray-800 p-2 rounded text-sm">
                                                 <button

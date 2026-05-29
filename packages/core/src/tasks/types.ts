@@ -68,7 +68,7 @@ export interface Quest {
 
   // Ordering / dependencies.
   orderIndex?: number;
-  dependsOn?: string[];
+  dependencies?: string[];
 
   _meta?: QuestMeta;
   _deleted?: boolean;

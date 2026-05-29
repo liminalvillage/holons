@@ -7,6 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   applyTaskCompletion,
   createTask,
+  findDependencyCycle,
   executeCompletionPlan,
   planTaskCompletion,
   saveTaskToHolon,
@@ -131,6 +132,10 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         category: z.string().optional(),
         when: z.string().optional(),
         until: z.string().optional(),
+        dependencies: z
+          .array(z.string())
+          .optional()
+          .describe('Ids of tasks this one depends on (predecessors). Pass an explicit `id` per task so dependents can reference them.'),
         persist: z.boolean().optional().describe('If true, write the new Quest to HoloSphere under (holon, "quests").'),
       },
     },
@@ -143,6 +148,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
           title: args.title,
           type: args.type,
           category: args.category,
+          dependencies: args.dependencies,
         });
         task.id = args.id ?? shortTaskId();
         if (args.description !== undefined) task.description = args.description;
@@ -150,9 +156,29 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         if (args.when !== undefined) task.when = args.when;
         if (args.until !== undefined) task.until = args.until;
 
+        const hs = await deps.getHoloSphere();
+
+        // Keep the dependency graph acyclic so it stays a top→bottom sequence.
+        if (args.dependencies && args.dependencies.length > 0) {
+          let existing: Quest[] = [];
+          if (typeof hs.getAll === 'function') {
+            existing = ((await hs.getAll(args.holon, 'quests')) ?? []) as Quest[];
+          }
+          const graph = [
+            ...existing.filter((q) => String(q?.id) !== String(task.id)),
+            task,
+          ];
+          const cycle = findDependencyCycle(graph);
+          if (cycle && cycle.includes(String(task.id))) {
+            return fail(
+              'Refusing to create task: its dependencies would form a cycle.',
+              { holon: args.holon, taskId: task.id, cycle },
+            );
+          }
+        }
+
         let persisted = false;
         if (args.persist) {
-          const hs = await deps.getHoloSphere();
           persisted = await saveTaskToHolon(hs, args.holon, task);
         }
         return ok({ success: true, persisted, task });

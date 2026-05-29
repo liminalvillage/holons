@@ -3,6 +3,7 @@
 
 export * from './types.js';
 export * from './creation.js';
+export * from './dependencies.js';
 export * from './marketplace.js';
 export * from './persistence.js';
 export * from './participants.js';

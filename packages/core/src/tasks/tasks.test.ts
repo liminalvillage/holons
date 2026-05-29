@@ -40,6 +40,17 @@ describe('createTask', () => {
     expect(q.picture).toBeNull();
     expect(q.version).toBe('0.1');
   });
+
+  it('records dependencies (predecessors) on the canonical field', () => {
+    const q = createTask({
+      holonId: 42,
+      initiator: { id: 7, username: 'alice' },
+      title: 'Build the frame',
+      dependencies: ['ct3', 'ct5'],
+    });
+    // Single canonical field read by every UI (web + bot).
+    expect(q.dependencies).toEqual(['ct3', 'ct5']);
+  });
 });
 
 describe('persistence', () => {

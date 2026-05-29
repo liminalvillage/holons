@@ -10,7 +10,7 @@
     status: 'ongoing' | 'completed' | 'recurring' | 'repeating';
     category?: string;
     picture?: string;
-    dependsOn?: string[];
+    dependencies?: string[];
     participants: Array<{
       id: string;
       username: string;

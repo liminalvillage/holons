@@ -18,6 +18,8 @@ export interface CreateTaskInput {
   category?: string;
   picture?: string | null;
   messageThreadId?: number | null;
+  /** Ids of tasks this one depends on (its predecessors). */
+  dependencies?: string[];
   /** Override the creation timestamp (ms since epoch). Mostly for tests. */
   now?: number;
 }
@@ -29,6 +31,8 @@ export interface CreateTaskInput {
  */
 export function createTask(input: CreateTaskInput): Quest {
   const now = input.now ?? Date.now();
+  // Canonical dependency field, read by every UI (web + bot).
+  const deps = input.dependencies ?? [];
   return {
     id: '',
     version: '0.1',
@@ -47,7 +51,7 @@ export function createTask(input: CreateTaskInput): Quest {
     participants: [],
     appreciation: [],
     stoppers: [],
-    dependencies: [],
+    dependencies: deps,
     frequency: null,
     recurringTaskId: null,
     timeTracking: {},
