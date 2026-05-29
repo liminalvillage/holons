@@ -73,6 +73,11 @@
 	let holonID = '';
 	let expenses: Record<string, Expense> = {};
 	let store: Record<string, User> = {};
+	// Federated `users` lens overlay (one-shot, federated mode only). Kept
+	// separate from the live local `store` so the local subscribe doesn't wipe
+	// it; merged into `realUsers` to resolve names of remote-holon participants
+	// that appear in federated expenses but aren't in the local users lens.
+	let fedUsers: Record<string, User> = {};
 	// Currency sources, unioned reactively into `availableCurrencies` so the
 	// dropdown always lists every token that appears anywhere: configured in
 	// settings, declared in the REA money stream, or used by an expense.
@@ -102,14 +107,35 @@
 		filters.currency = selectedCurrency;
 	}
 
-	// Real users: the `users` lens (authoritative names) unioned with every
-	// agent seen in the REA stream, so the matrix and pickers cover the full
-	// membership even when the users lens is incomplete. REA-only ids resolve
-	// their name via the global name map, falling back to the id.
+	// Every participant id that appears in the loaded (possibly federated)
+	// expense items themselves — the payer plus everyone in the split. This is
+	// the authoritative membership for the matrix: anyone with expense activity
+	// belongs, even if they're missing from the users lens and the REA stream.
+	$: expenseUserIds = (() => {
+		const ids = new Set<string>();
+		for (const e of Object.values(expenses)) {
+			if (e?.paidBy) ids.add(String(e.paidBy));
+			for (const id of Array.isArray(e?.splitWith) ? e.splitWith : []) {
+				if (id) ids.add(String(id));
+			}
+		}
+		return [...ids];
+	})();
+
+	// Real users: the local `users` lens (authoritative names) first, then the
+	// federated `users` lens (names for remote-holon participants), then every
+	// agent seen in the REA stream and every participant in the (federated)
+	// expense items. This covers the full membership even when the local users
+	// lens is incomplete. Ids still without a user object resolve their name via
+	// the global name map, falling back to the id.
 	$: realUsers = (() => {
 		const byId = new Map<string, User>();
 		for (const u of Object.values(store)) byId.set(String(u.id), u);
-		for (const id of reaUserIds) {
+		for (const u of Object.values(fedUsers)) {
+			const id = String(u.id);
+			if (!byId.has(id)) byId.set(id, u);
+		}
+		for (const id of [...reaUserIds, ...expenseUserIds]) {
 			if (id === holonID || byId.has(id)) continue;
 			byId.set(id, { id, first_name: resolvedName(id, $nameMap, null, id) });
 		}
@@ -171,6 +197,7 @@
 		subscribedFedFlag = targetFed;
 		isLoading = true;
 		expenses = {};
+		fedUsers = {};
 		reaUserIds = [];
 		reaCurrencies = [];
 
@@ -278,6 +305,24 @@
 				});
 				expenses = { ...expenses, ...merged };
 			}).catch((err: unknown) => console.error('[Expenses] federated overlay error:', err));
+
+			// Federated `users` overlay — names for remote-holon participants that
+			// show up in federated expenses but aren't in the local users lens.
+			holosphere.getFederated(targetHolon, 'users', {
+				includeLocal: false,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			}).then((data: any) => {
+				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+				if (!Array.isArray(data) || data.length === 0) return;
+				const merged: Record<string, User> = {};
+				for (const u of data as any[]) {
+					if (!u || u.id == null) continue;
+					merged[String(u.id)] = u as User;
+				}
+				fedUsers = merged;
+			}).catch((err: unknown) => console.error('[Expenses] federated users overlay error:', err));
 		}
 	}
 
