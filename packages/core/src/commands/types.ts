@@ -18,7 +18,7 @@ export interface CommandContext {
 	/** Holon/community scope for the command, when relevant. */
 	holonId?: string;
 	/** UI surface that originated the command. */
-	source?: 'web' | 'telegram' | 'text' | 'ai' | string;
+	source?: 'web' | 'telegram' | 'discord' | 'text' | 'ai' | string;
 	/** Optional holosphere instance (or any storage/transport handle). */
 	holosphere?: unknown;
 	/** Optional structured logger; defaults to a no-op when omitted. */
