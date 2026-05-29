@@ -628,7 +628,7 @@
 	.splash-container {
 		position: fixed;
 		inset: 0;
-		background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f1e 100%);
+		background: var(--color-bg-primary);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -659,21 +659,21 @@
 		width: 300px;
 		height: 300px;
 		filter:
-			drop-shadow(0 0 40px rgba(147, 197, 253, 0.95))
-			drop-shadow(0 0 90px rgba(99, 179, 237, 0.85));
+			drop-shadow(0 0 80px rgba(10, 16, 28, 0.6))
+			drop-shadow(0 0 200px rgba(10, 16, 28, 0.55));
 		animation: pulse-glow 2.4s ease-in-out infinite;
 	}
 
 	@keyframes pulse-glow {
 		0%, 100% {
 			filter:
-				drop-shadow(0 0 40px rgba(147, 197, 253, 0.95))
-				drop-shadow(0 0 90px rgba(99, 179, 237, 0.85));
+				drop-shadow(0 0 80px rgba(10, 16, 28, 0.6))
+				drop-shadow(0 0 200px rgba(10, 16, 28, 0.55));
 		}
 		50% {
 			filter:
-				drop-shadow(0 0 70px rgba(191, 219, 254, 1))
-				drop-shadow(0 0 140px rgba(99, 179, 237, 1));
+				drop-shadow(0 0 130px rgba(10, 16, 28, 0.75))
+				drop-shadow(0 0 300px rgba(10, 16, 28, 0.65));
 		}
 	}
 
@@ -698,7 +698,7 @@
 	.title {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: white;
+		color: var(--color-text-primary);
 		text-align: center;
 		margin-bottom: 0.5rem;
 	}
@@ -761,7 +761,7 @@
 	}
 
 	.option-title {
-		color: white;
+		color: var(--color-text-primary);
 		font-weight: 600;
 		font-size: 1rem;
 	}
@@ -787,7 +787,7 @@
 	}
 
 	.back-button:hover {
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.back-button svg {
@@ -806,7 +806,7 @@
 		background: rgba(15, 23, 42, 0.8);
 		border: 1px solid rgba(100, 116, 139, 0.3);
 		border-radius: 0.5rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 1rem;
 		transition: all 0.2s;
 	}
@@ -817,7 +817,7 @@
 	}
 
 	.text-input::placeholder {
-		color: #64748b;
+		color: var(--color-text-muted);
 	}
 
 	.text-input:focus {
@@ -846,10 +846,10 @@
 	.submit-button {
 		width: 100%;
 		padding: 0.875rem 1rem;
-		background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+		background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-light) 100%);
 		border: none;
 		border-radius: 0.5rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -883,7 +883,7 @@
 	}
 
 	.info-text {
-		color: #64748b;
+		color: var(--color-text-muted);
 		font-size: 0.8rem;
 		text-align: center;
 		margin-top: 1rem;
@@ -893,7 +893,7 @@
 	.bottom-branding {
 		position: absolute;
 		bottom: 2rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 0.875rem;
 		font-weight: 400;
 		letter-spacing: 0.05em;
@@ -1015,7 +1015,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		color: #64748b;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;

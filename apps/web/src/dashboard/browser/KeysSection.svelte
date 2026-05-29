@@ -201,8 +201,8 @@
 
 <style>
 	.keys-section {
-		border-bottom: 1px solid var(--color-border, #374151);
-		background: var(--color-bg-primary, #111827);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
+		background: var(--color-bg-primary, var(--color-bg-primary));
 	}
 
 	.keys-section__header {
@@ -213,13 +213,13 @@
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		cursor: pointer;
 		transition: background-color 150ms ease;
 	}
 
 	.keys-section__header:hover {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.keys-section__header-left {
@@ -255,7 +255,7 @@
 
 	.keys-section__header-subtitle {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-family: monospace;
 	}
 
@@ -269,13 +269,13 @@
 		font-size: var(--font-size-xs, 0.75rem);
 		padding: 2px 8px;
 		border-radius: var(--radius-full, 9999px);
-		background: var(--color-accent, #4f46e5);
-		color: white;
+		background: var(--color-accent, var(--color-accent));
+		color: var(--color-text-primary);
 	}
 
 	.keys-section__content {
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.keys-section__identity {
@@ -284,7 +284,7 @@
 		gap: var(--spacing-3, 0.75rem);
 		margin-bottom: var(--spacing-3, 0.75rem);
 		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-md, 0.375rem);
 	}
 
@@ -295,8 +295,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: var(--color-accent, #4f46e5);
-		color: white;
+		background: var(--color-accent, var(--color-accent));
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
@@ -317,7 +317,7 @@
 		gap: var(--spacing-1, 0.25rem);
 		font-size: var(--font-size-xs, 0.75rem);
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.keys-section__copy-btn {
@@ -328,14 +328,14 @@
 		height: 20px;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		border-radius: var(--radius-sm, 0.25rem);
 	}
 
 	.keys-section__copy-btn:hover {
-		color: var(--color-accent-light, #6366f1);
-		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-accent-light, var(--color-accent-light));
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.keys-section__actions {
@@ -350,10 +350,10 @@
 		gap: var(--spacing-2, 0.5rem);
 		width: 100%;
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		font-size: var(--font-size-sm, 0.875rem);
 		cursor: pointer;
 		transition: background-color 150ms ease;
@@ -361,7 +361,7 @@
 	}
 
 	.keys-section__action:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.keys-section__action:disabled {
@@ -380,7 +380,7 @@
 
 	.keys-section__private-key {
 		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-md, 0.375rem);
 		margin-bottom: var(--spacing-1, 0.25rem);
 	}
@@ -394,7 +394,7 @@
 	.keys-section__private-key-value {
 		font-size: var(--font-size-xs, 0.75rem);
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		word-break: break-all;
 		display: block;
 	}
@@ -412,7 +412,7 @@
 		gap: var(--spacing-2, 0.5rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 		cursor: pointer;
 		padding: 0;
@@ -425,15 +425,15 @@
 
 	.keys-section__import-label {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		margin: 0;
 	}
 
 	.keys-section__import-input {
 		width: 100%;
 		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		color: var(--color-text-primary, #ffffff);
 		font-size: var(--font-size-sm, 0.875rem);
@@ -442,7 +442,7 @@
 
 	.keys-section__import-input:focus {
 		outline: none;
-		border-color: var(--color-accent, #4f46e5);
+		border-color: var(--color-accent, var(--color-accent));
 	}
 
 	.keys-section__import-input--error {
@@ -461,10 +461,10 @@
 		justify-content: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: white;
+		color: var(--color-text-primary);
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-medium, 500);
 		cursor: pointer;
@@ -472,7 +472,7 @@
 	}
 
 	.keys-section__import-btn:hover:not(:disabled) {
-		background: var(--color-accent-dark, #4338ca);
+		background: var(--color-accent-dark, var(--color-accent-hover));
 	}
 
 	.keys-section__import-btn:disabled {

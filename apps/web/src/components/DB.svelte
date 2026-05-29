@@ -946,10 +946,10 @@
 
 <style>
 	.db-explorer {
-		background: #111827;
+		background: var(--color-bg-primary);
 		border-radius: 1rem;
 		overflow: hidden;
-		color: white;
+		color: var(--color-text-primary);
 		min-height: 600px;
 	}
 
@@ -959,7 +959,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 1.5rem;
-		border-bottom: 1px solid #1f2937;
+		border-bottom: 1px solid var(--color-bg-secondary);
 		background: #0d1117;
 	}
 
@@ -976,7 +976,7 @@
 
 	.mode-toggle {
 		display: flex;
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 0.5rem;
 		padding: 0.25rem;
 	}
@@ -985,7 +985,7 @@
 		padding: 0.5rem 1rem;
 		border: none;
 		background: transparent;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		border-radius: 0.375rem;
 		cursor: pointer;
 		display: flex;
@@ -996,12 +996,12 @@
 	}
 
 	.mode-btn:hover:not(:disabled) {
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.mode-btn.active {
 		background: #3b82f6;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.mode-btn:disabled {
@@ -1027,12 +1027,12 @@
 	}
 
 	.export-btn {
-		background: #374151;
-		color: white;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
 	}
 
 	.export-btn:hover {
-		background: #4b5563;
+		background: var(--color-border-light);
 	}
 
 
@@ -1042,8 +1042,8 @@
 		align-items: center;
 		gap: 1rem;
 		padding: 1rem 1.5rem;
-		background: #1f2937;
-		border-bottom: 1px solid #374151;
+		background: var(--color-bg-secondary);
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	/* Breadcrumb */
@@ -1056,18 +1056,18 @@
 
 	.breadcrumb-item {
 		padding: 0.375rem 0.75rem;
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		border: none;
 		border-radius: 0.375rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-size: 0.875rem;
 		cursor: pointer;
 		transition: all 0.2s;
 	}
 
 	.breadcrumb-item:hover {
-		background: #4b5563;
-		color: white;
+		background: var(--color-border-light);
+		color: var(--color-text-primary);
 	}
 
 	.breadcrumb-item.root {
@@ -1076,7 +1076,7 @@
 
 	.breadcrumb-item.current {
 		background: #3b82f6;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.breadcrumb-separator {
@@ -1086,17 +1086,17 @@
 
 	.nav-up-btn {
 		padding: 0.375rem 0.5rem;
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		border: none;
 		border-radius: 0.375rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		cursor: pointer;
 		margin-left: 0.5rem;
 	}
 
 	.nav-up-btn:hover {
-		background: #4b5563;
-		color: white;
+		background: var(--color-border-light);
+		color: var(--color-text-primary);
 	}
 
 	/* Table Dropdown */
@@ -1110,17 +1110,17 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.5rem 1rem;
-		background: #374151;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.5rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 		cursor: pointer;
 		min-width: 160px;
 	}
 
 	.table-selector:hover {
-		background: #4b5563;
+		background: var(--color-border-light);
 	}
 
 	.dropdown-arrow {
@@ -1137,8 +1137,8 @@
 		top: 100%;
 		left: 0;
 		margin-top: 0.5rem;
-		background: #1f2937;
-		border: 1px solid #374151;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-bg-tertiary);
 		border-radius: 0.5rem;
 		min-width: 280px;
 		z-index: 50;
@@ -1155,7 +1155,7 @@
 		padding: 0.5rem 0.75rem;
 		font-size: 0.75rem;
 		text-transform: uppercase;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-weight: 600;
 	}
 
@@ -1167,7 +1167,7 @@
 		padding: 0.625rem 0.75rem;
 		background: transparent;
 		border: none;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		font-size: 0.875rem;
 		cursor: pointer;
 		border-radius: 0.375rem;
@@ -1175,19 +1175,19 @@
 	}
 
 	.dropdown-item:hover {
-		background: #374151;
-		color: white;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
 	}
 
 	.dropdown-item.selected {
 		background: #3b82f6;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.dropdown-item .table-key {
 		margin-left: auto;
 		font-size: 0.75rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.dropdown-item.selected .table-key {
@@ -1195,7 +1195,7 @@
 	}
 
 	.custom-section {
-		border-top: 1px solid #374151;
+		border-top: 1px solid var(--color-bg-tertiary);
 	}
 
 	.custom-input-wrapper {
@@ -1207,10 +1207,10 @@
 	.custom-input-wrapper input {
 		flex: 1;
 		padding: 0.5rem;
-		background: #374151;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.375rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
@@ -1219,7 +1219,7 @@
 		background: #3b82f6;
 		border: none;
 		border-radius: 0.375rem;
-		color: white;
+		color: var(--color-text-primary);
 		cursor: pointer;
 	}
 
@@ -1233,15 +1233,15 @@
 	.search-box input {
 		width: 100%;
 		padding: 0.5rem 2.5rem 0.5rem 2.25rem;
-		background: #374151;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.5rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
 	.search-box input::placeholder {
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.search-box input:focus {
@@ -1255,7 +1255,7 @@
 		left: 0.75rem;
 		top: 50%;
 		transform: translateY(-50%);
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.clear-search {
@@ -1266,12 +1266,12 @@
 		padding: 0.25rem;
 		background: transparent;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: pointer;
 	}
 
 	.clear-search:hover {
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	/* Stats */
@@ -1281,16 +1281,16 @@
 
 	.stat {
 		font-size: 0.875rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.stat strong {
-		color: white;
+		color: var(--color-text-primary);
 		font-weight: 600;
 	}
 
 	.stat-label {
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	/* Content */
@@ -1316,7 +1316,7 @@
 	}
 
 	.empty-state p {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin-bottom: 1.5rem;
 	}
 
@@ -1328,10 +1328,10 @@
 	}
 
 	.card {
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 0.75rem;
 		overflow: hidden;
-		border: 1px solid #374151;
+		border: 1px solid var(--color-bg-tertiary);
 	}
 
 	.card-header {
@@ -1339,14 +1339,14 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 0.75rem 1rem;
-		background: #111827;
-		border-bottom: 1px solid #374151;
+		background: var(--color-bg-primary);
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	.card-id {
 		font-family: monospace;
 		font-size: 0.75rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.card-actions {
@@ -1371,14 +1371,14 @@
 		padding: 0.375rem;
 		background: transparent;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: pointer;
 		border-radius: 0.25rem;
 	}
 
 	.card-action:hover {
-		background: #374151;
-		color: white;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
 	}
 
 	.card-action.danger:hover {
@@ -1393,7 +1393,7 @@
 	.field {
 		margin-bottom: 0.75rem;
 		padding-bottom: 0.75rem;
-		border-bottom: 1px solid #374151;
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	.field:last-of-type {
@@ -1419,7 +1419,7 @@
 		padding: 0.25rem;
 		background: transparent;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: pointer;
 		font-size: 0.75rem;
 	}
@@ -1430,12 +1430,12 @@
 
 	.field-value {
 		font-size: 0.875rem;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		word-break: break-word;
 	}
 
 	.field-value.nested {
-		background: #111827;
+		background: var(--color-bg-primary);
 		border-radius: 0.375rem;
 		padding: 0.5rem;
 		margin-top: 0.25rem;
@@ -1445,7 +1445,7 @@
 		margin: 0;
 		font-size: 0.75rem;
 		white-space: pre-wrap;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.field-editor {
@@ -1455,10 +1455,10 @@
 	.field-editor textarea {
 		width: 100%;
 		padding: 0.5rem;
-		background: #111827;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.375rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-family: monospace;
 		font-size: 0.875rem;
 		resize: vertical;
@@ -1482,13 +1482,13 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.375rem;
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 0.25rem;
 	}
 
 	.array-index {
 		font-size: 0.625rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		min-width: 1.5rem;
 	}
 
@@ -1499,7 +1499,7 @@
 
 	.array-content code {
 		background: transparent;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.array-actions {
@@ -1511,21 +1511,21 @@
 		padding: 0.25rem;
 		background: transparent;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: pointer;
 		font-size: 0.625rem;
 	}
 
 	.array-actions button:hover {
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.add-array-item {
 		padding: 0.375rem;
 		background: transparent;
-		border: 1px dashed #4b5563;
+		border: 1px dashed var(--color-border-light);
 		border-radius: 0.25rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		cursor: pointer;
 		text-align: center;
@@ -1547,7 +1547,7 @@
 
 	.collapse-btn {
 		margin-top: 0.5rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	/* Address Link */
@@ -1564,7 +1564,7 @@
 
 	.address-link:hover {
 		background: #2563eb;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	/* Add Field */
@@ -1572,9 +1572,9 @@
 		width: 100%;
 		padding: 0.5rem;
 		background: transparent;
-		border: 1px dashed #4b5563;
+		border: 1px dashed var(--color-border-light);
 		border-radius: 0.375rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		cursor: pointer;
 		margin-top: 0.75rem;
@@ -1591,16 +1591,16 @@
 		gap: 0.5rem;
 		margin-top: 0.75rem;
 		padding: 0.75rem;
-		background: #111827;
+		background: var(--color-bg-primary);
 		border-radius: 0.375rem;
 	}
 
 	.add-field-form input {
 		padding: 0.5rem;
-		background: #1f2937;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.25rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
@@ -1621,7 +1621,7 @@
 	}
 
 	.modal {
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 0.75rem;
 		width: 90%;
 		max-width: 500px;
@@ -1636,7 +1636,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 1rem 1.5rem;
-		border-bottom: 1px solid #374151;
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	.modal-header h3 {
@@ -1648,12 +1648,12 @@
 		padding: 0.5rem;
 		background: transparent;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: pointer;
 	}
 
 	.modal-close:hover {
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.modal-body {
@@ -1666,7 +1666,7 @@
 		justify-content: flex-end;
 		gap: 0.75rem;
 		padding: 1rem 1.5rem;
-		border-top: 1px solid #374151;
+		border-top: 1px solid var(--color-bg-tertiary);
 	}
 
 	.form-group {
@@ -1688,10 +1688,10 @@
 	.form-group textarea {
 		width: 100%;
 		padding: 0.75rem;
-		background: #111827;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.5rem;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.875rem;
 	}
 
@@ -1721,7 +1721,7 @@
 
 	.btn-primary {
 		background: #3b82f6;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.btn-primary:hover {
@@ -1729,12 +1729,12 @@
 	}
 
 	.btn-secondary {
-		background: #374151;
-		color: white;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
 	}
 
 	.btn-secondary:hover {
-		background: #4b5563;
+		background: var(--color-border-light);
 	}
 
 	/* Responsive */

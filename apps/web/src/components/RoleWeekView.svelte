@@ -337,7 +337,7 @@
 		background: rgba(255, 255, 255, 0.1);
 		border: none;
 		border-radius: 8px;
-		color: white;
+		color: var(--color-text-primary);
 		cursor: pointer;
 		transition: background 0.2s ease;
 	}
@@ -356,7 +356,7 @@
 	.week-nav__range {
 		font-size: 16px;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.week-nav__today {
@@ -424,7 +424,7 @@
 		display: block;
 		font-size: 14px;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.week-grid__row {
@@ -441,7 +441,7 @@
 		gap: 6px;
 		font-size: 13px;
 		font-weight: 500;
-		color: white;
+		color: var(--color-text-primary);
 		background: rgba(0, 0, 0, 0.2);
 		border-radius: 8px;
 		overflow: hidden;
@@ -476,7 +476,7 @@
 	}
 
 	.modal-content {
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 16px;
 		padding: 24px;
 		max-width: 400px;
@@ -486,7 +486,7 @@
 	.modal-title {
 		font-size: 18px;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 		margin-bottom: 12px;
 	}
 
@@ -516,7 +516,7 @@
 	}
 
 	.modal-info__value {
-		color: white;
+		color: var(--color-text-primary);
 		font-weight: 500;
 		font-size: 13px;
 	}

@@ -282,7 +282,7 @@
 		justify-content: center;
 		font-size: 14px;
 		font-weight: bold;
-		color: white;
+		color: var(--color-text-primary);
 		border: 2px solid rgba(255, 255, 255, 0.2);
 	}
 
@@ -295,7 +295,7 @@
 		background: #f59e0b;
 		border-radius: 50%;
 		padding: 2px;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.week-cell__name {
@@ -334,7 +334,7 @@
 		min-width: 160px;
 		max-height: 200px;
 		overflow-y: auto;
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		border-radius: 8px;
 		box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
 	}
@@ -389,7 +389,7 @@
 		justify-content: center;
 		font-size: 12px;
 		font-weight: bold;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.week-cell__dropdown-empty {
@@ -416,6 +416,6 @@
 	}
 
 	.week-cell__dropdown-search input:focus {
-		border-color: #6366f1;
+		border-color: var(--color-accent-light);
 	}
 </style>

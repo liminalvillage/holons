@@ -13,6 +13,11 @@
 /* Import component styles */
 @import "./components.css";
 
+/* Import the optional "whiteboard" light skin last so its
+   `html[data-skin="whiteboard"]` rules can override the default dark tokens
+   and the hardcoded Tailwind utilities. No-op unless that attribute is set. */
+@import "./whiteboard.css";
+
 /* ==========================================================================
    Global Base Styles
    ========================================================================== */

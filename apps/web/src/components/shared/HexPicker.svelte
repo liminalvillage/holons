@@ -409,7 +409,7 @@
 		flex-shrink: 0;
 		border-radius: 0.75rem;
 		overflow: hidden;
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.hex-picker__controls {
@@ -425,10 +425,10 @@
 		align-items: center;
 		gap: 0.375rem;
 		font-size: 0.8125rem;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		padding: 0.25rem 0.5rem;
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: 0.375rem;
 	}
 
@@ -445,10 +445,10 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.375rem 0.625rem;
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: 0.5rem;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		font-size: 0.8125rem;
 		min-width: 0;
 		max-width: 100%;
@@ -464,7 +464,7 @@
 	}
 
 	.hex-picker__placeholder {
-		color: var(--color-text-muted, #9ca3af);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.hex-picker__clear {
@@ -476,12 +476,12 @@
 		border-radius: 9999px;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #9ca3af);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 	}
 
 	.hex-picker__clear:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #fff);
 	}
 

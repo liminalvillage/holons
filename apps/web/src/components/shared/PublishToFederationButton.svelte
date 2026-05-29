@@ -406,7 +406,7 @@
 		padding: 0;
 		border-radius: 6px;
 		background: transparent;
-		color: #6b7280; /* gray-500 */
+		color: var(--color-text-muted); /* gray-500 */
 		border: none;
 		cursor: pointer;
 		transition: background 120ms ease, color 120ms ease;
@@ -483,8 +483,8 @@
 		max-width: 320px;
 		max-height: min(60vh, 400px);
 		overflow-y: auto;
-		background: #1f2937; /* gray-800 */
-		border: 1px solid #374151; /* gray-700 */
+		background: var(--color-bg-secondary); /* gray-800 */
+		border: 1px solid var(--color-bg-tertiary); /* gray-700 */
 		border-radius: 0.5rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 		padding: 0.375rem;
@@ -494,7 +494,7 @@
 		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		padding: 0.375rem 0.625rem 0.5rem;
 	}
 	.ptf-row {
@@ -505,7 +505,7 @@
 		padding: 0.5rem 0.625rem;
 		background: transparent;
 		border: none;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		font-size: 0.875rem;
 		text-align: left;
 		border-radius: 0.375rem;
@@ -513,11 +513,11 @@
 		transition: background 100ms ease;
 	}
 	.ptf-row:hover {
-		background: #374151;
+		background: var(--color-bg-tertiary);
 	}
 	.ptf-row__icon {
 		display: inline-flex;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		flex-shrink: 0;
 	}
 	.ptf-row__label {
@@ -529,19 +529,19 @@
 	}
 	.ptf-divider {
 		height: 1px;
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		margin: 0.25rem 0.25rem;
 	}
 	.ptf-empty {
 		padding: 0.625rem;
 		font-size: 0.8125rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		text-align: center;
 	}
 	.ptf-empty__hint {
 		display: inline-block;
 		margin-top: 0.25rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 	}
 

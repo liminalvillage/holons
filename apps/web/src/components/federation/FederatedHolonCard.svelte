@@ -189,8 +189,8 @@
 
 <style>
     .holon-card {
-        background: var(--color-bg-secondary, #1f2937);
-        border: 1px solid var(--color-border, #374151);
+        background: var(--color-bg-secondary, var(--color-bg-secondary));
+        border: 1px solid var(--color-border, var(--color-bg-tertiary));
         border-radius: var(--radius-lg, 0.5rem);
         overflow: hidden;
         transition: all 200ms ease;
@@ -201,7 +201,7 @@
     }
 
     .holon-card--expanded {
-        border-color: var(--color-accent, #4f46e5);
+        border-color: var(--color-accent, var(--color-accent));
         box-shadow: 0 0 0 1px var(--color-accent-subtle, rgba(99, 102, 241, 0.2));
     }
 
@@ -227,7 +227,7 @@
         width: 40px;
         height: 40px;
         border-radius: var(--radius-md, 0.375rem);
-        background: linear-gradient(135deg, var(--color-accent, #4f46e5), #6366f1);
+        background: linear-gradient(135deg, var(--color-accent, var(--color-accent)), var(--color-accent-light));
         display: flex;
         align-items: center;
         justify-content: center;
@@ -237,7 +237,7 @@
     .holon-card__avatar-letter {
         font-size: var(--font-size-lg, 1.125rem);
         font-weight: var(--font-weight-bold, 700);
-        color: white;
+        color: var(--color-text-primary);
     }
 
     .holon-card__status {
@@ -248,7 +248,7 @@
         height: 12px;
         border-radius: 50%;
         background: #6b7280;
-        border: 2px solid var(--color-bg-secondary, #1f2937);
+        border: 2px solid var(--color-bg-secondary, var(--color-bg-secondary));
     }
 
     .holon-card__status.connected {
@@ -279,7 +279,7 @@
     .holon-card__npub {
         font-size: 10px;
         font-family: monospace;
-        color: var(--color-text-muted, #6b7280);
+        color: var(--color-text-muted, var(--color-text-muted));
     }
 
     .holon-card__stats {
@@ -293,17 +293,17 @@
         align-items: center;
         gap: 2px;
         font-size: 11px;
-        color: var(--color-text-secondary, #d1d5db);
+        color: var(--color-text-secondary, var(--color-text-secondary));
         font-weight: var(--font-weight-medium, 500);
     }
 
     .holon-card__stat--empty {
-        color: var(--color-text-muted, #6b7280);
+        color: var(--color-text-muted, var(--color-text-muted));
         font-style: italic;
     }
 
     .holon-card__expand {
-        color: var(--color-text-muted, #6b7280);
+        color: var(--color-text-muted, var(--color-text-muted));
         transition: transform 200ms ease;
     }
 
@@ -313,14 +313,14 @@
 
     /* Expanded content */
     .holon-card__content {
-        border-top: 1px solid var(--color-border, #374151);
+        border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
     }
 
     .holon-card__actions {
         display: flex;
         gap: var(--spacing-2, 0.5rem);
         padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
-        background: var(--color-bg-primary, #111827);
+        background: var(--color-bg-primary, var(--color-bg-primary));
     }
 
     .holon-card__action {
@@ -328,17 +328,17 @@
         align-items: center;
         gap: var(--spacing-1, 0.25rem);
         padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
-        background: var(--color-bg-tertiary, #374151);
+        background: var(--color-bg-tertiary, var(--color-bg-tertiary));
         border: none;
         border-radius: var(--radius-sm, 0.25rem);
-        color: var(--color-text-secondary, #d1d5db);
+        color: var(--color-text-secondary, var(--color-text-secondary));
         font-size: 11px;
         cursor: pointer;
         transition: all 150ms ease;
     }
 
     .holon-card__action:hover {
-        background: var(--color-bg-secondary, #1f2937);
+        background: var(--color-bg-secondary, var(--color-bg-secondary));
         color: var(--color-text-primary, #ffffff);
     }
 
@@ -367,7 +367,7 @@
     .holon-card__lenses-title {
         font-size: 10px;
         font-weight: var(--font-weight-semibold, 600);
-        color: var(--color-text-muted, #6b7280);
+        color: var(--color-text-muted, var(--color-text-muted));
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
@@ -389,7 +389,7 @@
         align-items: center;
         justify-content: space-between;
         padding: var(--spacing-2, 0.5rem);
-        background: var(--color-bg-primary, #111827);
+        background: var(--color-bg-primary, var(--color-bg-primary));
         border-radius: var(--radius-md, 0.375rem);
         border: 1px solid transparent;
         transition: all 150ms ease;
@@ -413,7 +413,7 @@
 
     .holon-card__lens-name {
         font-size: 11px;
-        color: var(--color-text-secondary, #d1d5db);
+        color: var(--color-text-secondary, var(--color-text-secondary));
         text-transform: capitalize;
         white-space: nowrap;
         overflow: hidden;
@@ -428,8 +428,8 @@
         justify-content: center;
         border: none;
         border-radius: var(--radius-sm, 0.25rem);
-        background: var(--color-bg-tertiary, #374151);
-        color: var(--color-text-muted, #6b7280);
+        background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+        color: var(--color-text-muted, var(--color-text-muted));
         font-size: 11px;
         font-weight: bold;
         cursor: pointer;
@@ -437,12 +437,12 @@
     }
 
     .holon-card__lens-toggle:hover:not(:disabled) {
-        background: var(--color-bg-secondary, #1f2937);
+        background: var(--color-bg-secondary, var(--color-bg-secondary));
     }
 
     .holon-card__lens-toggle--active {
-        background: var(--color-accent, #4f46e5);
-        color: white;
+        background: var(--color-accent, var(--color-accent));
+        color: var(--color-text-primary);
     }
 
     .holon-card__lens-toggle:disabled {

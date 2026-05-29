@@ -52,17 +52,17 @@
 		gap: var(--spacing-2, 0.5rem);
 		width: 100%;
 		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		font-size: var(--font-size-sm, 0.875rem);
 		cursor: pointer;
 		transition: background-color 150ms ease, color 150ms ease;
 	}
 
 	.stats-section__toggle:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 

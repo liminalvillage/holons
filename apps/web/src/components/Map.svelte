@@ -1951,7 +1951,7 @@
 		bottom: 10px;
 		left: 10px;
 		background-color: rgba(31, 41, 55, 0.8);
-		color: white;
+		color: var(--color-text-primary);
 		padding: 5px 10px;
 		border-radius: 9999px;
 		font-size: 14px;
@@ -1965,7 +1965,7 @@
 		position: absolute;
 		width: 400px;
 		max-height: calc(90vh - 120px); /* Account for top controls */
-		background-color: #1f2937;
+		background-color: var(--color-bg-secondary);
 		border-radius: 0.75rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
 		overflow: hidden;
@@ -1980,8 +1980,8 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 0.75rem 1rem;
-		background-color: #111827;
-		border-bottom: 1px solid #374151;
+		background-color: var(--color-bg-primary);
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	.sidebar-header button {
@@ -2222,7 +2222,7 @@
 
 	.tooltip-description {
 		margin: 0 0 16px 0;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-size: 13px;
 		line-height: 1.5;
 	}
@@ -2272,7 +2272,7 @@
 	}
 
 	.lens-desc {
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-size: 11px;
 		line-height: 1.3;
 	}

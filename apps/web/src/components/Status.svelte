@@ -1667,7 +1667,7 @@
         transform: rotate(180deg);
         display: inline-block;
         font-size: 0.7rem;
-        color: #9ca3af;
+        color: var(--color-text-muted);
     }
 </style>
 

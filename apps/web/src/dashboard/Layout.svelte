@@ -174,7 +174,7 @@
 		display: flex;
 		height: 100vh;
 		width: 100%;
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		overflow: hidden;
 		position: relative;
 	}

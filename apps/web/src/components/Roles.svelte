@@ -295,11 +295,11 @@
 		const todayAssignment = getTodayAssignment(role);
 
 		if (!todayAssignment) {
-			return "#553333"; // Red tint for unassigned roles
+			return "var(--role-unassigned)"; // skin-aware tint for unassigned roles
 		}
 
-		// Role has someone assigned for today - show as active/green
-		return "#335533"; // Green tint for assigned roles
+		// Role has someone assigned for today - show as active
+		return "var(--role-assigned)"; // skin-aware tint for assigned roles
 	}
 
 	let selectedRole = null;
@@ -426,7 +426,7 @@
 					>
 						<div
 							class="p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-							style="background-color: {getRoleColor(role)}; color: white;"
+							style="background-color: {getRoleColor(role)}; color: var(--role-card-text);"
 						>
 							<div class="flex items-center justify-between gap-4">
 								<div class="flex items-center gap-4 flex-1 min-w-0">
@@ -511,7 +511,7 @@
 					>
 						<div
 							class="p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005] h-full flex flex-col"
-							style="background-color: {getRoleColor(role)}; color: white;"
+							style="background-color: {getRoleColor(role)}; color: var(--role-card-text);"
 						>
 							<!-- Header with "Today" indicator -->
 							<div class="text-center mb-2">
@@ -680,7 +680,7 @@
 		transform: translateX(-50%);
 		border-width: 4px 4px 0 4px;
 		border-style: solid;
-		border-color: #1f2937 transparent transparent transparent;
+		border-color: var(--color-bg-secondary) transparent transparent transparent;
 	}
 
 	/* Grid layout improvements */

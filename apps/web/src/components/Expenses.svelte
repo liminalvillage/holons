@@ -859,7 +859,7 @@
 
 <style>
 	.expenses-container {
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		border-radius: 1.5rem;
 		padding: 1.5rem;
 	}
@@ -871,7 +871,7 @@
 		justify-content: center;
 		padding: 4rem 2rem;
 		text-align: center;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.spinner {
@@ -897,12 +897,12 @@
 	.empty-state h3 {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 		margin: 0 0 0.5rem;
 	}
 
 	.empty-state p {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin: 0;
 	}
 
@@ -910,7 +910,7 @@
 	.table-container {
 		overflow-x: auto;
 		border-radius: 0.75rem;
-		border: 1px solid #374151;
+		border: 1px solid var(--color-bg-tertiary);
 	}
 
 	table {
@@ -922,12 +922,12 @@
 	th, td {
 		padding: 0.75rem;
 		text-align: center;
-		border-bottom: 1px solid #374151;
+		border-bottom: 1px solid var(--color-bg-tertiary);
 	}
 
 	thead th {
-		background: #111827;
-		color: #9ca3af;
+		background: var(--color-bg-primary);
+		color: var(--color-text-muted);
 		font-weight: 600;
 		text-transform: uppercase;
 		font-size: 0.75rem;
@@ -941,7 +941,7 @@
 		position: sticky;
 		left: 0;
 		z-index: 20;
-		background: #111827;
+		background: var(--color-bg-primary);
 		min-width: 100px;
 	}
 
@@ -966,50 +966,50 @@
 	}
 
 	.balance-header {
-		background: #1f2937;
-		border-left: 2px solid #4b5563;
+		background: var(--color-bg-secondary);
+		border-left: 2px solid var(--color-border-light);
 		font-weight: 700;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.row-header {
 		position: sticky;
 		left: 0;
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 		text-align: left;
 		font-weight: 500;
-		color: white;
+		color: var(--color-text-primary);
 		z-index: 5;
 	}
 
 	tbody tr:nth-child(even) {
-		background: rgba(55, 65, 81, 0.3);
+		background: var(--color-bg-tertiary);
 	}
 
 	tbody tr:nth-child(even) .row-header {
-		background: #283141;
+		background: var(--color-bg-secondary);
 	}
 
 	tbody tr:hover {
-		background: rgba(55, 65, 81, 0.5);
+		background: var(--color-accent-subtle);
 	}
 
 	.credit-cell {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-weight: 500;
 	}
 
-	.credit-cell.positive { color: #4ade80; }
-	.credit-cell.negative { color: #f87171; }
+	.credit-cell.positive { color: var(--color-success); }
+	.credit-cell.negative { color: var(--color-error); }
 
 	.balance-cell {
-		border-left: 2px solid #4b5563;
+		border-left: 2px solid var(--color-border-light);
 		font-weight: 700;
-		background: rgba(31, 41, 55, 0.5);
+		background: var(--color-bg-tertiary);
 	}
 
-	.balance-cell.positive { color: #4ade80; }
-	.balance-cell.negative { color: #f87171; }
+	.balance-cell.positive { color: var(--color-success); }
+	.balance-cell.negative { color: var(--color-error); }
 
 	/* Recent Expenses */
 	.recent-expenses {
@@ -1019,7 +1019,7 @@
 	.recent-expenses h3 {
 		font-size: 1.125rem;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 		margin: 0 0 1rem;
 	}
 
@@ -1034,7 +1034,7 @@
 		justify-content: space-between;
 		align-items: flex-start;
 		gap: 0.75rem;
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		padding: 1rem;
 		border-radius: 0.75rem;
 	}
@@ -1056,18 +1056,18 @@
 	.expense-info h4 {
 		font-size: 1rem;
 		font-weight: 600;
-		color: white;
+		color: var(--color-text-primary);
 		margin: 0 0 0.25rem;
 	}
 
 	.paid-by {
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		font-size: 0.875rem;
 		margin: 0 0 0.25rem;
 	}
 
 	.split-with {
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		margin: 0;
 	}
@@ -1080,12 +1080,12 @@
 		display: block;
 		font-size: 1.125rem;
 		font-weight: 700;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.date {
 		font-size: 0.75rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	@media (max-width: 640px) {

@@ -468,10 +468,10 @@
 
 <style>
   .flow-visualization {
-    background: #1f2937;
+    background: var(--color-bg-secondary);
     border-radius: 12px;
     padding: 1.5rem;
-    color: white;
+    color: var(--color-text-primary);
   }
 
   .visualization-header {
@@ -480,7 +480,7 @@
     align-items: center;
     margin-bottom: 1rem;
     padding-bottom: 0.75rem;
-    border-bottom: 1px solid #374151;
+    border-bottom: 1px solid var(--color-bg-tertiary);
   }
 
   .visualization-header h3 {
@@ -491,7 +491,7 @@
 
   .refresh-btn {
     background: #3b82f6;
-    color: white;
+    color: var(--color-text-primary);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 6px;
@@ -512,7 +512,7 @@
   .error-message, .loading-message {
     text-align: center;
     padding: 2rem;
-    color: #9ca3af;
+    color: var(--color-text-muted);
   }
 
   .error-message p {
@@ -522,7 +522,7 @@
   .spinner {
     width: 40px;
     height: 40px;
-    border: 4px solid #374151;
+    border: 4px solid var(--color-bg-tertiary);
     border-top: 4px solid #3b82f6;
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -535,9 +535,9 @@
   }
 
   .canvas-container {
-    border: 2px solid #374151;
+    border: 2px solid var(--color-bg-tertiary);
     border-radius: 8px;
-    background: #111827;
+    background: var(--color-bg-primary);
     display: flex;
     justify-content: center;
     margin-bottom: 1rem;
@@ -553,7 +553,7 @@
     gap: 1rem;
     margin-bottom: 1rem;
     padding: 1rem;
-    background: #111827;
+    background: var(--color-bg-primary);
     border-radius: 8px;
   }
 
@@ -564,7 +564,7 @@
   }
 
   .metric-label {
-    color: #9ca3af;
+    color: var(--color-text-muted);
     font-size: 0.875rem;
   }
 
@@ -575,8 +575,8 @@
   }
 
   .node-info {
-    background: #111827;
-    border: 1px solid #374151;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-bg-tertiary);
     border-radius: 8px;
     padding: 1rem;
   }
@@ -594,7 +594,7 @@
   }
 
   .node-info code {
-    background: #374151;
+    background: var(--color-bg-tertiary);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
     font-family: 'Courier New', monospace;
@@ -607,7 +607,7 @@
   }
 
   .status-inactive {
-    color: #6b7280;
+    color: var(--color-text-muted);
   }
 
   .status-pending {

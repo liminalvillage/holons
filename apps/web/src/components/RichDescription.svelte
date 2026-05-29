@@ -264,7 +264,7 @@
 	.rich-description :global(.rich-inline-player__btn) {
 		background: transparent;
 		border: 0;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 13px;
 		line-height: 1;
 		cursor: pointer;

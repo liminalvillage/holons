@@ -1077,8 +1077,8 @@
 		flex-direction: column;
 		width: var(--browser-width-expanded, 260px);
 		height: 100vh;
-		background: var(--color-bg-primary, #111827);
-		border-right: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		border-right: 1px solid var(--color-border, var(--color-bg-tertiary));
 		transition: transform 350ms ease, width 350ms ease, margin-left 350ms ease;
 		overflow: hidden;
 		flex-shrink: 0;
@@ -1115,7 +1115,7 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		flex-shrink: 0;
 	}
 
@@ -1125,9 +1125,9 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.browser-panel__search input {
@@ -1140,7 +1140,7 @@
 	}
 
 	.browser-panel__search input::placeholder {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.browser-panel__add-btn {
@@ -1149,17 +1149,17 @@
 		justify-content: center;
 		width: 32px;
 		height: 32px;
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: white;
+		color: var(--color-text-primary);
 		cursor: pointer;
 		transition: background-color 150ms ease;
 		flex-shrink: 0;
 	}
 
 	.browser-panel__add-btn:hover {
-		background: var(--color-accent-dark, #4338ca);
+		background: var(--color-accent-dark, var(--color-accent-hover));
 	}
 
 	/* Identity selector (Acting As dropdown) */
@@ -1168,21 +1168,21 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		background: rgba(168, 85, 247, 0.1);
 	}
 
 	.browser-panel__identity-label {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		white-space: nowrap;
 	}
 
 	.browser-panel__identity-select {
 		flex: 1;
 		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-sm, 0.25rem);
 		color: var(--color-text-primary, #ffffff);
 		font-size: var(--font-size-xs, 0.75rem);
@@ -1196,7 +1196,7 @@
 	}
 
 	.browser-panel__identity-select option {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -1213,13 +1213,13 @@
 	}
 
 	.add-modal {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-xl, 1rem);
 		padding: var(--spacing-5, 1.25rem);
 		max-width: 400px;
 		width: 90%;
 		box-shadow: var(--shadow-xl);
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.add-modal__header {
@@ -1244,14 +1244,14 @@
 		justify-content: center;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: 1.5rem;
 		cursor: pointer;
 		border-radius: var(--radius-md, 0.375rem);
 	}
 
 	.add-modal__close:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -1270,13 +1270,13 @@
 	.add-modal__field label {
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-medium, 500);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.add-modal__field input {
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		color: var(--color-text-primary, #ffffff);
 		font-size: var(--font-size-sm, 0.875rem);
@@ -1284,12 +1284,12 @@
 
 	.add-modal__field input:focus {
 		outline: none;
-		border-color: var(--color-accent, #4f46e5);
+		border-color: var(--color-accent, var(--color-accent));
 		box-shadow: 0 0 0 2px var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
 	}
 
 	.add-modal__field input::placeholder {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.add-modal__input-row {
@@ -1310,7 +1310,7 @@
 		background: var(--color-success, #22c55e);
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: white;
+		color: var(--color-text-primary);
 		cursor: pointer;
 		transition: background-color 150ms ease;
 		flex-shrink: 0;
@@ -1359,9 +1359,9 @@
 		flex-direction: column;
 		gap: var(--spacing-3, 0.75rem);
 		padding: var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-md, 0.375rem);
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.add-modal__lens-section {
@@ -1376,7 +1376,7 @@
 		gap: var(--spacing-2, 0.5rem);
 		font-size: var(--font-size-xs, 0.75rem);
 		font-weight: var(--font-weight-medium, 500);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -1389,7 +1389,7 @@
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -1411,12 +1411,12 @@
 	}
 
 	.add-modal__lens-row:hover {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.add-modal__lens-name {
 		font-size: var(--font-size-sm, 0.875rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.add-modal__toggle {
@@ -1425,16 +1425,16 @@
 		height: 20px;
 		justify-self: center;
 		border-radius: 9999px;
-		background: var(--color-bg-tertiary, #374151);
-		border: 1px solid var(--color-border, #4b5563);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+		border: 1px solid var(--color-border, var(--color-border-light));
 		cursor: pointer;
 		transition: background-color 150ms ease, border-color 150ms ease;
 		padding: 0;
 	}
 
 	.add-modal__toggle--on {
-		background: var(--color-accent, #4f46e5);
-		border-color: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
+		border-color: var(--color-accent, var(--color-accent));
 	}
 
 	.add-modal__toggle-dot {
@@ -1460,7 +1460,7 @@
 		flex-direction: column;
 		gap: 2px;
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
 		margin-top: auto;
 		flex-shrink: 0;
 	}
@@ -1468,7 +1468,7 @@
 	.browser-panel__footer span {
 		font-size: 10px;
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		opacity: 0.6;
 	}
 
@@ -1485,7 +1485,7 @@
 		display: inline-block;
 		font-size: 10px;
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		background: rgba(245, 158, 11, 0.12);
 		border: 1px solid rgba(245, 158, 11, 0.35);
 		border-radius: 3px;

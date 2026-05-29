@@ -286,7 +286,7 @@
 
 	.card-created {
 		font-size: 0.6rem;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.card-category {
@@ -341,7 +341,7 @@
 	}
 	.dep-badge--missing {
 		background-color: rgba(0, 0, 0, 0.08);
-		color: #6b7280;
+		color: var(--color-text-muted);
 		cursor: default;
 	}
 
@@ -415,8 +415,8 @@
 		border: 2px solid white;
 		margin-left: -0.375rem;
 		object-fit: cover;
-		background-color: #6366f1;
-		color: white;
+		background-color: var(--color-accent-light);
+		color: var(--color-text-primary);
 		font-size: 0.55rem;
 		font-weight: 600;
 		display: flex;
@@ -430,11 +430,11 @@
 	}
 
 	.avatar-fallback {
-		background-color: #6366f1;
+		background-color: var(--color-accent-light);
 	}
 
 	.avatar-more {
-		background-color: #9ca3af;
+		background-color: #6b7280;
 	}
 
 	.card-appreciation {

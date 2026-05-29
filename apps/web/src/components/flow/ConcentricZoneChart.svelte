@@ -590,25 +590,25 @@
   .zone-label {
     font-size: 12px;
     font-weight: 600;
-    fill: #e2e8f0;
+    fill: var(--color-text-primary);
     pointer-events: none;
   }
 
   .zone-number {
     font-size: 10px;
     font-weight: 500;
-    fill: #94a3b8;
+    fill: var(--color-text-muted);
     pointer-events: none;
   }
 
   .pie-background {
-    fill: rgba(30, 41, 59, 0.8);
-    stroke: #475569;
+    fill: var(--color-bg-secondary);
+    stroke: var(--color-text-muted);
     stroke-width: 2;
   }
 
   .pie-slice {
-    stroke: #1e293b;
+    stroke: var(--color-bg-secondary);
     stroke-width: 1;
     cursor: pointer;
     transition: transform 0.2s ease, filter 0.2s ease;
@@ -620,23 +620,23 @@
   }
 
   .empty-text {
-    fill: #64748b;
+    fill: #6b7280;
     font-size: 12px;
   }
 
   .empty-hint {
-    fill: #475569;
+    fill: var(--color-text-muted);
     font-size: 10px;
   }
 
   .center-percent {
-    fill: #e2e8f0;
+    fill: var(--color-text-primary);
     font-size: 22px;
     font-weight: 700;
   }
 
   .center-label {
-    fill: #94a3b8;
+    fill: var(--color-text-muted);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -644,7 +644,7 @@
 
   .interior-label {
     font-size: 11px;
-    fill: #94a3b8;
+    fill: var(--color-text-muted);
   }
 
   .holon-node {
@@ -668,26 +668,26 @@
   }
 
   .holon-circle {
-    fill: #334155;
-    stroke: #64748b;
+    fill: var(--color-bg-tertiary);
+    stroke: #6b7280;
     stroke-width: 2;
     transition: fill 0.2s, stroke 0.2s;
   }
 
   .holon-node:hover .holon-circle {
-    fill: #475569;
-    stroke: #94a3b8;
+    fill: var(--color-text-muted);
+    stroke: var(--color-text-muted);
   }
 
   .holon-name {
     font-size: 10px;
     font-weight: 600;
-    fill: #e2e8f0;
+    fill: var(--color-text-primary);
     pointer-events: none;
   }
 
   .status-dot {
-    stroke: #1e293b;
+    stroke: var(--color-bg-secondary);
     stroke-width: 1;
   }
 
@@ -700,15 +700,15 @@
   }
 
   .status-dot.inactive {
-    fill: #64748b;
+    fill: #6b7280;
   }
 
   /* Tooltip styles */
   .tooltip {
     position: absolute;
     z-index: 100;
-    background: rgba(15, 23, 42, 0.95);
-    border: 1px solid #334155;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-bg-tertiary);
     border-radius: 0.5rem;
     padding: 0.75rem;
     min-width: 200px;
@@ -723,7 +723,7 @@
     gap: 0.75rem;
     margin-bottom: 0.75rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid #334155;
+    border-bottom: 1px solid var(--color-bg-tertiary);
   }
 
   .tooltip-avatar {
@@ -735,13 +735,13 @@
     justify-content: center;
     font-weight: 700;
     font-size: 14px;
-    color: white;
+    color: var(--color-text-primary);
     flex-shrink: 0;
   }
 
   .tooltip-avatar.holon-avatar {
-    background: #475569;
-    border: 2px solid #64748b;
+    background: var(--color-border-light);
+    border: 2px solid #6b7280;
   }
 
   .tooltip-title {
@@ -752,7 +752,7 @@
 
   .tooltip-name {
     font-weight: 600;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     font-size: 0.875rem;
   }
 
@@ -774,11 +774,11 @@
   }
 
   .breakdown-row span:first-child {
-    color: #94a3b8;
+    color: var(--color-text-muted);
   }
 
   .breakdown-row span:last-child {
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     font-weight: 500;
   }
 
@@ -791,7 +791,7 @@
   }
 
   .status-inactive {
-    color: #64748b !important;
+    color: var(--color-text-muted) !important;
   }
 
   .tooltip-id {
@@ -802,9 +802,9 @@
   .tooltip-footer {
     margin-top: 0.75rem;
     padding-top: 0.5rem;
-    border-top: 1px solid #334155;
+    border-top: 1px solid var(--color-bg-tertiary);
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--color-text-muted);
     text-align: center;
   }
 
@@ -814,11 +814,11 @@
     left: 50%;
     transform: translateX(-50%);
     padding: 0.5rem 1rem;
-    background: rgba(30, 41, 59, 0.9);
-    border: 1px solid #475569;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
     border-radius: 0.375rem;
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     white-space: nowrap;
   }
 

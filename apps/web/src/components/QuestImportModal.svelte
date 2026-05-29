@@ -816,8 +816,8 @@
 
 <style>
 	.quest-sample {
-		background: #111827;
-		border: 1px solid #374151;
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-bg-tertiary);
 		border-radius: 0.5rem;
 		overflow: hidden;
 	}
@@ -828,7 +828,7 @@
 		gap: 0.5rem;
 		padding: 0.5rem 0.75rem;
 		font-size: 0.8125rem;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		cursor: pointer;
 		list-style: none;
 	}
@@ -839,7 +839,7 @@
 
 	.quest-sample__summary::before {
 		content: '▸';
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		display: inline-block;
 		transition: transform 150ms ease;
@@ -852,29 +852,29 @@
 	.quest-sample__use {
 		margin-left: auto;
 		padding: 0.25rem 0.625rem;
-		background: #374151;
-		border: 1px solid #4b5563;
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border-light);
 		border-radius: 0.375rem;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		font-size: 0.75rem;
 		cursor: pointer;
 	}
 
 	.quest-sample__use:hover {
-		background: #4b5563;
+		background: var(--color-border-light);
 	}
 
 	.quest-sample__code {
 		margin: 0;
 		padding: 0.625rem 0.75rem;
 		background: #0b1220;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		font-family: ui-monospace, SFMono-Regular, monospace;
 		font-size: 0.75rem;
 		line-height: 1.45;
 		white-space: pre;
 		overflow-x: auto;
-		border-top: 1px solid #374151;
+		border-top: 1px solid var(--color-bg-tertiary);
 	}
 
 	/* Custom scrollbar for webkit browsers */
@@ -883,17 +883,17 @@
 	}
 	
 	::-webkit-scrollbar-track {
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		border-radius: 3px;
 	}
 	
 	::-webkit-scrollbar-thumb {
-		background: #6B7280;
+		background: #6b7280;
 		border-radius: 3px;
 	}
 	
 	::-webkit-scrollbar-thumb:hover {
-		background: #9CA3AF;
+		background: #6b7280;
 	}
 
 	/* Modal scrollbar styling */
@@ -902,16 +902,16 @@
 	}
 	
 	.modal-content::-webkit-scrollbar-track {
-		background: #374151;
+		background: var(--color-bg-tertiary);
 		border-radius: 4px;
 	}
 	
 	.modal-content::-webkit-scrollbar-thumb {
-		background: #6B7280;
+		background: #6b7280;
 		border-radius: 4px;
 	}
 	
 	.modal-content::-webkit-scrollbar-thumb:hover {
-		background: #9CA3AF;
+		background: #6b7280;
 	}
 </style>

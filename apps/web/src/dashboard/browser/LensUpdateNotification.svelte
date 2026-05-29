@@ -122,7 +122,7 @@
 	}
 
 	.lens-update--expanded {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.lens-update__row {
@@ -145,7 +145,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: white;
+		color: var(--color-text-primary);
 		font-weight: var(--font-weight-semibold, 600);
 		font-size: var(--font-size-xs, 0.75rem);
 		flex-shrink: 0;
@@ -198,7 +198,7 @@
 		padding: 0;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		border-radius: var(--radius-sm, 0.25rem);
 		transition: all 150ms ease;
@@ -220,7 +220,7 @@
 	}
 
 	.lens-update__btn--expand:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -248,7 +248,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-1, 0.25rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.lens-update__lens-row {
@@ -269,19 +269,19 @@
 
 
 	.lens-update__lens-list {
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.lens-update__lens-list--empty {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-style: italic;
 	}
 
 	.lens-update__message {
 		font-size: 11px;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-sm, 0.25rem);
 		margin-top: var(--spacing-1, 0.25rem);
 	}

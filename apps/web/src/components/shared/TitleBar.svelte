@@ -84,8 +84,8 @@
 		gap: var(--spacing-3, 0.75rem);
 		height: var(--titlebar-height, 36px);
 		padding: 0 var(--spacing-4, 1rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border-bottom: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		flex-shrink: 0;
 	}
 
@@ -103,13 +103,13 @@
 		border-radius: var(--radius-md, 0.375rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		cursor: pointer;
 		transition: background-color 150ms ease, color 150ms ease;
 	}
 
 	.title-bar__back:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -126,21 +126,21 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--color-accent-light, #6366f1);
+		color: var(--color-accent-light, var(--color-accent-light));
 		flex-shrink: 0;
 	}
 
 	.title-bar__holon-name {
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-semibold, 600);
-		color: var(--color-accent-light, #6366f1);
+		color: var(--color-accent-light, var(--color-accent-light));
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
 	.title-bar__separator {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 	}
 

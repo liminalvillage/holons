@@ -71,14 +71,14 @@
 		align-items: flex-start;
 		gap: var(--spacing-3, 0.75rem);
 		padding: var(--spacing-4, 1rem);
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-lg, 0.5rem);
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		transition: all 250ms ease;
 	}
 
 	.stat-card:hover {
-		border-color: var(--color-border-light, #4b5563);
+		border-color: var(--color-border-light, var(--color-border-light));
 	}
 
 	.stat-card--compact {
@@ -91,7 +91,7 @@
 	}
 
 	.stat-card--clickable:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		transform: translateY(-1px);
 	}
 
@@ -107,7 +107,7 @@
 		height: 40px;
 		border-radius: var(--radius-md, 0.375rem);
 		background: var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
-		color: var(--color-accent-light, #6366f1);
+		color: var(--color-accent-light, var(--color-accent-light));
 		flex-shrink: 0;
 	}
 
@@ -143,7 +143,7 @@
 
 	.stat-card__label {
 		font-size: var(--font-size-sm, 0.875rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -155,7 +155,7 @@
 
 	.stat-card__subtext {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.stat-card__trend {
@@ -172,13 +172,13 @@
 	}
 
 	.stat-card__trend--neutral {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.stat-card__progress {
 		width: 100%;
 		height: 4px;
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-full, 9999px);
 		overflow: hidden;
 		margin-top: var(--spacing-1, 0.25rem);
@@ -186,7 +186,7 @@
 
 	.stat-card__progress-bar {
 		height: 100%;
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 		border-radius: var(--radius-full, 9999px);
 		transition: width 300ms ease;
 	}

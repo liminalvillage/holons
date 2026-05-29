@@ -333,7 +333,7 @@
 <style lang="scss">
 	.qr-page {
 		min-height: 100vh;
-		background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+		background: linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-bg-primary) 100%);
 		padding: 2rem 0;
 	}
 </style> 

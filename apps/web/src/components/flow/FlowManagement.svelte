@@ -746,8 +746,8 @@
     gap: 1rem;
     padding: 1rem;
     min-height: 100%;
-    background: #0f172a;
-    color: #e2e8f0;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
   }
 
   .notifications {
@@ -824,10 +824,10 @@
 
   .connect-btn {
     padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    background: var(--color-accent);
     border: none;
     border-radius: 0.375rem;
-    color: white;
+    color: #fff;
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -835,7 +835,7 @@
   }
 
   .connect-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    background: var(--color-accent-hover);
   }
 
   .connect-btn:disabled {
@@ -875,13 +875,13 @@
     justify-content: center;
     gap: 1rem;
     padding: 4rem 2rem;
-    color: #94a3b8;
+    color: var(--color-text-muted);
   }
 
   .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid #334155;
+    border: 3px solid var(--color-bg-tertiary);
     border-top-color: #3b82f6;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -896,7 +896,7 @@
     gap: 0;
     flex: 1;
     min-height: 400px;
-    background: rgba(30, 41, 59, 0.3);
+    background: var(--color-bg-secondary);
     border-radius: 0.5rem;
     overflow: hidden;
   }

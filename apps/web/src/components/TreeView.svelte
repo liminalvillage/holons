@@ -46,14 +46,14 @@
     }
     .no-arrow { padding-left: 1.0rem; }
     .arrow {
-        color: white;
+        color: var(--color-text-primary);
         cursor: pointer;
         display: inline-block;
         margin-right: 0.5rem; /* Add margin between the arrow and the text */
     }
 
     .label {
-        color: white;
+        color: var(--color-text-primary);
     }
     .label.first-layer {
         font-weight: bold; /* Make only the first layer bold */

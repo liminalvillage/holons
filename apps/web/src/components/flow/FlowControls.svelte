@@ -165,7 +165,7 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
-    background: rgba(30, 41, 59, 0.5);
+    background: var(--color-bg-secondary);
     border-radius: 0.5rem;
   }
 
@@ -191,7 +191,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.875rem;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     margin-bottom: 0.5rem;
   }
 
@@ -205,7 +205,7 @@
     width: 100%;
     height: 6px;
     border-radius: 3px;
-    background: #334155;
+    background: var(--color-bg-tertiary);
     appearance: none;
     cursor: pointer;
   }
@@ -217,7 +217,7 @@
     border-radius: 50%;
     background: #3b82f6;
     cursor: pointer;
-    border: 2px solid #1e293b;
+    border: 2px solid var(--color-bg-secondary);
     transition: transform 0.15s;
   }
 
@@ -231,7 +231,7 @@
     border-radius: 50%;
     background: #3b82f6;
     cursor: pointer;
-    border: 2px solid #1e293b;
+    border: 2px solid var(--color-bg-secondary);
   }
 
   .steepness-slider::-webkit-slider-thumb {
@@ -242,7 +242,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--color-text-muted);
     margin-top: 0.25rem;
   }
 
@@ -256,9 +256,9 @@
     width: 32px;
     height: 32px;
     border-radius: 0.25rem;
-    background: #334155;
-    border: 1px solid #475569;
-    color: #e2e8f0;
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-light);
+    color: var(--color-text-primary);
     font-size: 1.25rem;
     font-weight: 600;
     cursor: pointer;
@@ -269,8 +269,8 @@
   }
 
   .zones-btn:hover:not(:disabled) {
-    background: #475569;
-    border-color: #64748b;
+    background: var(--color-border-light);
+    border-color: #6b7280;
   }
 
   .zones-btn:disabled {
@@ -284,10 +284,10 @@
     text-align: center;
     font-size: 1rem;
     font-weight: 600;
-    background: #1e293b;
-    border: 1px solid #475569;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
     border-radius: 0.25rem;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
   }
 
   .zones-number::-webkit-inner-spin-button,
@@ -300,7 +300,7 @@
     display: flex;
     gap: 0.25rem;
     padding: 0.5rem;
-    background: rgba(15, 23, 42, 0.4);
+    background: var(--color-bg-primary);
     border-radius: 0.375rem;
     height: 120px;
     flex: 1;
@@ -319,7 +319,7 @@
     flex: 1;
     width: 100%;
     max-width: 16px;
-    background: rgba(51, 65, 85, 0.5);
+    background: var(--color-bg-tertiary);
     border-radius: 0.25rem 0.25rem 0 0;
     display: flex;
     align-items: flex-end;
@@ -336,14 +336,14 @@
   .bar-label {
     font-size: 0.625rem;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     margin-top: 0.25rem;
   }
 
   .bar-value {
     font-size: 0.5rem;
     font-family: monospace;
-    color: #64748b;
+    color: var(--color-text-muted);
   }
 
   .action-buttons {
@@ -374,40 +374,40 @@
 
   .btn-reset {
     background: transparent;
-    border: 1px solid #475569;
-    color: #94a3b8;
+    border: 1px solid var(--color-border-light);
+    color: var(--color-text-muted);
   }
 
   .btn-reset:hover:not(:disabled) {
     background: rgba(71, 85, 105, 0.3);
-    color: #e2e8f0;
+    color: var(--color-text-primary);
   }
 
   .btn-sync {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
+    background: var(--color-accent);
+    color: #fff;
   }
 
   .btn-sync:hover:not(:disabled) {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    background: var(--color-accent-hover);
   }
 
   .btn-deploy {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: var(--color-accent);
+    color: #fff;
   }
 
   .btn-deploy:hover:not(:disabled) {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    background: var(--color-accent-hover);
   }
 
   .btn-redeploy {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
+    background: var(--color-accent);
+    color: #fff;
   }
 
   .btn-redeploy:hover:not(:disabled) {
-    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    background: var(--color-accent-hover);
   }
 
   .spinner {

@@ -1014,17 +1014,17 @@
     }
     
     ::-webkit-scrollbar-track {
-        background: #374151;
+        background: var(--color-bg-tertiary);
         border-radius: 3px;
     }
     
     ::-webkit-scrollbar-thumb {
-        background: #6B7280;
+        background: #6b7280;
         border-radius: 3px;
     }
     
     ::-webkit-scrollbar-thumb:hover {
-        background: #9CA3AF;
+        background: #6b7280;
     }
 
     /* Modal content scrollbar styling */
@@ -1033,17 +1033,17 @@
     }
     
     .modal-content::-webkit-scrollbar-track {
-        background: #374151;
+        background: var(--color-bg-tertiary);
         border-radius: 4px;
     }
     
     .modal-content::-webkit-scrollbar-thumb {
-        background: #6B7280;
+        background: #6b7280;
         border-radius: 4px;
     }
     
     .modal-content::-webkit-scrollbar-thumb:hover {
-        background: #9CA3AF;
+        background: #6b7280;
     }
 
     /* Team selector */
@@ -1054,8 +1054,8 @@
 
     .team-search__input {
         width: 100%;
-        background: #111827;
-        border: 1px solid #374151;
+        background: var(--color-bg-primary);
+        border: 1px solid var(--color-bg-tertiary);
         border-radius: 0.5rem;
         color: #f9fafb;
         font-size: 0.875rem;
@@ -1067,12 +1067,12 @@
 
     .team-search__input:focus {
         outline: none;
-        border-color: #6366f1;
+        border-color: var(--color-accent-light);
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     }
 
     .team-search__input::placeholder {
-        color: #6b7280;
+        color: var(--color-text-muted);
     }
 
     .team-search__clear {
@@ -1085,15 +1085,15 @@
         border-radius: 0.375rem;
         background: transparent;
         border: none;
-        color: #9ca3af;
+        color: var(--color-text-muted);
         font-size: 1.1rem;
         line-height: 1;
         cursor: pointer;
     }
 
     .team-search__clear:hover {
-        background: #374151;
-        color: #fff;
+        background: var(--color-bg-tertiary);
+        color: var(--color-text-primary);
     }
 
     .user-row {
@@ -1104,7 +1104,7 @@
         gap: 0.5rem;
         padding: 0.625rem 0.625rem;
         border-radius: 0.5rem;
-        background: #1f2937;
+        background: var(--color-bg-secondary);
         border: 1px solid transparent;
         cursor: pointer;
         touch-action: manipulation;
@@ -1115,11 +1115,11 @@
     }
 
     .user-row:hover {
-        background: #374151;
+        background: var(--color-bg-tertiary);
     }
 
     .user-row:active {
-        background: #4b5563;
+        background: var(--color-border-light);
     }
 
     .user-row--selected,
@@ -1141,8 +1141,8 @@
     }
 
     .user-row__check--on {
-        background: #6366f1;
-        border-color: #6366f1;
+        background: var(--color-accent-light);
+        border-color: var(--color-accent-light);
     }
 </style>
 

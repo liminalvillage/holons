@@ -101,8 +101,8 @@
 
 <style>
 	.request-card {
-		background: var(--color-bg-secondary, #1f2937);
-		border: 2px dashed var(--color-accent, #4f46e5);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 2px dashed var(--color-accent, var(--color-accent));
 		border-radius: var(--radius-lg, 0.5rem);
 		padding: var(--spacing-3, 0.75rem);
 		margin: var(--spacing-2, 0.5rem);
@@ -124,7 +124,7 @@
 		font-weight: var(--font-weight-semibold, 600);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--color-accent, #4f46e5);
+		color: var(--color-accent, var(--color-accent));
 	}
 
 	.request-card--update .request-card__type {
@@ -138,7 +138,7 @@
 		align-items: center;
 		gap: var(--spacing-3, 0.75rem);
 		padding: var(--spacing-3, 0.75rem);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		margin-bottom: var(--spacing-3, 0.75rem);
 	}
@@ -147,13 +147,13 @@
 		width: 40px;
 		height: 40px;
 		border-radius: var(--radius-full, 9999px);
-		background: linear-gradient(135deg, var(--color-accent, #4f46e5), var(--color-accent-light, #818cf8));
+		background: linear-gradient(135deg, var(--color-accent, var(--color-accent)), var(--color-accent-light, #818cf8));
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		font-size: var(--font-size-lg, 1.125rem);
 		font-weight: var(--font-weight-bold, 700);
-		color: white;
+		color: var(--color-text-primary);
 		flex-shrink: 0;
 	}
 
@@ -174,7 +174,7 @@
 
 	.request-card__pubkey {
 		font-size: 11px;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-family: var(--font-mono, monospace);
 	}
 
@@ -202,7 +202,7 @@
 		gap: var(--spacing-1, 0.25rem);
 		font-size: 11px;
 		font-weight: var(--font-weight-medium, 500);
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, var(--color-text-muted));
 		margin-bottom: var(--spacing-1, 0.25rem);
 	}
 
@@ -230,7 +230,7 @@
 
 	.request-card__no-lenses {
 		font-size: var(--font-size-sm, 0.875rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		text-align: center;
 		padding: var(--spacing-2, 0.5rem);
 	}
@@ -239,18 +239,18 @@
 	.request-card__message {
 		font-size: var(--font-size-sm, 0.875rem);
 		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		border-radius: var(--radius-sm, 0.25rem);
 		margin-bottom: var(--spacing-3, 0.75rem);
 	}
 
 	.request-card__message-label {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		margin-right: var(--spacing-1, 0.25rem);
 	}
 
 	.request-card__message-text {
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, var(--color-text-muted));
 	}
 
 	/* Actions */
@@ -281,7 +281,7 @@
 
 	.request-card__btn--accept {
 		background: var(--color-success, #22c55e);
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.request-card__btn--accept:hover:not(:disabled) {
@@ -289,20 +289,20 @@
 	}
 
 	.request-card__btn--decline {
-		background: var(--color-bg-tertiary, #374151);
-		color: var(--color-text-secondary, #9ca3af);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+		color: var(--color-text-secondary, var(--color-text-muted));
 	}
 
 	.request-card__btn--decline:hover:not(:disabled) {
 		background: var(--color-error, #ef4444);
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.request-card__spinner {
 		width: 14px;
 		height: 14px;
 		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: white;
+		border-top-color: var(--color-text-primary);
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}

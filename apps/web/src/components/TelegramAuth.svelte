@@ -382,7 +382,7 @@
 		background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
 		padding: 1rem;
 		border-radius: 0.75rem;
-		color: white;
+		color: var(--color-text-primary);
 		box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
 		position: relative;
 	}
@@ -454,7 +454,7 @@
 	.logout-btn {
 		background: rgba(255, 255, 255, 0.2);
 		border: 1px solid rgba(255, 255, 255, 0.3);
-		color: white;
+		color: var(--color-text-primary);
 		padding: 0.5rem;
 		border-radius: 0.5rem;
 		cursor: pointer;
@@ -488,7 +488,7 @@
 		h3 {
 			font-size: 1.5rem;
 			font-weight: 600;
-			color: white;
+			color: var(--color-text-primary);
 			margin-bottom: 0.5rem;
 		}
 
@@ -528,7 +528,7 @@
 
 	.retry-btn {
 		background: linear-gradient(135deg, #0088cc 0%, #0077b3 100%);
-		color: white;
+		color: var(--color-text-primary);
 		border: none;
 		padding: 0.625rem 1.25rem;
 		border-radius: 0.5rem;

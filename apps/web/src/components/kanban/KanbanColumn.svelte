@@ -183,7 +183,7 @@
     flex: 0 0 280px;
     min-width: 280px;
     max-width: 280px;
-    background-color: #1f2937;
+    background-color: var(--color-bg-secondary);
     border-radius: 0.75rem;
     display: flex;
     flex-direction: column;
@@ -195,7 +195,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem;
-    border-bottom: 1px solid #374151;
+    border-bottom: 1px solid var(--color-bg-tertiary);
     position: relative;
   }
 
@@ -215,8 +215,8 @@
   .column-name-input {
     font-size: 0.875rem;
     font-weight: 600;
-    background-color: #374151;
-    border: 1px solid #6366f1;
+    background-color: var(--color-bg-tertiary);
+    border: 1px solid var(--color-accent-light);
     border-radius: 0.25rem;
     color: #f3f4f6;
     padding: 0.25rem 0.5rem;
@@ -233,8 +233,8 @@
     padding: 0 0.375rem;
     font-size: 0.75rem;
     font-weight: 500;
-    color: #9ca3af;
-    background-color: #374151;
+    color: var(--color-text-muted);
+    background-color: var(--color-bg-tertiary);
     border-radius: 9999px;
   }
 
@@ -251,13 +251,13 @@
     border-radius: 0.375rem;
     background: transparent;
     border: none;
-    color: #9ca3af;
+    color: var(--color-text-muted);
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
   .menu-btn:hover {
-    background-color: #374151;
+    background-color: var(--color-bg-tertiary);
     color: #f3f4f6;
   }
 
@@ -266,8 +266,8 @@
     top: 100%;
     right: 0;
     margin-top: 0.25rem;
-    background-color: #374151;
-    border: 1px solid #4b5563;
+    background-color: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-light);
     border-radius: 0.5rem;
     padding: 0.25rem;
     min-width: 120px;
@@ -282,7 +282,7 @@
     width: 100%;
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
-    color: #e5e7eb;
+    color: var(--color-text-secondary);
     background: none;
     border: none;
     border-radius: 0.375rem;
@@ -291,7 +291,7 @@
   }
 
   .dropdown-menu button:hover {
-    background-color: #4b5563;
+    background-color: var(--color-border-light);
   }
 
   .dropdown-menu button.delete {

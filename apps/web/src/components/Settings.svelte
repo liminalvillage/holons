@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
+  import { skin, setSkin, accentOverride, setAccent, clearAccent, DEFAULT_ACCENT } from '$lib/stores/skin';
+
+  // Colour-picker value: the active skin's custom accent, or its built-in default.
+  $: accentValue = $accentOverride ?? DEFAULT_ACCENT[$skin];
   import { nameMap, resolvedName, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
@@ -403,23 +407,71 @@
 
           <!-- Appearance -->
           <section class="settings-section">
-            <h3 class="settings-section__title">
-              Appearance
-              <span class="settings-section__hint">Telegram bot only</span>
-            </h3>
-            <div class="theme-row">
-              {#each themes as theme}
+            <h3 class="settings-section__title">Appearance</h3>
+
+            <!-- Dashboard skin (this device) -->
+            <div class="settings-field">
+              <span class="settings-field__label">Theme <span class="settings-section__hint">this dashboard</span></span>
+              <div class="theme-row">
                 <button
                   type="button"
                   class="theme-chip"
-                  class:theme-chip--active={settings.theme === theme.id}
-                  on:click={() => updateSetting('theme', theme.id)}
-                  title={theme.description}
+                  class:theme-chip--active={$skin === 'whiteboard'}
+                  on:click={() => setSkin('whiteboard')}
+                  title="Light, paper-and-ink theme"
                 >
-                  <span class="theme-chip__icon">{theme.icon}</span>
-                  <span>{theme.name}</span>
+                  <span class="theme-chip__icon">☀️</span>
+                  <span>Light</span>
                 </button>
-              {/each}
+                <button
+                  type="button"
+                  class="theme-chip"
+                  class:theme-chip--active={$skin === 'blackboard'}
+                  on:click={() => setSkin('blackboard')}
+                  title="Dark theme"
+                >
+                  <span class="theme-chip__icon">🌙</span>
+                  <span>Dark</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Accent colour (per skin, this device) -->
+            <div class="settings-field">
+              <span class="settings-field__label">Accent <span class="settings-section__hint">{$skin === 'whiteboard' ? 'light' : 'dark'} theme</span></span>
+              <div class="accent-row">
+                <input
+                  type="color"
+                  class="accent-swatch"
+                  value={accentValue}
+                  on:input={(e) => setAccent(e.currentTarget.value)}
+                  title="Pick an accent colour"
+                  aria-label="Accent colour"
+                />
+                <span class="accent-value">{accentValue.toUpperCase()}</span>
+                {#if $accentOverride}
+                  <button type="button" class="accent-reset" on:click={clearAccent}>Reset</button>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Telegram bot theme (separate, server-side preference) -->
+            <div class="settings-field">
+              <span class="settings-field__label">Bot theme <span class="settings-section__hint">Telegram only</span></span>
+              <div class="theme-row">
+                {#each themes as theme}
+                  <button
+                    type="button"
+                    class="theme-chip"
+                    class:theme-chip--active={settings.theme === theme.id}
+                    on:click={() => updateSetting('theme', theme.id)}
+                    title={theme.description}
+                  >
+                    <span class="theme-chip__icon">{theme.icon}</span>
+                    <span>{theme.name}</span>
+                  </button>
+                {/each}
+              </div>
             </div>
           </section>
 
@@ -594,7 +646,7 @@
     justify-content: center;
     gap: 0.75rem;
     padding: 3rem 1rem;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
   }
 
   .settings-state__spinner {
@@ -602,7 +654,7 @@
     height: 2rem;
     border-radius: 9999px;
     border: 2px solid transparent;
-    border-bottom-color: var(--color-accent, #6366f1);
+    border-bottom-color: var(--color-accent, var(--color-accent-light));
     animation: spin 1s linear infinite;
   }
 
@@ -621,7 +673,7 @@
   .settings-tabs {
     display: flex;
     gap: 0.25rem;
-    border-bottom: 1px solid var(--color-border, #374151);
+    border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
     margin-bottom: 1rem;
     overflow-x: auto;
   }
@@ -634,7 +686,7 @@
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -648,7 +700,7 @@
 
   .settings-tabs__btn--active {
     color: var(--color-text-primary, #fff);
-    border-bottom-color: var(--color-accent, #6366f1);
+    border-bottom-color: var(--color-accent, var(--color-accent-light));
   }
 
   /* Sections */
@@ -659,8 +711,8 @@
   }
 
   .settings-section {
-    background: rgba(55, 65, 81, 0.4);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 0.75rem;
     padding: 1rem 1.25rem;
     display: flex;
@@ -681,7 +733,7 @@
   .settings-section__hint {
     font-size: 0.7rem;
     font-weight: 400;
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
   }
 
   .settings-section__count {
@@ -691,11 +743,11 @@
     min-width: 1.5rem;
     height: 1.25rem;
     padding: 0 0.4rem;
-    background: var(--color-bg-tertiary, #374151);
+    background: var(--color-bg-tertiary, var(--color-bg-tertiary));
     border-radius: 9999px;
     font-size: 0.7rem;
     font-weight: 600;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
   }
 
   /* Fields */
@@ -720,7 +772,7 @@
   .settings-field__label {
     font-size: 0.8125rem;
     font-weight: 500;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -728,17 +780,17 @@
 
   .settings-field__hint {
     font-size: 0.7rem;
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
     font-weight: 400;
   }
 
   .settings-field__readonly {
     display: block;
     padding: 0.5rem 0.75rem;
-    background: var(--color-bg-primary, #111827);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-primary, var(--color-bg-primary));
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 0.5rem;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.8125rem;
     overflow: hidden;
@@ -753,7 +805,7 @@
     padding: 0.125rem 0.375rem;
     background: transparent;
     border: none;
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
     font-size: 0.7rem;
     cursor: pointer;
   }
@@ -769,8 +821,8 @@
     gap: 0.5rem;
     width: 100%;
     padding: 0.55rem 0.75rem;
-    background: var(--color-bg-primary, #111827);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-primary, var(--color-bg-primary));
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 0.5rem;
     color: var(--color-text-primary, #fff);
     font-size: 0.875rem;
@@ -780,8 +832,8 @@
   }
 
   .hex-field:hover {
-    border-color: var(--color-accent, #6366f1);
-    background: var(--color-bg-secondary, #1f2937);
+    border-color: var(--color-accent, var(--color-accent-light));
+    background: var(--color-bg-secondary, var(--color-bg-secondary));
   }
 
   .hex-field__value {
@@ -795,7 +847,7 @@
   }
 
   .hex-field__placeholder {
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
     flex: 1;
     min-width: 0;
   }
@@ -804,8 +856,8 @@
     margin-left: auto;
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    background: var(--color-accent, #6366f1);
-    color: #fff;
+    background: var(--color-accent, var(--color-accent-light));
+    color: var(--color-text-primary);
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -824,10 +876,10 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.5rem 0.875rem;
-    background: var(--color-bg-primary, #111827);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-primary, var(--color-bg-primary));
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 9999px;
-    color: var(--color-text-secondary, #d1d5db);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     font-size: 0.8125rem;
     cursor: pointer;
     transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
@@ -835,16 +887,53 @@
 
   .theme-chip:hover {
     color: var(--color-text-primary, #fff);
-    border-color: var(--color-border-light, #4b5563);
+    border-color: var(--color-border-light, var(--color-border-light));
   }
 
   .theme-chip--active {
     color: var(--color-text-primary, #fff);
-    border-color: var(--color-accent, #6366f1);
+    border-color: var(--color-accent, var(--color-accent-light));
     background: rgba(99, 102, 241, 0.18);
   }
 
   .theme-chip__icon { line-height: 1; }
+
+  /* Accent colour picker */
+  .accent-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .accent-swatch {
+    width: 44px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+  }
+  .accent-swatch::-webkit-color-swatch-wrapper { padding: 3px; }
+  .accent-swatch::-webkit-color-swatch { border: none; border-radius: 5px; }
+  .accent-swatch::-moz-color-swatch { border: none; border-radius: 5px; }
+  .accent-value {
+    font-family: var(--font-family-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
+  }
+  .accent-reset {
+    margin-left: auto;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-tertiary);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .accent-reset:hover { color: var(--color-text-primary); }
 
   /* Chip input + chip list */
   .chip-input {
@@ -868,8 +957,8 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.25rem 0.5rem 0.25rem 0.625rem;
-    background: var(--color-bg-primary, #111827);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-primary, var(--color-bg-primary));
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 9999px;
     color: var(--color-text-primary, #fff);
     font-size: 0.8125rem;
@@ -884,13 +973,13 @@
     border-radius: 9999px;
     background: transparent;
     border: none;
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
     cursor: pointer;
   }
 
   .chip__remove:hover {
     background: var(--color-error, #ef4444);
-    color: #fff;
+    color: var(--color-text-primary);
   }
 
   /* Members */
@@ -909,8 +998,8 @@
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.5rem 0.75rem;
-    background: var(--color-bg-primary, #111827);
-    border: 1px solid var(--color-border, #374151);
+    background: var(--color-bg-primary, var(--color-bg-primary));
+    border: 1px solid var(--color-border, var(--color-bg-tertiary));
     border-radius: 0.5rem;
   }
 
@@ -942,7 +1031,7 @@
   }
 
   .empty-state {
-    color: var(--color-text-muted, #9ca3af);
+    color: var(--color-text-muted, var(--color-text-muted));
     font-size: 0.875rem;
     text-align: center;
     padding: 0.5rem 0;
@@ -965,7 +1054,7 @@
     gap: 0.5rem;
     padding: 0.625rem 0.875rem;
     border-radius: 0.5rem;
-    color: #fff;
+    color: var(--color-text-primary);
     font-size: 0.8125rem;
     box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.4);
   }

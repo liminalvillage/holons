@@ -95,7 +95,7 @@
     .lens-selector label {
         font-size: 14px;
         font-weight: 500;
-        color: white;
+        color: var(--color-text-primary);
     }
 
     .lens-selector select {
@@ -104,7 +104,7 @@
         border-radius: 9999px;
         font-size: 14px;
         background-color: rgba(255, 255, 255, 0.1);
-        color: white;
+        color: var(--color-text-primary);
         cursor: pointer;
         min-width: 120px;
     }

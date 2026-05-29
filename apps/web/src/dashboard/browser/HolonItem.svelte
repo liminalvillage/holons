@@ -497,7 +497,7 @@
 	}
 
 	.holon-item-wrapper--expanded {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-md, 0.375rem);
 		margin-bottom: var(--spacing-1, 0.25rem);
 	}
@@ -519,7 +519,7 @@
 	}
 
 	.holon-item-wrapper:not(.holon-item-wrapper--expanded) .holon-item:hover {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.holon-item--active {
@@ -545,7 +545,7 @@
 		top: 0;
 		bottom: 0;
 		width: 3px;
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 		border-radius: 3px 0 0 3px;
 	}
 
@@ -558,7 +558,7 @@
 	/* Pending federation styling */
 	.holon-item--pending {
 		opacity: 0.6;
-		border: 1px dashed var(--color-border, #374151);
+		border: 1px dashed var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.holon-item--pending:hover {
@@ -581,7 +581,7 @@
 	}
 
 	.holon-item__avatar--home {
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 	}
 
 	.holon-item__content {
@@ -603,7 +603,7 @@
 
 	.holon-item__id {
 		font-size: 10px;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-family: var(--font-family-mono, monospace);
 		display: flex;
 		align-items: center;
@@ -651,14 +651,14 @@
 		padding: 0;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		border-radius: var(--radius-sm, 0.25rem);
 		transition: all 150ms ease;
 	}
 
 	.holon-item__action-btn:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -672,11 +672,11 @@
 	}
 
 	.holon-item__action-btn--settings {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.holon-item__action-btn--settings:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -688,8 +688,8 @@
 	}
 
 	.holon-item__action-btn--key:hover {
-		background: var(--color-accent, #4f46e5);
-		color: white;
+		background: var(--color-accent, var(--color-accent));
+		color: var(--color-text-primary);
 	}
 
 	/* Dropdown container */
@@ -703,8 +703,8 @@
 		top: 100%;
 		margin-top: 4px;
 		min-width: 180px;
-		background: var(--color-bg-secondary, #1f2937);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 		z-index: 100;
@@ -713,7 +713,7 @@
 
 	.holon-item__dropdown-header {
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
@@ -723,14 +723,14 @@
 		font-size: 10px;
 		padding: 2px 6px;
 		border-radius: var(--radius-full, 9999px);
-		background: var(--color-accent, #4f46e5);
-		color: white;
+		background: var(--color-accent, var(--color-accent));
+		color: var(--color-text-primary);
 		font-weight: var(--font-weight-medium, 500);
 	}
 
 	.holon-item__dropdown-label {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.holon-item__dropdown-action {
@@ -741,7 +741,7 @@
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		font-size: var(--font-size-sm, 0.875rem);
 		cursor: pointer;
 		text-align: left;
@@ -749,7 +749,7 @@
 	}
 
 	.holon-item__dropdown-action:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.holon-item__dropdown-action--danger {
@@ -762,13 +762,13 @@
 
 	.holon-item__dropdown-key {
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 	}
 
 	.holon-item__dropdown-key code {
 		font-size: 9px;
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		word-break: break-all;
 		display: block;
 	}
@@ -780,7 +780,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-2, 0.5rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	/* Lens list */
@@ -797,7 +797,7 @@
 		gap: 4px;
 		padding: 3px 4px;
 		font-size: 10px;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -820,7 +820,7 @@
 	}
 
 	.holon-item__lens-row:hover {
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 	}
 
 	.holon-item__lens-row--active {
@@ -840,7 +840,7 @@
 
 	.holon-item__lens-name {
 		font-size: 11px;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		text-transform: capitalize;
 	}
 
@@ -850,16 +850,16 @@
 		height: 16px;
 		justify-self: center;
 		border-radius: 9999px;
-		background: var(--color-bg-tertiary, #374151);
-		border: 1px solid var(--color-border, #4b5563);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+		border: 1px solid var(--color-border, var(--color-border-light));
 		cursor: pointer;
 		transition: background-color 150ms ease, border-color 150ms ease;
 		padding: 0;
 	}
 
 	.holon-item__toggle--on {
-		background: var(--color-accent, #4f46e5);
-		border-color: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
+		border-color: var(--color-accent, var(--color-accent));
 	}
 
 	.holon-item__toggle-dot {
@@ -918,7 +918,7 @@
 		gap: var(--spacing-2, 0.5rem);
 		margin-top: var(--spacing-2, 0.5rem);
 		padding-top: var(--spacing-2, 0.5rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.holon-item__config-btn {
@@ -937,21 +937,21 @@
 	}
 
 	.holon-item__config-btn--cancel {
-		background: var(--color-bg-primary, #111827);
-		color: var(--color-text-muted, #6b7280);
+		background: var(--color-bg-primary, var(--color-bg-primary));
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.holon-item__config-btn--cancel:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
 	.holon-item__config-btn--request {
-		background: var(--color-accent, #4f46e5);
-		color: white;
+		background: var(--color-accent, var(--color-accent));
+		color: var(--color-text-primary);
 	}
 
 	.holon-item__config-btn--request:hover {
-		background: var(--color-accent-dark, #4338ca);
+		background: var(--color-accent-dark, var(--color-accent-hover));
 	}
 </style>

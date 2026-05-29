@@ -732,7 +732,7 @@
         height: 40px;
         border: 3px solid rgba(255, 255, 255, 0.2);
         border-radius: 50%;
-        border-top-color: #fff;
+        border-top-color: var(--color-text-primary);
         animation: spin 1s ease-in-out infinite;
     }
 

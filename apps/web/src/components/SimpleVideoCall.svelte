@@ -792,7 +792,7 @@
     flex-direction: column;
     height: 100vh;
     background: #000;
-    color: white;
+    color: var(--color-text-primary);
   }
 
   .header {
@@ -905,14 +905,14 @@
   }
 
   .video-wrapper.connecting {
-    background: #1f2937;
-    border: 2px dashed #374151;
+    background: var(--color-bg-secondary);
+    border: 2px dashed var(--color-bg-tertiary);
   }
 
   .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid #374151;
+    border: 3px solid var(--color-bg-tertiary);
     border-top: 3px solid #8b5cf6;
     border-radius: 50%;
     margin: 0 auto 1rem;
@@ -936,8 +936,8 @@
     padding: 0.75rem 1.5rem;
     border: none;
     border-radius: 8px;
-    background: #374151;
-    color: white;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
     cursor: pointer;
     font-size: 1rem;
     transition: background 0.2s;
@@ -949,7 +949,7 @@
   }
 
   .control-btn:hover:not(:disabled) {
-    background: #4b5563;
+    background: var(--color-border-light);
   }
 
   .control-btn.active {

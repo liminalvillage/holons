@@ -233,19 +233,19 @@
 	}
 
 	.holon-list::-webkit-scrollbar-thumb {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		border-radius: var(--radius-full, 9999px);
 	}
 
 	.holon-list::-webkit-scrollbar-thumb:hover {
-		background: var(--color-border-light, #4b5563);
+		background: var(--color-border-light, var(--color-border-light));
 	}
 
 	/* Home section - with divider */
 	.holon-list__home {
 		padding-bottom: var(--spacing-2, 0.5rem);
 		margin-bottom: var(--spacing-1, 0.25rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.holon-list__section {
@@ -259,7 +259,7 @@
 		padding: var(--spacing-1, 0.25rem) var(--spacing-4, 1rem);
 		font-size: 10px;
 		font-weight: var(--font-weight-medium, 500);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -271,15 +271,15 @@
 		justify-content: center;
 		padding: var(--spacing-8, 2rem);
 		gap: var(--spacing-3, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 	}
 
 	.holon-list__spinner {
 		width: 20px;
 		height: 20px;
-		border: 2px solid var(--color-bg-tertiary, #374151);
-		border-top-color: var(--color-accent, #4f46e5);
+		border: 2px solid var(--color-bg-tertiary, var(--color-bg-tertiary));
+		border-top-color: var(--color-accent, var(--color-accent));
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}
@@ -295,7 +295,7 @@
 		justify-content: center;
 		padding: var(--spacing-8, 2rem) var(--spacing-4, 1rem);
 		text-align: center;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.holon-list__empty p {
@@ -315,19 +315,19 @@
 	/* Incoming Requests Section */
 	.holon-list__section--requests {
 		background: rgba(79, 70, 229, 0.05);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		padding-bottom: var(--spacing-2, 0.5rem);
 		margin-bottom: var(--spacing-2, 0.5rem);
 	}
 
 	.holon-list__section-title--notification {
-		color: var(--color-accent, #4f46e5);
+		color: var(--color-accent, var(--color-accent));
 	}
 
 	/* Update badge in section title */
 	.holon-list__update-badge {
 		background: var(--color-warning, #f59e0b);
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 9px;
 		padding: 1px 5px;
 		border-radius: var(--radius-full, 9999px);

@@ -152,8 +152,8 @@
   .holon-drawer {
     position: relative;
     width: 280px;
-    background: rgba(30, 41, 59, 0.95);
-    border-left: 1px solid #334155;
+    background: var(--color-bg-secondary);
+    border-left: 1px solid var(--color-bg-tertiary);
     display: flex;
     flex-direction: column;
     transition: width 0.3s ease, margin 0.3s ease;
@@ -172,11 +172,11 @@
     transform: translateY(-50%);
     width: 32px;
     height: 64px;
-    background: rgba(30, 41, 59, 0.95);
-    border: 1px solid #334155;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-bg-tertiary);
     border-right: none;
     border-radius: 0.5rem 0 0 0.5rem;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -186,8 +186,8 @@
   }
 
   .drawer-toggle:hover {
-    background: #334155;
-    color: #e2e8f0;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
   }
 
   .toggle-icon {
@@ -216,7 +216,7 @@
   .drawer-title {
     font-size: 0.875rem;
     font-weight: 600;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     margin: 0 0 0.5rem 0;
   }
 
@@ -240,18 +240,18 @@
 
   .stat-label {
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--color-text-muted);
   }
 
   .stat-divider {
-    color: #475569;
+    color: var(--color-text-muted);
   }
 
   .drawer-instructions {
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--color-text-muted);
     padding: 0.5rem;
-    background: rgba(51, 65, 85, 0.3);
+    background: var(--color-bg-tertiary);
     border-radius: 0.25rem;
     margin-bottom: 0.75rem;
     text-align: center;
@@ -271,7 +271,7 @@
     align-items: center;
     justify-content: center;
     padding: 2rem 1rem;
-    color: #64748b;
+    color: var(--color-text-muted);
     text-align: center;
     gap: 0.5rem;
   }
@@ -292,8 +292,8 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.625rem;
-    background: rgba(51, 65, 85, 0.4);
-    border: 1px solid #475569;
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-light);
     border-radius: 0.375rem;
     cursor: grab;
     transition: all 0.2s;
@@ -301,7 +301,7 @@
 
   .holon-card:hover {
     background: rgba(71, 85, 105, 0.4);
-    border-color: #64748b;
+    border-color: #6b7280;
   }
 
   .holon-card:active {
@@ -312,14 +312,14 @@
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: #334155;
-    border: 2px solid #64748b;
+    background: var(--color-bg-tertiary);
+    border: 2px solid #6b7280;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
     font-size: 0.75rem;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     flex-shrink: 0;
   }
 
@@ -334,7 +334,7 @@
   .holon-name {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #e2e8f0;
+    color: var(--color-text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -344,7 +344,7 @@
     font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #64748b;
+    color: var(--color-text-muted);
   }
 
   .holon-status.active {
@@ -358,7 +358,7 @@
   .drag-handle {
     width: 20px;
     height: 20px;
-    color: #64748b;
+    color: var(--color-text-muted);
     opacity: 0.5;
     flex-shrink: 0;
   }
@@ -370,13 +370,13 @@
   .assigned-section {
     margin-top: 1rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #334155;
+    border-top: 1px solid var(--color-bg-tertiary);
   }
 
   .section-header {
     font-size: 0.75rem;
     font-weight: 500;
-    color: #94a3b8;
+    color: var(--color-text-muted);
     margin-bottom: 0.5rem;
   }
 
@@ -402,7 +402,7 @@
   }
 
   .chip-name {
-    color: #94a3b8;
+    color: var(--color-text-muted);
   }
 
   @media (max-width: 768px) {

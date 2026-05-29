@@ -277,7 +277,7 @@
   }
   th, td {
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #374151; /* gray-700 */
+    border-bottom: 1px solid var(--color-bg-tertiary); /* gray-700 */
     color: #f9fafb; /* white text */
     font-size: 1rem; /* larger text */
   }
@@ -294,15 +294,15 @@
   th {
     cursor: pointer;
     user-select: none;
-    background-color: #1f2937; /* gray-800 */
+    background-color: var(--color-bg-secondary); /* gray-800 */
     color: #f9fafb; /* white */
   }
   tr:nth-child(even) {
-    background-color: #111827; /* gray-900 */
+    background-color: var(--color-bg-primary); /* gray-900 */
   }
   .export-btn {
     background-color: #2563eb; /* blue-600 */
-    color: #fff;
+    color: var(--color-text-primary);
     padding: 0.4rem 0.75rem;
     border-radius: 0.375rem;
     margin-bottom: 0.5rem;

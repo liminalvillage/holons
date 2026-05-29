@@ -1099,16 +1099,16 @@
     }
     
     .overflow-y-auto::-webkit-scrollbar-track {
-        background: #374151;
+        background: var(--color-bg-tertiary);
         border-radius: 3px;
     }
     
     .overflow-y-auto::-webkit-scrollbar-thumb {
-        background: #6B7280;
+        background: #6b7280;
         border-radius: 3px;
     }
     
     .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-        background: #9CA3AF;
+        background: #6b7280;
     }
 </style>

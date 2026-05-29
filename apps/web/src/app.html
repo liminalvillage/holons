@@ -15,6 +15,51 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
 
+    <!-- Apply the saved visual skin AND any custom accent before first paint to
+         avoid a flash of the wrong theme. Mirrors $lib/stores/skin (keys:
+         harvest_skin, harvest_accent_<skin>). -->
+    <script>
+      (function () {
+        try {
+          var s =
+            localStorage.getItem("harvest_skin") === "whiteboard"
+              ? "whiteboard"
+              : "blackboard";
+          document.documentElement.setAttribute("data-skin", s);
+          var hex = localStorage.getItem("harvest_accent_" + s);
+          if (hex && /^#[0-9a-fA-F]{6}$/.test(hex)) {
+            var n = parseInt(hex.slice(1), 16),
+              r = (n >> 16) & 255,
+              g = (n >> 8) & 255,
+              b = n & 255;
+            var mix = function (t, a) {
+              var tc = [(t >> 16) & 255, (t >> 8) & 255, t & 255];
+              return (
+                "#" +
+                [r, g, b]
+                  .map(function (v, i) {
+                    return Math.round(v + (tc[i] - v) * a)
+                      .toString(16)
+                      .padStart(2, "0");
+                  })
+                  .join("")
+              );
+            };
+            var st = document.documentElement.style;
+            st.setProperty("--color-accent", hex);
+            st.setProperty("--color-accent-hover", mix(0x000000, 0.16));
+            st.setProperty("--color-accent-light", mix(0xffffff, 0.18));
+            st.setProperty(
+              "--color-accent-subtle",
+              "rgba(" + r + ", " + g + ", " + b + ", 0.14)",
+            );
+          }
+        } catch (e) {
+          document.documentElement.setAttribute("data-skin", "blackboard");
+        }
+      })();
+    </script>
+
     <!-- Suppress Google Translate logging errors (blocked by ad blockers).
 		     Inline so it intercepts console.error before any other script can
 		     emit one. Trivially small; moving to a file would defeat the point. -->

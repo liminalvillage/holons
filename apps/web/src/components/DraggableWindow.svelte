@@ -187,7 +187,7 @@
   }
 
   .window-title {
-    color: white;
+    color: var(--color-text-primary);
     font-weight: 500;
     font-size: 0.9rem;
   }
@@ -205,7 +205,7 @@
 
   .close-button:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: white;
+    color: var(--color-text-primary);
   }
 
   .window-content {

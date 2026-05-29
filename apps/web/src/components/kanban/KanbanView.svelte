@@ -318,14 +318,14 @@
     align-items: center;
     justify-content: center;
     height: 200px;
-    color: #9ca3af;
+    color: var(--color-text-muted);
   }
 
   .spinner {
     width: 2rem;
     height: 2rem;
-    border: 3px solid #374151;
-    border-top-color: #6366f1;
+    border: 3px solid var(--color-bg-tertiary);
+    border-top-color: var(--color-accent-light);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin-bottom: 0.75rem;
@@ -362,9 +362,9 @@
     width: 100%;
     padding: 1rem;
     background-color: rgba(31, 41, 55, 0.5);
-    border: 2px dashed #374151;
+    border: 2px dashed var(--color-bg-tertiary);
     border-radius: 0.75rem;
-    color: #9ca3af;
+    color: var(--color-text-muted);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -373,12 +373,12 @@
 
   .add-column-btn:hover {
     background-color: rgba(31, 41, 55, 0.8);
-    border-color: #6366f1;
-    color: #e5e7eb;
+    border-color: var(--color-accent-light);
+    color: var(--color-text-secondary);
   }
 
   .add-column-form {
-    background-color: #1f2937;
+    background-color: var(--color-bg-secondary);
     border-radius: 0.75rem;
     padding: 0.75rem;
   }
@@ -386,8 +386,8 @@
   .column-input {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    background-color: #374151;
-    border: 1px solid #4b5563;
+    background-color: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-light);
     border-radius: 0.375rem;
     color: #f3f4f6;
     font-size: 0.875rem;
@@ -396,7 +396,7 @@
   }
 
   .column-input:focus {
-    border-color: #6366f1;
+    border-color: var(--color-accent-light);
   }
 
   .add-column-actions {
@@ -407,17 +407,17 @@
   .btn-add {
     flex: 1;
     padding: 0.5rem;
-    background-color: #6366f1;
+    background-color: var(--color-accent-light);
     border: none;
     border-radius: 0.375rem;
-    color: white;
+    color: var(--color-text-primary);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
   }
 
   .btn-add:hover {
-    background-color: #4f46e5;
+    background-color: var(--color-accent);
   }
 
   .btn-cancel {
@@ -426,15 +426,15 @@
     justify-content: center;
     width: 2rem;
     height: 2rem;
-    background-color: #374151;
+    background-color: var(--color-bg-tertiary);
     border: none;
     border-radius: 0.375rem;
-    color: #9ca3af;
+    color: var(--color-text-muted);
     cursor: pointer;
   }
 
   .btn-cancel:hover {
-    background-color: #4b5563;
-    color: #e5e7eb;
+    background-color: var(--color-border-light);
+    color: var(--color-text-secondary);
   }
 </style>

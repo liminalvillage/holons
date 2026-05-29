@@ -129,7 +129,7 @@
 
 <style>
 	.federation-section {
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.federation-section__header {
@@ -140,13 +140,13 @@
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		cursor: pointer;
 		transition: background-color 150ms ease;
 	}
 
 	.federation-section__header:hover {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.federation-section__header-left {
@@ -171,7 +171,7 @@
 		height: 18px;
 		padding: 0 5px;
 		background: #ef4444;
-		color: white;
+		color: var(--color-text-primary);
 		font-size: 0.65rem;
 		font-weight: 600;
 		border-radius: var(--radius-full, 9999px);
@@ -181,14 +181,14 @@
 		font-size: var(--font-size-xs, 0.75rem);
 		padding: 2px 8px;
 		border-radius: var(--radius-full, 9999px);
-		background: var(--color-bg-tertiary, #374151);
-		color: var(--color-text-muted, #6b7280);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 
 	.federation-section__content {
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.federation-section__empty,
@@ -198,7 +198,7 @@
 		justify-content: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-4, 1rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 	}
 
@@ -214,7 +214,7 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		font-size: var(--font-size-sm, 0.875rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.federation-section__status-item--pending {
@@ -233,10 +233,10 @@
 		gap: var(--spacing-2, 0.5rem);
 		width: 100%;
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		font-size: var(--font-size-sm, 0.875rem);
 		cursor: pointer;
 		transition: background-color 150ms ease;
@@ -244,6 +244,6 @@
 	}
 
 	.federation-section__action:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 </style>

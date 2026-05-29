@@ -40,6 +40,12 @@
   --color-info: #3b82f6; /* blue-500 */
   --color-info-bg: rgba(59, 130, 246, 0.1);
 
+  /* Roles — assigned / unassigned card tints (skin-aware; whiteboard overrides
+     these to soft pastels in whiteboard.css). */
+  --role-assigned: #335533;
+  --role-unassigned: #553333;
+  --role-card-text: #ffffff;
+
   /* ========================================
      Typography
      ======================================== */

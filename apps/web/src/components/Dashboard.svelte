@@ -330,7 +330,7 @@
 	}
 
 	.loading p {
-		color: var(--color-text-muted, #9ca3af);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 	}
 
@@ -343,7 +343,7 @@
 
 	/* Announcements */
 	.announcements-section {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-xl, 1rem);
 		overflow: hidden;
 	}

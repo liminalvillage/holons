@@ -50,7 +50,7 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-3, 0.75rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		flex-shrink: 0;
 	}
 
@@ -60,19 +60,19 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		transition: border-color 150ms ease, box-shadow 150ms ease;
 	}
 
 	.browser-header__search:focus-within {
-		border-color: var(--color-accent, #4f46e5);
+		border-color: var(--color-accent, var(--color-accent));
 		box-shadow: 0 0 0 2px var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
 	}
 
 	.browser-header__search :global(.browser-header__search-icon) {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		flex-shrink: 0;
 	}
 
@@ -87,7 +87,7 @@
 	}
 
 	.browser-header__search-input::placeholder {
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.browser-header__clear {
@@ -97,7 +97,7 @@
 		padding: var(--spacing-1, 0.25rem);
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		border-radius: var(--radius-sm, 0.25rem);
 		transition: color 150ms ease, background-color 150ms ease;
@@ -105,7 +105,7 @@
 
 	.browser-header__clear:hover {
 		color: var(--color-text-primary, #ffffff);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.browser-header__add,
@@ -118,7 +118,7 @@
 		padding: 0;
 		background: transparent;
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		cursor: pointer;
 		border-radius: var(--radius-md, 0.375rem);
 		transition: color 150ms ease, background-color 150ms ease;
@@ -127,16 +127,16 @@
 	.browser-header__add:hover,
 	.browser-header__close:hover {
 		color: var(--color-text-primary, #ffffff);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.browser-header__add {
-		color: var(--color-accent-light, #6366f1);
+		color: var(--color-accent-light, var(--color-accent-light));
 	}
 
 	.browser-header__add:hover {
 		background: var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
-		color: var(--color-accent, #4f46e5);
+		color: var(--color-accent, var(--color-accent));
 	}
 
 	/* Hide close button on desktop */

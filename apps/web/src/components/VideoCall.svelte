@@ -842,7 +842,7 @@
     flex-direction: column;
     height: 100vh;
     background: #000;
-    color: white;
+    color: var(--color-text-primary);
     min-height: 0;
   }
 
@@ -929,7 +929,7 @@
     border: none;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.2);
-    color: white;
+    color: var(--color-text-primary);
     cursor: pointer;
     font-size: 1rem;
     transition: all 0.2s;
@@ -1025,7 +1025,7 @@
     top: 20px;
     right: 20px;
     background: rgba(0, 0, 0, 0.7);
-    color: white;
+    color: var(--color-text-primary);
     border: none;
     padding: 10px 15px;
     border-radius: 8px;

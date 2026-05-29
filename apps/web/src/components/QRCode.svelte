@@ -214,7 +214,7 @@
 
 	.card-description {
 		text-align: center;
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.role-name {
@@ -247,7 +247,7 @@
 
 	.download-btn {
 		background: rgba(255, 255, 255, 0.2);
-		color: white;
+		color: var(--color-text-primary);
 		border: 1px solid rgba(255, 255, 255, 0.3);
 		padding: 0.75rem 1.5rem;
 		border-radius: 0.5rem;

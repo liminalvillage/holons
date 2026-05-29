@@ -91,7 +91,7 @@
 		background: transparent;
 		border: none;
 		border-bottom: 2px solid transparent;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-medium, 500);
 		white-space: nowrap;
@@ -102,8 +102,8 @@
 	}
 
 	.tab:hover:not(:disabled) {
-		color: var(--color-text-secondary, #d1d5db);
-		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-secondary, var(--color-text-secondary));
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.tab:disabled {
@@ -113,13 +113,13 @@
 
 	.tab--active {
 		color: var(--color-text-primary, #ffffff);
-		border-bottom-color: var(--color-accent, #4f46e5);
-		background: var(--color-bg-tertiary, #374151);
+		border-bottom-color: var(--color-accent, var(--color-accent));
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.tab--active:hover:not(:disabled) {
 		color: var(--color-text-primary, #ffffff);
-		border-bottom-color: var(--color-accent-light, #6366f1);
+		border-bottom-color: var(--color-accent-light, var(--color-accent-light));
 	}
 
 	.tab__icon {

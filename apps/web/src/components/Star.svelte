@@ -863,6 +863,6 @@
 		transform: translateX(-50%);
 		border-width: 0 4px 4px 4px;
 		border-style: solid;
-		border-color: transparent transparent #1f2937 transparent;
+		border-color: transparent transparent var(--color-bg-secondary) transparent;
 	}
 </style>

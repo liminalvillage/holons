@@ -150,6 +150,6 @@
 	}
 
 	.places-search__fallback::placeholder {
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 </style>

@@ -745,15 +745,15 @@
 
   .status-card {
     background: white;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #d1d5db;
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
   }
 
   :global(.dark) .status-card {
-    background: #1f2937;
-    border-color: #374151;
+    background: var(--color-bg-secondary);
+    border-color: var(--color-bg-tertiary);
   }
 
   .holon-exists h3,
@@ -781,14 +781,14 @@
   }
 
   .address-item .address {
-    color: #6b7280;
+    color: var(--color-text-muted);
     word-break: break-all;
   }
 
   .create-form {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--color-text-secondary);
   }
 
   .create-form h4 {
@@ -822,23 +822,23 @@
 
   .tabs {
     background: white;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #d1d5db;
     border-radius: 12px;
     overflow: hidden;
   }
 
   :global(.dark) .tabs {
-    background: #1f2937;
-    border-color: #374151;
+    background: var(--color-bg-secondary);
+    border-color: var(--color-bg-tertiary);
   }
 
   .tab-list {
     display: flex;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--color-text-secondary);
   }
 
   :global(.dark) .tab-list {
-    border-color: #374151;
+    border-color: var(--color-bg-tertiary);
   }
 
   .tab {
@@ -859,12 +859,12 @@
   }
 
   :global(.dark) .tab:hover {
-    background-color: #374151;
+    background-color: var(--color-bg-tertiary);
   }
 
   .tab.active {
     background-color: #3b82f6;
-    color: white;
+    color: var(--color-text-primary);
   }
 
   .tab-icon {
@@ -886,7 +886,7 @@
 
   .visualization-container {
     margin-bottom: 24px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #d1d5db;
     border-radius: 8px;
     overflow: hidden;
   }
@@ -906,7 +906,7 @@
   }
 
   :global(.dark) .metric-card {
-    background: #374151;
+    background: var(--color-bg-tertiary);
   }
 
   .metric-value {
@@ -917,7 +917,7 @@
 
   .metric-label {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--color-text-muted);
     margin-top: 4px;
   }
 
@@ -943,7 +943,7 @@
 
   .internal-portion {
     background: linear-gradient(45deg, #3b82f6, #1d4ed8);
-    color: white;
+    color: var(--color-text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -954,7 +954,7 @@
 
   .external-portion {
     background: linear-gradient(45deg, #10b981, #059669);
-    color: white;
+    color: var(--color-text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1024,7 +1024,7 @@
 
   :global(.dark) .member-item,
   :global(.dark) .federation-item {
-    background: #374151;
+    background: var(--color-bg-tertiary);
   }
 
   .member-item {
@@ -1041,7 +1041,7 @@
 
   .member-role {
     background: #3b82f6;
-    color: white;
+    color: var(--color-text-primary);
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 0.75rem;
@@ -1065,12 +1065,12 @@
 
   .fed-id {
     font-family: monospace;
-    color: #6b7280;
+    color: var(--color-text-muted);
   }
 
   .fed-type {
     background: #10b981;
-    color: white;
+    color: var(--color-text-primary);
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 0.75rem;
@@ -1084,7 +1084,7 @@
 
   .lenses {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--color-text-muted);
   }
 
   .settings-grid {
@@ -1103,13 +1103,13 @@
   }
 
   :global(.dark) .setting-item {
-    background: #374151;
+    background: var(--color-bg-tertiary);
   }
 
   .setting-item .setting-label {
     font-weight: 600;
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--color-text-muted);
   }
 
   .setting-item span {
@@ -1119,12 +1119,12 @@
   .empty-state {
     text-align: center;
     padding: 48px 24px;
-    color: #6b7280;
+    color: var(--color-text-muted);
   }
 
   .btn-primary {
-    background-color: #4f46e5;
-    color: white;
+    background-color: var(--color-accent);
+    color: var(--color-text-primary);
     border: none;
     padding: 8px 16px;
     border-radius: 6px;
@@ -1134,7 +1134,7 @@
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #4338ca;
+    background-color: var(--color-accent-hover);
   }
 
   .btn-primary:disabled {
@@ -1144,7 +1144,7 @@
 
   .btn-secondary {
     background-color: #6b7280;
-    color: white;
+    color: var(--color-text-primary);
     border: none;
     padding: 8px 16px;
     border-radius: 6px;
@@ -1154,7 +1154,7 @@
   }
 
   .btn-secondary:hover {
-    background-color: #4b5563;
+    background-color: var(--color-border-light);
   }
 
   @media (max-width: 768px) {

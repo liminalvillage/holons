@@ -115,12 +115,12 @@
 <style>
 	.sidebar-header {
 		padding: var(--spacing-4, 1rem);
-		border-bottom: 1px solid var(--color-border, #374151);
-		background: var(--color-bg-secondary, #1f2937);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 	}
 
 	.sidebar-header__holon {
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-lg, 0.5rem);
 		padding: var(--spacing-3, 0.75rem);
 	}
@@ -136,7 +136,7 @@
 		width: 28px;
 		height: 28px;
 		flex-shrink: 0;
-		color: var(--color-accent-light, #6366f1);
+		color: var(--color-accent-light, var(--color-accent-light));
 	}
 
 	.sidebar-header__holon--empty {
@@ -163,7 +163,7 @@
 	.sidebar-header__holon-id-text {
 		font-size: var(--font-size-xs, 0.75rem);
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 	}
 
 	.sidebar-header__holon-actions {
@@ -178,15 +178,15 @@
 		width: 28px;
 		height: 28px;
 		border-radius: var(--radius-md, 0.375rem);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		border: none;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		cursor: pointer;
 		transition: background-color 150ms ease, color 150ms ease;
 	}
 
 	.sidebar-header__action-btn:hover {
-		background: var(--color-accent, #4f46e5);
+		background: var(--color-accent, var(--color-accent));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -203,14 +203,14 @@
 	}
 
 	.qr-modal {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-xl, 1rem);
 		padding: var(--spacing-4, 1rem);
 		max-width: 320px;
 		width: 90%;
 		box-shadow: var(--shadow-xl);
 		cursor: default;
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.qr-modal__header {
@@ -235,14 +235,14 @@
 		justify-content: center;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-size: 1.5rem;
 		cursor: pointer;
 		border-radius: var(--radius-md, 0.375rem);
 	}
 
 	.qr-modal__close:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -267,7 +267,7 @@
 	.qr-modal__id {
 		font-size: var(--font-size-xs, 0.75rem);
 		font-family: monospace;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		word-break: break-all;
 		margin: 0;
 	}

@@ -1100,7 +1100,7 @@
 
   /* Flow visualization animations */
   .flow-visualization {
-    background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+    background: linear-gradient(180deg, var(--color-bg-secondary) 0%, var(--color-bg-primary) 100%);
   }
 
   .bucket-svg {

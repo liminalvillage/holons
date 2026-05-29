@@ -275,7 +275,7 @@
 	.detail__title {
 		font-size: 1.05rem;
 		font-weight: 600;
-		color: #fff;
+		color: var(--color-text-primary);
 		margin: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -286,7 +286,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		padding-left: 2.25rem;
 	}
@@ -313,7 +313,7 @@
 		width: 2.25rem;
 		height: 2.25rem;
 		border-radius: 9999px;
-		border: 1px solid #4b5563;
+		border: 1px solid var(--color-border-light);
 		flex-shrink: 0;
 	}
 
@@ -325,27 +325,27 @@
 
 	.detail__initiator-label {
 		font-size: 0.7rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
 
 	.detail__initiator-name {
 		font-size: 0.9rem;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		font-weight: 500;
 	}
 
 	.detail__description {
 		white-space: pre-wrap;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		font-size: 0.9rem;
 		line-height: 1.55;
 		margin: 0;
 	}
 
 	.detail__description--empty {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-style: italic;
 	}
 
@@ -365,7 +365,7 @@
 	}
 	.detail__pill--neutral {
 		background: rgba(75, 85, 99, 0.4);
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 	}
 	.detail__pill--accent {
 		background: rgba(99, 102, 241, 0.25);
@@ -381,7 +381,7 @@
 	}
 
 	.detail__section {
-		border-top: 1px solid #374151;
+		border-top: 1px solid var(--color-bg-tertiary);
 		padding-top: 0.875rem;
 		display: flex;
 		flex-direction: column;
@@ -398,12 +398,12 @@
 	.detail__section-title {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: #fff;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.detail__section-count {
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		font-weight: 500;
 	}
 
@@ -413,8 +413,8 @@
 		gap: 0.375rem;
 		padding: 0.4rem 0.75rem;
 		border-radius: 0.5rem;
-		background: #6366f1;
-		color: #fff;
+		background: var(--color-accent-light);
+		color: var(--color-text-primary);
 		font-size: 0.8rem;
 		font-weight: 500;
 		border: none;
@@ -423,7 +423,7 @@
 	}
 
 	.detail__add-btn:hover:not(:disabled) {
-		background: #4f46e5;
+		background: var(--color-accent);
 	}
 
 	.detail__add-btn:disabled {
@@ -437,8 +437,8 @@
 		gap: 0.25rem;
 		max-height: 14rem;
 		overflow-y: auto;
-		background: #111827;
-		border: 1px solid #374151;
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-bg-tertiary);
 		border-radius: 0.5rem;
 		padding: 0.375rem;
 	}
@@ -451,7 +451,7 @@
 		border-radius: 0.375rem;
 		background: transparent;
 		border: none;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		text-align: left;
 		font-size: 0.875rem;
 		cursor: pointer;
@@ -459,14 +459,14 @@
 	}
 
 	.detail__user-row:hover {
-		background: #1f2937;
+		background: var(--color-bg-secondary);
 	}
 
 	.detail__user-avatar {
 		width: 1.75rem;
 		height: 1.75rem;
 		border-radius: 9999px;
-		border: 1px solid #4b5563;
+		border: 1px solid var(--color-border-light);
 		flex-shrink: 0;
 	}
 
@@ -481,7 +481,7 @@
 	.detail__user-search {
 		width: 100%;
 		background: #0b0f17;
-		border: 1px solid #374151;
+		border: 1px solid var(--color-bg-tertiary);
 		border-radius: 0.375rem;
 		color: #f9fafb;
 		font-size: 0.875rem;
@@ -491,14 +491,14 @@
 	}
 
 	.detail__user-search:focus {
-		border-color: #6366f1;
+		border-color: var(--color-accent-light);
 		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 	}
 
 	.detail__user-empty {
 		padding: 0.5rem;
 		font-size: 0.75rem;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		text-align: center;
 	}
 
@@ -517,8 +517,8 @@
 		gap: 0.625rem;
 		padding: 0.375rem 0.5rem;
 		border-radius: 0.375rem;
-		background: #111827;
-		color: #e5e7eb;
+		background: var(--color-bg-primary);
+		color: var(--color-text-secondary);
 		font-size: 0.875rem;
 	}
 
@@ -530,7 +530,7 @@
 		height: 1.5rem;
 		border-radius: 0.375rem;
 		background: transparent;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 		border: none;
 		cursor: pointer;
 		flex-shrink: 0;
@@ -543,7 +543,7 @@
 	}
 
 	.detail__empty {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-style: italic;
 		font-size: 0.85rem;
 		margin: 0;

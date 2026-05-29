@@ -66,13 +66,13 @@
 	}
 
 	.access-denied__card {
-		background: var(--color-bg-secondary, #1f2937);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
 		border-radius: var(--radius-xl, 1rem);
 		padding: var(--spacing-8, 2rem);
 		max-width: 420px;
 		width: 100%;
 		text-align: center;
-		border: 1px solid var(--color-border, #374151);
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.access-denied__icon {
@@ -91,7 +91,7 @@
 
 	.access-denied__message {
 		font-size: var(--font-size-base, 1rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		margin: 0 0 var(--spacing-2, 0.5rem) 0;
 		line-height: 1.5;
 	}
@@ -102,14 +102,14 @@
 	}
 
 	.access-denied__holon-id {
-		color: var(--color-text-muted, #9ca3af);
+		color: var(--color-text-muted, var(--color-text-muted));
 		font-family: monospace;
 		font-size: var(--font-size-sm, 0.875rem);
 	}
 
 	.access-denied__hint {
 		font-size: var(--font-size-sm, 0.875rem);
-		color: var(--color-text-muted, #9ca3af);
+		color: var(--color-text-muted, var(--color-text-muted));
 		margin: 0 0 var(--spacing-6, 1.5rem) 0;
 	}
 
@@ -135,7 +135,7 @@
 
 	.access-denied__btn--primary {
 		background: var(--color-primary, #3b82f6);
-		color: white;
+		color: var(--color-text-primary);
 	}
 
 	.access-denied__btn--primary:hover {
@@ -143,11 +143,11 @@
 	}
 
 	.access-denied__btn--secondary {
-		background: var(--color-bg-tertiary, #374151);
-		color: var(--color-text-secondary, #d1d5db);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.access-denied__btn--secondary:hover {
-		background: var(--color-bg-hover, #4b5563);
+		background: var(--color-bg-hover, var(--color-border-light));
 	}
 </style>

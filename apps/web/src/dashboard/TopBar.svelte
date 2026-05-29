@@ -221,8 +221,8 @@
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: 0 var(--spacing-3, 0.75rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border-bottom: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 		height: 48px;
 		flex-shrink: 0;
 	}
@@ -234,7 +234,7 @@
 		width: 36px;
 		height: 36px;
 		padding: 0;
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 		background: transparent;
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
@@ -245,7 +245,7 @@
 
 	.topbar__menu-btn:hover {
 		color: var(--color-text-primary, #ffffff);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.topbar__tabs {
@@ -273,7 +273,7 @@
 		background: transparent;
 		border: none;
 		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		transition: background-color 150ms ease, color 150ms ease;
 	}
@@ -285,7 +285,7 @@
 
 	.topbar__icon-btn:hover {
 		color: var(--color-text-primary, #ffffff);
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.topbar__translate {

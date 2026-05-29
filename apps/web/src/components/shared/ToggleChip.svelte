@@ -51,14 +51,14 @@
 	.toggle-chip__icon {
 		display: flex;
 		align-items: center;
-		color: #9ca3af;
+		color: var(--color-text-muted);
 	}
 
 	.toggle-chip__spinner {
 		width: 0.75rem;
 		height: 0.75rem;
 		border: 2px solid rgba(156, 163, 175, 0.3);
-		border-top-color: #9ca3af;
+		border-top-color: #6b7280;
 		border-radius: 50%;
 		animation: toggle-chip-spin 0.8s linear infinite;
 	}

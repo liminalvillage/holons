@@ -42,11 +42,11 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.625rem 1rem;
-		background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); /* blue-600 → blue-700 */
-		color: #ffffff;
+		background: var(--color-accent); /* centralized accent */
+		color: #fff;
 		border: 1px solid rgba(255, 255, 255, 0.15);
 		border-radius: 9999px;
-		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(37, 99, 235, 0.35);
+		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 10px var(--color-accent-subtle);
 		font-size: 0.875rem;
 		font-weight: 600;
 		text-decoration: none;
@@ -55,9 +55,9 @@
 	}
 
 	.feedback-button:hover {
-		background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%); /* blue-700 → blue-900 */
+		background: var(--color-accent-hover);
 		transform: translateY(-1px);
-		box-shadow: 0 14px 32px -6px rgba(0, 0, 0, 0.5), 0 6px 14px rgba(37, 99, 235, 0.45);
+		box-shadow: 0 14px 32px -6px rgba(0, 0, 0, 0.35), 0 6px 14px var(--color-accent-subtle);
 	}
 
 	.feedback-button:active {
@@ -65,7 +65,7 @@
 	}
 
 	.feedback-button:focus-visible {
-		outline: 2px solid #93c5fd;
+		outline: 2px solid var(--color-accent-light);
 		outline-offset: 2px;
 	}
 

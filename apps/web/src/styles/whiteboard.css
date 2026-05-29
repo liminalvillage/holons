@@ -1,0 +1,433 @@
+/* ==========================================================================
+   Harvest — "Whiteboard" skin
+   --------------------------------------------------------------------------
+   A light, paper-and-ink counterpart to the default dark "blackboard" skin,
+   based on the akasha kiosk palette (warm paper, deep teal-ink, teal accent).
+
+   Activated by `data-skin="whiteboard"` on <html> (see $lib/stores/skin). The
+   default skin sets `data-skin="blackboard"` (or leaves it unset) and uses the
+   variables defined in theme.css unchanged.
+
+   The dark theme is baked into ~2500 hardcoded Tailwind utility classes
+   (bg-gray-900, text-white, …) rather than the theme variables, so this sheet
+   does two things under the skin scope:
+     1. overrides the theme.css design-token variables, and
+     2. remaps the concrete Tailwind colour utilities actually used in the app
+        (greys inverted to paper/ink, indigo→teal, translucent-white → ink,
+        status colours darkened for a light background).
+
+   Specificity: `html[data-skin="whiteboard"] .utility` (0,2,1) outranks the
+   bare Tailwind utility (0,1,0); the `:hover`/`:focus` variants below add the
+   pseudo-class so interactive states keep winning too.
+   ========================================================================== */
+
+html[data-skin="whiteboard"] {
+  color-scheme: light;
+
+  /* ---- theme.css token overrides ---------------------------------------- */
+  --color-bg-primary: #f3efe4;
+  --color-bg-secondary: #fbf8f0;
+  --color-bg-tertiary: #ece7d8;
+  --color-bg-elevated: #ffffff;
+
+  --color-accent: #3b9ef5;
+  --color-accent-hover: #2b82db;
+  --color-accent-light: #63b3f7;
+  --color-accent-subtle: rgba(59, 158, 245, 0.14);
+
+  --color-text-primary: #20302f;
+  --color-text-secondary: #41524f;
+  --color-text-muted: #7a8784;
+  --color-text-disabled: #aab2af;
+
+  --color-border: #e3ddcd;
+  --color-border-light: #d3cbb8;
+  --color-border-focus: var(--color-accent);
+
+  /* Soft pastel status colours to match the paper aesthetic. Text-white is
+     remapped to ink under this skin, so solid pastel badges/buttons keep
+     readable dark labels. */
+  --color-success: #57bf8e;
+  --color-success-bg: rgba(87, 191, 142, 0.16);
+  --color-warning: #e3a857;
+  --color-warning-bg: rgba(227, 168, 87, 0.16);
+  --color-error: #ec7e7e;
+  --color-error-bg: rgba(236, 126, 126, 0.16);
+
+  /* Roles — soft pastel card tints with dark text (assigned mint, unassigned coral). */
+  --role-assigned: #c4e8cd;
+  --role-unassigned: #fad2c6;
+  --role-card-text: #20302f;
+  --color-info: #2563eb;
+  --color-info-bg: rgba(37, 99, 235, 0.1);
+
+  --shadow-sm: 0 1px 2px 0 rgba(28, 48, 46, 0.08);
+  --shadow-md:
+    0 4px 6px -1px rgba(28, 48, 46, 0.1), 0 2px 4px -1px rgba(28, 48, 46, 0.06);
+  --shadow-lg:
+    0 10px 15px -3px rgba(28, 48, 46, 0.12),
+    0 4px 6px -2px rgba(28, 48, 46, 0.08);
+  --shadow-xl:
+    0 20px 25px -5px rgba(28, 48, 46, 0.14),
+    0 10px 10px -5px rgba(28, 48, 46, 0.08);
+  --shadow-inner: inset 0 2px 4px 0 rgba(28, 48, 46, 0.06);
+  --shadow-glow: 0 0 20px rgba(14, 107, 102, 0.22);
+
+  /* ---- skin ramp (used by the utility remaps below) --------------------- */
+  --wb-bg: #f3efe4;
+  --wb-s1: #efeadd; /* gray-900 — deepest shell */
+  --wb-s2: #fbf8f0; /* gray-800 — panels / cards */
+  --wb-s3: #ece7d8; /* gray-700 — inputs / raised */
+  --wb-s4: #e3ddcd; /* gray-600 — hover / chips */
+  --wb-s5: #d7cfbd; /* gray-500 */
+  --wb-s6: #c9c1ad; /* gray-400 */
+  --wb-line: #e1dac9;
+  --wb-line2: #d3cbb8;
+  --wb-ink: #20302f;
+  --wb-ink2: #2f3d3b;
+  --wb-ink3: #3f4f4c;
+  --wb-muted: #6f7d7a;
+  --wb-muted2: #8b9794;
+}
+
+/* Base canvas (also covered by --color-* vars, but pin it explicitly). */
+html[data-skin="whiteboard"] body {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+}
+
+/* ==========================================================================
+   Backgrounds — grey scale → paper
+   ========================================================================== */
+html[data-skin="whiteboard"] .bg-gray-900 {
+  background-color: var(--wb-s1);
+}
+html[data-skin="whiteboard"] .bg-gray-800 {
+  background-color: var(--wb-s2);
+}
+html[data-skin="whiteboard"] .bg-gray-700 {
+  background-color: var(--wb-s3);
+}
+html[data-skin="whiteboard"] .bg-gray-600 {
+  background-color: var(--wb-s4);
+}
+html[data-skin="whiteboard"] .bg-gray-500 {
+  background-color: var(--wb-s5);
+}
+html[data-skin="whiteboard"] .bg-gray-400 {
+  background-color: var(--wb-s6);
+}
+html[data-skin="whiteboard"] .bg-gray-100,
+html[data-skin="whiteboard"] .bg-gray-200 {
+  background-color: var(--wb-s2);
+}
+html[data-skin="whiteboard"] .bg-slate-600 {
+  background-color: var(--wb-s4);
+}
+html[data-skin="whiteboard"] .bg-slate-700,
+html[data-skin="whiteboard"] .bg-slate-800 {
+  background-color: var(--wb-s2);
+}
+/* Solid black panels → deep paper (scrims with /opacity handled below). */
+html[data-skin="whiteboard"] .bg-black {
+  background-color: var(--wb-s1);
+}
+
+/* Translucent grey/slate surfaces → translucent ink tints. */
+html[data-skin="whiteboard"] .bg-gray-700\/30,
+html[data-skin="whiteboard"] .bg-gray-700\/50,
+html[data-skin="whiteboard"] .bg-gray-800\/40,
+html[data-skin="whiteboard"] .bg-gray-800\/50,
+html[data-skin="whiteboard"] .bg-gray-800\/80,
+html[data-skin="whiteboard"] .bg-slate-800\/40 {
+  background-color: rgba(32, 48, 47, 0.05);
+}
+html[data-skin="whiteboard"] .bg-gray-600\/40,
+html[data-skin="whiteboard"] .bg-gray-600\/50,
+html[data-skin="whiteboard"] .bg-slate-600\/30 {
+  background-color: rgba(32, 48, 47, 0.08);
+}
+
+/* ==========================================================================
+   Translucent white → translucent ink (the big readability fix)
+   ========================================================================== */
+html[data-skin="whiteboard"] .bg-white\/5 {
+  background-color: rgba(32, 48, 47, 0.04);
+}
+html[data-skin="whiteboard"] .bg-white\/10 {
+  background-color: rgba(32, 48, 47, 0.06);
+}
+html[data-skin="whiteboard"] .bg-white\/20 {
+  background-color: rgba(32, 48, 47, 0.1);
+}
+
+html[data-skin="whiteboard"] .text-white\/40 {
+  color: rgba(32, 48, 47, 0.45);
+}
+html[data-skin="whiteboard"] .text-white\/50 {
+  color: rgba(32, 48, 47, 0.55);
+}
+html[data-skin="whiteboard"] .text-white\/60 {
+  color: rgba(32, 48, 47, 0.62);
+}
+html[data-skin="whiteboard"] .text-white\/70 {
+  color: rgba(32, 48, 47, 0.72);
+}
+html[data-skin="whiteboard"] .text-white\/80 {
+  color: rgba(32, 48, 47, 0.82);
+}
+html[data-skin="whiteboard"] .text-white\/90 {
+  color: rgba(32, 48, 47, 0.9);
+}
+
+html[data-skin="whiteboard"] .border-white\/10 {
+  border-color: rgba(32, 48, 47, 0.08);
+}
+html[data-skin="whiteboard"] .border-white\/20 {
+  border-color: rgba(32, 48, 47, 0.12);
+}
+html[data-skin="whiteboard"] .border-white\/30 {
+  border-color: rgba(32, 48, 47, 0.16);
+}
+html[data-skin="whiteboard"] .border-white\/50 {
+  border-color: rgba(32, 48, 47, 0.24);
+}
+html[data-skin="whiteboard"] .ring-white\/10 {
+  --tw-ring-color: rgba(32, 48, 47, 0.08);
+}
+
+/* ==========================================================================
+   Text — light greys → ink (dark greys left alone; they read on light)
+   ========================================================================== */
+html[data-skin="whiteboard"] .text-white {
+  color: var(--wb-ink);
+}
+html[data-skin="whiteboard"] .text-gray-100 {
+  color: #283533;
+}
+html[data-skin="whiteboard"] .text-gray-200 {
+  color: var(--wb-ink2);
+}
+html[data-skin="whiteboard"] .text-gray-300 {
+  color: var(--wb-ink3);
+}
+html[data-skin="whiteboard"] .text-gray-400 {
+  color: var(--wb-muted);
+}
+html[data-skin="whiteboard"] .text-gray-500 {
+  color: var(--wb-muted2);
+}
+html[data-skin="whiteboard"] .text-gray-600 {
+  color: #5a6864;
+}
+html[data-skin="whiteboard"] .placeholder-gray-400::placeholder {
+  color: #a3aeaa;
+}
+
+/* ==========================================================================
+   Borders — dark/white lines → subtle paper lines
+   ========================================================================== */
+html[data-skin="whiteboard"] .border-gray-700 {
+  border-color: var(--wb-line);
+}
+html[data-skin="whiteboard"] .border-gray-600 {
+  border-color: var(--wb-line);
+}
+html[data-skin="whiteboard"] .border-gray-500 {
+  border-color: var(--wb-line2);
+}
+html[data-skin="whiteboard"] .border-white {
+  border-color: var(--wb-line2);
+}
+html[data-skin="whiteboard"] .border-slate-600,
+html[data-skin="whiteboard"] .border-slate-700\/50,
+html[data-skin="whiteboard"] .border-slate-600\/70,
+html[data-skin="whiteboard"] .border-gray-700\/50 {
+  border-color: var(--wb-line);
+}
+html[data-skin="whiteboard"]
+  .divide-gray-700
+  > :not([hidden])
+  ~ :not([hidden]) {
+  border-color: var(--wb-line);
+}
+
+/* Accent (indigo→teal) is handled globally in components.css via
+   `html[data-skin] .…-indigo-…` → var(--color-accent*), driven by the accent
+   variables overridden above — one source of truth, no per-utility rules here. */
+
+/* ==========================================================================
+   Blue (interactive) → the accent. The whiteboard accent IS a sky blue, so the
+   whole blue/indigo family collapses onto the single accent — every filled
+   button reads as the one accent colour. Link/icon *text* stays a deeper blue
+   for contrast on paper (the light accent would be too faint as text).
+   ========================================================================== */
+html[data-skin="whiteboard"] .bg-blue-400,
+html[data-skin="whiteboard"] .bg-blue-500 {
+  background-color: var(--color-accent-light);
+}
+html[data-skin="whiteboard"] .bg-blue-600 {
+  background-color: var(--color-accent);
+}
+html[data-skin="whiteboard"] .bg-blue-700,
+html[data-skin="whiteboard"] .bg-blue-900 {
+  background-color: var(--color-accent-hover);
+}
+html[data-skin="whiteboard"] .hover\:bg-blue-500:hover {
+  background-color: var(--color-accent-light);
+}
+html[data-skin="whiteboard"] .hover\:bg-blue-600:hover {
+  background-color: var(--color-accent);
+}
+html[data-skin="whiteboard"] .hover\:bg-blue-700:hover {
+  background-color: var(--color-accent-hover);
+}
+html[data-skin="whiteboard"] .from-blue-500 {
+  --tw-gradient-from: var(--color-accent-light) var(--tw-gradient-from-position);
+}
+html[data-skin="whiteboard"] .to-blue-400 {
+  --tw-gradient-to: var(--color-accent-light) var(--tw-gradient-to-position);
+}
+html[data-skin="whiteboard"] .border-blue-400,
+html[data-skin="whiteboard"] .border-blue-500 {
+  border-color: var(--color-accent);
+}
+html[data-skin="whiteboard"] .ring-blue-500 {
+  --tw-ring-color: var(--color-accent);
+}
+html[data-skin="whiteboard"] .bg-blue-500\/20 {
+  background-color: var(--color-accent-subtle);
+}
+/* Link/icon text — keep a readable deeper blue (not the light accent). */
+html[data-skin="whiteboard"] .text-blue-200 {
+  color: #1d4ed8;
+}
+html[data-skin="whiteboard"] .text-blue-300,
+html[data-skin="whiteboard"] .text-blue-400 {
+  color: #2563eb;
+}
+
+/* ==========================================================================
+   Status — soft pastel greens/reds/ambers, driven by the status tokens.
+   Text and solid fills both use the tokens; text-white is ink here, so solid
+   pastel badges/buttons keep readable dark labels.
+   ========================================================================== */
+html[data-skin="whiteboard"] .text-green-200,
+html[data-skin="whiteboard"] .text-green-300,
+html[data-skin="whiteboard"] .text-green-400,
+html[data-skin="whiteboard"] .text-emerald-400 {
+  color: var(--color-success);
+}
+html[data-skin="whiteboard"] .text-red-200,
+html[data-skin="whiteboard"] .text-red-300,
+html[data-skin="whiteboard"] .text-red-400 {
+  color: var(--color-error);
+}
+html[data-skin="whiteboard"] .text-yellow-400,
+html[data-skin="whiteboard"] .text-amber-400 {
+  color: var(--color-warning);
+}
+html[data-skin="whiteboard"] .text-purple-400 {
+  color: #9d7be8;
+}
+
+/* Solid status fills → pastel tokens. */
+html[data-skin="whiteboard"] .bg-green-500,
+html[data-skin="whiteboard"] .bg-green-600,
+html[data-skin="whiteboard"] .bg-green-700,
+html[data-skin="whiteboard"] .bg-emerald-600 {
+  background-color: var(--color-success);
+}
+html[data-skin="whiteboard"] .bg-red-500,
+html[data-skin="whiteboard"] .bg-red-600,
+html[data-skin="whiteboard"] .bg-red-700 {
+  background-color: var(--color-error);
+}
+html[data-skin="whiteboard"] .bg-yellow-500,
+html[data-skin="whiteboard"] .bg-amber-500,
+html[data-skin="whiteboard"] .bg-amber-600 {
+  background-color: var(--color-warning);
+}
+html[data-skin="whiteboard"] .hover\:bg-green-700:hover {
+  background-color: var(--color-success);
+}
+html[data-skin="whiteboard"] .hover\:bg-red-600:hover,
+html[data-skin="whiteboard"] .hover\:bg-red-700:hover {
+  background-color: var(--color-error);
+}
+
+/* Soft tinted status panels. */
+html[data-skin="whiteboard"] .bg-red-900 {
+  background-color: var(--color-error-bg);
+}
+html[data-skin="whiteboard"] .bg-green-900 {
+  background-color: var(--color-success-bg);
+}
+html[data-skin="whiteboard"] .border-green-500 {
+  border-color: var(--color-success);
+}
+html[data-skin="whiteboard"] .border-red-500,
+html[data-skin="whiteboard"] .border-red-600 {
+  border-color: var(--color-error);
+}
+
+/* ==========================================================================
+   Hover / focus variants — keep interactive states winning & light-correct
+   ========================================================================== */
+html[data-skin="whiteboard"] .hover\:bg-gray-700:hover {
+  background-color: var(--wb-s4);
+}
+html[data-skin="whiteboard"] .hover\:bg-gray-600:hover {
+  background-color: var(--wb-s5);
+}
+html[data-skin="whiteboard"] .hover\:bg-gray-500:hover {
+  background-color: var(--wb-s6);
+}
+html[data-skin="whiteboard"] .hover\:bg-gray-400:hover {
+  background-color: #bcb3a0;
+}
+html[data-skin="whiteboard"] .hover\:bg-gray-100:hover {
+  background-color: var(--wb-s3);
+}
+html[data-skin="whiteboard"] .hover\:bg-slate-600:hover {
+  background-color: var(--wb-s5);
+}
+html[data-skin="whiteboard"] .hover\:text-white:hover {
+  color: var(--wb-ink);
+}
+html[data-skin="whiteboard"] .hover\:text-gray-200:hover,
+html[data-skin="whiteboard"] .hover\:text-gray-300:hover {
+  color: var(--wb-ink2);
+}
+html[data-skin="whiteboard"] .hover\:text-red-300:hover,
+html[data-skin="whiteboard"] .hover\:text-red-400:hover,
+html[data-skin="whiteboard"] .hover\:text-red-600:hover {
+  color: var(--color-error);
+}
+html[data-skin="whiteboard"] .hover\:text-blue-300:hover,
+html[data-skin="whiteboard"] .hover\:text-blue-400:hover {
+  color: #1d4ed8;
+}
+html[data-skin="whiteboard"] .hover\:border-gray-500:hover,
+html[data-skin="whiteboard"] .hover\:border-gray-600:hover {
+  border-color: var(--wb-line2);
+}
+html[data-skin="whiteboard"] .hover\:border-white:hover {
+  border-color: var(--wb-line2);
+}
+html[data-skin="whiteboard"] .hover\:border-slate-600:hover {
+  border-color: var(--wb-line2);
+}
+
+/* Common Tailwind shadow utilities → softer on paper. */
+html[data-skin="whiteboard"] .shadow,
+html[data-skin="whiteboard"] .shadow-md {
+  box-shadow: var(--shadow-md);
+}
+html[data-skin="whiteboard"] .shadow-lg {
+  box-shadow: var(--shadow-lg);
+}
+html[data-skin="whiteboard"] .shadow-xl,
+html[data-skin="whiteboard"] .shadow-2xl {
+  box-shadow: var(--shadow-xl);
+}

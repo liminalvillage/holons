@@ -122,8 +122,8 @@
 		top: 100%;
 		margin-top: 4px;
 		min-width: 220px;
-		background: var(--color-bg-secondary, #1f2937);
-		border: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-secondary, var(--color-bg-secondary));
+		border: 1px solid var(--color-border, var(--color-bg-tertiary));
 		border-radius: var(--radius-md, 0.375rem);
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 		z-index: 100;
@@ -135,7 +135,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-bottom: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.lens-dropdown__title {
@@ -152,13 +152,13 @@
 		height: 24px;
 		background: transparent;
 		border: none;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, var(--color-text-muted));
 		cursor: pointer;
 		border-radius: var(--radius-sm, 0.25rem);
 	}
 
 	.lens-dropdown__close:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 		color: var(--color-text-primary, #ffffff);
 	}
 
@@ -186,30 +186,30 @@
 		align-items: center;
 		gap: var(--spacing-1, 0.25rem);
 		padding: 2px var(--spacing-2, 0.5rem);
-		background: var(--color-bg-primary, #111827);
+		background: var(--color-bg-primary, var(--color-bg-primary));
 		border-radius: var(--radius-sm, 0.25rem);
 		cursor: pointer;
 		transition: background-color 150ms ease;
 	}
 
 	.lens-dropdown__toggle:hover {
-		background: var(--color-bg-tertiary, #374151);
+		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
 	}
 
 	.lens-dropdown__toggle input[type="checkbox"] {
 		width: 12px;
 		height: 12px;
-		accent-color: var(--color-accent, #4f46e5);
+		accent-color: var(--color-accent, var(--color-accent));
 	}
 
 	.lens-dropdown__toggle span {
 		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-secondary, #d1d5db);
+		color: var(--color-text-secondary, var(--color-text-secondary));
 	}
 
 	.lens-dropdown__footer {
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-top: 1px solid var(--color-border, var(--color-bg-tertiary));
 	}
 
 	.lens-dropdown__remove {
