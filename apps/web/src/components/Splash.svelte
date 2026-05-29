@@ -659,21 +659,24 @@
 		width: 300px;
 		height: 300px;
 		filter:
-			drop-shadow(0 0 80px color-mix(in srgb, var(--color-accent) 60%, transparent))
-			drop-shadow(0 0 200px color-mix(in srgb, var(--color-accent) 50%, transparent));
+			drop-shadow(0 0 40px var(--color-accent))
+			drop-shadow(0 0 110px color-mix(in srgb, var(--color-accent) 95%, transparent))
+			drop-shadow(0 0 240px color-mix(in srgb, var(--color-accent) 80%, transparent));
 		animation: pulse-glow 2.4s ease-in-out infinite;
 	}
 
 	@keyframes pulse-glow {
 		0%, 100% {
 			filter:
-				drop-shadow(0 0 80px color-mix(in srgb, var(--color-accent) 60%, transparent))
-				drop-shadow(0 0 200px color-mix(in srgb, var(--color-accent) 50%, transparent));
+				drop-shadow(0 0 40px var(--color-accent))
+				drop-shadow(0 0 110px color-mix(in srgb, var(--color-accent) 95%, transparent))
+				drop-shadow(0 0 240px color-mix(in srgb, var(--color-accent) 80%, transparent));
 		}
 		50% {
 			filter:
-				drop-shadow(0 0 130px color-mix(in srgb, var(--color-accent) 78%, transparent))
-				drop-shadow(0 0 300px color-mix(in srgb, var(--color-accent) 62%, transparent));
+				drop-shadow(0 0 70px var(--color-accent))
+				drop-shadow(0 0 170px color-mix(in srgb, var(--color-accent) 100%, transparent))
+				drop-shadow(0 0 340px color-mix(in srgb, var(--color-accent) 90%, transparent));
 		}
 	}
 
