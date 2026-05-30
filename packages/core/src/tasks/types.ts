@@ -60,6 +60,8 @@ export interface Quest {
   participants: QuestParticipant[];
   // Bot stores user objects, web stores string usernames — keep open.
   appreciation?: any[];
+  // Members who have vetoed ("stopped") the quest; non-empty ⇒ status 'stopped'.
+  stoppers?: QuestParticipant[];
 
   // Provenance.
   // Canonical creation timestamp — ISO string. Set by every writer.
