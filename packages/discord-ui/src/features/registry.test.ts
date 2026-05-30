@@ -18,6 +18,9 @@ describe('feature registry', () => {
     expect(index.get('expense')?.id).toBe('expenses');
     expect(index.get('balances')?.id).toBe('expenses');
     expect(index.get('checklist')?.id).toBe('checklists');
+    expect(index.get('quest')?.id).toBe('quests');
+    expect(index.get('scores')?.id).toBe('scores');
+    expect(index.get('settings')?.id).toBe('settings');
   });
 
   it('maps every feature id to its feature', () => {

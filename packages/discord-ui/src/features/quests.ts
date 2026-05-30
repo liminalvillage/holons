@@ -89,7 +89,25 @@ export const questsFeature: Feature = {
     buildCreateCommand('request', 'Request help from the community', false),
     new SlashCommandBuilder()
       .setName('quests')
-      .setDescription('List quests in this holon'),
+      .setDescription('List quests in this holon')
+      .addStringOption(opt =>
+        opt
+          .setName('type')
+          .setDescription('Only show one kind')
+          .setRequired(false)
+          .addChoices(
+            { name: 'task', value: 'task' },
+            { name: 'event', value: 'event' },
+            { name: 'offer', value: 'offer' },
+            { name: 'request', value: 'request' }
+          )
+      ),
+    new SlashCommandBuilder()
+      .setName('quest')
+      .setDescription('Show one quest as an interactive card')
+      .addStringOption(opt =>
+        opt.setName('id').setDescription('Quest id').setRequired(true)
+      ),
   ],
 
   async handleCommand(
@@ -103,6 +121,11 @@ export const questsFeature: Feature = {
 
     if (interaction.commandName === 'quests') {
       await listQuests(interaction, ctx, ctx.holonId);
+      return;
+    }
+
+    if (interaction.commandName === 'quest') {
+      await showQuest(interaction, ctx, ctx.holonId);
       return;
     }
 
@@ -223,10 +246,12 @@ async function listQuests(
   ctx: InvocationContext,
   holonId: string
 ): Promise<void> {
+  const typeFilter = interaction.options.getString('type');
   const all = ((await ctx.holosphere.getAll(holonId, QUESTS_BUCKET)) ??
     []) as Quest[];
   const active = all
     .filter(q => q && !q._deleted)
+    .filter(q => !typeFilter || (q.type ?? 'task') === typeFilter)
     .sort((a, b) => {
       // Ongoing before completed, then newest first.
       const ac = a.status === 'completed' ? 1 : 0;
@@ -237,21 +262,50 @@ async function listQuests(
 
   if (active.length === 0) {
     await interaction.reply({
-      content:
-        'No quests yet. Create one with `/task`, `/event`, `/offer` or `/request`.',
+      content: typeFilter
+        ? `No ${typeFilter} quests yet.`
+        : 'No quests yet. Create one with `/task`, `/event`, `/offer` or `/request`.',
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
   const shown = active.slice(0, 25);
-  const lines = shown.map(questSummaryLine);
+  // Append the id so members can reopen the interactive card via `/quest`.
+  const lines = shown.map(q => `${questSummaryLine(q)}  \`${q.id}\``);
   const more =
     active.length > shown.length
       ? `\n\n…and ${active.length - shown.length} more.`
       : '';
+  const heading = typeFilter ? `**Quests · ${typeFilter}**` : '**Quests**';
 
   await interaction.reply({
-    content: `**Quests** (${active.length})\n\n${lines.join('\n')}${more}`,
+    content: `${heading} (${active.length})\n\n${lines.join('\n')}${more}\n\n_Open one with_ \`/quest id:<id>\``,
+  });
+}
+
+async function showQuest(
+  interaction: ChatInputCommandInteraction,
+  ctx: InvocationContext,
+  holonId: string
+): Promise<void> {
+  const questId = interaction.options.getString('id', true).trim();
+  const quest = (await ctx.holosphere.get(
+    holonId,
+    QUESTS_BUCKET,
+    questId
+  )) as Quest | null;
+
+  if (!quest || quest._deleted) {
+    await interaction.reply({
+      content: `No quest with id \`${questId}\`.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.reply({
+    embeds: [questEmbed(quest)],
+    components: questComponents(FEATURE_ID, quest),
   });
 }

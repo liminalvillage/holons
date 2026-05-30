@@ -181,3 +181,31 @@ export function checklistSummaryLine(checklist: Checklist): string {
   const done = (checklist.items ?? []).filter(i => i.checked).length;
   return `📝 **${checklist.id}** — ${done}/${total} done`;
 }
+
+// ---------------------------------------------------------------------------
+// Scores / leaderboard
+// ---------------------------------------------------------------------------
+
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  /** Share of the holon's total, already on a 0–100 scale. */
+  percentage: number;
+}
+
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+/** Render a contribution leaderboard, sorted by score descending. */
+export function leaderboardView(entries: LeaderboardEntry[]): string {
+  if (!entries || entries.length === 0) {
+    return '_No contributions scored yet._';
+  }
+  return [...entries]
+    .sort((a, b) => b.score - a.score)
+    .map((entry, i) => {
+      const rank = MEDALS[i] ?? `**${i + 1}.**`;
+      const pct = Math.round(entry.percentage);
+      return `${rank} **${entry.name}** — ${formatAmount(entry.score)} (${pct}%)`;
+    })
+    .join('\n');
+}

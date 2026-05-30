@@ -7,6 +7,8 @@ import { checklistsFeature } from './checklists.js';
 import { expensesFeature } from './expenses.js';
 import { holonFeature } from './holon.js';
 import { questsFeature } from './quests.js';
+import { scoresFeature } from './scores.js';
+import { settingsFeature } from './settings.js';
 import { shoppingFeature } from './shopping.js';
 import { usersFeature } from './users.js';
 
@@ -17,6 +19,8 @@ export const features: Feature[] = [
   shoppingFeature,
   expensesFeature,
   checklistsFeature,
+  scoresFeature,
+  settingsFeature,
 ];
 
 /** Map of slash command name -> owning feature. */

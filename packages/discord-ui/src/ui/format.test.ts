@@ -9,6 +9,7 @@ import {
   formatAmount,
   checklistView,
   checklistSummaryLine,
+  leaderboardView,
 } from './format.js';
 import type { Quest } from '@holons/core/tasks';
 import type { ShoppingChecklist } from '@holons/core/shopping';
@@ -155,5 +156,28 @@ describe('checklist formatting', () => {
 
   it('shows an empty state', () => {
     expect(checklistView(checklist([]))).toMatch(/empty/i);
+  });
+});
+
+describe('leaderboard formatting', () => {
+  it('sorts by score descending and medals the top three', () => {
+    const out = leaderboardView([
+      { name: 'Bob', score: 8, percentage: 30 },
+      { name: 'Alice', score: 12, percentage: 45 },
+      { name: 'Carol', score: 4, percentage: 15 },
+      { name: 'Dan', score: 2, percentage: 10 },
+    ]);
+    const lines = out.split('\n');
+    expect(lines[0]).toContain('🥇');
+    expect(lines[0]).toContain('Alice');
+    expect(lines[1]).toContain('🥈');
+    expect(lines[1]).toContain('Bob');
+    expect(lines[2]).toContain('🥉');
+    expect(lines[3]).toContain('4.'); // numbered after the medals
+    expect(lines[0]).toContain('(45%)');
+  });
+
+  it('shows an empty state', () => {
+    expect(leaderboardView([])).toMatch(/no contributions/i);
   });
 });
