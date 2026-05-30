@@ -64,6 +64,18 @@ export function questEmbedView(quest: Quest): QuestEmbedView {
     fields.push({ name: 'Where', value: quest.location, inline: true });
   }
 
+  const deps = (quest.dependencies as string[] | undefined) ?? [];
+  if (deps.length > 0) {
+    fields.push({
+      name: 'Depends on',
+      value: `${deps.length} task${deps.length === 1 ? '' : 's'}`,
+      inline: true,
+    });
+  }
+  if (quest.checklistId) {
+    fields.push({ name: 'Checklist', value: '✓ linked', inline: true });
+  }
+
   const initiator =
     quest.initiator?.username ||
     quest.initiator?.firstName ||

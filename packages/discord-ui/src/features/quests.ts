@@ -19,12 +19,24 @@ import {
   saveTaskToHolon,
   toggleAppreciation,
   toggleParticipant,
+  wouldCreateDependencyCycle,
   type Quest,
   type QuestInitiator,
 } from '@holons/core/tasks';
+import {
+  createChecklist,
+  getChecklist,
+  addItemsToChecklist,
+  type ChecklistStore,
+} from '@holons/core/checklists';
 import type { DiscordUser, Feature, InvocationContext } from '../types.js';
 import type { ParsedCustomId } from '../ui/customId.js';
-import { questComponents, questEmbed } from '../ui/DiscordUI.js';
+import {
+  checklistComponents,
+  checklistEmbed,
+  questComponents,
+  questEmbed,
+} from '../ui/DiscordUI.js';
 import { questSummaryLine } from '../ui/format.js';
 
 const FEATURE_ID = 'quests';
@@ -104,9 +116,45 @@ export const questsFeature: Feature = {
       ),
     new SlashCommandBuilder()
       .setName('quest')
-      .setDescription('Show one quest as an interactive card')
-      .addStringOption(opt =>
-        opt.setName('id').setDescription('Quest id').setRequired(true)
+      .setDescription('Work with a single quest')
+      .addSubcommand(sub =>
+        sub
+          .setName('show')
+          .setDescription('Show one quest as an interactive card')
+          .addStringOption(opt =>
+            opt.setName('id').setDescription('Quest id').setRequired(true)
+          )
+      )
+      .addSubcommand(sub =>
+        sub
+          .setName('depend')
+          .setDescription('Make one quest depend on another')
+          .addStringOption(opt =>
+            opt
+              .setName('id')
+              .setDescription('The quest that depends')
+              .setRequired(true)
+          )
+          .addStringOption(opt =>
+            opt
+              .setName('on')
+              .setDescription('The quest it must come after')
+              .setRequired(true)
+          )
+      )
+      .addSubcommand(sub =>
+        sub
+          .setName('checklist')
+          .setDescription('Show or create a checklist attached to a quest')
+          .addStringOption(opt =>
+            opt.setName('id').setDescription('Quest id').setRequired(true)
+          )
+          .addStringOption(opt =>
+            opt
+              .setName('items')
+              .setDescription('Comma-separated items to add')
+              .setRequired(false)
+          )
       ),
   ],
 
@@ -125,7 +173,14 @@ export const questsFeature: Feature = {
     }
 
     if (interaction.commandName === 'quest') {
-      await showQuest(interaction, ctx, ctx.holonId);
+      const sub = interaction.options.getSubcommand();
+      if (sub === 'depend') {
+        await dependQuest(interaction, ctx, ctx.holonId);
+      } else if (sub === 'checklist') {
+        await questChecklist(interaction, ctx, ctx.holonId);
+      } else {
+        await showQuest(interaction, ctx, ctx.holonId);
+      }
       return;
     }
 
@@ -280,7 +335,7 @@ async function listQuests(
   const heading = typeFilter ? `**Quests · ${typeFilter}**` : '**Quests**';
 
   await interaction.reply({
-    content: `${heading} (${active.length})\n\n${lines.join('\n')}${more}\n\n_Open one with_ \`/quest id:<id>\``,
+    content: `${heading} (${active.length})\n\n${lines.join('\n')}${more}\n\n_Open one with_ \`/quest show id:<id>\``,
   });
 }
 
@@ -307,5 +362,122 @@ async function showQuest(
   await interaction.reply({
     embeds: [questEmbed(quest)],
     components: questComponents(FEATURE_ID, quest),
+  });
+}
+
+/**
+ * `/quest depend` — record that `id` must come after `on`. Rejected if it
+ * would close a cycle (the dependency graph must stay a DAG), using the core
+ * `wouldCreateDependencyCycle` guard against the full quest set.
+ */
+async function dependQuest(
+  interaction: ChatInputCommandInteraction,
+  ctx: InvocationContext,
+  holonId: string
+): Promise<void> {
+  const fromId = interaction.options.getString('id', true).trim();
+  const onId = interaction.options.getString('on', true).trim();
+
+  if (fromId === onId) {
+    await interaction.reply({
+      content: 'A quest cannot depend on itself.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const all = ((await ctx.holosphere.getAll(holonId, QUESTS_BUCKET)) ??
+    []) as Quest[];
+  const quest = all.find(q => String(q.id) === fromId && !q._deleted);
+  const dep = all.find(q => String(q.id) === onId && !q._deleted);
+  if (!quest || !dep) {
+    await interaction.reply({
+      content: `Unknown quest id: \`${!quest ? fromId : onId}\`.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (wouldCreateDependencyCycle(all, fromId, onId)) {
+    await interaction.reply({
+      content: '⛔ That would create a dependency cycle.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const deps = ((quest.dependencies as string[] | undefined) ?? []).map(String);
+  if (deps.includes(onId)) {
+    await interaction.reply({
+      content: `\`${quest.title}\` already depends on \`${dep.title}\`.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  quest.dependencies = [...deps, onId];
+  await saveTaskToHolon(ctx.holosphere, holonId, quest);
+
+  await interaction.reply({
+    embeds: [questEmbed(quest)],
+    components: questComponents(FEATURE_ID, quest),
+  });
+}
+
+/**
+ * `/quest checklist` — show (or lazily create) a checklist attached to a
+ * quest. The checklist id is the quest id (base36, colon/underscore-free), so
+ * it links cleanly and its toggle buttons route to the checklists feature.
+ */
+async function questChecklist(
+  interaction: ChatInputCommandInteraction,
+  ctx: InvocationContext,
+  holonId: string
+): Promise<void> {
+  const questId = interaction.options.getString('id', true).trim();
+  const quest = (await ctx.holosphere.get(
+    holonId,
+    QUESTS_BUCKET,
+    questId
+  )) as Quest | null;
+  if (!quest || quest._deleted) {
+    await interaction.reply({
+      content: `No quest with id \`${questId}\`.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const store = ctx.holosphere as unknown as ChecklistStore;
+  const name = String(quest.id);
+  let checklist = await getChecklist(store, holonId, name);
+
+  if (!checklist) {
+    const created = await createChecklist(store, holonId, name, {
+      type: 'quest',
+      questId: name,
+      parentTitle: quest.title,
+      creator: interaction.user.id,
+    });
+    if (!created.ok) {
+      await interaction.reply({
+        content: 'Could not create a checklist for this quest.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    checklist = created.checklist;
+    quest.checklistId = name;
+    await saveTaskToHolon(ctx.holosphere, holonId, quest);
+  }
+
+  const items = interaction.options.getString('items');
+  if (items) {
+    const added = await addItemsToChecklist(store, holonId, name, items);
+    if (added.ok) checklist = added.checklist;
+  }
+
+  await interaction.reply({
+    embeds: [checklistEmbed(checklist)],
+    components: checklistComponents('checklists', checklist),
   });
 }

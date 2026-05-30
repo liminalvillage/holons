@@ -7,11 +7,11 @@ Holons community ("holon"), delegating all business logic to
 
 ## Status
 
-**Phase 3 — contribution scores, quest detail/filter, read-only settings.**
-Builds on the Phase 1 runtime (gateway client, slash-command registration,
-interaction router, embed/button UI helpers, guild→holon binding, `@holons/core`
-context adapter) and the Phase 2 features. More telegram-parity features are
-being ported in subsequent phases (see the roadmap below).
+**Phase 4 — deeper quests: dependencies + on-quest checklists.** Builds on the
+Phase 1 runtime (gateway client, slash-command registration, interaction
+router, embed/button UI helpers, guild→holon binding, `@holons/core` context
+adapter) and the Phase 2–3 features. More telegram-parity features are being
+ported in subsequent phases (see the roadmap below).
 
 ## Architecture
 
@@ -60,7 +60,9 @@ it into both registration and routing.
 - `/balances [currency]` — who owes whom (credit-matrix balances).
 - `/checklist create|add|show|list` — checklists with per-item toggle buttons.
 - `/quests [type]` — list quests (optionally filtered); each line shows its id.
-- `/quest <id>` — reopen one quest as an interactive card.
+- `/quest show <id>` — reopen one quest as an interactive card.
+- `/quest depend <id> <on>` — add a cycle-guarded dependency between quests.
+- `/quest checklist <id> [items]` — show/create a checklist attached to a quest.
 - `/scores` — contribution leaderboard (REA + value equation, via core scoring).
 - `/settings` — read-only holon configuration overview.
 
@@ -88,7 +90,8 @@ Set `DISCORD_TOKEN`, `DISCORD_APP_ID`, and (for instant dev updates)
   (`/expense` `/balances`), checklists (`/checklist`), quest appreciation.
 - ✅ **Phase 3** — contribution scores (`/scores`), quest detail/filter
   (`/quest`, `/quests type:`), read-only settings (`/settings`).
-- ⬜ Quests deeper (time logging, on-quest checklists, scheduling/recurring).
-- ⬜ Tags, Roles/Onboarding, Scheduler/Reminders, Federation, Library,
-  editable Settings.
+- ✅ **Phase 4** — quest dependencies (`/quest depend`, cycle-guarded) and
+  on-quest checklists (`/quest checklist`), surfaced in the quest embed.
+- ⬜ Quests deeper still (time logging, scheduling/recurring reminders).
+- ⬜ Tags, Roles/Onboarding, Scheduler, Federation, Library, editable Settings.
 - ⬜ Long tail: announcements, RSVP, rounds/rotation, booking, capital game.

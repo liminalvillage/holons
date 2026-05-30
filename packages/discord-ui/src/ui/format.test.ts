@@ -53,6 +53,21 @@ describe('quest formatting', () => {
     expect(questSummaryLine(quest({ status: 'completed' }))).toContain('✅');
     expect(questSummaryLine(quest())).not.toContain('✅');
   });
+
+  it('surfaces dependencies and a linked checklist when present', () => {
+    const view = questEmbedView(
+      quest({ dependencies: ['a', 'b'], checklistId: 'abc123' })
+    );
+    const fields = Object.fromEntries(view.fields.map(f => [f.name, f.value]));
+    expect(fields['Depends on']).toBe('2 tasks');
+    expect(fields['Checklist']).toBeDefined();
+  });
+
+  it('omits dependency/checklist fields when absent', () => {
+    const names = questEmbedView(quest()).fields.map(f => f.name);
+    expect(names).not.toContain('Depends on');
+    expect(names).not.toContain('Checklist');
+  });
 });
 
 describe('shopping formatting', () => {
