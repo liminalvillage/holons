@@ -9,6 +9,9 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import type { Quest } from '@holons/core/tasks';
 import type { ShoppingChecklist } from '@holons/core/shopping';
@@ -30,29 +33,90 @@ export function questEmbed(quest: Quest): EmbedBuilder {
   const thanks = (quest.appreciation ?? []).length;
   if (thanks > 0)
     embed.addFields({ name: 'Appreciation', value: `🙏 ${thanks}` });
+  const stoppers = quest.stoppers ?? [];
+  if (quest.status === 'stopped' && stoppers.length > 0) {
+    const names = stoppers
+      .map(
+        (s: { username?: string; id?: unknown }) => s.username ?? String(s.id)
+      )
+      .join(', ');
+    embed.setColor(0xed4245);
+    embed.addFields({ name: '🛑 Vetoed by', value: names });
+  }
   return embed;
 }
 
+/** 🛑 Stop/veto toggle — label reflects whether the quest is already stopped. */
+function stopButton(
+  featureId: string,
+  questId: string,
+  stopped: boolean
+): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(encodeCustomId(featureId, 'stop', questId))
+    .setLabel(stopped ? 'Lift veto' : 'Stop')
+    .setStyle(stopped ? ButtonStyle.Secondary : ButtonStyle.Danger)
+    .setEmoji('🛑');
+}
+
+/** 🙏 Appreciate button — available whether the quest is ongoing or done. */
+function appreciateButton(featureId: string, questId: string): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId(encodeCustomId(featureId, 'appreciate', questId))
+    .setLabel('Appreciate')
+    .setStyle(ButtonStyle.Secondary)
+    .setEmoji('🙏');
+}
+
+/** Edit + Delete management row, shown in every quest state. */
+function manageRow(
+  featureId: string,
+  questId: string
+): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(encodeCustomId(featureId, 'edit', questId))
+      .setLabel('Edit')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('✏️'),
+    new ButtonBuilder()
+      .setCustomId(encodeCustomId(featureId, 'delete', questId))
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('🗑️')
+  );
+}
+
 /**
- * Action buttons for a quest. While ongoing: Join/Leave + Complete. Once
- * completed: an Appreciate button so members can thank contributors.
+ * Action buttons for a quest.
+ *  - Ongoing:   Join/Leave + Complete + Stop + Appreciate, then Edit/Delete.
+ *  - Stopped:   Lift-veto + Appreciate, then Edit/Delete (cannot complete).
+ *  - Completed: Appreciate, then Edit/Delete.
+ * Appreciate is always available; Stop (veto) is open to any member; Delete is
+ * initiator-gated at the handler level (uses cascade deletion).
  */
 export function questComponents(
   featureId: string,
   quest: Quest
 ): ActionRowBuilder<ButtonBuilder>[] {
   const questId = String(quest.id ?? '');
-  const completed = quest.status === 'completed';
 
-  if (completed) {
+  if (quest.status === 'completed') {
     return [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(encodeCustomId(featureId, 'appreciate', questId))
-          .setLabel('Appreciate')
-          .setStyle(ButtonStyle.Secondary)
-          .setEmoji('🙏')
+        appreciateButton(featureId, questId)
       ),
+      manageRow(featureId, questId),
+    ];
+  }
+
+  if (quest.status === 'stopped') {
+    return [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        stopButton(featureId, questId, true),
+        appreciateButton(featureId, questId)
+      ),
+      manageRow(featureId, questId),
     ];
   }
 
@@ -65,9 +129,65 @@ export function questComponents(
       new ButtonBuilder()
         .setCustomId(encodeCustomId(featureId, 'complete', questId))
         .setLabel('Complete')
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Success),
+      stopButton(featureId, questId, false),
+      appreciateButton(featureId, questId)
     ),
+    manageRow(featureId, questId),
   ];
+}
+
+/**
+ * Edit modal for a quest — title, description, location and schedule. Each
+ * input is pre-filled with the current value so unchanged fields round-trip.
+ * The modal's customId carries the quest id so the submit handler knows which
+ * record to mutate.
+ */
+export function questEditModal(featureId: string, quest: Quest): ModalBuilder {
+  const questId = String(quest.id ?? '');
+  const modal = new ModalBuilder()
+    .setCustomId(encodeCustomId(featureId, 'editSubmit', questId))
+    .setTitle('Edit quest');
+
+  const title = new TextInputBuilder()
+    .setCustomId('title')
+    .setLabel('Title')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(200)
+    .setValue(String(quest.title ?? ''));
+
+  const description = new TextInputBuilder()
+    .setCustomId('description')
+    .setLabel('Description')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(2000)
+    .setValue(String(quest.description ?? ''));
+
+  const location = new TextInputBuilder()
+    .setCustomId('location')
+    .setLabel('Location')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(200)
+    .setValue(String(quest.location ?? ''));
+
+  const when = new TextInputBuilder()
+    .setCustomId('when')
+    .setLabel('When (e.g. 2026-06-01 18:00)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(100)
+    .setValue(String(quest.when ?? ''));
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(title),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(description),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(location),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(when)
+  );
+  return modal;
 }
 
 export function shoppingEmbed(

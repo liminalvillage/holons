@@ -50,19 +50,14 @@ export const shoppingFeature: Feature = {
   id: FEATURE_ID,
   commands: [
     new SlashCommandBuilder()
-      .setName('shopping')
-      .setDescription('Manage the shared shopping list')
-      .addSubcommand(sub =>
-        sub
-          .setName('add')
-          .setDescription('Add an item to the shopping list')
-          .addStringOption(opt =>
-            opt.setName('item').setDescription('Item to add').setRequired(true)
-          )
-      )
-      .addSubcommand(sub =>
-        sub.setName('list').setDescription('Show the shopping list')
+      .setName('buy')
+      .setDescription('Add an item to the shopping list')
+      .addStringOption(opt =>
+        opt.setName('item').setDescription('Item to add').setRequired(true)
       ),
+    new SlashCommandBuilder()
+      .setName('shopping')
+      .setDescription('Show the shopping list as clickable items'),
   ],
 
   async handleCommand(
@@ -78,9 +73,8 @@ export const shoppingFeature: Feature = {
       return;
     }
     const holonId = ctx.holonId;
-    const sub = interaction.options.getSubcommand();
 
-    if (sub === 'add') {
+    if (interaction.commandName === 'buy') {
       const text = interaction.options.getString('item', true);
       const current = await loadList(ctx, holonId);
       const updated = addItem(current, text, {
@@ -94,7 +88,7 @@ export const shoppingFeature: Feature = {
       return;
     }
 
-    // sub === 'list'
+    // /shopping — show the clickable list
     const list = await loadList(ctx, holonId);
     await interaction.reply({
       embeds: [shoppingEmbed(list)],

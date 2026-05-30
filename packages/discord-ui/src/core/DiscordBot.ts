@@ -8,6 +8,7 @@ import createHoloSphere from '../createHoloSphere.js';
 import { createClient } from '../runtime/client.js';
 import { registerCommands } from '../runtime/registerCommands.js';
 import { attachRouter } from '../runtime/router.js';
+import { SchedulerRuntime } from '../runtime/scheduler.js';
 import type { HoloStore } from '../types.js';
 import { HolosphereHolonBindings } from '../ui/holonBinding.js';
 import { config } from '../utils/config.js';
@@ -19,6 +20,7 @@ export class DiscordBot {
   private readonly holosphere = createHoloSphere(
     config.appName
   ) as unknown as HoloStore;
+  private scheduler: SchedulerRuntime | null = null;
   private started = false;
 
   async init(): Promise<void> {
@@ -32,8 +34,16 @@ export class DiscordBot {
     const bindings = new HolosphereHolonBindings(this.holosphere);
     attachRouter(this.client, { holosphere: this.holosphere, bindings });
 
+    this.scheduler = new SchedulerRuntime({
+      holosphere: this.holosphere,
+      bindings,
+      client: this.client,
+    });
+
     this.client.once(Events.ClientReady, readyClient => {
       log.info('Discord bot ready', { user: readyClient.user.tag });
+      // Start the reminder loop only once the client can fetch channels.
+      this.scheduler?.start();
     });
 
     if (config.appId) {
@@ -57,6 +67,7 @@ export class DiscordBot {
   async shutdown(): Promise<void> {
     if (!this.started) return;
     log.info('Shutting down Discord bot');
+    this.scheduler?.stop();
     await this.client.destroy();
     this.started = false;
   }

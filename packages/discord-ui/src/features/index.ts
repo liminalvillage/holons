@@ -3,11 +3,23 @@
  * registration and its handlers into the router — no other changes needed.
  */
 import type { Feature } from '../types.js';
+import { announcementsFeature } from './announcements.js';
+import { calendarFeature } from './calendar.js';
 import { checklistsFeature } from './checklists.js';
+import { dashboardFeature } from './dashboard.js';
+import { dnaFeature } from './dna.js';
 import { expensesFeature } from './expenses.js';
+import { federationFeature } from './federation.js';
 import { holonFeature } from './holon.js';
+import { libraryFeature } from './library.js';
 import { questsFeature } from './quests.js';
+import { remindersFeature } from './reminders.js';
+import { rolesFeature } from './roles.js';
+import { rsvpFeature } from './rsvp.js';
+import { scoringFeature } from './scoring.js';
+import { settingsFeature } from './settings.js';
 import { shoppingFeature } from './shopping.js';
+import { tagsFeature } from './tags.js';
 import { usersFeature } from './users.js';
 
 export const features: Feature[] = [
@@ -17,6 +29,18 @@ export const features: Feature[] = [
   shoppingFeature,
   expensesFeature,
   checklistsFeature,
+  calendarFeature,
+  libraryFeature,
+  scoringFeature,
+  federationFeature,
+  settingsFeature,
+  dnaFeature,
+  rolesFeature,
+  announcementsFeature,
+  tagsFeature,
+  rsvpFeature,
+  remindersFeature,
+  dashboardFeature,
 ];
 
 /** Map of slash command name -> owning feature. */

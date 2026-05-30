@@ -97,6 +97,12 @@ export const checklistsFeature: Feature = {
       .addSubcommand(sub =>
         sub.setName('list').setDescription('List all checklists')
       ),
+    new SlashCommandBuilder()
+      .setName('checklists')
+      .setDescription('Open the checklists interface'),
+    new SlashCommandBuilder()
+      .setName('agenda')
+      .setDescription('Open the shared agenda'),
   ],
 
   async handleCommand(
@@ -108,6 +114,47 @@ export const checklistsFeature: Feature = {
       return;
     }
     const holonId = ctx.holonId;
+
+    if (interaction.commandName === 'checklists') {
+      const all = await getAllChecklists(store(ctx), holonId);
+      if (all.length === 0) {
+        await interaction.reply({
+          content: 'No checklists yet. Create one with `/checklist create`.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      await interaction.reply({
+        content: `**Checklists** (${all.length})\n\n${all
+          .map(checklistSummaryLine)
+          .join('\n')}`,
+      });
+      return;
+    }
+
+    if (interaction.commandName === 'agenda') {
+      const AGENDA = 'agenda';
+      let checklist = await getChecklist(store(ctx), holonId, AGENDA);
+      if (!checklist) {
+        const created = await createChecklist(store(ctx), holonId, AGENDA, {
+          creator: interaction.user.id,
+        });
+        if (!created.ok) {
+          await interaction.reply({
+            content: 'Could not open the agenda.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        checklist = created.checklist;
+      }
+      await interaction.reply({
+        embeds: [checklistEmbed(checklist)],
+        components: checklistComponents(FEATURE_ID, checklist),
+      });
+      return;
+    }
+
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'list') {

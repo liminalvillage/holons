@@ -11,20 +11,27 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
   type MessageComponentInteraction,
+  type ModalSubmitInteraction,
 } from 'discord.js';
 import {
   applyTaskCompletion,
   createMarketItem,
   createTask,
+  deleteTaskWithCascade,
   saveTaskToHolon,
-  toggleAppreciation,
-  toggleParticipant,
+  toggleAppreciationExclusive,
+  toggleParticipationExclusive,
+  toggleStopper,
   type Quest,
   type QuestInitiator,
 } from '@holons/core/tasks';
 import type { DiscordUser, Feature, InvocationContext } from '../types.js';
 import type { ParsedCustomId } from '../ui/customId.js';
-import { questComponents, questEmbed } from '../ui/DiscordUI.js';
+import {
+  questComponents,
+  questEditModal,
+  questEmbed,
+} from '../ui/DiscordUI.js';
 import { questSummaryLine } from '../ui/format.js';
 
 const FEATURE_ID = 'quests';
@@ -43,6 +50,21 @@ function userFrom(interaction: {
 
 function initiatorFrom(user: DiscordUser): QuestInitiator {
   return { id: user.id, username: user.username, firstName: user.username };
+}
+
+/**
+ * Guard against partial Holosphere reads: GUN can surface a quest before its
+ * array fields have synced, which would make the core toggles throw. Coerce the
+ * list fields to arrays so handlers never crash mid-interaction.
+ */
+function normalizeQuest(quest: Quest | null): Quest | null {
+  if (!quest) return null;
+  return {
+    ...quest,
+    participants: Array.isArray(quest.participants) ? quest.participants : [],
+    appreciation: Array.isArray(quest.appreciation) ? quest.appreciation : [],
+    stoppers: Array.isArray(quest.stoppers) ? quest.stoppers : [],
+  };
 }
 
 async function replyNeedHolon(
@@ -90,6 +112,12 @@ export const questsFeature: Feature = {
     new SlashCommandBuilder()
       .setName('quests')
       .setDescription('List quests in this holon'),
+    new SlashCommandBuilder()
+      .setName('tasks')
+      .setDescription('List currently open tasks'),
+    new SlashCommandBuilder()
+      .setName('board')
+      .setDescription('List all offers and requests'),
   ],
 
   async handleCommand(
@@ -101,8 +129,12 @@ export const questsFeature: Feature = {
       return;
     }
 
-    if (interaction.commandName === 'quests') {
-      await listQuests(interaction, ctx, ctx.holonId);
+    if (
+      interaction.commandName === 'quests' ||
+      interaction.commandName === 'tasks' ||
+      interaction.commandName === 'board'
+    ) {
+      await listQuests(interaction, ctx, ctx.holonId, interaction.commandName);
       return;
     }
 
@@ -121,27 +153,62 @@ export const questsFeature: Feature = {
       });
       return;
     }
+    const holonId = ctx.holonId;
     const [questId] = parsed.args;
-    const quest = (await ctx.holosphere.get(
-      ctx.holonId,
-      QUESTS_BUCKET,
-      questId
-    )) as Quest | null;
+    const user = userFrom(interaction);
 
+    // `edit` opens a modal, which MUST be the first response — handle it before
+    // any defer. (Its own Holosphere read is one quick fetch.)
+    if (parsed.action === 'edit') {
+      const quest = normalizeQuest(
+        (await ctx.holosphere.get(
+          holonId,
+          QUESTS_BUCKET,
+          questId
+        )) as Quest | null
+      );
+      if (!quest) {
+        await interaction.reply({
+          content: 'That quest no longer exists.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      if (!isInitiator(quest, user.id)) {
+        await interaction.reply({
+          content: 'Only the initiator can edit this quest.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      await interaction.showModal(questEditModal(FEATURE_ID, quest));
+      return;
+    }
+
+    // Everything else edits the message. Acknowledge IMMEDIATELY so a slow
+    // Holosphere round-trip can't blow Discord's 3s interaction deadline (which
+    // would drop the buttons). After deferUpdate we use editReply / followUp.
+    await interaction.deferUpdate();
+
+    const quest = normalizeQuest(
+      (await ctx.holosphere.get(
+        holonId,
+        QUESTS_BUCKET,
+        questId
+      )) as Quest | null
+    );
     if (!quest) {
-      await interaction.reply({
+      await interaction.followUp({
         content: 'That quest no longer exists.',
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
-    const user = userFrom(interaction);
-
     if (parsed.action === 'toggle') {
-      const updated = toggleParticipant(quest, initiatorFrom(user));
-      await saveTaskToHolon(ctx.holosphere, ctx.holonId, updated);
-      await interaction.update({
+      const updated = toggleParticipationExclusive(quest, initiatorFrom(user));
+      await saveTaskToHolon(ctx.holosphere, holonId, updated);
+      await interaction.editReply({
         embeds: [questEmbed(updated)],
         components: questComponents(FEATURE_ID, updated),
       });
@@ -149,9 +216,9 @@ export const questsFeature: Feature = {
     }
 
     if (parsed.action === 'appreciate') {
-      const updated = toggleAppreciation(quest, initiatorFrom(user));
-      await saveTaskToHolon(ctx.holosphere, ctx.holonId, updated);
-      await interaction.update({
+      const updated = toggleAppreciationExclusive(quest, initiatorFrom(user));
+      await saveTaskToHolon(ctx.holosphere, holonId, updated);
+      await interaction.editReply({
         embeds: [questEmbed(updated)],
         components: questComponents(FEATURE_ID, updated),
       });
@@ -161,7 +228,7 @@ export const questsFeature: Feature = {
     if (parsed.action === 'complete') {
       const result = applyTaskCompletion(quest, user.id);
       if (!result.ok) {
-        await interaction.reply({
+        await interaction.followUp({
           content:
             result.reason === 'forbidden'
               ? 'Only the initiator or a participant can complete this quest.'
@@ -170,14 +237,124 @@ export const questsFeature: Feature = {
         });
         return;
       }
-      await saveTaskToHolon(ctx.holosphere, ctx.holonId, result.task);
-      await interaction.update({
+      await saveTaskToHolon(ctx.holosphere, holonId, result.task);
+      await interaction.editReply({
         embeds: [questEmbed(result.task)],
         components: questComponents(FEATURE_ID, result.task),
+      });
+      return;
+    }
+
+    if (parsed.action === 'stop') {
+      const { task: updated } = toggleStopper(quest, initiatorFrom(user));
+      await saveTaskToHolon(ctx.holosphere, holonId, updated);
+      await interaction.editReply({
+        embeds: [questEmbed(updated)],
+        components: questComponents(FEATURE_ID, updated),
+      });
+      return;
+    }
+
+    if (parsed.action === 'delete') {
+      if (!isInitiator(quest, user.id)) {
+        await interaction.followUp({
+          content: 'Only the initiator can delete this quest.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      const result = await deleteTaskWithCascade(
+        ctx.holosphere as unknown as Parameters<
+          typeof deleteTaskWithCascade
+        >[0],
+        holonId,
+        questId
+      );
+      const cascade =
+        result.forwardsFound > 0
+          ? ` (cleaned up ${result.forwardsDeleted}/${result.forwardsFound} federated copies)`
+          : '';
+      await interaction.editReply({
+        content: `🗑️ **${quest.title}** deleted${cascade}.`,
+        embeds: [],
+        components: [],
+      });
+      return;
+    }
+  },
+
+  async handleModal(
+    interaction: ModalSubmitInteraction,
+    parsed: ParsedCustomId,
+    ctx: InvocationContext
+  ): Promise<void> {
+    if (parsed.action !== 'editSubmit') return;
+    if (!ctx.holonId) {
+      await interaction.reply({
+        content: 'This server is no longer bound to a holon.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    const [questId] = parsed.args;
+    const quest = (await ctx.holosphere.get(
+      ctx.holonId,
+      QUESTS_BUCKET,
+      questId
+    )) as Quest | null;
+    if (!quest) {
+      await interaction.reply({
+        content: 'That quest no longer exists.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    if (!isInitiator(quest, userFrom(interaction).id)) {
+      await interaction.reply({
+        content: 'Only the initiator can edit this quest.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const field = (id: string): string =>
+      interaction.fields.getTextInputValue(id).trim();
+    const updated: Quest = { ...quest, title: field('title') || quest.title };
+    setOrClear(updated, 'description', field('description'));
+    setOrClear(updated, 'location', field('location'));
+    setOrClear(updated, 'when', field('when'));
+
+    await saveTaskToHolon(ctx.holosphere, ctx.holonId, updated);
+
+    // The modal was opened from the quest message, so we can update it in place.
+    if (interaction.isFromMessage()) {
+      await interaction.update({
+        embeds: [questEmbed(updated)],
+        components: questComponents(FEATURE_ID, updated),
+      });
+    } else {
+      await interaction.reply({
+        content: '✅ Quest updated.',
+        flags: MessageFlags.Ephemeral,
       });
     }
   },
 };
+
+/** True when the acting user opened the quest (initiator id matches). */
+function isInitiator(quest: Quest, userId: string): boolean {
+  return String(quest.initiator?.id ?? '') === String(userId);
+}
+
+/** Set a field to the trimmed value, or delete it when the value is empty. */
+function setOrClear(
+  quest: Quest,
+  key: 'description' | 'location' | 'when',
+  value: string
+): void {
+  if (value) quest[key] = value;
+  else delete quest[key];
+}
 
 async function createQuest(
   interaction: ChatInputCommandInteraction,
@@ -218,15 +395,47 @@ async function createQuest(
   });
 }
 
+const MARKET_TYPES = new Set(['offer', 'request', 'need']);
+
+/** Per-command list view config. */
+function listView(command: string): {
+  heading: string;
+  empty: string;
+  keep: (q: Quest) => boolean;
+} {
+  if (command === 'tasks') {
+    return {
+      heading: 'Open tasks',
+      empty: 'No open tasks. Create one with `/task`.',
+      keep: q => q.status !== 'completed' && !MARKET_TYPES.has(String(q.type)),
+    };
+  }
+  if (command === 'board') {
+    return {
+      heading: 'Board — offers & requests',
+      empty: 'No offers or requests yet. Add one with `/offer` or `/request`.',
+      keep: q => MARKET_TYPES.has(String(q.type)),
+    };
+  }
+  return {
+    heading: 'Quests',
+    empty:
+      'No quests yet. Create one with `/task`, `/event`, `/offer` or `/request`.',
+    keep: () => true,
+  };
+}
+
 async function listQuests(
   interaction: ChatInputCommandInteraction,
   ctx: InvocationContext,
-  holonId: string
+  holonId: string,
+  command: string
 ): Promise<void> {
+  const view = listView(command);
   const all = ((await ctx.holosphere.getAll(holonId, QUESTS_BUCKET)) ??
     []) as Quest[];
   const active = all
-    .filter(q => q && !q._deleted)
+    .filter(q => q && !q._deleted && view.keep(q))
     .sort((a, b) => {
       // Ongoing before completed, then newest first.
       const ac = a.status === 'completed' ? 1 : 0;
@@ -237,8 +446,7 @@ async function listQuests(
 
   if (active.length === 0) {
     await interaction.reply({
-      content:
-        'No quests yet. Create one with `/task`, `/event`, `/offer` or `/request`.',
+      content: view.empty,
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -252,6 +460,6 @@ async function listQuests(
       : '';
 
   await interaction.reply({
-    content: `**Quests** (${active.length})\n\n${lines.join('\n')}${more}`,
+    content: `**${view.heading}** (${active.length})\n\n${lines.join('\n')}${more}`,
   });
 }
