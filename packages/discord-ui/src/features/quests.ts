@@ -17,6 +17,7 @@ import {
   createMarketItem,
   createTask,
   saveTaskToHolon,
+  toggleAppreciation,
   toggleParticipant,
   type Quest,
   type QuestInitiator,
@@ -139,6 +140,16 @@ export const questsFeature: Feature = {
 
     if (parsed.action === 'toggle') {
       const updated = toggleParticipant(quest, initiatorFrom(user));
+      await saveTaskToHolon(ctx.holosphere, ctx.holonId, updated);
+      await interaction.update({
+        embeds: [questEmbed(updated)],
+        components: questComponents(FEATURE_ID, updated),
+      });
+      return;
+    }
+
+    if (parsed.action === 'appreciate') {
+      const updated = toggleAppreciation(quest, initiatorFrom(user));
       await saveTaskToHolon(ctx.holosphere, ctx.holonId, updated);
       await interaction.update({
         embeds: [questEmbed(updated)],

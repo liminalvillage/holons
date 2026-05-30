@@ -13,6 +13,11 @@ describe('feature registry', () => {
     expect(index.get('quests')?.id).toBe('quests');
     expect(index.get('shopping')?.id).toBe('shopping');
     expect(index.get('holon')?.id).toBe('holon');
+    expect(index.get('join')?.id).toBe('members');
+    expect(index.get('members')?.id).toBe('members');
+    expect(index.get('expense')?.id).toBe('expenses');
+    expect(index.get('balances')?.id).toBe('expenses');
+    expect(index.get('checklist')?.id).toBe('checklists');
   });
 
   it('maps every feature id to its feature', () => {

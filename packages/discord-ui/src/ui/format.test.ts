@@ -4,9 +4,16 @@ import {
   questSummaryLine,
   participantNames,
   shoppingListView,
+  memberListView,
+  balancesView,
+  formatAmount,
+  checklistView,
+  checklistSummaryLine,
 } from './format.js';
 import type { Quest } from '@holons/core/tasks';
 import type { ShoppingChecklist } from '@holons/core/shopping';
+import type { BalancesResult } from '@holons/core/expenses';
+import type { Checklist } from '@holons/core/checklists';
 
 function quest(overrides: Partial<Quest> = {}): Quest {
   return {
@@ -69,5 +76,84 @@ describe('shopping formatting', () => {
     expect(out).toContain('⬜ Milk');
     expect(out).toContain('☑️ Eggs');
     expect(out).toContain('⬜ Nails');
+  });
+});
+
+describe('member formatting', () => {
+  it('prefers username, falls back to first_name then id', () => {
+    expect(memberListView([{ id: 1, username: 'bob' }])).toContain('• bob');
+    expect(memberListView([{ id: 2, first_name: 'Carol' }])).toContain(
+      '• Carol'
+    );
+    expect(memberListView([{ id: 3 }])).toContain('• 3');
+  });
+
+  it('shows an empty state', () => {
+    expect(memberListView([])).toMatch(/no members/i);
+  });
+});
+
+describe('expense formatting', () => {
+  it('formats amounts, dropping trailing .00', () => {
+    expect(formatAmount(10)).toBe('10');
+    expect(formatAmount(10.5)).toBe('10.50');
+    expect(formatAmount(10.333)).toBe('10.33');
+  });
+
+  it('renders owed/owes lines and resolves names', () => {
+    const result: BalancesResult = {
+      creditMatrix: [],
+      userIds: ['a', 'b'],
+      balances: [
+        { userId: 'a', net: 12.5 },
+        { userId: 'b', net: -12.5 },
+      ],
+    };
+    const out = balancesView(result, 'eur', id =>
+      id === 'a' ? 'Alice' : 'Bob'
+    );
+    expect(out).toContain('🟢 **Alice** is owed 12.50 EUR');
+    expect(out).toContain('🔴 **Bob** owes 12.50 EUR');
+  });
+
+  it('reports a settled state when all balances are ~zero', () => {
+    const result: BalancesResult = {
+      creditMatrix: [],
+      userIds: ['a'],
+      balances: [{ userId: 'a', net: 0 }],
+    };
+    expect(balancesView(result, 'usd')).toMatch(/settled up/i);
+  });
+});
+
+describe('checklist formatting', () => {
+  function checklist(items: Checklist['items']): Checklist {
+    return { id: 'chores', type: 'checklist', items };
+  }
+
+  it('renders items with checkbox state', () => {
+    const out = checklistView(
+      checklist([
+        { text: 'Sweep', checked: true },
+        { text: 'Mop', checked: false },
+      ])
+    );
+    expect(out).toContain('☑️ Sweep');
+    expect(out).toContain('⬜ Mop');
+  });
+
+  it('summarises done/total', () => {
+    const line = checklistSummaryLine(
+      checklist([
+        { text: 'a', checked: true },
+        { text: 'b', checked: false },
+      ])
+    );
+    expect(line).toContain('chores');
+    expect(line).toContain('1/2');
+  });
+
+  it('shows an empty state', () => {
+    expect(checklistView(checklist([]))).toMatch(/empty/i);
   });
 });

@@ -4,6 +4,8 @@
  */
 import type { Quest } from '@holons/core/tasks';
 import type { ShoppingChecklist, ShoppingItem } from '@holons/core/shopping';
+import type { BalancesResult } from '@holons/core/expenses';
+import type { Checklist } from '@holons/core/checklists';
 
 const TYPE_LABELS: Record<string, string> = {
   task: '📋 Task',
@@ -103,4 +105,79 @@ export function shoppingListView(checklist: ShoppingChecklist | null): string {
     }
   }
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Members
+// ---------------------------------------------------------------------------
+
+export interface MemberLike {
+  id: string | number;
+  username?: string | null;
+  first_name?: string | null;
+}
+
+export function memberName(member: MemberLike): string {
+  return member.username || member.first_name || String(member.id ?? 'unknown');
+}
+
+export function memberListView(members: MemberLike[]): string {
+  if (!members || members.length === 0) {
+    return '_No members yet. Use `/join` to register._';
+  }
+  return members.map(m => `• ${memberName(m)}`).join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+/** Round to 2 decimals and drop a trailing `.00`. */
+export function formatAmount(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+/**
+ * Render net balances for one currency. `nameFor` resolves a user id to a
+ * display name (defaults to the raw id). Positive net = is owed; negative =
+ * owes.
+ */
+export function balancesView(
+  result: BalancesResult,
+  currency: string,
+  nameFor: (id: string | number) => string = String
+): string {
+  const cur = currency.toUpperCase();
+  const nonZero = result.balances.filter(b => Math.abs(b.net) >= 0.005);
+  if (nonZero.length === 0) return `Everyone is settled up in ${cur}. 🎉`;
+
+  return nonZero
+    .sort((a, b) => b.net - a.net)
+    .map(b => {
+      const name = nameFor(b.userId);
+      if (b.net > 0)
+        return `🟢 **${name}** is owed ${formatAmount(b.net)} ${cur}`;
+      return `🔴 **${name}** owes ${formatAmount(-b.net)} ${cur}`;
+    })
+    .join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Checklists
+// ---------------------------------------------------------------------------
+
+export function checklistView(checklist: Checklist): string {
+  if (!checklist.items || checklist.items.length === 0) {
+    return '_This checklist is empty._';
+  }
+  return checklist.items
+    .map(item => `${item.checked ? '☑️' : '⬜'} ${item.text}`)
+    .join('\n');
+}
+
+export function checklistSummaryLine(checklist: Checklist): string {
+  const total = checklist.items?.length ?? 0;
+  const done = (checklist.items ?? []).filter(i => i.checked).length;
+  return `📝 **${checklist.id}** — ${done}/${total} done`;
 }

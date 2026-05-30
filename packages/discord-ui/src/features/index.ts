@@ -3,14 +3,20 @@
  * registration and its handlers into the router — no other changes needed.
  */
 import type { Feature } from '../types.js';
+import { checklistsFeature } from './checklists.js';
+import { expensesFeature } from './expenses.js';
 import { holonFeature } from './holon.js';
 import { questsFeature } from './quests.js';
 import { shoppingFeature } from './shopping.js';
+import { usersFeature } from './users.js';
 
 export const features: Feature[] = [
   holonFeature,
+  usersFeature,
   questsFeature,
   shoppingFeature,
+  expensesFeature,
+  checklistsFeature,
 ];
 
 /** Map of slash command name -> owning feature. */

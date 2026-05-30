@@ -7,11 +7,11 @@ Holons community ("holon"), delegating all business logic to
 
 ## Status
 
-**Phase 1 — runtime foundation + first vertical slice.** This package ships the
-bot runtime (gateway client, slash-command registration, an interaction router,
-embed/button UI helpers, guild→holon binding, and a `@holons/core` context
-adapter) plus a working slice of features. More telegram-parity features are
-being ported in subsequent phases (see the table below).
+**Phase 2 — membership, expenses, checklists + quest appreciation.** Builds on
+the Phase 1 runtime (gateway client, slash-command registration, interaction
+router, embed/button UI helpers, guild→holon binding, `@holons/core` context
+adapter). More telegram-parity features are being ported in subsequent phases
+(see the roadmap below).
 
 ## Architecture
 
@@ -49,11 +49,16 @@ it into both registration and routing.
 ## Commands (current)
 
 - `/holon bind <id>` · `/holon current` — bind the server to a holon.
+- `/join` · `/leave` · `/members` — holon membership (a member is a profile in
+  the `users` lens, feeding expenses and scoring).
 - `/task` · `/event` · `/offer` · `/request` — create quests; join/leave and
-  complete via buttons.
+  complete via buttons, **appreciate** contributors once completed.
 - `/quests` — list quests in the holon.
 - `/shopping add <item>` · `/shopping list` — shared shopping list with toggle
   and "remove checked" buttons.
+- `/expense <amount> <description> [currency] [split]` — record a shared cost.
+- `/balances [currency]` — who owes whom (credit-matrix balances).
+- `/checklist create|add|show|list` — checklists with per-item toggle buttons.
 
 ## Development
 
@@ -74,6 +79,9 @@ Set `DISCORD_TOKEN`, `DISCORD_APP_ID`, and (for instant dev updates)
 
 ## Roadmap (telegram parity)
 
-Quests (time logging, checklists, scheduling, appreciation) → Checklists/Tags →
-Expenses/REA → Roles/Users/Onboarding → Scheduler/Reminders → Federation →
-Library → Settings → the long tail (announcements, RSVP, rounds, booking, …).
+- ✅ **Phase 1** — runtime + quests/shopping vertical slice.
+- ✅ **Phase 2** — membership (`/join` `/leave` `/members`), expenses/REA
+  (`/expense` `/balances`), checklists (`/checklist`), quest appreciation.
+- ⬜ Quests deeper (time logging, on-quest checklists, scheduling/recurring).
+- ⬜ Tags, Roles/Onboarding, Scheduler/Reminders, Federation, Library, Settings.
+- ⬜ Long tail: announcements, RSVP, rounds/rotation, booking, capital game.
