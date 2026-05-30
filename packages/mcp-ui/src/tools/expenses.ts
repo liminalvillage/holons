@@ -111,6 +111,72 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.tool(
+    'expenses_create_batch',
+    'Create multiple normalized expenses in one call via @holons/core. Accepts a JSON-encoded array of CreateExpenseInput; entries with a non-positive or invalid amount are reported in `rejected` and skipped (best-effort, not atomic). Optionally persists each via HoloSphere when persist=true.',
+    {
+      holon: z
+        .string()
+        .describe('Holon id (fallback holonId/splitWith and persistence target).'),
+      expenses: z
+        .string()
+        .describe(
+          'JSON-encoded array of CreateExpenseInput: [{ id?, amount, currency, description, paidBy, splitWith?, picture?, date? }].'
+        ),
+      persist: z
+        .boolean()
+        .optional()
+        .describe('When true, h.put(holon, "expenses", created) for each created expense.'),
+    },
+    async ({ holon, expenses, persist }) => {
+      try {
+        const arr = parseJson<Array<Partial<CreateExpenseInput>>>(expenses, 'expenses');
+        if (!Array.isArray(arr)) throw new Error('"expenses" must be a JSON array');
+        if (arr.length === 0) throw new Error('"expenses" is empty');
+
+        const h = persist ? await deps.getHoloSphere() : null;
+        const created: Expense[] = [];
+        const rejected: Array<{ index: number; reason: string }> = [];
+        let persisted = 0;
+
+        for (let i = 0; i < arr.length; i++) {
+          const input = arr[i] ?? {};
+          const fullInput: CreateExpenseInput = {
+            holonId: input.holonId ?? holon,
+            // Stagger default ids by index so a same-millisecond batch can't collide.
+            id: input.id ?? Date.now() + i,
+            amount: Number(input.amount),
+            currency: String(input.currency ?? ''),
+            description: String(input.description ?? ''),
+            paidBy: input.paidBy as AgentId,
+            splitWith: input.splitWith,
+            picture: input.picture ?? null,
+            now: (input as any).now ?? (input as any).date,
+          };
+          const exp = createExpense(fullInput);
+          if (!exp) {
+            rejected.push({ index: i, reason: 'non-positive or invalid amount' });
+            continue;
+          }
+          created.push(exp);
+          if (h) {
+            await h.put(holon, 'expenses', exp);
+            persisted++;
+          }
+        }
+
+        return ok({
+          created,
+          count: created.length,
+          rejected,
+          persisted,
+        });
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
+  server.tool(
     'expense_balance',
     'Compute the net balance for one user in one currency. Provide either "expenses" (JSON) or "holon" (fetch via HoloSphere).',
     {

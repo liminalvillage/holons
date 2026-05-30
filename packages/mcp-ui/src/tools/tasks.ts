@@ -7,6 +7,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   applyTaskCompletion,
   createTask,
+  createMarketItem,
+  findDependencyCycle,
   executeCompletionPlan,
   planTaskCompletion,
   saveTaskToHolon,
@@ -19,6 +21,7 @@ import {
   toggleAppreciation,
   type Quest,
   type QuestParticipant,
+  type MarketItemKind,
 } from '@holons/core/tasks';
 import { REAEventStore } from '@holons/core/rea';
 import { DEFAULT_EQUATION, loadEquation } from '@holons/core/scoring';
@@ -131,6 +134,10 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         category: z.string().optional(),
         when: z.string().optional(),
         until: z.string().optional(),
+        dependencies: z
+          .array(z.string())
+          .optional()
+          .describe('Ids of tasks this one depends on (predecessors). Pass an explicit `id` per task so dependents can reference them.'),
         persist: z.boolean().optional().describe('If true, write the new Quest to HoloSphere under (holon, "quests").'),
       },
     },
@@ -143,6 +150,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
           title: args.title,
           type: args.type,
           category: args.category,
+          dependencies: args.dependencies,
         });
         task.id = args.id ?? shortTaskId();
         if (args.description !== undefined) task.description = args.description;
@@ -150,12 +158,199 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         if (args.when !== undefined) task.when = args.when;
         if (args.until !== undefined) task.until = args.until;
 
+        const hs = await deps.getHoloSphere();
+
+        // Keep the dependency graph acyclic so it stays a top→bottom sequence.
+        if (args.dependencies && args.dependencies.length > 0) {
+          let existing: Quest[] = [];
+          if (typeof hs.getAll === 'function') {
+            existing = ((await hs.getAll(args.holon, 'quests')) ?? []) as Quest[];
+          }
+          const graph = [
+            ...existing.filter((q) => String(q?.id) !== String(task.id)),
+            task,
+          ];
+          const cycle = findDependencyCycle(graph);
+          if (cycle && cycle.includes(String(task.id))) {
+            return fail(
+              'Refusing to create task: its dependencies would form a cycle.',
+              { holon: args.holon, taskId: task.id, cycle },
+            );
+          }
+        }
+
         let persisted = false;
         if (args.persist) {
-          const hs = await deps.getHoloSphere();
           persisted = await saveTaskToHolon(hs, args.holon, task);
         }
         return ok({ success: true, persisted, task });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // tasks_create_batch — build many tasks/quests in one call, cycle-checked.
+  server.registerTool(
+    'tasks_create_batch',
+    {
+      description:
+        'Create multiple tasks/quests in one call. Accepts a JSON-encoded array of task inputs; each is built via @holons/core/tasks createTask with the configured actor as initiator. Ids are auto-generated when omitted — pass an explicit `id` for any task that others depend on. The whole batch (plus existing persisted quests when persist=true) is checked for dependency cycles and rejected atomically if a new task would form one. Pass persist:true to write them under (holon, "quests").',
+      inputSchema: {
+        holon: z.string().describe('Holon id.'),
+        tasks: z
+          .string()
+          .describe(
+            'JSON-encoded array of task inputs: [{ title, id?, description?, type?("task"|"quest"|"bounty"), category?, when?, until?, orderIndex?, dependencies?: string[] }].',
+          ),
+        persist: z
+          .boolean()
+          .optional()
+          .describe('If true, write each new Quest under (holon, "quests").'),
+      },
+    },
+    async (args) => {
+      try {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(args.tasks);
+        } catch (err) {
+          return fail(`Invalid JSON for 'tasks': ${(err as Error).message}`);
+        }
+        if (!Array.isArray(parsed)) {
+          return fail("'tasks' must decode to a JSON array of task inputs.");
+        }
+        if (parsed.length === 0) return fail("'tasks' is empty.");
+
+        const initiator = actorAsInitiator(deps.resolveActor());
+        const allowedTypes = ['task', 'quest', 'bounty'];
+        const built: Quest[] = parsed.map((raw) => {
+          const t = (raw ?? {}) as Record<string, unknown>;
+          const title = String(t.title ?? '').trim();
+          if (!title) throw new Error('Every task needs a non-empty title.');
+          const type =
+            typeof t.type === 'string' && allowedTypes.includes(t.type)
+              ? (t.type as Quest['type'])
+              : undefined;
+          const task = createTask({
+            holonId: args.holon,
+            initiator,
+            title,
+            type,
+            category: typeof t.category === 'string' ? t.category : undefined,
+            dependencies: Array.isArray(t.dependencies)
+              ? t.dependencies.map(String)
+              : undefined,
+          });
+          task.id = typeof t.id === 'string' && t.id ? t.id : shortTaskId();
+          if (typeof t.description === 'string') task.description = t.description;
+          if (typeof t.orderIndex === 'number') task.orderIndex = t.orderIndex;
+          if (typeof t.when === 'string') task.when = t.when;
+          if (typeof t.until === 'string') task.until = t.until;
+          return task;
+        });
+
+        const ids = built.map((t) => String(t.id));
+        const dupes = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+        if (dupes.length > 0) {
+          return fail(`Duplicate task ids in batch: ${dupes.join(', ')}.`);
+        }
+
+        const hs = await deps.getHoloSphere();
+        // Cycle-check against existing persisted quests too, so the batch can't
+        // close a loop through tasks already in the holon.
+        let existing: Quest[] = [];
+        if (args.persist && typeof hs.getAll === 'function') {
+          const newIds = new Set(ids);
+          existing = (((await hs.getAll(args.holon, 'quests')) ?? []) as Quest[]).filter(
+            (q) => q?.id != null && !newIds.has(String(q.id)),
+          );
+        }
+        const cycle = findDependencyCycle([...existing, ...built]);
+        if (cycle && cycle.some((id) => ids.includes(id))) {
+          return fail('Refusing to create batch: dependencies would form a cycle.', {
+            cycle,
+          });
+        }
+
+        let persisted = 0;
+        if (args.persist) {
+          persisted = await saveTasksToHolon(hs, args.holon, built);
+        }
+        return ok({ success: true, requested: built.length, persisted, tasks: built });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  // marketplace_items_create_batch — create offers / requests / needs in bulk.
+  server.registerTool(
+    'marketplace_items_create_batch',
+    {
+      description:
+        'Create multiple marketplace items (offers / requests / needs) in one call. Each is built via @holons/core/tasks createMarketItem and shares the "quests" lens with tasks. Pass persist:true to write them under (holon, "quests").',
+      inputSchema: {
+        holon: z.string().describe('Holon id.'),
+        items: z
+          .string()
+          .describe(
+            'JSON-encoded array: [{ kind:("offer"|"request"|"need"), title, id?, description?, itemType?("good"|"service"), transactionTypes?: string[], tags?: string[], expiresAt?: number(ms epoch), category? }].',
+          ),
+        persist: z
+          .boolean()
+          .optional()
+          .describe('If true, write each new item under (holon, "quests").'),
+      },
+    },
+    async (args) => {
+      try {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(args.items);
+        } catch (err) {
+          return fail(`Invalid JSON for 'items': ${(err as Error).message}`);
+        }
+        if (!Array.isArray(parsed)) {
+          return fail("'items' must decode to a JSON array.");
+        }
+        if (parsed.length === 0) return fail("'items' is empty.");
+
+        const initiator = actorAsInitiator(deps.resolveActor());
+        const kinds = ['offer', 'request', 'need'];
+        const built: Quest[] = parsed.map((raw) => {
+          const m = (raw ?? {}) as Record<string, unknown>;
+          const title = String(m.title ?? '').trim();
+          if (!title) throw new Error('Every marketplace item needs a non-empty title.');
+          const kind = String(m.kind ?? '');
+          if (!kinds.includes(kind)) {
+            throw new Error(`Invalid kind "${kind}" — expected offer | request | need.`);
+          }
+          const item = createMarketItem({
+            holonId: args.holon,
+            initiator,
+            kind: kind as MarketItemKind,
+            title,
+            description: typeof m.description === 'string' ? m.description : undefined,
+            itemType:
+              m.itemType === 'good' || m.itemType === 'service' ? m.itemType : undefined,
+            transactionTypes: Array.isArray(m.transactionTypes)
+              ? m.transactionTypes.map(String)
+              : undefined,
+            tags: Array.isArray(m.tags) ? m.tags.map(String) : undefined,
+            expiresAt: typeof m.expiresAt === 'number' ? m.expiresAt : undefined,
+            category: typeof m.category === 'string' ? m.category : undefined,
+          });
+          item.id = typeof m.id === 'string' && m.id ? m.id : shortTaskId();
+          return item;
+        });
+
+        let persisted = 0;
+        if (args.persist) {
+          const hs = await deps.getHoloSphere();
+          persisted = await saveTasksToHolon(hs, args.holon, built);
+        }
+        return ok({ success: true, requested: built.length, persisted, items: built });
       } catch (err) {
         return fail((err as Error).message);
       }

@@ -90,6 +90,28 @@ describe('publishToFederation', () => {
 		expect(out.destinations).toEqual(['8928308280fffff']);
 	});
 
+	it('hex target with upcast propagates up the parent chain', async () => {
+		const m = mockHolosphere();
+		const out = await publishToFederation(
+			ctx(m.holosphere),
+			{ kind: 'hex', cell: '8928308280fffff' },
+			{ upcast: true, upcastLevels: 8 }
+		);
+		expect(m.put).toHaveBeenCalledWith(
+			'8928308280fffff',
+			'quests',
+			expect.any(Object),
+			expect.objectContaining({
+				autoPropagate: true,
+				propagationOptions: expect.objectContaining({
+					propagateToParents: true,
+					maxParentLevels: 8
+				})
+			})
+		);
+		expect(out.destinations).toEqual(['8928308280fffff']);
+	});
+
 	it('all target propagates and writes to settings.hex', async () => {
 		const m = mockHolosphere({
 			federated: ['p1', 'p2'],

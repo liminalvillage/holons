@@ -4,6 +4,7 @@
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 	// Side-effect import: registers <mapbox-search-box> as a custom element.
 	import { MapboxSearchBox } from '@mapbox/search-js-web';
+	import { skin } from '$lib/stores/skin';
 
 	export let placeholder: string = 'Search a place…';
 	export let initialValue: string = '';
@@ -20,6 +21,45 @@
 	let unavailableReason: string = unavailable
 		? 'Place search unavailable — VITE_MAPBOX_TOKEN is not set.'
 		: '';
+
+	// The Mapbox search box renders in its own shadow DOM, so our skin sheets
+	// can't reach it — we hand it a matching palette explicitly and re-apply it
+	// when the skin changes. `whiteboard` is the light paper skin.
+	function buildTheme(currentSkin: string) {
+		const light = currentSkin === 'whiteboard';
+		const ink = light ? '#20302f' : '#ffffff';
+		const inkSecondary = light ? '#41524f' : '#e5e7eb';
+		const placeholderColor = light ? '#7a8784' : '#cbd5e1';
+		return {
+			variables: {
+				unit: '14px',
+				padding: '0.5em',
+				borderRadius: '12px',
+				boxShadow: light ? '0 4px 12px rgba(32, 48, 47, 0.12)' : '0 4px 12px rgba(0, 0, 0, 0.3)',
+				colorBackground: light ? 'rgba(236, 231, 216, 0.85)' : 'rgba(55, 65, 81, 0.5)',
+				colorBackgroundHover: light ? 'rgba(59, 158, 245, 0.15)' : 'rgba(96, 165, 250, 0.2)',
+				colorBackgroundActive: light ? 'rgba(59, 158, 245, 0.22)' : 'rgba(96, 165, 250, 0.3)',
+				colorText: ink,
+				colorTextSecondary: inkSecondary,
+				colorPlaceholder: placeholderColor,
+				colorPrimary: light ? '#3b9ef5' : '#60a5fa',
+				colorSecondary: inkSecondary,
+				border: light ? '1px solid rgba(32, 48, 47, 0.15)' : '1px solid rgba(255, 255, 255, 0.1)',
+				fontFamily: 'inherit'
+			},
+			cssText: `
+				input,
+				.Input,
+				.SuggestionName,
+				.SuggestionDescription {
+					color: ${ink} !important;
+				}
+				input::placeholder {
+					color: ${placeholderColor} !important;
+				}
+			`
+		};
+	}
 
 	function handleRetrieve(ev: any) {
 		// Mapbox Search Box emits `retrieve` with a FeatureCollection. Pull
@@ -53,35 +93,7 @@
 				types: 'poi,address,place,locality,neighborhood,region,country,postcode'
 			};
 			searchBox.placeholder = placeholder;
-			searchBox.theme = {
-				variables: {
-					unit: '14px',
-					padding: '0.5em',
-					borderRadius: '12px',
-					boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-					colorBackground: 'rgba(55, 65, 81, 0.5)',
-					colorBackgroundHover: 'rgba(96, 165, 250, 0.2)',
-					colorBackgroundActive: 'rgba(96, 165, 250, 0.3)',
-					colorText: '#ffffff',
-					colorTextSecondary: '#e5e7eb',
-					colorPlaceholder: '#cbd5e1',
-					colorPrimary: '#60a5fa',
-					colorSecondary: '#cbd5e1',
-					border: '1px solid rgba(255, 255, 255, 0.1)',
-					fontFamily: 'inherit'
-				},
-				cssText: `
-					input,
-					.Input,
-					.SuggestionName,
-					.SuggestionDescription {
-						color: #ffffff !important;
-					}
-					input::placeholder {
-						color: #cbd5e1 !important;
-					}
-				`
-			};
+			searchBox.theme = buildTheme($skin);
 			if (initialValue) {
 				try {
 					searchBox.value = initialValue;
@@ -95,6 +107,11 @@
 			unavailableReason = (err as Error)?.message || 'Place search unavailable';
 		}
 	});
+
+	// Re-theme live when the user switches skin.
+	$: if (searchBox) {
+		try { searchBox.theme = buildTheme($skin); } catch {}
+	}
 
 	onDestroy(() => {
 		try {

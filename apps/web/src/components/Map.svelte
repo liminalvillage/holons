@@ -198,6 +198,9 @@
 	let nativeLensData: Record<LensType, Set<string>> = emptyLensSets();
 	let fedLensData: Record<LensType, Set<string>> = emptyLensSets();
 	const fedProbed: Record<LensType, Set<string>> = emptyLensSets();
+	// (lens,hex) pairs we've already revalidated against the DB this session, so
+	// panning doesn't re-issue getAll for the same cache-seeded cell repeatedly.
+	const revalidated: Record<LensType, Set<string>> = emptyLensSets();
 
 	// Cap per pass so a wide, dense viewport doesn't fire thousands of
 	// getFederated round-trips at once. Local presence subscribes to all
@@ -220,14 +223,16 @@
 				const data = await (holosphere as any).getFederated(hex, lens, {
 					includeLocal: false,
 					includeFederated: true,
-					resolveReferences: false,
+					// Quests need the resolved record to read `status`; other
+					// lenses only need a presence count, so skip the resolve cost.
+					resolveReferences: lens === 'quests',
 					aggregate: false
 				});
-				// Quests lens: ignore federated quests that are completed, to
-				// match the local presence rule.
+				// Quests lens: only count federated quests that are open — not
+				// completed and not tombstoned — to match the local rule.
 				const hasContent = Array.isArray(data) && (
 					lens === 'quests'
-						? data.some((it: any) => it?.status !== 'completed')
+						? data.some((it: any) => it && it.status !== 'completed' && it._deleted !== true)
 						: data.length > 0
 				);
 				if (hasContent) {
@@ -278,6 +283,128 @@
 		canvases: new Map()
 	};
 
+	// Apply one item's contribution to a hex's presence sets, then repaint if
+	// the cell's (native) presence flipped. `isOpen=false` removes the key —
+	// used for completed quests so a cell un-lights when its last open quest is
+	// done. Gun nulls (deletes/replays) never reach here (filtered upstream),
+	// so non-quest presence stays monotonic; only explicit completion removes.
+	function applyPresence(
+		lens: LensType,
+		hex: string,
+		key: string,
+		isHologram: boolean,
+		isOpen: boolean,
+		itemKeys: Set<string>,
+		nativeKeys: Set<string>
+	) {
+		const had = itemKeys.size > 0;
+		const hadNative = nativeKeys.size > 0;
+		if (isOpen) {
+			itemKeys.add(key);
+			// A holographic item carries `_hologram.isHologram` — same flag the
+			// lens views gate on (see passesLensFilters). Everything else counts
+			// as native content authored at this cell.
+			if (!isHologram) nativeKeys.add(key);
+		} else {
+			itemKeys.delete(key);
+			nativeKeys.delete(key);
+		}
+		const has = itemKeys.size > 0;
+		const hasNative = nativeKeys.size > 0;
+
+		// Bump the cache timestamp on every emit so the entry stays warm.
+		presenceCache[lens].set(hex, { has, ts: Date.now() });
+		schedulePersistPresence(lens);
+
+		if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
+			if (has) lensData[lens].add(hex); else lensData[lens].delete(hex);
+			if (hasNative) nativeLensData[lens].add(hex); else nativeLensData[lens].delete(hex);
+			lensData[lens] = lensData[lens]; // Svelte reactivity poke
+			nativeLensData[lens] = nativeLensData[lens];
+			renderHexes(map, lens);
+		}
+	}
+
+	// Sentinel distinguishing a timed-out cold read from a genuine null.
+	const QUEST_READ_TIMEOUT = Symbol('quest-read-timeout');
+
+	// Authoritative, sanitized check of a quest's presence at a cell. `get`
+	// resolves the upcast hologram pointer to its origin AND filters tombstones
+	// by default, so this is the single source of truth for "should this cell
+	// be lit for this quest". Wrapped in a timeout because Gun cold reads for
+	// not-yet-replicated keys never fire.
+	//   'hide'    → completed, or gone (deleted / tombstoned origin)
+	//   'show'    → confirmed open
+	//   'unknown' → couldn't confirm (timed out) → leave as-is
+	async function resolveQuestPresence(hex: string, key: string): Promise<'hide' | 'show' | 'unknown'> {
+		try {
+			const rec: any = await Promise.race([
+				// resolveHolograms: follow the upcast pointer to its origin so we
+				// read the real status (no-op if get already resolves by default).
+				// Tombstones are filtered (includeDeleted defaults false) → null.
+				(holosphere as any).get(hex, 'quests', key, null, { resolveHolograms: true }),
+				new Promise((res) => window.setTimeout(() => res(QUEST_READ_TIMEOUT), 4000))
+			]);
+			if (rec === QUEST_READ_TIMEOUT) return 'unknown';
+			if (rec == null) return 'hide';
+			if (rec.status === 'completed' || rec._deleted === true) return 'hide';
+			return 'show';
+		} catch {
+			return 'unknown';
+		}
+	}
+
+	// Drop a cell's presence entirely: remove it from the rendered sets and
+	// mark the persisted cache not-lit, so a stale positive can't resurrect it.
+	// The live subscription's view is reset too, so a genuine future write can
+	// still re-light the cell cleanly.
+	function purgeHex(lens: LensType, hex: string) {
+		const wasLit = lensData[lens].delete(hex);
+		nativeLensData[lens].delete(hex);
+		presenceCache[lens].set(hex, { has: false, ts: Date.now() });
+		schedulePersistPresence(lens);
+		const sub = subscriptions[lens].get(hex);
+		if (sub) { sub.itemKeys.clear(); sub.nativeKeys.clear(); }
+		if (wasLit && lens === selectedLens) {
+			lensData[lens] = lensData[lens];
+			nativeLensData[lens] = nativeLensData[lens];
+			renderHexes(map, lens);
+		}
+	}
+
+	// Revalidate a cell that is lit ONLY from the persisted cache (no live items
+	// observed this session). Direct-DB or remote deletes/completions emit
+	// nothing through `subscribe`, so a stale cached positive would otherwise
+	// keep the cell lit until the 7-day TTL. We read the authoritative,
+	// tombstone-filtered set and purge cells with no ACTIVE content. A false
+	// purge (cold read) self-heals: the still-active subscription re-lights the
+	// cell when real data finally arrives.
+	async function revalidateCachedHex(lens: LensType, hex: string) {
+		try {
+			const items: any[] = await (holosphere as any).getAll(hex, lens);
+			// The subscription may have delivered real items while we read — if
+			// so, trust the live channel and don't purge.
+			if ((subscriptions[lens].get(hex)?.itemKeys.size ?? 0) > 0) return;
+
+			let active = Array.isArray(items) && items.length > 0;
+			if (active && lens === 'quests') {
+				// getAll already drops tombstones; also drop completed quests,
+				// resolving pointers that carry no inline status.
+				const verdicts = await Promise.all(
+					items.map((it: any) =>
+						typeof it?.status === 'string'
+							? Promise.resolve(it.status !== 'completed' && it._deleted !== true)
+							: resolveQuestPresence(hex, String(it?.id ?? it?.key ?? '')).then((v) => v !== 'hide')
+					)
+				);
+				active = verdicts.some(Boolean);
+			}
+			if (!active) purgeHex(lens, hex);
+		} catch {
+			// leave as-is on read failure
+		}
+	}
+
 	function subscribeHex(lens: LensType, hex: string) {
 		const subs = subscriptions[lens];
 		if (subs.has(hex) || !holosphere) return;
@@ -286,50 +413,37 @@
 		const nativeKeys = new Set<string>();
 		const handle = (holosphere as any).subscribe(hex, lens, (item: any, key?: string) => {
 			if (!key || key === '_') return;
-			// Monotonic positives: once we've seen real content at a hex, we
-			// keep it highlighted regardless of subsequent Gun nulls. Gun
-			// emits nulls on reconnects, replays, and missing-key reads — all
-			// noise for a "does this cell contain anything?" indicator. The
-			// trade-off: a genuinely-emptied hex stays highlighted until the
-			// cache entry is cleared (re-validation isn't free here, and the
-			// prototype value of "don't make discovered cells flicker out" is
-			// higher than instant deletion accuracy).
+			const isHologram = item?._hologram?.isHologram === true;
+
+			if (lens === 'quests') {
+				// Quests get sanitized: completed AND deleted/tombstoned must not
+				// light a cell. The emitted item can lag the origin (a stale-open
+				// upcast pointer over a completed/deleted source) or be a Gun null
+				// (a delete), so we never trust it alone.
+				if (item != null) {
+					// Optimistic: light immediately on inline-open so a freshly
+					// published task appears without waiting on a cold read. Hide
+					// at once if the record itself says completed/deleted.
+					const hideNow = item._deleted === true || item.status === 'completed';
+					applyPresence('quests', hex, key, isHologram, !hideNow, itemKeys, nativeKeys);
+					if (hideNow) return;
+				}
+				// Reconcile against the authoritative, tombstone-filtered read.
+				// Acts only on a definite verdict, so Gun's noise nulls don't
+				// cause flicker and a fresh task stays lit until truly resolved.
+				void resolveQuestPresence(hex, key).then((verdict) => {
+					if (verdict === 'unknown') return;
+					if (subscriptions.quests.get(hex)?.itemKeys !== itemKeys) return;
+					applyPresence('quests', hex, key, false, verdict === 'show', itemKeys, nativeKeys);
+				});
+				return;
+			}
+
+			// Non-quest lenses: ignore Gun nulls (reconnect/replay noise) and
+			// count any item — presence here is just "does this cell contain
+			// anything for this lens".
 			if (item == null) return;
-			const had = itemKeys.size > 0;
-			const hadNative = nativeKeys.size > 0;
-			// Completed quests don't count as presence — a cell whose only
-			// quests are done shouldn't stay highlighted (mirrors MapSidebar's
-			// list filter). Applies to native quests AND quest holograms, both
-			// of which carry `status`. A re-emit flipping to 'completed'
-			// actively un-counts the key, so a cell un-lights when its last
-			// open quest is completed.
-			if (lens === 'quests' && item?.status === 'completed') {
-				itemKeys.delete(key);
-				nativeKeys.delete(key);
-			} else {
-				itemKeys.add(key);
-				// A holographic item carries `_hologram.isHologram` — same flag
-				// the lens views gate on (see passesLensFilters). Everything
-				// else counts as native content authored at this cell.
-				if (item?._hologram?.isHologram !== true) nativeKeys.add(key);
-			}
-			const has = itemKeys.size > 0;
-			const hasNative = nativeKeys.size > 0;
-
-			// Bump the cache timestamp on every emit so the entry stays warm.
-			presenceCache[lens].set(hex, { has, ts: Date.now() });
-			schedulePersistPresence(lens);
-
-			// Repaint when presence (or native presence) flips in either
-			// direction — including the completion case above that can drop a
-			// cell back to empty.
-			if (lens === selectedLens && (had !== has || hadNative !== hasNative)) {
-				if (has) lensData[lens].add(hex); else lensData[lens].delete(hex);
-				if (hasNative) nativeLensData[lens].add(hex); else nativeLensData[lens].delete(hex);
-				lensData[lens] = lensData[lens]; // Svelte reactivity poke
-				nativeLensData[lens] = nativeLensData[lens];
-				renderHexes(map, lens);
-			}
+			applyPresence(lens, hex, key, isHologram, true, itemKeys, nativeKeys);
 		});
 
 		const unsubscribe =
@@ -1047,6 +1161,17 @@
 		// paints instantly while resubscribe re-establishes the live channel.
 		for (const hex of Array.from(subs.keys())) {
 			if (!visible.has(hex)) unsubscribeHex(currentLens, hex);
+		}
+
+		// Revalidate visible cells lit only from the cache (no live items yet),
+		// once per session each. Clears positives left behind by deletes or
+		// completions that never emitted to this client (direct-DB / remote).
+		const seen = revalidated[currentLens];
+		for (const hex of visible) {
+			if (!lensData[currentLens].has(hex) || seen.has(hex)) continue;
+			if ((subs.get(hex)?.itemKeys.size ?? 0) > 0) continue;
+			seen.add(hex);
+			void revalidateCachedHex(currentLens, hex);
 		}
 
 		// Federated presence overlay: probe the freshly-visible cells for
@@ -2574,6 +2699,72 @@
 
 	:global(.mapboxgl-ctrl-icon) {
 		filter: brightness(0) invert(1) !important;
+	}
+
+	/* ==========================================================================
+	   Whiteboard skin overrides
+	   --------------------------------------------------------------------------
+	   The control bar, info tooltip and Mapbox native controls are hardcoded
+	   dark glass (gradients + white borders), so they stay dark on the light
+	   map. Repaint them as light paper under the whiteboard scope. Accent
+	   (blue) icon colours read fine on the light surface and are left as-is.
+	   ========================================================================== */
+	:global(html[data-skin="whiteboard"]) .control-bar-inner {
+		background: linear-gradient(135deg, rgba(251, 248, 240, 0.96) 0%, rgba(243, 239, 228, 0.94) 100%);
+		border-color: rgba(32, 48, 47, 0.12);
+		box-shadow:
+			0 10px 40px rgba(32, 48, 47, 0.15),
+			0 4px 12px rgba(32, 48, 47, 0.1),
+			inset 0 1px 0 rgba(255, 255, 255, 0.7);
+	}
+	:global(html[data-skin="whiteboard"]) .control-bar-inner:hover {
+		box-shadow:
+			0 12px 50px rgba(32, 48, 47, 0.2),
+			0 6px 16px rgba(32, 48, 47, 0.12),
+			inset 0 1px 0 rgba(255, 255, 255, 0.8);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-select-embedded {
+		background-color: rgba(236, 231, 216, 0.85);
+		color: var(--color-text-primary);
+		border-color: rgba(32, 48, 47, 0.15);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-select-embedded:hover {
+		background-color: rgba(236, 231, 216, 1);
+	}
+	:global(html[data-skin="whiteboard"]) .control-divider {
+		background: linear-gradient(to bottom, rgba(32, 48, 47, 0), rgba(32, 48, 47, 0.18), rgba(32, 48, 47, 0));
+	}
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded,
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded::before {
+		background: linear-gradient(135deg, rgba(251, 248, 240, 0.99) 0%, rgba(243, 239, 228, 0.97) 100%);
+		border-color: rgba(32, 48, 47, 0.12);
+		color: var(--color-text-primary);
+	}
+	:global(html[data-skin="whiteboard"]) .info-tooltip-embedded {
+		box-shadow:
+			0 20px 60px rgba(32, 48, 47, 0.2),
+			0 10px 30px rgba(32, 48, 47, 0.12),
+			inset 0 1px 0 rgba(255, 255, 255, 0.7);
+	}
+	:global(html[data-skin="whiteboard"]) .tooltip-header h3 {
+		color: var(--color-text-primary);
+	}
+	:global(html[data-skin="whiteboard"]) .lens-option-item {
+		background: rgba(236, 231, 216, 0.6);
+		border-color: rgba(32, 48, 47, 0.08);
+	}
+
+	/* Mapbox native zoom/geolocate group: light glass + dark (un-inverted) icons.
+	   The mapbox classes are global, so the whole selector goes inside :global(). */
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-group) {
+		background: rgba(251, 248, 240, 0.96) !important;
+		border-color: rgba(32, 48, 47, 0.12) !important;
+	}
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-group > button:hover) {
+		background: rgba(236, 231, 216, 1) !important;
+	}
+	:global(html[data-skin="whiteboard"] .mapboxgl-ctrl-icon) {
+		filter: none !important;
 	}
 </style>
 

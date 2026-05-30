@@ -25,7 +25,7 @@
 		type?: 'task' | 'quest' | 'event' | 'recurring';
 		orderIndex?: number;
 		position?: { x: number; y: number };
-		dependsOn?: string[];
+		dependencies?: string[];
 		initiator?: {
 			id: string;
 			username: string;
