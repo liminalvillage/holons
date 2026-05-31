@@ -28,6 +28,13 @@ export const FREQUENCIES: Frequency[] = [
   'yearly',
 ];
 
+/**
+ * Cron-runtime-only extra cadences (sub-minute and six-month). NOT part of the
+ * canonical `Frequency` set that tick runtimes (`nextOccurrence`) handle — only
+ * `cronExpression` accepts them.
+ */
+export type CronCadence = Frequency | '1min' | '30sec' | 'sixmonths';
+
 /** A scheduled reminder. One-shot when `frequency` is null/absent. */
 export interface Reminder {
   id: string;

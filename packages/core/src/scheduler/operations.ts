@@ -6,7 +6,7 @@
 // All functions take their reference time explicitly so they're deterministic
 // and testable.
 
-import type { Frequency, Reminder } from './types.js';
+import type { CronCadence, Frequency, Reminder } from './types.js';
 
 /**
  * Advance a date by one cadence step. Returns a new Date. Uses UTC mutators so
@@ -43,6 +43,56 @@ export function nextOccurrence(frequency: Frequency, from: Date): Date {
 /** Reminders whose fire time has arrived (`fireAt <= now`). */
 export function dueReminders(reminders: Reminder[], nowIso: string): Reminder[] {
   return reminders.filter(r => r && r.fireAt && r.fireAt <= nowIso);
+}
+
+/**
+ * Build a 5-field (or 6-field for sub-minute) cron expression that fires at the
+ * `when` time-of-day on the cadence's schedule. UTC components, so it's
+ * timezone-independent. Returns null for an unparseable date/frequency.
+ *
+ * Cron runtimes (telegram) consume this; tick runtimes (discord/web) use
+ * `nextOccurrence`. Both share the canonical `Frequency` vocabulary; the
+ * sub-minute / six-month entries are cron-only extras.
+ */
+export function cronExpression(
+  frequency: CronCadence,
+  when: string | Date
+): string | null {
+  const date = when instanceof Date ? when : new Date(when);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const minute = date.getUTCMinutes();
+  const hour = date.getUTCHours();
+  const dayOfMonth = date.getUTCDate();
+  const month = date.getUTCMonth() + 1; // cron months are 1-indexed
+  const dayOfWeek = date.getUTCDay(); // 0 = Sunday
+
+  switch (frequency) {
+    case '30sec':
+      return '*/30 * * * * *';
+    case '1min':
+      return '*/1 * * * *';
+    case 'hourly':
+      return `${minute} * * * *`;
+    case 'daily':
+      return `${minute} ${hour} * * *`;
+    case 'weekly':
+      // Cron can't express true bi-weekly; weekly trigger + caller-side week
+      // check is how telegram approximates `biweekly` (same here).
+      return `${minute} ${hour} * * ${dayOfWeek}`;
+    case 'biweekly':
+      return `${minute} ${hour} * * ${dayOfWeek}`;
+    case 'monthly':
+      return `${minute} ${hour} ${dayOfMonth} * *`;
+    case 'quarterly':
+      return `${minute} ${hour} ${dayOfMonth} */3 *`;
+    case 'sixmonths':
+      return `${minute} ${hour} ${dayOfMonth} */6 *`;
+    case 'yearly':
+      return `${minute} ${hour} ${dayOfMonth} ${month} *`;
+    default:
+      return null;
+  }
 }
 
 /**

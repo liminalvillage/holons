@@ -5,6 +5,7 @@
 import { CronJob } from 'cron';
 import { Calendar } from './Calendar.js';
 import dayjs from 'dayjs';
+import { cronExpression } from '@holons/core/scheduler';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
 import { log } from '../utils/logger.js';
@@ -386,57 +387,15 @@ class Scheduler {
   }
 
   getCronTime(frequency, whenDate) {
-    // Ensure whenDate is a Date object (handle both Date objects and ISO strings)
-    const date = whenDate instanceof Date ? whenDate : new Date(whenDate);
-
-    // Validate the date
-    if (isNaN(date.getTime())) {
-      console.error(`Invalid date provided to getCronTime: ${whenDate}`);
-      return null;
+    // @holons/core/scheduler owns the cadence → cron-expression math (UTC),
+    // shared with the other UIs' schedulers.
+    const cron = cronExpression(String(frequency).toLowerCase(), whenDate);
+    if (!cron) {
+      console.error(
+        `Invalid frequency/date for cron: ${frequency} / ${whenDate}`
+      );
     }
-
-    // Use UTC components for scheduling
-    const minute = date.getUTCMinutes();
-    const hour = date.getUTCHours();
-    const dayOfMonth = date.getUTCDate();
-    const month = date.getUTCMonth() + 1; // Cron months are 1-indexed
-    const dayOfWeek = date.getUTCDay(); // 0 for Sunday
-
-    switch (frequency.toLowerCase()) {
-      case '1min':
-        return '*/1 * * * *'; // Every minute
-      case '30sec':
-        return '*/30 * * * * *'; // Every 30 seconds
-      case 'daily':
-        return `${minute} ${hour} * * *`; // Every day at specified UTC hour:minute
-      case 'weekly':
-        return `${minute} ${hour} * * ${dayOfWeek}`; // Every week on same UTC day at specified UTC hour:minute
-      case 'biweekly':
-        // Cron doesn't directly support bi-weekly easily.
-        // This attempts it but might not be perfect across month/year boundaries.
-        // A more robust solution might involve checking the week number within the job.
-        // For simplicity here, we schedule for the specific day of week.
-        // The execution logic would need to check if it should run this specific week.
-        // Alternatively, schedule two monthly jobs? This gets complex.
-        // Let's keep the weekly trigger for now.
-        console.warn(
-          'Bi-weekly scheduling using cron is approximated to weekly. Execution logic should verify week.'
-        );
-        return `${minute} ${hour} * * ${dayOfWeek}`;
-      case 'monthly':
-        return `${minute} ${hour} ${dayOfMonth} * *`; // Same day each month at specified UTC hour:minute
-      case 'quarterly':
-        return `${minute} ${hour} ${dayOfMonth} */3 *`; // Every third month on same day at specified UTC hour:minute
-      case 'sixmonths':
-        return `${minute} ${hour} ${dayOfMonth} */6 *`; // Every six months on same day
-      case 'yearly':
-        return `${minute} ${hour} ${dayOfMonth} ${month} *`; // Same date each year at specified UTC hour:minute
-      default:
-        console.error(
-          `Invalid frequency provided to getCronTime: ${frequency}`
-        );
-        return null;
-    }
+    return cron;
   }
 
   async stopTask(taskId) {
