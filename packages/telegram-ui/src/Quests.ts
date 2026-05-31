@@ -24,6 +24,9 @@ import {
     saveTasksToHolon,
     planTaskCompletion,
     executeCompletionPlan,
+    toggleParticipationExclusive,
+    toggleAppreciationExclusive,
+    toggleStopper,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -479,33 +482,14 @@ export default class Quests {
             quest.participants = quest.participants || [];
             quest.appreciation = quest.appreciation || [];
 
-            if (action === 'join') {
-                const idx = quest.participants.findIndex(u => u.id === sender.id);
-                if (idx > -1) {
-                    quest.participants.splice(idx, 1);
-                } else {
-                    quest.participants.push(sender);
-                }
-                quest.appreciation = quest.appreciation.filter(u => u.id !== sender.id);
-            } else {
-                const userIdx = quest.participants.findIndex(u => u.id === sender.id);
-                if (userIdx > -1) {
-                    if (quest.status === "completed") {
-                        return;
-                    }
-                    quest.participants.splice(userIdx, 1);
-                }
-
-                const appIdx = quest.appreciation.findIndex(u => u.id === sender.id);
-                if (appIdx > -1) {
-                    if (quest.status === "completed") {
-                        return;
-                    }
-                    quest.appreciation.splice(appIdx, 1);
-                } else {
-                    quest.appreciation.push(sender);
-                }
-            }
+            // Participation and appreciation are mutually exclusive per member;
+            // @holons/core owns that rule (doer XOR thanker). Completed quests
+            // are already short-circuited by handleCompletedQuestInteraction above.
+            const toggled = action === 'join'
+                ? toggleParticipationExclusive(quest, sender)
+                : toggleAppreciationExclusive(quest, sender);
+            quest.participants = toggled.participants;
+            quest.appreciation = toggled.appreciation;
 
             // Unified save and update - pass interacting user for personal hologram on join
             const interactingUser = (action === 'join') ? sender : null;
@@ -627,22 +611,23 @@ export default class Quests {
         if (!await this.questExists(quest, ctx, messageId)) return;
 
         const sender = ctx.callbackQuery.from;
-        const idx = quest.stoppers.findIndex(u => u.id === sender.id);
 
         // Answer callback query IMMEDIATELY
         ctx.answerCbQuery().catch(() => {});
 
-        if (idx > -1) {
-            quest.stoppers.splice(idx, 1);
-            ctx.reply(`${getDisplayName(sender)} revoked veto for "${quest.title}"`,
+        // @holons/core owns the veto state machine (stoppers ⇒ status 'stopped').
+        const { task: updated, stopped } = toggleStopper(quest, sender);
+        quest.stoppers = updated.stoppers;
+        quest.status = updated.status;
+
+        if (stopped) {
+            ctx.reply(`${getDisplayName(sender)} stopped "${quest.title}". Please address concerns.`,
                      { reply_to_message_id: messageId }).catch(() => {});
         } else {
-            quest.stoppers.push(sender);
-            ctx.reply(`${getDisplayName(sender)} stopped "${quest.title}". Please address concerns.`,
+            ctx.reply(`${getDisplayName(sender)} revoked veto for "${quest.title}"`,
                      { reply_to_message_id: messageId }).catch(() => {});
         }
 
-        quest.status = quest.stoppers.length > 0 ? 'stopped' : 'ongoing';
         // Unified save and update
         await this.updateMessage(ctx, quest, language);
     }

@@ -4,6 +4,7 @@
  */
 
 import { Markup } from 'telegraf';
+import { toggleRSVP } from '@holons/core/calendar';
 
 /**
  * RSVP system for event participation tracking.
@@ -79,16 +80,8 @@ export default class RSVP {
       return;
     }
 
-    if (typeof user.participated !== 'object') {
-      user.participated = {};
-      console.log('participate was not an object');
-    }
-
-    if (user.participated[messageId] == undefined) {
-      user.participated[messageId] = false;
-    }
-
-    user.participated[messageId] = !user.participated[messageId];
+    // @holons/core/calendar owns the RSVP toggle (participated[eventKey]).
+    toggleRSVP(user, messageId);
 
     await this.db.put(holonId.toString(), 'users', user);
     const users = await this.db.getAll(holonId.toString(), 'users');

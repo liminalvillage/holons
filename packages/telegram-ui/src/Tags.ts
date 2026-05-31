@@ -3,9 +3,9 @@
  * @module src/Tags
  */
 
-// NOTE: No @holons/core extraction yet — Phase B unit `tg-ui/remaining-modules`
-// only types this module. A future unit can extract pure tag aggregation logic
-// into `@holons/core/tags`.
+// Tag aggregation logic now lives in `@holons/core/tags`; this module is the
+// Telegram shell (command parsing + replies) over it.
+import { getTagEntries, tagMessage, type TagsDB } from '@holons/core/tags';
 
 // Minimal structural types so we don't depend on the full Telegraf surface
 // area in this UI-only handler. The bot/db are duck-typed against what this
@@ -14,21 +14,7 @@ type CommandHandler = (ctx: any) => any | Promise<any>;
 interface BotLike {
   command(name: string, handler: CommandHandler): unknown;
 }
-interface DbLike {
-  get(holonId: string, lens: string, id: string): Promise<any>;
-  put(holonId: string, lens: string, value: any): Promise<unknown>;
-}
-
-interface TagEntry {
-  holonId: number | string;
-  messageId: number;
-  messageContent: string | undefined;
-}
-
-interface TagObject {
-  id: string;
-  content: TagEntry[];
-}
+type DbLike = TagsDB;
 
 /**
  * Tag management system for categorizing messages and content.
@@ -63,17 +49,11 @@ export default class Tags {
       const messageContent: string | undefined = ctx.message.reply_to_message.text;
 
       for (let i = 0; i < tags.length; i++) {
-        let tagobject: TagObject | undefined = await this.db.get(
-          holonId.toString(),
-          'tags',
-          tags[i],
-        );
-        if (tagobject?.content) {
-          tagobject.content.push({ holonId, messageId, messageContent });
-        } else {
-          tagobject = { id: tags[i], content: [{ holonId, messageId, messageContent }] };
-        }
-        await this.db.put(holonId.toString(), 'tags', tagobject);
+        await tagMessage(this.db, holonId.toString(), tags[i], {
+          holonId,
+          messageId,
+          messageContent,
+        });
       }
 
       ctx.reply('Message tagged successfully.');
@@ -87,17 +67,13 @@ export default class Tags {
         return ctx.reply('Please specify a tag.');
       }
 
-      const tagobject: TagObject | undefined = await this.db.get(
-        holonId.toString(),
-        'tags',
-        tag,
-      );
+      const entries = await getTagEntries(this.db, holonId.toString(), tag);
 
-      if (!tagobject || !tagobject.content) {
+      if (entries.length === 0) {
         return ctx.reply('No messages found for this tag.');
       }
 
-      const response = tagobject.content.map((entry) => entry.messageContent).join('\n');
+      const response = entries.map((entry) => entry.messageContent).join('\n');
       ctx.reply(response);
     });
   }

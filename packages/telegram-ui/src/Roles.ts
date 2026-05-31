@@ -11,6 +11,10 @@ import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import fs from 'fs';
+import {
+    normalizeParticipants,
+    toggleParticipant as coreToggleRoleParticipant,
+} from '@holons/core/roles';
 
 /**
  * Role management class for creating and managing holon roles.
@@ -100,18 +104,7 @@ export default class Roles {
             if (role.participants && role.participants.length > 0) {
                 const hasStringParticipants = role.participants.some(p => typeof p === 'string');
                 if (hasStringParticipants) {
-                    // Convert string participants to user objects (with minimal info)
-                    role.participants = role.participants.map(p => {
-                        if (typeof p === 'string') {
-                            return {
-                                id: null, // We don't have the ID for old string participants
-                                username: p,
-                                first_name: null,
-                                last_name: null
-                            };
-                        }
-                        return p;
-                    });
+                    role.participants = normalizeParticipants(role.participants);
                     hasChanges = true;
                 }
             }
@@ -623,18 +616,7 @@ export default class Roles {
             if (role.participants && role.participants.length > 0) {
                 const hasStringParticipants = role.participants.some(p => typeof p === 'string');
                 if (hasStringParticipants) {
-                    // Convert string participants to user objects (with minimal info)
-                    role.participants = role.participants.map(p => {
-                        if (typeof p === 'string') {
-                            return {
-                                id: null, // We don't have the ID for old string participants
-                                username: p,
-                                first_name: null,
-                                last_name: null
-                            };
-                        }
-                        return p;
-                    });
+                    role.participants = normalizeParticipants(role.participants);
                     hasChanges = true;
                 }
             }
@@ -718,51 +700,17 @@ export default class Roles {
 
         let role = await this.db.get(holonId.toString(), 'roles', roleid);
 
-        // Migrate old string-based participants to user objects if needed
-        if (role.participants && role.participants.length > 0) {
-            const hasStringParticipants = role.participants.some(p => typeof p === 'string');
-            if (hasStringParticipants) {
-                // Convert string participants to user objects (with minimal info)
-                role.participants = role.participants.map(p => {
-                    if (typeof p === 'string') {
-                        return {
-                            id: null, // We don't have the ID for old string participants
-                            username: p,
-                            first_name: null,
-                            last_name: null
-                        };
-                    }
-                    return p;
-                });
-                // Save the migrated role
-                await this.db.put(holonId.toString(), 'roles', role);
-            }
-        }
-
-        // Create a user object with full information
-        const userObject = {
+        // @holons/core/roles owns membership: it normalizes legacy string
+        // participants and toggles the member by id (falling back to username).
+        const user = {
             id: userID,
             username: username,
             first_name: ctx.callbackQuery.from.first_name,
-            last_name: ctx.callbackQuery.from.last_name
+            last_name: ctx.callbackQuery.from.last_name,
         };
-
-        // Check if user is already in the role (by ID)
-        const existingUserIndex = role.participants?.findIndex(user => 
-            (typeof user === 'string' && user === username) || 
-            (typeof user === 'object' && user.id === userID)
-        );
-
-        if (existingUserIndex !== -1) {
-            // Remove user from role
-            role.participants.splice(existingUserIndex, 1);
-            ctx.answerCbQuery('You have removed yourself from this role');
-        } else {
-            // Add user to role
-            if (!role.participants) role.participants = [];
-            role.participants.push(userObject);
-            ctx.answerCbQuery('You joined the role');
-        }
+        const { role: updatedRole, joined } = coreToggleRoleParticipant(role, user);
+        role = updatedRole;
+        ctx.answerCbQuery(joined ? 'You joined the role' : 'You have removed yourself from this role');
 
         await this.db.put(holonId.toString(), 'roles', role); // saves changes to the role
 
