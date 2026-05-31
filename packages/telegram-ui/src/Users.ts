@@ -13,10 +13,18 @@ import * as utils from './utilities.js';
 import { REAEventStore } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import type { ScoreEquation } from '@holons/core/scoring';
+import {
+  getUsers as coreGetUsers,
+  getUserProfile as coreGetUserProfile,
+  ensureUserProfile as coreEnsureUserProfile,
+  addUserValues as coreAddUserValues,
+  addUserNeeds as coreAddUserNeeds,
+} from '@holons/core/users';
 
-// `@holons/core/users` ships function exports (getUserProfile, joinHolon, ...);
-// the bot keeps a class-shaped service-locator pattern below for backwards
-// compat with existing handlers, structurally typed against UsersServiceLike.
+// `@holons/core/users` owns profile/membership logic; the LocalUsersService
+// below is a thin class-shaped locator delegating to it (kept for backwards
+// compat with existing Telegraf handlers), structurally typed against
+// UsersServiceLike. REA aggregate merging stays local (getUserInfo).
 
 // ----------------------------------------------------------------------------
 // Local types modelling the Telegraf surface we need. Kept narrow on purpose
@@ -81,11 +89,6 @@ interface UserInfoWithAggregates extends UserProfile {
   hours: number;
   collaboration: unknown;
   actions: unknown[];
-}
-
-/** holosphere returns '' for missing keys; treat that and nullish as "no profile". */
-function isUserProfile(v: unknown): v is UserProfile {
-  return v !== null && typeof v === 'object' && 'id' in (v as object);
 }
 
 /**
@@ -162,42 +165,18 @@ class LocalUsersService implements UsersServiceLike {
   }
 
   async getUsers(holonId: string) {
-    return this.db.getAll(holonId, 'users');
+    return coreGetUsers(this.db as any, holonId);
   }
 
   async getUserProfile(
     user: TelegramUser,
     holonId: string,
   ): Promise<UserProfile | null> {
-    if (user?.is_bot) return null;
-    if (!holonId) return null;
-
-    const holonIdStr = String(holonId);
-    const stored = await this.db.get(holonIdStr, 'users', user.id);
-    if (isUserProfile(stored)) return stored;
-
-    const userinfo: UserProfile = {
-      id: user.id,
-      version: '0.3', // REA version
-      username: user.username ? user.username : user.id,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      values: [],
-      needs: [],
-      participated: {},
-    };
-    await this.db.put(holonIdStr, 'users', userinfo);
-    return userinfo;
+    return coreGetUserProfile(this.db as any, user as any, holonId) as Promise<UserProfile | null>;
   }
 
   async ensureUserProfile(user: TelegramUser, holonId: string) {
-    if (user?.is_bot) return;
-    if (!holonId) return;
-
-    const stored = await this.db.get(holonId, 'users', user.id);
-    if (!isUserProfile(stored)) {
-      await this.getUserProfile(user, holonId);
-    }
+    await coreEnsureUserProfile(this.db as any, user as any, holonId);
   }
 
   async getUserInfo(
@@ -239,11 +218,7 @@ class LocalUsersService implements UsersServiceLike {
     holonId: string,
     values: string[],
   ) {
-    const userinfo = (await this.getUserProfile(user, holonId)) as UserProfile;
-    if (!userinfo.values) userinfo.values = [];
-    userinfo.values = Array.from(new Set(userinfo.values.concat(values)));
-    await this.db.put(holonId, 'users', userinfo);
-    return userinfo;
+    return coreAddUserValues(this.db as any, user as any, holonId, values) as Promise<UserProfile>;
   }
 
   async addNeedToProfile(
@@ -251,11 +226,7 @@ class LocalUsersService implements UsersServiceLike {
     holonId: string,
     needs: string[],
   ) {
-    const userinfo = (await this.getUserProfile(user, holonId)) as UserProfile;
-    if (!userinfo.needs) userinfo.needs = [];
-    userinfo.needs = Array.from(new Set(userinfo.needs.concat(needs)));
-    await this.db.put(holonId, 'users', userinfo);
-    return userinfo;
+    return coreAddUserNeeds(this.db as any, user as any, holonId, needs) as Promise<UserProfile>;
   }
 
   async removeUser(holonId: string, userId: string | number) {
