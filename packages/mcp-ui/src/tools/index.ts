@@ -20,6 +20,10 @@ const DOMAINS = [
   'federation',
   'commands',
   'settings',
+  'roles',
+  'announcements',
+  'tags',
+  'scheduler',
 ];
 
 export async function registerAllTools(server: McpServer, deps: ToolDeps): Promise<void> {
