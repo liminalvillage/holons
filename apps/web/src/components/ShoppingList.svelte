@@ -14,6 +14,11 @@
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
     import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
+    import {
+        toggleItem as coreToggleItem,
+        removeItem as coreRemoveItem,
+        removeChecked as coreRemoveChecked,
+    } from "@holons/core/shopping";
 
     // Storage layout matches HolonsBot: a single container document under the
     // `checklists` collection with id `shopping`, holding all items in `items[]`.
@@ -239,12 +244,12 @@
         if (!isLocalItem(item)) return;
 
         try {
-            const list = ensureLocalList();
-            const target = list.items.find(i => String(i.id) === String(item.id));
-            if (!target) return;
-            target.checked = !target.checked;
+            // Core owns the toggle rule; cast at the boundary (it preserves
+            // our extra fields via spread).
+            const updated = coreToggleItem(ensureLocalList() as any, item.id) as ShoppingChecklist | null;
+            if (!updated) return;
+            localList = updated;
             await saveLocalList();
-            localList = { ...list, items: [...list.items] };
         } catch (error) {
             handleWriteError(error, 'Failed to toggle item:');
         }
@@ -279,10 +284,10 @@
         if (!isLocalItem(item)) return;
 
         try {
-            const list = ensureLocalList();
-            list.items = list.items.filter(i => String(i.id) !== String(item.id));
+            const updated = coreRemoveItem(ensureLocalList() as any, item.id) as ShoppingChecklist | null;
+            if (!updated) return;
+            localList = updated;
             await saveLocalList();
-            localList = { ...list };
         } catch (error) {
             handleWriteError(error, 'Failed to remove item:');
         }
@@ -293,9 +298,10 @@
         if (!localList.items.some(i => i.checked)) return;
 
         try {
-            localList.items = localList.items.filter(i => !i.checked);
+            const updated = coreRemoveChecked(localList as any) as ShoppingChecklist | null;
+            if (!updated) return;
+            localList = updated;
             await saveLocalList();
-            localList = { ...localList };
         } catch (error) {
             handleWriteError(error, 'Failed to remove checked items:');
         }

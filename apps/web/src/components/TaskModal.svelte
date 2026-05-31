@@ -29,7 +29,7 @@
         createChecklistObject,
     } from "@holons/core/checklists";
     import {
-        addParticipant as coreAddParticipant,
+        toggleParticipant as coreToggleParticipant,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -229,21 +229,21 @@
         const isSelected = participantIds.has(userIdStr);
         const base = { ...quest, participants: quest.participants || [] };
 
-        let updatedQuest: any;
+        // Core owns the participants membership logic (add/remove by id).
+        const newParticipant = {
+            id: user.id,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            username: user.username,
+        };
+        let updatedQuest: any = coreToggleParticipant(base, newParticipant);
+
+        // Dropping a participant also drops their time-tracking entry (a UI
+        // concern not owned by core).
         if (isSelected) {
-            const newList = base.participants.filter((p: any) => String(p.id) !== userIdStr);
             const newTime = { ...(quest.timeTracking || {}) };
             if (newTime[user.id] != null) delete newTime[user.id];
-            updatedQuest = { ...base, participants: newList, timeTracking: newTime };
-        } else {
-            const newParticipant = {
-                id: user.id,
-                firstName: user.first_name,
-                lastName: user.last_name,
-                username: user.username,
-            };
-            const newList = coreAddParticipant(base, newParticipant).participants;
-            updatedQuest = { ...base, participants: newList };
+            updatedQuest = { ...updatedQuest, timeTracking: newTime };
         }
 
         const previousQuest = quest;
