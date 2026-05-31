@@ -126,7 +126,10 @@ class Announcements {
       );
 
       // Get existing federation tracking info (@holons/core owns the key).
-      const federationKey = buildFederationKey(announcement.chat, announcement.id);
+      const federationKey = buildFederationKey(
+        announcement.chat,
+        announcement.id
+      );
       const federatedMessages = (await this.db.getGlobal(
         'federation_messages',
         federationKey
@@ -138,7 +141,10 @@ class Announcements {
       };
 
       // @holons/core selects targets (outbound minus self).
-      for (const federatedholonId of selectFederationTargets(fedInfo, announcement.chat)) {
+      for (const federatedholonId of selectFederationTargets(
+        fedInfo,
+        announcement.chat
+      )) {
         console.log(
           `[handleFederatedAnnouncements] Processing federated chat ${federatedholonId}`
         );
@@ -148,7 +154,9 @@ class Announcements {
           const targetFedInfo = await this.db.getFederation(federatedholonId);
           const sourceholonId = announcement.chat.toString();
 
-          if (!targetAcceptsLens(targetFedInfo, sourceholonId, 'announcements')) {
+          if (
+            !targetAcceptsLens(targetFedInfo, sourceholonId, 'announcements')
+          ) {
             console.log(
               `[handleFederatedAnnouncements] Skipping ${federatedholonId} - 'announcements' lens not accepted from ${sourceholonId}`
             );
@@ -265,7 +273,9 @@ class Announcements {
   createAnnouncementMessage(announcement, language, originalHolonName = null) {
     const userDisplayName =
       announcement.user.first_name || announcement.user.username || 'Unknown';
-    const dateStr = new Date(announcement.created ?? announcement.date).toLocaleString();
+    const dateStr = new Date(
+      announcement.created ?? announcement.date
+    ).toLocaleString();
 
     let message = `📢 *${utils.i18next.t('announcement', { lng: language, defaultValue: 'Announcement' })}*\n\n`;
     message += `${announcement.content}\n\n`;
