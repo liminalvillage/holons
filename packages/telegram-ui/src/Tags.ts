@@ -45,11 +45,12 @@ export default class Tags {
       }
 
       const messageId: number = ctx.message.reply_to_message.message_id;
-      const holonId: number | string = ctx.message.chat.id;
+      // Holon ids are always strings — coerce Telegram's numeric chat id here.
+      const holonId: string = ctx.message.chat.id.toString();
       const messageContent: string | undefined = ctx.message.reply_to_message.text;
 
       for (let i = 0; i < tags.length; i++) {
-        await tagMessage(this.db, holonId.toString(), tags[i], {
+        await tagMessage(this.db, holonId, tags[i], {
           holonId,
           messageId,
           messageContent,
@@ -61,13 +62,13 @@ export default class Tags {
 
     // Query tagged messages
     this.bot.command('gettag', async (ctx: any) => {
-      const holonId: number | string = ctx.message.chat.id;
+      const holonId: string = ctx.message.chat.id.toString();
       const tag: string | undefined = ctx.message.text.split(' ')[1];
       if (!tag) {
         return ctx.reply('Please specify a tag.');
       }
 
-      const entries = await getTagEntries(this.db, holonId.toString(), tag);
+      const entries = await getTagEntries(this.db, holonId, tag);
 
       if (entries.length === 0) {
         return ctx.reply('No messages found for this tag.');

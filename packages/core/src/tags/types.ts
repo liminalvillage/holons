@@ -8,7 +8,7 @@
 
 /** One tagged reference. `messageId` is UI-shaped (Telegram/Discord message id). */
 export interface TagEntry {
-  holonId: string | number;
+  holonId: string;
   messageId: string | number;
   messageContent?: string;
   [key: string]: unknown;
