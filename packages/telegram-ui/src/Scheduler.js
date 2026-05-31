@@ -11,6 +11,10 @@ import {
   saveRecurringTask,
   listRecurringTasks,
   recurringLookupKey,
+  createQuestReminder,
+  saveQuestReminder,
+  listQuestReminders,
+  deleteQuestReminder,
 } from '@holons/core/scheduler';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
@@ -905,18 +909,9 @@ class Scheduler {
 
   async saveReminderRecord(reminder) {
     try {
-      // Store in the global reminders table
-      await this.db.putGlobal('reminders', reminder);
-
-      // Create lookup reference for easy retrieval
-      const lookupKey = `${reminder.holonId}${reminder.questId}`;
-      const lookupData = {
-        id: lookupKey,
-        reminderId: reminder.id,
-      };
-
-      await this.db.putGlobal('reminderslookup', lookupData);
-
+      // @holons/core/scheduler owns the quest-reminder shape + global
+      // persistence (record + lookup), shared with the other UIs.
+      await saveQuestReminder(this.db, createQuestReminder(reminder));
       return true;
     } catch (error) {
       console.error('Error saving reminder record:', error);
@@ -927,21 +922,9 @@ class Scheduler {
 
   async deleteReminderRecord(reminderId) {
     try {
-      console.log(`Deleting reminder record: ${reminderId}`);
-
-      // Get the reminder to find associated lookup
-      const reminder = await this.db.getGlobal('reminders', reminderId);
-      if (reminder) {
-        // Delete the lookup record if it exists
-        const lookupId = `${reminder.holonId}${reminder.questId}`;
-        await this.db.deleteGlobal('reminderslookup', lookupId);
-        console.log(`Deleted reminder lookup: ${lookupId}`);
-      }
-
-      // Delete the main reminder record
-      await this.db.deleteGlobal('reminders', reminderId);
+      // Core deletes the record + its lookup index.
+      await deleteQuestReminder(this.db, reminderId);
       console.log(`Deleted reminder record: ${reminderId}`);
-
       return true;
     } catch (error) {
       console.error(`Error deleting reminder record ${reminderId}:`, error);
@@ -1284,8 +1267,8 @@ class Scheduler {
   async loadReminders() {
     console.log('Loading saved one-time reminders...');
     try {
-      // Get all reminders from the global reminders table
-      const reminders = await this.db.getAllGlobal('reminders');
+      // Normalised via core (created ISO, holonId string).
+      const reminders = await listQuestReminders(this.db);
       let loadedReminders = 0;
 
       if (reminders && reminders.length > 0) {
