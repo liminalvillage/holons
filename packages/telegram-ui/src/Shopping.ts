@@ -11,11 +11,15 @@
 import { Markup, Telegraf } from 'telegraf';
 import * as utils from './utilities.js';
 
-// NOTE: `@holons/core/shopping` is being extracted in parallel by Phase B
-// Unit 5. Until it lands the import will fail to resolve. The structural
-// delegation below is intentional so that swap-in is a single-line change.
-// @ts-expect-error -- target import; module appears once Unit 5 lands.
-import type { ShoppingService as CoreShoppingService } from '@holons/core/shopping';
+import {
+  createEmptyChecklist,
+  normalizeChecklist,
+  addItems as coreAddItems,
+  toggleItem as coreToggleItem,
+  removeChecked as coreRemoveChecked,
+  type ShoppingChecklist,
+  type ShoppingItem as CoreShoppingItem,
+} from '@holons/core/shopping';
 
 // ----------------------------------------------------------------------------
 // Local types
@@ -38,21 +42,9 @@ interface Settings {
   getLanguage: (holonId: string | number) => Promise<string>;
 }
 
-interface ShoppingItem {
-  id: number;
-  text: string;
-  checked: boolean;
-  createdBy?: number;
-  category?: string;
-}
-
-interface ShoppingList {
-  id: 'shopping';
-  type: 'shopping';
-  title: string;
-  items: ShoppingItem[];
-  createdAt: number;
-}
+// Canonical shapes are owned by @holons/core/shopping (created: ISO).
+type ShoppingItem = CoreShoppingItem;
+type ShoppingList = ShoppingChecklist;
 
 /**
  * Interface mirroring `@holons/core/shopping`. The implementation is inline
@@ -81,21 +73,8 @@ class LocalShoppingService implements ShoppingServiceLike {
   }
 
   async getList(holonId: string): Promise<ShoppingList | null> {
-    const list = (await this.db.get(holonId, 'checklists', 'shopping')) as
-      | ShoppingList
-      | null
-      | undefined;
-    return list ?? null;
-  }
-
-  private newEmptyList(): ShoppingList {
-    return {
-      id: 'shopping',
-      type: 'shopping',
-      title: 'Shopping List',
-      items: [],
-      createdAt: Date.now(),
-    };
+    // Read-normalize: promotes legacy createdAt(ms) → created(ISO).
+    return normalizeChecklist(await this.db.get(holonId, 'checklists', 'shopping'));
   }
 
   async addItems(
@@ -104,39 +83,30 @@ class LocalShoppingService implements ShoppingServiceLike {
     createdBy?: number,
     category?: string,
   ) {
-    let list = await this.getList(holonId);
-    if (!list) list = this.newEmptyList();
-
-    const cat = typeof category === 'string' ? category.trim() : '';
-    const newItems: ShoppingItem[] = items.map((text) => ({
-      id: Date.now() + Math.random(),
-      text,
-      checked: false,
-      createdBy,
-      ...(cat ? { category: cat } : {}),
-    }));
-    list.items.push(...newItems);
-    await this.db.put(holonId, 'checklists', list);
-    return list;
+    const list = (await this.getList(holonId)) ?? createEmptyChecklist();
+    const updated = coreAddItems(list, items, {
+      ...(createdBy != null ? { createdBy } : {}),
+      ...(typeof category === 'string' ? { category } : {}),
+    });
+    await this.db.put(holonId, 'checklists', updated);
+    return updated;
   }
 
   async toggleItem(holonId: string, itemId: string | number) {
     const list = await this.getList(holonId);
-    if (!list || !list.items) return null;
-    const item = list.items.find((i) => i.id == itemId);
-    if (!item) return null;
-    item.checked = !item.checked;
-    await this.db.put(holonId, 'checklists', list);
-    return list;
+    if (!list) return null;
+    const updated = coreToggleItem(list, itemId);
+    if (!updated) return null;
+    await this.db.put(holonId, 'checklists', updated);
+    return updated;
   }
 
   async removeChecked(holonId: string) {
-    const list = (await this.getList(holonId)) ?? this.newEmptyList();
+    const list = (await this.getList(holonId)) ?? createEmptyChecklist();
     const before = list.items.length;
-    list.items = list.items.filter((item) => !item.checked);
-    const removed = before - list.items.length;
-    await this.db.put(holonId, 'checklists', list);
-    return { list, removed };
+    const updated = coreRemoveChecked(list) ?? createEmptyChecklist();
+    await this.db.put(holonId, 'checklists', updated);
+    return { list: updated, removed: before - updated.items.length };
   }
 }
 
@@ -423,4 +393,4 @@ class Shopping {
 }
 
 export default Shopping;
-export type { ShoppingServiceLike, CoreShoppingService };
+export type { ShoppingServiceLike };
