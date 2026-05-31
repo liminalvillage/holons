@@ -6,3 +6,4 @@
 export * from './types.js';
 export * from './operations.js';
 export * from './persistence.js';
+export * from './recurring.js';

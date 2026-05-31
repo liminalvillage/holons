@@ -5,7 +5,13 @@
 import { CronJob } from 'cron';
 import { Calendar } from './Calendar.js';
 import dayjs from 'dayjs';
-import { cronExpression } from '@holons/core/scheduler';
+import {
+  cronExpression,
+  createRecurringTask,
+  saveRecurringTask,
+  listRecurringTasks,
+  recurringLookupKey,
+} from '@holons/core/scheduler';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
 import { log } from '../utils/logger.js';
@@ -106,8 +112,8 @@ class Scheduler {
   }
 
   async loadTasks() {
-    // Load all recurring tasks from database and schedule them
-    const tasks = await this.db.getAllGlobal('recurring');
+    // Load all recurring tasks (normalised via core: created ISO, holonId string).
+    const tasks = await listRecurringTasks(this.db);
 
     if (tasks && tasks.length > 0) {
       tasks.forEach(async task => {
@@ -163,20 +169,20 @@ class Scheduler {
 
     const quest = await this.quests.quest('recurring', ctx);
 
-    const task = {
+    // @holons/core/scheduler owns the recurring-task shape (created ISO,
+    // holonId string), shared with the other UIs.
+    const task = createRecurringTask({
       id: quest.id,
-      holonId: holonId,
+      holonId,
       title: taskDetails,
-      frequency: frequency,
-      when: new Date().toISOString(), // Convert Date to string for Nostr serialization
-      createdAt: new Date().toISOString(), // Convert Date to string for Nostr serialization
+      frequency,
       initiator: ctx.message.from,
-    };
+    });
 
     // Save to database
-    await this.db.putGlobal('recurring', task);
+    await saveRecurringTask(this.db, task);
     await this.db.putGlobal('recurringlookup', {
-      id: holonId + quest.id,
+      id: recurringLookupKey(holonId, quest.id),
       taskID: task.id,
     });
 
