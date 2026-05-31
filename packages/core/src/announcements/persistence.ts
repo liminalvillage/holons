@@ -29,7 +29,9 @@ export async function listAnnouncements(
     []) as Announcement[];
   return list
     .filter(Boolean)
-    .sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
+    .sort((a, b) =>
+      String(b.created ?? '').localeCompare(String(a.created ?? '')),
+    );
 }
 
 /** Load the federation tracking record, or a fresh empty one. */

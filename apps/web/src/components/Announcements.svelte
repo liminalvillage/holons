@@ -41,7 +41,9 @@
 			username?: string;
 		};
 		content: string;
-		date: string;
+		/** Canonical timestamp; legacy records may carry `date` instead. */
+		created?: string;
+		date?: string;
 	}
 
 	let store: Record<string, Announcement> = {};
@@ -152,8 +154,8 @@
 							class="text-right
                         text-gray-400 text-sm"
 						>
-							{new Date(announcement.date).toLocaleDateString()}
-							{new Date(announcement.date).toLocaleTimeString()}
+							{new Date(announcement.created ?? announcement.date ?? '').toLocaleDateString()}
+							{new Date(announcement.created ?? announcement.date ?? '').toLocaleTimeString()}
 						</p>
 					</div>
 				</div>

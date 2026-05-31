@@ -23,7 +23,7 @@ export function createAnnouncement(input: {
   return {
     id: input.id,
     user: input.user,
-    date: new Date().toISOString(),
+    created: new Date().toISOString(),
     content: input.content,
     chat: String(input.chat),
   };

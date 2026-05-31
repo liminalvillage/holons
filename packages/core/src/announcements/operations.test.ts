@@ -12,12 +12,12 @@ import {
 } from './operations.js';
 
 describe('announcements/operations', () => {
-  it('createAnnouncement stamps date and stringifies chat', () => {
+  it('createAnnouncement stamps created and stringifies chat', () => {
     const a = createAnnouncement({ id: 5, content: 'hi', chat: 123 as unknown as string });
     expect(a.id).toBe(5);
     expect(a.content).toBe('hi');
     expect(a.chat).toBe('123');
-    expect(typeof a.date).toBe('string');
+    expect(typeof a.created).toBe('string');
   });
 
   it('federationKey is stable', () => {

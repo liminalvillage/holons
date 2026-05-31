@@ -4,6 +4,12 @@
  */
 
 import * as utils from './utilities.js';
+import {
+  createAnnouncement,
+  federationKey as buildFederationKey,
+  selectFederationTargets,
+  targetAcceptsLens,
+} from '@holons/core/announcements';
 
 /**
  * Announcement system for broadcasting messages across holons.
@@ -73,13 +79,13 @@ class Announcements {
       originalMessageId !== null ? originalMessageId : ctx.message.message_id;
     const language = await this.settings.getLanguage(holonId);
 
-    const announcement = {
+    // @holons/core owns the announcement shape (created: ISO).
+    const announcement = createAnnouncement({
       id: messageId,
-      user: ctx.from,
-      date: new Date(),
       content: message,
       chat: holonId,
-    };
+      user: ctx.from,
+    });
 
     await this.db.put(holonId.toString(), 'announcements', announcement);
 
@@ -119,8 +125,8 @@ class Announcements {
         fedInfo.outbound
       );
 
-      // Get existing federation tracking info
-      const federationKey = `${announcement.chat}_${announcement.id}_fedannouncements`;
+      // Get existing federation tracking info (@holons/core owns the key).
+      const federationKey = buildFederationKey(announcement.chat, announcement.id);
       const federatedMessages = (await this.db.getGlobal(
         'federation_messages',
         federationKey
@@ -131,42 +137,23 @@ class Announcements {
         messages: [],
       };
 
-      for (const federatedholonId of fedInfo.outbound) {
-        // Skip if it's the same chat as the original
-        if (federatedholonId === announcement.chat) {
-          console.log(
-            `[handleFederatedAnnouncements] Skipping same chat ${federatedholonId}`
-          );
-          continue;
-        }
-
+      // @holons/core selects targets (outbound minus self).
+      for (const federatedholonId of selectFederationTargets(fedInfo, announcement.chat)) {
         console.log(
           `[handleFederatedAnnouncements] Processing federated chat ${federatedholonId}`
         );
 
-        // Check if the target holon has allowed the 'announcements' lens in their federation array
+        // Only deliver if the target accepts the 'announcements' lens FROM us.
         try {
           const targetFedInfo = await this.db.getFederation(federatedholonId);
-          console.log(
-            `[handleFederatedAnnouncements] Target federation info for ${federatedholonId}:`,
-            targetFedInfo
-          );
-
-          // Check if the target chat has lensConfig and if it allows 'announcements' lens in their inbound
-          // (receiver's inbound = what they accept FROM us)
           const sourceholonId = announcement.chat.toString();
-          const targetLensConfig = targetFedInfo?.lensConfig?.[sourceholonId];
 
-          if (!targetLensConfig?.inbound?.includes('announcements')) {
+          if (!targetAcceptsLens(targetFedInfo, sourceholonId, 'announcements')) {
             console.log(
-              `[handleFederatedAnnouncements] Skipping federated announcement to ${federatedholonId} - 'announcements' lens not in their inbound for chat ${sourceholonId}`
+              `[handleFederatedAnnouncements] Skipping ${federatedholonId} - 'announcements' lens not accepted from ${sourceholonId}`
             );
             continue;
           }
-
-          console.log(
-            `[handleFederatedAnnouncements] Target chat ${federatedholonId} accepts 'announcements' lens from chat ${sourceholonId}, proceeding with message`
-          );
         } catch (error) {
           console.error(
             `[handleFederatedAnnouncements] Error checking federation settings for chat ${federatedholonId}:`,
@@ -278,7 +265,7 @@ class Announcements {
   createAnnouncementMessage(announcement, language, originalHolonName = null) {
     const userDisplayName =
       announcement.user.first_name || announcement.user.username || 'Unknown';
-    const dateStr = new Date(announcement.date).toLocaleString();
+    const dateStr = new Date(announcement.created ?? announcement.date).toLocaleString();
 
     let message = `📢 *${utils.i18next.t('announcement', { lng: language, defaultValue: 'Announcement' })}*\n\n`;
     message += `${announcement.content}\n\n`;

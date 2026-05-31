@@ -13,8 +13,8 @@ export interface Announcement {
   id: string | number;
   /** The actor who published it (UI-shaped; optional). */
   user?: unknown;
-  /** ISO timestamp. */
-  date: string;
+  /** Canonical creation timestamp (ISO string). */
+  created: string;
   content: string;
   /** Source holon id. */
   chat: string;
