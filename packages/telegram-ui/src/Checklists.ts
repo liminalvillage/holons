@@ -12,6 +12,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import {
     CHECKLIST_TYPES as CHECKLIST_TYPES_CORE,
+    createChecklistObject as coreCreateChecklistObject,
     type Checklist,
     type ChecklistItem,
     type ChecklistType,
@@ -88,39 +89,11 @@ class Checklists {
         this.bot.action('back_to_all_checklists', (ctx) => this.handleBackToChecklists(ctx));
     }
 
-    // Helper method to create a standardized checklist object
+    // Helper method to create a standardized checklist object.
+    // Delegates to @holons/core/checklists so the shape (incl. `created` ISO)
+    // stays aligned across UIs.
     createChecklistObject(id, type, options = {}) {
-        const baseChecklist = {
-            id: id,
-            type: type,
-            items: [],
-            created: new Date(),
-            creator: options.creator || null
-        };
-
-        // Add type-specific fields
-        switch (type) {
-            case CHECKLIST_TYPES.QUEST:
-                return {
-                    ...baseChecklist,
-                    questId: options.questId,
-                    parentTitle: options.parentTitle,
-                    holonId: options.holonId
-                };
-            case CHECKLIST_TYPES.ROLE:
-                return {
-                    ...baseChecklist,
-                    roleId: options.roleId,
-                    parentTitle: options.parentTitle,
-                    holonId: options.holonId
-                };
-            case CHECKLIST_TYPES.AGENDA:
-            case CHECKLIST_TYPES.SHOPPING:
-                return baseChecklist;
-            case CHECKLIST_TYPES.CHECKLIST:
-            default:
-                return baseChecklist;
-        }
+        return coreCreateChecklistObject(id, type, options);
     }
 
     // Helper method to get display title for any checklist
