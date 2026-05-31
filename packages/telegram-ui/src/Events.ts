@@ -22,6 +22,8 @@ import {
     saveTasksToHolon,
     planTaskCompletion,
     executeCompletionPlan,
+    toggleParticipationExclusive,
+    toggleAppreciationExclusive,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -348,27 +350,13 @@ export default class Events {
             event.participants = event.participants || [];
             event.appreciation = event.appreciation || [];
 
-            if (action === 'join') {
-                const idx = event.participants.findIndex(u => u.id === sender.id);
-                if (idx > -1) {
-                    event.participants.splice(idx, 1);
-                } else {
-                    event.participants.push(sender);
-                }
-                event.appreciation = event.appreciation.filter(u => u.id !== sender.id);
-            } else {
-                const userIdx = event.participants.findIndex(u => u.id === sender.id);
-                if (userIdx > -1 && event.status === "completed") return;
-                if (userIdx > -1) event.participants.splice(userIdx, 1);
-
-                const appIdx = event.appreciation.findIndex(u => u.id === sender.id);
-                if (appIdx > -1) {
-                    if (event.status === "completed") return;
-                    event.appreciation.splice(appIdx, 1);
-                } else {
-                    event.appreciation.push(sender);
-                }
-            }
+            // Participation XOR appreciation is owned by @holons/core; completed
+            // events are short-circuited by handleCompletedEventInteraction above.
+            const toggled = action === 'join'
+                ? toggleParticipationExclusive(event, sender)
+                : toggleAppreciationExclusive(event, sender);
+            event.participants = toggled.participants;
+            event.appreciation = toggled.appreciation;
 
             // Save event using the same holonId we fetched from
             try {
