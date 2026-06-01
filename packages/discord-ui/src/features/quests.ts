@@ -19,8 +19,8 @@ import {
   createTask,
   deleteTaskWithCascade,
   saveTaskToHolon,
-  toggleAppreciationExclusive,
-  toggleParticipationExclusive,
+  toggleAppreciation,
+  toggleParticipant,
   toggleStopper,
   type Quest,
   type QuestInitiator,
@@ -206,7 +206,7 @@ export const questsFeature: Feature = {
     }
 
     if (parsed.action === 'toggle') {
-      const updated = toggleParticipationExclusive(quest, initiatorFrom(user));
+      const updated = toggleParticipant(quest, initiatorFrom(user));
       await saveTaskToHolon(ctx.holosphere, holonId, updated);
       await interaction.editReply({
         embeds: [questEmbed(updated)],
@@ -216,7 +216,7 @@ export const questsFeature: Feature = {
     }
 
     if (parsed.action === 'appreciate') {
-      const updated = toggleAppreciationExclusive(quest, initiatorFrom(user));
+      const updated = toggleAppreciation(quest, initiatorFrom(user));
       await saveTaskToHolon(ctx.holosphere, holonId, updated);
       await interaction.editReply({
         embeds: [questEmbed(updated)],

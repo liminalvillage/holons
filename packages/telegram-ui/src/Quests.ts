@@ -24,8 +24,8 @@ import {
     saveTasksToHolon,
     planTaskCompletion,
     executeCompletionPlan,
-    toggleParticipationExclusive,
-    toggleAppreciationExclusive,
+    toggleParticipant,
+    toggleAppreciation,
     toggleStopper,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
@@ -486,8 +486,8 @@ export default class Quests {
             // @holons/core owns that rule (doer XOR thanker). Completed quests
             // are already short-circuited by handleCompletedQuestInteraction above.
             const toggled = action === 'join'
-                ? toggleParticipationExclusive(quest, sender)
-                : toggleAppreciationExclusive(quest, sender);
+                ? toggleParticipant(quest, sender)
+                : toggleAppreciation(quest, sender);
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
 

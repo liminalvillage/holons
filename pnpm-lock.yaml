@@ -16,7 +16,7 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  apps/akasha:
+  apps/kiosk:
     dependencies:
       '@holons/core':
         specifier: workspace:*

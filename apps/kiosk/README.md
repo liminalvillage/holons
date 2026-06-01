@@ -1,0 +1,117 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+
+# kiosk
+
+A minimal, touch-first **kiosk PWA** for the entrance of the hub. One vertical
+screen, three views, auto-rotating between them unless someone is interacting:
+
+1. **Calendar** — the month at a glance, with post-it notes for what's coming up.
+2. **Tasks** — the backlog, as a wall of sticky notes.
+3. **Library** — the library of things, and what's available to borrow.
+
+_Less is more._ Just the holon's life, served read-only and local-first from
+[Holosphere](https://gun.eco) — with a small caretaker **Settings** panel for
+the few knobs that matter.
+
+## How it works
+
+- **Fully independent** SvelteKit SPA (`@sveltejs/adapter-static`, served as
+  plain files from anywhere). It depends only on `holosphere` and `@holons/core`
+  — it reuses the shared HoloSphere factory and library domain helpers, and
+  re-implements no domain rules of its own (core owns meaning).
+- **Live data:** subscribes to the holon's `quests` lens (calendar events + task
+  backlog) and `library` lens.
+- **Federated view:** a header toggle (available from every tab) folds in the
+  holon's federation partners — resolved from `@holons/core/federation`'s
+  `getFederationSnapshot` — so each tab can show the combined picture. Items
+  from a partner carry a small `⇄ <partner>` source chip.
+- **Settings:** the ⚙ button opens a panel to choose which holon the screen
+  shows, set a **display name** and **logo** for the header (logo uploaded and
+  stored on the device), flip the federated toggle, and jump to the full
+  dashboard. Choices are remembered on the device; the live subscriptions
+  re-point without a reload.
+- **Production by default:** the entrance display reads the production `Holons`
+  namespace from the production Gun relay — independent of the shared dev
+  `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
+- **Holon button:** the ⬡ button opens the holon's full web dashboard at
+  `https://dashboard.holons.io/<holon-id>` in a new tab.
+- **Tap to zoom:** any post-it or card comes forward into a detail card showing
+  everything about it. Viewing is open to all.
+- **Edit when logged in:** sign in with Telegram (Login Widget on the web, or the
+  native WebApp identity inside Telegram) to edit events/tasks, mark them
+  complete, and borrow / return library things. Not logged in → a friendly
+  "log in to edit" prompt. The kiosk holds its own device key to _sign_ writes;
+  the acting identity recorded on each write is the logged-in user (`actingAs`),
+  exactly as the bot writes on behalf of chat members. Borrowing/lending meaning
+  comes from `@holons/core/library` — no domain rules are re-implemented here.
+- **Auto-rotation:** advances one tab every 16s; any touch/scroll/key pauses it
+  and it resumes after 30s of stillness. A thin bar under the active tab shows
+  time to the next flip. Rotation freezes while a detail card is open.
+- **PWA:** installable, fullscreen, portrait-locked, with an offline app shell.
+
+## Configuration
+
+The kiosk shares the monorepo-root `.env`. It reads exactly two vars (see
+[`.env.example`](./.env.example)), each overridable per device via a URL query
+param or the in-app **Settings** panel, then remembered in `localStorage`:
+
+| What          | Env var            | URL param / Settings | Default                     |
+| ------------- | ------------------ | -------------------- | --------------------------- |
+| Holon to show | `VITE_KIOSK_HOLON` | `?holon=<id>`        | _(none)_                    |
+| App namespace | `VITE_KIOSK_APP`   | `?app=<name>`        | `Holons` (production)       |
+| Gun relay     | `VITE_KIOSK_PEER`  | —                    | `https://gun.holons.io/gun` |
+
+To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
+or open **Settings** and type the id. The kiosk reads production data by default.
+
+**Editing** is optional and off until configured. Set
+`VITE_TELEGRAM_BOT_USERNAME` to the hub's bot to enable the Telegram Login
+Widget. The bot's login domain must be registered as **`hubs.network`** via
+`@BotFather` `/setdomain` — Telegram honours that domain and all its subdomains,
+so a single `/setdomain hubs.network` authorises every `*.hubs.network` kiosk.
+In dev, `VITE_DEV_TELEGRAM_USER_*` auto-signs-in so you can exercise editing
+without the widget.
+
+## Develop
+
+```bash
+pnpm -F kiosk dev       # http://localhost:5273
+pnpm -F kiosk build     # static build → ./build
+pnpm -F kiosk preview   # serve the production build
+```
+
+## Deploy (Netlify, multi-tenant)
+
+**One deploy serves every registered holon.** Point a wildcard domain
+(`*.hubs.network`) at a single Netlify site; the app reads the host's subdomain
+at runtime and looks up the holon in [`src/lib/holons.ts`](./src/lib/holons.ts):
+
+```ts
+// src/lib/holons.ts
+export const SUBDOMAIN_HOLONS: Record<string, string> = {
+  liminal: "-1001234567890", // liminal.hubs.network → this holon
+  // …one line per registered holon
+};
+```
+
+Resolution order is `?holon=<id>` → subdomain → Settings/localStorage →
+`VITE_KIOSK_HOLON`, so a registered subdomain is authoritative for its host
+while `?holon=` still works for testing.
+
+- **Git deploy:** [`netlify.toml`](./netlify.toml) builds `@holons/core` then the
+  kiosk and publishes `apps/kiosk/build` as a static SPA. In the Netlify site
+  settings, set the **base directory** to `apps/kiosk`.
+- **Manual deploy:** [`deploy.sh`](./deploy.sh) (needs the Netlify CLI + a linked
+  site):
+
+  ```bash
+  pnpm -F kiosk deploy:preview   # draft preview URL
+  pnpm -F kiosk deploy           # production
+  ```
+
+> The apps consume core's **compiled `dist`**, so every deploy rebuilds
+> `@holons/core` first — a change to `packages/core` won't take effect otherwise.
+
+## License
+
+AGPL-3.0-or-later — see [`LICENSING.md`](../../LICENSING.md).

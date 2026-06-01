@@ -1,0 +1,341 @@
+<script lang="ts">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  // Caretaker settings for the kiosk: choose which holon the screen shows, set a
+  // display name, logo, and accent colour. Everything is persisted (see
+  // config.ts) and applied reactively — no reload needed. (Federated toggle and
+  // the dashboard link live in the user menu.)
+  import {
+    holonId,
+    holonName,
+    brandName,
+    brandLogo,
+    accent,
+    settingsOpen,
+  } from "$lib/stores";
+  import {
+    setHolonId,
+    setBrandName,
+    setBrandLogo,
+    setAccent,
+    DEFAULT_ACCENT,
+  } from "$lib/config";
+
+  // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
+  let draftHolon = $holonId ?? "";
+  let draftName = $brandName;
+  let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
+  let draftAccent = $accent || DEFAULT_ACCENT;
+  let logoError = "";
+
+  const SWATCHES = [
+    DEFAULT_ACCENT,
+    "#3b6fb0",
+    "#7a5cc0",
+    "#c0567a",
+    "#c47d2f",
+    "#2f9e6b",
+  ];
+
+  function onLogoFile(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    logoError = "";
+    if (!file.type.startsWith("image/")) {
+      logoError = "Please choose an image file.";
+      return;
+    }
+    if (file.size > 512 * 1024) {
+      logoError = "Image is too large — keep it under 512 KB.";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => (draftLogo = String(reader.result ?? ""));
+    reader.onerror = () => (logoError = "Could not read that image.");
+    reader.readAsDataURL(file);
+  }
+
+  function clearLogo() {
+    draftLogo = "";
+    logoError = "";
+  }
+
+  function apply() {
+    const id = draftHolon.trim();
+    if (id) {
+      setHolonId(id);
+      holonId.set(id);
+    }
+    setBrandName(draftName);
+    brandName.set(draftName.trim());
+    setBrandLogo(draftLogo || null);
+    brandLogo.set(draftLogo);
+    setAccent(draftAccent);
+    accent.set(draftAccent);
+    settingsOpen.set(false);
+  }
+</script>
+
+<div class="settings">
+  <div class="glyph" aria-hidden="true">⚙</div>
+  <h3>Kiosk settings</h3>
+
+  <label class="field"
+    >Holon
+    <input
+      type="text"
+      bind:value={draftHolon}
+      placeholder="holon id"
+      inputmode="numeric"
+      on:keydown={(e) => e.key === "Enter" && apply()}
+    />
+  </label>
+
+  <label class="field"
+    >Display name
+    <input
+      type="text"
+      bind:value={draftName}
+      placeholder={$holonName || "shown in the header"}
+      on:keydown={(e) => e.key === "Enter" && apply()}
+    />
+  </label>
+
+  <div class="field">
+    Logo <span class="sub">— optional; the name shows as text otherwise</span>
+    <div class="logo-row">
+      <div class="logo-preview" class:empty={!draftLogo}>
+        {#if draftLogo}
+          <img src={draftLogo} alt="Logo preview" />
+        {:else}
+          <span class="wm">{draftName.trim() || $holonName || "name"}</span>
+        {/if}
+      </div>
+      <div class="logo-actions">
+        <label class="upload">
+          Upload…
+          <input type="file" accept="image/*" on:change={onLogoFile} />
+        </label>
+        {#if draftLogo}
+          <button type="button" class="link" on:click={clearLogo}
+            >Use default</button
+          >
+        {/if}
+      </div>
+    </div>
+    {#if logoError}<p class="err">{logoError}</p>{/if}
+  </div>
+
+  <div class="field">
+    Accent colour
+    <div class="accent-row">
+      {#each SWATCHES as sw (sw)}
+        <button
+          type="button"
+          class="swatch"
+          class:sel={draftAccent.toLowerCase() === sw.toLowerCase()}
+          style="background: {sw};"
+          aria-label="Accent {sw}"
+          on:click={() => (draftAccent = sw)}
+        ></button>
+      {/each}
+      <label class="swatch custom" style="background: {draftAccent};">
+        <input
+          type="color"
+          bind:value={draftAccent}
+          aria-label="Custom accent"
+        />
+      </label>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" on:click={apply}>Apply</button>
+    <button class="ghost" on:click={() => settingsOpen.set(false)}
+      >Cancel</button
+    >
+  </div>
+</div>
+
+<style>
+  .settings {
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+  }
+  .glyph {
+    font-size: 2rem;
+    color: var(--teal);
+  }
+  h3 {
+    margin: 0.4rem 0 1rem;
+    font-size: 1.3rem;
+    color: var(--ink);
+  }
+  .field {
+    display: block;
+    text-align: left;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-top: 1rem;
+  }
+  input[type="text"] {
+    display: block;
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.7rem 0.8rem;
+    font-size: 1rem;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+
+  /* Logo picker */
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 0.4rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .logo-preview {
+    flex: 0 0 auto;
+    width: 64px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .logo-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  .logo-preview.empty .wm {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--teal-deep);
+    padding: 0 0.3rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sub {
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--muted);
+  }
+  .logo-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+  .upload {
+    display: inline-block;
+    padding: 0.5rem 0.9rem;
+    border-radius: 10px;
+    background: var(--paper);
+    color: var(--teal-deep);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .upload input {
+    display: none;
+  }
+  .link {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-decoration: underline;
+  }
+  .err {
+    text-align: left;
+    margin: 0.4rem 0 0;
+    font-size: 0.82rem;
+    color: #9a3b2f;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .accent-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.45rem;
+  }
+  .swatch {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    box-shadow: var(--shadow-soft);
+    position: relative;
+    transition: transform 0.1s ease;
+  }
+  .swatch:active {
+    transform: scale(0.9);
+  }
+  .swatch.sel {
+    outline: 3px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .swatch.custom {
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    border: 2px dashed rgba(255, 255, 255, 0.7);
+  }
+  .swatch.custom input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.3rem;
+  }
+  .primary,
+  .ghost {
+    flex: 1;
+    min-width: 8rem;
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+    transition: transform 0.1s ease;
+  }
+  .primary {
+    background: var(--teal);
+    color: #fff;
+    box-shadow: var(--shadow-soft);
+  }
+  .ghost {
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--ink);
+  }
+  .primary:active,
+  .ghost:active {
+    transform: scale(0.97);
+  }
+</style>

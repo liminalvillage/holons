@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Kiosk">
+  <rect width="512" height="512" rx="112" fill="#0e6b66"/>
+  <!-- Three nodes (calendar · tasks · library) joined into one quiet glyph. -->
+  <g fill="none" stroke="#f7f4ec" stroke-width="14" stroke-linecap="round">
+    <circle cx="256" cy="256" r="150" stroke-opacity="0.35"/>
+    <path d="M256 150 L353 312 L159 312 Z" stroke-opacity="0.9"/>
+  </g>
+  <g fill="#f7f4ec">
+    <circle cx="256" cy="150" r="26"/>
+    <circle cx="353" cy="312" r="26"/>
+    <circle cx="159" cy="312" r="26"/>
+  </g>
+  <circle cx="256" cy="256" r="20" fill="#ffe79a"/>
+</svg>

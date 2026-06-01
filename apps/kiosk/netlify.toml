@@ -1,0 +1,49 @@
+# Netlify config for the Kiosk (apps/kiosk) — a static SvelteKit SPA.
+#
+# In the Netlify site settings set the base directory to `apps/kiosk` so this
+# file is picked up. Install + build run from the monorepo root (`cd ../..`) so
+# the pnpm workspace is intact and @holons/core is BUILT before the kiosk
+# (the apps consume core's compiled dist, not its TS source). The static output
+# lands in apps/kiosk/build, which `publish` resolves relative to `base`.
+#
+# Multi-tenant: point a wildcard domain (`*.hubs.network`) at this one site.
+# The app reads the host's subdomain at runtime and looks up the holon in
+# src/lib/holons.ts — one deploy serves every registered holon.
+
+[build]
+  base = "apps/kiosk"
+  publish = "build"
+  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile && pnpm -F @holons/core build && pnpm -F kiosk build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--prefer-online"
+  # These VITE_* values are public-by-design (inlined into the client bundle by
+  # contract). Whitelist them so Netlify's secrets scanner doesn't flag them.
+  # NEVER add a private key here.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_KIOSK_HOLON,VITE_KIOSK_APP,VITE_KIOSK_PEER,VITE_HOLONS_APP,VITE_TELEGRAM_BOT_USERNAME"
+
+# SPA fallback: every path serves the single index.html so client-side routing
+# (and refreshes on any subdomain) work.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Long-cache the content-hashed build assets; never cache the HTML shell.
+[[headers]]
+  for = "/_app/immutable/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
