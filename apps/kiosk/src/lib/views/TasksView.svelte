@@ -63,6 +63,12 @@
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
 
+  // Until the user drags this session, follow the backlog's order (which
+  // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
+  // saved arrangement. Once they reorder, preserve the local order so live data
+  // updates don't reshuffle the board under them.
+  let touched = false;
+
   function syncOrder(tasks: BacklogTask[]) {
     if (drag) return; // never reshuffle mid-drag
     const have = new Set(tasks.map((t) => t.id));
@@ -70,7 +76,7 @@
     for (const id of Object.keys(completing)) {
       if (!have.has(id)) uncomplete(id);
     }
-    const next = reconcile(order, tasks);
+    const next = touched ? reconcile(order, tasks) : tasks.map((t) => t.id); // adopt the persisted order on load
     if (next.length !== order.length || next.some((id, i) => id !== order[i])) {
       order = next;
     }
@@ -192,6 +198,7 @@
     pendingId = null;
     pendingRect = null;
     if (moved) {
+      touched = true; // keep the local order; don't let live updates reshuffle
       justDragged = true; // swallow the click that follows pointerup
       setTimeout(() => (justDragged = false), 0);
       void persistOrder();
@@ -209,8 +216,11 @@
     const writer = await getWriter(hid);
     for (let i = 0; i < order.length; i++) {
       const q = quests.find((x) => String(x.id ?? x.title) === order[i]);
-      if (!q || q.orderIndex === i) continue; // only write what changed
-      await writer.put("quests", { ...q, orderIndex: i });
+      if (!q || Number(q.orderIndex) === i) continue; // only write what changed
+      // Drop the UI-only `_holon` federation tag before persisting.
+      const clean: Record<string, unknown> = { ...q };
+      delete clean._holon;
+      await writer.put("quests", { ...clean, orderIndex: i });
     }
   }
 

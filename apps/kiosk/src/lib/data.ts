@@ -178,7 +178,12 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
-      orderIndex: typeof q.orderIndex === "number" ? q.orderIndex : undefined,
+      // Tolerate a string round-trip from the store (e.g. "3") so manual order
+      // survives a reload.
+      orderIndex:
+        q.orderIndex != null && Number.isFinite(Number(q.orderIndex))
+          ? Number(q.orderIndex)
+          : undefined,
     });
   }
   // Manually-ordered tasks first (by orderIndex), then the rest alphabetically.
