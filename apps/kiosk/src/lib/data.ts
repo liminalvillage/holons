@@ -100,6 +100,8 @@ export interface BacklogTask {
   people: TaskPerson[];
   /** Number of appreciators. */
   appreciation: number;
+  /** Ids of the appreciators, so a card can show whether *you* appreciate it. */
+  appreciatedBy: (string | number)[];
   source?: string;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
   orderIndex?: number;
@@ -121,6 +123,14 @@ function toPeople(arr: unknown): TaskPerson[] {
 
 function countOf(arr: unknown): number {
   return Array.isArray(arr) ? arr.length : 0;
+}
+
+/** Appreciator ids, for matching against the logged-in user. */
+function idsOf(arr: unknown): (string | number)[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((p: any) => p?.id ?? p?.username)
+    .filter((id): id is string | number => id != null);
 }
 
 /** Dated, still-open quests → calendar events, soonest first. */
@@ -177,6 +187,7 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       participants: countOf(q.participants),
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
+      appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
       // survives a reload.

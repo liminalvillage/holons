@@ -14,6 +14,7 @@
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
   import { checkComplete, recordCompletion } from "$lib/complete";
+  import { toggleAppreciate } from "$lib/membership";
   import { noteColor, noteTilt, type BacklogTask } from "$lib/data";
   import { createTask, type Quest } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
@@ -32,6 +33,60 @@
       e.preventDefault();
       openTask(id);
     }
+  }
+
+  // Does the logged-in user currently appreciate this task?
+  $: appreciatorId = $telegramUser?.id;
+  function amAppreciating(task: BacklogTask): boolean {
+    return appreciatorId != null && task.appreciatedBy.includes(appreciatorId);
+  }
+
+  // Appreciating is exclusive of participating (core's participate-XOR-appreciate
+  // invariant), so turning it on while you're a participant silently drops you
+  // from the doers — warn before that happens.
+  function wouldDropParticipation(task: BacklogTask): boolean {
+    return (
+      !amAppreciating(task) &&
+      appreciatorId != null &&
+      task.people.some((p) => p.id === appreciatorId)
+    );
+  }
+
+  // The task whose appreciation needs confirming because it'd remove the user
+  // as a participant; null when no prompt is pending.
+  let confirmDrop: BacklogTask | null = null;
+
+  // Heart tap: toggle the logged-in user's appreciation of the task. If that
+  // would remove them as a participant, confirm first; otherwise just do it.
+  async function toggleAppr(task: BacklogTask) {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) {
+      loginOpen.set(true);
+      return;
+    }
+    if (wouldDropParticipation(task)) {
+      confirmDrop = task;
+      return;
+    }
+    await doAppreciate(task);
+  }
+
+  async function doAppreciate(task: BacklogTask) {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) return;
+    try {
+      await toggleAppreciate(hid, task.id, user);
+    } catch (err) {
+      console.error("[kiosk] appreciate failed", err);
+    }
+  }
+
+  function confirmAppreciate() {
+    const task = confirmDrop;
+    confirmDrop = null;
+    if (task) void doAppreciate(task);
   }
 
   function dueLabel(t: BacklogTask): string | null {
@@ -398,13 +453,26 @@
                   {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
                   {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
                     >{/if}
-                  {#if task.appreciation}<span class="appr"
-                      ><span class="h">♥</span> {task.appreciation}</span
-                    >{/if}
                 </div>
-                {#if task.people.length}
-                  <div class="cardfoot"><Avatars people={task.people} /></div>
-                {/if}
+                <div class="cardfoot">
+                  <button
+                    class="heart"
+                    class:on={amAppreciating(task)}
+                    on:pointerdown|stopPropagation
+                    on:click|stopPropagation={() => toggleAppr(task)}
+                    aria-label="Appreciate"
+                    aria-pressed={amAppreciating(task)}
+                    title="Appreciate"
+                  >
+                    <span class="glyph" aria-hidden="true">♥</span>
+                    {#if task.appreciation}
+                      <span class="count">{task.appreciation}</span>
+                    {/if}
+                  </button>
+                  {#if task.people.length}
+                    <Avatars people={task.people} />
+                  {/if}
+                </div>
               </article>
             </span>
             {#if completing[task.id]}
@@ -428,6 +496,25 @@
     ＋
   </button>
 </div>
+
+{#if confirmDrop}
+  <Modal on:close={() => (confirmDrop = null)}>
+    <div class="add">
+      <div class="glyph heart-glyph" aria-hidden="true">♥</div>
+      <h3>Appreciate instead?</h3>
+      <p class="lead">
+        You're a participant on “{confirmDrop.title}”. Appreciating it removes
+        you from the participants.
+      </p>
+      <div class="actions">
+        <button class="primary" on:click={confirmAppreciate}>Appreciate</button>
+        <button class="ghost" on:click={() => (confirmDrop = null)}
+          >Cancel</button
+        >
+      </div>
+    </div>
+  </Modal>
+{/if}
 
 {#if addOpen}
   <Modal on:close={() => (addOpen = false)}>
@@ -464,13 +551,22 @@
         {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span>{/if}
         {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
           >{/if}
-        {#if drag.task.appreciation}<span class="appr"
-            ><span class="h">♥</span> {drag.task.appreciation}</span
-          >{/if}
       </div>
-      {#if drag.task.people.length}
-        <div class="cardfoot"><Avatars people={drag.task.people} /></div>
-      {/if}
+      <div class="cardfoot">
+        <span
+          class="heart"
+          class:on={amAppreciating(drag.task)}
+          aria-hidden="true"
+        >
+          <span class="glyph">♥</span>
+          {#if drag.task.appreciation}
+            <span class="count">{drag.task.appreciation}</span>
+          {/if}
+        </span>
+        {#if drag.task.people.length}
+          <Avatars people={drag.task.people} />
+        {/if}
+      </div>
     </article>
   </div>
 {/if}
@@ -686,23 +782,50 @@
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
   }
-  /* Participant avatar stack, bottom-right of the post-it. */
+  /* Footer row: appreciation heart on the left, participant avatars on the
+     right — each on its own side, matching sizes. */
   .cardfoot {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin-top: 0.6rem;
   }
-  .appr {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.15rem;
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #9a3b2f;
-  }
-  .appr .h {
-    font-size: 1.4em;
+
+  /* Appreciation heart — same footprint as an avatar (1.7rem), with the count
+     nested inside it. Tap toggles your own appreciation. */
+  .note .heart {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 1.7rem;
+    height: 1.7rem;
     line-height: 1;
+    /* Muted by default; brightens when you've appreciated (see .on). */
+    color: rgba(154, 59, 47, 0.55);
+    touch-action: manipulation;
+    transition:
+      transform 0.1s ease,
+      color 0.15s ease;
+  }
+  .note .heart .glyph {
+    grid-area: 1 / 1;
+    font-size: 1.7rem;
+  }
+  .note .heart .count {
+    grid-area: 1 / 1;
+    /* Sit the number inside the heart's body, nudged below its centre. */
+    transform: translateY(0.1em);
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  }
+  .note .heart.on {
+    color: #d4493a;
+  }
+  .note .heart:active {
+    transform: scale(0.88);
   }
   .empty {
     color: var(--muted);
@@ -732,6 +855,10 @@
     font-size: 1.8rem;
     color: var(--teal);
     font-weight: 800;
+  }
+  .add .glyph.heart-glyph {
+    color: #d4493a;
+    font-size: 2.2rem;
   }
   .add h3 {
     margin: 0.2rem 0 0.3rem;
