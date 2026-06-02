@@ -5,6 +5,11 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 const config = {
   kit: {
     adapter: adapter(),
+    // The monorepo keeps a single root .env (shared by web + bot). Point
+    // SvelteKit's $env loader there so $env/dynamic/private sees server secrets
+    // (TELEGRAM, AUTH_JWT_SECRET, NOSTR_DERIVATION_SECRET) in local dev. In
+    // production these come from the platform's process.env (Netlify) regardless.
+    env: { dir: "../.." },
   },
   build: {
     rollupOptions: {

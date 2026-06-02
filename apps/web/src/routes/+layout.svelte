@@ -29,9 +29,6 @@
 	// and starts emitting its "Fetching ALL items" trail.
 	if (browser) installQuietLogs();
 
-	// Accept data from layout load function (includes URL private key parameter)
-	export let data: { urlPrivateKey: string | null };
-
 	// Track if user has passed the splash screen
 	let showSplash = true;
 	let splashComplete = false;
@@ -59,10 +56,6 @@
 	let pendingHolonName: string | null = null;
 	let pendingTelegramUserId: number | null = null;
 
-	// Track if this is a telegram-mapped session (user without local key)
-	let isTelegramMappedSession = false;
-	let telegramMappedPublicKey: string | null = null;
-
 	// Splash UX deadline. The library's correctness timeouts are 5s (writes)
 	// and 8s (reads) — fine for general code paths but too long for the splash,
 	// which must feel responsive. Use this to race calls that don't accept a
@@ -88,14 +81,12 @@
 
 		// Telegram users are namespaced by their Telegram user id, so the URL and
 		// holon storage key reflect who they are (e.g. /12345678/...) rather
-		// than the underlying Nostr signing key. Falls back to the mapped Nostr
-		// pubkey for legacy sessions or to client.publicKey for plain Nostr.
+		// than the underlying derived Nostr signing key. Falls back to the
+		// client pubkey only if there's no Telegram id (shouldn't happen now).
 		const userPublicKey = pendingTelegramUserId
 			? String(pendingTelegramUserId)
-			: isTelegramMappedSession && telegramMappedPublicKey
-				? telegramMappedPublicKey
-				: holosphere.client.publicKey;
-		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession, 'telegramUserId:', pendingTelegramUserId);
+			: holosphere.client.publicKey;
+		console.log('Initializing user holon with ID:', userPublicKey, 'telegramUserId:', pendingTelegramUserId);
 
 		try {
 			// Check if holon settings already exist with a short retry — Gun may
@@ -205,11 +196,11 @@
 			const isGenuinelyNewUser = !!pendingNameForThisUser && !existingSettings;
 			const isFirstTimeUser = !existingSettings || !existingNameValid;
 
-			// Telegram-mapped is the primary identity flow now, so it writes
+			// Telegram is the primary identity flow now, so it writes
 			// settings/HNS/mappings just like a Nostr session. A new user is
 			// either one that arrived via the Create flow (pendingName set) or
 			// a fresh telegram user with no settings yet.
-			const isFreshTelegramUser = isTelegramMappedSession && !!pendingTelegramUserId && !existingSettings;
+			const isFreshTelegramUser = !!pendingTelegramUserId && !existingSettings;
 			if (isGenuinelyNewUser || isFreshTelegramUser) {
 				console.log('New user - creating personal holon:', holonName);
 				// Library default is 5s; splash needs faster. Local radisk
@@ -552,10 +543,12 @@
 		}
 	});
 
-	// Handle splash screen completion
+	// Handle splash screen completion. The signing key is the per-user Nostr key
+	// derived server-side from the verified Telegram session — telegramStore has
+	// already handed it to nostrStore, so we just read it here.
 	async function handleAuthenticated(event: CustomEvent) {
 		const { publicKey, holonName, telegramUserId, mode } = event.detail;
-		console.log('User authenticated with public key:', publicKey, 'mode:', mode, 'holonName:', holonName);
+		console.log('User authenticated:', publicKey, 'mode:', mode, 'holonName:', holonName);
 
 		// Store holon name and telegram user ID for use in initializeUserHolon
 		if (holonName) {
@@ -565,114 +558,58 @@
 			pendingTelegramUserId = telegramUserId;
 		}
 
-		// Determine which private key to use
-		let privateKey: string | null = null;
-
-		if (mode === 'telegram-mapped') {
-			// Telegram Mini App user with existing mapping but no local key
-			// Use holosphere service key for backend operations
-			// But set the ID to the user's mapped public key
-			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-			isTelegramMappedSession = true;
-			telegramMappedPublicKey = publicKey;
-			console.log('Telegram mapped session - using service key, navigating to user holon:', publicKey);
-		} else {
-			// Private mode - get the private key from the store
-			const state = nostrStore.getState();
-			privateKey = state.privateKey;
+		const privateKey = nostrStore.getState().privateKey;
+		if (!privateKey) {
+			console.error('No signing key available for initialization');
+			window.dispatchEvent(new CustomEvent('holosphere-init-failed', {
+				detail: { error: new Error('No signing key') }
+			}));
+			showSplash = false;
+			splashComplete = true;
+			return;
 		}
 
-		if (privateKey) {
-			try {
-				await initHoloSphere(privateKey);
+		try {
+			await initHoloSphere(privateKey);
 
-				// For telegram-mapped sessions, pin the user's home holon id for
-				// sidebar/federation source — $nostrPublicKey is null in this mode,
-				// so without an override `homeHolonId` would fall back to the
-				// URL-driven $ID and drift on every navigation. Routing itself is
-				// handled by initializeUserHolon() inside initHoloSphere(), so we
-				// don't call goto() again here (the old duplicate caused a race
-				// with the layout's own redirect and with +page.svelte's subscription).
-				if (isTelegramMappedSession && telegramMappedPublicKey) {
-					const homeHolonId = pendingTelegramUserId
-						? String(pendingTelegramUserId)
-						: telegramMappedPublicKey;
-					homeHolonIdOverride.set(homeHolonId);
-
-					if (browser) {
-						addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
-					}
+			// Telegram users are namespaced by their Telegram id, which differs
+			// from the derived Nostr pubkey ($nostrPublicKey). Pin the home holon
+			// id so the sidebar/federation source doesn't drift to the URL-driven
+			// $ID on navigation. Routing itself is handled by initializeUserHolon().
+			if (telegramUserId) {
+				const homeHolonId = String(telegramUserId);
+				homeHolonIdOverride.set(homeHolonId);
+				if (browser) {
+					addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
 				}
-			} catch (err) {
-				// initHoloSphere can throw on invalid keys or Nostr/Gun init failures.
-				// Without this catch the splash would stay visible forever — surface
-				// the failure to the user instead of hanging on the loading view.
-				console.error('HoloSphere initialization failed:', err);
-				window.dispatchEvent(new CustomEvent('holosphere-init-failed', { detail: { error: err } }));
 			}
-		} else {
-			console.error('No private key available for initialization');
+		} catch (err) {
+			// initHoloSphere can throw on invalid keys or Nostr/Gun init failures.
+			// Without this catch the splash would stay visible forever — surface
+			// the failure to the user instead of hanging on the loading view.
+			console.error('HoloSphere initialization failed:', err);
+			window.dispatchEvent(new CustomEvent('holosphere-init-failed', { detail: { error: err } }));
 		}
 
 		showSplash = false;
 		splashComplete = true;
 	}
 
-	async function handleSkip() {
-		// Dev-only skip - use env key as fallback
-		const fallbackKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-		if (fallbackKey) {
-			await initHoloSphere(fallbackKey);
-		}
-		showSplash = false;
-		splashComplete = true;
-	}
-
-	// Check for URL private key parameter on mount (for direct access from safe environments)
 	onMount(async () => {
 		if (!browser) return;
 
-		// Hydrate $nostrPublicKey from localStorage even when the user skipped
-		// the splash (e.g. landed directly on a /[id]/dashboard URL). Without
-		// this the home-holon row in the sidebar stays hidden after a refresh.
+		// Hydrate the signing pubkey from the localStorage cache even before the
+		// session endpoint responds (e.g. landed directly on a /[id]/dashboard
+		// URL). Without this the home-holon row in the sidebar stays hidden after
+		// a refresh. The authoritative key arrives via the verified session in
+		// Splash → handleAuthenticated.
 		await nostrStore.init();
-
-		const urlPrivateKey = data?.urlPrivateKey;
-		if (urlPrivateKey) {
-			// Validate key format (64 hex characters)
-			if (/^[0-9a-fA-F]{64}$/.test(urlPrivateKey)) {
-				console.log('URL private key detected, auto-authenticating...');
-				try {
-					// Import the key into the nostr store
-					await nostrStore.importKey(urlPrivateKey);
-
-					// Initialize HoloSphere with the imported key
-					await initHoloSphere(urlPrivateKey.toLowerCase());
-
-					// Skip splash screen
-					showSplash = false;
-					splashComplete = true;
-
-					// Clear the key from URL for security (replace current history entry)
-					const cleanUrl = new URL(window.location.href);
-					cleanUrl.searchParams.delete('key');
-					window.history.replaceState({}, '', cleanUrl.toString());
-
-					console.log('Auto-authenticated via URL parameter');
-				} catch (error) {
-					console.error('Failed to authenticate with URL private key:', error);
-					// Fall through to show splash screen on error
-				}
-			} else {
-				console.warn('Invalid private key format in URL parameter');
-			}
-		}
 	});
 </script>
 
 <!-- Show splash screen for identity setup -->
 {#if showSplash}
-	<Splash on:authenticated={handleAuthenticated} on:skip={handleSkip} />
+	<Splash on:authenticated={handleAuthenticated} />
 {/if}
 
 <!-- Main app content (hidden while splash is showing) -->

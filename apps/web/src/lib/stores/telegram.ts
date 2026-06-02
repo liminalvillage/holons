@@ -1,22 +1,29 @@
 import { writable, derived, get } from "svelte/store";
 import { browser } from "$app/environment";
+import { nostrStore } from "./nostr";
 
-// Telegram WebApp types
+// The authenticated user, as returned by the server after verifying the
+// Telegram signature. `id` is the Telegram user id.
 export interface TelegramUser {
   id: number;
   first_name: string;
   last_name?: string;
   username?: string;
-  language_code?: string;
-  is_premium?: boolean;
   photo_url?: string;
 }
 
+// Minimal Telegram Mini App (WebApp) surface used for detection + theming.
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: {
     query_id?: string;
-    user?: TelegramUser;
+    user?: {
+      id: number;
+      first_name: string;
+      last_name?: string;
+      username?: string;
+      photo_url?: string;
+    };
     auth_date?: number;
     hash?: string;
     start_param?: string;
@@ -26,58 +33,34 @@ export interface TelegramWebApp {
   colorScheme: "light" | "dark";
   themeParams: Record<string, string>;
   isExpanded: boolean;
-  viewportHeight: number;
-  viewportStableHeight: number;
-  headerColor: string;
-  backgroundColor: string;
-  isClosingConfirmationEnabled: boolean;
   ready: () => void;
   expand: () => void;
   close: () => void;
-  enableClosingConfirmation: () => void;
-  disableClosingConfirmation: () => void;
-  MainButton: {
-    text: string;
-    color: string;
-    textColor: string;
-    isVisible: boolean;
-    isActive: boolean;
-    isProgressVisible: boolean;
-    setText: (text: string) => void;
-    onClick: (callback: () => void) => void;
-    offClick: (callback: () => void) => void;
-    show: () => void;
-    hide: () => void;
-    enable: () => void;
-    disable: () => void;
-    showProgress: (leaveActive?: boolean) => void;
-    hideProgress: () => void;
-  };
-  BackButton: {
-    isVisible: boolean;
-    onClick: (callback: () => void) => void;
-    offClick: (callback: () => void) => void;
-    show: () => void;
-    hide: () => void;
-  };
-  HapticFeedback: {
-    impactOccurred: (
-      style: "light" | "medium" | "heavy" | "rigid" | "soft",
-    ) => void;
-    notificationOccurred: (type: "error" | "success" | "warning") => void;
-    selectionChanged: () => void;
-  };
 }
 
-// Telegram WebApp is declared on window by the SDK script
+// Shape returned by /api/auth/* — the verified profile plus the per-user
+// HoloSphere signing key derived server-side.
+interface AuthResult {
+  user: {
+    id: number | string;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+    photo_url?: string;
+  } | null;
+  nostrPublicKey?: string;
+  nostrPrivateKey?: string;
+}
 
-// Authentication state
 interface TelegramAuthState {
   isAuthenticated: boolean;
   user: TelegramUser | null;
   isTelegramWebApp: boolean;
   isLoading: boolean;
   error: string | null;
+  // The derived signing key for this session (also mirrored into nostrStore).
+  nostrPrivateKey: string | null;
+  nostrPublicKey: string | null;
 }
 
 const initialState: TelegramAuthState = {
@@ -86,168 +69,120 @@ const initialState: TelegramAuthState = {
   isTelegramWebApp: false,
   isLoading: true,
   error: null,
+  nostrPrivateKey: null,
+  nostrPublicKey: null,
 };
 
-// Dev-only fallback: when running outside a real Telegram WebApp / widget
-// context, auto-populate from env so the dashboard always has a Telegram
-// identity to work with. Only active in non-production builds.
-function devTelegramUser(): TelegramUser | null {
-  const isProd = import.meta.env.MODE === "production";
-  if (isProd) return null;
-  const idRaw = import.meta.env.VITE_DEV_TELEGRAM_USER_ID;
-  const name = import.meta.env.VITE_DEV_TELEGRAM_USER_NAME;
-  const lastName = import.meta.env.VITE_DEV_TELEGRAM_USER_LAST_NAME;
-  const username = import.meta.env.VITE_DEV_TELEGRAM_USER_USERNAME;
-  if (!idRaw || !name) return null;
-  const id = Number(idRaw);
-  if (!Number.isFinite(id)) return null;
-  const user: TelegramUser = { id, first_name: String(name) };
-  if (lastName) user.last_name = String(lastName);
-  if (username) user.username = String(username);
-  return user;
+function normalizeUser(u: AuthResult["user"]): TelegramUser | null {
+  if (!u || u.id == null) return null;
+  return {
+    id: Number(u.id),
+    first_name: u.first_name,
+    last_name: u.last_name,
+    username: u.username,
+    photo_url: u.photo_url,
+  };
 }
 
-// Create the store
 function createTelegramStore() {
   const { subscribe, set, update } = writable<TelegramAuthState>(initialState);
+
+  // Apply a verified auth result: populate the user and hand the derived
+  // signing key to nostrStore (the HoloSphere signing layer).
+  function applyAuthResult(result: AuthResult): AuthResult | null {
+    const user = normalizeUser(result.user);
+    if (!user) return null;
+    if (result.nostrPrivateKey) {
+      nostrStore.setSessionKey(result.nostrPrivateKey);
+    }
+    update((state) => ({
+      ...state,
+      isAuthenticated: true,
+      user,
+      isLoading: false,
+      error: null,
+      nostrPrivateKey: result.nostrPrivateKey ?? null,
+      nostrPublicKey: result.nostrPublicKey ?? null,
+    }));
+    return result;
+  }
+
+  function detectWebApp(): TelegramWebApp | null {
+    if (!browser) return null;
+    return (window as any).Telegram?.WebApp ?? null;
+  }
 
   return {
     subscribe,
 
-    // Initialize - check if running in Telegram WebApp
-    init: () => {
-      if (!browser) return;
-
+    // Restore an existing session via the cookie. In dev the server mints a
+    // session for VITE_DEV_TELEGRAM_USER_ID. Returns the AuthResult or null.
+    init: async (): Promise<AuthResult | null> => {
+      if (!browser) return null;
       update((state) => ({ ...state, isLoading: true }));
 
-      // Check if Telegram WebApp is available
-      const win = window as any;
-      const telegram = win.Telegram?.WebApp as TelegramWebApp | undefined;
-
-      if (telegram && telegram.initDataUnsafe?.user) {
-        // We're inside Telegram WebApp
-        const user = telegram.initDataUnsafe.user;
-
-        // Notify Telegram that the app is ready
-        telegram.ready();
-
-        // Expand the app to full height
-        telegram.expand();
-
-        update((state) => ({
-          ...state,
-          isAuthenticated: true,
-          user,
-          isTelegramWebApp: true,
-          isLoading: false,
-          error: null,
-        }));
-
-        // Store in localStorage for persistence
-        localStorage.setItem("telegram_user", JSON.stringify(user));
-
-        console.log("Telegram WebApp user:", user);
-      } else {
-        // Check if we're actually inside Telegram WebApp (initData is non-empty)
-        // The SDK loads on regular web too, but initData is empty outside Telegram
-        const isActuallyInTelegram = Boolean(
-          telegram && telegram.initData && telegram.initData.length > 0,
-        );
-
-        // Dev fallback takes precedence over stale stored users so dev
-        // runs always pick up the configured VITE_DEV_TELEGRAM_USER_ID.
-        const devUser = devTelegramUser();
-        if (devUser) {
-          localStorage.setItem("telegram_user", JSON.stringify(devUser));
-          update((state) => ({
-            ...state,
-            isAuthenticated: true,
-            user: devUser,
-            isTelegramWebApp: isActuallyInTelegram,
-            isLoading: false,
-            error: null,
-          }));
-          console.log("Dev Telegram user:", devUser);
-          return;
-        }
-
-        // Check if we have a stored user from previous login
-        const storedUser = localStorage.getItem("telegram_user");
-        if (storedUser) {
-          try {
-            const user = JSON.parse(storedUser);
-            update((state) => ({
-              ...state,
-              isAuthenticated: true,
-              user,
-              isTelegramWebApp: isActuallyInTelegram,
-              isLoading: false,
-              error: null,
-            }));
-          } catch {
-            update((state) => ({
-              ...state,
-              isAuthenticated: false,
-              user: null,
-              isTelegramWebApp: isActuallyInTelegram,
-              isLoading: false,
-              error: null,
-            }));
-          }
-        } else {
-          update((state) => ({
-            ...state,
-            isAuthenticated: false,
-            user: null,
-            isTelegramWebApp: isActuallyInTelegram,
-            isLoading: false,
-            error: null,
-          }));
+      // Detect Mini App context (for theming/UX); login itself always goes
+      // through the standard OIDC redirect regardless.
+      const webApp = detectWebApp();
+      const inTelegram = Boolean(
+        webApp?.initData && webApp.initData.length > 0,
+      );
+      if (inTelegram && webApp) {
+        try {
+          webApp.ready();
+          webApp.expand();
+        } catch {
+          /* not fatal */
         }
       }
-    },
+      update((state) => ({ ...state, isTelegramWebApp: inTelegram }));
 
-    // Handle Telegram Login Widget callback
-    loginWithWidget: (user: TelegramUser) => {
-      localStorage.setItem("telegram_user", JSON.stringify(user));
+      try {
+        const res = await fetch("/api/auth/session", { method: "GET" });
+        if (res.ok) return applyAuthResult(await res.json());
+      } catch (err) {
+        console.warn("Session restore failed:", err);
+      }
+
       update((state) => ({
         ...state,
-        isAuthenticated: true,
-        user,
+        isAuthenticated: false,
+        user: null,
         isLoading: false,
-        error: null,
+        nostrPrivateKey: null,
+        nostrPublicKey: null,
       }));
+      return null;
     },
 
-    // Logout
-    logout: () => {
-      localStorage.removeItem("telegram_user");
-      set({
-        ...initialState,
-        isLoading: false,
-      });
+    // Start the Telegram OIDC login: a full-page redirect to our /login
+    // endpoint, which bounces to Telegram and back to /callback. The callback
+    // sets the session cookie and redirects home, where init() picks it up.
+    login: () => {
+      if (!browser) return;
+      window.location.href = "/api/auth/telegram/login";
     },
 
-    // Set error
+    logout: async () => {
+      if (browser) {
+        try {
+          await fetch("/api/auth/session", { method: "DELETE" });
+        } catch {
+          /* best effort */
+        }
+        nostrStore.clearKey();
+        sessionStorage.setItem("just_logged_out", "true");
+      }
+      set({ ...initialState, isLoading: false });
+    },
+
     setError: (error: string) => {
-      update((state) => ({
-        ...state,
-        error,
-        isLoading: false,
-      }));
+      update((state) => ({ ...state, error, isLoading: false }));
     },
 
-    // Get Telegram WebApp instance
-    getWebApp: (): TelegramWebApp | null => {
-      if (!browser) return null;
-      const win = window as any;
-      return win.Telegram?.WebApp || null;
-    },
+    getWebApp: (): TelegramWebApp | null => detectWebApp(),
 
-    // Get current state synchronously
-    getState: (): TelegramAuthState => {
-      return get({ subscribe });
-    },
+    getState: (): TelegramAuthState => get({ subscribe }),
   };
 }
 
@@ -256,11 +191,11 @@ export const telegramStore = createTelegramStore();
 // Derived stores for convenience
 export const isAuthenticated = derived(
   telegramStore,
-  ($store) => $store.isAuthenticated,
+  ($s) => $s.isAuthenticated,
 );
-export const telegramUser = derived(telegramStore, ($store) => $store.user);
+export const telegramUser = derived(telegramStore, ($s) => $s.user);
 export const isTelegramWebApp = derived(
   telegramStore,
-  ($store) => $store.isTelegramWebApp,
+  ($s) => $s.isTelegramWebApp,
 );
-export const isLoading = derived(telegramStore, ($store) => $store.isLoading);
+export const isLoading = derived(telegramStore, ($s) => $s.isLoading);

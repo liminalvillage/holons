@@ -59,6 +59,30 @@ function createNostrStore() {
       }
     },
 
+    // Adopt the signing key delivered by a verified Telegram session. This is
+    // the primary path now: the key is derived server-side from the Telegram
+    // identity (see lib/server/telegramAuth.ts) and handed to the client over
+    // HTTPS. Cached in localStorage so an offline reload can still sign before
+    // the session endpoint responds. Not "new" — never prompts for backup.
+    setSessionKey: (privateKey: string) => {
+      if (!browser) return null;
+      try {
+        const publicKey = getPublicKey(privateKey);
+        localStorage.setItem(STORAGE_KEY, privateKey);
+        update((state) => ({
+          ...state,
+          privateKey,
+          publicKey,
+          isLoading: false,
+          isNewKey: false,
+        }));
+        return { privateKey, publicKey };
+      } catch (error) {
+        console.error("Error adopting session signing key:", error);
+        return null;
+      }
+    },
+
     // Generate a new keypair
     generateKey: async () => {
       if (!browser) return;

@@ -1,12 +1,8 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
-	import { fade, fly, slide } from 'svelte/transition';
-	import { nostrStore } from '$lib/stores/nostr';
+	import { fade, fly } from 'svelte/transition';
 	import { telegramStore, type TelegramUser } from '$lib/stores/telegram';
-	import { nostrUtils } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
-
-	const { hexToNsec } = nostrUtils;
 
 	// Props
 	export let skipLoading = false; // Skip loading animation (for modal usage)
@@ -14,101 +10,20 @@
 
 	const dispatch = createEventDispatcher();
 
-	// View states
-	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'save-key';
+	// View states — Telegram OIDC is the sole login path.
+	type View = 'loading' | 'welcome';
 	let view: View = skipLoading ? 'welcome' : 'loading';
 
-	// Form state
-	let holonName = '';
-	let privateKeyInput = '';
 	let error = '';
-	let isProcessing = false;
-
-	// Generated key state (for save-key view)
-	let generatedNsec = '';
-	let generatedPublicKey = '';
-	let pendingHolonName = '';
-	let pendingTelegramUserId: number | null = null;
-	let keyCopied = false;
-
-	// Telegram state
-	let telegramUser: TelegramUser | null = null;
-	let isTelegramWebApp = false;
-
-	// Telegram Login Widget (web users — not Mini App)
-	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
-	let telegramWidgetContainer: HTMLDivElement | null = null;
-	let telegramWidgetLoaded = false;
-	let telegramWidgetError = '';
-	let telegramWidgetMounted = false;
-
-	// Parse a Telegram Login Widget redirect-mode callback off the URL.
-	// The widget normally calls `onTelegramAuth(user)` via window.postMessage from
-	// its popup, but on Safari/ITP/mobile-in-app browsers that path can fail and
-	// it falls back to navigating the parent to `?tgAuthResult=<base64-json>` (or
-	// dropping the user fields directly as query params). Without this handler
-	// the auth data is silently dropped and the welcome view re-appears in a loop.
-	function consumeTelegramAuthFromUrl(): TelegramUser | null {
-		try {
-			const url = new URL(window.location.href);
-			const params = url.searchParams;
-			let user: TelegramUser | null = null;
-
-			const tgAuthResult = params.get('tgAuthResult');
-			if (tgAuthResult) {
-				const padded = tgAuthResult + '='.repeat((4 - (tgAuthResult.length % 4)) % 4);
-				const json = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
-				const parsed = JSON.parse(json);
-				if (parsed?.id && parsed?.first_name) {
-					user = {
-						id: Number(parsed.id),
-						first_name: String(parsed.first_name),
-						last_name: parsed.last_name,
-						username: parsed.username,
-						photo_url: parsed.photo_url,
-					};
-				}
-			} else if (params.get('id') && params.get('first_name') && params.get('hash')) {
-				user = {
-					id: Number(params.get('id')),
-					first_name: String(params.get('first_name')),
-					last_name: params.get('last_name') ?? undefined,
-					username: params.get('username') ?? undefined,
-					photo_url: params.get('photo_url') ?? undefined,
-				};
-				['id', 'first_name', 'last_name', 'username', 'photo_url', 'auth_date', 'hash'].forEach((k) =>
-					params.delete(k)
-				);
-			}
-
-			if (user) {
-				params.delete('tgAuthResult');
-				const cleaned = url.pathname + (params.toString() ? '?' + params.toString() : '') + url.hash;
-				window.history.replaceState({}, '', cleaned);
-			}
-			return user;
-		} catch (err) {
-			console.warn('Failed to parse Telegram auth result from URL:', err);
-			return null;
-		}
-	}
 
 	onMount(async () => {
-		// Initialize stores
-		await nostrStore.init();
-		telegramStore.init();
-
-		// In modal mode (skipLoading), skip all auto-login logic and just show welcome
+		// In modal mode (skipLoading), skip auto-login logic and just show welcome.
 		if (skipLoading) {
-			// Check Telegram context for display purposes but don't auto-login
-			const telegramState = telegramStore.getState();
-			isTelegramWebApp = telegramState.isTelegramWebApp;
-			telegramUser = telegramState.user;
-			// View is already set to 'welcome' via the initial value
+			view = 'welcome';
 			return;
 		}
 
-		// Check if user just logged out (show welcome screen to allow re-login)
+		// Show the welcome screen after an explicit logout instead of re-logging in.
 		const justLoggedOut = sessionStorage.getItem('just_logged_out') === 'true';
 		if (justLoggedOut) {
 			sessionStorage.removeItem('just_logged_out');
@@ -116,217 +31,46 @@
 			return;
 		}
 
-		// Check Telegram context
-		const telegramState = telegramStore.getState();
-		isTelegramWebApp = telegramState.isTelegramWebApp;
-		telegramUser = telegramState.user;
+		// Restore an existing session (the OIDC callback set the cookie before
+		// redirecting here; in dev the server mints a session automatically).
+		const restored = await telegramStore.init();
+		const state = telegramStore.getState();
 
-		// Recover from the Telegram Login Widget's URL-redirect fallback before
-		// deciding which path to take — otherwise a popup-blocked login lands back
-		// on / with the auth data in the query string and we'd just re-show welcome.
-		if (!telegramUser) {
-			const urlUser = consumeTelegramAuthFromUrl();
-			if (urlUser) {
-				telegramStore.loginWithWidget(urlUser);
-				telegramUser = urlUser;
-			}
-		}
-
-		// Check if we have a saved private key
-		const state = nostrStore.getState();
-
-		// Telegram is now the primary identity. A telegram user (Mini App,
-		// stored from previous widget login, or dev fallback) takes precedence
-		// over any stored Nostr key so the dashboard always operates under the
-		// telegram-id namespace. Nostr stays available as a legacy fallback.
-		if (telegramUser) {
-			handleTelegramUser(telegramUser);
-		} else if (state.privateKey) {
-			// Returning Nostr user - legacy fallback for keys persisted before
-			// the telegram-only flow.
-			dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' });
+		if (restored?.user || state.user) {
+			handleTelegramUser((restored?.user as TelegramUser) ?? state.user!);
 		} else {
-			// No key, no telegram - show welcome screen (widget loads via reactive block)
 			view = 'welcome';
 		}
 	});
 
-	// Hand a Telegram user (Mini App, Login Widget callback, or stored) over to
-	// the layout. The layout owns HoloSphere init, the telegram_mappings lookup,
-	// and the routing decision — we used to do a "is this user already mapped?"
-	// probe here, but it spun up a second HoloSphere instance (~1–2s of ready()
-	// + Gun handshake) for a publicKey value the layout never actually used.
+	// Hand a verified Telegram user to the layout, which owns HoloSphere init,
+	// the telegram_mappings write, and routing. The signing key is already in
+	// nostrStore (set by telegramStore from the verified session).
 	function handleTelegramUser(user: TelegramUser) {
-		telegramUser = user;
+		const state = telegramStore.getState();
 		const name = user.username
 			? `@${user.username}'s Holon`
 			: `${user.first_name}'s Holon`;
 		dispatch('authenticated', {
-			publicKey: String(user.id),
+			publicKey: state.nostrPublicKey ?? String(user.id),
 			holonName: name,
 			telegramUserId: user.id,
-			mode: 'telegram-mapped'
+			mode: 'telegram'
 		});
 	}
 
-	// Mount the Telegram Login Widget into the welcome view (web users only).
-	function mountTelegramWidget() {
-		if (telegramWidgetMounted || !telegramWidgetContainer) return;
-		telegramWidgetMounted = true;
-		telegramWidgetError = '';
-
-		try {
-			(window as any).onTelegramAuth = (user: any) => {
-				try {
-					console.log('Telegram widget login:', user);
-					telegramStore.loginWithWidget(user);
-					handleTelegramUser(user);
-				} catch (err) {
-					console.error('Error handling Telegram widget login:', err);
-					telegramWidgetError = 'Login succeeded but processing failed.';
-					isProcessing = false;
-				}
-			};
-
-			const script = document.createElement('script');
-			script.src = 'https://telegram.org/js/telegram-widget.js?22';
-			script.async = true;
-			script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
-			script.setAttribute('data-size', 'large');
-			script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-			script.setAttribute('data-request-access', 'write');
-			script.onload = () => {
-				telegramWidgetLoaded = true;
-			};
-			script.onerror = () => {
-				telegramWidgetError = 'Failed to load the Telegram Login Widget.';
-				telegramWidgetLoaded = false;
-			};
-			telegramWidgetContainer.appendChild(script);
-		} catch (err) {
-			console.error('Failed to initialize Telegram Login Widget:', err);
-			telegramWidgetError = 'Failed to initialize the Telegram Login Widget.';
-		}
-	}
-
-	// Re-mount the widget whenever the welcome view becomes visible to a non-Mini-App user.
-	$: if (view === 'welcome' && !isTelegramWebApp && telegramWidgetContainer && !telegramWidgetMounted) {
-		mountTelegramWidget();
-	}
-
-	// Handle create new holon
-	async function handleCreate() {
-		if (!holonName.trim()) {
-			error = 'Please enter a name for your holon';
-			return;
-		}
-
-		isProcessing = true;
+	// Kick off the OIDC redirect flow.
+	function signIn() {
 		error = '';
-
-		try {
-			// Generate new key
-			const result = await nostrStore.generateKey();
-
-			if (result) {
-				// Store pending data and show save-key view
-				generatedNsec = hexToNsec(result.privateKey);
-				generatedPublicKey = result.publicKey;
-				pendingHolonName = holonName.trim();
-				pendingTelegramUserId = null;
-				keyCopied = false;
-				view = 'save-key';
-			}
-		} catch (err: any) {
-			error = err.message || 'Failed to create holon';
-		} finally {
-			isProcessing = false;
-		}
+		telegramStore.login();
 	}
 
-	// Handle restore existing holon
-	async function handleRestore() {
-		if (!privateKeyInput.trim()) {
-			error = 'Please enter your private key';
-			return;
-		}
-
-		isProcessing = true;
-		error = '';
-
-		try {
-			// Import the key (nostrStore.importKey accepts nsec or hex)
-			const result = await nostrStore.importKey(privateKeyInput.trim());
-
-			if (result) {
-				// Dispatch authenticated - include telegram user ID if available for mapping
-				dispatch('authenticated', {
-					publicKey: result.publicKey,
-					telegramUserId: telegramUser?.id,
-					mode: 'private'
-				});
-			}
-		} catch (err: any) {
-			error = err.message || 'Failed to restore holon';
-		} finally {
-			isProcessing = false;
-		}
-	}
-
-	// Handle key input (allow nsec or hex format)
-	function handleKeyInput(event: Event) {
-		const input = event.target as HTMLInputElement;
-		privateKeyInput = input.value.trim();
-	}
-
-	// Copy nsec to clipboard
-	async function copyNsec() {
-		try {
-			await navigator.clipboard.writeText(generatedNsec);
-			keyCopied = true;
-		} catch (err) {
-			console.error('Failed to copy:', err);
-		}
-	}
-
-	// Proceed after saving key
-	function proceedAfterSave() {
-		dispatch('authenticated', {
-			publicKey: generatedPublicKey,
-			holonName: pendingHolonName,
-			telegramUserId: pendingTelegramUserId,
-			mode: 'private'
-		});
-	}
-
-	// Go back to welcome screen
-	function goBack() {
-		if (isModal) {
-			// In modal mode, going back from create/restore closes the modal
-			dispatch('close');
-		} else {
-			view = 'welcome';
-		}
-		error = '';
-		holonName = '';
-		privateKeyInput = '';
-	}
-
-	// Handle closing the modal (only in modal mode)
-	function handleClose() {
-		if (isModal) {
-			dispatch('close');
-		}
-	}
-
-	// Handle backdrop click
 	function handleBackdropClick(event: MouseEvent) {
 		if (isModal && event.target === event.currentTarget) {
 			dispatch('close');
 		}
 	}
 
-	// Handle escape key
 	function handleKeydown(event: KeyboardEvent) {
 		if (isModal && event.key === 'Escape') {
 			dispatch('close');
@@ -368,254 +112,16 @@
 			<h1 class="title">Welcome to Holons</h1>
 			<p class="subtitle">Sign in with Telegram to get started</p>
 
-			{#if isProcessing}
-				<div class="widget-loading">
-					<svg class="spinner" viewBox="0 0 24 24">
-						<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
-					</svg>
-					<span>Signing you in…</span>
-				</div>
-			{:else}
-				<!-- Telegram Login Widget (primary) -->
-				<div class="telegram-login-section">
-					{#if !telegramWidgetLoaded && !telegramWidgetError}
-						<div class="widget-loading">
-							<svg class="spinner" viewBox="0 0 24 24">
-								<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
-							</svg>
-							<span>Loading Telegram login…</span>
-						</div>
-					{/if}
-					<div bind:this={telegramWidgetContainer} class="telegram-widget-container"></div>
-					{#if telegramWidgetError}
-						<p class="error-message" transition:slide>{telegramWidgetError}</p>
-					{/if}
-				</div>
+			<button class="telegram-button" on:click={signIn}>
+				<svg class="tg-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+					<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+				</svg>
+				<span>Log in with Telegram</span>
+			</button>
 
-				<div class="divider"><span>or</span></div>
-
-				<!-- Secondary options -->
-				<div class="options">
-					<button
-						class="option-button secondary"
-						on:click={() => view = 'create'}
-					>
-						<div class="option-icon">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-							</svg>
-						</div>
-						<div class="option-text">
-							<span class="option-title">Create New Holon</span>
-							<span class="option-desc">Start fresh with a new identity</span>
-						</div>
-					</button>
-
-					<button
-						class="option-button secondary"
-						on:click={() => view = 'restore'}
-					>
-						<div class="option-icon">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-							</svg>
-						</div>
-						<div class="option-text">
-							<span class="option-title">Restore Existing</span>
-							<span class="option-desc">Import your private key</span>
-						</div>
-					</button>
-				</div>
+			{#if error}
+				<p class="error-message" transition:fade>{error}</p>
 			{/if}
-
-		</div>
-
-		<div class="bottom-branding">
-			<p>powered by HoloSphere</p>
-		</div>
-	</div>
-
-{:else if view === 'create'}
-	<!-- Create View -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="splash-container"
-		class:splash-container--modal={isModal}
-		transition:fade={{ duration: 300 }}
-		on:click={handleBackdropClick}
-	>
-		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
-			<button class="back-button" on:click={goBack}>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-				</svg>
-				Back
-			</button>
-
-			<h1 class="title">Name Your Holon</h1>
-			<p class="subtitle">A unique identity will be generated for your holon</p>
-
-			<div class="form-group">
-				<input
-					type="text"
-					bind:value={holonName}
-					placeholder="Enter holon name..."
-					class="text-input"
-					class:error={error && !holonName.trim()}
-					disabled={isProcessing}
-					on:keydown={(e) => e.key === 'Enter' && handleCreate()}
-				/>
-
-				{#if error}
-					<p class="error-message" transition:slide>{error}</p>
-				{/if}
-			</div>
-
-			<button
-				class="submit-button"
-				on:click={handleCreate}
-				disabled={isProcessing || !holonName.trim()}
-			>
-				{#if isProcessing}
-					<svg class="spinner" viewBox="0 0 24 24">
-						<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
-					</svg>
-					Creating...
-				{:else}
-					Create Holon
-				{/if}
-			</button>
-
-			<p class="info-text">
-				Your private key will be saved locally. Make sure to back it up after creation.
-			</p>
-		</div>
-
-		<div class="bottom-branding">
-			<p>powered by HoloSphere</p>
-		</div>
-	</div>
-
-{:else if view === 'restore'}
-	<!-- Restore View -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="splash-container"
-		class:splash-container--modal={isModal}
-		transition:fade={{ duration: 300 }}
-		on:click={handleBackdropClick}
-	>
-		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
-			<button class="back-button" on:click={goBack}>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-				</svg>
-				Back
-			</button>
-
-			<h1 class="title">Restore Your Holon</h1>
-			<p class="subtitle">Enter your nsec or hex private key</p>
-
-			<div class="form-group">
-				<input
-					type="password"
-					bind:value={privateKeyInput}
-					on:input={handleKeyInput}
-					placeholder="nsec1... or hex key"
-					class="text-input mono"
-					class:error={error}
-					disabled={isProcessing}
-					on:keydown={(e) => e.key === 'Enter' && handleRestore()}
-				/>
-
-				{#if error}
-					<p class="error-message" transition:slide>{error}</p>
-				{/if}
-			</div>
-
-			<button
-				class="submit-button"
-				on:click={handleRestore}
-				disabled={isProcessing || !privateKeyInput.trim()}
-			>
-				{#if isProcessing}
-					<svg class="spinner" viewBox="0 0 24 24">
-						<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
-					</svg>
-					Restoring...
-				{:else}
-					Restore Holon
-				{/if}
-			</button>
-
-			<p class="info-text">
-				Your private key is stored only on this device and never sent to any server.
-			</p>
-		</div>
-
-		<div class="bottom-branding">
-			<p>powered by HoloSphere</p>
-		</div>
-	</div>
-
-{:else if view === 'save-key'}
-	<!-- Save Key View -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="splash-container"
-		class:splash-container--modal={isModal}
-		transition:fade={{ duration: 300 }}
-		on:click={handleBackdropClick}
-	>
-		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
-			<div class="logo-small">
-				<MyHolonsIcon />
-			</div>
-
-			<h1 class="title">Save Your Secret Key</h1>
-			<p class="subtitle warning">
-				This is your only way to recover your identity. Save it somewhere safe!
-			</p>
-
-			<div class="key-display">
-				<div class="key-label">Your nsec (private key)</div>
-				<div class="key-value">{generatedNsec}</div>
-				<button class="copy-button" on:click={copyNsec}>
-					{#if keyCopied}
-						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-						</svg>
-						Copied!
-					{:else}
-						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-						</svg>
-						Copy to Clipboard
-					{/if}
-				</button>
-			</div>
-
-			<div class="warning-box">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-				</svg>
-				<span>If you lose this key, you cannot recover your holon or data.</span>
-			</div>
-
-			<button
-				class="submit-button"
-				on:click={proceedAfterSave}
-				disabled={!keyCopied}
-			>
-				{#if keyCopied}
-					I've Saved My Key - Continue
-				{:else}
-					Copy Key First to Continue
-				{/if}
-			</button>
 		</div>
 
 		<div class="bottom-branding">
@@ -637,7 +143,6 @@
 		padding: 1rem;
 	}
 
-	/* Modal variant - displays as overlay with backdrop */
 	.splash-container--modal {
 		background: rgba(0, 0, 0, 0.7);
 		z-index: 100;
@@ -647,7 +152,6 @@
 		display: none;
 	}
 
-	/* Loading View */
 	.logo-container {
 		display: flex;
 		flex-direction: column;
@@ -680,7 +184,6 @@
 		}
 	}
 
-	/* Onboarding Card */
 	.onboarding-card {
 		background: rgba(30, 41, 59, 0.9);
 		border: 1px solid rgba(100, 116, 139, 0.3);
@@ -689,6 +192,7 @@
 		max-width: 400px;
 		width: 100%;
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+		text-align: center;
 	}
 
 	.logo-small {
@@ -702,197 +206,49 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--color-text-primary);
-		text-align: center;
 		margin-bottom: 0.5rem;
 	}
 
 	.subtitle {
 		color: #94a3b8;
-		text-align: center;
 		margin-bottom: 1.5rem;
 		font-size: 0.95rem;
 	}
 
-	/* Options */
-	.options {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.option-button {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		padding: 1rem;
-		border-radius: 0.75rem;
-		border: 1px solid transparent;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		text-align: left;
-		width: 100%;
-	}
-
-	.option-button.secondary {
-		background: rgba(100, 116, 139, 0.15);
-		border-color: rgba(100, 116, 139, 0.3);
-	}
-
-	.option-button.secondary:hover {
-		background: rgba(100, 116, 139, 0.25);
-		border-color: rgba(100, 116, 139, 0.5);
-	}
-
-	.option-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: 0.5rem;
+	.telegram-button {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.option-button.secondary .option-icon {
-		background: rgba(100, 116, 139, 0.3);
-		color: #cbd5e1;
-	}
-
-	.option-text {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.option-title {
-		color: var(--color-text-primary);
-		font-weight: 600;
-		font-size: 1rem;
-	}
-
-	.option-desc {
-		color: #94a3b8;
-		font-size: 0.85rem;
-	}
-
-	/* Back Button */
-	.back-button {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		color: #94a3b8;
-		background: none;
-		border: none;
-		cursor: pointer;
-		font-size: 0.9rem;
-		padding: 0;
-		margin-bottom: 1.5rem;
-		transition: color 0.2s;
-	}
-
-	.back-button:hover {
-		color: var(--color-text-primary);
-	}
-
-	.back-button svg {
-		width: 1.25rem;
-		height: 1.25rem;
-	}
-
-	/* Form */
-	.form-group {
-		margin-bottom: 1.5rem;
-	}
-
-	.text-input {
+		gap: 0.625rem;
 		width: 100%;
 		padding: 0.875rem 1rem;
-		background: rgba(15, 23, 42, 0.8);
-		border: 1px solid rgba(100, 116, 139, 0.3);
+		background: #2aabee;
+		border: none;
 		border-radius: 0.5rem;
-		color: var(--color-text-primary);
+		color: #fff;
 		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
 		transition: all 0.2s;
 	}
 
-	.text-input.mono {
-		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-		font-size: 0.9rem;
+	.telegram-button:hover {
+		background: #1d97d8;
+		transform: translateY(-1px);
+		box-shadow: 0 10px 20px -10px rgba(42, 171, 238, 0.6);
 	}
 
-	.text-input::placeholder {
-		color: var(--color-text-muted);
+	.tg-icon {
+		width: 1.375rem;
+		height: 1.375rem;
 	}
-
-	.text-input:focus {
-		outline: none;
-		border-color: rgba(79, 70, 229, 0.6);
-		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-	}
-
-	.text-input.error {
-		border-color: #ef4444;
-	}
-
-	.text-input:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
 
 	.error-message {
 		color: #f87171;
 		font-size: 0.85rem;
-		margin-top: 0.5rem;
+		margin-top: 0.75rem;
 	}
 
-	/* Submit Button */
-	.submit-button {
-		width: 100%;
-		padding: 0.875rem 1rem;
-		background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-light) 100%);
-		border: none;
-		border-radius: 0.5rem;
-		color: var(--color-text-primary);
-		font-size: 1rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-	}
-
-	.submit-button:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 10px 20px -10px rgba(79, 70, 229, 0.5);
-	}
-
-	.submit-button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-		transform: none;
-	}
-
-	.spinner {
-		width: 1.25rem;
-		height: 1.25rem;
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
-	}
-
-	.info-text {
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
-		text-align: center;
-		margin-top: 1rem;
-	}
-
-	/* Bottom Branding */
 	.bottom-branding {
 		position: absolute;
 		bottom: 2rem;
@@ -905,132 +261,4 @@
 	.bottom-branding p {
 		margin: 0;
 	}
-
-	/* SVG sizing */
-	.w-5 { width: 1.25rem; }
-	.h-5 { height: 1.25rem; }
-	.w-6 { width: 1.5rem; }
-	.h-6 { height: 1.5rem; }
-
-	/* Save Key View */
-	.subtitle.warning {
-		color: #fbbf24;
-		font-weight: 500;
-	}
-
-	.key-display {
-		background: rgba(15, 23, 42, 0.8);
-		border: 1px solid rgba(100, 116, 139, 0.3);
-		border-radius: 0.75rem;
-		padding: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.key-label {
-		color: #94a3b8;
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin-bottom: 0.5rem;
-	}
-
-	.key-value {
-		color: #a5b4fc;
-		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-		font-size: 0.85rem;
-		word-break: break-all;
-		line-height: 1.5;
-		margin-bottom: 0.75rem;
-	}
-
-	.copy-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0.625rem 1rem;
-		background: rgba(79, 70, 229, 0.2);
-		border: 1px solid rgba(79, 70, 229, 0.4);
-		border-radius: 0.5rem;
-		color: #a5b4fc;
-		font-size: 0.9rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.copy-button:hover {
-		background: rgba(79, 70, 229, 0.3);
-		border-color: rgba(79, 70, 229, 0.6);
-	}
-
-	.warning-box {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.875rem;
-		background: rgba(251, 191, 36, 0.1);
-		border: 1px solid rgba(251, 191, 36, 0.3);
-		border-radius: 0.5rem;
-		margin-bottom: 1.5rem;
-	}
-
-	.warning-box svg {
-		color: #fbbf24;
-		flex-shrink: 0;
-		margin-top: 0.125rem;
-	}
-
-	.warning-box span {
-		color: #fcd34d;
-		font-size: 0.85rem;
-		line-height: 1.4;
-	}
-
-	/* Telegram Login Widget (welcome view) */
-	.telegram-login-section {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		min-height: 56px;
-		margin-bottom: 1rem;
-	}
-
-	.telegram-widget-container {
-		display: flex;
-		justify-content: center;
-		width: 100%;
-	}
-
-	.widget-loading {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-		color: #94a3b8;
-		font-size: 0.875rem;
-		padding: 0.75rem 0;
-	}
-
-	.divider {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		margin: 1rem 0;
-	}
-
-	.divider::before,
-	.divider::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: rgba(100, 116, 139, 0.3);
-	}
-
 </style>

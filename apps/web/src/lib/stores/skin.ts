@@ -87,7 +87,11 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 /** Mix `hex` toward `target` ({r,g,b}) by `amt` (0..1) → "#rrggbb". */
-function mix(hex: string, target: { r: number; g: number; b: number }, amt: number): string {
+function mix(
+  hex: string,
+  target: { r: number; g: number; b: number },
+  amt: number,
+): string {
   const a = hexToRgb(hex);
   const c = [
     clampByte(a.r + (target.r - a.r) * amt),
@@ -117,8 +121,14 @@ export function applyAccent(): void {
   if (hex && /^#[0-9a-fA-F]{6}$/.test(hex)) {
     const { r, g, b } = hexToRgb(hex);
     st.setProperty("--color-accent", hex);
-    st.setProperty("--color-accent-hover", mix(hex, { r: 0, g: 0, b: 0 }, 0.16));
-    st.setProperty("--color-accent-light", mix(hex, { r: 255, g: 255, b: 255 }, 0.18));
+    st.setProperty(
+      "--color-accent-hover",
+      mix(hex, { r: 0, g: 0, b: 0 }, 0.16),
+    );
+    st.setProperty(
+      "--color-accent-light",
+      mix(hex, { r: 255, g: 255, b: 255 }, 0.18),
+    );
     st.setProperty("--color-accent-subtle", `rgba(${r}, ${g}, ${b}, 0.14)`);
     accentOverride.set(hex);
   } else {
