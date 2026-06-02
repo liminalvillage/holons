@@ -22,6 +22,7 @@ export const BASE_DOMAIN = "hubs.network";
  */
 export const SUBDOMAIN_HOLONS: Record<string, string> = {
   liminal: "-1001652773351",
+  akasha: "-1003958094547",
   casaselva: "-1002964866719",
   refactory: "-1003943146280",
 };
