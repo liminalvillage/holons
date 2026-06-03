@@ -147,11 +147,16 @@ export async function exchangeCodeForProfile(opts: {
     );
   }
 
-  const tokens = (await res.json()) as { id_token?: string };
+  const tokens = (await res.json()) as {
+    id_token?: string;
+    error?: string;
+    error_description?: string;
+  };
   if (!tokens.id_token) {
-    throw new Error(
-      `Token response missing id_token (got: ${Object.keys(tokens).join(", ")})`,
-    );
+    const detail = tokens.error
+      ? `${tokens.error}${tokens.error_description ? `: ${tokens.error_description}` : ""}`
+      : `fields: ${Object.keys(tokens).join(", ")}`;
+    throw new Error(`Token response has no id_token (${detail})`);
   }
 
   return verifyIdToken(tokens.id_token, opts.clientId);
