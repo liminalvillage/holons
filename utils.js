@@ -84,7 +84,23 @@ export function subscribe(holoInstance, holon, lens, callback) {
                 try {
                     let parsed = await holoInstance.parse(data);
                     if (parsed && holoInstance.isHologram(parsed)) {
+                        const hologramSoul = parsed.soul;
                         const resolved = await holoInstance.resolveHologram(parsed, { followHolograms: true });
+                        if (resolved === null) {
+                            // Emit the SAME janitor-parseable warning that
+                            // `get`/`getAll` emit on an unresolved hologram. The
+                            // live subscribe path is the dashboard's primary read
+                            // channel; without this line a genuinely-dangling
+                            // pointer (source tombstoned/deleted) re-fires here on
+                            // every map update and is never garbage-collected.
+                            // `resolveHologram`'s own "Could not resolve hologram
+                            // soul" log carries only the SOURCE soul, not the
+                            // LOCAL pointer (holon/lens/key) a cleaner needs to
+                            // delete it — so a console-hook janitor can't act on
+                            // it. Note we still pass `null` to the callback below
+                            // (consumers treat it as "item absent", unchanged).
+                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                        }
                         if (resolved !== parsed) {
                             parsed = resolved;
                         }
