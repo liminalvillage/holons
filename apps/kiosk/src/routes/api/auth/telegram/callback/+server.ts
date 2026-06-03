@@ -32,8 +32,18 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
   if (oauthError) {
     error(401, `Telegram login error: ${oauthError}`);
   }
-  if (!code || !state || !savedState || state !== savedState || !verifier) {
-    error(400, "Invalid OAuth callback (state/code missing or mismatched)");
+  if (!code) error(400, "OAuth callback: missing ?code");
+  if (!state) error(400, "OAuth callback: missing ?state");
+  if (!savedState || !verifier) {
+    error(
+      400,
+      "OAuth callback: login cookies not sent back (tg_oidc_state/verifier missing). " +
+        "This happens if the callback URL was reloaded, login was started in a different " +
+        "browser/tab, or cookies are blocked. Start a fresh login from the button.",
+    );
+  }
+  if (state !== savedState) {
+    error(400, "OAuth callback: state mismatch — start a fresh login.");
   }
 
   // Surface misconfiguration plainly instead of a generic "auth failed".
