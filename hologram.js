@@ -168,7 +168,13 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
                         resolveHolograms: followHolograms,
                     visited: nextVisited,
                     maxDepth: maxDepth,
-                    currentDepth: currentDepth + 1
+                    currentDepth: currentDepth + 1,
+                    // The soul almost always points at a DIFFERENT holon's lens
+                    // this peer never subscribed to, so the node is cold: Gun's
+                    // `.once()` would fire `undefined` synchronously and we'd
+                    // wrongly report "target not present locally". Wait for the
+                    // network round-trip instead.
+                    awaitNetwork: true
                     }
                 );
 

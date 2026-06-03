@@ -38,12 +38,41 @@ const WRITE_TIMEOUT_MS = 5000;
  *
  * The first responder wins — both branches are idempotent so a late
  * `.once()` callback after timeout is harmlessly ignored.
+ *
+ * Pass `{ awaitNetwork: true }` for cold reads that MUST reach the network —
+ * notably cross-holon hologram soul resolution. Gun's `.once()` fires
+ * synchronously with whatever is in the local graph and never re-fires; for a
+ * node we never subscribed to (another holon's lens), that first value is
+ * `undefined` even though a peer is about to deliver the real data a few ms
+ * later. Accepting that `undefined` as "not found" is exactly what produced
+ * the `Could not resolve hologram soul: … (target not present locally)` false
+ * negatives on freshly-loaded federated data. In `awaitNetwork` mode we use
+ * `.on()` instead, skip the cold `undefined`, and settle once the value
+ * syncs — while still honouring an explicit `null` (a real tombstone) and the
+ * deadline (for nodes no peer ever answers). The common, same-holon read path
+ * keeps the fast `.once()` behaviour so empty/missing local reads resolve
+ * immediately instead of blocking for the full deadline.
  */
-function onceWithTimeout(node, timeoutMs = READ_TIMEOUT_MS) {
+function onceWithTimeout(node, timeoutMs = READ_TIMEOUT_MS, { awaitNetwork = false } = {}) {
+    if (!awaitNetwork) {
+        return new Promise((resolve) => {
+            let done = false;
+            const finish = (v) => { if (!done) { done = true; resolve(v); } };
+            node.once((data) => finish(data));
+            if (timeoutMs > 0) {
+                setTimeout(() => finish(null), timeoutMs);
+            }
+        });
+    }
+
     return new Promise((resolve) => {
         let done = false;
-        const finish = (v) => { if (!done) { done = true; resolve(v); } };
-        node.once((data) => finish(data));
+        const detach = () => { try { if (node.off) node.off(); } catch { /* ignore */ } };
+        const finish = (v) => { if (!done) { done = true; detach(); resolve(v); } };
+        node.on((data) => {
+            if (data === undefined) return; // cold/not-known yet — wait for a peer
+            finish(data); // defined value OR explicit null tombstone — definitive
+        });
         if (timeoutMs > 0) {
             setTimeout(() => finish(null), timeoutMs);
         }
@@ -535,6 +564,11 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
         validationOptions = {},
         visited,
         timeout = READ_TIMEOUT_MS,
+        // Network-aware read: skip Gun's cold synchronous `undefined` and wait
+        // (up to `timeout`) for a peer to answer. Used by hologram soul
+        // resolution so cross-holon reads aren't misreported as missing. See
+        // `onceWithTimeout`. Off by default to keep same-holon reads fast.
+        awaitNetwork = false,
         // `_deleted: true` is the soft-tombstone convention used by the bot,
         // the web dashboard, and the MCP council tools. Pre-this fix the
         // library was unaware of it and every caller filtered defensively.
@@ -661,7 +695,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
             // `.once()` wrapped in a deadline — cold-path reads (peer offline,
             // never-written key) used to hang forever otherwise. After
             // `timeout` ms with no Gun response we treat it as "not found".
-            onceWithTimeout(dataPath, timeout).then(handleData);
+            onceWithTimeout(dataPath, timeout, { awaitNetwork }).then(handleData);
         });
     } catch (error) {
         console.error('Error in get:', error);
