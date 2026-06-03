@@ -101,20 +101,21 @@ export async function exchangeCodeForProfile(opts: {
   clientId: string;
   clientSecret: string;
 }): Promise<TelegramProfile> {
-  const basic = Buffer.from(`${opts.clientId}:${opts.clientSecret}`).toString(
-    "base64",
-  );
+  // client_secret_post: credentials in the form body. Telegram lists
+  // client_secret_basic as supported too, but in practice rejects it with
+  // invalid_client — the working flow passes client_id/secret in the body.
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: opts.code,
     redirect_uri: opts.redirectUri,
     code_verifier: opts.codeVerifier,
+    client_id: opts.clientId,
+    client_secret: opts.clientSecret,
   });
 
   const res = await fetch(TG_TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${basic}`,
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
