@@ -9,9 +9,14 @@
 // recorded via `actingAs`), so this is the identity half of the web app's flow
 // with no Nostr key derivation:
 //   /login   → redirect to Telegram (Authorization Code + PKCE)
-//   /callback → exchange code (client_secret_basic), verify id_token vs JWKS,
-//               mint a session cookie scoped to the hub domain
+//   /callback → exchange code (client_secret_post), verify id_token vs JWKS,
+//               mint a session cookie scoped to .hubs.network
 //   /session → return the verified profile (or a dev user in non-prod)
+//
+// Multi-tenant: all subdomains route through one canonical callback origin
+// (TELEGRAM_OIDC_CALLBACK_ORIGIN) so only ONE redirect_uri is registered in
+// BotFather; the session cookie is .hubs.network-wide and we bounce the user
+// back to their originating subdomain.
 //
 // Lives under $lib/server, so SvelteKit never bundles it into the client.
 
@@ -47,6 +52,14 @@ export interface AuthConfig {
   clientId: string;
   clientSecret: string;
   jwtSecret: string;
+  /**
+   * Single canonical callback origin for the multi-tenant flow, e.g.
+   * "https://hubs.network". Every tenant subdomain routes its OIDC round-trip
+   * through this one host (so only ONE redirect_uri must be registered in
+   * BotFather), then we bounce the user back to their originating subdomain.
+   * Empty in local dev → falls back to the request origin (single host).
+   */
+  callbackOrigin: string;
 }
 
 /** Read auth config from private env (server-only, sourced from root .env). */
@@ -57,7 +70,30 @@ export function authConfig(): AuthConfig {
     clientId: (env.TELEGRAM_OIDC_CLIENT_ID || "").trim(),
     clientSecret: (env.TELEGRAM_OIDC_CLIENT_SECRET || "").trim(),
     jwtSecret: (env.AUTH_JWT_SECRET || "").trim(),
+    callbackOrigin: (env.TELEGRAM_OIDC_CALLBACK_ORIGIN || "")
+      .trim()
+      .replace(/\/$/, ""),
   };
+}
+
+/**
+ * Whether `origin` is a safe place to redirect the user back to after login
+ * (prevents the return cookie from being used as an open redirect): any
+ * hubs.network host over https, or localhost in dev.
+ */
+export function isAllowedReturnOrigin(
+  origin: string | undefined | null,
+): boolean {
+  if (!origin) return false;
+  try {
+    const u = new URL(origin);
+    const h = u.hostname;
+    const isHub = h === "hubs.network" || h.endsWith(".hubs.network");
+    const isLocal = h === "localhost" || h === "127.0.0.1";
+    return (u.protocol === "https:" && isHub) || isLocal;
+  } catch {
+    return false;
+  }
 }
 
 // --- PKCE + authorization request ---
@@ -186,13 +222,14 @@ export function sessionCookieOptions(secure: boolean, domain?: string) {
   };
 }
 
-export function transientCookieOptions(secure: boolean) {
+export function transientCookieOptions(secure: boolean, domain?: string) {
   return {
     path: "/",
     httpOnly: true,
     secure,
     sameSite: "lax" as const,
     maxAge: 600,
+    ...(domain ? { domain } : {}),
   };
 }
 
