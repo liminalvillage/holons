@@ -36,6 +36,18 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     error(400, "Invalid OAuth callback (state/code missing or mismatched)");
   }
 
+  // Surface misconfiguration plainly instead of a generic "auth failed".
+  if (!cfg.clientId || !cfg.clientSecret || !cfg.jwtSecret) {
+    const missing = [
+      !cfg.clientId && "TELEGRAM_OIDC_CLIENT_ID",
+      !cfg.clientSecret && "TELEGRAM_OIDC_CLIENT_SECRET",
+      !cfg.jwtSecret && "AUTH_JWT_SECRET",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    error(500, `Telegram OIDC is not configured — missing: ${missing}`);
+  }
+
   const redirectUri = `${url.origin}/api/auth/telegram/callback`;
   let profile: TelegramProfile;
   try {
@@ -47,8 +59,11 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
       clientSecret: cfg.clientSecret,
     });
   } catch (e) {
+    // The underlying reason (e.g. token endpoint "invalid_client" or a
+    // redirect_uri mismatch) is diagnostic and contains no secret — surface it.
+    const reason = e instanceof Error ? e.message : String(e);
     console.error("OIDC code exchange/verify failed:", e);
-    error(401, "Telegram authentication failed");
+    error(401, `Telegram authentication failed: ${reason}`);
   }
 
   const token = await mintSession(profile, cfg.jwtSecret);
