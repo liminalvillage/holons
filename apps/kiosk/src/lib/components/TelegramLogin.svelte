@@ -1,43 +1,20 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  // Renders the official Telegram Login Widget when a bot username is
-  // configured. The widget calls a global callback with the authenticated
-  // user, which we persist. Without configuration we explain how to enable it
-  // (and, in dev, the VITE_DEV_TELEGRAM_USER_* fallback already auto-logs in).
+  // Login via Telegram's OpenID Connect provider. The button starts a full-page
+  // redirect to our /api/auth/telegram/login endpoint, which bounces through
+  // Telegram and back to /callback; the server verifies the id_token and sets
+  // the session cookie. Viewing stays open to all; editing requires login.
   //
-  // Login domain: the backing bot must register `hubs.network` via @BotFather's
-  // /setdomain. Telegram honours the registered domain and its subdomains, so a
-  // single /setdomain hubs.network authorises every hub kiosk served from a
-  // *.hubs.network origin.
-  import { onMount } from "svelte";
+  // Setup: the backing bot needs Web Login configured in @BotFather (client_id
+  // + client_secret) and this site's callback registered under Allowed URLs,
+  // e.g. https://<hub>.hubs.network/api/auth/telegram/callback.
   import {
-    botUsername,
-    setUser,
+    login,
     logout,
     displayName,
     telegramUser,
     type TelegramUser,
   } from "$lib/auth";
-
-  let host: HTMLDivElement;
-
-  onMount(() => {
-    // Global hook the widget invokes: data-onauth="onKioskTelegramAuth(user)".
-    (window as any).onKioskTelegramAuth = (user: TelegramUser) => setUser(user);
-
-    if (botUsername && host) {
-      const s = document.createElement("script");
-      s.async = true;
-      s.src = "https://telegram.org/js/telegram-widget.js?22";
-      s.setAttribute("data-telegram-login", botUsername);
-      s.setAttribute("data-size", "large");
-      s.setAttribute("data-radius", "12");
-      s.setAttribute("data-userpic", "true");
-      s.setAttribute("data-request-access", "write");
-      s.setAttribute("data-onauth", "onKioskTelegramAuth(user)");
-      host.appendChild(s);
-    }
-  });
 </script>
 
 <div class="login">
@@ -45,8 +22,9 @@
     <div class="glyph" aria-hidden="true">✓</div>
     <h3>Logged in</h3>
     <p>
-      You're signed in as <strong>{displayName($telegramUser)}</strong> and can edit
-      what's on the screen.
+      You're signed in as
+      <strong>{displayName($telegramUser as TelegramUser)}</strong>
+      and can edit what's on the screen.
     </p>
     <button class="logout" on:click={logout}>Log out</button>
   {:else}
@@ -56,15 +34,19 @@
       Sign in to add and edit what's on the screen. Viewing stays open to all.
     </p>
 
-    {#if botUsername}
-      <div class="widget" bind:this={host}></div>
-    {:else}
-      <p class="hint">
-        Telegram login isn't configured yet. Set
-        <code>VITE_TELEGRAM_BOT_USERNAME</code> in the root <code>.env</code> to the
-        bot that backs this hub.
-      </p>
-    {/if}
+    <button class="telegram" on:click={login}>
+      <svg
+        class="tg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
+        />
+      </svg>
+      <span>Log in with Telegram</span>
+    </button>
   {/if}
 </div>
 
@@ -88,20 +70,23 @@
     margin: 0 auto 1rem;
     max-width: 22rem;
   }
-  .widget {
-    display: flex;
-    justify-content: center;
+  .telegram {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
     min-height: 48px;
+    padding: 0 1.6rem;
+    border-radius: 14px;
+    font-weight: 700;
+    color: #fff;
+    background: #2aabee;
   }
-  .hint {
-    font-size: 0.9rem;
-    color: var(--muted);
+  .telegram:active {
+    transform: scale(0.97);
   }
-  code {
-    background: var(--paper-deep);
-    border-radius: 6px;
-    padding: 0.1em 0.4em;
-    font-size: 0.85em;
+  .tg {
+    width: 1.4rem;
+    height: 1.4rem;
   }
   .logout {
     min-height: 48px;

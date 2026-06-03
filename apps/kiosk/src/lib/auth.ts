@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Telegram identity for the kiosk. Editing is gated behind being "logged in
-// with Telegram"; viewing is always open. Identity is resolved, in order:
-//   1. inside a Telegram WebApp  → window.Telegram.WebApp.initDataUnsafe.user
-//   2. dev env fallback          → VITE_DEV_TELEGRAM_USER_* (non-prod only)
-//   3. persisted login           → localStorage (set by the Login Widget)
+// with Telegram"; viewing is always open. Login uses Telegram's OpenID Connect
+// provider via our serverless endpoints (see src/lib/server/telegramAuth.ts and
+// src/routes/api/auth/*): the browser is redirected to Telegram and back, the
+// server verifies the id_token and sets an httpOnly session cookie, and the
+// client reads the verified identity from /api/auth/session.
 //
 // We never hold the user's signing key — writes are signed by the kiosk's own
 // device key (see holosphere.ts) and record this user as the actor via
@@ -18,11 +19,7 @@ export interface TelegramUser {
   last_name?: string;
   username?: string;
   photo_url?: string;
-  auth_date?: number;
-  hash?: string;
 }
-
-const STORAGE_KEY = "kiosk_telegram_user";
 
 export const telegramUser = writable<TelegramUser | null>(null);
 export const isLoggedIn = derived(telegramUser, (u) => u != null);
@@ -30,71 +27,50 @@ export const isLoggedIn = derived(telegramUser, (u) => u != null);
 /** Whether a login overlay is currently requested. */
 export const loginOpen = writable<boolean>(false);
 
-/** The configured Login Widget bot username (without @), if any. */
-export const botUsername = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? "")
-  .toString()
-  .replace(/^@/, "");
-
-function persisted(): TelegramUser | null {
-  if (typeof localStorage === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as TelegramUser) : null;
-  } catch {
-    return null;
-  }
+function normalize(u: any): TelegramUser | null {
+  if (!u || u.id == null) return null;
+  return {
+    id: Number(u.id),
+    first_name: u.first_name ?? "",
+    last_name: u.last_name,
+    username: u.username,
+    photo_url: u.photo_url,
+  };
 }
 
-function devUser(): TelegramUser | null {
-  if (import.meta.env.PROD) return null;
-  const id = Number(import.meta.env.VITE_DEV_TELEGRAM_USER_ID);
-  const name = import.meta.env.VITE_DEV_TELEGRAM_USER_NAME;
-  if (!Number.isFinite(id) || !name) return null;
-  const u: TelegramUser = { id, first_name: String(name) };
-  const username = import.meta.env.VITE_DEV_TELEGRAM_USER_USERNAME;
-  if (username) u.username = String(username);
-  const last = import.meta.env.VITE_DEV_TELEGRAM_USER_LAST_NAME;
-  if (last) u.last_name = String(last);
-  return u;
-}
-
-/** Resolve and hydrate the current Telegram identity. Call once on mount. */
-export function initAuth(): void {
+/**
+ * Resolve the current identity from the server session (or the dev-only
+ * auto-login in non-prod). Call once on mount; updates the store reactively.
+ */
+export async function initAuth(): Promise<void> {
   if (typeof window === "undefined") return;
-  const wa = (window as any).Telegram?.WebApp;
-  if (wa?.initDataUnsafe?.user) {
-    wa.ready?.();
-    wa.expand?.();
-    setUser(wa.initDataUnsafe.user as TelegramUser);
-    return;
-  }
-  const dev = devUser();
-  if (dev) {
-    setUser(dev);
-    return;
-  }
-  const stored = persisted();
-  if (stored) telegramUser.set(stored);
-}
-
-/** Record a logged-in user (from the Login Widget or WebApp) and persist it. */
-export function setUser(user: TelegramUser): void {
-  telegramUser.set(user);
-  loginOpen.set(false);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    const res = await fetch("/api/auth/session");
+    if (res.ok) {
+      const { user } = await res.json();
+      telegramUser.set(normalize(user));
+      return;
+    }
   } catch {
-    /* private mode — session-only login */
+    /* offline / not logged in */
   }
-}
-
-export function logout(): void {
   telegramUser.set(null);
+}
+
+/** Begin the Telegram OIDC login (full-page redirect via our /login endpoint). */
+export function login(): void {
+  if (typeof window === "undefined") return;
+  loginOpen.set(false);
+  window.location.href = "/api/auth/telegram/login";
+}
+
+export async function logout(): Promise<void> {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    await fetch("/api/auth/session", { method: "DELETE" });
   } catch {
-    /* ignore */
+    /* best effort */
   }
+  telegramUser.set(null);
 }
 
 /** Friendly display name for the logged-in user. */
