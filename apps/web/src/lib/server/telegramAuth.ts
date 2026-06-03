@@ -98,7 +98,11 @@ export function buildAuthorizationUrl(opts: {
   u.searchParams.set("state", opts.state);
   u.searchParams.set("code_challenge", opts.codeChallenge);
   u.searchParams.set("code_challenge_method", "S256");
-  return u.toString();
+  // Telegram's scope parser treats "+" literally, so a "+"-encoded space breaks
+  // the openid scope (the token response then omits id_token). URLSearchParams
+  // encodes spaces as "+", so force "%20". Other params are base64url/digits/a
+  // URL with no literal spaces, so this only rewrites the scope separator.
+  return u.toString().replace(/\+/g, "%20");
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +148,11 @@ export async function exchangeCodeForProfile(opts: {
   }
 
   const tokens = (await res.json()) as { id_token?: string };
-  if (!tokens.id_token) throw new Error("Token response missing id_token");
+  if (!tokens.id_token) {
+    throw new Error(
+      `Token response missing id_token (got: ${Object.keys(tokens).join(", ")})`,
+    );
+  }
 
   return verifyIdToken(tokens.id_token, opts.clientId);
 }
