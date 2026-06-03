@@ -158,9 +158,15 @@ export async function verifyIdToken(
     issuer: TG_ISSUER,
     audience: clientId,
   });
-  if (!payload.sub) throw new Error("id_token missing sub");
+  // Telegram's id_token carries the numeric Bot-API user id in a non-standard
+  // `id` claim; the standard `sub` is a separate opaque subject identifier.
+  // We namespace each holon by the Telegram user id (so it matches the user's
+  // pre-existing data and the bot's view of them), so read `id` — never `sub`.
+  // Fall back to `sub` only if `id` is somehow absent.
+  const telegramId = (payload.id as string | number | undefined) ?? payload.sub;
+  if (telegramId == null) throw new Error("id_token missing id/sub");
   return {
-    id: String(payload.sub),
+    id: String(telegramId),
     // OIDC `profile` scope: name (full), preferred_username, picture.
     first_name: (payload.name as string | undefined) ?? undefined,
     username: (payload.preferred_username as string | undefined) ?? undefined,
