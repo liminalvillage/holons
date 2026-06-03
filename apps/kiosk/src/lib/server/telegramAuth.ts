@@ -51,10 +51,12 @@ export interface AuthConfig {
 
 /** Read auth config from private env (server-only, sourced from root .env). */
 export function authConfig(): AuthConfig {
+  // .trim() guards against a trailing newline/space pasted into the env var —
+  // a non-empty-but-wrong secret would otherwise fail as invalid_client.
   return {
-    clientId: env.TELEGRAM_OIDC_CLIENT_ID || "",
-    clientSecret: env.TELEGRAM_OIDC_CLIENT_SECRET || "",
-    jwtSecret: env.AUTH_JWT_SECRET || "",
+    clientId: (env.TELEGRAM_OIDC_CLIENT_ID || "").trim(),
+    clientSecret: (env.TELEGRAM_OIDC_CLIENT_SECRET || "").trim(),
+    jwtSecret: (env.AUTH_JWT_SECRET || "").trim(),
   };
 }
 
