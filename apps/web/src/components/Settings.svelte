@@ -10,7 +10,8 @@
   import { nostrStore } from '$lib/stores/nostr';
   import TitleBar from './shared/TitleBar.svelte';
   import Modal from './shared/Modal.svelte';
-  import HexPicker from './shared/HexPicker.svelte';
+  // HexPicker pulls in mapbox-gl (~1.9 MB); load it lazily (see {#await} below)
+  // so it only downloads when the picker is actually opened.
   import {
     Plus,
     Settings as SettingsIcon,
@@ -629,11 +630,13 @@
 <!-- Hex picker popup -->
 <Modal bind:open={hexPickerOpen} title="Select Hex Address" size="lg">
   {#if hexPickerOpen}
-    <HexPicker
-      value={settings.hex}
-      on:select={handleHexSelect}
-      on:cancel={() => (hexPickerOpen = false)}
-    />
+    {#await import('./shared/HexPicker.svelte') then { default: HexPicker }}
+      <HexPicker
+        value={settings.hex}
+        on:select={handleHexSelect}
+        on:cancel={() => (hexPickerOpen = false)}
+      />
+    {/await}
   {/if}
 </Modal>
 

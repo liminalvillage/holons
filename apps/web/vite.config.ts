@@ -50,6 +50,9 @@ export default defineConfig({
     noExternal: ["holosphere"],
   },
   build: {
+    // Target modern evergreen browsers so esbuild/Rollup don't down-level
+    // syntax or ship legacy polyfills (Lighthouse "avoid legacy JavaScript").
+    target: "es2022",
     rollupOptions: {
       // Externalize Node.js-only packages from client bundle
       external: ["ws"],

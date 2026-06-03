@@ -12,7 +12,9 @@
 	} from '$lib/holosphere/publish';
 	import { awaitName } from '$lib/stores/nameResolver';
 	import Modal from './Modal.svelte';
-	import HexPicker from './HexPicker.svelte';
+	// HexPicker pulls in mapbox-gl (~1.9 MB). It's only shown when the user
+	// opens the picker, so load it lazily (see the {#await} in the markup) to
+	// keep mapbox out of the initial bundle this button is statically reachable from.
 	// @ts-ignore — h3-js has no published types in this repo's tsconfig
 	import * as h3 from 'h3-js';
 
@@ -413,7 +415,9 @@
 				<span class="ptf-upcast__hint">Also surface this at wider zoom levels, not only at the exact spot.</span>
 			</span>
 		</label>
-		<HexPicker on:select={onHexSelect} on:cancel={onHexCancel} />
+		{#await import('./HexPicker.svelte') then { default: HexPicker }}
+			<HexPicker on:select={onHexSelect} on:cancel={onHexCancel} />
+		{/await}
 	{/if}
 </Modal>
 

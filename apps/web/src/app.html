@@ -10,6 +10,12 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <meta name="theme-color" content="#1f2937" />
+
+    <!-- Warm up the TLS/TCP handshake to the third-party script origins so the
+         deferred Telegram SDK and async Google Translate widget start fetching
+         sooner. -->
+    <link rel="preconnect" href="https://telegram.org" crossorigin />
+    <link rel="preconnect" href="https://translate.google.com" crossorigin />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
@@ -79,16 +85,21 @@
       })();
     </script>
 
-    <!-- Telegram WebApp SDK - Must be loaded first -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Telegram WebApp SDK. `defer` keeps it off the critical rendering path
+         while still guaranteeing it runs (in document order) before the
+         deferred SvelteKit app module, so window.Telegram is ready at mount. -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
 
     <!-- Google Translate widget bootstrap. Local script defines
 		     `googleTranslateElementInit` before element.js loads async. -->
     <link rel="stylesheet" href="%sveltekit.assets%/google-translate.css" />
-    <script src="%sveltekit.assets%/google-translate.js"></script>
+    <!-- Both deferred so neither blocks first paint. `defer` preserves document
+         order, so google-translate.js defines googleTranslateElementInit before
+         element.js loads and invokes it. -->
+    <script src="%sveltekit.assets%/google-translate.js" defer></script>
     <script
       src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-      async
+      defer
     ></script>
 
     %sveltekit.head%
