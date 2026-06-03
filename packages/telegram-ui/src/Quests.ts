@@ -27,6 +27,7 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
+    reflectJoin,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -491,7 +492,19 @@ export default class Quests {
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
 
-            // Unified save and update - pass interacting user for personal hologram on join
+            // On join, mirror the quest into the joiner's personal holon as a
+            // hologram via the shared core path (same as harvest-web). This is
+            // what surfaces the task under "my holon" everywhere; skipped by
+            // core when the quest already lives in the joiner's personal holon.
+            // The Telegram DM itself is still delivered imperatively below
+            // (updateMessage → ensureTelegramHologramMessage) because the bot
+            // can't subscribe to its own writes.
+            if (action === 'join') {
+                await reflectJoin({ holosphere: this.db, homeHolonId: holonId, quest, user: sender })
+                    .catch((err: any) => log.warn(`reflectJoin failed for quest ${messageId} in ${holonId}: ${err?.message || err}`));
+            }
+
+            // Unified save and update - pass interacting user for personal hologram DM on join
             const interactingUser = (action === 'join') ? sender : null;
             await this.updateMessage(ctx, quest, language, { interactingUser });
         });
