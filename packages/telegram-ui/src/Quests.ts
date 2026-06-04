@@ -27,8 +27,6 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
-    reflectJoin,
-    reflectLeave,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -484,13 +482,6 @@ export default class Quests {
             quest.participants = quest.participants || [];
             quest.appreciation = quest.appreciation || [];
 
-            // The "join" button is a toggle: clicking it when already a
-            // participant is a *leave*. Capture membership before toggling so we
-            // know which way the personal-holon mirror should move.
-            const wasParticipant = quest.participants.some(
-                (p: any) => p != null && p.id != null && String(p.id) === String(sender.id)
-            );
-
             // Participation and appreciation are mutually exclusive per member;
             // @holons/core owns that rule (doer XOR thanker). Completed quests
             // are already short-circuited by handleCompletedQuestInteraction above.
@@ -499,19 +490,6 @@ export default class Quests {
                 : toggleAppreciation(quest, sender);
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
-
-            // Mirror the membership change into the member's personal holon via
-            // the shared core path (same as harvest-web): join writes a hologram
-            // so the task surfaces under "my holon" everywhere; leave removes it.
-            // Core skips when the quest already lives in the member's own holon.
-            // The Telegram DM itself is still delivered imperatively below
-            // (updateMessage → ensureTelegramHologramMessage) because the bot
-            // can't subscribe to its own writes.
-            if (action === 'join') {
-                const reflect = wasParticipant ? reflectLeave : reflectJoin;
-                await reflect({ holosphere: this.db, homeHolonId: holonId, quest, user: sender })
-                    .catch((err: any) => log.warn(`reflect membership failed for quest ${messageId} in ${holonId}: ${err?.message || err}`));
-            }
 
             // Unified save and update - pass interacting user for personal hologram DM on join
             const interactingUser = (action === 'join') ? sender : null;

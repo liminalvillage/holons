@@ -30,8 +30,6 @@
     } from "@holons/core/checklists";
     import {
         toggleParticipant as coreToggleParticipant,
-        reflectJoin,
-        reflectLeave,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -261,28 +259,11 @@
             }
         });
 
-        // On add (not remove), run the join side effects in the background —
-        // never block the participant toggle on them.
+        // Log user-actions in background (only on add). Pure bookkeeping for
+        // scoring — never block the participant toggle on it.
         if (!isSelected) {
-            // Pure bookkeeping for scoring.
             recordUserJoinAction(user, quest.title, quest.category || '').catch((err) => {
                 console.warn("[TaskModal.svelte] User action log failed:", err);
-            });
-
-            // Mirror the quest into the joiner's personal holon as a hologram
-            // (unless it already lives there). Core owns the rule; the hologram
-            // write doubles as the signal that surfaces it to the member — web
-            // renders it under their holon and the bot DMs them via /refresh.
-            reflectJoin({ holosphere, homeHolonId: holonId, quest: updatedQuest, user: newParticipant }).catch((err) => {
-                console.warn("[TaskModal.svelte] reflectJoin failed:", err);
-            });
-        } else {
-            // On remove, tear down the personal-holon hologram created on join
-            // (no-op when the quest lives in the member's own holon). The home
-            // quest put above already refreshes the member's DM to show they
-            // left; this removes the task from their "my holon" view.
-            reflectLeave({ holosphere, homeHolonId: holonId, quest: updatedQuest, user: newParticipant }).catch((err) => {
-                console.warn("[TaskModal.svelte] reflectLeave failed:", err);
             });
         }
     }
