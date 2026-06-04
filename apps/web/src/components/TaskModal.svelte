@@ -31,6 +31,7 @@
     import {
         toggleParticipant as coreToggleParticipant,
         reflectJoin,
+        reflectLeave,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -274,6 +275,14 @@
             // renders it under their holon and the bot DMs them via /refresh.
             reflectJoin({ holosphere, homeHolonId: holonId, quest: updatedQuest, user: newParticipant }).catch((err) => {
                 console.warn("[TaskModal.svelte] reflectJoin failed:", err);
+            });
+        } else {
+            // On remove, tear down the personal-holon hologram created on join
+            // (no-op when the quest lives in the member's own holon). The home
+            // quest put above already refreshes the member's DM to show they
+            // left; this removes the task from their "my holon" view.
+            reflectLeave({ holosphere, homeHolonId: holonId, quest: updatedQuest, user: newParticipant }).catch((err) => {
+                console.warn("[TaskModal.svelte] reflectLeave failed:", err);
             });
         }
     }
