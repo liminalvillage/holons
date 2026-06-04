@@ -53,7 +53,7 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com https://api.mapbox.com https://events.mapbox.com; style-src 'self' 'unsafe-inline' https://api.mapbox.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://api.mapbox.com; img-src 'self' data: https: blob:; connect-src 'self' https://api.mapbox.com https://events.mapbox.com https://translate.google.com https://translate.googleapis.com wss://*.mapbox.com; frame-src https://translate.google.com;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com https://api.mapbox.com https://events.mapbox.com; style-src 'self' 'unsafe-inline' https://api.mapbox.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://api.mapbox.com; img-src 'self' data: https: blob:; connect-src 'self' https://telegram.holons.io https://api.mapbox.com https://events.mapbox.com https://translate.google.com https://translate.googleapis.com wss://*.mapbox.com; frame-src https://translate.google.com;"
 
 # Cache static assets (SvelteKit optimized)
 [[headers]]
