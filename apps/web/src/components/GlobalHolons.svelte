@@ -162,6 +162,10 @@
 
             console.log(`Found ${holonIds.size} holons in global registry`);
 
+            // Snapshot what was already registered, so we only seed the registry
+            // with holons it doesn't already know about (below).
+            const alreadyRegistered = new Set(holonIds);
+
             // If registry is empty or has very few entries, try communities lens
             if (holonIds.size < 2) {
                 console.log("Registry empty or sparse, checking communities lens...");
@@ -346,6 +350,28 @@
                 });
 
             console.log(`Updated all ${holons.length} holons with names`);
+
+            // Seed the global registry with newly-discovered community holons so
+            // it stays populated for next time and for registry-only readers
+            // (Navigator, DB). Only seed ones with a real name (avoid cold-read
+            // ghosts) that aren't already registered. Best-effort, non-blocking.
+            const toSeed = nameResults.filter(r =>
+                !personalIds.has(r.holonId)
+                && !alreadyRegistered.has(r.holonId)
+                && r.name && r.name !== r.holonId
+            );
+            if (toSeed.length) {
+                console.log(`Seeding ${toSeed.length} discovered holon(s) into global registry`);
+                Promise.allSettled(toSeed.map(r =>
+                    holosphere.writeGlobal('holons_registry', {
+                        id: r.holonId,
+                        name: r.name,
+                        purpose: '',
+                        created: new Date().toISOString(),
+                        type: 'community',
+                    })
+                )).catch(() => {});
+            }
 
             // Phase 3: Compute stats asynchronously in the background
             console.log(`Starting async stats computation for ${communityIds.length} holons...`);
