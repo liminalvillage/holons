@@ -15,3 +15,10 @@ export {
   type HolonWriter,
 } from './write.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
+export {
+  HOLONS_REGISTRY_TABLE,
+  buildRegistryEntry,
+  registerHolon,
+  type HolonRegistryEntry,
+  type RegisterHolonInput,
+} from './registry.js';

@@ -10,6 +10,7 @@
   } from '../lib/contracts/contractLoader';
   import { HolonsManager } from '../lib/holons/HolonsManager';
   import type { HolonBundle } from '../lib/holons/HolonsContract';
+  import { registerHolon } from '@holons/core/holosphere';
   import { Plus } from 'svelte-feathers';
 
   export let holonId: string;
@@ -271,6 +272,14 @@
     try {
       await holosphere.put(holonId, 'settings', contractData);
       console.log('[SaveContract] Successfully saved holon contract to Nostr');
+      // Record the new holon in the global registry so it shows up in the
+      // global view for everyone. Best-effort: never throws.
+      await registerHolon(holosphere, {
+        id: holonId,
+        name,
+        created: contractData.bundle.deployedAt,
+        type: 'community',
+      });
     } catch (err) {
       console.error('[SaveContract] Failed to save holon contract:', err);
     }

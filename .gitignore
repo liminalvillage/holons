@@ -44,6 +44,8 @@ radata*
 radata/*
 holosphere.db/*
 holosphere/
+# …but NOT the @holons/core source dir of the same name.
+!packages/core/src/holosphere/
 # Gun RAD temp files written to CWD (e.g. holosphere-!-xyz.tmp)
 holosphere-!-*
 

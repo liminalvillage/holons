@@ -26,6 +26,7 @@ import {
     migrateEquation,
 } from '@holons/core/scoring';
 import { REAEventStore } from '@holons/core/rea';
+import { registerHolon } from '@holons/core/holosphere';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -410,7 +411,15 @@ export default class Settings {
 
                 console.log(`=== Reset complete, deleted ${deletedCount} items ===\n`);
 
-                await this.db.put(holonId.toString(), 'settings', await this.getDefaultSettings(holonId, holonName))
+                const freshSettings = this.getDefaultSettings(holonId, holonName)
+                await this.db.put(holonId.toString(), 'settings', freshSettings)
+                // Re-seed the global registry (idempotent — keyed by id).
+                await registerHolon(this.db, {
+                    id: holonId,
+                    name: freshSettings.name,
+                    purpose: freshSettings.purpose,
+                    type: holonId.toString().startsWith('-') ? 'community' : 'personal',
+                })
                 ctx.reply(`Holon reset complete! ${deletedCount} items deleted.`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -2369,6 +2378,15 @@ export default class Settings {
             let holonName = await utils.getChatName(this.bot, holonId)
             settings = this.getDefaultSettings(holonId, holonName)
             await this.db.put(holonId.toString(), 'settings', settings)
+            // First time we've seen this holon → record it in the global
+            // registry so the network stays enumerable. Best-effort: never
+            // throws, so a registry hiccup can't break settings creation.
+            await registerHolon(this.db, {
+                id: holonId,
+                name: settings.name,
+                purpose: settings.purpose,
+                type: holonId.toString().startsWith('-') ? 'community' : 'personal',
+            })
         } else {
             // Ensure all required fields exist by merging with default settings.
             // migrateEquation folds legacy `hours` and flat per-currency keys
