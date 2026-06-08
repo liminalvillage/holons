@@ -162,10 +162,6 @@
 
             console.log(`Found ${holonIds.size} holons in global registry`);
 
-            // Snapshot what was already registered, so we only seed the registry
-            // with holons it doesn't already know about (below).
-            const alreadyRegistered = new Set(holonIds);
-
             // If registry is empty or has very few entries, try communities lens
             if (holonIds.size < 2) {
                 console.log("Registry empty or sparse, checking communities lens...");
@@ -185,18 +181,17 @@
                 }
             }
 
-            // If the registry + communities are still empty/sparse, fall back to
-            // discovering holons directly from the GUN graph so the global view
-            // isn't permanently stuck at zero (nothing seeds those tables).
-            if (holonIds.size < 2) {
-                console.log("Registry + communities sparse, discovering holons from the graph...");
-                try {
-                    const discovered = await discoverHolonIdsFromGraph();
-                    discovered.forEach(id => holonIds.add(id));
-                    console.log(`After graph discovery: Found ${holonIds.size} candidate holons.`);
-                } catch (error) {
-                    console.warn('Error discovering holons from graph:', error);
-                }
+            // PRIMARY source: enumerate holon nodes directly from the GUN graph
+            // root (gun.get(app).map()) — that's where holons actually live. The
+            // registry/communities tables are only a supplementary union; they
+            // aren't reliably seeded. Always run this so the view reflects the
+            // whole network rather than whatever happens to be registered.
+            try {
+                const discovered = await discoverHolonIdsFromGraph();
+                discovered.forEach(id => holonIds.add(id));
+                console.log(`After graph discovery: ${holonIds.size} candidate holons.`);
+            } catch (error) {
+                console.warn('Error discovering holons from graph:', error);
             }
 
             // Add current holon if not already included
@@ -255,14 +250,11 @@
                 // Skip shopping items and other path-like entries
                 if (trimmed.includes('/')) return false;
                 
-                // Skip all-hex ids of 15+ chars: H3 geospatial cells are exactly
-                // 15 hex chars (e.g. "8001fffffffffff") and nostr-style internal
-                // ids are longer. No real holon id (decimal telegram ids, named
-                // slugs) is a 15+ char pure-hex string. (>=15, not >15, so the
-                // 15-char map cells are caught.) isValidH3 is a belt-and-braces
-                // extra but isn't reliable on every HoloSphere build.
-                if (trimmed.length >= 15 && /^[0-9a-f]+$/i.test(trimmed)) return false;
-                if ((holosphere as any).isValidH3?.(trimmed)) return false;
+                // Skip very long hex-like strings that are clearly internal IDs (more than 15 chars)
+                if (trimmed.length > 15 && /^[0-9a-f]+$/i.test(trimmed)) return false;
+
+                // Skip specific hex patterns but be more specific
+                if (trimmed.match(/^8[0-9a-f]{15,}$/i)) return false;
                 
                 console.log(`Checking holon ID: "${trimmed}" - keeping it`);
                 return true; // Keep everything else for now
@@ -308,76 +300,40 @@
             // Phase 2: Fetch all holon names at once
             console.log(`Fetching names for all ${validHolonIds.length} holons...`);
             
-            // Fetch all names in parallel. Also capture whether the holon is a
-            // *personal* holon — those are excluded from the global community
-            // view (settings.type === 'personal', as written on self-register).
+            // Fetch all names in parallel
             const namePromises = validHolonIds.map(async (holonId) => {
                 try {
-                    const settings = await holosphere.get(holonId, "settings", holonId);
-                    const name = settings?.name || holonId;
-                    // Personal holons rarely set settings.type; they're created
-                    // with a "@username's Holon" name, so match that too.
-                    const isPersonal = settings?.type === 'personal'
-                        || /^@.+'s Holon$/i.test(name);
-                    return { holonId, name, isPersonal };
+                    const settingsResult = await holosphere.get(holonId, "settings", holonId);
+                    const settings = settingsResult;
+                    const holonName = settings?.name || holonId;
+                    return { holonId, name: holonName };
                 } catch (error) {
                     console.warn(`Failed to fetch name for holon ${holonId}:`, error);
-                    return { holonId, name: holonId, isPersonal: false }; // cold read — keep
+                    return { holonId, name: holonId }; // Fallback to ID
                 }
             });
 
             // Wait for all names to be fetched
             const nameResults = await Promise.all(namePromises);
 
-            // Drop personal holons from the community view.
-            const personalIds = new Set(
-                nameResults.filter(r => r.isPersonal).map(r => r.holonId)
-            );
-            if (personalIds.size) console.log(`Excluding ${personalIds.size} personal holon(s) from global view`);
-            const communityIds = validHolonIds.filter(id => !personalIds.has(id));
-
-            // Update surviving holons with their names; remove the personal ones.
-            holons = holons
-                .filter(holon => !personalIds.has(holon.id))
-                .map(holon => {
-                    const nameResult = nameResults.find(result => result.holonId === holon.id);
-                    return {
-                        ...holon,
-                        name: nameResult?.name || holon.id,
-                        isLoading: false,
-                        updatedAt: Date.now()
-                    };
-                });
+            // Update all holons with their names at once
+            holons = holons.map(holon => {
+                const nameResult = nameResults.find(result => result.holonId === holon.id);
+                return {
+                    ...holon,
+                    name: nameResult?.name || holon.id,
+                    isLoading: false,
+                    updatedAt: Date.now()
+                };
+            });
 
             console.log(`Updated all ${holons.length} holons with names`);
 
-            // Seed the global registry with newly-discovered community holons so
-            // it stays populated for next time and for registry-only readers
-            // (Navigator, DB). Only seed ones with a real name (avoid cold-read
-            // ghosts) that aren't already registered. Best-effort, non-blocking.
-            const toSeed = nameResults.filter(r =>
-                !personalIds.has(r.holonId)
-                && !alreadyRegistered.has(r.holonId)
-                && r.name && r.name !== r.holonId
-            );
-            if (toSeed.length) {
-                console.log(`Seeding ${toSeed.length} discovered holon(s) into global registry`);
-                Promise.allSettled(toSeed.map(r =>
-                    holosphere.writeGlobal('holons_registry', {
-                        id: r.holonId,
-                        name: r.name,
-                        purpose: '',
-                        created: new Date().toISOString(),
-                        type: 'community',
-                    })
-                )).catch(() => {});
-            }
-
             // Phase 3: Compute stats asynchronously in the background
-            console.log(`Starting async stats computation for ${communityIds.length} holons...`);
+            console.log(`Starting async stats computation for ${validHolonIds.length} holons...`);
 
             // Start stats computation without blocking the UI
-            computeStatsAsync(communityIds);
+            computeStatsAsync(validHolonIds);
             
         } catch (error) {
             console.error('Error fetching all holons:', error);
