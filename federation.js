@@ -4,7 +4,7 @@
  */
 
 import * as h3 from 'h3-js';
-import { attachHologramMeta } from './hologram.js';
+import { attachHologramMeta, parseSoulPath } from './hologram.js';
 
 /**
  * Look up a holon's display name from its `settings` lens.
@@ -887,11 +887,32 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 };
                             }
 
-                            // Defensive: even if the outbound list somehow
-                            // contains the source holon, never write a self-
-                            // hologram. The source already has the original.
-                            if (String(targetSpace) === String(holon)) {
+                            // Never write a hologram to the holon its soul
+                            // already points at — that overwrites the original
+                            // record with a pointer to itself (a circular
+                            // hologram that can never resolve, so get() logs
+                            // "CIRCULAR … Breaking loop" forever). Two cases:
+                            //   • target === source: the source already holds
+                            //     the original; don't self-hologram it.
+                            //   • forwarding a RECEIVED hologram back toward its
+                            //     birthplace via a third hop (A→B propagates,
+                            //     then B→A federation echoes the hologram — whose
+                            //     soul still points at A — home). The plain
+                            //     `target === holon` check misses this because
+                            //     here `holon` is B, not A.
+                            const soulTargetHolon =
+                                payloadToPut && typeof payloadToPut.soul === 'string'
+                                    ? parseSoulPath(payloadToPut.soul)?.holon
+                                    : null;
+                            if (
+                                String(targetSpace) === String(holon) ||
+                                (soulTargetHolon != null &&
+                                    String(soulTargetHolon) === String(targetSpace))
+                            ) {
                                 result.skipped++;
+                                result.messages.push(
+                                    `Skipped self-referential propagation of ${data.id} to ${targetSpace} (hologram soul already points there).`
+                                );
                                 return true;
                             }
 
@@ -1018,10 +1039,31 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                     };
                                 }
                                 
+                                // Same self-reference guard as partner
+                                // propagation: never write a hologram to the
+                                // holon its soul points at (would create a
+                                // circular self-pointer that can never resolve).
+                                const soulTargetHolonParent =
+                                    payloadToPut && typeof payloadToPut.soul === 'string'
+                                        ? parseSoulPath(payloadToPut.soul)?.holon
+                                        : null;
+                                if (
+                                    String(parentHexagon) === String(holon) ||
+                                    (soulTargetHolonParent != null &&
+                                        String(soulTargetHolonParent) === String(parentHexagon))
+                                ) {
+                                    result.parentPropagation.skipped =
+                                        (result.parentPropagation.skipped || 0) + 1;
+                                    result.parentPropagation.messages.push(
+                                        `Skipped self-referential parent propagation of ${data.id} to ${parentHexagon} (hologram soul already points there).`
+                                    );
+                                    return true;
+                                }
+
                                 // Store in the parent hexagon with redirection disabled and no further auto-propagation
-                                await holosphere.put(parentHexagon, lens, payloadToPut, null, { 
-                                    disableHologramRedirection: true, 
-                                    autoPropagate: false 
+                                await holosphere.put(parentHexagon, lens, payloadToPut, null, {
+                                    disableHologramRedirection: true,
+                                    autoPropagate: false
                                 });
 
                                 console.log(`[Federation] Successfully propagated to parent hexagon: ${parentHexagon}`);

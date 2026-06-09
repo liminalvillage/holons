@@ -210,6 +210,88 @@ describe('Federation Tests', () => {
     });
   });
 
+  describe('self-referential propagation guard', () => {
+    // Regression: a bidirectional federation (A↔B) used to corrupt records.
+    // A propagates quest q → B, which stores a hologram with soul pointing at
+    // A. B also has A in its outbound, so the hologram echoes back: B forwards
+    // it to A — and because the soul still points at A, A's own record gets
+    // overwritten with a pointer to ITSELF. That self-hologram can never
+    // resolve (get() logs "CIRCULAR … Breaking loop" forever). The guard must
+    // skip any target the hologram's soul already points at.
+    test('skips forwarding a received hologram back to its source (echo)', async () => {
+      const A = `${testPrefix}echo_A`;
+      const B = `${testPrefix}echo_B`;
+      const APP = holosphere.appname;
+
+      // B forwards `quests` to A (the back-edge of an A↔B federation).
+      await holosphere.federate(B, A, null, null, true, {
+        inbound: [],
+        outbound: ['quests']
+      });
+
+      // The hologram B holds for q1 points at A's storage (A is the origin).
+      const echoed = {
+        id: 'q1',
+        soul: `${APP}/${A}/quests/q1`,
+        _federation: { origin: A, sourceLens: 'quests', originalId: 'q1' }
+      };
+
+      const result = await holosphere.propagate(B, 'quests', echoed);
+
+      expect(result.success).toBe(0);
+      expect(result.skipped).toBeGreaterThanOrEqual(1);
+      expect(result.messages.some(m => m.includes('self-referential'))).toBe(true);
+
+      // A's record must NOT have been clobbered with a self-pointer.
+      const atA = await holosphere.gun.get(APP).get(A).get('quests').get('q1');
+      // (No write happened, so nothing self-referential landed at A.)
+      expect(atA && atA.soul === `${APP}/${A}/quests/q1`).toBeFalsy();
+    });
+
+    test('still forwards a hologram to a DIFFERENT third party', async () => {
+      const A = `${testPrefix}fwd_A`;
+      const B = `${testPrefix}fwd_B`;
+      const C = `${testPrefix}fwd_C`;
+      const APP = holosphere.appname;
+
+      // A forwards `quests` to C.
+      await holosphere.federate(A, C, null, null, true, {
+        inbound: [],
+        outbound: ['quests']
+      });
+
+      // A holds a hologram for q2 whose soul points at B (a third holon, not C).
+      const fromB = {
+        id: 'q2',
+        soul: `${APP}/${B}/quests/q2`,
+        _federation: { origin: B, sourceLens: 'quests', originalId: 'q2' }
+      };
+
+      const result = await holosphere.propagate(A, 'quests', fromB);
+
+      // Soul points at B, target is C — not self-referential, so it propagates.
+      expect(result.success).toBe(1);
+      expect(result.skipped).toBe(0);
+    });
+
+    test('still forwards a holon\'s own fresh data to a partner', async () => {
+      const A = `${testPrefix}fresh_A`;
+      const B = `${testPrefix}fresh_B`;
+
+      await holosphere.federate(A, B, null, null, true, {
+        inbound: [],
+        outbound: ['quests']
+      });
+
+      // Plain (non-hologram) data minted at A → hologram soul points at A,
+      // target is B, so the guard must NOT skip it.
+      const result = await holosphere.propagate(A, 'quests', { id: 'q3', title: 'Fresh' });
+
+      expect(result.success).toBe(1);
+      expect(result.skipped).toBe(0);
+    });
+  });
+
   describe('getFederatedConfig', () => {
     test('returns the inbound/outbound lens config for a federation link', async () => {
       const space1 = `${testPrefix}lens_config_space1`;
