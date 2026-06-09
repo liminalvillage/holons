@@ -35,7 +35,7 @@
   "dependencies": {
     "@holons/core": "workspace:*",
     "buffer": "^6.0.3",
-    "holosphere": "1.3.0-alpha8",
+    "holosphere": "1.3.0-alpha9",
     "jose": "^6.2.3"
   }
 }
