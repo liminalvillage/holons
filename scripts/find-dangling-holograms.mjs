@@ -16,7 +16,12 @@ const LENS = process.argv[3] || 'quests';
 const WARMUP_MS = Number(process.env.WARMUP_MS || 6000);
 const SETTLE_MS = Number(process.env.SETTLE_MS || 6000);
 
-const mod = await import('holosphere');
+// Resolve `holosphere` from the CWD (scripts/ has no node_modules of its own);
+// run from a package that depends on it, e.g. packages/telegram-ui.
+const { createRequire } = await import('module');
+const { pathToFileURL } = await import('url');
+const requireFromCwd = createRequire(pathToFileURL(`${process.cwd()}/`));
+const mod = await import(pathToFileURL(requireFromCwd.resolve('holosphere')).href);
 const HoloSphere = mod.HoloSphere || mod.default;
 // Persistent cache (in /tmp, outside the repo) so repeated runs warm up.
 const hs = new HoloSphere(APP, false, null, {
