@@ -158,6 +158,27 @@ self-signed genesis event).
 | `await sphere.auditLens(holon, lens)` | Shadow-audit a lens (accounted vs would-drop); output unchanged |
 | `sphere.getShadowReport()` / `sphere.resetShadowReport()` | Cumulative shadow stats |
 
+## Using it in the harvest dashboard
+
+The web dashboard (`apps/web`) wires signing onto the instance it builds, controlled
+by env (default **off** — no behavior change):
+
+```bash
+# apps/web/.env
+VITE_HOLOSPHERE_SIGNING=shadow            # off (default) | shadow | enforce
+VITE_HOLOSPHERE_RELAYS=wss://relay.example.com,wss://relay2.example.com   # optional
+```
+
+- `shadow` — every write is signed + published to the relay(s) and a forgery-surface
+  report is collected; **what's displayed is unchanged**. Inspect from the browser
+  console: `__signingReport()`. Use this first to watch coverage.
+- `enforce` — reads return only authorized, signed items. **Requires a membership log
+  per holon** (`foundHolon` / `addMember`) or lenses will look empty — turn on
+  deliberately, after `shadow` coverage is high.
+
+The wiring is guarded (`typeof holosphere.enableSigning === 'function'`), so it is a
+no-op against a holosphere build without signing.
+
 ## Scope & limits (Phase 1)
 
 - **Durability + portability** for signed data. ✅
