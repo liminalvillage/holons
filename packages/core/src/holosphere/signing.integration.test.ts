@@ -74,9 +74,9 @@ describe('holosphere signing — federation read-list via @holons/core factory',
   });
 
   it('adding a key to my read-list surfaces its signed writes; removing hides them', async () => {
-    sphere.addReadKey(Bpub);
+    await sphere.addReadKey(Bpub);
     expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1', 't2']);
-    sphere.removeReadKey(Bpub);
+    await sphere.removeReadKey(Bpub);
     expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1']);
   });
 
