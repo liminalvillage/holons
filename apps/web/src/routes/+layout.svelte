@@ -450,6 +450,35 @@
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
 
+		// Opt-in NIP-01 signing (holosphere Phase 1/2). Controlled by env:
+		//   VITE_HOLOSPHERE_SIGNING = off (default) | shadow | enforce
+		//   VITE_HOLOSPHERE_RELAYS  = comma-separated wss:// relay URLs (optional)
+		// - off:     no change (default — safe for production).
+		// - shadow:  sign-on-write + publish to relay(s) + measure the forgery
+		//            surface; reads are UNCHANGED. Inspect via window.__signingReport().
+		// - enforce: reads return only authorized, signed items (Phase 2). Requires
+		//            a membership log per holon (foundHolon/addMember) or lenses
+		//            appear empty — turn on deliberately.
+		// Guarded so it's a no-op on holosphere builds without signing.
+		const signingMode = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
+		if (signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
+			try {
+				const relays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
+					.split(',').map((r: string) => r.trim()).filter(Boolean);
+				await (holosphere as any).enableSigning({
+					relays,
+					shadow: signingMode === 'shadow',
+					enforce: signingMode === 'enforce',
+				});
+				if (typeof window !== 'undefined') {
+					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
+				}
+				console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
+			} catch (e) {
+				console.warn('[signing] enableSigning failed:', (e as any)?.message);
+			}
+		}
+
 		// Notify holonsbot on every put so the bot can bootstrap (or refresh)
 		// the Telegram message for the touched entity. The bot's /refresh/<kind>
 		// endpoints are idempotent — first call creates the message in the home
