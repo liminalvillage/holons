@@ -30,7 +30,8 @@
   "devDependencies": {
     "esbuild": "^0.25.12",
     "jest": "^29.7.0",
-    "jest-environment-node": "^29.7.0"
+    "jest-environment-node": "^29.7.0",
+    "nostr-tools": "^2.23.5"
   },
   "jest": {
     "testEnvironment": "node",
