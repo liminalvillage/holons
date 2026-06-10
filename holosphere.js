@@ -610,9 +610,11 @@ class HoloSphere {
             || this.config?.nostr?.relays
             || this.config?.nostr?.peers
             || [];
-        // Seed the federation read-list (the keys you want to read) — your own
-        // key is always trusted implicitly.
-        if (Array.isArray(opts.readKeys)) opts.readKeys.forEach((k) => this.addReadKey(k));
+        // Your read-list lives under your "read space" (default: your own key).
+        // Hydrate it from the SAVED federation list, then add any explicit seeds.
+        this._readSpace = opts.federationSpace || this.client?.publicKey || this.appname;
+        await this._hydrateReadKeys();
+        if (Array.isArray(opts.readKeys)) opts.readKeys.forEach((k) => this._addReadKeyLocal(k));
         this._signer = await createSigner({
             privateKey, relays, verbose: opts.verbose,
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
@@ -692,26 +694,56 @@ class HoloSphere {
 
     // -------- Federation read-list (default authorized read) --------
     //
-    // In the default `enforce` mode, your authorized-read set is YOUR list of
-    // trusted keys — your federation list (`_allowedAuthors`, also populated by
-    // the federation handshake) plus your own key. Reader-scoped, current-list
-    // (the Nostr follow model): removing a key hides its writes from your view.
-    // Accepts npub or hex.
+    // In the default `enforce` mode, your authorized-read set IS your SAVED
+    // federation list — the keys you've federated with under your read space
+    // (default: your own key), hydrated on enableSigning — plus your own key.
+    // `addReadKey`/`removeReadKey` write through to that saved federation, so the
+    // allow-list and the federation list are one and the same. Reader-scoped,
+    // current-list (Nostr follow model). Accepts npub or hex.
 
-    /** Add a key (npub or hex) to your federation read-list. Returns the hex key. */
-    addReadKey(key) {
+    /** Add a key (npub/hex) to the in-memory read-set only (no persistence). */
+    _addReadKeyLocal(key) {
         const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
-        this._allowedAuthors.add(hex);
+        if (hex) this._allowedAuthors.add(hex);
         return hex;
     }
 
-    /** Remove a key (npub or hex) from your federation read-list. */
-    removeReadKey(key) {
-        const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
-        this._allowedAuthors.delete(hex);
+    /** Load the read-set from the saved federation list (additive). */
+    async _hydrateReadKeys() {
+        if (!this._readSpace) return;
+        try {
+            const fed = await this.getFederation(this._readSpace);
+            const list = (fed && (fed.federated || fed.federation)) || [];
+            for (const k of list) this._addReadKeyLocal(k);
+        } catch { /* nothing federated yet */ }
     }
 
-    /** Your effective read-list: your own key + your federation list. */
+    /**
+     * Trust a key (npub or hex): add it to your read-set AND persist it to your
+     * saved federation list. Returns the hex key.
+     */
+    async addReadKey(key) {
+        const hex = this._addReadKeyLocal(key);
+        if (this._readSpace && hex && hex !== this.client?.publicKey) {
+            try { await this.federate(this._readSpace, hex, null, null, false); } catch { /* best-effort persist */ }
+        }
+        return hex;
+    }
+
+    /** Stop trusting a key: remove from the read-set AND your saved federation. */
+    async removeReadKey(key) {
+        const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
+        this._allowedAuthors.delete(hex);
+        if (this._readSpace && hex) { try { await this.unfederate(this._readSpace, hex); } catch { /* ignore */ } }
+    }
+
+    /** Reload the read-set from the saved federation list. */
+    async refreshReadKeys() {
+        await this._hydrateReadKeys();
+        return this.getReadKeys();
+    }
+
+    /** Your effective read-list: your own key + your saved federation list. */
     getReadKeys() {
         const own = this.client?.publicKey;
         return [...(own ? [own] : []), ...this._allowedAuthors];

@@ -66,16 +66,57 @@ describe('authorized read — federation read-list (default)', () => {
   });
 
   test('adding B to my read-list surfaces B\'s signed writes', async () => {
-    sphere.addReadKey(Bpub);
+    await sphere.addReadKey(Bpub);
     expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1', 't2']);
   });
 
   test('removing B hides them again (current-list semantics)', async () => {
-    sphere.removeReadKey(Bpub);
+    await sphere.removeReadKey(Bpub);
     expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1']);
   });
 
   test('getReadKeys includes my own key', () => {
     expect(sphere.getReadKeys()).toContain(sphere._signer.pubkey);
+  });
+});
+
+describe('read-list IS the saved federation list', () => {
+  let sphere, dir, ownPub, Bpub;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-fedsave-'));
+    Bpub = getPublicKey(generateSecretKey());
+    sphere = new HoloSphere({
+      appName: 'fedsave-test',
+      privateKey: generateSecretKey(),
+      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+    });
+    await sphere.enableSigning({ relays: [], enforce: true });
+    ownPub = sphere._signer.pubkey;
+  }, 30000);
+
+  afterAll(async () => {
+    try { sphere?.disableSigning(); } catch {}
+    try { await sphere?.close?.(); } catch {}
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }, 15000);
+
+  test('addReadKey writes through to the saved federation list', async () => {
+    await sphere.addReadKey(Bpub);
+    const fed = await sphere.getFederation(ownPub);
+    expect(fed.federated).toContain(Bpub);
+  });
+
+  test('the read-set rehydrates from the saved federation', async () => {
+    sphere._allowedAuthors.clear();                 // wipe the in-memory cache
+    expect(sphere.getReadKeys()).not.toContain(Bpub);
+    await sphere.refreshReadKeys();                 // reload from saved federation
+    expect(sphere.getReadKeys()).toContain(Bpub);
+  });
+
+  test('removeReadKey writes through too', async () => {
+    await sphere.removeReadKey(Bpub);
+    const fed = await sphere.getFederation(ownPub);
+    expect(fed.federated || []).not.toContain(Bpub);
   });
 });

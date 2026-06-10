@@ -68,12 +68,12 @@ async function view(sphere, label, opts) {
   console.log('\n🚫 hidden from me (getPending):');
   console.log((await sphere.getPending(HOLON, LENS)).map((i) => `   • ${i.title}  (${i.id})`).join('\n'));
 
-  console.log(`\n👀 I recognize the stranger and add them: addReadKey('${npub(strangerPub)}')`);
-  sphere.addReadKey(strangerPub);
+  console.log(`\n👀 I recognize the stranger and add them: addReadKey('${npub(strangerPub)}')  → saved to my federation`);
+  await sphere.addReadKey(strangerPub);
   await view(sphere, '📋 MY DASHBOARD now — my key + the one I trust (forgery still hidden):');
 
   console.log('\n🙈 I stop trusting them: removeReadKey(...)  (current-list — their writes leave my view)');
-  sphere.removeReadKey(strangerPub);
+  await sphere.removeReadKey(strangerPub);
   await view(sphere, '📋 MY DASHBOARD again:');
 
   console.log(`\nread-list = [ ${sphere.getReadKeys().map(npub).join(', ')} ]   (my own key is always implicit)`);

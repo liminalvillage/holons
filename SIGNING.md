@@ -114,21 +114,25 @@ everything else (unsigned, invalid, or from a key you don't read) drops to a
 **pending** view. The raw store is untouched (open graph); enforcement happens
 entirely at read time.
 
-"Keys you trust" = **your federation read-list** — your own key (always) plus the
-keys in `_allowedAuthors` (which the federation handshake also populates). This is
-the Nostr follow model: truth is relative to whose keys you read, and it's
-**current-list** — removing a key hides its writes from your view.
+"Keys you trust" = **your saved federation list** — your own key (always) plus the
+keys you've federated with. On `enableSigning` the read-set is **hydrated from your
+saved federation** (under your read space — your own key by default), and
+`addReadKey`/`removeReadKey` **write through** to that federation list. The allow-list
+and the federation list are one and the same. Nostr follow model: truth is relative
+to whose keys you read, **current-list** — removing a key hides its writes.
 
 ```js
 await sphere.enableSigning({
   relays: ['wss://relay'],
   enforce: true,
-  readKeys: ['npub1…', 'hexpubkey…'],   // optional seed; your own key is implicit
+  // readKeys: ['npub1…'],          // optional in-memory seed
+  // federationSpace: myHomeHolon,  // whose saved federation = my read-list (default: my key)
 });
 
-sphere.addReadKey('npub1…');    // trust a key (npub or hex)
-sphere.removeReadKey('npub1…'); // stop reading it
-sphere.getReadKeys();           // [yourKey, ...federationList]
+await sphere.addReadKey('npub1…');    // trust a key (npub/hex) -> saved to federation
+await sphere.removeReadKey('npub1…'); // stop reading it       -> removed from federation
+await sphere.refreshReadKeys();       // reload from saved federation
+sphere.getReadKeys();                 // [yourKey, ...savedFederation]
 
 const tasks   = await sphere.getAll(holon, 'tasks');    // only keys you trust
 const dropped = await sphere.getPending(holon, 'tasks');// unsigned / untrusted / invalid
