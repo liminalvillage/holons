@@ -1,32 +1,47 @@
 /**
- * Integration: HoloSphere signing (Phase 2 authorized read) exercised through
- * the real @holons/core factory, in the harvest runtime.
+ * Integration: HoloSphere signing exercised through the real @holons/core
+ * factory, in the harvest runtime. Default authorized-read model = your
+ * FEDERATION read-list (sign with your key, read from keys you trust).
  *
- * Requires the local holosphere build (the repo links it via the root
- * pnpm override `holosphere: link:../holosphere`). Proves the signing API works
- * when consumed exactly the way the UIs consume it — `createHoloSphere(...)`.
+ * Requires the local holosphere build (root pnpm override
+ * `holosphere: link:../holosphere`). Proves the API works when consumed exactly
+ * the way the dashboard consumes it — `createHoloSphere(...)`.
  */
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { generateSecretKey, getPublicKey } from 'holosphere/nostr-events';
+import { generateSecretKey, getPublicKey, buildEvent } from 'holosphere/nostr-events';
 import { createHoloSphere } from './factory.js';
 
 const HOLON = '89283082803ffff';
 const LENS = 'tasks';
+const ids = (arr: any[]) => arr.map((i) => i.id).sort();
 
-describe('holosphere signing — Phase 2 authorized read via @holons/core factory', () => {
+describe('holosphere signing — federation read-list via @holons/core factory', () => {
   let sphere: any;
   let dir: string;
   let Apub: string;
+  let Bsk: Uint8Array;
   let Bpub: string;
+
+  async function writeAs(sk: Uint8Array, item: any) {
+    const evt = buildEvent({ holon: HOLON, lens: LENS, item, sk });
+    await new Promise<void>((r) => {
+      let s = false; const d = () => { if (!s) { s = true; r(); } };
+      setTimeout(d, 2000);
+      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(LENS).get(item.id).get(evt.pubkey)
+        .put(JSON.stringify(evt), () => d());
+    });
+    await sphere.put(HOLON, LENS, item, null, { _skipSign: true, autoPropagate: false });
+  }
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'harvest-sign-'));
     const Ask = generateSecretKey();
     Apub = getPublicKey(Ask);
-    Bpub = getPublicKey(generateSecretKey());
+    Bsk = generateSecretKey();
+    Bpub = getPublicKey(Bsk);
 
     sphere = createHoloSphere({
       appName: 'harvest-sign-test',
@@ -36,12 +51,10 @@ describe('holosphere signing — Phase 2 authorized read via @holons/core factor
       },
     });
 
-    await sphere.enableSigning({ relays: [], enforce: true });
-    await sphere.foundHolon(HOLON);                                             // A = genesis admin
-    await sphere.put(HOLON, LENS, { id: 't1', title: 'authorized task' });      // signed by A
-    await sphere.put(HOLON, LENS, { id: 't-forged', title: 'unsigned' }, null, { _skipSign: true }); // forgery
-    await sphere.addMember(HOLON, Bpub, 'member');                              // signed membership op
-
+    await sphere.enableSigning({ relays: [], enforce: true });               // federation read-list (default)
+    await sphere.put(HOLON, LENS, { id: 't1', title: 'mine' });              // signed by my key
+    await sphere.put(HOLON, LENS, { id: 't-forged', title: 'unsigned' }, null, { _skipSign: true });
+    await writeAs(Bsk, { id: 't2', title: 'from B' });                       // a key I do not trust yet
     await new Promise((r) => setTimeout(r, 1500));
   }, 30000);
 
@@ -51,22 +64,23 @@ describe('holosphere signing — Phase 2 authorized read via @holons/core factor
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it('enforce read returns only the authorized item', async () => {
-    const view = await sphere.getAll(HOLON, LENS);
-    expect(view.map((i: any) => i.id).sort()).toEqual(['t1']);
+  it('reads only my own signed writes by default', async () => {
+    expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1']);
   });
 
-  it('the unsigned forgery is hidden but retained in the raw store / pending', async () => {
-    const pending = await sphere.getPending(HOLON, LENS);
-    expect(pending.map((i: any) => i.id)).toContain('t-forged');
-
-    const raw = await sphere.getAll(HOLON, LENS, null, { _skipAuthorize: true });
-    expect(raw.map((i: any) => i.id).sort()).toEqual(['t-forged', 't1']);
+  it('unsigned + untrusted writes are pending, but retained in the raw store', async () => {
+    expect(ids(await sphere.getPending(HOLON, LENS))).toEqual(['t-forged', 't2']);
+    expect(ids(await sphere.getAll(HOLON, LENS, null, { _skipAuthorize: true }))).toEqual(['t-forged', 't1', 't2']);
   });
 
-  it('membership log reflects founder + added member', async () => {
-    const members = await sphere.getMembers(HOLON);
-    expect(members.get(Apub)).toBe('admin');
-    expect(members.get(Bpub)).toBe('member');
+  it('adding a key to my read-list surfaces its signed writes; removing hides them', async () => {
+    sphere.addReadKey(Bpub);
+    expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1', 't2']);
+    sphere.removeReadKey(Bpub);
+    expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1']);
+  });
+
+  it('my own key is always in the read-list', () => {
+    expect(sphere.getReadKeys()).toContain(Apub);
   });
 });

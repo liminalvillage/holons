@@ -450,23 +450,27 @@
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
 
-		// Opt-in NIP-01 signing (holosphere Phase 1/2). Controlled by env:
-		//   VITE_HOLOSPHERE_SIGNING = off (default) | shadow | enforce
-		//   VITE_HOLOSPHERE_RELAYS  = comma-separated wss:// relay URLs (optional)
+		// Opt-in NIP-01 signing (holosphere). Controlled by env:
+		//   VITE_HOLOSPHERE_SIGNING   = off (default) | shadow | enforce
+		//   VITE_HOLOSPHERE_RELAYS    = comma-separated wss:// relay URLs (optional)
+		//   VITE_HOLOSPHERE_READ_KEYS = comma-separated npub/hex keys to trust
 		// - off:     no change (default — safe for production).
-		// - shadow:  sign-on-write + publish to relay(s) + measure the forgery
-		//            surface; reads are UNCHANGED. Inspect via window.__signingReport().
-		// - enforce: reads return only authorized, signed items (Phase 2). Requires
-		//            a membership log per holon (foundHolon/addMember) or lenses
-		//            appear empty — turn on deliberately.
+		// - shadow:  sign-on-write + publish to relay(s) + measure; reads are
+		//            UNCHANGED. Inspect via window.__signingReport().
+		// - enforce: reads return only your own writes + writes from keys in your
+		//            federation read-list (VITE_HOLOSPHERE_READ_KEYS / addReadKey).
+		//            Your own key is always trusted.
 		// Guarded so it's a no-op on holosphere builds without signing.
 		const signingMode = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
 		if (signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
 			try {
 				const relays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
+				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
+					.split(',').map((r: string) => r.trim()).filter(Boolean);
 				await (holosphere as any).enableSigning({
 					relays,
+					readKeys,
 					shadow: signingMode === 'shadow',
 					enforce: signingMode === 'enforce',
 				});
