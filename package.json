@@ -60,7 +60,10 @@
     "subscriptions-shim.js",
     "registry-shim.js",
     "handshake-shim.js",
+    "nostr-events.js",
+    "signing.js",
     "README.md",
+    "SIGNING.md",
     "LICENSE",
     "FEDERATION.md"
   ],
@@ -74,7 +77,10 @@
     "./bundle/esm": "./holosphere-bundle.esm.js",
     "./bundle/min": "./holosphere-bundle.min.js",
     "./browser": "./holosphere-bundle.js",
-    "./node": "./holosphere.js"
+    "./node": "./holosphere.js",
+    "./nostr-events": "./nostr-events.js",
+    "./nostr-events.js": "./nostr-events.js",
+    "./signing.js": "./signing.js"
   },
   "repository": {
     "type": "git",
@@ -110,5 +116,8 @@
     "gun": {
       "optional": false
     }
+  },
+  "optionalDependencies": {
+    "nostr-tools": "^2.23.5"
   }
 }
