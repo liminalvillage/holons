@@ -468,6 +468,17 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                                 lens: targetLens,
                                 ...data // The data that was put
                             });
+
+                            // Phase 1 signing: sign-on-write + dual-publish to
+                            // relay(s). Fire-and-forget so it never delays or
+                            // fails the Gun write. No-op unless enableSigning()
+                            // was called. `_skipSign` avoids re-publishing during
+                            // rehydrate/migrate. See NOSTR-SIGNING-PLAN.md.
+                            if (!options._skipSign && holoInstance._signer) {
+                                Promise.resolve()
+                                    .then(() => holoInstance._signer.onWrite(targetHolon, targetLens, data))
+                                    .catch((e) => console.warn('[signing] onWrite failed:', e?.message));
+                            }
                         }
 
                         // Auto-propagate to federation by default (if data *being put* is not a hologram)

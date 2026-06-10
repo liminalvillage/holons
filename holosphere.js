@@ -78,6 +78,11 @@ class HoloSphere {
                 gunOptions = { peers: gunPeers, ...gunOptions };
             }
 
+            // Allow explicit Gun options (peers, file, radisk, …) in v2 config.
+            if (config.gunOptions) {
+                gunOptions = { ...gunOptions, ...config.gunOptions };
+            }
+
             openaikey = config.openaiKey || config.openaikey || null;
         } else {
             // v1-style positional args
@@ -131,6 +136,9 @@ class HoloSphere {
 
         // Initialize allowed authors set (for canWrite)
         this._allowedAuthors = new Set();
+
+        // Phase 1 signing layer (null until enableSigning() is called)
+        this._signer = null;
     }
 
     /**
@@ -561,6 +569,80 @@ class HoloSphere {
      */
     listAllowedAuthors() {
         return Array.from(this._allowedAuthors);
+    }
+
+    // ================================ SIGNING (Phase 1) ================================
+    //
+    // Opt-in NIP-01 signing: sign-on-write + dual-publish to Nostr relay(s),
+    // plus relay-backed recover and relay migration. Non-breaking — the Gun
+    // store is unchanged; signed events are published alongside. Requires the
+    // optional `nostr-tools` dependency. See NOSTR-SIGNING-PLAN.md.
+
+    /**
+     * Enable signing. Every subsequent put publishes a signed event to the
+     * configured relays.
+     * @param {object} [opts]
+     * @param {string|Uint8Array} [opts.privateKey] - defaults to the instance key
+     * @param {string[]} [opts.relays] - defaults to config.nostr.relays
+     * @param {boolean} [opts.verbose]
+     * @returns {Promise<object>} the signer
+     */
+    async enableSigning(opts = {}) {
+        const { createSigner } = await import('./signing.js');
+        const privateKey = opts.privateKey || this._privateKey;
+        const relays = opts.relays
+            || this.config?.nostr?.relays
+            || this.config?.nostr?.peers
+            || [];
+        this._signer = await createSigner({ privateKey, relays, verbose: opts.verbose });
+        return this._signer;
+    }
+
+    /** Disable signing and close relay connections. */
+    disableSigning() {
+        try { this._signer?.close(); } catch { /* ignore */ }
+        this._signer = null;
+    }
+
+    /** Whether signing is currently enabled. */
+    get signingEnabled() {
+        return this._signer !== null;
+    }
+
+    /** Current signing relays (empty if signing is disabled). */
+    getSigningRelays() {
+        return this._signer ? this._signer.relays : [];
+    }
+
+    /** Replace the signing relay set. */
+    setSigningRelays(relays) {
+        if (!this._signer) throw new Error('setSigningRelays: signing not enabled');
+        this._signer.setRelays(relays);
+    }
+
+    /**
+     * Recover a holon/lens from the relays into the local Gun store (verifies
+     * signatures, drops forgeries).
+     * @returns {Promise<{found:number, restored:number}>}
+     */
+    async rehydrate(holon, lens, opts = {}) {
+        if (!this._signer) throw new Error('rehydrate: signing not enabled');
+        return this._signer.rehydrate(this, holon, lens, opts);
+    }
+
+    /**
+     * Move your data to a different relay set. Republishes your signed events
+     * verbatim (signatures stay valid, ids dedup). With no filter it moves ALL
+     * your data across every holon/lens.
+     * @param {object} o
+     * @param {string[]} o.to - destination relays
+     * @param {string[]} [o.from] - source relays (defaults to current)
+     * @param {boolean} [o.switch] - switch to `to` after a successful move
+     * @returns {Promise<{total:number, moved:number, switched:boolean}>}
+     */
+    async migrateRelays(o) {
+        if (!this._signer) throw new Error('migrateRelays: signing not enabled');
+        return this._signer.migrate(o);
     }
 
     // ================================ END FEDERATION FUNCTIONS ================================
