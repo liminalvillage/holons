@@ -106,50 +106,61 @@ const report = sphere.getShadowReport();
 `wouldDrop` is exactly what Phase 2's authorized-read would hide. Watching it go to
 ~0 as clients adopt signing is the green light to flip enforcement on.
 
-## Authorized read (Phase 2) — collapse through authorized keys
+## Authorized read — your federation read-list (default)
 
 With `enforce: true`, reads no longer return raw Gun items — they return the
-**authorized view**: for each item, the latest claim from a key that was authorized
-*at the time it signed* wins; everything else (unsigned, invalid, or from a
-non-member) is dropped to a **pending** view. The raw store is untouched (open
-graph); enforcement happens entirely at read time.
+**authorized view**: for each item, the latest claim from a key **you trust** wins;
+everything else (unsigned, invalid, or from a key you don't read) drops to a
+**pending** view. The raw store is untouched (open graph); enforcement happens
+entirely at read time.
 
-The authorized-key set per holon is itself a **signed `_members` log** rooted at a
-genesis key. Anyone can write to it; only events authored by an admin-at-the-time
-take effect when the log is folded. Revocation is **as-of-time**: removing a key does
-not invalidate what it signed while it was a member.
+"Keys you trust" = **your federation read-list** — your own key (always) plus the
+keys in `_allowedAuthors` (which the federation handshake also populates). This is
+the Nostr follow model: truth is relative to whose keys you read, and it's
+**current-list** — removing a key hides its writes from your view.
 
 ```js
-await sphere.enableSigning({ relays: ['wss://relay'], enforce: true });
+await sphere.enableSigning({
+  relays: ['wss://relay'],
+  enforce: true,
+  readKeys: ['npub1…', 'hexpubkey…'],   // optional seed; your own key is implicit
+});
 
-// found the holon — your key becomes the genesis admin:
-await sphere.foundHolon(holon);
+sphere.addReadKey('npub1…');    // trust a key (npub or hex)
+sphere.removeReadKey('npub1…'); // stop reading it
+sphere.getReadKeys();           // [yourKey, ...federationList]
 
-// authorize others (only effective if you're an admin):
-await sphere.addMember(holon, theirPubkey);            // or role 'admin'
-await sphere.removeMember(holon, theirPubkey);
-
-await sphere.getMembers(holon);   // Map(pubkey -> 'admin' | 'member')
-
-// reads are now filtered to authorized, signed claims:
-const tasks   = await sphere.getAll(holon, 'tasks');   // authorized view
-const dropped = await sphere.getPending(holon, 'tasks');// unsigned / unauthorized / invalid
+const tasks   = await sphere.getAll(holon, 'tasks');    // only keys you trust
+const dropped = await sphere.getPending(holon, 'tasks');// unsigned / untrusted / invalid
 ```
 
-If you don't found the holon yourself, pin the trust anchor you were given:
-`sphere.setGenesis(holon, genesisPubkey)` (otherwise genesis is TOFU = the earliest
-self-signed genesis event).
+No genesis, no admins, no per-holon setup — each reader curates their own trust.
+
+### Optional: holon-owned authority (`enforce: 'membership'`)
+
+When the *space* should define who may write (a shared treasury, a formal org) rather
+than each reader choosing, use the signed `_members` log: a genesis key founds the
+holon and admins add/remove members, folded **as-of-time** (a key's past writes stay
+valid after it's removed).
+
+```js
+await sphere.enableSigning({ relays: ['wss://relay'], enforce: 'membership' });
+await sphere.foundHolon(holon);                 // your key becomes genesis admin
+await sphere.addMember(holon, theirPubkey);     // or role 'admin'
+await sphere.removeMember(holon, theirPubkey);
+await sphere.getMembers(holon);                 // Map(pubkey -> 'admin' | 'member')
+// sphere.setGenesis(holon, pubkey) to pin a trust anchor you were given (else TOFU)
+```
 
 ## API
 
 | Method | Purpose |
 |---|---|
-| `await sphere.enableSigning({ privateKey?, relays?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on sign-on-write + dual-publish; `shadow` = measure, `enforce` = authorized read |
-| `await sphere.foundHolon(holon)` | Self-sign the genesis membership event (you become admin) |
-| `await sphere.addMember(holon, pubkey, role?)` / `removeMember(holon, pubkey)` | Modify the signed membership log (admin-gated) |
-| `await sphere.getMembers(holon)` | Current authorized set → `Map(pubkey -> role)` |
-| `await sphere.getPending(holon, lens)` | Items hidden by enforce-mode (unsigned/unauthorized/invalid) |
-| `sphere.setGenesis(holon, pubkey)` | Pin the trusted genesis pubkey |
+| `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon authority |
+| `sphere.addReadKey(npubOrHex)` / `removeReadKey(...)` / `getReadKeys()` | Manage your federation read-list (default `enforce`) |
+| `await sphere.getPending(holon, lens)` | Items hidden by enforce-mode (unsigned/untrusted/invalid) |
+| `await sphere.foundHolon(holon)` | *(membership mode)* Self-sign the genesis event (you become admin) |
+| `await sphere.addMember(holon, pubkey, role?)` / `removeMember(...)` / `getMembers(holon)` / `setGenesis(holon, pubkey)` | *(membership mode)* Manage the signed `_members` log |
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |
 | `sphere.getSigningRelays()` / `sphere.setSigningRelays(list)` | Read / replace relay set |
@@ -167,14 +178,16 @@ by env (default **off** — no behavior change):
 # apps/web/.env
 VITE_HOLOSPHERE_SIGNING=shadow            # off (default) | shadow | enforce
 VITE_HOLOSPHERE_RELAYS=wss://relay.example.com,wss://relay2.example.com   # optional
+VITE_HOLOSPHERE_READ_KEYS=npub1abc…,npub1def…   # enforce: keys you trust to read (your own is implicit)
 ```
 
 - `shadow` — every write is signed + published to the relay(s) and a forgery-surface
   report is collected; **what's displayed is unchanged**. Inspect from the browser
   console: `__signingReport()`. Use this first to watch coverage.
-- `enforce` — reads return only authorized, signed items. **Requires a membership log
-  per holon** (`foundHolon` / `addMember`) or lenses will look empty — turn on
-  deliberately, after `shadow` coverage is high.
+- `enforce` — reads return only your own signed writes plus writes from keys in your
+  federation read-list (`VITE_HOLOSPHERE_READ_KEYS` / `addReadKey`). With an empty
+  read-list you'll see only your own data — add the keys you trust. Turn on after
+  `shadow` coverage is high.
 
 The wiring is guarded (`typeof holosphere.enableSigning === 'function'`), so it is a
 no-op against a holosphere build without signing.

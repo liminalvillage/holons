@@ -610,6 +610,9 @@ class HoloSphere {
             || this.config?.nostr?.relays
             || this.config?.nostr?.peers
             || [];
+        // Seed the federation read-list (the keys you want to read) — your own
+        // key is always trusted implicitly.
+        if (Array.isArray(opts.readKeys)) opts.readKeys.forEach((k) => this.addReadKey(k));
         this._signer = await createSigner({
             privateKey, relays, verbose: opts.verbose,
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
@@ -687,12 +690,41 @@ class HoloSphere {
         this._signer?.resetReport();
     }
 
-    // -------- Membership (Phase 2 authorized read) --------
+    // -------- Federation read-list (default authorized read) --------
     //
-    // The authorized-key set per holon is itself a signed, append-only log
-    // rooted at a genesis key. Anyone can write to it (open graph); only events
-    // authored by an admin-at-the-time take effect when the log is folded. See
-    // NOSTR-SIGNING-PLAN.md §6.
+    // In the default `enforce` mode, your authorized-read set is YOUR list of
+    // trusted keys — your federation list (`_allowedAuthors`, also populated by
+    // the federation handshake) plus your own key. Reader-scoped, current-list
+    // (the Nostr follow model): removing a key hides its writes from your view.
+    // Accepts npub or hex.
+
+    /** Add a key (npub or hex) to your federation read-list. Returns the hex key. */
+    addReadKey(key) {
+        const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
+        this._allowedAuthors.add(hex);
+        return hex;
+    }
+
+    /** Remove a key (npub or hex) from your federation read-list. */
+    removeReadKey(key) {
+        const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
+        this._allowedAuthors.delete(hex);
+    }
+
+    /** Your effective read-list: your own key + your federation list. */
+    getReadKeys() {
+        const own = this.client?.publicKey;
+        return [...(own ? [own] : []), ...this._allowedAuthors];
+    }
+
+    // -------- Membership (optional `enforce: 'membership'` holon-authority mode) --------
+    //
+    // An alternative to the federation read-list: authority lives ON THE HOLON
+    // as a signed, append-only log rooted at a genesis key (admin-gated
+    // add/remove, as-of-time). Use this when the *space* defines who may write
+    // (e.g. a shared treasury), rather than each reader choosing whose keys to
+    // read. Only consulted when signing was enabled with `enforce: 'membership'`.
+    // See NOSTR-SIGNING-PLAN.md §6.
 
     /** Pin the trusted genesis pubkey for a holon (else TOFU = earliest genesis). */
     setGenesis(holon, pubkey) {

@@ -289,18 +289,21 @@ see [`SIGNING.md`](./SIGNING.md), `signing.js`, `nostr-events.js`, `test/signing
   Watching `wouldDrop → ~0` as clients adopt signing is the go signal for Phase 2.
 
 **Phase 2 — Authorized read goes live.** ✅ *Implemented — see [`SIGNING.md`](./SIGNING.md)
-"Authorized read", `signing.js` (membership timeline + `authorizedView`),
-`test/authorize.test.js`.*
-- The `_members` log (genesis + admin-gated add/remove) is folded into an as-of-time
-  authorization oracle. With `enableSigning({ enforce: true })`, `getAll` returns the
-  collapsed authorized view (latest claim from a key authorized at signing time);
-  unsigned/unauthorized/invalid items go to a `pending` bucket (`getPending`).
-  Revocation is as-of-time. API: `foundHolon` / `addMember` / `removeMember` /
-  `getMembers` / `setGenesis`. Validated hermetically (genesis → write → add → write →
-  remove → write).
-- *Still to do:* core-domain home for membership (currently in the library layer),
-  lens-scoped roles, hard (retroactive) revocation tombstones, and importing a
-  partner's membership root across federation (overlaps Phase 3).
+"Authorized read", `signing.js` (`authorizedView`), `test/federation-read.test.js`
+(default) + `test/authorize.test.js` (membership).*
+- **Default — federation read-list** (`enforce: true`): reads collapse to the latest
+  claim from a key *you* trust — your own key plus your federation list
+  (`_allowedAuthors`, also fed by the federation handshake). Reader-scoped,
+  current-list (the Nostr follow model). API: `addReadKey` / `removeReadKey` /
+  `getReadKeys`; unsigned/untrusted/invalid → `getPending`.
+- **Optional — holon authority** (`enforce: 'membership'`): the signed `_members` log
+  (genesis + admin-gated add/remove) folded as-of-time, for when the *space* (not the
+  reader) defines who may write. API: `foundHolon` / `addMember` / `removeMember` /
+  `getMembers` / `setGenesis`.
+- Wired into the harvest dashboard (`apps/web`, env-driven) and validated through the
+  real `@holons/core` factory.
+- *Still to do:* signed/portable read-list (NIP-02 contact list), core-domain home,
+  lens-scoped roles, federated read-list import (Phase 3).
 
 **Phase 3 — Trustless federation.**
 - Propagate signed events; exchange + import membership roots/capabilities on

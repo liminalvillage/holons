@@ -23,7 +23,7 @@ const TS = 1700000000;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const ids = (arr) => arr.map((i) => i.id).sort();
 
-describe('authorized read (Phase 2)', () => {
+describe('authorized read — membership mode (holon authority)', () => {
   let sphere, dir, Ask, Bsk, Bpub;
 
   // simulate any key writing into the open graph: signed envelope + raw item
@@ -48,7 +48,7 @@ describe('authorized read (Phase 2)', () => {
       privateKey: Ask,
       gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
     });
-    await sphere.enableSigning({ relays: [], enforce: true });
+    await sphere.enableSigning({ relays: [], enforce: 'membership' });
 
     await sphere.foundHolon(HOLON, { at: TS });           // A = genesis admin
     await writeAs(Ask, { id: 't1', title: 'A task' }, TS + 1);

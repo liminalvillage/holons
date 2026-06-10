@@ -83,7 +83,14 @@ export async function createSigner({
   const pool = new SimplePool();
   let relayList = [...relays];
   const pubkey = getPublicKey(privateKey);
-  const envelope = storeEnvelope ?? (shadow || enforce); // need local envelopes to verify/authorize
+  // enforce modes:
+  //   'federation' (default for truthy enforce) — read only keys in your
+  //      federation list (holo._allowedAuthors) plus your own key. Reader-scoped,
+  //      current-list (Nostr follow model).
+  //   'membership' — holon-scoped authority via the signed `_members` log
+  //      (genesis + admin add/remove, as-of-time). Opt-in.
+  const enforceMode = enforce === 'membership' ? 'membership' : (enforce ? 'federation' : false);
+  const envelope = storeEnvelope ?? (shadow || !!enforceMode); // need local envelopes to verify/authorize
   const report = freshReport();
   const pinnedGenesis = new Map();
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
@@ -143,7 +150,7 @@ export async function createSigner({
   const signer = {
     pubkey,
     shadow,
-    enforce,
+    enforce: enforceMode,
     get relays() { return [...relayList]; },
     setRelays(next) { relayList = [...next]; },
     addRelay(url) { if (!relayList.includes(url)) relayList.push(url); },
@@ -191,7 +198,20 @@ export async function createSigner({
      */
     async authorizedView(holo, holon, lens, rawItems) {
       if (lens === MEMBERSHIP_LENS) return { items: rawItems, pending: [] };
-      const tl = await resolveMembership(holo, holon);
+
+      // Pick the authorization predicate for the active enforce mode.
+      let isAuth;
+      if (enforceMode === 'membership') {
+        const tl = await resolveMembership(holo, holon);
+        isAuth = (pub, at) => tl.isAuthorizedAt(pub, at);
+      } else {
+        // federation / read-list: trust your own key + your federation list.
+        // Current-list semantics — removing a key hides its writes from your view.
+        const readKeys = new Set(holo._allowedAuthors || []);
+        readKeys.add(pubkey);
+        isAuth = (pub) => readKeys.has(pub);
+      }
+
       report.reads++;
       const items = [], pending = [];
       for (const raw of rawItems) {
@@ -199,7 +219,7 @@ export async function createSigner({
         report.items++;
         const events = await readEnvelopes(holo, holon, lens, raw.id);
         const valid = events.filter(verifyEvent);
-        const authorized = valid.filter((e) => tl.isAuthorizedAt(e.pubkey, e.created_at));
+        const authorized = valid.filter((e) => isAuth(e.pubkey, e.created_at));
         if (authorized.length) {
           authorized.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
           const chosen = authorized[0];
