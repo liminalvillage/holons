@@ -282,9 +282,11 @@ see [`SIGNING.md`](./SIGNING.md), `signing.js`, `nostr-events.js`, `test/signing
   `sphere.enableSigning()`); the Gun store is unchanged (raw items), so nothing
   breaks. Adds `rehydrate()` (relay → Gun recovery) and `migrateRelays()` (move/mirror
   signed data across relays). Validated against real strfry.
-- *Still to do in this phase:* store the envelope in Gun (nested by pubkey) and run
-  the verify+authorize+collapse pipeline in **shadow mode** (log divergence without
-  changing output) to measure forgery surface and verification cost on real data.
+- Signed envelopes are also stored locally in a reserved `_events` Gun sidecar
+  (invisible to normal reads), and **shadow mode** (`enableSigning({ shadow: true })`)
+  classifies every read as accounted vs would-drop — measuring the forgery surface
+  **without changing output**. `auditLens()` + `getShadowReport()` expose the numbers.
+  Watching `wouldDrop → ~0` as clients adopt signing is the go signal for Phase 2.
 
 **Phase 2 — Authorized read goes live.**
 - Introduce the `_members` log (genesis + admin-signed add/remove) as a core domain.

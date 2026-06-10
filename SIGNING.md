@@ -80,21 +80,51 @@ relay (mirror) means no relay is a single point of failure; losing one costs not
 await sphere.migrateRelays({ to: ['wss://new'], filter: { '#h': ['<holon>'], '#l': ['tasks'] } });
 ```
 
+## Shadow mode — measure the forgery surface before enforcing
+
+Before Phase 2 turns on *authorized read* (where only signed, authorized data is
+displayed), shadow mode lets you measure how much existing data would be affected —
+**without changing anything that's returned**. With `shadow: true`, each `put` also
+stores its signed event in a reserved `_events` sidecar in Gun (invisible to normal
+reads), and reads classify every item as **accounted** (backed by a valid signature)
+or **would-drop** (unsigned / mismatched / invalid signature).
+
+```js
+await sphere.enableSigning({ relays: ['wss://relay'], shadow: true });
+
+// ... app runs normally; getAll output is identical to before ...
+
+// audit a lens on demand:
+const r = await sphere.auditLens('89283082803ffff', 'tasks');
+// { items: 1200, accounted: 1187, wouldDrop: 13, unsigned: 13, invalidSig: 0, mismatch: 0 }
+
+// or read the cumulative report across all reads:
+const report = sphere.getShadowReport();
+// report.byPubkey shows which keys account for which volume of data
+```
+
+`wouldDrop` is exactly what Phase 2's authorized-read would hide. Watching it go to
+~0 as clients adopt signing is the green light to flip enforcement on.
+
 ## API
 
 | Method | Purpose |
 |---|---|
-| `await sphere.enableSigning({ privateKey?, relays?, verbose? })` | Turn on sign-on-write + dual-publish |
+| `await sphere.enableSigning({ privateKey?, relays?, shadow?, storeEnvelope?, verbose? })` | Turn on sign-on-write + dual-publish (and, with `shadow`, envelope storage + read classification) |
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |
 | `sphere.getSigningRelays()` / `sphere.setSigningRelays(list)` | Read / replace relay set |
 | `await sphere.rehydrate(holon, lens)` | Restore a holon/lens from relays into Gun |
 | `await sphere.migrateRelays({ to, from?, filter?, switch? })` | Move/mirror signed data across relays |
+| `await sphere.auditLens(holon, lens)` | Shadow-audit a lens (accounted vs would-drop); output unchanged |
+| `sphere.getShadowReport()` / `sphere.resetShadowReport()` | Cumulative shadow stats |
 
 ## Scope & limits (Phase 1)
 
 - **Durability + portability** for signed data. ✅
-- **Not yet** (Phase 2+, see the plan): authorized read-collapse (the Gun store still
-  holds raw items, so reads are not yet filtered by authorized keys), `content`
-  encryption (NIP-44), and relay write-policy/NIP-42. Signing here proves *who wrote
-  what* and makes it durable; it does not yet gate *what is displayed*.
+- **Shadow measurement** of the forgery surface (`shadow: true`). ✅
+- **Not yet** (Phase 2+, see the plan): authorized read-*collapse* (shadow mode
+  *measures* what would drop but still returns everything; Phase 2 actually filters by
+  authorized keys), `content` encryption (NIP-44), and relay write-policy/NIP-42.
+  Signing here proves *who wrote what*, makes it durable, and measures coverage; it
+  does not yet gate *what is displayed*.

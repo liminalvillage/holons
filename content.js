@@ -476,7 +476,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             // rehydrate/migrate. See NOSTR-SIGNING-PLAN.md.
                             if (!options._skipSign && holoInstance._signer) {
                                 Promise.resolve()
-                                    .then(() => holoInstance._signer.onWrite(targetHolon, targetLens, data))
+                                    .then(() => holoInstance._signer.onWrite(holoInstance, targetHolon, targetLens, data))
                                     .catch((e) => console.warn('[signing] onWrite failed:', e?.message));
                             }
                         }

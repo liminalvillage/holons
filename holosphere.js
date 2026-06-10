@@ -205,7 +205,15 @@ class HoloSphere {
     }
 
     async getAll(holon, lens, password = null, options = {}) {
-        return ContentOps.getAll(this, holon, lens, password, options);
+        const items = await ContentOps.getAll(this, holon, lens, password, options);
+        // Shadow-mode verification: measure the forgery surface without changing
+        // output. Fire-and-forget so reads are never delayed or altered.
+        if (this._signer?.shadow && !options._skipShadow) {
+            Promise.resolve()
+                .then(() => this._signer.shadowCheck(this, holon, lens, items))
+                .catch(() => {});
+        }
+        return items;
     }
 
     async parse(rawData) {
@@ -594,7 +602,10 @@ class HoloSphere {
             || this.config?.nostr?.relays
             || this.config?.nostr?.peers
             || [];
-        this._signer = await createSigner({ privateKey, relays, verbose: opts.verbose });
+        this._signer = await createSigner({
+            privateKey, relays, verbose: opts.verbose,
+            shadow: opts.shadow, storeEnvelope: opts.storeEnvelope,
+        });
         return this._signer;
     }
 
@@ -643,6 +654,29 @@ class HoloSphere {
     async migrateRelays(o) {
         if (!this._signer) throw new Error('migrateRelays: signing not enabled');
         return this._signer.migrate(o);
+    }
+
+    /**
+     * Shadow audit a lens: read it and classify every item against its local
+     * signed envelope (accounted vs would-drop). Returns a per-call summary and
+     * also updates the cumulative report. Output of the lens is unchanged.
+     * Requires signing enabled with `shadow: true`.
+     * @returns {Promise<{items, accounted, wouldDrop, unsigned, invalidSig, mismatch}>}
+     */
+    async auditLens(holon, lens) {
+        if (!this._signer) throw new Error('auditLens: signing not enabled');
+        const items = await this.getAll(holon, lens, null, { _skipShadow: true });
+        return this._signer.shadowCheck(this, holon, lens, items);
+    }
+
+    /** Cumulative shadow-verification report (empty if shadow mode is off). */
+    getShadowReport() {
+        return this._signer ? this._signer.getReport() : null;
+    }
+
+    /** Reset the cumulative shadow report. */
+    resetShadowReport() {
+        this._signer?.resetReport();
     }
 
     // ================================ END FEDERATION FUNCTIONS ================================
