@@ -210,6 +210,11 @@ class HoloSphere {
         if (signer && lens !== '_members' && !options._skipAuthorize) {
             // Phase 2 enforce: collapse to the authorized view (changes output).
             if (signer.enforce) {
+                // Per-author lenses (participation, reactions, …) aggregate one
+                // record per trusted author instead of collapsing to a single winner.
+                if (signer.isPerActor(lens)) {
+                    return signer.aggregate(this, holon, lens);
+                }
                 const { items: view } = await signer.authorizedView(this, holon, lens, items);
                 return view;
             }
@@ -618,6 +623,7 @@ class HoloSphere {
         this._signer = await createSigner({
             privateKey, relays, verbose: opts.verbose,
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
+            perActorLenses: opts.perActorLenses,
         });
         return this._signer;
     }
@@ -690,6 +696,31 @@ class HoloSphere {
     /** Reset the cumulative report. */
     resetShadowReport() {
         this._signer?.resetReport();
+    }
+
+    // -------- Per-author aggregate (signed, filterable collaborative state) --------
+    //
+    // For collaborative state where many actors each assert their own status
+    // (participation, reactions, votes, RSVPs), store one signed record per actor
+    // (write with `id` = the subject) instead of a shared mutable array. Each
+    // actor's record lives under their own key, so it can't be forged across keys
+    // and your read-list filters it. `aggregate` returns each trusted actor's
+    // LATEST record; toggling is just a newer record from that actor.
+
+    /**
+     * Per-author aggregate for a lens (optionally one subject). Returns each
+     * trusted author's latest signed record, tagged with `_owner` + `_subject`.
+     * @returns {Promise<object[]>}
+     */
+    async aggregate(holon, lens, subject = null) {
+        if (!this._signer) throw new Error('aggregate: signing not enabled');
+        return this._signer.aggregate(this, holon, lens, subject);
+    }
+
+    /** Mark a lens as per-author, so enforce-mode `getAll` aggregates it. */
+    setPerActorLens(lens) {
+        if (!this._signer) throw new Error('setPerActorLens: signing not enabled');
+        this._signer.addPerActorLens(lens);
     }
 
     // -------- Federation read-list (default authorized read) --------

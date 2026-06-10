@@ -156,12 +156,45 @@ await sphere.getMembers(holon);                 // Map(pubkey -> 'admin' | 'memb
 // sphere.setGenesis(holon, pubkey) to pin a trust anchor you were given (else TOFU)
 ```
 
+## Per-author aggregate — signed, filterable collaborative state
+
+Collaborative state where many actors each assert their own status — **participation,
+reactions, votes, RSVPs** — must NOT be a shared mutable array (one item everyone
+overwrites): under signing, concurrent writes last-writer-win and clobber each other.
+
+Instead, store **one signed record per actor**: write with `id` = the *subject* (e.g.
+the quest id). Each actor's record lives under their own key (the signer IS the
+owner), so:
+- it **can't be forged** across keys (B's write lands in B's slot, not A's),
+- it's **filtered** by your read-list,
+- a **toggle** is just a newer record from that actor replacing only their own.
+
+`aggregate()` returns each trusted actor's latest record (tagged `_owner`, `_subject`):
+
+```js
+await sphere.enableSigning({ enforce: true, perActorLenses: ['participation'] });
+
+// each client signs its own record for quest 'q1' (concurrent-safe, no read-modify-write):
+await sphere.put(holon, 'participation', { id: 'q1', user: 'alice', status: 'in' });
+// … alice toggles off later — a newer record from her key:
+await sphere.put(holon, 'participation', { id: 'q1', user: 'alice', status: 'out' });
+
+const recs  = await sphere.aggregate(holon, 'participation', 'q1');  // [{...,_owner,_subject}]
+const going = recs.filter((r) => r.status === 'in').map((r) => r._owner);
+```
+
+Registering a lens via `perActorLenses` (or `setPerActorLens`) makes enforce-mode
+`getAll(holon, lens)` aggregate it automatically. Trust each record's `_owner` (the
+signer), not its self-reported fields.
+
 ## API
 
 | Method | Purpose |
 |---|---|
 | `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon authority |
 | `sphere.addReadKey(npubOrHex)` / `removeReadKey(...)` / `getReadKeys()` | Manage your federation read-list (default `enforce`) |
+| `await sphere.aggregate(holon, lens, subject?)` | Per-author records (latest per trusted actor; `_owner`/`_subject`) for signed collaborative state |
+| `sphere.setPerActorLens(lens)` (or `enableSigning({ perActorLenses })`) | Mark a lens per-author → enforce `getAll` aggregates it |
 | `await sphere.getPending(holon, lens)` | Items hidden by enforce-mode (unsigned/untrusted/invalid) |
 | `await sphere.foundHolon(holon)` | *(membership mode)* Self-sign the genesis event (you become admin) |
 | `await sphere.addMember(holon, pubkey, role?)` / `removeMember(...)` / `getMembers(holon)` / `setGenesis(holon, pubkey)` | *(membership mode)* Manage the signed `_members` log |

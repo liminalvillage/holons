@@ -75,7 +75,7 @@ function buildTimeline(events, pinnedGenesis) {
 
 export async function createSigner({
   privateKey, relays = [], kind = HOLOSPHERE_KIND, verbose = false,
-  shadow = false, enforce = false, storeEnvelope,
+  shadow = false, enforce = false, storeEnvelope, perActorLenses = [],
 }) {
   if (!privateKey) throw new Error('enableSigning: a privateKey is required');
   const { SimplePool } = await import('nostr-tools/pool');
@@ -93,6 +93,7 @@ export async function createSigner({
   const envelope = storeEnvelope ?? (shadow || !!enforceMode); // need local envelopes to verify/authorize
   const report = freshReport();
   const pinnedGenesis = new Map();
+  const perActor = new Set(perActorLenses); // lenses read as per-author aggregates
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
 
   // --- Gun sidecar I/O (reserved _events namespace; reads never see it) -------
@@ -147,6 +148,18 @@ export async function createSigner({
     return buildTimeline(events, pinnedGenesis.get(holon));
   }
 
+  // Authorization predicate for the active mode: federation read-list (default)
+  // or the holon membership log. `(pubkey, created_at) -> boolean`.
+  async function authPredicate(holo, holon) {
+    if (enforceMode === 'membership') {
+      const tl = await resolveMembership(holo, holon);
+      return (pub, at) => tl.isAuthorizedAt(pub, at);
+    }
+    const readKeys = new Set(holo._allowedAuthors || []);
+    readKeys.add(pubkey);
+    return (pub) => readKeys.has(pub);
+  }
+
   const signer = {
     pubkey,
     shadow,
@@ -198,20 +211,7 @@ export async function createSigner({
      */
     async authorizedView(holo, holon, lens, rawItems) {
       if (lens === MEMBERSHIP_LENS) return { items: rawItems, pending: [] };
-
-      // Pick the authorization predicate for the active enforce mode.
-      let isAuth;
-      if (enforceMode === 'membership') {
-        const tl = await resolveMembership(holo, holon);
-        isAuth = (pub, at) => tl.isAuthorizedAt(pub, at);
-      } else {
-        // federation / read-list: trust your own key + your federation list.
-        // Current-list semantics — removing a key hides its writes from your view.
-        const readKeys = new Set(holo._allowedAuthors || []);
-        readKeys.add(pubkey);
-        isAuth = (pub) => readKeys.has(pub);
-      }
-
+      const isAuth = await authPredicate(holo, holon);
       report.reads++;
       const items = [], pending = [];
       for (const raw of rawItems) {
@@ -236,6 +236,44 @@ export async function createSigner({
       }
       return { items, pending };
     },
+
+    /**
+     * Per-author aggregate. For each subject (item id) in a lens, return each
+     * trusted author's LATEST signed record. The signer IS the owner of their
+     * record, so nobody can forge another's (B's write lands under B's key, not
+     * A's). Results are filtered by your read-list and carry `_owner` (the
+     * signing key) and `_subject` (the item id). This is how collaborative state
+     * — participation, reactions, votes, RSVPs — stays signed and filterable
+     * without a shared mutable list.
+     */
+    async aggregate(holo, holon, lens, subject = null) {
+      const isAuth = await authPredicate(holo, holon);
+      const subjects = subject != null
+        ? [String(subject)]
+        : (await mapChildren(lensRoot(holo, holon, lens))).map(([k]) => k);
+      const out = [];
+      for (const subj of subjects) {
+        const events = (await readEnvelopes(holo, holon, lens, subj))
+          .filter(verifyEvent)
+          .filter((e) => isAuth(e.pubkey, e.created_at));
+        const latest = new Map(); // pubkey -> that author's latest event
+        for (const e of events) {
+          const prev = latest.get(e.pubkey);
+          if (!prev || e.created_at > prev.created_at || (e.created_at === prev.created_at && e.id > prev.id)) {
+            latest.set(e.pubkey, e);
+          }
+        }
+        for (const e of latest.values()) {
+          const item = eventToItem(e);
+          if (item) out.push({ ...item, _owner: e.pubkey, _subject: subj });
+        }
+      }
+      return out;
+    },
+
+    isPerActor: (lens) => perActor.has(lens),
+    addPerActorLens: (lens) => perActor.add(lens),
+    getPerActorLenses: () => Array.from(perActor),
 
     /**
      * Shadow verification (Phase 1): classify items against local envelopes

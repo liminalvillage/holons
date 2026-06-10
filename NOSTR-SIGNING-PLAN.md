@@ -300,6 +300,10 @@ see [`SIGNING.md`](./SIGNING.md), `signing.js`, `nostr-events.js`, `test/signing
   (genesis + admin-gated add/remove) folded as-of-time, for when the *space* (not the
   reader) defines who may write. API: `foundHolon` / `addMember` / `removeMember` /
   `getMembers` / `setGenesis`.
+- **Per-author aggregate** (`perActorLenses` + `aggregate()`): collaborative state
+  (participation, reactions, votes, RSVPs) as one signed record per actor instead of a
+  shared mutable array — forge-proof (the signer IS the owner), concurrent-safe,
+  filtered by the read-list, latest-status-per-actor on toggle. `test/aggregate.test.js`.
 - Wired into the harvest dashboard (`apps/web`, env-driven) and validated through the
   real `@holons/core` factory.
 - *Still to do:* signed/portable read-list (NIP-02 contact list), core-domain home,

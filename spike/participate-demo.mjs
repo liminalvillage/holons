@@ -33,7 +33,7 @@ async function signWrite(sphere, sk, lens, item, at) {
   const A = generateSecretKey(), B = generateSecretKey();
   const sphere = new HoloSphere({ appName: 'participate-demo', privateKey: A,
     gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
-  await sphere.enableSigning({ relays: [], enforce: true });
+  await sphere.enableSigning({ relays: [], enforce: true, perActorLenses: ['participation'] });
   await sphere.addReadKey(getPublicKey(B));   // I trust B too
 
   console.log('Two people, both trusted, both say "participate" on quest q1 — concurrently\n');
@@ -48,19 +48,20 @@ async function signWrite(sphere, sk, lens, item, at) {
   console.log('   participants =', JSON.stringify(qA.participants.map((p) => p.id)),
               '   ← last write wins; A was clobbered ❌\n');
 
-  // ---- Model B: one signed record per participant ----
-  await signWrite(sphere, A, 'participation', { id: 'q1:A', quest: 'q1', user: 'A', status: 'in' }, T + 1);
-  await signWrite(sphere, B, 'participation', { id: 'q1:B', quest: 'q1', user: 'B', status: 'in' }, T + 2);
+  // ---- Model B: per-author records via the aggregate system (id = subject) ----
+  // Each person signs their own record for quest 'q1'; the signer IS the owner.
+  await signWrite(sphere, A, 'participation', { id: 'q1', user: 'A', status: 'in' }, T + 1);
+  await signWrite(sphere, B, 'participation', { id: 'q1', user: 'B', status: 'in' }, T + 2);
   await sleep(800);
-  const list1 = (await sphere.getAll(HOLON, 'participation')).filter((r) => r.status === 'in').map((r) => r.user);
-  console.log('Model B  (one signed record per participant):');
-  console.log('   participants =', JSON.stringify(list1.sort()), '   ← both stacked, nothing lost ✅');
+  const inList = async () => (await sphere.aggregate(HOLON, 'participation', 'q1'))
+    .filter((r) => r.status === 'in').map((r) => r.user).sort();
+  console.log('Model B  (per-author aggregate — sphere.aggregate):');
+  console.log('   participants =', JSON.stringify(await inList()), '   ← both stacked, nothing lost ✅');
 
   // A toggles off — a NEWER record from A's key, replacing only A's own record
-  await signWrite(sphere, A, 'participation', { id: 'q1:A', quest: 'q1', user: 'A', status: 'out' }, T + 5);
+  await signWrite(sphere, A, 'participation', { id: 'q1', user: 'A', status: 'out' }, T + 5);
   await sleep(800);
-  const list2 = (await sphere.getAll(HOLON, 'participation')).filter((r) => r.status === 'in').map((r) => r.user);
-  console.log('   after A toggles off →', JSON.stringify(list2.sort()), '  ← latest status per person, B untouched ✅');
+  console.log('   after A toggles off →', JSON.stringify(await inList()), '  ← latest status per person, B untouched ✅');
 
   sphere.disableSigning(); await sphere.close?.(); fs.rmSync(dir, { recursive: true, force: true }); process.exit(0);
 })().catch((e) => { console.error('demo error:', e); process.exit(1); });
