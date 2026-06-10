@@ -106,11 +106,50 @@ const report = sphere.getShadowReport();
 `wouldDrop` is exactly what Phase 2's authorized-read would hide. Watching it go to
 ~0 as clients adopt signing is the green light to flip enforcement on.
 
+## Authorized read (Phase 2) — collapse through authorized keys
+
+With `enforce: true`, reads no longer return raw Gun items — they return the
+**authorized view**: for each item, the latest claim from a key that was authorized
+*at the time it signed* wins; everything else (unsigned, invalid, or from a
+non-member) is dropped to a **pending** view. The raw store is untouched (open
+graph); enforcement happens entirely at read time.
+
+The authorized-key set per holon is itself a **signed `_members` log** rooted at a
+genesis key. Anyone can write to it; only events authored by an admin-at-the-time
+take effect when the log is folded. Revocation is **as-of-time**: removing a key does
+not invalidate what it signed while it was a member.
+
+```js
+await sphere.enableSigning({ relays: ['wss://relay'], enforce: true });
+
+// found the holon — your key becomes the genesis admin:
+await sphere.foundHolon(holon);
+
+// authorize others (only effective if you're an admin):
+await sphere.addMember(holon, theirPubkey);            // or role 'admin'
+await sphere.removeMember(holon, theirPubkey);
+
+await sphere.getMembers(holon);   // Map(pubkey -> 'admin' | 'member')
+
+// reads are now filtered to authorized, signed claims:
+const tasks   = await sphere.getAll(holon, 'tasks');   // authorized view
+const dropped = await sphere.getPending(holon, 'tasks');// unsigned / unauthorized / invalid
+```
+
+If you don't found the holon yourself, pin the trust anchor you were given:
+`sphere.setGenesis(holon, genesisPubkey)` (otherwise genesis is TOFU = the earliest
+self-signed genesis event).
+
 ## API
 
 | Method | Purpose |
 |---|---|
-| `await sphere.enableSigning({ privateKey?, relays?, shadow?, storeEnvelope?, verbose? })` | Turn on sign-on-write + dual-publish (and, with `shadow`, envelope storage + read classification) |
+| `await sphere.enableSigning({ privateKey?, relays?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on sign-on-write + dual-publish; `shadow` = measure, `enforce` = authorized read |
+| `await sphere.foundHolon(holon)` | Self-sign the genesis membership event (you become admin) |
+| `await sphere.addMember(holon, pubkey, role?)` / `removeMember(holon, pubkey)` | Modify the signed membership log (admin-gated) |
+| `await sphere.getMembers(holon)` | Current authorized set → `Map(pubkey -> role)` |
+| `await sphere.getPending(holon, lens)` | Items hidden by enforce-mode (unsigned/unauthorized/invalid) |
+| `sphere.setGenesis(holon, pubkey)` | Pin the trusted genesis pubkey |
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |
 | `sphere.getSigningRelays()` / `sphere.setSigningRelays(list)` | Read / replace relay set |
@@ -123,8 +162,9 @@ const report = sphere.getShadowReport();
 
 - **Durability + portability** for signed data. ✅
 - **Shadow measurement** of the forgery surface (`shadow: true`). ✅
-- **Not yet** (Phase 2+, see the plan): authorized read-*collapse* (shadow mode
-  *measures* what would drop but still returns everything; Phase 2 actually filters by
-  authorized keys), `content` encryption (NIP-44), and relay write-policy/NIP-42.
-  Signing here proves *who wrote what*, makes it durable, and measures coverage; it
-  does not yet gate *what is displayed*.
+- **Authorized read** with a signed membership log + revocation-as-of-time
+  (`enforce: true`). ✅
+- **Not yet** (see the plan): `content` encryption (NIP-44) — signing proves *who
+  wrote what* and now gates *what is displayed*, but does not yet hide content;
+  relay write-policy/NIP-42; lens-scoped roles; hard (retroactive) revocation
+  tombstones; cross-holon/federated authorization import.

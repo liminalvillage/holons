@@ -288,11 +288,19 @@ see [`SIGNING.md`](./SIGNING.md), `signing.js`, `nostr-events.js`, `test/signing
   **without changing output**. `auditLens()` + `getShadowReport()` expose the numbers.
   Watching `wouldDrop → ~0` as clients adopt signing is the go signal for Phase 2.
 
-**Phase 2 — Authorized read goes live.**
-- Introduce the `_members` log (genesis + admin-signed add/remove) as a core domain.
-  Flip reads to return the collapsed authorized view per lens; route unauthorized
-  events to a `pending` bucket. This is where "filtered and collapsed through
-  authorized keys" becomes the actual UI.
+**Phase 2 — Authorized read goes live.** ✅ *Implemented — see [`SIGNING.md`](./SIGNING.md)
+"Authorized read", `signing.js` (membership timeline + `authorizedView`),
+`test/authorize.test.js`.*
+- The `_members` log (genesis + admin-gated add/remove) is folded into an as-of-time
+  authorization oracle. With `enableSigning({ enforce: true })`, `getAll` returns the
+  collapsed authorized view (latest claim from a key authorized at signing time);
+  unsigned/unauthorized/invalid items go to a `pending` bucket (`getPending`).
+  Revocation is as-of-time. API: `foundHolon` / `addMember` / `removeMember` /
+  `getMembers` / `setGenesis`. Validated hermetically (genesis → write → add → write →
+  remove → write).
+- *Still to do:* core-domain home for membership (currently in the library layer),
+  lens-scoped roles, hard (retroactive) revocation tombstones, and importing a
+  partner's membership root across federation (overlaps Phase 3).
 
 **Phase 3 — Trustless federation.**
 - Propagate signed events; exchange + import membership roots/capabilities on

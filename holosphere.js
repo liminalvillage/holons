@@ -206,12 +206,20 @@ class HoloSphere {
 
     async getAll(holon, lens, password = null, options = {}) {
         const items = await ContentOps.getAll(this, holon, lens, password, options);
-        // Shadow-mode verification: measure the forgery surface without changing
-        // output. Fire-and-forget so reads are never delayed or altered.
-        if (this._signer?.shadow && !options._skipShadow) {
-            Promise.resolve()
-                .then(() => this._signer.shadowCheck(this, holon, lens, items))
-                .catch(() => {});
+        const signer = this._signer;
+        if (signer && lens !== '_members' && !options._skipAuthorize) {
+            // Phase 2 enforce: collapse to the authorized view (changes output).
+            if (signer.enforce) {
+                const { items: view } = await signer.authorizedView(this, holon, lens, items);
+                return view;
+            }
+            // Phase 1 shadow: measure the forgery surface without changing output
+            // (fire-and-forget so reads are never delayed or altered).
+            if (signer.shadow && !options._skipShadow) {
+                Promise.resolve()
+                    .then(() => signer.shadowCheck(this, holon, lens, items))
+                    .catch(() => {});
+            }
         }
         return items;
     }
@@ -604,7 +612,7 @@ class HoloSphere {
             || [];
         this._signer = await createSigner({
             privateKey, relays, verbose: opts.verbose,
-            shadow: opts.shadow, storeEnvelope: opts.storeEnvelope,
+            shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
         });
         return this._signer;
     }
@@ -669,14 +677,80 @@ class HoloSphere {
         return this._signer.shadowCheck(this, holon, lens, items);
     }
 
-    /** Cumulative shadow-verification report (empty if shadow mode is off). */
+    /** Cumulative shadow/authorized report (empty if signing is off). */
     getShadowReport() {
         return this._signer ? this._signer.getReport() : null;
     }
 
-    /** Reset the cumulative shadow report. */
+    /** Reset the cumulative report. */
     resetShadowReport() {
         this._signer?.resetReport();
+    }
+
+    // -------- Membership (Phase 2 authorized read) --------
+    //
+    // The authorized-key set per holon is itself a signed, append-only log
+    // rooted at a genesis key. Anyone can write to it (open graph); only events
+    // authored by an admin-at-the-time take effect when the log is folded. See
+    // NOSTR-SIGNING-PLAN.md §6.
+
+    /** Pin the trusted genesis pubkey for a holon (else TOFU = earliest genesis). */
+    setGenesis(holon, pubkey) {
+        if (!this._signer) throw new Error('setGenesis: signing not enabled');
+        this._signer.pinGenesis(holon, pubkey);
+    }
+
+    /**
+     * Found a holon: write a self-signed genesis membership event making the
+     * local key the first admin, and pin it as the trust anchor.
+     * @returns {Promise<string>} the genesis pubkey
+     */
+    async foundHolon(holon, opts = {}) {
+        if (!this._signer) throw new Error('foundHolon: signing not enabled');
+        this._signer.pinGenesis(holon, this._signer.pubkey);
+        const item = { id: 'genesis', op: 'genesis', role: 'admin' };
+        await this._signer.signAndStore(this, holon, '_members', item, { at: opts.at });
+        await this.put(holon, '_members', item, null, { _skipSign: true });
+        return this._signer.pubkey;
+    }
+
+    /**
+     * Add a member (only effective if the local key is an admin of the holon).
+     * @param {string} role - 'member' (default) or 'admin'
+     */
+    async addMember(holon, pubkey, role = 'member', opts = {}) {
+        if (!this._signer) throw new Error('addMember: signing not enabled');
+        const at = opts.at;
+        const item = { id: `add:${pubkey}:${at ?? Date.now()}`, op: 'add', pubkey, role };
+        await this._signer.signAndStore(this, holon, '_members', item, { at });
+        await this.put(holon, '_members', item, null, { _skipSign: true });
+    }
+
+    /** Remove a member (only effective if the local key is an admin). */
+    async removeMember(holon, pubkey, opts = {}) {
+        if (!this._signer) throw new Error('removeMember: signing not enabled');
+        const at = opts.at;
+        const item = { id: `remove:${pubkey}:${at ?? Date.now()}`, op: 'remove', pubkey };
+        await this._signer.signAndStore(this, holon, '_members', item, { at });
+        await this.put(holon, '_members', item, null, { _skipSign: true });
+    }
+
+    /** Current authorized members → Map(pubkey -> role). */
+    async getMembers(holon) {
+        if (!this._signer) throw new Error('getMembers: signing not enabled');
+        const tl = await this._signer.resolveMembership(this, holon);
+        return tl.currentMembers();
+    }
+
+    /**
+     * Items present in the lens but NOT backed by an authorized signature
+     * (unsigned / unauthorized / invalid). What enforce-mode reads hide.
+     */
+    async getPending(holon, lens) {
+        if (!this._signer) throw new Error('getPending: signing not enabled');
+        const items = await this.getAll(holon, lens, null, { _skipAuthorize: true });
+        const { pending } = await this._signer.authorizedView(this, holon, lens, items);
+        return pending;
     }
 
     // ================================ END FEDERATION FUNCTIONS ================================
