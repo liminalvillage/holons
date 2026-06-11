@@ -58,7 +58,7 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
  * @param {function} callback - The callback to execute on changes.
  * @returns {{ unsubscribe: () => void }} - Subscription with unsubscribe method.
  */
-export function subscribe(holoInstance, holon, lens, callback) {
+export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     if (!holon || !lens) {
         throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
     }
@@ -67,6 +67,9 @@ export function subscribe(holoInstance, holon, lens, callback) {
         throw new Error('subscribe: Callback must be a function');
     }
 
+    // Notify on deletes too (callback(null, key)) — consumers already expect
+    // `object | null`. Opt out with `{ includeDeletes: false }`.
+    const includeDeletes = options.includeDeletes !== false;
     const subscriptionId = holoInstance.generateId(); // Use instance's generateId
 
     try {
@@ -124,6 +127,9 @@ export function subscribe(holoInstance, holon, lens, callback) {
                 } catch (error) {
                     console.error('Error processing subscribed data:', error);
                 }
+            } else if (includeDeletes && key && key !== '_' && holoInstance.subscriptions[subscriptionId]) {
+                // delete / tombstone — notify consumers the item is gone
+                callback(null, key);
             }
         });
 

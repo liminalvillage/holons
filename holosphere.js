@@ -400,25 +400,32 @@ class HoloSphere {
      * need to `await` — both `const s = holosphere.subscribe(...)` and
      * `const s = await holosphere.subscribe(...)` yield the same shape.
      */
-    subscribe(holon, lens, callback) {
+    subscribe(holon, lens, callback, options = {}) {
         const signer = this._signer;
         // In enforce mode, resolve each update through the signing layer so
         // subscribers see the authorized value (or null when an update isn't from
-        // a trusted, valid signature) — symmetric with get/getAll.
+        // a trusted, valid signature, or the item was deleted) — symmetric with
+        // get/getAll. Re-resolving on every change makes deletes notify too.
         if (signer && signer.enforce && holon && lens !== '_members') {
             const self = this;
-            const resolved = async (_data, key) => {
-                try {
-                    if (signer.isPerActor(lens)) {
-                        callback(await signer.aggregate(self, holon, lens, key), key);
-                    } else {
-                        callback(await signer.resolveItem(self, holon, lens, key), key);
-                    }
-                } catch { /* ignore */ }
+            const last = new Map(); // key -> last delivered (deduped)
+            const deliver = async (key) => {
+                const val = signer.isPerActor(lens)
+                    ? await signer.aggregate(self, holon, lens, key)
+                    : await signer.resolveItem(self, holon, lens, key);
+                const sig = JSON.stringify(val ?? null);
+                if (last.get(key) !== sig) { last.set(key, sig); callback(val, key); }
             };
-            return Utils.subscribe(this, holon, lens, resolved);
+            const resolved = async (_data, key) => {
+                // The raw write triggers this before the fire-and-forget signed
+                // envelope has settled, so re-resolve twice and dedup — subscribers
+                // converge to the authorized value (or null on a signed delete).
+                try { await new Promise((r) => setTimeout(r, 120)); await deliver(key); } catch { /* ignore */ }
+                try { await new Promise((r) => setTimeout(r, 400)); await deliver(key); } catch { /* ignore */ }
+            };
+            return Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
         }
-        return Utils.subscribe(this, holon, lens, callback);
+        return Utils.subscribe(this, holon, lens, callback, options);
     }
 
     notifySubscribers(data) {

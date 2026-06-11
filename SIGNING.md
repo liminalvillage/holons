@@ -35,7 +35,8 @@ Without `enableSigning()` nothing changes — signing is strictly opt-in.
   key can't drop your data, and a per-actor record can be retracted by its owner).
 - `get` / `getAll` / `subscribe` resolve through verify → read-list filter → collapse
   (singleton) or per-author aggregate. Resolution reads the **signed envelope store**,
-  so scribbling or deleting a raw slot can't change what you see.
+  so scribbling or deleting a raw slot can't change what you see. `subscribe` also
+  **notifies on deletes** — `callback(null, key)` when an item is removed.
 
 The only things the app declares are *that* signing is on (`enableSigning`) and *which*
 lenses are per-author (`perActorLenses`). Note: a per-author collection must be its own
