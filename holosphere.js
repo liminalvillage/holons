@@ -210,10 +210,8 @@ class HoloSphere {
                 // per-author lens: return the subject's aggregated records
                 return signer.aggregate(this, holon, lens, key);
             }
-            if (raw) {
-                const { items } = await signer.authorizedView(this, holon, lens, [raw]);
-                return items[0] || null; // null when the item isn't from a trusted, valid signature
-            }
+            // resolve the single item from its signed envelopes (raw-tamper-proof)
+            return signer.resolveItem(this, holon, lens, key);
         }
         return raw;
     }
@@ -247,7 +245,13 @@ class HoloSphere {
         return ContentOps.parse(this, rawData);
     }
 
-    async delete(holon, lens, key, password = null) {
+    async delete(holon, lens, key, password = null, options = {}) {
+        // Signed delete: authenticate the removal with a signed tombstone so an
+        // unauthorized key can't drop your data from the resolved view, and so a
+        // per-actor record (participation, …) can be retracted by its owner.
+        if (this._signer && holon && !options._skipSign) {
+            try { await this._signer.onDelete(this, holon, lens, key); } catch { /* best-effort */ }
+        }
         return ContentOps.deleteFunc(this, holon, lens, key, password);
     }
 
@@ -278,32 +282,36 @@ class HoloSphere {
     }
 
     // ================================ GLOBAL FUNCTIONS ================================
+    //
+    // A "global" is just a holon-less get/put: data at appname/table/key instead
+    // of appname/holon/lens/key. These are thin aliases over the holon-aware
+    // methods with `holon = null`. (Global tables hold infrastructure like the
+    // federation config, so they skip signing/resolution — get/put detect the
+    // null holon and route to the holon-less path automatically.)
 
     async putGlobal(tableName, data, password = null, options = {}) {
-        return GlobalOps.putGlobal(this, tableName, data, password, options);
+        return this.put(null, tableName, data, password, options);
     }
 
-    /**
-     * v2-compatible alias for putGlobal (no password param)
-     */
+    /** v2-compatible alias for putGlobal (no password param) */
     async writeGlobal(tableName, data, options = {}) {
-        return GlobalOps.putGlobal(this, tableName, data, null, options);
+        return this.put(null, tableName, data, null, options);
     }
 
     async getGlobal(tableName, key, password = null) {
-        return GlobalOps.getGlobal(this, tableName, key, password);
+        return this.get(null, tableName, key, password, { _skipAuthorize: true });
     }
 
     async getAllGlobal(tableName, password = null) {
-        return GlobalOps.getAllGlobal(this, tableName, password);
+        return this.getAll(null, tableName, password, { _skipAuthorize: true });
     }
 
     async deleteGlobal(tableName, key, password = null) {
-        return GlobalOps.deleteGlobal(this, tableName, key, password);
+        return this.delete(null, tableName, key, password);
     }
 
     async deleteAllGlobal(tableName, password = null) {
-        return GlobalOps.deleteAllGlobal(this, tableName, password);
+        return this.deleteAll(null, tableName, password);
     }
 
     /**
@@ -393,6 +401,23 @@ class HoloSphere {
      * `const s = await holosphere.subscribe(...)` yield the same shape.
      */
     subscribe(holon, lens, callback) {
+        const signer = this._signer;
+        // In enforce mode, resolve each update through the signing layer so
+        // subscribers see the authorized value (or null when an update isn't from
+        // a trusted, valid signature) — symmetric with get/getAll.
+        if (signer && signer.enforce && holon && lens !== '_members') {
+            const self = this;
+            const resolved = async (_data, key) => {
+                try {
+                    if (signer.isPerActor(lens)) {
+                        callback(await signer.aggregate(self, holon, lens, key), key);
+                    } else {
+                        callback(await signer.resolveItem(self, holon, lens, key), key);
+                    }
+                } catch { /* ignore */ }
+            };
+            return Utils.subscribe(this, holon, lens, resolved);
+        }
         return Utils.subscribe(this, holon, lens, callback);
     }
 

@@ -216,8 +216,8 @@ describe('HoloSphere Deletion Tests', () => {
         });
 
         test('should handle invalid parameters gracefully', async () => {
-            // Test with missing parameters
-            await expect(holoSphere.delete(null, testLens, 'test-id')).rejects.toThrow();
+            // holon is optional now (a null holon = a global table), so it is no
+            // longer invalid — only missing lens/key are.
             await expect(holoSphere.delete(testHolon, null, 'test-id')).rejects.toThrow();
             await expect(holoSphere.delete(testHolon, testLens, null)).rejects.toThrow();
             

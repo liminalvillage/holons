@@ -184,6 +184,12 @@ export async function createSigner({
       return { id: event.id, published: ok };
     },
 
+    /** Signed delete: store a signed tombstone so the deletion is authenticated. */
+    async onDelete(holo, holon, lens, key) {
+      if (!key) return { published: 0 };
+      return signer.signAndStore(holo, holon, lens, { id: String(key), _deleted: true });
+    },
+
     /** Sign-on-write hook: publish to relays + store envelope (in envelope mode). */
     async onWrite(holo, holon, lens, item) {
       try {
@@ -214,20 +220,29 @@ export async function createSigner({
       const isAuth = await authPredicate(holo, holon);
       report.reads++;
       const items = [], pending = [];
-      for (const raw of rawItems) {
-        if (!raw || !raw.id) { pending.push(raw); report.items++; report.wouldDrop++; report.unsigned++; continue; }
+      // Enumerate from the SIGNED envelope store (so raw-store tampering — a
+      // stranger deleting or scribbling a slot — can't change the view), unioned
+      // with raw-only ids (unsigned writes) so those still surface as pending.
+      const rawById = new Map((rawItems || []).filter((r) => r && r.id != null).map((r) => [String(r.id), r]));
+      const ids = new Set((await mapChildren(lensRoot(holo, holon, lens))).map(([k]) => k));
+      for (const k of rawById.keys()) ids.add(k);
+      for (const id of ids) {
         report.items++;
-        const events = await readEnvelopes(holo, holon, lens, raw.id);
+        const events = await readEnvelopes(holo, holon, lens, id);
         const valid = events.filter(verifyEvent);
         const authorized = valid.filter((e) => isAuth(e.pubkey, e.created_at));
         if (authorized.length) {
           authorized.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
-          const chosen = authorized[0];
-          items.push(eventToItem(chosen));
-          report.accounted++;
-          report.byPubkey[chosen.pubkey] = (report.byPubkey[chosen.pubkey] || 0) + 1;
+          const item = eventToItem(authorized[0]);
+          if (item && item._deleted) {
+            // authorized SIGNED delete — omit from the view (not pending)
+          } else {
+            items.push(item);
+            report.accounted++;
+            report.byPubkey[authorized[0].pubkey] = (report.byPubkey[authorized[0].pubkey] || 0) + 1;
+          }
         } else {
-          pending.push(raw);
+          pending.push(rawById.get(id) || { id });
           report.wouldDrop++;
           if (valid.length) report.unauthorized++;
           else if (events.length) report.invalidSig++;
@@ -235,6 +250,17 @@ export async function createSigner({
         }
       }
       return { items, pending };
+    },
+
+    /** Resolve a single item id to its authorized value (or null), honoring deletes. */
+    async resolveItem(holo, holon, lens, key) {
+      const isAuth = await authPredicate(holo, holon);
+      const events = (await readEnvelopes(holo, holon, lens, key))
+        .filter(verifyEvent).filter((e) => isAuth(e.pubkey, e.created_at));
+      if (!events.length) return null;
+      events.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
+      const item = eventToItem(events[0]);
+      return (item && item._deleted) ? null : item;
     },
 
     /**
@@ -265,7 +291,7 @@ export async function createSigner({
         }
         for (const e of latest.values()) {
           const item = eventToItem(e);
-          if (item) out.push({ ...item, _owner: e.pubkey, _subject: subj });
+          if (item && !item._deleted) out.push({ ...item, _owner: e.pubkey, _subject: subj }); // signed delete drops the actor
         }
       }
       return out;

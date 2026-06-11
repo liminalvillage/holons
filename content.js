@@ -179,13 +179,25 @@ function sanitizeForStorage(value, path = '', seen = new WeakSet(), warnings = [
  * @param {boolean} [options.disableHologramRedirection=false] - Whether to disable hologram redirection
  * @returns {Promise<object>} - Returns an object with success status, path info, propagation result, and list of updated holograms
  */
+/**
+ * Gun chain for a holon/lens. When `holon` is nullish/empty the holon segment is
+ * omitted — i.e. a "global" table at appname/lens. (getGlobal/putGlobal are just
+ * get/put without a holon.)
+ */
+export function holonLens(holoInstance, holon, lens) {
+    const base = holoInstance.gun.get(holoInstance.appname);
+    return (holon === null || holon === undefined || holon === '') ? base.get(lens) : base.get(holon).get(lens);
+}
+const isGlobalHolon = (holon) => holon === null || holon === undefined || holon === '';
+
 export async function put(holoInstance, holon, lens, data, password = null, options = {}) {
     if (!data) { // Check data first as it's used for id generation
         throw new Error('put: Missing required data parameter');
     }
-    if (!holon || !lens) {
-        throw new Error('put: Missing required holon or lens parameters:', holon, lens);
+    if (!lens) {
+        throw new Error('put: Missing required lens parameter');
     }
+    const isGlobal = isGlobalHolon(holon);
 
     const {
         disableHologramRedirection = false,
@@ -203,7 +215,8 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
     }
 
     // --- Start: Target Path Hologram Redirection Logic ---
-    try {
+    // (skipped for global tables — they aren't holon-scoped or holographic)
+    if (!isGlobal) try {
         // Get the item at the original target path, WITHOUT resolving holograms
         const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, password, { resolveHolograms: false });
 
@@ -474,7 +487,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             // fails the Gun write. No-op unless enableSigning()
                             // was called. `_skipSign` avoids re-publishing during
                             // rehydrate/migrate. See NOSTR-SIGNING-PLAN.md.
-                            if (!options._skipSign && holoInstance._signer) {
+                            if (!options._skipSign && !isGlobal && holoInstance._signer) {
                                 Promise.resolve()
                                     .then(() => holoInstance._signer.onWrite(holoInstance, targetHolon, targetLens, data))
                                     .catch((e) => console.warn('[signing] onWrite failed:', e?.message));
@@ -482,7 +495,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         }
 
                         // Auto-propagate to federation by default (if data *being put* is not a hologram)
-                        const shouldPropagate = options.autoPropagate !== false && !isHologram;
+                        const shouldPropagate = options.autoPropagate !== false && !isHologram && !isGlobal;
                         let propagationResult = null;
 
                         if (shouldPropagate) {
@@ -522,7 +535,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 // Use targetHolon, targetLens, and targetKey for the actual storage path
                 const dataPath = password ?
                     user.get('private').get(targetLens).get(targetKey) :
-                    holoInstance.gun.get(holoInstance.appname).get(targetHolon).get(targetLens).get(targetKey);
+                    holonLens(holoInstance, targetHolon, targetLens).get(targetKey);
 
                 dataPath.put(payload, putCallback);
             } catch (error) {
@@ -564,7 +577,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
  * @returns {Promise<object|null>} - The retrieved content or null if not found.
  */
 export async function get(holoInstance, holon, lens, key, password = null, options = {}) {
-    if (!holon || !lens || !key) {
+    if (!lens || !key) {
         console.error('get: Missing required parameters');
         return null;
     }
@@ -701,7 +714,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
             const dataPath = password ?
                 user.get('private').get(lens).get(key) :
-                holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+                holonLens(holoInstance, holon, lens).get(key);
 
             // `.once()` wrapped in a deadline — cold-path reads (peer offline,
             // never-written key) used to hang forever otherwise. After
@@ -728,7 +741,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
  * @returns {Promise<Array<object>>} - The retrieved content.
  */
 export async function getAll(holoInstance, holon, lens, password = null, options = {}) {
-    if (!holon || !lens) {
+    if (!lens) {
         throw new Error('getAll: Missing required parameters');
     }
     const {
@@ -793,7 +806,7 @@ export async function getAll(holoInstance, holon, lens, password = null, options
 
             const dataPath = password ?
                 user.get('private').get(lens) :
-                holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
+                holonLens(holoInstance, holon, lens);
 
             // PASS 1: Get shallow node to determine expected item count.
             // Wrapped in a deadline (see `onceWithTimeout`) so cold paths
@@ -989,7 +1002,7 @@ export async function parse(holoInstance, rawData) {
  * @returns {Promise<boolean>} - Returns true if successful
  */
 export async function deleteFunc(holoInstance, holon, lens, key, password = null) { // Renamed to deleteFunc to avoid keyword conflict
-    if (!holon || !lens || !key) {
+    if (!lens || !key) {
         throw new Error('delete: Missing required parameters');
     }
 
@@ -1037,7 +1050,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
 
         const dataPath = password ?
             user.get('private').get(lens).get(key) :
-            holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+            holonLens(holoInstance, holon, lens).get(key);
 
         // --- Start: Hologram Tracking Removal ---
         let trackingRemovalPromise = Promise.resolve(); // Default to resolved promise
@@ -1120,7 +1133,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
  * @returns {Promise<boolean>} - Returns true if successful
  */
 export async function deleteAll(holoInstance, holon, lens, password = null) {
-    if (!holon || !lens) {
+    if (!lens) {
         console.error('deleteAll: Missing holon or lens parameter');
         return false;
     }
@@ -1174,7 +1187,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
 
             const dataPath = password ?
                 user.get('private').get(lens) :
-                holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
+                holonLens(holoInstance, holon, lens);
 
             // First get all the data to find keys to delete
             dataPath.once(async (data) => {
@@ -1192,7 +1205,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                         // Get the data to check if it's a hologram
                         const itemPath = password ?
                             user.get('private').get(lens).get(key) :
-                            holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+                            holonLens(holoInstance, holon, lens).get(key);
 
                         const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
                         let dataToDelete = null;
@@ -1243,7 +1256,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                             new Promise((resolveDelete) => {
                                 const deletePath = password ?
                                     user.get('private').get(lens).get(key) :
-                                    holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+                                    holonLens(holoInstance, holon, lens).get(key);
 
                                 deletePath.put(null, ack => {
                                     resolveDelete(!!ack.ok); // Convert to boolean
@@ -1257,7 +1270,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                             new Promise((resolveDelete) => {
                                 const deletePath = password ?
                                     user.get('private').get(lens).get(key) :
-                                    holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+                                    holonLens(holoInstance, holon, lens).get(key);
 
                                 deletePath.put(null, ack => {
                                     resolveDelete(!!ack.ok);

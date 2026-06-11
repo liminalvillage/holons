@@ -29,13 +29,23 @@ await sphere.put('89283082803ffff', 'tasks', { id: 'task-1', title: 'Repair the 
 
 Without `enableSigning()` nothing changes — signing is strictly opt-in.
 
-**Transparent once enabled.** Domains keep calling `put` / `get` / `getAll` exactly as
-before — holosphere does the rest: every `put` is signed automatically, and every
-`get`/`getAll` resolves through verify → read-list filter → collapse (singleton) or
-per-author aggregate. The only things the app declares are *that* signing is on
-(`enableSigning`) and *which* lenses are per-author (`perActorLenses`). Note: a
-per-author collection must be its own lens of records (write `id` = subject) — an array
-embedded inside another item is still one blob and can't be merged transparently.
+**Transparent once enabled.** Domains keep calling `put` / `get` / `getAll` / `delete` /
+`subscribe` exactly as before — holosphere does the rest:
+- `put` is signed automatically; `delete` writes a signed tombstone (an unauthorized
+  key can't drop your data, and a per-actor record can be retracted by its owner).
+- `get` / `getAll` / `subscribe` resolve through verify → read-list filter → collapse
+  (singleton) or per-author aggregate. Resolution reads the **signed envelope store**,
+  so scribbling or deleting a raw slot can't change what you see.
+
+The only things the app declares are *that* signing is on (`enableSigning`) and *which*
+lenses are per-author (`perActorLenses`). Note: a per-author collection must be its own
+lens of records (write `id` = subject) — an array embedded inside another item is still
+one blob and can't be merged transparently.
+
+**Globals are just holon-less get/put.** `getGlobal`/`putGlobal`/`getAllGlobal`/
+`deleteGlobal` are thin aliases for `get`/`put`/`getAll`/`delete` with `holon = null`
+(data at `appname/table/key`). Global tables hold infrastructure (e.g. the federation
+config) and skip signing/resolution.
 
 ## Recover after data loss
 
