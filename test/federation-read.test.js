@@ -65,6 +65,13 @@ describe('authorized read — federation read-list (default)', () => {
     expect(ids(await sphere.getAll(HOLON, LENS, null, { _skipAuthorize: true }))).toEqual(['t-unsigned', 't1', 't2']);
   });
 
+  test('get() resolves single items through signing too', async () => {
+    expect((await sphere.get(HOLON, LENS, 't1'))?.id).toBe('t1');     // mine, authorized
+    expect(await sphere.get(HOLON, LENS, 't-unsigned')).toBeNull();   // unsigned -> hidden
+    expect(await sphere.get(HOLON, LENS, 't2')).toBeNull();           // untrusted -> hidden
+    expect((await sphere.get(HOLON, LENS))?.id).toBe('t1');           // 2-arg form resolves too
+  });
+
   test('adding B to my read-list surfaces B\'s signed writes', async () => {
     await sphere.addReadKey(Bpub);
     expect(ids(await sphere.getAll(HOLON, LENS))).toEqual(['t1', 't2']);

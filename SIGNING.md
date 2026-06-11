@@ -29,6 +29,14 @@ await sphere.put('89283082803ffff', 'tasks', { id: 'task-1', title: 'Repair the 
 
 Without `enableSigning()` nothing changes — signing is strictly opt-in.
 
+**Transparent once enabled.** Domains keep calling `put` / `get` / `getAll` exactly as
+before — holosphere does the rest: every `put` is signed automatically, and every
+`get`/`getAll` resolves through verify → read-list filter → collapse (singleton) or
+per-author aggregate. The only things the app declares are *that* signing is on
+(`enableSigning`) and *which* lenses are per-author (`perActorLenses`). Note: a
+per-author collection must be its own lens of records (write `id` = subject) — an array
+embedded inside another item is still one blob and can't be merged transparently.
+
 ## Recover after data loss
 
 If GunDB loses its local data, pull it back from the relay (signatures are

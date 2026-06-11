@@ -197,11 +197,25 @@ class HoloSphere {
      */
     async get(holon, lens, key = null, password = null, options = {}) {
         if (key === null || key === undefined) {
-            // v2-style 2-arg call: get entire lens (return first/only item)
-            const items = await ContentOps.getAll(this, holon, lens, null);
+            // v2-style 2-arg call: get entire lens (return first/only item).
+            // Route through this.getAll so the signing layer resolves it.
+            const items = await this.getAll(holon, lens, password, options);
             return items && items.length > 0 ? items[0] : null;
         }
-        return ContentOps.get(this, holon, lens, key, password, options);
+        const raw = await ContentOps.get(this, holon, lens, key, password, options);
+        // Resolve a single item through the signing layer — every get resolves.
+        const signer = this._signer;
+        if (signer && signer.enforce && lens !== '_members' && !options._skipAuthorize) {
+            if (signer.isPerActor(lens)) {
+                // per-author lens: return the subject's aggregated records
+                return signer.aggregate(this, holon, lens, key);
+            }
+            if (raw) {
+                const { items } = await signer.authorizedView(this, holon, lens, [raw]);
+                return items[0] || null; // null when the item isn't from a trusted, valid signature
+            }
+        }
+        return raw;
     }
 
     async getAll(holon, lens, password = null, options = {}) {
