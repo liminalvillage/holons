@@ -33,6 +33,8 @@ Without `enableSigning()` nothing changes — signing is strictly opt-in.
 `subscribe` exactly as before — holosphere does the rest:
 - `put` is signed automatically; `delete` writes a signed tombstone (an unauthorized
   key can't drop your data, and a per-actor record can be retracted by its owner).
+  Writes are **race-free**: the signed envelope is issued *before* the raw write, so a
+  read (or subscriber) immediately after `await put` already resolves the new value.
 - `get` / `getAll` / `subscribe` resolve through verify → read-list filter → collapse
   (singleton) or per-author aggregate. Resolution reads the **signed envelope store**,
   so scribbling or deleting a raw slot can't change what you see. `subscribe` also

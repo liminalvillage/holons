@@ -184,30 +184,33 @@ export async function createSigner({
       return { id: event.id, published: ok };
     },
 
-    /** Signed delete: store a signed tombstone so the deletion is authenticated. */
-    async onDelete(holo, holon, lens, key) {
-      if (!key) return { published: 0 };
-      return signer.signAndStore(holo, holon, lens, { id: String(key), _deleted: true });
+    /**
+     * Build the signed event and ISSUE the envelope write synchronously (relay
+     * publish stays fire-and-forget). Callers write the raw record immediately
+     * after, so reads/subscribers resolve against a consistent envelope the
+     * instant the raw write lands — race-free by construction.
+     */
+    signEnvelope(holo, holon, lens, item) {
+      try {
+        if (!item || !item.id) return null;
+        if (!relayList.length && !envelope) return null;
+        const event = buildEvent({ holon, lens, item, sk: privateKey, kind });
+        if (envelope && holo) {
+          // issued synchronously — lands in Gun's in-memory graph before the raw write
+          itemNode(holo, holon, lens, item.id).get(event.pubkey).put(JSON.stringify(event));
+        }
+        if (relayList.length) Promise.allSettled(pool.publish(relayList, event)).catch(() => {});
+        return event;
+      } catch (e) { vlog('signEnvelope failed:', e?.message); return null; }
     },
 
-    /** Sign-on-write hook: publish to relays + store envelope (in envelope mode). */
-    async onWrite(holo, holon, lens, item) {
-      try {
-        if (!item || !item.id) return { published: 0 };
-        if (!relayList.length && !envelope) return { published: 0 };
-        const event = buildEvent({ holon, lens, item, sk: privateKey, kind });
-        let ok = 0;
-        if (relayList.length) {
-          const r = await Promise.allSettled(pool.publish(relayList, event));
-          ok = r.filter((x) => x.status === 'fulfilled').length;
-        }
-        if (envelope && holo) await writeEnvelope(holo, holon, lens, item.id, event);
-        vlog(`signed ${event.id.slice(0, 8)}… → ${ok}/${relayList.length} relay(s)${envelope ? ' + gun envelope' : ''}`);
-        return { published: ok, id: event.id, stored: !!envelope };
-      } catch (e) {
-        vlog('onWrite failed:', e?.message);
-        return { published: 0, error: e?.message };
-      }
+    /** Back-compat alias for the old sign-on-write hook. */
+    async onWrite(holo, holon, lens, item) { return signer.signEnvelope(holo, holon, lens, item); },
+
+    /** Signed delete: a signed tombstone, issued before the raw removal. */
+    async onDelete(holo, holon, lens, key) {
+      if (!key) return null;
+      return signer.signEnvelope(holo, holon, lens, { id: String(key), _deleted: true });
     },
 
     /**

@@ -408,20 +408,16 @@ class HoloSphere {
         // get/getAll. Re-resolving on every change makes deletes notify too.
         if (signer && signer.enforce && holon && lens !== '_members') {
             const self = this;
-            const last = new Map(); // key -> last delivered (deduped)
-            const deliver = async (key) => {
-                const val = signer.isPerActor(lens)
-                    ? await signer.aggregate(self, holon, lens, key)
-                    : await signer.resolveItem(self, holon, lens, key);
-                const sig = JSON.stringify(val ?? null);
-                if (last.get(key) !== sig) { last.set(key, sig); callback(val, key); }
-            };
             const resolved = async (_data, key) => {
-                // The raw write triggers this before the fire-and-forget signed
-                // envelope has settled, so re-resolve twice and dedup — subscribers
-                // converge to the authorized value (or null on a signed delete).
-                try { await new Promise((r) => setTimeout(r, 120)); await deliver(key); } catch { /* ignore */ }
-                try { await new Promise((r) => setTimeout(r, 400)); await deliver(key); } catch { /* ignore */ }
+                // The signed envelope is written before the raw write that triggers
+                // this, so a single resolve is consistent (no race).
+                try {
+                    if (signer.isPerActor(lens)) {
+                        callback(await signer.aggregate(self, holon, lens, key), key);
+                    } else {
+                        callback(await signer.resolveItem(self, holon, lens, key), key);
+                    }
+                } catch { /* ignore */ }
             };
             return Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
         }

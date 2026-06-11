@@ -481,17 +481,6 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                                 lens: targetLens,
                                 ...data // The data that was put
                             });
-
-                            // Phase 1 signing: sign-on-write + dual-publish to
-                            // relay(s). Fire-and-forget so it never delays or
-                            // fails the Gun write. No-op unless enableSigning()
-                            // was called. `_skipSign` avoids re-publishing during
-                            // rehydrate/migrate. See NOSTR-SIGNING-PLAN.md.
-                            if (!options._skipSign && !isGlobal && holoInstance._signer) {
-                                Promise.resolve()
-                                    .then(() => holoInstance._signer.onWrite(holoInstance, targetHolon, targetLens, data))
-                                    .catch((e) => console.warn('[signing] onWrite failed:', e?.message));
-                            }
                         }
 
                         // Auto-propagate to federation by default (if data *being put* is not a hologram)
@@ -536,6 +525,14 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 const dataPath = password ?
                     user.get('private').get(targetLens).get(targetKey) :
                     holonLens(holoInstance, targetHolon, targetLens).get(targetKey);
+
+                // Race-free signing: issue the signed envelope BEFORE the raw write
+                // so reads/subscribers resolve against a consistent envelope the
+                // instant the raw write lands. No-op unless signing is enabled.
+                if (!isHologram && !isGlobal && !options._skipSign && holoInstance._signer) {
+                    try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, data); }
+                    catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
+                }
 
                 dataPath.put(payload, putCallback);
             } catch (error) {
