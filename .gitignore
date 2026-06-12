@@ -43,8 +43,10 @@ legal/**/*.pdf
 radata*
 radata/*
 holosphere.db/*
+# Gun/radata junk dirs named "holosphere" written to each app's CWD at runtime.
 holosphere/
-# …but NOT the @holons/core source dir of the same name.
+# …but NOT the vendored package or the @holons/core source dir of the same name.
+!packages/holosphere/
 !packages/core/src/holosphere/
 # Gun RAD temp files written to CWD (e.g. holosphere-!-xyz.tmp)
 holosphere-!-*
