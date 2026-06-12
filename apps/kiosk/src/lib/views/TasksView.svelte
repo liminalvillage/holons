@@ -10,6 +10,7 @@
     rawQuests,
     completionRequest,
     editOnOpen,
+    showNotice,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -318,7 +319,16 @@
     if (!q) return;
     // Permission + status check up front, so we only prompt for real completions.
     const result = checkComplete(q, user.id);
-    if (!result.ok) return;
+    if (!result.ok) {
+      showNotice(
+        result.reason === "already-completed"
+          ? "Already completed."
+          : result.reason === "stopped"
+            ? "This quest was stopped."
+            : "Join the task first — only a participant can complete it.",
+      );
+      return;
+    }
     // Confirm participants (for REA) before recording — see CompleteConfirm.
     completionRequest.set({
       task: result.task,

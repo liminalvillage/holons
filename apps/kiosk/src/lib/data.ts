@@ -114,7 +114,7 @@ function personName(p: any): string {
 }
 
 /** Map a quest's participant/appreciation array to avatar-stack people. */
-function toPeople(arr: unknown): TaskPerson[] {
+export function toPeople(arr: unknown): TaskPerson[] {
   if (!Array.isArray(arr)) return [];
   return arr
     .map((p: any) => ({ id: p?.id ?? p?.username, name: personName(p) }))

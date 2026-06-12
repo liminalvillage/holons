@@ -18,7 +18,8 @@
   import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { checkComplete, recordCompletion } from "$lib/complete";
-  import { noteColor } from "$lib/data";
+  import { noteColor, toPeople } from "$lib/data";
+  import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
     borrowItem,
     returnItem,
@@ -74,6 +75,23 @@
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
 
+  // Edit mode lives only while its card is on screen: closing the modal or
+  // switching to another record discards the form (runs before the
+  // edit-on-open hook below, which may then re-enter editing for the new card).
+  let selKey: string | null = null;
+  $: {
+    const k = !sel
+      ? null
+      : sel.kind === "thing"
+        ? `thing:${sel.item.id}`
+        : `quest:${sel.quest.id ?? sel.quest.title}`;
+    if (k !== selKey) {
+      selKey = k;
+      editing = false;
+      message = "";
+    }
+  }
+
   // Opened via a pen button → jump straight into edit mode.
   $: if ($selection && $selection.kind !== "thing" && $editOnOpen) {
     editOnOpen.set(false);
@@ -88,6 +106,9 @@
     quest.participants.some(
       (p: any) => String(p?.id) === String($telegramUser?.id),
     );
+
+  // Participants as display people (id + friendly name) for the chips below.
+  $: people = toPeople(quest?.participants);
 
   // Whether the logged-in user has already appreciated this quest.
   $: appreciationCount = Array.isArray(quest?.appreciation)
@@ -216,7 +237,7 @@
           ? "Already completed."
           : result.reason === "stopped"
             ? "This quest was stopped."
-            : "Only a participant can complete this.";
+            : "Join the task first — only a participant can complete it.";
       return;
     }
     saving = false;
@@ -247,17 +268,22 @@
     }
     saving = true;
     message = "";
-    // Core owns membership and the participate-XOR-appreciate invariant:
-    // joining clears any appreciation. Mutate the freshest copy.
-    const updated = toggleParticipant(
-      await freshQuest(sel.quest),
-      person(user),
-    );
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", updated);
-    saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = "Could not join.";
+    try {
+      // Core owns membership and the participate-XOR-appreciate invariant:
+      // joining clears any appreciation. Mutate the freshest copy.
+      const updated = toggleParticipant(
+        await freshQuest(sel.quest),
+        person(user),
+      );
+      const writer = await getWriter($holonId, (m) => (message = m));
+      const ok = await writer.put("quests", updated);
+      if (ok) closeDetail();
+      else if (!message) message = "Could not join.";
+    } catch (err) {
+      message = (err as Error)?.message || "Could not join.";
+    } finally {
+      saving = false;
+    }
   }
 
   async function appreciate() {
@@ -269,17 +295,22 @@
     }
     saving = true;
     message = "";
-    // Appreciating removes you from participants (participate XOR appreciate);
-    // it feeds the REA appreciation-exchange on completion. Mutate the freshest.
-    const updated = toggleAppreciation(
-      await freshQuest(sel.quest),
-      person(user),
-    );
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", updated);
-    saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = "Could not save.";
+    try {
+      // Appreciating removes you from participants (participate XOR appreciate);
+      // it feeds the REA appreciation-exchange on completion. Mutate the freshest.
+      const updated = toggleAppreciation(
+        await freshQuest(sel.quest),
+        person(user),
+      );
+      const writer = await getWriter($holonId, (m) => (message = m));
+      const ok = await writer.put("quests", updated);
+      if (ok) closeDetail();
+      else if (!message) message = "Could not save.";
+    } catch (err) {
+      message = (err as Error)?.message || "Could not save.";
+    } finally {
+      saving = false;
+    }
   }
 
   async function saveThing() {
@@ -427,12 +458,11 @@
         <p class="when">{whenText()}</p>
         {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
         {#if quest.description}<p class="desc">{quest.description}</p>{/if}
-        {#if (Array.isArray(quest.participants) && quest.participants.length) || appreciationCount}
-          <p class="facts-line">
-            {#if Array.isArray(quest.participants) && quest.participants.length}
-              <span
-                >{quest.participants.length} participant{quest.participants
-                  .length === 1
+        {#if people.length || appreciationCount}
+          <div class="facts-line">
+            {#if people.length}
+              <span class="people-label"
+                >{people.length} participant{people.length === 1
                   ? ""
                   : "s"}</span
               >
@@ -440,7 +470,26 @@
             {#if appreciationCount}
               <span>♥ {appreciationCount}</span>
             {/if}
-          </p>
+          </div>
+        {/if}
+        {#if people.length}
+          <ul class="people">
+            {#each people as p (p.id)}
+              <li class="person">
+                <span class="pav">
+                  <span class="pini">{avatarInitial(p.name)}</span>
+                  <img
+                    src={avatarUrl(p.id)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
+                </span>
+                <span class="pname">{p.name}</span>
+              </li>
+            {/each}
+          </ul>
         {/if}
 
         {#if $isLoggedIn}
@@ -565,6 +614,56 @@
     color: var(--ink-soft);
     font-weight: 600;
     margin: 0 0 0.5rem;
+  }
+
+  /* Participant chips: photo (initials fallback) + name. */
+  .people {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0 0 0.6rem;
+    padding: 0;
+  }
+  .person {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.7rem 0.25rem 0.3rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    font-weight: 700;
+    color: var(--ink);
+    font-size: 0.92rem;
+  }
+  .pav {
+    position: relative;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--teal);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+  .pini {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #fff;
+  }
+  .pav img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .pname {
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .desc {
     color: var(--ink-soft);

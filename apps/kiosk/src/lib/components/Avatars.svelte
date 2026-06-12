@@ -1,3 +1,23 @@
+<script lang="ts" context="module">
+  // Shared avatar primitives (also used by the detail modal's people chips).
+
+  /** Telegram profile photo for a user id, served by the avatar service. */
+  export function avatarUrl(id: string | number): string {
+    return `https://telegram.holons.io/getavatar?user_id=${encodeURIComponent(String(id))}`;
+  }
+  /** First letter of the human part of the name ("@user" → "U", not "@"). */
+  export function avatarInitial(name: string): string {
+    return (name.replace(/^[@#]/, "")[0] ?? "·").toUpperCase();
+  }
+  /** Image fallback handlers: hide on error, un-hide when a retry loads. */
+  export function hideImg(e: Event) {
+    (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+  }
+  export function showImg(e: Event) {
+    (e.currentTarget as HTMLImageElement).style.visibility = "visible";
+  }
+</script>
+
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   // An overlapping stack of participant avatars (Telegram photos with an
@@ -8,13 +28,6 @@
   export let max = 4;
   export let size = "1.7rem";
 
-  function url(id: string | number): string {
-    return `https://telegram.holons.io/getavatar?user_id=${id}`;
-  }
-  function hide(e: Event) {
-    (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-  }
-
   $: shown = people.slice(0, max);
   $: extra = people.length - shown.length;
 </script>
@@ -23,8 +36,14 @@
   <div class="avatars" style="--sz: {size};">
     {#each shown as p (p.id)}
       <span class="av" title={p.name}>
-        <span class="ini">{(p.name[0] ?? "·").toUpperCase()}</span>
-        <img src={url(p.id)} alt="" loading="lazy" on:error={hide} />
+        <span class="ini">{avatarInitial(p.name)}</span>
+        <img
+          src={avatarUrl(p.id)}
+          alt=""
+          loading="lazy"
+          on:error={hideImg}
+          on:load={showImg}
+        />
       </span>
     {/each}
     {#if extra > 0}

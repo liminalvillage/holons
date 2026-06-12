@@ -37,6 +37,24 @@ export const partnerNames = writable<Record<string, string>>({});
 /** Whether the Settings panel is open. */
 export const settingsOpen = writable<boolean>(false);
 
+// ── Transient notice (toast) ───────────────────────────────────────────────
+//
+// One-line feedback for taps that can't proceed (e.g. completing a task you
+// haven't joined). Auto-dismisses; each new notice replaces the previous one.
+
+export const notice = writable<string | null>(null);
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Show a transient notice for `ms` (default ~3.5s). */
+export function showNotice(text: string, ms = 3500): void {
+  if (noticeTimer) clearTimeout(noticeTimer);
+  notice.set(text);
+  noticeTimer = setTimeout(() => {
+    notice.set(null);
+    noticeTimer = null;
+  }, ms);
+}
+
 /** Whether the user menu (account / federated / dashboard / settings) is open. */
 export const userMenuOpen = writable<boolean>(false);
 

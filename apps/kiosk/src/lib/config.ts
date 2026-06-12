@@ -5,7 +5,7 @@
 // here, in priority order so a caretaker can re-point the screen without a
 // rebuild — or from the in-app Settings panel, which writes the same keys:
 //
-//   holon : ?holon=<id>  →  subdomain map (holons.ts)  →  Settings / localStorage  →  VITE_KIOSK_HOLON  →  (unset → setup)
+//   holon : ?holon=<id>  →  URL path /<id|label>  →  subdomain map (holons.ts)  →  Settings / localStorage  →  VITE_KIOSK_HOLON  →  (unset → setup)
 //   app   : ?app=<name>  →  Settings / localStorage  →  VITE_KIOSK_APP    →  "Holons"
 //
 // The kiosk reads PRODUCTION by default: the app namespace falls back to
@@ -16,7 +16,7 @@
 // The query-param overrides are persisted to localStorage so a one-time setup
 // URL survives reloads and power-cycles of the entrance display.
 
-import { holonForHost } from "./holons";
+import { holonForHost, holonForPath } from "./holons";
 
 /** Production Gun relay the entrance display reads from by default. */
 export const PRODUCTION_PEER = "https://gun.holons.io/gun";
@@ -91,8 +91,14 @@ export function resolvePeers(): string[] {
 export function resolveHolonId(): string | null {
   const fromParam = readParam("holon");
   if (fromParam) persist(HOLON_KEY, fromParam);
-  // A registered subdomain (liminal.hubs.network → liminal) is authoritative
-  // for that host — one deploy serves every holon. `?holon=` still overrides.
+  // The URL path (`site.com/<id>` or a registered label) and a registered
+  // subdomain (liminal.hubs.network → liminal) are authoritative for that URL —
+  // one deploy serves every holon. Neither is persisted: visiting another
+  // holon's link must not re-point this device. `?holon=` still overrides.
+  const fromPath =
+    typeof window !== "undefined"
+      ? holonForPath(window.location.pathname)
+      : null;
   const fromSubdomain =
     typeof window !== "undefined"
       ? holonForHost(window.location.hostname)
@@ -100,6 +106,7 @@ export function resolveHolonId(): string | null {
   const env = import.meta.env.VITE_KIOSK_HOLON as string | undefined;
   return (
     fromParam ||
+    fromPath ||
     fromSubdomain ||
     persisted(HOLON_KEY) ||
     (env ? String(env) : null)

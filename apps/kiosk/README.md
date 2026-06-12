@@ -55,14 +55,17 @@ The kiosk shares the monorepo-root `.env`. It reads exactly two vars (see
 [`.env.example`](./.env.example)), each overridable per device via a URL query
 param or the in-app **Settings** panel, then remembered in `localStorage`:
 
-| What          | Env var            | URL param / Settings | Default                     |
-| ------------- | ------------------ | -------------------- | --------------------------- |
-| Holon to show | `VITE_KIOSK_HOLON` | `?holon=<id>`        | _(none)_                    |
-| App namespace | `VITE_KIOSK_APP`   | `?app=<name>`        | `Holons` (production)       |
-| Gun relay     | `VITE_KIOSK_PEER`  | —                    | `https://gun.holons.io/gun` |
+| What          | Env var            | URL param / Settings   | Default                     |
+| ------------- | ------------------ | ---------------------- | --------------------------- |
+| Holon to show | `VITE_KIOSK_HOLON` | `/<id>`, `?holon=<id>` | _(none)_                    |
+| App namespace | `VITE_KIOSK_APP`   | `?app=<name>`          | `Holons` (production)       |
+| Gun relay     | `VITE_KIOSK_PEER`  | —                      | `https://gun.holons.io/gun` |
 
 To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
-or open **Settings** and type the id. The kiosk reads production data by default.
+or open **Settings** and type the id. To _visit_ a holon without re-pointing the
+device, open `https://…/<holon-id>` (or `/<registered label>`, e.g. `/liminal`)
+— the path wins for that page load but is not remembered. The kiosk reads
+production data by default.
 
 **Editing** is optional and off until configured. Set
 `VITE_TELEGRAM_BOT_USERNAME` to the hub's bot to enable the Telegram Login
@@ -94,9 +97,10 @@ export const SUBDOMAIN_HOLONS: Record<string, string> = {
 };
 ```
 
-Resolution order is `?holon=<id>` → subdomain → Settings/localStorage →
-`VITE_KIOSK_HOLON`, so a registered subdomain is authoritative for its host
-while `?holon=` still works for testing.
+Resolution order is `?holon=<id>` → URL path `/<id|label>` → subdomain →
+Settings/localStorage → `VITE_KIOSK_HOLON`, so a registered subdomain is
+authoritative for its host while `/<id>` deep-links any holon and `?holon=`
+still works for testing.
 
 - **Git deploy:** [`netlify.toml`](./netlify.toml) builds `@holons/core` then the
   kiosk and publishes `apps/kiosk/build` as a static SPA. In the Netlify site

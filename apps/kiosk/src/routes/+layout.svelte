@@ -30,6 +30,7 @@
     settingsOpen,
     userMenuOpen,
     connected,
+    notice,
     startClock,
     startRotation,
     noteInteraction,
@@ -178,9 +179,10 @@
       <h1>No holon configured</h1>
       <p>
         Point this screen at a holon: open <strong>Settings</strong> and enter a
-        holon id, open the kiosk once with a <code>?holon=&lt;id&gt;</code>
-        parameter, or set <code>VITE_KIOSK_HOLON</code> in the root
-        <code>.env</code>. The choice is remembered on this device.
+        holon id, open the kiosk at <code>/&lt;holon id&gt;</code>, open it once
+        with a <code>?holon=&lt;id&gt;</code> parameter, or set
+        <code>VITE_KIOSK_HOLON</code> in the root <code>.env</code>. Settings
+        and <code>?holon=</code> are remembered on this device.
       </p>
       <button class="setup-btn" on:click={() => settingsOpen.set(true)}>
         Open settings
@@ -220,6 +222,11 @@
 
 <!-- Participant confirmation before a completion records REA. -->
 <CompleteConfirm />
+
+<!-- Transient one-line feedback for taps that can't proceed. -->
+{#if $notice}
+  <div class="notice" role="status">{$notice}</div>
+{/if}
 
 <style>
   .kiosk {
@@ -298,5 +305,34 @@
   }
   .setup-btn:active {
     transform: scale(0.97);
+  }
+
+  .notice {
+    position: fixed;
+    left: 50%;
+    bottom: calc(1.6rem + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 60; /* above the modal overlay (z-index 50) */
+    max-width: min(34rem, calc(100vw - 2.8rem));
+    padding: 0.85rem 1.3rem;
+    border-radius: 14px;
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 700;
+    font-size: 1rem;
+    text-align: center;
+    box-shadow: var(--shadow-soft);
+    animation: kiosk-notice 0.25s ease both;
+    pointer-events: none;
+  }
+  @keyframes kiosk-notice {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 0.6rem);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
   }
 </style>
