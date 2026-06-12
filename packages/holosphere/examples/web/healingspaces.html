@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HealingSpaces - Community Wellness Mapping | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #ec4899; }
+    .btn-project { background: #ec4899; color: white; }
+    .btn-project:hover { background: #db2777; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">💚</div>
+          <span>HealingSpaces</span>
+        </div>
+        <nav class="nav">
+          <a href="learnlocal.html">← LearnLocal</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="mindfulmeets.html">MindfulMeets →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Health & Spiritual Well-being</div>
+      <h1>HealingSpaces</h1>
+      <p>Community wellness resource mapping and practitioner discovery. Map healing locations, find holistic practitioners, book wellness sessions, and share therapeutic spaces across your bioregion.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="spaces-count">0</span>
+        <span class="stat-label">Healing Spaces</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="practitioners-count">0</span>
+        <span class="stat-label">Practitioners</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="modalities-count">0</span>
+        <span class="stat-label">Modalities</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="sessions-count">0</span>
+        <span class="stat-label">Sessions Booked</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers HealingSpaces</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Geospatial Discovery:</strong> Find healing spaces and practitioners by location using H3 indexing</li>
+          <li><strong>Bioregional Wellness:</strong> Each area is a holon containing local healing resources</li>
+          <li><strong>Practitioner Profiles:</strong> Store credentials, specialties, and availability</li>
+          <li><strong>Session Management:</strong> Book appointments and track wellness journeys</li>
+          <li><strong>Community-owned:</strong> No platform fees, practitioners keep full autonomy</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Wellness on community land
+          </div>
+          <div class="connection-tag">
+            <span>💚</span> <strong>MindfulMeets:</strong> Spiritual gatherings
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Shares therapy spaces
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Local currency payments
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Map Wellness Resources</h2>
+
+      <div class="card mb-lg">
+        <h3>Add Healing Space</h3>
+        <div class="form-group">
+          <label for="bioregion">Bioregion/Area</label>
+          <input type="text" id="bioregion" placeholder="e.g., cascade-watershed" value="cascade-watershed">
+        </div>
+        <div class="form-group">
+          <label for="space-name">Space Name</label>
+          <input type="text" id="space-name" placeholder="Healing Garden, Therapy Room, etc.">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="space-type">Space Type</label>
+            <select id="space-type">
+              <option value="clinic">Clinic</option>
+              <option value="studio">Studio</option>
+              <option value="garden">Garden</option>
+              <option value="therapy-room">Therapy Room</option>
+              <option value="retreat-center">Retreat Center</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="capacity">Capacity</label>
+            <input type="number" id="capacity" placeholder="1" min="1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="modalities">Modalities Offered (comma-separated)</label>
+          <input type="text" id="modalities" placeholder="Acupuncture, Massage, Reiki, etc.">
+        </div>
+        <div class="form-group">
+          <label for="space-description">Description</label>
+          <textarea id="space-description" rows="3" placeholder="Describe the healing space..."></textarea>
+        </div>
+        <button class="btn btn-project" onclick="addHealingSpace()">Add Healing Space</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Add Practitioner</h3>
+        <div class="form-group">
+          <label for="practitioner-area">Area</label>
+          <input type="text" id="practitioner-area" placeholder="cascade-watershed" value="cascade-watershed">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="practitioner-name">Name</label>
+            <input type="text" id="practitioner-name" placeholder="Jane Smith">
+          </div>
+          <div class="form-group">
+            <label for="practitioner-modality">Primary Modality</label>
+            <select id="practitioner-modality">
+              <option value="acupuncture">Acupuncture</option>
+              <option value="massage">Massage Therapy</option>
+              <option value="reiki">Reiki</option>
+              <option value="herbalism">Herbalism</option>
+              <option value="counseling">Counseling</option>
+              <option value="yoga">Yoga Instruction</option>
+              <option value="meditation">Meditation Guide</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="practitioner-bio">Bio</label>
+          <textarea id="practitioner-bio" rows="3" placeholder="Experience, certifications, approach..."></textarea>
+        </div>
+        <button class="btn btn-secondary" onclick="addPractitioner()">Add Practitioner</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Book Session</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="practitioner-id">Practitioner ID</label>
+            <input type="text" id="practitioner-id" placeholder="From practitioner listing">
+          </div>
+          <div class="form-group">
+            <label for="session-date">Date & Time</label>
+            <input type="datetime-local" id="session-date">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="session-notes">Session Notes (optional)</label>
+          <input type="text" id="session-notes" placeholder="Any specific needs or intentions...">
+        </div>
+        <button class="btn btn-secondary" onclick="bookSession()">Book Session</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Healing spaces and practitioners will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize HealingSpaces
+const healing = new HoloSphere('HealingSpaces');
+
+// Add a healing space to a bioregion
+await healing.put('cascade-watershed', 'spaces', {
+  id: 'healing-garden-1',
+  name: 'Community Healing Garden',
+  type: 'garden',
+  capacity: 12,
+  modalities: ['Herbalism', 'Forest Bathing', 'Meditation'],
+  description: 'Outdoor healing sanctuary with medicinal plants',
+  available: true
+});
+
+// Add a practitioner profile
+await healing.put('cascade-watershed', 'practitioners', {
+  id: 'acupuncturist-jane',
+  name: 'Jane Smith',
+  modality: 'Acupuncture',
+  bio: '20 years experience in Traditional Chinese Medicine',
+  certifications: ['LAc', 'NCCAOM'],
+  availability: { mon: true, wed: true, fri: true }
+});
+
+// Book a session
+await healing.put('cascade-watershed', 'sessions', {
+  practitioner_id: 'acupuncturist-jane',
+  client: 'user-123',
+  date: new Date('2025-11-15T14:00').getTime(),
+  modality: 'Acupuncture',
+  status: 'confirmed'
+});
+
+// Find all healing spaces in an area
+const spaces = await healing.getAll('cascade-watershed', 'spaces');
+
+// Federate with CommonGround to share wellness locations
+await healing.federate('cascade-watershed', 'commonground-parcels');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <div class="connection-list">
+        <span class="connection-tag">🏛️ CommonGround maps wellness locations on community land</span>
+        <span class="connection-tag">💚 MindfulMeets schedules group healing sessions</span>
+        <span class="connection-tag">🏘️ NeighborHub provides shared therapy spaces</span>
+        <span class="connection-tag">💰 LocalLoop enables mutual aid payments</span>
+        <span class="connection-tag">🌱 TerraTrust tracks medicinal plant locations</span>
+        <span class="connection-tag">📚 LearnLocal hosts wellness education</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>HealingSpaces - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('HealingSpaces', 'HealingSpaces', '#ec4899');
+
+    async function initSampleData() {
+      // Sample healing spaces
+      const spaces = [
+        { name: 'Community Healing Garden', type: 'garden', capacity: 12, modalities: 'Herbalism, Forest Bathing, Meditation', description: 'Outdoor sanctuary with medicinal plants' },
+        { name: 'Riverside Therapy Room', type: 'therapy-room', capacity: 2, modalities: 'Counseling, Reiki, Sound Healing', description: 'Peaceful space by the river' },
+        { name: 'Mountain Retreat Center', type: 'retreat-center', capacity: 30, modalities: 'Yoga, Meditation, Qigong', description: 'Multi-day retreat facility' }
+      ];
+
+      for (const space of spaces) {
+        await sphere.put('cascade-watershed', 'spaces', {
+          id: Date.now().toString() + Math.random(),
+          name: space.name,
+          type: space.type,
+          capacity: space.capacity,
+          modalities: space.modalities.split(', '),
+          description: space.description,
+          available: true,
+          listed_by: 'Demo User',
+          timestamp: Date.now()
+        });
+      }
+
+      // Sample practitioners
+      const practitioners = [
+        { name: 'Sarah Chen', modality: 'acupuncture', bio: 'Licensed acupuncturist with 15 years experience in TCM' },
+        { name: 'Marcus Rodriguez', modality: 'massage', bio: 'Certified massage therapist specializing in deep tissue' },
+        { name: 'Ama Osei', modality: 'herbalism', bio: 'Traditional herbalist and plant medicine teacher' }
+      ];
+
+      for (const practitioner of practitioners) {
+        await sphere.put('cascade-watershed', 'practitioners', {
+          id: Date.now().toString() + Math.random(),
+          name: practitioner.name,
+          modality: practitioner.modality,
+          bio: practitioner.bio,
+          available: true,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    async function addHealingSpace() {
+      const bioregion = document.getElementById('bioregion').value;
+      const name = document.getElementById('space-name').value;
+      const type = document.getElementById('space-type').value;
+      const capacity = parseInt(document.getElementById('capacity').value);
+      const modalities = document.getElementById('modalities').value;
+      const description = document.getElementById('space-description').value;
+
+      if (!bioregion || !name || !capacity || !description) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const space = {
+        id: Date.now().toString(),
+        name,
+        type,
+        capacity,
+        modalities: modalities ? modalities.split(',').map(m => m.trim()) : [],
+        description,
+        available: true,
+        listed_by: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(bioregion, 'spaces', space);
+      showNotification('Healing space added successfully!');
+
+      // Clear form
+      document.getElementById('space-name').value = '';
+      document.getElementById('capacity').value = '';
+      document.getElementById('modalities').value = '';
+      document.getElementById('space-description').value = '';
+
+      await loadResources();
+      updateStats();
+    }
+
+    async function addPractitioner() {
+      const area = document.getElementById('practitioner-area').value;
+      const name = document.getElementById('practitioner-name').value;
+      const modality = document.getElementById('practitioner-modality').value;
+      const bio = document.getElementById('practitioner-bio').value;
+
+      if (!area || !name || !bio) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const practitioner = {
+        id: Date.now().toString(),
+        name,
+        modality,
+        bio,
+        available: true,
+        listed_by: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(area, 'practitioners', practitioner);
+      showNotification('Practitioner added successfully!');
+
+      // Clear form
+      document.getElementById('practitioner-name').value = '';
+      document.getElementById('practitioner-bio').value = '';
+
+      await loadResources();
+      updateStats();
+    }
+
+    async function bookSession() {
+      const practitionerId = document.getElementById('practitioner-id').value;
+      const sessionDate = document.getElementById('session-date').value;
+      const notes = document.getElementById('session-notes').value;
+
+      if (!practitionerId || !sessionDate) {
+        showNotification('Please fill in practitioner ID and date', 'error');
+        return;
+      }
+
+      await sphere.put('cascade-watershed', 'sessions', {
+        id: Date.now().toString(),
+        practitioner_id: practitionerId,
+        client: 'Demo User',
+        date: new Date(sessionDate).getTime(),
+        notes: notes,
+        status: 'confirmed',
+        timestamp: Date.now()
+      });
+
+      showNotification('Session booked successfully!');
+
+      // Clear form
+      document.getElementById('practitioner-id').value = '';
+      document.getElementById('session-date').value = '';
+      document.getElementById('session-notes').value = '';
+
+      updateStats();
+    }
+
+    async function loadResources() {
+      const spaces = await sphere.getAll('cascade-watershed', 'spaces');
+      const practitioners = await sphere.getAll('cascade-watershed', 'practitioners');
+      const output = document.getElementById('output');
+
+      if (spaces.length === 0 && practitioners.length === 0) {
+        output.innerHTML = `<p class="text-muted">No resources listed yet</p>`;
+        return;
+      }
+
+      let html = '';
+
+      if (spaces.length > 0) {
+        html += `<h4>Healing Spaces</h4><div class="grid grid-2 mb-lg">`;
+        for (const space of spaces) {
+          html += `
+            <div class="card">
+              <h3>${space.name}</h3>
+              <p><strong>Type:</strong> ${space.type}</p>
+              <p><strong>Capacity:</strong> ${space.capacity} ${space.capacity === 1 ? 'person' : 'people'}</p>
+              <p><strong>Modalities:</strong> ${Array.isArray(space.modalities) ? space.modalities.join(', ') : space.modalities}</p>
+              <p class="text-small">${space.description}</p>
+              <p class="text-small text-muted">ID: ${space.id}</p>
+              ${createStatusBadge('available').outerHTML}
+            </div>
+          `;
+        }
+        html += '</div>';
+      }
+
+      if (practitioners.length > 0) {
+        html += `<h4>Practitioners</h4><div class="grid grid-2">`;
+        for (const practitioner of practitioners) {
+          html += `
+            <div class="card">
+              <h3>${practitioner.name}</h3>
+              <p><strong>Modality:</strong> ${practitioner.modality}</p>
+              <p class="text-small">${practitioner.bio}</p>
+              <p class="text-small text-muted">ID: ${practitioner.id}</p>
+              ${createStatusBadge('available').outerHTML}
+            </div>
+          `;
+        }
+        html += '</div>';
+      }
+
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let spacesCount = 0, practitionersCount = 0, sessionsCount = 0;
+      const modalities = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('HealingSpaces:')) {
+          if (key.includes(':spaces:')) {
+            spacesCount++;
+            const item = JSON.parse(localStorage.getItem(key));
+            if (Array.isArray(item.modalities)) {
+              item.modalities.forEach(m => modalities.add(m));
+            }
+          } else if (key.includes(':practitioners:')) {
+            practitionersCount++;
+            const item = JSON.parse(localStorage.getItem(key));
+            if (item.modality) modalities.add(item.modality);
+          } else if (key.includes(':sessions:')) {
+            sessionsCount++;
+          }
+        }
+      }
+
+      document.getElementById('spaces-count').textContent = spacesCount;
+      document.getElementById('practitioners-count').textContent = practitionersCount;
+      document.getElementById('modalities-count').textContent = modalities.size;
+      document.getElementById('sessions-count').textContent = sessionsCount;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('cascade-watershed', 'spaces');
+      if (existing.length === 0) await initSampleData();
+      await loadResources();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

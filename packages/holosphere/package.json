@@ -1,0 +1,123 @@
+{
+  "name": "holosphere",
+  "version": "1.3.0-alpha9",
+  "description": "Holonic Geospatial Communication Infrastructure",
+  "main": "holosphere.js",
+  "module": "holosphere.js",
+  "types": "holosphere.d.ts",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "build": "npm run build:browser",
+    "prepare": "npm run build",
+    "build:browser": "node build.js",
+    "build:bundle": "node build.js",
+    "prepublishOnly": "npm run build",
+    "publish:cdn": "npm publish && echo 'Package published to npm and will be available on CDNs within minutes'",
+    "publish:force": "npm publish --force && echo 'Package force published to npm and will be available on CDNs within minutes'",
+    "prepublish:skip-tests": "npm run build"
+  },
+  "author": "Roberto Valenti",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.0",
+    "ajv": "^8.12.0",
+    "gun": "^0.2020.1240",
+    "h3-js": "^4.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "nostr-tools": "^2.23.5"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {}
+  },
+  "browser": "holosphere.js",
+  "unpkg": "holosphere-bundle.js",
+  "jsdelivr": "holosphere-bundle.js",
+  "cdn": "holosphere-bundle.js",
+  "files": [
+    "holosphere.js",
+    "holosphere-bundle.js",
+    "holosphere-bundle.min.js",
+    "holosphere-bundle.esm.js",
+    "holosphere.d.ts",
+    "federation.js",
+    "schema.js",
+    "content.js",
+    "node.js",
+    "global.js",
+    "hologram.js",
+    "compute.js",
+    "utils.js",
+    "hexlib.js",
+    "nostr-utils-shim.js",
+    "subscriptions-shim.js",
+    "registry-shim.js",
+    "handshake-shim.js",
+    "nostr-events.js",
+    "signing.js",
+    "README.md",
+    "SIGNING.md",
+    "LICENSE",
+    "FEDERATION.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./holosphere.js",
+      "require": "./holosphere.js",
+      "default": "./holosphere.js"
+    },
+    "./bundle": "./holosphere-bundle.js",
+    "./bundle/esm": "./holosphere-bundle.esm.js",
+    "./bundle/min": "./holosphere-bundle.min.js",
+    "./browser": "./holosphere-bundle.js",
+    "./node": "./holosphere.js",
+    "./nostr-events": "./nostr-events.js",
+    "./nostr-events.js": "./nostr-events.js",
+    "./signing.js": "./signing.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rvalenti/holosphere.git"
+  },
+  "keywords": [
+    "holonic",
+    "geospatial",
+    "h3",
+    "hexagon",
+    "p2p",
+    "decentralized",
+    "gun",
+    "spatial",
+    "mapping",
+    "cdn",
+    "browser",
+    "realtime",
+    "webrtc"
+  ],
+  "bugs": {
+    "url": "https://github.com/rvalenti/holosphere/issues"
+  },
+  "homepage": "https://github.com/rvalenti/holosphere#readme",
+  "peerDependencies": {
+    "gun": "^0.2020.1240",
+    "h3-js": "^4.1.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "gun": {
+      "optional": false
+    }
+  },
+  "optionalDependencies": {
+    "nostr-tools": "^2.23.5"
+  }
+}

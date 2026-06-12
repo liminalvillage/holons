@@ -1,0 +1,15 @@
+node_modules
+radata/*
+.env
+.DS_Store
+package-lock.json
+yarn.lock
+radata*
+browser-radata/
+holosphere/
+holosphere.db*
+data/*
+holosphere-bundle*.js
+# Gun radata test-run leftovers (radisk temp files written next to the test cwd)
+holosphere-!-*
+browser-radata-!-*

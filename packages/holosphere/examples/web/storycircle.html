@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StoryCircle - Cultural Heritage Preservation | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #7c3aed; }
+    .btn-project { background: #7c3aed; color: white; }
+    .btn-project:hover { background: #6d28d9; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">📖</div>
+          <span>StoryCircle</span>
+        </div>
+        <nav class="nav">
+          <a href="skillswap.html">← SkillSwap</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="learnlocal.html">LearnLocal →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Culture & Education</div>
+      <h1>StoryCircle</h1>
+      <p>Preserve oral histories and cultural heritage through location-based storytelling. Record community wisdom, map cultural sites, and keep languages alive across generations using holographic data storage.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="stories-count">0</span>
+        <span class="stat-label">Stories Recorded</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="sites-count">0</span>
+        <span class="stat-label">Cultural Sites</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="languages-count">0</span>
+        <span class="stat-label">Languages</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="contributors-count">0</span>
+        <span class="stat-label">Contributors</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers StoryCircle</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Place-Based Stories:</strong> Every story is linked to a geographic holon (H3 cell)</li>
+          <li><strong>Thematic Lenses:</strong> Organize by culture, language, tradition, or topic</li>
+          <li><strong>Oral Traditions:</strong> Record audio, video, and text in multiple languages</li>
+          <li><strong>Federation:</strong> Stories propagate to community archives and cultural databases</li>
+          <li><strong>Community-Owned:</strong> No platform extraction—communities control their heritage</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>VoiceVillage:</strong> Preserves governance wisdom
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Shares educational content
+          </div>
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Maps land stories & history
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Hosts storytelling events
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Record & Share Stories</h2>
+
+      <div class="card mb-lg">
+        <h3>Record a Story</h3>
+        <div class="form-group">
+          <label for="location-holon">Location (Holon ID)</label>
+          <input type="text" id="location-holon" placeholder="e.g., elders-oak-tree" value="elders-oak-tree">
+          <small class="text-muted">Where did this story take place?</small>
+        </div>
+        <div class="form-group">
+          <label for="story-title">Story Title</label>
+          <input type="text" id="story-title" placeholder="e.g., The Great Flood of 1962">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="story-language">Language</label>
+            <input type="text" id="story-language" placeholder="e.g., English, Spanish, Nahuatl">
+          </div>
+          <div class="form-group">
+            <label for="story-theme">Theme/Category</label>
+            <select id="story-theme">
+              <option value="oral-history">Oral History</option>
+              <option value="traditional-knowledge">Traditional Knowledge</option>
+              <option value="land-stories">Land Stories</option>
+              <option value="cultural-practice">Cultural Practice</option>
+              <option value="language-preservation">Language Preservation</option>
+              <option value="family-history">Family History</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="storyteller">Storyteller Name</label>
+          <input type="text" id="storyteller" placeholder="e.g., Maria Garcia">
+        </div>
+        <div class="form-group">
+          <label for="story-content">Story Content</label>
+          <textarea id="story-content" rows="6" placeholder="Share the story, tradition, or cultural wisdom..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="story-tags">Tags (comma-separated)</label>
+          <input type="text" id="story-tags" placeholder="e.g., water, agriculture, ceremony, ancestors">
+        </div>
+        <button class="btn btn-project" onclick="recordStory()">Record Story</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Browse Stories</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="browse-location">Filter by Location</label>
+            <input type="text" id="browse-location" placeholder="Leave empty for all locations">
+          </div>
+          <div class="form-group">
+            <label for="browse-theme">Filter by Theme</label>
+            <select id="browse-theme">
+              <option value="">All Themes</option>
+              <option value="oral-history">Oral History</option>
+              <option value="traditional-knowledge">Traditional Knowledge</option>
+              <option value="land-stories">Land Stories</option>
+              <option value="cultural-practice">Cultural Practice</option>
+              <option value="language-preservation">Language Preservation</option>
+              <option value="family-history">Family History</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="loadStories()">Browse Stories</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Stories will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize StoryCircle with HoloSphere
+const circle = new HoloSphere('StoryCircle', strict=false);
+
+// Record a story at a specific location
+await circle.put('elders-oak-tree', 'stories', {
+  id: Date.now().toString(),
+  title: 'The Great Flood of 1962',
+  language: 'English',
+  theme: 'oral-history',
+  storyteller: 'Maria Garcia',
+  content: 'I remember when the river rose...',
+  tags: ['water', 'community', 'resilience'],
+  recorded_date: Date.now(),
+  contributor: 'Community Member'
+});
+
+// Get all stories from a location
+const locationStories = await circle.getAll('elders-oak-tree', 'stories');
+
+// Get stories by theme across all locations
+const oralHistories = [];
+for (const story of await circle.getAllGlobal('stories')) {
+  if (story.theme === 'oral-history') {
+    oralHistories.push(story);
+  }
+}
+
+// Subscribe to new stories
+circle.subscribe('elders-oak-tree', 'stories', (story) => {
+  console.log('New story recorded:', story.title);
+});
+
+// Federate with community archives
+await circle.federate('elders-oak-tree', 'community-archive');
+// Stories automatically propagate to preserve cultural heritage</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">StoryCircle connects cultural knowledge across the ecosystem</p>
+      <div class="connection-list">
+        <span class="connection-tag">🏛️ VoiceVillage records decision-making wisdom</span>
+        <span class="connection-tag">📚 LearnLocal integrates stories into curricula</span>
+        <span class="connection-tag">🏛️ CommonGround preserves land histories</span>
+        <span class="connection-tag">🏘️ NeighborHub hosts storytelling circles</span>
+        <span class="connection-tag">🌱 TerraTrust shares ecological knowledge</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>StoryCircle - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('StoryCircle', 'StoryCircle', '#7c3aed');
+
+    // Initialize sample data
+    async function initSampleData() {
+      const samples = [
+        {
+          location: 'elders-oak-tree',
+          title: 'The Great Flood of 1962',
+          language: 'English',
+          theme: 'oral-history',
+          storyteller: 'Maria Garcia',
+          content: 'I remember when the river rose higher than anyone had ever seen. The whole community came together to save what we could. We built sandbag walls and helped each other move to higher ground. That\'s when I learned what community really means.',
+          tags: ['water', 'community', 'resilience', 'flood']
+        },
+        {
+          location: 'old-mill-site',
+          title: 'Traditional Wheat Grinding Methods',
+          language: 'Spanish',
+          theme: 'traditional-knowledge',
+          storyteller: 'Juan Ramirez',
+          content: 'Mi abuela me enseñó cómo moler el trigo de la manera tradicional. No se necesita electricidad, solo la fuerza del agua y la sabiduría de nuestros ancestros.',
+          tags: ['agriculture', 'tradition', 'ancestors', 'food']
+        },
+        {
+          location: 'sacred-spring',
+          title: 'Water Ceremony Traditions',
+          language: 'Nahuatl',
+          theme: 'cultural-practice',
+          storyteller: 'Xochitl Flores',
+          content: 'Each spring, we gather at the sacred spring to give thanks to the water spirits. This ceremony has been performed for hundreds of years, keeping our connection to the land alive.',
+          tags: ['ceremony', 'water', 'spirituality', 'tradition']
+        },
+        {
+          location: 'community-garden',
+          title: 'Three Sisters Planting Method',
+          language: 'English',
+          theme: 'traditional-knowledge',
+          storyteller: 'Elder Thomas',
+          content: 'The three sisters - corn, beans, and squash - grow together in harmony. The corn provides structure, the beans fix nitrogen, and the squash covers the ground. Our ancestors understood ecology before we had a word for it.',
+          tags: ['agriculture', 'indigenous-knowledge', 'permaculture', 'food']
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put(sample.location, 'stories', {
+          id: Date.now().toString() + Math.random(),
+          title: sample.title,
+          language: sample.language,
+          theme: sample.theme,
+          storyteller: sample.storyteller,
+          content: sample.content,
+          tags: sample.tags,
+          recorded_date: Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000,
+          contributor: 'Demo User',
+          timestamp: Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function recordStory() {
+      const location = document.getElementById('location-holon').value;
+      const title = document.getElementById('story-title').value;
+      const language = document.getElementById('story-language').value;
+      const theme = document.getElementById('story-theme').value;
+      const storyteller = document.getElementById('storyteller').value;
+      const content = document.getElementById('story-content').value;
+      const tagsInput = document.getElementById('story-tags').value;
+
+      if (!location || !title || !content) {
+        showNotification('Please fill in location, title, and story content', 'error');
+        return;
+      }
+
+      const story = {
+        id: Date.now().toString(),
+        title,
+        language: language || 'Not specified',
+        theme,
+        storyteller: storyteller || 'Anonymous',
+        content,
+        tags: tagsInput ? tagsInput.split(',').map(t => t.trim()) : [],
+        recorded_date: Date.now(),
+        contributor: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(location, 'stories', story);
+      showNotification('Story recorded successfully!');
+
+      // Clear form
+      document.getElementById('story-title').value = '';
+      document.getElementById('story-language').value = '';
+      document.getElementById('storyteller').value = '';
+      document.getElementById('story-content').value = '';
+      document.getElementById('story-tags').value = '';
+
+      await loadStories();
+      updateStats();
+    }
+
+    async function loadStories() {
+      const filterLocation = document.getElementById('browse-location').value;
+      const filterTheme = document.getElementById('browse-theme').value;
+      const output = document.getElementById('output');
+
+      let stories = [];
+
+      if (filterLocation) {
+        stories = await sphere.getAll(filterLocation, 'stories');
+      } else {
+        // Get all stories from all locations
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('StoryCircle:') && key.includes(':stories:')) {
+            const item = JSON.parse(localStorage.getItem(key));
+            stories.push(item);
+          }
+        }
+      }
+
+      // Apply theme filter
+      if (filterTheme) {
+        stories = stories.filter(s => s.theme === filterTheme);
+      }
+
+      if (stories.length === 0) {
+        output.innerHTML = `<p class="text-muted">No stories found. Try adjusting your filters or record a new story.</p>`;
+        return;
+      }
+
+      // Sort by timestamp, newest first
+      stories.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Stories (${stories.length})</h4><div class="item-list">`;
+
+      for (const story of stories) {
+        const date = new Date(story.recorded_date || story.timestamp).toLocaleDateString();
+        const tags = Array.isArray(story.tags) ? story.tags.join(', ') : story.tags;
+
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">
+                ${story.title}
+                <span class="badge badge-info" style="margin-left: 0.5rem;">${story.theme.replace('-', ' ')}</span>
+              </div>
+              <div class="item-meta">
+                <strong>Storyteller:</strong> ${story.storyteller} |
+                <strong>Language:</strong> ${story.language} |
+                <strong>Location:</strong> ${story._holon} |
+                <strong>Date:</strong> ${date}
+              </div>
+              <p style="margin-top: 0.5rem; font-style: italic; color: var(--text);">
+                ${story.content}
+              </p>
+              ${tags ? `<div class="text-small text-muted" style="margin-top: 0.5rem;"><strong>Tags:</strong> ${tags}</div>` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      const allStories = [];
+      const sites = new Set();
+      const languages = new Set();
+      const contributors = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('StoryCircle:') && key.includes(':stories:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          allStories.push(item);
+          sites.add(item._holon);
+          if (item.language && item.language !== 'Not specified') {
+            languages.add(item.language);
+          }
+          if (item.contributor) {
+            contributors.add(item.contributor);
+          }
+          if (item.storyteller && item.storyteller !== 'Anonymous') {
+            contributors.add(item.storyteller);
+          }
+        }
+      }
+
+      document.getElementById('stories-count').textContent = allStories.length;
+      document.getElementById('sites-count').textContent = sites.size;
+      document.getElementById('languages-count').textContent = languages.size;
+      document.getElementById('contributors-count').textContent = contributors.size;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('elders-oak-tree', 'stories');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadStories();
+    })();
+  </script>
+</body>
+</html>

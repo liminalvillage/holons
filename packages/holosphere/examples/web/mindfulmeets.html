@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MindfulMeets - Spiritual Gathering Coordination | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #f472b6; }
+    .btn-project { background: #f472b6; color: white; }
+    .btn-project:hover { background: #ec4899; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🧘</div>
+          <span>MindfulMeets</span>
+        </div>
+        <nav class="nav">
+          <a href="healingspaces.html">← HealingSpaces</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="localloop.html">LocalLoop →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Health & Spiritual Well-being</div>
+      <h1>MindfulMeets</h1>
+      <p>Meditation and spiritual gathering coordination. Schedule group meditations, find contemplative communities, organize interfaith dialogues, and share sacred wisdom across traditions.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="groups-count">0</span>
+        <span class="stat-label">Active Groups</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="gatherings-count">0</span>
+        <span class="stat-label">Gatherings</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="participants-count">0</span>
+        <span class="stat-label">Participants</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="traditions-count">0</span>
+        <span class="stat-label">Traditions</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers MindfulMeets</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Geographic Circles:</strong> Each meditation group is a holon representing a local community</li>
+          <li><strong>Gathering Discovery:</strong> Find spiritual gatherings by location and tradition</li>
+          <li><strong>RSVP & Attendance:</strong> Coordinate group size and prepare accordingly</li>
+          <li><strong>Wisdom Sharing:</strong> Archive teachings, practices, and contemplative insights</li>
+          <li><strong>Interfaith Bridge:</strong> Federation enables cross-tradition dialogue and collaboration</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>💚</span> <strong>HealingSpaces:</strong> Wellness locations
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Meditation spaces
+          </div>
+          <div class="connection-tag">
+            <span>📖</span> <strong>StoryCircle:</strong> Spiritual wisdom
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Contemplative education
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Coordinate Spiritual Gatherings</h2>
+
+      <div class="card mb-lg">
+        <h3>Create Meditation Group</h3>
+        <div class="form-group">
+          <label for="group-area">Area/Community</label>
+          <input type="text" id="group-area" placeholder="e.g., oak-grove-circle" value="oak-grove-circle">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="group-name">Group Name</label>
+            <input type="text" id="group-name" placeholder="Morning Meditation Circle">
+          </div>
+          <div class="form-group">
+            <label for="group-tradition">Tradition</label>
+            <select id="group-tradition">
+              <option value="buddhist">Buddhist</option>
+              <option value="vipassana">Vipassana</option>
+              <option value="zen">Zen</option>
+              <option value="mindfulness">Secular Mindfulness</option>
+              <option value="contemplative-christian">Contemplative Christian</option>
+              <option value="sufi">Sufi</option>
+              <option value="interfaith">Interfaith</option>
+              <option value="eclectic">Eclectic/Open</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="group-description">Description</label>
+          <textarea id="group-description" rows="3" placeholder="Describe the group's focus and approach..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="group-facilitator">Facilitator</label>
+          <input type="text" id="group-facilitator" placeholder="Your name">
+        </div>
+        <button class="btn btn-project" onclick="createGroup()">Create Group</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Schedule Gathering</h3>
+        <div class="form-group">
+          <label for="gathering-group">Group ID (from group listing)</label>
+          <input type="text" id="gathering-group" placeholder="Group ID">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="gathering-title">Gathering Title</label>
+            <input type="text" id="gathering-title" placeholder="Full Moon Meditation">
+          </div>
+          <div class="form-group">
+            <label for="gathering-date">Date & Time</label>
+            <input type="datetime-local" id="gathering-date">
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="gathering-duration">Duration (minutes)</label>
+            <input type="number" id="gathering-duration" placeholder="60" min="15">
+          </div>
+          <div class="form-group">
+            <label for="gathering-location">Location</label>
+            <input type="text" id="gathering-location" placeholder="Riverside Garden, Online, etc.">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="gathering-notes">Notes (optional)</label>
+          <textarea id="gathering-notes" rows="2" placeholder="Bring cushion, silent practice, etc."></textarea>
+        </div>
+        <button class="btn btn-secondary" onclick="scheduleGathering()">Schedule Gathering</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>RSVP to Gathering</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="rsvp-gathering">Gathering ID</label>
+            <input type="text" id="rsvp-gathering" placeholder="From gathering listing">
+          </div>
+          <div class="form-group">
+            <label for="rsvp-name">Your Name</label>
+            <input type="text" id="rsvp-name" placeholder="Your name">
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="rsvpGathering()">RSVP</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Groups and gatherings will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize MindfulMeets
+const mindful = new HoloSphere('MindfulMeets');
+
+// Create a meditation group
+await mindful.put('oak-grove-circle', 'groups', {
+  id: 'morning-meditation',
+  name: 'Morning Meditation Circle',
+  tradition: 'vipassana',
+  description: 'Daily silent sitting practice',
+  facilitator: 'Sarah Chen',
+  active: true
+});
+
+// Schedule a gathering
+await mindful.put('oak-grove-circle', 'gatherings', {
+  id: 'full-moon-sit-nov',
+  group_id: 'morning-meditation',
+  title: 'Full Moon Meditation',
+  date: new Date('2025-11-15T19:00').getTime(),
+  duration: 90,
+  location: 'Riverside Garden',
+  notes: 'Followed by tea and silent reflection',
+  rsvps: []
+});
+
+// RSVP to a gathering
+await mindful.put('oak-grove-circle', 'rsvps', {
+  gathering_id: 'full-moon-sit-nov',
+  participant: 'user-123',
+  timestamp: Date.now()
+});
+
+// Find all gatherings in an area
+const gatherings = await mindful.getAll('oak-grove-circle', 'gatherings');
+
+// Federate with StoryCircle to share wisdom teachings
+await mindful.federate('oak-grove-circle', 'storycircle-wisdom');
+
+// Federate with NeighborHub to access meditation spaces
+await mindful.federate('oak-grove-circle', 'neighborhub-spaces');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <div class="connection-list">
+        <span class="connection-tag">💚 HealingSpaces provides retreat centers and therapy rooms</span>
+        <span class="connection-tag">🏘️ NeighborHub shares quiet spaces for meditation</span>
+        <span class="connection-tag">📖 StoryCircle archives spiritual teachings and wisdom</span>
+        <span class="connection-tag">📚 LearnLocal hosts contemplative practice classes</span>
+        <span class="connection-tag">🏛️ VoiceVillage uses mindfulness in decision-making</span>
+        <span class="connection-tag">🌱 TerraTrust connects to nature-based spirituality</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>MindfulMeets - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('MindfulMeets', 'MindfulMeets', '#f472b6');
+
+    async function initSampleData() {
+      // Sample groups
+      const groups = [
+        { name: 'Morning Meditation Circle', tradition: 'vipassana', description: 'Daily silent sitting practice', facilitator: 'Sarah Chen' },
+        { name: 'Zen Practice Group', tradition: 'zen', description: 'Zazen and dharma talks', facilitator: 'Roshi Michael' },
+        { name: 'Mindful Living Community', tradition: 'mindfulness', description: 'Secular mindfulness for daily life', facilitator: 'Dr. Patel' }
+      ];
+
+      for (const group of groups) {
+        const groupId = Date.now().toString() + Math.random();
+        await sphere.put('oak-grove-circle', 'groups', {
+          id: groupId,
+          name: group.name,
+          tradition: group.tradition,
+          description: group.description,
+          facilitator: group.facilitator,
+          active: true,
+          members: 0,
+          timestamp: Date.now()
+        });
+
+        // Add a sample gathering for each group
+        await sphere.put('oak-grove-circle', 'gatherings', {
+          id: Date.now().toString() + Math.random(),
+          group_id: groupId,
+          title: `${group.name} - Weekly Sit`,
+          date: Date.now() + (Math.random() * 7 * 24 * 60 * 60 * 1000),
+          duration: 60,
+          location: 'Community Garden',
+          notes: 'All welcome, beginners encouraged',
+          rsvps: Math.floor(Math.random() * 12) + 3,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    async function createGroup() {
+      const area = document.getElementById('group-area').value;
+      const name = document.getElementById('group-name').value;
+      const tradition = document.getElementById('group-tradition').value;
+      const description = document.getElementById('group-description').value;
+      const facilitator = document.getElementById('group-facilitator').value;
+
+      if (!area || !name || !description || !facilitator) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const group = {
+        id: Date.now().toString(),
+        name,
+        tradition,
+        description,
+        facilitator,
+        active: true,
+        members: 1,
+        timestamp: Date.now()
+      };
+
+      await sphere.put(area, 'groups', group);
+      showNotification('Meditation group created successfully!');
+
+      // Clear form
+      document.getElementById('group-name').value = '';
+      document.getElementById('group-description').value = '';
+      document.getElementById('group-facilitator').value = '';
+
+      await loadGroupsAndGatherings();
+      updateStats();
+    }
+
+    async function scheduleGathering() {
+      const groupId = document.getElementById('gathering-group').value;
+      const title = document.getElementById('gathering-title').value;
+      const date = document.getElementById('gathering-date').value;
+      const duration = parseInt(document.getElementById('gathering-duration').value);
+      const location = document.getElementById('gathering-location').value;
+      const notes = document.getElementById('gathering-notes').value;
+
+      if (!groupId || !title || !date || !duration || !location) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const gathering = {
+        id: Date.now().toString(),
+        group_id: groupId,
+        title,
+        date: new Date(date).getTime(),
+        duration,
+        location,
+        notes,
+        rsvps: 0,
+        timestamp: Date.now()
+      };
+
+      await sphere.put('oak-grove-circle', 'gatherings', gathering);
+      showNotification('Gathering scheduled successfully!');
+
+      // Clear form
+      document.getElementById('gathering-group').value = '';
+      document.getElementById('gathering-title').value = '';
+      document.getElementById('gathering-date').value = '';
+      document.getElementById('gathering-duration').value = '';
+      document.getElementById('gathering-location').value = '';
+      document.getElementById('gathering-notes').value = '';
+
+      await loadGroupsAndGatherings();
+      updateStats();
+    }
+
+    async function rsvpGathering() {
+      const gatheringId = document.getElementById('rsvp-gathering').value;
+      const name = document.getElementById('rsvp-name').value;
+
+      if (!gatheringId || !name) {
+        showNotification('Please fill in all fields', 'error');
+        return;
+      }
+
+      await sphere.put('oak-grove-circle', 'rsvps', {
+        id: Date.now().toString(),
+        gathering_id: gatheringId,
+        participant: name,
+        timestamp: Date.now()
+      });
+
+      showNotification('RSVP recorded successfully!');
+
+      // Clear form
+      document.getElementById('rsvp-gathering').value = '';
+      document.getElementById('rsvp-name').value = '';
+
+      updateStats();
+    }
+
+    async function loadGroupsAndGatherings() {
+      const groups = await sphere.getAll('oak-grove-circle', 'groups');
+      const gatherings = await sphere.getAll('oak-grove-circle', 'gatherings');
+      const output = document.getElementById('output');
+
+      if (groups.length === 0 && gatherings.length === 0) {
+        output.innerHTML = `<p class="text-muted">No groups or gatherings yet</p>`;
+        return;
+      }
+
+      let html = '';
+
+      if (groups.length > 0) {
+        html += `<h4>Meditation Groups</h4><div class="grid grid-2 mb-lg">`;
+        for (const group of groups) {
+          html += `
+            <div class="card">
+              <h3>${group.name}</h3>
+              <p><strong>Tradition:</strong> ${group.tradition}</p>
+              <p><strong>Facilitator:</strong> ${group.facilitator}</p>
+              <p class="text-small">${group.description}</p>
+              <p class="text-small text-muted">ID: ${group.id}</p>
+              ${createStatusBadge('active').outerHTML}
+            </div>
+          `;
+        }
+        html += '</div>';
+      }
+
+      if (gatherings.length > 0) {
+        // Sort gatherings by date
+        gatherings.sort((a, b) => a.date - b.date);
+
+        html += `<h4>Upcoming Gatherings</h4><div class="item-list">`;
+        for (const gathering of gatherings) {
+          const date = new Date(gathering.date);
+          const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const isPast = date < new Date();
+
+          html += `
+            <div class="item">
+              <div class="item-content">
+                <div class="item-title">${gathering.title}</div>
+                <div class="item-meta">
+                  📅 ${dateStr} | ⏱️ ${gathering.duration} min | 📍 ${gathering.location}
+                  ${gathering.notes ? '<br>📝 ' + gathering.notes : ''}
+                  ${gathering.rsvps ? '<br>👥 ' + gathering.rsvps + ' RSVPs' : ''}
+                </div>
+                <p class="text-small text-muted">ID: ${gathering.id}</p>
+              </div>
+              ${isPast ? createStatusBadge('completed').outerHTML : createStatusBadge('pending').outerHTML}
+            </div>
+          `;
+        }
+        html += '</div>';
+      }
+
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let groupsCount = 0, gatheringsCount = 0, rsvpsCount = 0;
+      const traditions = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('MindfulMeets:')) {
+          if (key.includes(':groups:')) {
+            groupsCount++;
+            const item = JSON.parse(localStorage.getItem(key));
+            if (item.tradition) traditions.add(item.tradition);
+          } else if (key.includes(':gatherings:')) {
+            gatheringsCount++;
+          } else if (key.includes(':rsvps:')) {
+            rsvpsCount++;
+          }
+        }
+      }
+
+      document.getElementById('groups-count').textContent = groupsCount;
+      document.getElementById('gatherings-count').textContent = gatheringsCount;
+      document.getElementById('participants-count').textContent = rsvpsCount;
+      document.getElementById('traditions-count').textContent = traditions.size;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('oak-grove-circle', 'groups');
+      if (existing.length === 0) await initSampleData();
+      await loadGroupsAndGatherings();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

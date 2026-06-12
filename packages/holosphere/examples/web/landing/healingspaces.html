@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HealingSpaces - Find the Care Your Body Knows It Needs</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --healing-primary: #ec4899;
+      --healing-secondary: #f472b6;
+      --healing-accent: #fb7185;
+      --healing-light: #fdf2f8;
+      --healing-soft: #fce7f3;
+    }
+
+    body {
+      background: linear-gradient(180deg, #fdf2f8 0%, #ffffff 100%);
+    }
+
+    .healing-hero {
+      background:
+        linear-gradient(135deg, rgba(159, 18, 57, 0.85) 0%, rgba(190, 18, 60, 0.85) 30%, rgba(236, 72, 153, 0.85) 70%, rgba(244, 114, 182, 0.85) 100%),
+        url('https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1920&q=80') center/cover;
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .healing-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background:
+        radial-gradient(circle at 20% 50%, rgba(251, 113, 133, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(244, 114, 182, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 40% 90%, rgba(236, 72, 153, 0.2) 0%, transparent 40%);
+      opacity: 0.6;
+    }
+
+    .healing-hero::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 30 L50 70 M30 50 L70 50" stroke="rgba(255,255,255,0.1)" stroke-width="2" fill="none"/></svg>');
+      background-size: 40px 40px;
+      opacity: 0.2;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .healing-hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .healing-hero .tagline {
+      font-size: 1.875rem;
+      opacity: 0.95;
+      margin-bottom: 2rem;
+      font-weight: 300;
+      line-height: 1.4;
+    }
+
+    .healing-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.9;
+      max-width: 700px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-healing {
+      background: white;
+      color: var(--healing-primary);
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+    }
+
+    .btn-healing:hover {
+      background: var(--healing-soft);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(236, 72, 153, 0.4);
+      text-decoration: none;
+    }
+
+    .btn-healing-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-healing-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: white;
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-rose {
+      background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+    }
+
+    .section-dark {
+      background: linear-gradient(135deg, #9f1239 0%, #be123c 50%, #ec4899 100%);
+      color: white;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.75rem;
+      margin-bottom: 1rem;
+      color: var(--healing-primary);
+      font-weight: 800;
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 750px;
+      margin: 0 auto 3rem;
+      line-height: 1.6;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.9);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 20px rgba(236, 72, 153, 0.12);
+      transition: all 0.3s;
+      border: 2px solid transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 32px rgba(236, 72, 153, 0.2);
+      border-color: var(--healing-secondary);
+    }
+
+    .feature-icon {
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, var(--healing-primary), var(--healing-accent));
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25);
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--healing-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.8;
+      font-size: 1rem;
+    }
+
+    .wellness-banner {
+      background:
+        linear-gradient(135deg, rgba(252, 231, 243, 0.95) 0%, rgba(251, 207, 232, 0.95) 100%),
+        url('https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&q=80') center/cover;
+      padding: 4rem;
+      border-radius: 2rem;
+      margin: 4rem 0;
+      text-align: center;
+      border: 3px solid var(--healing-secondary);
+    }
+
+    .wellness-banner h3 {
+      font-size: 2rem;
+      color: var(--healing-primary);
+      margin-bottom: 1rem;
+      font-weight: 700;
+    }
+
+    .wellness-banner p {
+      font-size: 1.25rem;
+      color: #4b5563;
+      max-width: 700px;
+      margin: 0 auto;
+      line-height: 1.7;
+    }
+
+    .impact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .impact-card {
+      background: rgba(255,255,255,0.15);
+      padding: 2rem;
+      border-radius: 1.25rem;
+      border: 2px solid rgba(255,255,255,0.3);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+
+    .impact-card:hover {
+      background: rgba(255,255,255,0.25);
+      transform: translateY(-4px);
+    }
+
+    .impact-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .impact-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .impact-desc {
+      opacity: 0.95;
+      line-height: 1.7;
+    }
+
+    .holosystem {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.5rem;
+      border-left: 6px solid var(--healing-primary);
+      margin: 3rem 0;
+      box-shadow: 0 4px 20px rgba(236, 72, 153, 0.1);
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      color: var(--healing-primary);
+    }
+
+    .holosystem-content {
+      color: #374151;
+      line-height: 1.9;
+      font-size: 1.05rem;
+    }
+
+    .holosystem-content p {
+      margin-bottom: 1rem;
+    }
+
+    .holosystem-content ul {
+      margin-left: 1.5rem;
+      line-height: 1.9;
+    }
+
+    .holosystem-content strong {
+      color: var(--healing-primary);
+      font-weight: 600;
+    }
+
+    .card-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .pricing-card {
+      background: white;
+      padding: 3rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 30px rgba(236, 72, 153, 0.15);
+      max-width: 600px;
+      margin: 3rem auto;
+      text-align: center;
+      border: 3px solid var(--healing-secondary);
+    }
+
+    .pricing-card h3 {
+      font-size: 2.25rem;
+      color: var(--healing-primary);
+      margin-bottom: 1rem;
+      font-weight: 800;
+    }
+
+    .pricing-card .price {
+      font-size: 3.5rem;
+      font-weight: 800;
+      color: var(--healing-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .pricing-card .price-desc {
+      color: #6b7280;
+      font-size: 1.125rem;
+      margin-bottom: 2rem;
+    }
+
+    .pricing-features {
+      text-align: left;
+      margin: 2rem 0;
+    }
+
+    .pricing-features li {
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #fce7f3;
+      color: #4b5563;
+      font-size: 1.05rem;
+    }
+
+    .testimonial {
+      background: rgba(255,255,255,0.2);
+      padding: 2rem;
+      border-radius: 1rem;
+      margin: 2rem 0;
+      border-left: 4px solid white;
+    }
+
+    .testimonial-text {
+      font-style: italic;
+      font-size: 1.125rem;
+      margin-bottom: 1rem;
+      line-height: 1.7;
+    }
+
+    .testimonial-author {
+      font-weight: 600;
+      opacity: 0.95;
+    }
+
+    @media (max-width: 768px) {
+      .healing-hero h1 {
+        font-size: 2.5rem;
+      }
+
+      .healing-hero .tagline {
+        font-size: 1.375rem;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .wellness-banner {
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--healing-primary); color: white;">✨</div>
+          <span>HealingSpaces</span>
+        </div>
+        <nav class="nav">
+          <a href="#features">Features</a>
+          <a href="../index.html">Ecosystem</a>
+          <a href="mailto:hello@healingspaces.care">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="healing-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Healing Happens<br>Everywhere</h1>
+        <p class="tagline">Find the care your body knows it needs.</p>
+        <p class="subtitle">A geospatial wellness directory connecting you to alternative and traditional healing modalities in your community. Sliding scale pricing, holistic healing paths, and community-owned data.</p>
+        <div class="cta-buttons">
+          <a href="#" class="btn-healing">Find Healing Near You</a>
+          <a href="#how-it-works" class="btn-healing btn-healing-outline">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="wellness-banner">
+        <h3>Free for Everyone Seeking Care</h3>
+        <p>Browse practitioners, compare modalities, read healing journeys, and find affordable care in your neighborhood. No insurance required.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-rose">
+    <div class="container">
+      <h2 class="section-title">Why Healing Is Hard to Find</h2>
+      <p class="section-subtitle">Alternative and traditional healing modalities are scattered, unaffordable, and invisible to the people who need them most.</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="card">
+          <h3 style="color: var(--healing-primary); margin-bottom: 1rem;">❌ The Problem</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Insurance doesn't cover holistic care</li>
+            <li>Traditional healers are hard to find</li>
+            <li>No way to discover nearby modalities</li>
+            <li>Practitioners work in isolation</li>
+            <li>Cultural healing knowledge being lost</li>
+          </ul>
+        </div>
+        <div class="card" style="border: 3px solid var(--healing-secondary); background: var(--healing-light);">
+          <h3 style="color: var(--healing-primary); margin-bottom: 1rem;">✨ HealingSpaces Solution</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Sliding scale makes care accessible</li>
+            <li>Geospatial search finds healing nearby</li>
+            <li>Multi-modal healing paths</li>
+            <li>Practitioners support each other</li>
+            <li>Traditional knowledge protected & honored</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Novel geospatial architecture that makes holistic healing accessible to everyone</p>
+
+      <div class="features-grid" id="features">
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80" alt="Wellness journey" class="feature-card-image">
+          <div class="feature-icon">📍</div>
+          <h3 class="feature-title">Healing Radius</h3>
+          <p class="feature-desc">Discover all healing modalities within walking distance. Acupuncture, massage, herbalism, energy work, traditional medicine—see what's available in your neighborhood.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=600&q=80" alt="Holistic healing modalities" class="feature-card-image">
+          <div class="feature-icon">🕸️</div>
+          <h3 class="feature-title">Modality Meshes</h3>
+          <p class="feature-desc">"People who see acupuncturists also visit massage therapists." Discover complementary healing paths based on community patterns and practitioner recommendations.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1593811167562-9cef47bfc4a7?w=600&q=80" alt="Health tracking and wellness" class="feature-card-image">
+          <div class="feature-icon">📊</div>
+          <h3 class="feature-title">Outcomes Tracking</h3>
+          <p class="feature-desc">Anonymous healing journey data helps others find what works. Track your own progress and contribute to community understanding of different modalities.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80" alt="Accessible healing for all" class="feature-card-image">
+          <div class="feature-icon">💰</div>
+          <h3 class="feature-title">Sliding Scale Federation</h3>
+          <p class="feature-desc">Practitioners share sliding scale capacity across the network. See real-time availability of affordable sessions. No one turned away for lack of funds.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1516450137517-162bfbeb8dba?w=600&q=80" alt="Traditional healing wisdom" class="feature-card-image">
+          <div class="feature-icon">🪶</div>
+          <h3 class="feature-title">Traditional Knowledge Protection</h3>
+          <p class="feature-desc">Indigenous and cultural healing practices with fine-grained access controls. Communities maintain sovereignty over sacred knowledge while offering care.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&q=80" alt="Healing practitioners community" class="feature-card-image">
+          <div class="feature-icon">🤝</div>
+          <h3 class="feature-title">Practitioner Support</h3>
+          <p class="feature-desc">Connect with other healers, share resources, coordinate care, and build referral networks. Prevent burnout through community mutual aid.</p>
+        </div>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>🌐</span>
+          <span>How Healing Holons Work</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Each healing modality, practitioner, and wellness space is a <strong>holon</strong>—a geospatial entity that relates to everything around it. Your neighborhood's healers automatically connect to broader networks while maintaining independence.</p>
+          <p>This means:</p>
+          <ul>
+            <li><strong>Discover healing by location:</strong> "Show me all herbalists within 2 miles"</li>
+            <li><strong>Follow healing paths:</strong> See what modalities people combine for specific conditions</li>
+            <li><strong>Track affordability:</strong> Real-time sliding scale availability across your area</li>
+            <li><strong>Protect sacred knowledge:</strong> Traditional practices shared only with permission</li>
+            <li><strong>Build healing communities:</strong> Practitioners collaborate without platform extraction</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Making holistic healing accessible while protecting traditional knowledge and preventing healer burnout</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <span class="impact-icon">🌸</span>
+          <h3 class="impact-title">Healthcare Access</h3>
+          <p class="impact-desc">Makes holistic healing accessible to people who can't afford Western medicine or who are failed by it.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">🪶</span>
+          <h3 class="impact-title">Cultural Respect</h3>
+          <p class="impact-desc">Values traditional medicine equally with modern modalities. Protects Indigenous healing knowledge from appropriation.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">💊</span>
+          <h3 class="impact-title">Pharmaceutical Alternative</h3>
+          <p class="impact-desc">Reduces reliance on expensive pharmaceuticals by connecting people to preventive and holistic care.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">🤗</span>
+          <h3 class="impact-title">Healer Support</h3>
+          <p class="impact-desc">Prevents practitioner burnout through community networks, referral sharing, and mutual aid.</p>
+        </div>
+      </div>
+
+      <div class="testimonial">
+        <p class="testimonial-text">"I found an amazing traditional herbalist three blocks from my house who I never knew existed. She uses a sliding scale and has completely transformed my chronic pain management."</p>
+        <p class="testimonial-author">— Sarah, Community Member</p>
+      </div>
+
+      <div class="testimonial">
+        <p class="testimonial-text">"HealingSpaces helped me build my acupuncture practice while staying true to my values. I can offer sliding scale without going broke because the community supports each other."</p>
+        <p class="testimonial-author">— James, Acupuncturist</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-rose">
+    <div class="container">
+      <h2 class="section-title">Who We Serve</h2>
+      <div class="features-grid">
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=600&q=80" alt="People seeking healing" class="card-image">
+          <h3>🌿 People Seeking Healing</h3>
+          <p>Find affordable holistic care, explore multiple modalities, and discover traditional healing in your community.</p>
+        </div>
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=600&q=80" alt="Holistic practitioners" class="card-image">
+          <h3>💆 Holistic Practitioners</h3>
+          <p>Build your practice, connect with clients, share sliding scale capacity, and collaborate with other healers.</p>
+        </div>
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1474418397713-7ede21d49118?w=600&q=80" alt="Traditional healers" class="card-image">
+          <h3>🪶 Traditional Healers</h3>
+          <p>Serve your community while protecting sacred knowledge. Maintain sovereignty over cultural practices.</p>
+        </div>
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=600&q=80" alt="Community health workers" class="card-image">
+          <h3>🩺 Community Health Workers</h3>
+          <p>Refer patients to culturally appropriate care. Connect people to affordable healing resources.</p>
+        </div>
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1573497491208-6b1acb260507?w=600&q=80" alt="Chronic illness community" class="card-image">
+          <h3>💪 Chronic Illness Community</h3>
+          <p>Find alternative approaches when Western medicine falls short. Build multi-modal healing strategies.</p>
+        </div>
+        <div class="card">
+          <img src="https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=600&q=80" alt="Wellness centers" class="card-image">
+          <h3>🏘️ Wellness Centers</h3>
+          <p>Offer your space for sliding scale sessions. Connect with practitioners seeking affordable locations.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Pricing</h2>
+      <p class="section-subtitle">Built for communities, not extraction</p>
+
+      <div class="pricing-card">
+        <h3>Free Directory</h3>
+        <div class="price">100%</div>
+        <p class="price-desc">Free for everyone seeking healing</p>
+        <ul class="pricing-features">
+          <li>✓ Search all practitioners and modalities</li>
+          <li>✓ Find sliding scale availability</li>
+          <li>✓ Read healing journey stories</li>
+          <li>✓ Discover multi-modal paths</li>
+          <li>✓ Community-owned data</li>
+        </ul>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>💝</span>
+          <span>For Practitioners: Sliding Scale Payment</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Practitioners pay what they can in <strong>LocalLoop community currency</strong> or sliding scale dollars. Your financial contribution supports the infrastructure, but no one is excluded from participating.</p>
+          <p style="margin-top: 1rem;"><strong>We value your healing work and will never extract profit from your practice.</strong> This is community infrastructure, not a tech platform.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-rose">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Your Healing Journey</h2>
+      <p class="section-subtitle">Join a community that believes healing happens everywhere, for everyone</p>
+      <div class="cta-buttons" style="margin-top: 2rem;">
+        <a href="#" class="btn-healing" style="background: var(--healing-primary); color: white;">Find Healing Near You</a>
+        <a href="mailto:hello@healingspaces.care" class="btn-healing" style="background: var(--healing-secondary); color: white;">Join as a Practitioner</a>
+      </div>
+      <p style="margin-top: 2rem; color: #6b7280; font-size: 0.875rem;">
+        Part of the <a href="../index.html" style="color: var(--healing-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>HealingSpaces - Powered by HoloSphere | Community-owned, culturally respectful, accessible to all</p>
+    </div>
+  </footer>
+</body>
+</html>

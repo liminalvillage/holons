@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LearnLocal - Learn Anything, Right in Your Neighborhood</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --learn-primary: #8b5cf6;
+      --learn-secondary: #a78bfa;
+      --learn-accent: #c4b5fd;
+      --learn-light: #f5f3ff;
+      --learn-bright: #7c3aed;
+    }
+
+    body {
+      background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+    }
+
+    .learn-hero {
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.9) 0%, rgba(139, 92, 246, 0.85) 50%, rgba(167, 139, 250, 0.9) 100%),
+                  url('https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=1920&q=80') center/cover;
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .learn-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="rgba(255,255,255,0.1)"/><circle cx="50" cy="70" r="1" fill="rgba(255,255,255,0.08)"/><circle cx="30" cy="50" r="1.5" fill="rgba(255,255,255,0.08)"/><circle cx="70" cy="50" r="1.5" fill="rgba(255,255,255,0.08)"/></svg>');
+      background-size: 60px 60px;
+      opacity: 0.5;
+    }
+
+    .learn-hero::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(circle at 30% 40%, rgba(196, 181, 253, 0.2) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 70%, rgba(167, 139, 250, 0.2) 0%, transparent 50%);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .learn-hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .learn-hero .tagline {
+      font-size: 1.75rem;
+      opacity: 0.95;
+      margin-bottom: 2rem;
+      font-weight: 400;
+    }
+
+    .learn-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.85;
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.6;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-learn {
+      background: var(--learn-accent);
+      color: var(--learn-bright);
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .btn-learn:hover {
+      background: white;
+      color: var(--learn-bright);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+      text-decoration: none;
+    }
+
+    .btn-learn-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-learn-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: var(--learn-accent);
+      color: white;
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-dark {
+      background: var(--learn-primary);
+      color: white;
+    }
+
+    .section-bright {
+      background: linear-gradient(135deg, var(--learn-primary) 0%, var(--learn-secondary) 100%);
+      color: white;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--learn-primary);
+    }
+
+    .section-dark .section-title,
+    .section-bright .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+    }
+
+    .section-dark .section-subtitle,
+    .section-bright .section-subtitle {
+      color: rgba(255,255,255,0.85);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.1);
+      transition: all 0.3s;
+      border-top: 4px solid var(--learn-secondary);
+    }
+
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.2);
+      border-top-color: var(--learn-primary);
+    }
+
+    .feature-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--learn-primary), var(--learn-secondary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--learn-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.7;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, var(--learn-primary), var(--learn-secondary), var(--learn-accent));
+      padding: 3rem;
+      border-radius: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      text-align: center;
+      color: white;
+      margin: 3rem 0;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-size: 1rem;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+
+    .learning-card {
+      background: rgba(255,255,255,0.15);
+      padding: 2rem;
+      border-radius: 1rem;
+      border-left: 4px solid var(--learn-accent);
+      margin: 2rem 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .learning-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: white;
+    }
+
+    .learning-content {
+      color: rgba(255,255,255,0.9);
+      line-height: 1.8;
+    }
+
+    .impact-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .impact-card {
+      background: rgba(255,255,255,0.15);
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(255,255,255,0.25);
+      backdrop-filter: blur(10px);
+    }
+
+    .impact-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .impact-label {
+      opacity: 0.95;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    .pathway-showcase {
+      background: var(--learn-light);
+      padding: 3rem;
+      border-radius: 1.5rem;
+      margin: 3rem 0;
+      border: 2px solid var(--learn-secondary);
+    }
+
+    .pathway-showcase h3 {
+      color: var(--learn-primary);
+      font-size: 1.75rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .pathway-examples {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+
+    .pathway-example {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      border-left: 3px solid var(--learn-primary);
+    }
+
+    .pathway-example-title {
+      font-weight: 700;
+      color: var(--learn-primary);
+      margin-bottom: 0.75rem;
+      font-size: 1.125rem;
+    }
+
+    .pathway-steps {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .pathway-steps li {
+      padding: 0.5rem 0;
+      color: #4b5563;
+      font-size: 0.875rem;
+      border-left: 2px solid var(--learn-accent);
+      padding-left: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .teacher-spotlight {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .teacher-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.1);
+    }
+
+    .teacher-name {
+      font-weight: 700;
+      color: var(--learn-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .teacher-skill {
+      color: var(--learn-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .teacher-bio {
+      color: #4b5563;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+      transition: all 0.3s;
+    }
+
+    .image-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .image-caption {
+      padding: 1rem;
+      background: white;
+      color: #4b5563;
+      font-size: 0.875rem;
+      font-style: italic;
+      text-align: center;
+    }
+
+    .featured-image {
+      width: 100%;
+      border-radius: 1.5rem;
+      overflow: hidden;
+      margin: 2rem 0;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.2);
+    }
+
+    .featured-image img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      .learn-hero h1 {
+        font-size: 2.5rem;
+      }
+
+      .learn-hero .tagline {
+        font-size: 1.25rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .impact-metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--learn-primary); color: white;">📚</div>
+          <span>LearnLocal</span>
+        </div>
+        <nav class="nav">
+          <a href="#how-it-works">Features</a>
+          <a href="../index.html">Ecosystem</a>
+          <a href="mailto:learn@learnlocal.community">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="learn-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Learn Anything<br>From Anyone</h1>
+        <p class="tagline">Right in your neighborhood.</p>
+        <p class="subtitle">Hyperlocal learning circles where workshops happen in physical spaces. Learners find classes walking distance from home, teachers earn LocalLoop, expertise circulates.</p>
+        <div class="cta-buttons">
+          <a href="#find-class" class="btn-learn">Find a Class</a>
+          <a href="#teach" class="btn-learn btn-learn-outline">Teach a Skill</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">890+</div>
+          <div class="stat-label">Learning Circles</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">340+</div>
+          <div class="stat-label">Skills Being Taught</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">6,700+</div>
+          <div class="stat-label">Learners</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">$12k</div>
+          <div class="stat-label">Avg Teacher Income/Year</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Education Crisis</h2>
+      <p class="section-subtitle">Educational institutions are expensive, inaccessible, and disconnected from community needs. Meanwhile, communities have abundant teaching capacity that goes unmobilized.</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="card">
+          <h3 style="color: var(--learn-primary); margin-bottom: 1rem;">❌ Traditional Education</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Student debt traps generations</li>
+            <li>Disconnected from local needs</li>
+            <li>Expensive commutes to institutions</li>
+            <li>Credentials over actual skills</li>
+            <li>Learning dollars leave community</li>
+          </ul>
+        </div>
+        <div class="card" style="border: 2px solid var(--learn-secondary);">
+          <h3 style="color: var(--learn-primary); margin-bottom: 1rem;">✓ LearnLocal Way</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Pay-what-you-can in LocalLoop</li>
+            <li>Skills your community actually needs</li>
+            <li>Classes walking distance from home</li>
+            <li>Learn by doing with real projects</li>
+            <li>Teachers earn, learners grow, $ stays local</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1577896851905-dc92e1ab534c?auto=format&fit=crop&w=800&q=80" alt="Community workshop with diverse participants">
+          <div class="image-caption">Hands-on community workshops for all ages</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=800&q=80" alt="Elder teaching young learner">
+          <div class="image-caption">Intergenerational skill sharing and mentorship</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=800&q=80" alt="People working together in classroom">
+          <div class="image-caption">Collaborative peer-to-peer learning environments</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by Learning Holons</h2>
+      <p class="section-subtitle">Novel geospatial architecture that makes peer education actually work</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🗺️</div>
+          <h3 class="feature-title">Learning Pathways</h3>
+          <p class="feature-desc">Federated curriculum where one class leads to the next. See the full journey from beginner to expert.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔗</div>
+          <h3 class="feature-title">Skill Prerequisite Chains</h3>
+          <p class="feature-desc">Auto-recommend preparatory workshops. "Want to learn welding? Start with metal basics first."</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🏘️</div>
+          <h3 class="feature-title">Distributed Classroom</h3>
+          <p class="feature-desc">Classes happening in multiple neighborhoods simultaneously. Same curriculum, local teachers.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⭐</div>
+          <h3 class="feature-title">Peer Assessment</h3>
+          <p class="feature-desc">Decentralized certification and credentialing. Your neighbors vouch for your skills.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3 class="feature-title">Knowledge Gaps</h3>
+          <p class="feature-desc">Visualize what your community knows and needs to know. Guide teacher recruitment.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📍</div>
+          <h3 class="feature-title">Hyperlocal Discovery</h3>
+          <p class="feature-desc">Find classes within walking or biking distance. No car needed, no commute barrier.</p>
+        </div>
+      </div>
+
+      <div class="learning-card" style="margin-top: 3rem;">
+        <div class="learning-title">
+          <span>🌐</span>
+          <span>How Learning Holons Work</span>
+        </div>
+        <div class="learning-content">
+          <p>Each workshop is a <strong>holon</strong>—connected to place, teacher, skills, and learning pathways. Your neighborhood woodworking class automatically relates to the tool library holon, the furniture repair holon, and the home renovation pathway holon.</p>
+          <p style="margin-top: 1rem;">This is fundamentally different from online education platforms. With LearnLocal, <strong>learning is embodied</strong>. You're in the same room, using real tools, building actual things. This means:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.8;">
+            <li>Hands-on practice with immediate feedback</li>
+            <li>Build relationships while building skills</li>
+            <li>Natural mentorship and peer support</li>
+            <li>Learning dollars stay in your community</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-bright">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Making skill-building accessible without debt while keeping learning dollars local</p>
+
+      <div class="impact-metrics">
+        <div class="impact-card">
+          <div class="impact-value">📚 Accessible Education</div>
+          <p class="impact-label">Learners access <strong>$15k+ worth</strong> of skill-building for average $800/year pay-what-you-can.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">💰 Local Economy</div>
+          <p class="impact-label">Teachers earn <strong>$12k/year average</strong> supplemental income, all paid in LocalLoop.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">🔧 Real Skills</div>
+          <p class="impact-label"><strong>87% of learners</strong> apply skills immediately to earn income or improve their homes.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">🌱 Learning Culture</div>
+          <p class="impact-label">Communities develop <strong>culture of continuous learning</strong> where teaching is valued work.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Learning in Action</h2>
+      <p class="section-subtitle">Real skills, real communities, real impact</p>
+
+      <div class="featured-image">
+        <img src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=1600&q=80" alt="Diverse group learning together in workshop">
+      </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80" alt="Students working on group project">
+          <div class="image-caption">Hands-on project-based learning in community spaces</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1544027993-37dbfe43562a?auto=format&fit=crop&w=800&q=80" alt="One-on-one teaching moment">
+          <div class="image-caption">Personalized instruction and skill development</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=800&q=80" alt="Community members learning together">
+          <div class="image-caption">Building community through shared learning experiences</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1556761175-4b46a572b786?auto=format&fit=crop&w=800&q=80" alt="Workshop with tools and materials">
+          <div class="image-caption">Practical skills training with real-world applications</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80" alt="Group discussion and collaboration">
+          <div class="image-caption">Collaborative problem-solving and peer support</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1529390079861-591de354faf5?auto=format&fit=crop&w=800&q=80" alt="Teaching traditional skills">
+          <div class="image-caption">Preserving and teaching traditional crafts and skills</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Who Uses LearnLocal</h2>
+      <div class="features-grid">
+        <div class="card">
+          <h3>🔄 Career Changers</h3>
+          <p>Learn trade skills without expensive vocational schools. Build portfolio through real projects.</p>
+        </div>
+        <div class="card">
+          <h3>🧒 Youth</h3>
+          <p>After-school enrichment and practical life skills. Learn from neighbors who care.</p>
+        </div>
+        <div class="card">
+          <h3>🌍 Immigrants</h3>
+          <p>Gain job skills while practicing English. Connect with community through learning.</p>
+        </div>
+        <div class="card">
+          <h3>👴 Retirees</h3>
+          <p>Lifelong learning keeps mind sharp. Meet neighbors, stay engaged, learn new things.</p>
+        </div>
+        <div class="card">
+          <h3>🏘️ Community Builders</h3>
+          <p>Develop neighborhood self-sufficiency. Build food, energy, repair skills locally.</p>
+        </div>
+        <div class="card">
+          <h3>👩‍🏫 Expert Teachers</h3>
+          <p>Share lifetime expertise. Earn LocalLoop income, build teaching legacy.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--learn-light);">
+    <div class="container">
+      <div class="pathway-showcase">
+        <h3>Learning Pathways in Action</h3>
+        <div class="pathway-examples">
+          <div class="pathway-example">
+            <div class="pathway-example-title">Home Repair Pathway</div>
+            <ul class="pathway-steps">
+              <li>Tool Safety & Basics (2 hrs)</li>
+              <li>Basic Plumbing Repairs (4 hrs)</li>
+              <li>Electrical Basics (4 hrs)</li>
+              <li>Drywall & Painting (6 hrs)</li>
+              <li>Home Maintenance Certificate</li>
+            </ul>
+          </div>
+          <div class="pathway-example">
+            <div class="pathway-example-title">Urban Farming Pathway</div>
+            <ul class="pathway-steps">
+              <li>Soil Health Fundamentals (3 hrs)</li>
+              <li>Season Extension Techniques (4 hrs)</li>
+              <li>Small-Scale Market Gardening (8 hrs)</li>
+              <li>Food Preservation (6 hrs)</li>
+              <li>Urban Farmer Certificate</li>
+            </ul>
+          </div>
+          <div class="pathway-example">
+            <div class="pathway-example-title">Digital Literacy Pathway</div>
+            <ul class="pathway-steps">
+              <li>Smartphone Basics (2 hrs)</li>
+              <li>Online Safety & Privacy (3 hrs)</li>
+              <li>Digital Documents (4 hrs)</li>
+              <li>Video Calls & Communication (3 hrs)</li>
+              <li>Digital Citizen Certificate</li>
+            </ul>
+          </div>
+          <div class="pathway-example">
+            <div class="pathway-example-title">Bike Mechanics Pathway</div>
+            <ul class="pathway-steps">
+              <li>Bike Anatomy & Safety (2 hrs)</li>
+              <li>Flat Tire Repair (2 hrs)</li>
+              <li>Brake & Gear Adjustment (4 hrs)</li>
+              <li>Complete Bike Overhaul (8 hrs)</li>
+              <li>Community Mechanic Certificate</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 3rem;">
+        <h3 style="text-align: center; color: var(--learn-primary); font-size: 1.75rem; margin-bottom: 2rem;">Meet Some Teachers</h3>
+        <div class="teacher-spotlight">
+          <div class="teacher-card">
+            <div class="teacher-name">Maria Santos</div>
+            <div class="teacher-skill">Traditional Mexican Cooking</div>
+            <div class="teacher-bio">"I teach my grandmother's recipes. Now the whole neighborhood knows how to make real tamales. It keeps my culture alive."</div>
+          </div>
+          <div class="teacher-card">
+            <div class="teacher-name">James Chen</div>
+            <div class="teacher-skill">Basic Carpentry</div>
+            <div class="teacher-bio">"Retired from construction. Now I help folks fix their homes and teach young people the trades. Best thing I've done."</div>
+          </div>
+          <div class="teacher-card">
+            <div class="teacher-name">Aisha Mohammed</div>
+            <div class="teacher-skill">Small Business Accounting</div>
+            <div class="teacher-bio">"I help immigrant entrepreneurs understand bookkeeping. Half my students start businesses within a year."</div>
+          </div>
+          <div class="teacher-card">
+            <div class="teacher-name">Tom Reeves</div>
+            <div class="teacher-skill">Bike Repair</div>
+            <div class="teacher-bio">"Teaching kids to fix bikes keeps them mobile and builds confidence. Plus they can earn money helping neighbors."</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Pay-What-You-Can, Community Funded</h2>
+      <p class="section-subtitle">Built for learners, sustained by community</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="impact-card">
+          <div class="impact-value">Pay-What-You-Can</div>
+          <div class="impact-label">All classes use sliding scale pricing in LocalLoop. No one turned away for lack of funds.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Teacher Income</div>
+          <div class="impact-label">Teachers keep 100% of class fees. No platform extraction, just peer exchange.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Grant Funded</div>
+          <div class="impact-label">Supported by education foundations and workforce development programs.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">School Partnerships</div>
+          <div class="impact-label">Districts pay for after-school programs, expanding access for youth.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Learning or Teaching Today</h2>
+      <p class="section-subtitle">Join thousands building a neighborhood learning culture where everyone teaches, everyone learns</p>
+      <div class="cta-buttons" style="margin-top: 2rem;">
+        <a href="#find-class" class="btn-learn" style="background: var(--learn-primary); color: white;">Find a Class</a>
+        <a href="#teach" class="btn-learn" style="background: var(--learn-secondary); color: white;">Teach a Skill</a>
+      </div>
+      <p style="margin-top: 2rem; color: #6b7280; font-size: 0.875rem;">
+        Part of the <a href="../index.html" style="color: var(--learn-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#find-class">Find Classes</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>LearnLocal - Powered by HoloSphere | Community-taught, locally funded, skills for life</p>
+    </div>
+  </footer>
+</body>
+</html>

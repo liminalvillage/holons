@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TerraTrust - Community Land Monitoring | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #2d5016; }
+    .btn-project { background: #2d5016; color: white; }
+    .btn-project:hover { background: #1f3810; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🌱</div>
+          <span>TerraTrust</span>
+        </div>
+        <nav class="nav">
+          <a href="index.html">← Ecosystem</a>
+          <a href="waterwise.html">WaterWise →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Land & Nature Stewardship</div>
+      <h1>TerraTrust</h1>
+      <p>Community-powered land monitoring and biodiversity tracking using geospatial holons. Track soil health, species diversity, and ecological changes in your local watershed.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="sites-count">0</span>
+        <span class="stat-label">Monitoring Sites</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="observations-count">0</span>
+        <span class="stat-label">Observations</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="species-count">0</span>
+        <span class="stat-label">Species Tracked</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="avg-health">--</span>
+        <span class="stat-label">Avg Soil Health</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers TerraTrust</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>H3 Geospatial Indexing:</strong> Each monitoring site is a holon (H3 cell) representing a specific geographic area</li>
+          <li><strong>Hierarchical Data:</strong> Sites nest within watersheds, which nest within bioregions</li>
+          <li><strong>Federation:</strong> Local observations propagate to regional environmental databases</li>
+          <li><strong>Real-time Updates:</strong> Subscriptions enable live biodiversity tracking</li>
+          <li><strong>Decentralized:</strong> No central authority required—communities own their data</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🌊</span> <strong>WaterWise:</strong> Shares land health data
+          </div>
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Monitors community land
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Hosts field days
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Ecology education
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Track Land Observations</h2>
+
+      <div class="card mb-lg">
+        <h3>Add Observation</h3>
+        <div class="form-group">
+          <label for="site-id">Monitoring Site (H3 Cell ID)</label>
+          <input type="text" id="site-id" placeholder="e.g., watershed-north-meadow" value="watershed-north-meadow">
+        </div>
+        <div class="form-group">
+          <label for="observation-type">Observation Type</label>
+          <select id="observation-type">
+            <option value="soil-health">Soil Health</option>
+            <option value="species">Species Sighting</option>
+            <option value="water-quality">Water Quality</option>
+            <option value="vegetation">Vegetation Cover</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="observation-data">Data (JSON or text)</label>
+          <textarea id="observation-data" rows="4" placeholder='{"species": "Red-tailed Hawk", "count": 2, "health": "good"}'></textarea>
+        </div>
+        <div class="form-group">
+          <label for="notes">Notes</label>
+          <input type="text" id="notes" placeholder="Optional observation notes">
+        </div>
+        <button class="btn btn-project" onclick="addObservation()">Record Observation</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>View Site Observations</h3>
+        <div class="form-group">
+          <label for="view-site">Site to View</label>
+          <input type="text" id="view-site" placeholder="watershed-north-meadow" value="watershed-north-meadow">
+        </div>
+        <button class="btn btn-secondary" onclick="loadObservations()">Load Observations</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Observations will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize TerraTrust with HoloSphere
+const terra = new HoloSphere('TerraTrust', strict=false);
+
+// Record an observation at a monitoring site
+await terra.put('watershed-north-meadow', 'observations', {
+  id: Date.now().toString(),
+  type: 'species',
+  species: 'Red-tailed Hawk',
+  count: 2,
+  health: 'good',
+  observer: 'Jane Smith',
+  timestamp: Date.now()
+});
+
+// Get all observations from a site
+const observations = await terra.getAll('watershed-north-meadow', 'observations');
+
+// Subscribe to real-time observations
+terra.subscribe('watershed-north-meadow', 'observations', (obs) => {
+  console.log('New observation:', obs);
+});
+
+// Federate with regional environmental database
+await terra.federate('watershed-north-meadow', 'regional-biodata');
+
+// Observations now automatically propagate to regional monitoring</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">TerraTrust shares data with other ecosystem projects through HoloSphere federation</p>
+      <div class="connection-list">
+        <span class="connection-tag">🌊 WaterWise receives soil & vegetation data</span>
+        <span class="connection-tag">🏛️ CommonGround monitors trust lands</span>
+        <span class="connection-tag">📚 LearnLocal uses data for ecology courses</span>
+        <span class="connection-tag">🏘️ NeighborHub hosts community field days</span>
+        <span class="connection-tag">🔧 ToolLibrary tracks equipment for fieldwork</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>TerraTrust - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    // Initialize HoloSphere for TerraTrust
+    const sphere = new HoloSphereDemo('TerraTrust', 'TerraTrust', '#2d5016');
+
+    // Initialize some sample data
+    async function initSampleData() {
+      const samples = [
+        {
+          site: 'watershed-north-meadow',
+          type: 'species',
+          data: { species: 'Red-tailed Hawk', count: 2, health: 'excellent' },
+          notes: 'Nesting pair observed'
+        },
+        {
+          site: 'watershed-north-meadow',
+          type: 'soil-health',
+          data: { ph: 6.8, organic_matter: 4.2, nitrogen: 'high' },
+          notes: 'Healthy soil conditions'
+        },
+        {
+          site: 'watershed-south-forest',
+          type: 'vegetation',
+          data: { cover: '85%', diversity: 'high', invasives: 'low' },
+          notes: 'Excellent forest health'
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put(sample.site, 'observations', {
+          id: Date.now().toString() + Math.random(),
+          type: sample.type,
+          data: sample.data,
+          notes: sample.notes,
+          observer: 'Demo User',
+          timestamp: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    // Add observation
+    async function addObservation() {
+      const site = document.getElementById('site-id').value;
+      const type = document.getElementById('observation-type').value;
+      const dataInput = document.getElementById('observation-data').value;
+      const notes = document.getElementById('notes').value;
+
+      if (!site || !dataInput) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      let data;
+      try {
+        // Try to parse as JSON first
+        data = JSON.parse(dataInput);
+      } catch (e) {
+        // If not JSON, use as text
+        data = { value: dataInput };
+      }
+
+      const observation = {
+        id: Date.now().toString(),
+        type: type,
+        data: data,
+        notes: notes,
+        observer: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(site, 'observations', observation);
+      showNotification('Observation recorded successfully!');
+
+      // Clear form
+      document.getElementById('observation-data').value = '';
+      document.getElementById('notes').value = '';
+
+      // Reload if viewing the same site
+      if (document.getElementById('view-site').value === site) {
+        await loadObservations();
+      }
+
+      updateStats();
+    }
+
+    // Load observations
+    async function loadObservations() {
+      const site = document.getElementById('view-site').value;
+      if (!site) {
+        showNotification('Please enter a site ID', 'error');
+        return;
+      }
+
+      const observations = await sphere.getAll(site, 'observations');
+      const output = document.getElementById('output');
+
+      if (observations.length === 0) {
+        output.innerHTML = `<p class="text-muted">No observations found for ${site}</p>`;
+        return;
+      }
+
+      // Sort by timestamp, newest first
+      observations.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Observations from ${site}</h4><div class="item-list">`;
+
+      for (const obs of observations) {
+        const date = new Date(obs.timestamp).toLocaleDateString();
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">
+                ${obs.type} - ${date}
+              </div>
+              <div class="item-meta">
+                ${obs.notes || 'No notes'}
+              </div>
+              ${renderJSON(obs.data)}
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    // Update statistics
+    async function updateStats() {
+      // Count unique sites
+      const allObs = [];
+      const sites = new Set();
+      const species = new Set();
+      let totalHealth = 0;
+      let healthCount = 0;
+
+      // Scan localStorage for all observations
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('TerraTrust:') && key.includes(':observations:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          allObs.push(item);
+          sites.add(item._holon);
+
+          if (item.data.species) {
+            species.add(item.data.species);
+          }
+
+          if (item.data.ph) {
+            totalHealth += item.data.ph;
+            healthCount++;
+          }
+        }
+      }
+
+      document.getElementById('sites-count').textContent = sites.size;
+      document.getElementById('observations-count').textContent = allObs.length;
+      document.getElementById('species-count').textContent = species.size;
+      document.getElementById('avg-health').textContent = healthCount > 0
+        ? (totalHealth / healthCount).toFixed(1)
+        : '--';
+    }
+
+    // Initialize
+    (async () => {
+      // Only init sample data if no data exists
+      const existing = await sphere.getAll('watershed-north-meadow', 'observations');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadObservations();
+    })();
+  </script>
+</body>
+</html>

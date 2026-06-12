@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoopCreds - Banking Without Banks</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --coop-primary: #ea580c;
+      --coop-secondary: #fb923c;
+      --coop-accent: #fdba74;
+      --coop-light: #ffedd5;
+      --coop-dark: #7c2d12;
+    }
+
+    body {
+      background: linear-gradient(180deg, #ffedd5 0%, #ffffff 100%);
+    }
+
+    .coop-hero {
+      background: linear-gradient(135deg, rgba(124, 45, 18, 0.9) 0%, rgba(154, 52, 18, 0.85) 20%, rgba(194, 65, 12, 0.8) 50%, rgba(234, 88, 12, 0.8) 80%, rgba(251, 146, 60, 0.75) 100%),
+                  url('https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=2000&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .coop-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image:
+        radial-gradient(circle at 30% 40%, rgba(253, 186, 116, 0.12) 0%, transparent 50%),
+        radial-gradient(circle at 70% 70%, rgba(251, 146, 60, 0.12) 0%, transparent 50%),
+        url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="25" cy="25" r="15" stroke="rgba(255,255,255,0.06)" fill="none" stroke-width="2"/><circle cx="50" cy="50" r="15" stroke="rgba(255,255,255,0.06)" fill="none" stroke-width="2"/><circle cx="75" cy="75" r="15" stroke="rgba(255,255,255,0.06)" fill="none" stroke-width="2"/><line x1="25" y1="25" x2="50" y2="50" stroke="rgba(255,255,255,0.04)" stroke-width="1.5"/><line x1="50" y1="50" x2="75" y2="75" stroke="rgba(255,255,255,0.04)" stroke-width="1.5"/></svg>');
+      background-size: 100% 100%, 100% 100%, 80px 80px;
+      opacity: 0.5;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .coop-hero h1 {
+      font-size: 4.5rem;
+      font-weight: 900;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 3px 8px rgba(0,0,0,0.3);
+    }
+
+    .coop-hero .tagline {
+      font-size: 2rem;
+      margin-bottom: 2rem;
+      font-weight: 400;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .coop-hero .subtitle {
+      font-size: 1.25rem;
+      opacity: 0.95;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+      line-height: 1.7;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-coop {
+      background: var(--coop-accent);
+      color: #7c2d12;
+      padding: 1.125rem 3rem;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 6px 20px rgba(234, 88, 12, 0.3);
+    }
+
+    .btn-coop:hover {
+      background: #fed7aa;
+      transform: translateY(-3px);
+      box-shadow: 0 8px 28px rgba(234, 88, 12, 0.4);
+      text-decoration: none;
+    }
+
+    .btn-coop-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-coop-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: var(--coop-accent);
+      color: white;
+    }
+
+    .section {
+      padding: 5rem 0;
+    }
+
+    .section-dark {
+      background: linear-gradient(135deg, #9a3412 0%, #ea580c 100%);
+      color: white;
+    }
+
+    .section-accent {
+      background: var(--coop-light);
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 3rem;
+      margin-bottom: 1.25rem;
+      color: var(--coop-dark);
+      font-weight: 800;
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.375rem;
+      color: #6b7280;
+      max-width: 800px;
+      margin: 0 auto 4rem;
+      line-height: 1.6;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.9);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2.5rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      box-shadow: 0 8px 20px rgba(234, 88, 12, 0.12);
+      transition: all 0.3s;
+      border: 2px solid transparent;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 32px rgba(234, 88, 12, 0.2);
+      border-color: var(--coop-accent);
+    }
+
+    .feature-icon {
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, var(--coop-secondary), var(--coop-accent));
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(251, 146, 60, 0.3);
+    }
+
+    .feature-title {
+      font-size: 1.625rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--coop-dark);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.8;
+      font-size: 1.0625rem;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, #fb923c 0%, #fdba74 50%, #fed7aa 100%);
+      padding: 4rem;
+      border-radius: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 3rem;
+      text-align: center;
+      color: #7c2d12;
+      margin: 3rem 0;
+      box-shadow: 0 12px 40px rgba(234, 88, 12, 0.25);
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 3.5rem;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 0.75rem;
+    }
+
+    .stat-label {
+      font-size: 1.125rem;
+      font-weight: 600;
+      opacity: 0.9;
+    }
+
+    .holosystem {
+      background: rgba(255,255,255,0.1);
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      border-left: 5px solid var(--coop-accent);
+      margin: 2.5rem 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      color: white;
+    }
+
+    .holosystem-content {
+      color: rgba(255,255,255,0.95);
+      line-height: 1.9;
+      font-size: 1.0625rem;
+    }
+
+    .impact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .impact-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      border-top: 4px solid var(--coop-secondary);
+      box-shadow: 0 4px 12px rgba(234, 88, 12, 0.1);
+    }
+
+    .impact-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .impact-value {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      color: var(--coop-dark);
+    }
+
+    .impact-label {
+      color: #4b5563;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .comparison-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+    }
+
+    .comparison-card.new {
+      border: 3px solid var(--coop-accent);
+      box-shadow: 0 8px 24px rgba(251, 146, 60, 0.2);
+    }
+
+    .comparison-card h3 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .comparison-card ul {
+      line-height: 2.2;
+      color: #4b5563;
+      font-size: 1.0625rem;
+    }
+
+    .credit-circle-visual {
+      background: linear-gradient(to bottom, rgba(255,255,255,0.05), rgba(255,255,255,0.15));
+      padding: 3rem;
+      border-radius: 1.5rem;
+      margin: 3rem 0;
+      border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    .circle-title {
+      text-align: center;
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 2.5rem;
+      color: white;
+    }
+
+    .circle-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      text-align: center;
+    }
+
+    .circle-step {
+      background: rgba(255,255,255,0.1);
+      padding: 1.5rem;
+      border-radius: 1rem;
+      backdrop-filter: blur(5px);
+    }
+
+    .circle-step-number {
+      width: 50px;
+      height: 50px;
+      background: var(--coop-accent);
+      color: var(--coop-dark);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin: 0 auto 1rem;
+    }
+
+    .circle-step-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .circle-step-desc {
+      font-size: 0.9375rem;
+      opacity: 0.9;
+    }
+
+    .principle-box {
+      background: rgba(255,255,255,0.1);
+      border: 2px solid var(--coop-accent);
+      border-radius: 1.25rem;
+      padding: 2rem;
+      margin: 2rem 0;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .principle-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .principle-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: white;
+    }
+
+    .principle-text {
+      font-size: 1.125rem;
+      color: rgba(255,255,255,0.95);
+      line-height: 1.7;
+    }
+
+    .image-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1.25rem;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(234, 88, 12, 0.15);
+      transition: transform 0.3s;
+      position: relative;
+      height: 300px;
+    }
+
+    .image-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 36px rgba(234, 88, 12, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .image-card-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      padding: 1.5rem;
+      color: white;
+    }
+
+    .image-card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .image-card-desc {
+      font-size: 0.9375rem;
+      opacity: 0.95;
+    }
+
+    @media (max-width: 768px) {
+      .coop-hero h1 {
+        font-size: 2.75rem;
+      }
+
+      .coop-hero .tagline {
+        font-size: 1.5rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--coop-primary); color: white;">🤝</div>
+          <span>CoopCreds</span>
+        </div>
+        <nav class="nav">
+          <a href="../index.html">Ecosystem</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="mailto:hello@coopcreds.org">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="coop-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Banking<br>Without Banks</h1>
+        <p class="tagline">Borrow from your neighbors, build wealth together</p>
+        <p class="subtitle">Zero-interest community lending circles powered by trust, not credit scores. Access capital, build solidarity, escape extraction.</p>
+        <div class="cta-buttons">
+          <a href="#join" class="btn-coop">Join a Credit Circle</a>
+          <a href="#how-it-works" class="btn-coop btn-coop-outline">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">0%</div>
+          <div class="stat-label">Interest Rate</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">$2.4M</div>
+          <div class="stat-label">Lent Interest-Free</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">342</div>
+          <div class="stat-label">Active Credit Circles</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">98%</div>
+          <div class="stat-label">Repayment Rate</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Banking Extraction Crisis</h2>
+      <p class="section-subtitle">Banks exclude 25% of Americans. Payday lenders charge 400% APR. Your community has the capital—it just needs infrastructure.</p>
+
+      <div class="comparison-grid">
+        <div class="comparison-card">
+          <h3 style="color: #dc2626;">❌ Extractive Banking</h3>
+          <ul>
+            <li>Credit scores exclude the poor</li>
+            <li>Interest extracts wealth over time</li>
+            <li>Payday loans at 400% APR</li>
+            <li>No solidarity, just transactions</li>
+            <li>Debt as punishment, not support</li>
+            <li>Banks profit from your hardship</li>
+          </ul>
+        </div>
+        <div class="comparison-card new">
+          <h3 style="color: var(--coop-primary);">✓ CoopCreds Circles</h3>
+          <ul>
+            <li>Community trust, not credit scores</li>
+            <li>Zero interest, just mutual aid</li>
+            <li>Emergency aid when disaster strikes</li>
+            <li>Peer accountability and support</li>
+            <li>Hardship help, not penalties</li>
+            <li>Build collective wealth together</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="image-section">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?auto=format&fit=crop&w=800&q=80" alt="Hands stacked together in solidarity">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Mutual Aid in Action</div>
+            <div class="image-card-desc">Communities lifting each other up through cooperative finance</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80" alt="Community members in circle discussion">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Credit Circles Meeting</div>
+            <div class="image-card-desc">Democratic decision-making about lending and support</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1525026198548-4baa812f1183?auto=format&fit=crop&w=800&q=80" alt="Diverse group of people together">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Solidarity Economy</div>
+            <div class="image-card-desc">Building financial systems based on trust and cooperation</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Geospatial credit architecture that makes community banking actually work</p>
+
+      <div class="credit-circle-visual">
+        <div class="circle-title">How Credit Circles Work</div>
+        <div class="circle-steps">
+          <div class="circle-step">
+            <div class="circle-step-number">1</div>
+            <div class="circle-step-title">Form Circle</div>
+            <div class="circle-step-desc">5-15 neighbors who trust each other</div>
+          </div>
+          <div class="circle-step">
+            <div class="circle-step-number">2</div>
+            <div class="circle-step-title">Pool Savings</div>
+            <div class="circle-step-desc">Everyone contributes monthly</div>
+          </div>
+          <div class="circle-step">
+            <div class="circle-step-number">3</div>
+            <div class="circle-step-title">Rotating Payout</div>
+            <div class="circle-step-desc">One person receives full pot</div>
+          </div>
+          <div class="circle-step">
+            <div class="circle-step-number">4</div>
+            <div class="circle-step-title">Continue</div>
+            <div class="circle-step-desc">Everyone gets their turn</div>
+          </div>
+          <div class="circle-step">
+            <div class="circle-step-number">5</div>
+            <div class="circle-step-title">Build Trust</div>
+            <div class="circle-step-desc">Reputation grows with each cycle</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⭕</div>
+          <h3 class="feature-title">Credit Circles</h3>
+          <p class="feature-desc">Self-organized lending holons (ROSCAs) with transparent histories. Traditional wisdom meets distributed technology.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌟</div>
+          <h3 class="feature-title">Reputation Holons</h3>
+          <p class="feature-desc">Community-based credit scoring that values character over FICO. Your neighbors know you better than an algorithm.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3 class="feature-title">Risk Pooling</h3>
+          <p class="feature-desc">Federate risk across multiple circles. When one member struggles, the broader community provides support.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🚨</div>
+          <h3 class="feature-title">Emergency Aid</h3>
+          <p class="feature-desc">Fast-deploy mutual aid when disaster strikes. Medical emergency? Job loss? Your circle mobilizes capital immediately.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💙</div>
+          <h3 class="feature-title">Delinquency Support</h3>
+          <p class="feature-desc">Community helps members through hardship instead of penalizing them. Restructure repayment, offer temporary relief.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📈</div>
+          <h3 class="feature-title">Wealth Building</h3>
+          <p class="feature-desc">Interest-free capital for business, education, housing. Build collective wealth instead of individual debt.</p>
+        </div>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>🌐</span>
+          <span>How Credit Holons Work</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Each credit circle is a <strong>trust holon</strong>—a self-sovereign financial community that can federate with neighboring circles for risk pooling and emergency lending. Your circle's reputation propagates through the network.</p>
+          <p style="margin-top: 1rem;">This is fundamentally different from banks or even blockchain finance. With HoloSphere, <strong>social relationships are the infrastructure</strong>. This means:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.9;">
+            <li>Zero interest because money is mutual aid, not commodity</li>
+            <li>Community accountability instead of legal enforcement</li>
+            <li>Reputation earned through participation, not credit scores</li>
+            <li>Offline-first operations—no internet required</li>
+            <li>Data sovereignty—your financial history stays with your community</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="principle-box">
+        <div class="principle-icon">☪️</div>
+        <div class="principle-title">Islamic Finance Principles</div>
+        <div class="principle-text">
+          CoopCreds operates on riba-free (interest-free) principles aligned with Islamic finance and traditional mutual aid. Money is a tool for cooperation, not extraction. Profit comes from productive work, not from lending capital.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-accent">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Building financial resilience through solidarity, not extraction</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <div class="impact-icon">💰</div>
+          <h3 style="color: var(--coop-primary);">Zero-Interest Capital</h3>
+          <p class="impact-label">Unbanked communities access capital without usurious interest. Thousands of dollars saved per person over time.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🚫</div>
+          <h3 style="color: var(--coop-primary);">Prevent Payday Lending</h3>
+          <p class="impact-label">Emergency aid holons provide same-day capital during crises, eliminating need for predatory 400% APR loans.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🤝</div>
+          <h3 style="color: var(--coop-primary);">Peer Accountability</h3>
+          <p class="impact-label">98% repayment rate through social bonds, not legal threats. Trust and reputation are the collateral.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">👥</div>
+          <h3 style="color: var(--coop-primary);">Collective Wealth</h3>
+          <p class="impact-label">Every circle builds pooled savings that can be deployed for community needs—housing, business, education.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🌍</div>
+          <h3 style="color: var(--coop-primary);">Cultural Continuity</h3>
+          <p class="impact-label">Honors traditional ROSCAs, tandas, susus, and other community lending practices from around the world.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">💪</div>
+          <h3 style="color: var(--coop-primary);">Financial Sovereignty</h3>
+          <p class="impact-label">Communities divest from extractive banks and build parallel financial infrastructure they control.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Who Uses CoopCreds</h2>
+
+      <div class="image-section">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80" alt="Women entrepreneurs collaborating">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Women-Led Circles</div>
+            <div class="image-card-desc">Economic empowerment through community-controlled capital</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80" alt="Immigrant community gathering">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Cultural Traditions</div>
+            <div class="image-card-desc">Honoring tandas, ROSCAs, and traditional lending practices</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80" alt="Community support network">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Financial Sovereignty</div>
+            <div class="image-card-desc">Building wealth together, escaping extractive banking</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="features-grid">
+        <div class="card">
+          <h3>🌎 Immigrant Communities</h3>
+          <p>Continue traditional lending circle practices (tandas, ROSCAs) with digital coordination and transparent record-keeping.</p>
+        </div>
+        <div class="card">
+          <h3>👩 Women Entrepreneurs</h3>
+          <p>Pool resources for business capital without male gatekeepers or discriminatory lending practices.</p>
+        </div>
+        <div class="card">
+          <h3>🏘️ Underbanked Neighborhoods</h3>
+          <p>Build community financial infrastructure when banks have abandoned your area.</p>
+        </div>
+        <div class="card">
+          <h3>🎓 Students</h3>
+          <p>Access education funding without crushing debt. Circle members invest in each other's futures.</p>
+        </div>
+        <div class="card">
+          <h3>🤲 Mutual Aid Networks</h3>
+          <p>Coordinate emergency financial support with transparent, accountable lending infrastructure.</p>
+        </div>
+        <div class="card">
+          <h3>☪️ Faith Communities</h3>
+          <p>Practice Islamic finance principles or other faith-based economic justice within your community.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Community-Owned, Not Profit-Driven</h2>
+      <p class="section-subtitle">Financial infrastructure for the people, by the people</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <div class="impact-value">0%</div>
+          <div class="impact-label">Interest Charged Ever</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">100%</div>
+          <div class="impact-label">Community Controlled</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Small</div>
+          <div class="impact-label">Admin Fees Cover Ops Only</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Grant</div>
+          <div class="impact-label">Funded, Not VC-Backed</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Open Source</div>
+          <div class="impact-label">Built on HoloSphere LGPL</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">CDFI</div>
+          <div class="impact-label">Supported by CDFIs</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="join">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Your Credit Circle Today</h2>
+      <p class="section-subtitle">Join thousands building financial resilience through mutual aid and zero-interest lending</p>
+      <div class="cta-buttons" style="margin-top: 2.5rem;">
+        <a href="mailto:hello@coopcreds.org" class="btn-coop" style="background: var(--coop-primary); color: white;">Form Your Circle</a>
+        <a href="../index.html" class="btn-coop" style="background: var(--coop-secondary); color: white;">Explore Ecosystem</a>
+      </div>
+      <p style="margin-top: 2.5rem; color: #6b7280; font-size: 0.9375rem;">
+        Part of the <a href="../index.html" style="color: var(--coop-primary); font-weight: 700;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#how-it-works">How It Works</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>CoopCreds - Powered by HoloSphere | Community-owned, interest-free, solidarity-based</p>
+    </div>
+  </footer>
+</body>
+</html>

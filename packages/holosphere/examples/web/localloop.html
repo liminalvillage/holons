@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalLoop - Community Currency & Exchange | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #f59e0b; }
+    .btn-project { background: #f59e0b; color: white; }
+    .btn-project:hover { background: #d97706; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">💰</div>
+          <span>LocalLoop</span>
+        </div>
+        <nav class="nav">
+          <a href="mindfulmeets.html">← MindfulMeets</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="coopcreds.html">CoopCreds →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Finance & Economics</div>
+      <h1>LocalLoop</h1>
+      <p>Community currency and local exchange system. Issue complementary currency, record peer-to-peer transactions, and track economic velocity to strengthen your local economy without relying on scarce national currency.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="currency-circulation">0</span>
+        <span class="stat-label">Currency in Circulation</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="transactions-count">0</span>
+        <span class="stat-label">Transactions</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="businesses-count">0</span>
+        <span class="stat-label">Accepting Businesses</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="economic-velocity">0</span>
+        <span class="stat-label">Economic Velocity</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers LocalLoop</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Community Currency Issuance:</strong> Each community creates its own currency holon</li>
+          <li><strong>Decentralized Ledger:</strong> No central bank or authority required</li>
+          <li><strong>Peer-to-Peer Transactions:</strong> Direct exchange between members without intermediaries</li>
+          <li><strong>Economic Metrics:</strong> Real-time tracking of circulation and velocity</li>
+          <li><strong>Universal Acceptance:</strong> ALL ecosystem projects can accept local currency</li>
+          <li><strong>Mutual Credit:</strong> Currency issued based on community trust and exchanges</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Accepts local currency
+          </div>
+          <div class="connection-tag">
+            <span>🔧</span> <strong>ToolLibrary:</strong> Rentals in local currency
+          </div>
+          <div class="connection-tag">
+            <span>🏗️</span> <strong>EcoConstruct:</strong> Materials trading
+          </div>
+          <div class="connection-tag">
+            <span>🤝</span> <strong>SkillSwap:</strong> Service exchanges
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Course payments
+          </div>
+          <div class="connection-tag">
+            <span>🌱</span> <strong>All Projects:</strong> Universal acceptance
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Currency & Transactions</h2>
+
+      <div class="card mb-lg">
+        <h3>Issue Currency to Member</h3>
+        <div class="form-group">
+          <label for="currency-holon">Currency Holon</label>
+          <input type="text" id="currency-holon" placeholder="e.g., portland-hours" value="portland-hours">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="recipient">Recipient</label>
+            <input type="text" id="recipient" placeholder="Member name or ID">
+          </div>
+          <div class="form-group">
+            <label for="amount-issue">Amount to Issue</label>
+            <input type="number" id="amount-issue" placeholder="100" step="0.01">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="issue-reason">Reason</label>
+          <input type="text" id="issue-reason" placeholder="e.g., New member signup, Community service">
+        </div>
+        <button class="btn btn-project" onclick="issueCurrency()">Issue Currency</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Record Transaction</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="from-member">From</label>
+            <input type="text" id="from-member" placeholder="Sender">
+          </div>
+          <div class="form-group">
+            <label for="to-member">To</label>
+            <input type="text" id="to-member" placeholder="Recipient">
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="amount-tx">Amount</label>
+            <input type="number" id="amount-tx" placeholder="25.00" step="0.01">
+          </div>
+          <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category">
+              <option>Goods</option>
+              <option>Services</option>
+              <option>Rent</option>
+              <option>Food</option>
+              <option>Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <input type="text" id="description" placeholder="e.g., Carpentry work, Fresh vegetables">
+        </div>
+        <button class="btn btn-secondary" onclick="recordTransaction()">Record Transaction</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Recent transactions will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize LocalLoop currency system
+const localloop = new HoloSphere('LocalLoop');
+
+// Issue currency to a new member
+await localloop.put('portland-hours', 'issuance', {
+  id: Date.now().toString(),
+  recipient: 'alice@local',
+  amount: 100,
+  reason: 'New member signup',
+  timestamp: Date.now()
+});
+
+// Record a peer-to-peer transaction
+await localloop.put('portland-hours', 'transactions', {
+  id: Date.now().toString(),
+  from: 'alice@local',
+  to: 'bob@local',
+  amount: 25,
+  category: 'Services',
+  description: 'Web design work',
+  timestamp: Date.now()
+});
+
+// Get all transactions for economic analysis
+const transactions = await localloop.getAll('portland-hours', 'transactions');
+
+// Calculate economic velocity (transactions per unit of currency)
+const circulation = await localloop.getAll('portland-hours', 'issuance');
+const totalIssued = circulation.reduce((sum, iss) => sum + iss.amount, 0);
+const totalTransacted = transactions.reduce((sum, tx) => sum + tx.amount, 0);
+const velocity = totalTransacted / totalIssued;
+
+// Subscribe to real-time transactions
+localloop.subscribe('portland-hours', 'transactions', (tx) => {
+  console.log(`New transaction: ${tx.from} → ${tx.to}: ${tx.amount}`);
+});
+
+// Federate with other communities for inter-currency exchange
+await localloop.federate('portland-hours', 'seattle-time-dollars');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">LocalLoop enables all ecosystem projects to transact in community currency</p>
+      <div class="connection-list">
+        <span class="connection-tag">🔧 ToolLibrary accepts local currency for rentals</span>
+        <span class="connection-tag">🏗️ EcoConstruct trades materials in local currency</span>
+        <span class="connection-tag">🏘️ NeighborHub accepts payment for space bookings</span>
+        <span class="connection-tag">🤝 SkillSwap denominates services in local currency</span>
+        <span class="connection-tag">📚 LearnLocal accepts tuition in local currency</span>
+        <span class="connection-tag">🌱 TerraTrust accepts currency for produce & seeds</span>
+        <span class="connection-tag">💳 CoopCreds extends credit in local currency</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>LocalLoop - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('LocalLoop', 'LocalLoop', '#f59e0b');
+
+    async function initSampleData() {
+      // Sample currency issuances
+      const issuances = [
+        { recipient: 'Alice Johnson', amount: 100, reason: 'New member signup' },
+        { recipient: 'Bob Martinez', amount: 100, reason: 'New member signup' },
+        { recipient: 'Carol White', amount: 50, reason: 'Community volunteering' }
+      ];
+
+      for (const issue of issuances) {
+        await sphere.put('portland-hours', 'issuance', {
+          id: Date.now().toString() + Math.random(),
+          recipient: issue.recipient,
+          amount: issue.amount,
+          reason: issue.reason,
+          timestamp: Date.now() - Math.random() * 14 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      // Sample transactions
+      const transactions = [
+        { from: 'Alice Johnson', to: 'Bob Martinez', amount: 25, category: 'Services', desc: 'Web design work' },
+        { from: 'Bob Martinez', to: 'Carol White', amount: 15, category: 'Food', desc: 'Fresh vegetables' },
+        { from: 'Carol White', to: 'Alice Johnson', amount: 20, category: 'Goods', desc: 'Handmade pottery' },
+        { from: 'Alice Johnson', to: 'Local Bakery', amount: 10, category: 'Food', desc: 'Artisan bread' },
+        { from: 'Bob Martinez', to: 'Tool Library', amount: 5, category: 'Services', desc: 'Drill rental' }
+      ];
+
+      for (const tx of transactions) {
+        await sphere.put('portland-hours', 'transactions', {
+          id: Date.now().toString() + Math.random(),
+          from: tx.from,
+          to: tx.to,
+          amount: tx.amount,
+          category: tx.category,
+          description: tx.desc,
+          timestamp: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      // Sample businesses
+      const businesses = [
+        { name: 'Local Bakery', category: 'Food', accepts: 100 },
+        { name: 'Tool Library', category: 'Services', accepts: 100 },
+        { name: 'Community Garden', category: 'Food', accepts: 100 }
+      ];
+
+      for (const biz of businesses) {
+        await sphere.put('portland-hours', 'businesses', {
+          id: Date.now().toString() + Math.random(),
+          name: biz.name,
+          category: biz.category,
+          accepts_percentage: biz.accepts,
+          joined: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function issueCurrency() {
+      const holon = document.getElementById('currency-holon').value;
+      const recipient = document.getElementById('recipient').value;
+      const amount = parseFloat(document.getElementById('amount-issue').value);
+      const reason = document.getElementById('issue-reason').value;
+
+      if (!holon || !recipient || !amount) {
+        showNotification('Please fill in all fields', 'error');
+        return;
+      }
+
+      await sphere.put(holon, 'issuance', {
+        id: Date.now().toString(),
+        recipient,
+        amount,
+        reason: reason || 'Currency issuance',
+        timestamp: Date.now()
+      });
+
+      showNotification(`Issued ${amount} to ${recipient}!`);
+
+      document.getElementById('recipient').value = '';
+      document.getElementById('amount-issue').value = '';
+      document.getElementById('issue-reason').value = '';
+
+      await loadTransactions();
+      updateStats();
+    }
+
+    async function recordTransaction() {
+      const holon = document.getElementById('currency-holon').value;
+      const from = document.getElementById('from-member').value;
+      const to = document.getElementById('to-member').value;
+      const amount = parseFloat(document.getElementById('amount-tx').value);
+      const category = document.getElementById('category').value;
+      const description = document.getElementById('description').value;
+
+      if (!from || !to || !amount) {
+        showNotification('Please fill in from, to, and amount', 'error');
+        return;
+      }
+
+      await sphere.put(holon, 'transactions', {
+        id: Date.now().toString(),
+        from,
+        to,
+        amount,
+        category,
+        description: description || 'Transaction',
+        timestamp: Date.now()
+      });
+
+      showNotification('Transaction recorded!');
+
+      document.getElementById('from-member').value = '';
+      document.getElementById('to-member').value = '';
+      document.getElementById('amount-tx').value = '';
+      document.getElementById('description').value = '';
+
+      await loadTransactions();
+      updateStats();
+    }
+
+    async function loadTransactions() {
+      const transactions = await sphere.getAll('portland-hours', 'transactions');
+      const output = document.getElementById('output');
+
+      if (transactions.length === 0) {
+        output.innerHTML = `<p class="text-muted">No transactions yet</p>`;
+        return;
+      }
+
+      transactions.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Recent Transactions</h4><div class="item-list">`;
+
+      for (const tx of transactions.slice(0, 10)) {
+        const date = formatTimestamp(tx.timestamp);
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">
+                ${tx.from} → ${tx.to}: ${tx.amount} LC
+              </div>
+              <div class="item-meta">
+                ${tx.description} • ${tx.category} • ${date}
+              </div>
+            </div>
+            ${createStatusBadge('completed').outerHTML}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let totalIssued = 0, totalTransacted = 0, transactionCount = 0, businessCount = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('LocalLoop:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+
+          if (key.includes(':issuance:')) {
+            totalIssued += item.amount || 0;
+          } else if (key.includes(':transactions:')) {
+            totalTransacted += item.amount || 0;
+            transactionCount++;
+          } else if (key.includes(':businesses:')) {
+            businessCount++;
+          }
+        }
+      }
+
+      const velocity = totalIssued > 0 ? (totalTransacted / totalIssued).toFixed(2) : '0';
+
+      document.getElementById('currency-circulation').textContent = totalIssued.toFixed(0);
+      document.getElementById('transactions-count').textContent = transactionCount;
+      document.getElementById('businesses-count').textContent = businessCount;
+      document.getElementById('economic-velocity').textContent = velocity + 'x';
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('portland-hours', 'transactions');
+      if (existing.length === 0) await initSampleData();
+      await loadTransactions();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>
