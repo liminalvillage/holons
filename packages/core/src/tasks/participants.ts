@@ -8,17 +8,37 @@ function sameId(a: QuestParticipant | undefined, b: string | number): boolean {
   return String(a.id) === String(b);
 }
 
-export function addParticipant(task: Quest, user: QuestParticipant): Quest {
-  if (user.id != null && task.participants.some((p) => sameId(p, user.id!))) {
-    return task;
+/**
+ * A quest's people list as an array, tolerating wire-format records where the
+ * field is missing (no one has joined yet) or arrives as a JSON string (older
+ * bot writes / Gun round-trips). Never throws — a quest fresh off the graph
+ * must be joinable.
+ */
+function listOf(value: unknown): QuestParticipant[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* not JSON — treat as empty */
+    }
   }
-  return { ...task, participants: [...task.participants, user] };
+  return [];
+}
+
+export function addParticipant(task: Quest, user: QuestParticipant): Quest {
+  const participants = listOf(task.participants);
+  if (user.id != null && participants.some((p) => sameId(p, user.id!))) {
+    return { ...task, participants };
+  }
+  return { ...task, participants: [...participants, user] };
 }
 
 export function removeParticipant(task: Quest, userId: string | number): Quest {
   return {
     ...task,
-    participants: task.participants.filter((p) => !sameId(p, userId)),
+    participants: listOf(task.participants).filter((p) => !sameId(p, userId)),
   };
 }
 
@@ -30,7 +50,9 @@ export function removeParticipant(task: Quest, userId: string | number): Quest {
  */
 export function toggleParticipant(task: Quest, user: QuestParticipant): Quest {
   if (user.id == null) return addParticipant(task, user);
-  const isParticipant = task.participants.some((p) => sameId(p, user.id!));
+  const isParticipant = listOf(task.participants).some((p) =>
+    sameId(p, user.id!)
+  );
   const next = isParticipant
     ? removeParticipant(task, user.id)
     : addParticipant(task, user);
@@ -38,18 +60,19 @@ export function toggleParticipant(task: Quest, user: QuestParticipant): Quest {
 }
 
 export function addAppreciation(task: Quest, user: QuestParticipant): Quest {
-  const current = task.appreciation ?? [];
+  const current = listOf(task.appreciation);
   if (user.id != null && current.some((p: QuestParticipant) => sameId(p, user.id!))) {
-    return task;
+    return { ...task, appreciation: current };
   }
   return { ...task, appreciation: [...current, user] };
 }
 
 export function removeAppreciation(task: Quest, userId: string | number): Quest {
-  const current = task.appreciation ?? [];
   return {
     ...task,
-    appreciation: current.filter((p: QuestParticipant) => !sameId(p, userId)),
+    appreciation: listOf(task.appreciation).filter(
+      (p: QuestParticipant) => !sameId(p, userId)
+    ),
   };
 }
 
@@ -61,7 +84,7 @@ export function removeAppreciation(task: Quest, userId: string | number): Quest 
 export function toggleAppreciation(task: Quest, user: QuestParticipant): Quest {
   if (user.id == null) return addAppreciation(task, user);
   const cleared = removeParticipant(task, user.id);
-  const current = cleared.appreciation ?? [];
+  const current = listOf(cleared.appreciation);
   return current.some((p: QuestParticipant) => sameId(p, user.id!))
     ? removeAppreciation(cleared, user.id)
     : addAppreciation(cleared, user);

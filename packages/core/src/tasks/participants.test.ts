@@ -47,3 +47,27 @@ describe('participation / appreciation mutual exclusion', () => {
     expect(ID(q, 'participants')).toEqual([]);
   });
 });
+
+describe('wire-format tolerance (quests straight off the graph)', () => {
+  it('joins a quest that has no participants field yet', () => {
+    const raw = { id: '42', title: 'fresh quest' } as unknown as Quest;
+    const out = toggleParticipant(raw, { id: 7, username: 'sam' });
+    expect(ID(out, 'participants')).toEqual(['7']);
+    expect(ID(out, 'appreciation')).toEqual([]);
+  });
+
+  it('appreciates a quest that has no people fields yet', () => {
+    const raw = { id: '42', title: 'fresh quest' } as unknown as Quest;
+    const out = toggleAppreciation(raw, { id: 7 });
+    expect(ID(out, 'appreciation')).toEqual(['7']);
+    expect(ID(out, 'participants')).toEqual([]);
+  });
+
+  it('keeps participants that arrive as a JSON string', () => {
+    const raw = quest({
+      participants: '[{"id":9,"username":"ana"}]' as unknown as Quest['participants'],
+    });
+    const out = toggleParticipant(raw, { id: 7 });
+    expect(ID(out, 'participants')).toEqual(['9', '7']);
+  });
+});
