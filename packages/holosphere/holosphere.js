@@ -676,6 +676,65 @@ class HoloSphere {
         this._signer = null;
     }
 
+    /**
+     * Log in as a signing identity. Sets the active key AMBIENTLY — every
+     * subsequent put/delete is signed with it, with NO per-call key — and
+     * (re)enables signing. If already signed in, switches identity cleanly.
+     *
+     * Mode options (relays/shadow/enforce/storeEnvelope/perActorLenses/readKeys/
+     * federationSpace) match {@link enableSigning}; omit them for sane defaults.
+     * Envelope storage defaults to ON so the signature is actually persisted and
+     * verifiable locally even without relays (override via `opts.storeEnvelope`).
+     *
+     * @param {string|Uint8Array} privateKey - the identity to sign as
+     * @param {object} [opts] - same shape as {@link enableSigning} (privateKey is taken from the first arg)
+     * @returns {Promise<{pubkey:string, signer:object}>}
+     */
+    async login(privateKey, opts = {}) {
+        if (!privateKey) throw new Error('login: a privateKey is required');
+        if (this._signer) this.disableSigning();        // clean switch when re-logging in
+        this._privateKey = privateKey;
+        this.client = { publicKey: this._derivePubKey(privateKey) };
+        const signer = await this.enableSigning({ storeEnvelope: true, ...opts, privateKey });
+        return { pubkey: this.client.publicKey, signer };
+    }
+
+    /**
+     * Log out: stop signing and clear the active signing identity. Subsequent
+     * puts are unsigned (raw Gun writes) until the next {@link login}.
+     */
+    logout() {
+        this.disableSigning();
+        this._privateKey = null;
+        this.client = { publicKey: '' };
+    }
+
+    /** The pubkey of the currently logged-in signing identity (or '' if none). */
+    get currentPubkey() {
+        return this.client?.publicKey || '';
+    }
+
+    /** Whether a signing identity is currently logged in. */
+    get loggedIn() {
+        return this._signer !== null && !!this.client?.publicKey;
+    }
+
+    /** Derive a hex nostr public key from a secret key (hex string or bytes). */
+    _derivePubKey(privateKey) {
+        try {
+            return nostrUtils.getPublicKeyFromBytes
+                ? nostrUtils.getPublicKeyFromBytes(privateKey)
+                : nostrUtils.getPublicKey(
+                    typeof privateKey === 'string'
+                        ? privateKey
+                        : nostrUtils.bytesToHex(privateKey)
+                  );
+        } catch (e) {
+            console.warn('login: failed to derive public key:', e?.message);
+            return '';
+        }
+    }
+
     /** Whether signing is currently enabled. */
     get signingEnabled() {
         return this._signer !== null;
