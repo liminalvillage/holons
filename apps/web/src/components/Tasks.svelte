@@ -45,7 +45,7 @@
 	import { queryManager } from "$lib/holosphere/QueryManager";
 	import { dndzone } from "svelte-dnd-action";
 	import { flip } from "svelte/animate";
-	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import TaskCard from "./shared/TaskCard.svelte";
 	import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
@@ -223,6 +223,9 @@
 		};
 	}
 	let newTask: Quest = $state(buildBlankNewTask());
+	// Guards against double-submit (Enter + click, or a rapid double-click)
+	// creating duplicate/blank tasks. Set synchronously before any await.
+	let isAddingTask = $state(false);
 
 	let questsUnsubscribe: (() => void) | undefined;
 
@@ -391,7 +394,7 @@
 				return false;
 			}
 
-			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
+			if (!passesLensFilters(quest as any, $showHolograms, $showFederated, $showUnverified)) {
 				return false;
 			}
 
@@ -493,9 +496,16 @@
 
 	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
 	async function handleAddTask() {
-		if (!holosphere || !holonID || !newTask.title.trim()) {
+		if (!holosphere || !holonID || !newTask.title.trim() || isAddingTask) {
 			return;
 		}
+		// Claim this submission synchronously (before any await) so a concurrent
+		// second submit returns above instead of writing a duplicate. Snapshot
+		// the form into an immutable draft too: the task is assembled AFTER an
+		// await, and newTask gets reset on success, so reading it post-await
+		// could otherwise capture blank values.
+		isAddingTask = true;
+		const draft: Quest = { ...newTask, title: newTask.title.trim() };
 
 		try {
 			let initiatorInfo;
@@ -509,8 +519,16 @@
 			const currentUserId = telegramUser?.id?.toString() || nostrPubKey || holonID;
 
 			try {
-				// Attempt to get user data using the current user's ID
-				const userData = await holosphere.get(holonID, 'users', currentUserId);
+				// Attempt to get user data using the current user's ID.
+				// This is a NON-ESSENTIAL display-name lookup (we have a full
+				// fallback chain below), so it must never block task creation.
+				// Under enforce mode this read routes through the signing layer
+				// and can stall the whole create flow, so cap it with a hard 2s
+				// timeout and fall back to the identity info we already have.
+				const userData = await Promise.race([
+					holosphere.get(holonID, 'users', currentUserId).catch(() => null),
+					new Promise((res) => setTimeout(() => res(null), 2000)),
+				]);
 
 				if (userData && typeof userData === 'object' && userData !== null) {
 					initiatorInfo = {
@@ -576,45 +594,27 @@
 				: 0;
 
 			const task: Quest = {
-				...newTask,
+				...draft,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(), // canonical, see taskCreatedAtMs
 				orderIndex: newOrderIndex // Assign orderIndex
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
-			// DEBUG: Log what we're about to write
-			console.log('[ADD_TASK] Writing task:', { id: task.id, title: task.title, newTaskTitle: newTask.title });
-
 			// Add the task to holosphere
-			if (holonID) {
-				await holosphere.put(holonID, 'quests', task);
-				console.log('[ADD_TASK] Task written successfully:', task.id);
-			} else {
-				return;
-			}
+			await holosphere.put(holonID, 'quests', task);
 
 			// Reset form and close dialog
 			showTaskInput = false;
-			newTask = {
-				id: generateId(),
-				title: '',
-				description: '',
-				category: '',
-				status: 'ongoing',
-				type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
-				participants: [],
-				appreciation: []
-			};
-
-			// Force update
-			// updateTrigger.update(n => n + 1); // Removed
+			newTask = buildBlankNewTask();
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
 			} else {
 				console.error('Error adding task:', error);
 			}
+		} finally {
+			isAddingTask = false;
 		}
 	}
 
@@ -1061,7 +1061,8 @@
 				includeLocal: true,
 				includeFederated: true,
 				resolveReferences: true,
-				aggregate: false
+				aggregate: false,
+				includeUnverified: true
 			});
 			if (questsLoadKey !== loadKey) return; // user switched holon mid-flight
 			if (Array.isArray(federatedData) && federatedData.length > 0) {
@@ -1661,7 +1662,7 @@
 													<button
 								type="submit"
 								class="btn btn--primary"
-								disabled={!newTask.title.trim()}
+								disabled={!newTask.title.trim() || isAddingTask}
 								aria-label="Add new {filterType === 'event' ? 'event' : 'task'}"
 							>
 								Create {filterType === 'event' ? 'Event' : 'Task'}
