@@ -83,4 +83,13 @@ describe('holosphere signing — federation read-list via @holons/core factory',
   it('my own key is always in the read-list', () => {
     expect(sphere.getReadKeys()).toContain(Apub);
   });
+
+  it('includeUnverified returns everything, tagged by provenance (migration/display)', async () => {
+    const all: any[] = await sphere.getAll(HOLON, LENS, null, { includeUnverified: true });
+    const byId = Object.fromEntries(all.map((i) => [i.id, i]));
+    expect(ids(all)).toEqual(['t-forged', 't1', 't2']);     // nothing hidden
+    expect(byId.t1._verified).toBe(true);                   // my signed write
+    expect(byId['t-forged']._verified).toBe(false);         // unsigned write
+    expect(byId['t-forged']._unverified).toBe(true);
+  });
 });

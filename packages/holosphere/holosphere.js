@@ -216,10 +216,34 @@ class HoloSphere {
         return raw;
     }
 
+    /**
+     * Read a whole lens.
+     *
+     * `options.includeUnverified` returns a **provenance-annotated dual-source
+     * view**: signed/authorized items tagged `_verified: true`, and legacy or
+     * unsigned/untrusted items tagged `_verified: false, _unverified: true`. This
+     * is the safe, public way to "show everything" during a signing migration —
+     * the UI can render grandfathered data while badging it. Requires signing to
+     * be enabled (shadow or enforce); with signing off there's nothing to verify
+     * against, so the raw list is returned untagged. NEVER trust `_unverified`
+     * items for auth/ownership — they're for display only.
+     */
     async getAll(holon, lens, password = null, options = {}) {
         const items = await ContentOps.getAll(this, holon, lens, password, options);
         const signer = this._signer;
         if (signer && lens !== '_members' && !options._skipAuthorize) {
+            // Provenance-annotated dual-source read (signed + grandfathered legacy).
+            if (options.includeUnverified) {
+                if (signer.isPerActor(lens)) {
+                    const recs = await signer.aggregate(this, holon, lens);
+                    return recs.map((r) => ({ ...r, _verified: true }));
+                }
+                const { items: ok, pending } = await signer.authorizedView(this, holon, lens, items);
+                return [
+                    ...ok.map((i) => ({ ...i, _verified: true })),
+                    ...pending.map((i) => ({ ...i, _verified: false, _unverified: true })),
+                ];
+            }
             // Phase 2 enforce: collapse to the authorized view (changes output).
             if (signer.enforce) {
                 // Per-author lenses (participation, reactions, …) aggregate one
