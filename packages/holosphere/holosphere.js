@@ -426,21 +426,31 @@ class HoloSphere {
      */
     subscribe(holon, lens, callback, options = {}) {
         const signer = this._signer;
+        const annotate = !!options.includeUnverified;
         // In enforce mode, resolve each update through the signing layer so
         // subscribers see the authorized value (or null when an update isn't from
         // a trusted, valid signature, or the item was deleted) — symmetric with
-        // get/getAll. Re-resolving on every change makes deletes notify too.
-        if (signer && signer.enforce && holon && lens !== '_members') {
+        // get/getAll. With `includeUnverified`, instead of DROPPING unsigned/
+        // untrusted updates we surface them tagged `_unverified` (display-only —
+        // never trust them for auth). Re-resolving on every change makes deletes
+        // notify too.
+        if (signer && holon && lens !== '_members' && (signer.enforce || annotate)) {
             const self = this;
-            const resolved = async (_data, key) => {
-                // The signed envelope is written before the raw write that triggers
-                // this, so a single resolve is consistent (no race).
+            const resolved = async (raw, key) => {
+                // Gun can re-fire an update with `key` undefined (a lens-level echo
+                // of an item-level write); fall back to the raw record's id so we
+                // resolve the right envelope instead of mis-tagging it unverified.
+                const id = key ?? raw?.id;
                 try {
                     if (signer.isPerActor(lens)) {
-                        callback(await signer.aggregate(self, holon, lens, key), key);
-                    } else {
-                        callback(await signer.resolveItem(self, holon, lens, key), key);
+                        callback(await signer.aggregate(self, holon, lens, id), id);
+                        return;
                     }
+                    const verified = await signer.resolveItem(self, holon, lens, id);
+                    if (!annotate) { callback(verified, id); return; }
+                    if (verified) callback({ ...verified, _verified: true }, id);
+                    else if (raw && !raw._deleted) callback({ ...raw, _verified: false, _unverified: true }, id);
+                    else callback(null, id); // genuine tombstone/delete
                 } catch { /* ignore */ }
             };
             return Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
@@ -762,6 +772,11 @@ class HoloSphere {
     /** Whether signing is currently enabled. */
     get signingEnabled() {
         return this._signer !== null;
+    }
+
+    /** Whether enforce (authorized-read) mode is active. */
+    get enforceActive() {
+        return !!this._signer?.enforce;
     }
 
     /** Current signing relays (empty if signing is disabled). */

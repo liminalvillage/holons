@@ -1052,8 +1052,12 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         // --- Start: Hologram Tracking Removal ---
         let trackingRemovalPromise = Promise.resolve(); // Default to resolved promise
         
-        // 1. Get the data first to check if it's a hologram
-        const rawDataToDelete = await new Promise((resolve) => dataPath.once(resolve));
+        // 1. Get the data first to check if it's a hologram.
+        // Use the shared deadline wrapper — a bare `.once()` hangs forever on a
+        // cold read (peer offline / missing key), which would stall the whole
+        // delete. On timeout we proceed as "not a hologram" (null), which just
+        // skips the forward-reference cleanup — the node removal below still runs.
+        const rawDataToDelete = await onceWithTimeout(dataPath, READ_TIMEOUT_MS);
         let dataToDelete = null;
         try {
             if (typeof rawDataToDelete === 'string') {

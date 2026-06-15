@@ -48,6 +48,20 @@ interface GetAllOptions {
   timeout?: number;
   /** Include `_deleted: true` soft-tombstoned records in the response. Default false. */
   includeDeleted?: boolean;
+  /**
+   * Provenance-annotated dual-source read: signed/authorized items tagged
+   * `_verified: true`, unsigned/legacy/untrusted items tagged
+   * `_verified: false, _unverified: true`. For display/migration only — never
+   * trust `_unverified` items. Requires signing enabled. Default false.
+   */
+  includeUnverified?: boolean;
+}
+
+interface SubscribeOptions {
+  /** Also notify on deletes (tombstones) instead of only live values. */
+  includeDeletes?: boolean;
+  /** Surface unsigned/legacy/untrusted updates tagged `_unverified` instead of dropping them under enforce. Display-only — never trust. Default false. */
+  includeUnverified?: boolean;
 }
 
 interface ResolveHologramOptions {
@@ -172,6 +186,7 @@ interface GetFederatedOptions {
   resolveReferences?: boolean;
   maxFederatedSpaces?: number;
   timeout?: number;
+  includeUnverified?: boolean;
 }
 
 interface PropagationResult {
@@ -298,7 +313,7 @@ declare class HoloSphere {
     // Subscription. Returns synchronously — `await` on the return value
     // still works (await on a non-Promise resolves to the value), so both
     // call styles produce the same `{ unsubscribe }` shape.
-    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void, options?: SubscribeOptions): { unsubscribe: () => void };
 
     // Federation - v1 style
     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;

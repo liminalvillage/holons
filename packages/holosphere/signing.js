@@ -94,6 +94,12 @@ export async function createSigner({
   const report = freshReport();
   const pinnedGenesis = new Map();
   const perActor = new Set(perActorLenses); // lenses read as per-author aggregates
+  // Our own freshly-issued envelopes, kept in memory (keyed holon|lens|id) so a
+  // subscribe/resolve that fires the instant a raw write lands sees them before
+  // Gun's async graph read catches up — eliminates the own-write read-back race
+  // that made a just-created item resolve as unverified until a reload.
+  const ownEnvelopes = new Map();
+  const ownKey = (holon, lens, id) => `${holon}|${lens}|${id}`;
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
 
   // --- Gun sidecar I/O (reserved _events namespace; reads never see it) -------
@@ -133,6 +139,15 @@ export async function createSigner({
     const out = [];
     for (const [, val] of pairs) {
       try { out.push(typeof val === 'string' ? JSON.parse(val) : val); } catch { /* skip */ }
+    }
+    // Merge our own in-memory envelope so a just-written record resolves as
+    // verified immediately, even before Gun's async graph reflects it.
+    const mine = ownEnvelopes.get(ownKey(holon, lens, itemId));
+    if (mine) {
+      const i = out.findIndex((e) => e && e.pubkey === mine.pubkey);
+      if (i === -1) out.push(mine);
+      else if ((out[i].created_at || 0) < mine.created_at
+        || (out[i].created_at === mine.created_at && String(out[i].id) < String(mine.id))) out[i] = mine;
     }
     return out;
   }
@@ -198,6 +213,9 @@ export async function createSigner({
         if (envelope && holo) {
           // issued synchronously — lands in Gun's in-memory graph before the raw write
           itemNode(holo, holon, lens, item.id).get(event.pubkey).put(JSON.stringify(event));
+          // …and cached in memory so resolves before Gun's async read-back see it now.
+          ownEnvelopes.set(ownKey(holon, lens, item.id), event);
+          if (ownEnvelopes.size > 10000) ownEnvelopes.delete(ownEnvelopes.keys().next().value);
         }
         if (relayList.length) Promise.allSettled(pool.publish(relayList, event)).catch(() => {});
         return event;

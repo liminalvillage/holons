@@ -499,7 +499,13 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         // those out of the response so consumers never render broken-card
         // placeholders. Set `includeUnresolvedStubs: true` if you actually
         // want to surface the failure to the user (e.g. an admin/debug view).
-        includeUnresolvedStubs = false
+        includeUnresolvedStubs = false,
+        // Provenance-annotated dual-source read (signing shadow/enforce only):
+        // surface unsigned/legacy items tagged `_unverified` instead of
+        // dropping them under enforce, so a UI "show all data" toggle can gate
+        // them exactly like the local subscribe path. No-op when signing is
+        // off. Display-only — NEVER trust `_unverified` items for auth.
+        includeUnverified = false
     } = options;
     
     console.log(`resolveReferences option: ${resolveReferences}`);
@@ -580,8 +586,14 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                  console.warn(`getFederated: No queryIds provided. Falling back to fetching ALL items from ${currentSpace} using getAll. This can be inefficient.`);
             }
             console.log(`Fetching ALL items from ${currentSpace}`);
+            // Only surface tagged `_unverified` rows under enforce — mirrors the
+            // local subscribe path (QueryManager passes includeUnverified:
+            // enforceActive). In shadow/off, getAll already returns raw rows
+            // unchanged, so the caller's "show all data" toggle is a no-op there
+            // just like locally; we must not change shadow-mode read output.
+            const wantUnverified = includeUnverified && !!holosphere.enforceActive;
             fetchPromises.push(
-                holosphere.getAll(currentSpace, lens)
+                holosphere.getAll(currentSpace, lens, null, { includeUnverified: wantUnverified })
                     .then(items => {
                         for (const item of items) {
                             if (item && item[idField] && !fetchedItems.has(item[idField])) {
