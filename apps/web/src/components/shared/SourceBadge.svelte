@@ -6,6 +6,7 @@
 		extractHolonIdFromSoul,
 		buildHologramLink
 	} from '$lib/stores/nameResolver';
+	import VerifiedBadge from './badges/VerifiedBadge.svelte';
 
 	/**
 	 * Pass the item directly. The badge inspects `item._hologram` and
@@ -98,6 +99,9 @@
 		<span class="source-badge__name">{displayName}</span>
 	</button>
 {/if}
+
+<!-- Signing provenance (signed / unsigned) — no-op unless the item is tagged. -->
+<VerifiedBadge {item} />
 
 <style>
 	.source-badge {

@@ -19,7 +19,7 @@
 	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
 	import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import { goto } from '$app/navigation';
-	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
@@ -81,7 +81,7 @@
 		const q = filters.searchQuery.trim().toLowerCase();
 		if (!q && $showHolograms && $showFederated) return roles;
 		return roles.filter(([, role]) => {
-			if (!passesLensFilters(role as any, $showHolograms, $showFederated)) return false;
+			if (!passesLensFilters(role as any, $showHolograms, $showFederated, $showUnverified)) return false;
 			if (!q) return true;
 			const title = (role as any)?.title ?? '';
 			const description = (role as any)?.description ?? '';
@@ -189,7 +189,8 @@
 				includeLocal: true,
 				includeFederated: true,
 				resolveReferences: true,
-				aggregate: false
+				aggregate: false,
+				includeUnverified: true
 			}).then((federatedRoles) => {
 				if (activeHolonId !== subscribedHolonId) return;
 				if (!Array.isArray(federatedRoles) || federatedRoles.length === 0) return;

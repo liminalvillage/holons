@@ -15,7 +15,7 @@
 	import OfferDetailModal from "./OfferDetailModal.svelte";
 	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
-	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -58,7 +58,7 @@
 	let loadingFederated = false;
 
 	function matchesVisibility(item: any): boolean {
-		return passesLensFilters(item, $showHolograms, $showFederated);
+		return passesLensFilters(item, $showHolograms, $showFederated, $showUnverified);
 	}
 
 	function matchesSearch(item: any, query: string): boolean {
@@ -359,7 +359,8 @@
 				includeLocal: true,
 				includeFederated: true,
 				resolveReferences: true,
-				aggregate: false
+				aggregate: false,
+				includeUnverified: true
 			});
 			
 			console.log("Federated data result:", federatedData);

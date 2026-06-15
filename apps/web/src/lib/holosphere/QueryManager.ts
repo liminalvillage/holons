@@ -6,6 +6,8 @@
  */
 
 import type { HoloSphere } from "holosphere";
+import { get } from "svelte/store";
+import { showUnverified } from "$lib/stores/lensFilters";
 
 export interface QueryConfig {
   holonId: string;
@@ -108,12 +110,22 @@ class QueryManager {
   // updates from Gun's map().on() fires one re-render per cycle, not N).
   private pendingNotifications: Set<string> = new Set();
   private notifyScheduled = false;
+  private toggleHooked = false;
 
   /**
    * Initialize the query manager with a HoloSphere instance
    */
   init(holosphere: HoloSphere) {
     this.holosphere = holosphere;
+    // Re-emit every active subscription when the "show all data" toggle flips,
+    // so the _unverified filter in notifySubscribers re-applies without a
+    // re-fetch (items are already loaded & tagged under enforce).
+    if (!this.toggleHooked) {
+      this.toggleHooked = true;
+      showUnverified.subscribe(() => {
+        for (const key of this.subscribers.keys()) this.scheduleNotify(key);
+      });
+    }
   }
 
   /**
@@ -284,6 +296,10 @@ class QueryManager {
           (item: any, itemKey?: string) => {
             this.handleSubscriptionEvent(key, item, itemKey);
           },
+          // Under enforce, pull unsigned/legacy items in too (tagged
+          // _unverified) so the "show all data" toggle can reveal them; the
+          // default-hidden filter lives in notifySubscribers. No-op otherwise.
+          { includeUnverified: !!(this.holosphere as any).enforceActive },
         );
         entry.subscription = normalizeSubscription(sub);
       } catch (error) {
@@ -380,7 +396,13 @@ class QueryManager {
     if (!entry) return;
     const subs = this.subscribers.get(key);
     if (!subs || subs.size === 0) return;
-    const data = Array.from(entry.data.values());
+    // "Show all data" gate: hide _unverified (unsigned/legacy) items unless the
+    // toggle is on. Items only carry _unverified under enforce, so this is a
+    // no-op in off/shadow.
+    const showUnv = get(showUnverified);
+    const data = Array.from(entry.data.values()).filter(
+      (i) => showUnv || !i?._unverified,
+    );
     subs.forEach((callback) => {
       try {
         callback(data);

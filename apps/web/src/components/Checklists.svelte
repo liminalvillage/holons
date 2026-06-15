@@ -9,7 +9,7 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-    import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
+    import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
     import { CheckSquare, Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -64,7 +64,7 @@
         let entries = Object.entries(allChecklists);
 
         entries = entries.filter(([_, checklist]) =>
-            passesLensFilters(checklist as any, $showHolograms, $showFederated)
+            passesLensFilters(checklist as any, $showHolograms, $showFederated, $showUnverified)
         );
 
         switch (filters.activeFilter) {
@@ -225,7 +225,8 @@
                     includeLocal: true,
                     includeFederated: true,
                     resolveReferences: true,
-                    aggregate: false
+                    aggregate: false,
+                    includeUnverified: true
                 })
                 .then((result) => {
                     if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;

@@ -40,7 +40,7 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { goto } from '$app/navigation';
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { queryManager } from '$lib/holosphere/QueryManager';
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
@@ -290,7 +290,8 @@
 				includeLocal: true,
 				includeFederated: true,
 				resolveReferences: true,
-				aggregate: false
+				aggregate: false,
+				includeUnverified: true
 			}).then((data: any) => {
 				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
 				if (!Array.isArray(data) || data.length === 0) return;
@@ -419,7 +420,7 @@
 		const q = filters.searchQuery.trim().toLowerCase();
 		return Object.values(expenses)
 			.filter(e => expenseCurrency(e as any) === want)
-			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated))
+			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated, $showUnverified))
 			.filter((e: any) => !q || `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q))
 			.sort((a, b) => expenseTimestampMs(b) - expenseTimestampMs(a));
 	})();
