@@ -18,7 +18,6 @@
 	import { isValidHolonName, setName } from '$lib/stores/nameResolver';
 	import { getEffectiveAppName } from '$lib/stores/appName';
 	import { installQuietLogs } from '$lib/quietLogs';
-	import { installHologramJanitor } from '$lib/hologramJanitor';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -524,12 +523,6 @@
 
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
-
-		// Pull-side GC for dangling federation pointers: whenever holosphere
-		// can't resolve a hologram, the janitor re-checks the source and
-		// deletes the local pointer if the source is explicitly tombstoned.
-		// Idempotent + dedup'd so calling this on every initHoloSphere is fine.
-		installHologramJanitor(holosphere);
 
 		// Set up global federation DM subscription
 		setupFederationDMSubscription(privateKey);
