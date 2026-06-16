@@ -1,6 +1,6 @@
 <script lang="ts">
 
-	import { onMount, getContext, createEventDispatcher } from "svelte";
+	import { onMount, onDestroy, getContext, createEventDispatcher } from "svelte";
 	import { goto } from "$app/navigation";
 	import { ID } from "../dashboard/store";
 
@@ -19,6 +19,13 @@
 	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
+	// Live-subscription handles. `questsSub` is the Gun listener; it MUST be
+	// torn down before re-subscribing (and on destroy) or every holon switch
+	// leaks a `.map().on()` callback that Gun keeps forever. `idUnsub` is the
+	// manual ID-store subscription that drives the re-subscribe.
+	let idUnsub: (() => void) | undefined;
+	let questsSub: { unsubscribe: () => void } | undefined;
+
 	let showDatePicker = false;
 	let selectedQuest: { id: string; quest: Quest } | null = null;
 	let tempDate: string;
@@ -29,7 +36,7 @@
 
 	onMount(() => {
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-		ID.subscribe((value) => {
+		idUnsub = ID.subscribe((value) => {
 			holonID = value;
 			subscribe();
 		});
@@ -51,10 +58,20 @@
 
 	$: update(holonID);
 
+	onDestroy(() => {
+		idUnsub?.();
+		questsSub?.unsubscribe();
+		questsSub = undefined;
+	});
+
 	function subscribe() {
+		// Tear down any previous Gun listener before opening a new one so a
+		// holon switch (or repeated calls) can't stack listeners.
+		questsSub?.unsubscribe();
+		questsSub = undefined;
 		store = {};
 		if (holosphere && holonID) {
-			holosphere.subscribe(holonID, "quests", (newquest, key) => {
+			questsSub = holosphere.subscribe(holonID, "quests", (newquest, key) => {
 				if (key) {
 					if (newquest) {
 						// Updates the store with the new value

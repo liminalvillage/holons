@@ -58,6 +58,12 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
  * @param {function} callback - The callback to execute on changes.
  * @returns {{ unsubscribe: () => void }} - Subscription with unsubscribe method.
  */
+// A correctly-written consumer opens a bounded number of live subscriptions per
+// (holon, lens) path. A reactive loop that re-subscribes without tearing down
+// will blow past this — warn (then back off, doubling) so the leak surfaces in
+// dev instead of silently exhausting the heap.
+const SUBSCRIBE_WARN_THRESHOLD = 64;
+
 export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     if (!holon || !lens) {
         throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
@@ -72,12 +78,71 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     const includeDeletes = options.includeDeletes !== false;
     const subscriptionId = holoInstance.generateId(); // Use instance's generateId
 
+    // Global odometer: catches a runaway that re-subscribes with an
+    // ever-changing (holon, lens) too (which keeps every group small, so the
+    // per-path warning below would never fire). Warns at exponential
+    // milestones with the calling stack, so the loop is identifiable.
+    holoInstance._subscribeCallCount = (holoInstance._subscribeCallCount || 0) + 1;
+    holoInstance._subscribeWarnAt = holoInstance._subscribeWarnAt || 500;
+    if (holoInstance._subscribeCallCount >= holoInstance._subscribeWarnAt) {
+        const stack = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+        console.warn(`[holosphere.subscribe] ${holoInstance._subscribeCallCount} total subscribe() calls this session — runaway re-subscribe likely. Latest: ${holon}/${lens}. Caller stack:\n${stack}`);
+        holoInstance._subscribeWarnAt *= 2;
+    }
+
     try {
+        // Per-subscriber Gun listener. We intentionally give EACH subscribe its
+        // own `gun...map().on()` rather than sharing one listener per path:
+        // Gun replays the existing graph to a listener only at attach time, so a
+        // shared listener would starve every subscriber that joins after the
+        // first of its initial snapshot (which broke enforce-mode provenance
+        // tagging — late joiners like QueryManager got only live updates, never
+        // the tagged initial items). Leak prevention is handled by callers
+        // tearing down via the returned `unsubscribe` (every `.map().on()` is
+        // `.off()`d here); the per-path + global counters below only *detect* a
+        // caller that re-subscribes without cleaning up and surface it loudly.
+        if (!holoInstance._subscriptionGroups) {
+            holoInstance._subscriptionGroups = new Map();
+        }
+        const groupKey = `${holon} ${lens}`;
+        let group = holoInstance._subscriptionGroups.get(groupKey);
+        if (!group) {
+            group = { holon, lens, ids: new Set(), warnThreshold: SUBSCRIBE_WARN_THRESHOLD };
+            holoInstance._subscriptionGroups.set(groupKey, group);
+        }
+        group.ids.add(subscriptionId);
+
+        if (group.ids.size >= group.warnThreshold) {
+            // Include the calling stack so the runaway caller is identifiable
+            // straight from the console — strip this frame's own line.
+            const stack = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+            console.warn(`[holosphere.subscribe] ${group.ids.size} live subscriptions on ${holon}/${lens} — likely a subscription leak (a caller is re-subscribing without calling unsubscribe()). Caller stack:\n${stack}`);
+            group.warnThreshold *= 2;
+        }
+
         // Get the Gun chain up to the map()
         const mapChain = holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).map();
 
         // Create the subscription by calling .on() on the map chain
-        const gunListener = mapChain.on(async (data, key) => { // Renamed variable
+        const gunListener = mapChain.on(async (data, key) => {
+            // Fire-storm breaker. A write to a cyclic / over-subscribed federated
+            // node can make Gun re-fire map().on() handlers in an unbounded burst,
+            // exhausting the heap before any await yields. Count instance-wide
+            // fires in a 1s window; past a clear-runaway threshold, log the path +
+            // stack ONCE and bail (no parse/resolve/allocate) so the tab survives
+            // and the culprit is identifiable.
+            const __fnow = Date.now();
+            const __fw = (holoInstance.__onFireWindow ||= []);
+            __fw.push(__fnow);
+            if (__fw.length > 64) { while (__fw.length && __fnow - __fw[0] > 1000) __fw.shift(); }
+            if (__fw.length > 4000) {
+                if (!holoInstance.__onFireWarnedAt || __fnow - holoInstance.__onFireWarnedAt > 2000) {
+                    holoInstance.__onFireWarnedAt = __fnow;
+                    const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+                    console.error(`[subscribe] FIRE-STORM: ${__fw.length} map().on() fires/s — runaway. Latest path=${holon}/${lens} key=${key}. Stack:\n${__st}`);
+                }
+                return;
+            }
             // Check if subscription ID still exists (might have been unsubscribed)
             if (!holoInstance.subscriptions[subscriptionId]) {
                 return;
@@ -139,8 +204,9 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             holon,
             lens,
             callback,
-            mapChain: mapChain,       // Store the map chain
-            gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
+            mapChain,
+            gunListener,
+            groupKey,
         };
 
         // Return an object with unsubscribe method.
@@ -157,9 +223,19 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 }
 
                 try {
-                    // Turn off the Gun subscription using the stored mapChain reference
-                    if (sub.mapChain) { // Check if mapChain exists
-                        sub.mapChain.off(); // Call off() on the chain where .on() was attached
+                    // Turn off THIS subscriber's own Gun listener.
+                    if (sub.mapChain) {
+                        sub.mapChain.off();
+                    }
+
+                    // Drop it from the per-path counter (for the leak warnings).
+                    const g = holoInstance._subscriptionGroups &&
+                        holoInstance._subscriptionGroups.get(groupKey);
+                    if (g) {
+                        g.ids.delete(subscriptionId);
+                        if (g.ids.size === 0) {
+                            holoInstance._subscriptionGroups.delete(groupKey);
+                        }
                     }
 
                     // Remove from subscriptions object AFTER turning off listener
@@ -236,8 +312,13 @@ export async function close(holoInstance) {
                 }
             }
 
-            // Clear subscriptions
+            // Clear subscriptions (the loop above already `.off()`'d the
+            // shared map chains) and drop the dedup registry so a reopened
+            // instance starts with zero listener groups.
             holoInstance.subscriptions = {};
+            if (holoInstance._subscriptionGroups) {
+                holoInstance._subscriptionGroups.clear();
+            }
 
             // Clear schema cache using instance method
             holoInstance.clearSchemaCache();

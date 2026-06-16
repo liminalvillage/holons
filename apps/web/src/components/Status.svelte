@@ -344,6 +344,7 @@
         return () => {
             unsubscribe();
             pageUnsubscribe();
+            teardownHolosphereSubs();
         };
     });
 
@@ -413,12 +414,31 @@
     let settingsAutoMerged = false;
     let currentSettingsSnapshot: any = null;
 
+    // Live Gun-listener handles. Each subscribe function below tears down its
+    // own previous handle before opening a new one, and onDestroy tears them
+    // all down — otherwise every holon switch (the ID/page subscriptions call
+    // these on each change) would leak a `.map().on()` callback that Gun keeps
+    // forever.
+    let settingsSub: { unsubscribe: () => void } | undefined;
+    let expensesSub: { unsubscribe: () => void } | undefined;
+    let usersSub: { unsubscribe: () => void } | undefined;
+    let reaSub: { unsubscribe: () => void } | undefined;
+
+    function teardownHolosphereSubs() {
+        settingsSub?.unsubscribe(); settingsSub = undefined;
+        expensesSub?.unsubscribe(); expensesSub = undefined;
+        usersSub?.unsubscribe(); usersSub = undefined;
+        reaSub?.unsubscribe(); reaSub = undefined;
+        reaSubscribedFor = null;
+    }
+
     async function subscribeToSettings() {
         if (!holosphere || !holonID) return;
 
         try {
             availableCurrencies = [];
-            holosphere.subscribe(holonID, "settings", (settingsData: any) => {
+            settingsSub?.unsubscribe();
+            settingsSub = holosphere.subscribe(holonID, "settings", (settingsData: any) => {
                 currentSettingsSnapshot = settingsData ?? {};
                 applyCurrentCurrencyList();
                 currenciesLoaded = true;
@@ -509,7 +529,8 @@
 
         try {
             expenseStore = {};
-            holosphere.subscribe(holonID, "expenses", (newExpense: any, key?: string) => {
+            expensesSub?.unsubscribe();
+            expensesSub = holosphere.subscribe(holonID, "expenses", (newExpense: any, key?: string) => {
                 if (!key) return;
                 // Library now guarantees the callback receives `object | null`
                 // (non-object leaves are dropped at the boundary), so no
@@ -552,7 +573,8 @@
     async function subscribeToUsers() {
         if (holosphere && holonID) {
             console.log("[Status.svelte] Setting up user subscription for holon:", holonID);
-            holosphere.subscribe(holonID, "users", (newUser, key) => {
+            usersSub?.unsubscribe();
+            usersSub = holosphere.subscribe(holonID, "users", (newUser, key) => {
                 console.log("[Status.svelte] Subscription update received:", { key, newUser, hasId: !!newUser?.id });
 
                 if (!key || key === 'undefined') {
@@ -682,7 +704,8 @@
         if (reaSubscribedFor === holonID) return; // already wired for this holon
         reaSubscribedFor = holonID;
         try {
-            holosphere.subscribe(holonID, 'rea_events', () => {
+            reaSub?.unsubscribe();
+            reaSub = holosphere.subscribe(holonID, 'rea_events', () => {
                 if (reaRefreshTimer) clearTimeout(reaRefreshTimer);
                 reaRefreshTimer = setTimeout(() => {
                     loadScoringData();

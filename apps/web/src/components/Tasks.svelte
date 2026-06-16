@@ -601,7 +601,9 @@
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
-			// Add the task to holosphere
+			// Add the task to holosphere. Push-propagation to federation partners
+			// is fire-and-forget in the library, so this returns as soon as the
+			// local write lands (the propagate() cascade guard bounds echo storms).
 			await holosphere.put(holonID, 'quests', task);
 
 			// Reset form and close dialog

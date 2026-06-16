@@ -259,6 +259,33 @@
     });
   }
 
+  async function deleteQuest() {
+    if (!sel || sel.kind === "thing" || !$holonId) return;
+    const user = $telegramUser;
+    if (!user) {
+      loginOpen.set(true);
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Delete "${quest?.title ?? "this task"}"? This can't be undone.`,
+      )
+    )
+      return;
+    saving = true;
+    message = "";
+    try {
+      const hs = await getHolosphere();
+      await hs.delete($holonId, "quests", String(sel.quest.id));
+      closeDetail();
+    } catch (err) {
+      message = (err as Error)?.message || "Could not delete — try again.";
+    } finally {
+      saving = false;
+    }
+  }
+
   async function joinQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
     const user = $telegramUser;
@@ -525,6 +552,9 @@
             <button class="ghost" on:click={startEdit} disabled={saving}
               >Edit</button
             >
+            <button class="ghost danger" on:click={deleteQuest} disabled={saving}
+              >Delete</button
+            >
           </div>
         {:else}
           <button class="primary" on:click={requestLogin}
@@ -764,6 +794,13 @@
   .ghost {
     background: rgba(255, 255, 255, 0.5);
     color: var(--ink);
+  }
+  .danger {
+    color: #c0392b;
+    background: rgba(192, 57, 43, 0.1);
+  }
+  .danger:active {
+    transform: scale(0.97);
   }
   .primary:active,
   .ghost:active {

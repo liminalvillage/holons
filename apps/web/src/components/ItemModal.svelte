@@ -32,6 +32,10 @@
     const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
+    // Gun-listener handle for the users subscription. This modal mounts/unmounts
+    // repeatedly; without tearing this down on unmount, every open leaks a
+    // `.map().on()` callback that Gun keeps forever.
+    let usersSub: { unsubscribe: () => void } | undefined;
     let userSearchQuery = '';
     $: filteredUserEntries = (() => {
         const entries = Object.entries(userStore);
@@ -90,7 +94,8 @@
                 }
 
                 // Then subscribe to future updates
-                holosphere.subscribe(holonId, "users", (newUser: any, key?: string) => {
+                usersSub?.unsubscribe();
+                usersSub = holosphere.subscribe(holonId, "users", (newUser: any, key?: string) => {
                     if (key && newUser) {
                         // Use user.id as the canonical key if available
                         const canonicalKey = newUser.id || key;
@@ -115,6 +120,8 @@
 
         return () => {
             document.removeEventListener('click', handleClickOutside);
+            usersSub?.unsubscribe();
+            usersSub = undefined;
         };
     });
 

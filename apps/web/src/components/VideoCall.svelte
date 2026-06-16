@@ -463,6 +463,12 @@
     await holosphere.put(roomId, userLens, presence);
     log('Announced presence');
 
+    // Tear down any prior room subscriptions before re-subscribing so a
+    // repeated joinRoom() (e.g. reopening the video window) can't stack Gun
+    // `.map().on()` listeners that are never removed.
+    if (unsubscribeUsers) { unsubscribeUsers(); unsubscribeUsers = null; }
+    if (unsubscribeSignals) { unsubscribeSignals(); unsubscribeSignals = null; }
+
     // Listen for other users via holosphere subscription
     const userSub = await holosphere.subscribe(roomId, userLens, (userData: any) => {
       if (!userData || !userData.online || userData.id === myUserId) return;

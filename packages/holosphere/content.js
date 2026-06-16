@@ -483,29 +483,34 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             });
                         }
 
-                        // Auto-propagate to federation by default (if data *being put* is not a hologram)
+                        // Auto-propagate to federation by default (if data *being put* is not a hologram).
+                        // Permissionless write: the LOCAL write already acked, so propagating a
+                        // hologram of this item to federation partners is a BACKGROUND cascade and
+                        // must NOT block the caller's save (a partner that's slow/unreachable, or a
+                        // multi-hop parent-hexagon walk, would otherwise stall every write — the
+                        // receiving holon filters on READ, not on our write). Fire-and-forget by
+                        // default; callers that need the result can pass `{ awaitPropagation: true }`.
                         const shouldPropagate = options.autoPropagate !== false && !isHologram && !isGlobal;
                         let propagationResult = null;
 
                         if (shouldPropagate) {
-                            try {
-                                const propagationOptions = {
-                                    useHolograms: true,
-                                    ...options.propagationOptions
-                                };
-
-                                propagationResult = await holoInstance.propagate(
-                                    targetHolon, // Propagate from final target
-                                    targetLens,
-                                    data, // The data that was put
-                                    propagationOptions
-                                );
-
-                                if (propagationResult && propagationResult.errors > 0) {
-                                    console.warn('Auto-propagation had errors:', propagationResult);
-                                }
-                            } catch (propError) {
-                                console.warn('Error in auto-propagation:', propError);
+                            const propagationOptions = {
+                                useHolograms: true,
+                                ...options.propagationOptions
+                            };
+                            const runPropagation = () => {
+                                return holoInstance.propagate(targetHolon, targetLens, data, propagationOptions)
+                                    .then((r) => {
+                                        if (r && r.errors > 0) console.warn('Auto-propagation had errors:', r);
+                                        return r;
+                                    })
+                                    .catch((propError) => { console.warn('Error in auto-propagation:', propError); return null; });
+                            };
+                            if (options.awaitPropagation) {
+                                propagationResult = await runPropagation();
+                            } else {
+                                // Background — don't block the write on federation propagation.
+                                runPropagation();
                             }
                         }
 
@@ -533,7 +538,6 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                     try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, data); }
                     catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
                 }
-
                 dataPath.put(payload, putCallback);
             } catch (error) {
                 reject(error);

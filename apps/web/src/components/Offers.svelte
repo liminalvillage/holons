@@ -123,6 +123,11 @@
 	const ensureCurrentUserInStore = (store: any) => mergeSelfIntoUsers(store);
 
 	// Fetch and subscribe to users for the current holon
+	// Gun-listener handle for the users subscription. Tear it down before
+	// re-subscribing (called on every holon change) and on destroy, or each
+	// switch leaks a `.map().on()` callback Gun keeps forever.
+	let usersSubscriptionOff: (() => void) | null = null;
+
 	async function fetchAndSubscribeUsers() {
 		if (!holosphere || !holonID) {
 			userStore = {};
@@ -144,7 +149,8 @@
 
 		// Subscribe to user updates with error handling
 		try {
-			holosphere.subscribe(holonID, "users", (updatedUser, key) => {
+			usersSubscriptionOff?.();
+			const usersSub = holosphere.subscribe(holonID, "users", (updatedUser, key) => {
 				try {
 					if (updatedUser) {
 						// Use user.id as the canonical key if available
@@ -166,6 +172,7 @@
 					// Silently handle user update errors
 				}
 			});
+			usersSubscriptionOff = (usersSub as any)?.unsubscribe ?? (usersSub as any) ?? null;
 		} catch (error) {
 			// Silently handle subscription setup errors
 		}
@@ -218,6 +225,14 @@
 					// Silently handle cleanup errors
 				}
 				questSubscriptionOff = null;
+			}
+			if (usersSubscriptionOff) {
+				try {
+					usersSubscriptionOff();
+				} catch (error) {
+					// Silently handle cleanup errors
+				}
+				usersSubscriptionOff = null;
 			}
 		};
 	});

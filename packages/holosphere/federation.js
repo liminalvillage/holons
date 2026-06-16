@@ -798,6 +798,28 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
     if (!holosphere || !holon || !lens || !data) {
         throw new Error('propagate: Missing required parameters');
     }
+
+    // Cascade / re-entrancy guard. Under mutual federation a propagated item can
+    // echo back and re-propagate, and the echoes compound until the heap blows
+    // up. If we already propagated THIS item very recently, treat it as an echo:
+    // skip it and log the trigger stack so the cascade source is identifiable.
+    // A genuine fresh write is always the first occurrence, so it passes.
+    const __dedupKey = `${holon}/${lens}/${data.id}`;
+    const __now = Date.now();
+    if (!holosphere._recentPropagations) holosphere._recentPropagations = new Map();
+    const __recent = holosphere._recentPropagations;
+    const __last = __recent.get(__dedupKey);
+    const PROPAGATE_DEDUP_MS = 4000;
+    if (__last && (__now - __last) < PROPAGATE_DEDUP_MS) {
+        const __stack = (new Error().stack || '').split('\n').slice(2, 7).join('\n');
+        console.warn(`[propagate] DEDUP skip ${__dedupKey} (${__now - __last}ms since last) — federation cascade echo. Trigger:\n${__stack}`);
+        return { success: 0, errors: 0, skipped: 1, messages: ['deduped: recent propagation'], parentPropagation: { success: 0, errors: 0, skipped: 0, messages: [] } };
+    }
+    __recent.set(__dedupKey, __now);
+    if (__recent.size > 5000) {
+        for (const [k, t] of __recent) { if (__now - t > PROPAGATE_DEDUP_MS) __recent.delete(k); }
+    }
+
     // Default propagation options
     const { 
         useHolograms = true, 

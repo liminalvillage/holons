@@ -1,6 +1,6 @@
 <script lang="ts">
 	// @ts-nocheck
-	import { onMount, getContext } from "svelte";
+	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date.js";
 	import type { HoloSphere } from "holosphere";
@@ -19,6 +19,18 @@
 	$: holonID = $ID;
 	let store = {};
 	let userStore = {};
+
+	// Live-subscription handles. The two Gun listeners (quests, users) MUST be
+	// torn down before re-subscribing and on destroy, or every holon switch
+	// leaks `.map().on()` callbacks that Gun keeps forever. `idUnsub` is the
+	// manual ID-store subscription that drives the re-subscribe.
+	let idUnsub: (() => void) | undefined;
+	let activeSubs: Array<{ unsubscribe: () => void }> = [];
+
+	function teardownSubs() {
+		activeSubs.forEach((s) => s.unsubscribe());
+		activeSubs = [];
+	}
 	let showDropdown = null;
 	let userSearchQuery = '';
 	$: if (!showDropdown) userSearchQuery = ''; // reset search when dropdown closes
@@ -89,7 +101,7 @@
 
 	onMount(async () => {
 		// Fetch all quests from holon
-		ID.subscribe((value) => {
+		idUnsub = ID.subscribe((value) => {
 			holonID = value;
 			subscribe();
 		});
@@ -109,10 +121,13 @@
 	$: update(holonID);
 
 	function subscribe() {
+		// Tear down any previous Gun listeners before opening new ones so a
+		// holon switch (or repeated calls) can't stack listeners.
+		teardownSubs();
 		store = {};
 		userStore = {};
-		if (holosphere) {
-			holosphere.subscribe(holonID, "quests", (newquest, key) => {
+		if (holosphere && holonID) {
+			activeSubs.push(holosphere.subscribe(holonID, "quests", (newquest, key) => {
 				if (newquest) {
 					store = {
 						...store,
@@ -123,9 +138,9 @@
 					delete newStore[key];
 					store = newStore;
 				}
-			});
+			}));
 
-			holosphere.subscribe(holonID, "users", (newUser, key) => {
+			activeSubs.push(holosphere.subscribe(holonID, "users", (newUser, key) => {
 				if (newUser) {
 					// Use user.id as the canonical key if available
 					const canonicalKey = newUser.id || key;
@@ -143,9 +158,14 @@
 					delete newUserStore[key];
 					userStore = newUserStore;
 				}
-			});
+			}));
 		}
 	}
+
+	onDestroy(() => {
+		idUnsub?.();
+		teardownSubs();
+	});
 
 	function update(hex) {
 		// Filter ongoing and scheduled quests

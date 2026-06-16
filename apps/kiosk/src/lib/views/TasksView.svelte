@@ -16,7 +16,13 @@
   import { getWriter } from "$lib/holosphere";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { toggleAppreciate } from "$lib/membership";
-  import { noteColor, noteTilt, type BacklogTask } from "$lib/data";
+  import {
+    noteColor,
+    noteTilt,
+    noteRiseDelay,
+    noteRiseRot,
+    type BacklogTask,
+  } from "$lib/data";
   import { createTask, type Quest } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
@@ -427,7 +433,9 @@
               <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
               <article
                 class="note tilt"
-                style="--tilt: {noteTilt(task.id)}deg; background: {noteColor(
+                style="--tilt: {noteTilt(task.id)}deg; --rise-delay: {noteRiseDelay(
+                  task.id,
+                )}s; --rise-rot: {noteRiseRot(task.id)}deg; background: {noteColor(
                   task.category,
                 )};"
                 role="button"
@@ -649,10 +657,35 @@
     display: block;
     padding: 0.95rem 1rem 1.05rem;
     border-radius: 4px 14px 14px 14px;
-    animation: kiosk-rise 0.4s ease both;
+    /* Staggered entrance — each card rises in on its OWN delay (--rise-delay,
+       hash-derived per card) so they arrive independently at different times
+       rather than all at once, while rotating from --rise-rot into the resting
+       tilt as they land. Two one-shot animations on separate properties
+       (translate/opacity vs the individual `rotate`) so they compose with the
+       post-it's `transform: rotate(--tilt)` and the FLIP reorder. */
+    animation:
+      kiosk-rise 0.42s ease var(--rise-delay, 0s) both,
+      kiosk-rise-spin 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) var(--rise-delay, 0s)
+        both;
     cursor: grab;
     /* Allow vertical scroll of the wall; a long-press arms drag-to-reorder. */
     touch-action: pan-y;
+  }
+  /* Registered so the per-card value resolves INSIDE the keyframe below.
+     An unregistered custom property used in @keyframes is ignored (every card
+     falls back to one fixed angle → they'd all spin the same way). */
+  @property --rise-rot {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+  }
+  @keyframes kiosk-rise-spin {
+    from {
+      rotate: var(--rise-rot, 0deg);
+    }
+    to {
+      rotate: 0deg;
+    }
   }
   .note:active {
     filter: brightness(0.97);
@@ -750,6 +783,9 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    .note {
+      animation: kiosk-rise 0.4s ease both;
+    }
     .note-wrap.done .note {
       animation: none;
       opacity: 0;

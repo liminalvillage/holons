@@ -40,6 +40,31 @@ export function noteTilt(seed: string): number {
   return (hash & 1 ? 1 : -1) * mag;
 }
 
+/**
+ * Per-note entrance delay (s), keyed by id — so each card rises in at its OWN
+ * time rather than the whole wall appearing at once. Hash-derived, so it's
+ * stable per card and independent of list position. Spread across ~0…0.7s.
+ */
+export function noteRiseDelay(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++)
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+  return (Math.abs(hash) % 70) / 100; // 0.00 … 0.69s
+}
+
+/**
+ * Starting rotation (deg) for a note's entrance — it spins from this angle and
+ * settles into its resting tilt as it lands. Hash-derived per card so each
+ * rotates in its own direction/amount. Magnitude 6°…10°, sign from a hash bit.
+ */
+export function noteRiseRot(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++)
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+  const mag = 6 + (Math.abs(hash) % 5); // 6 … 10
+  return (hash & 2 ? 1 : -1) * mag;
+}
+
 function isDone(q: Quest): boolean {
   const s = String(q.status ?? "").toLowerCase();
   return (

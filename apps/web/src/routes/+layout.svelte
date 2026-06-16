@@ -475,6 +475,59 @@
 				});
 				if (typeof window !== 'undefined') {
 					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
+					// Direct delete escape hatch for known-bad/storming keys, e.g.
+					// await __del('123','quests','moufplh7i0t').
+					(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
+					// Raw-overwrite to null (in case a signed delete is itself blocked
+					// under enforce): nukes the node so Gun stops re-emitting it.
+					(window as any).__nuke = (h: string, l: string, k: string) => new Promise((res) => {
+						(holosphere as any).gun.get((holosphere as any).appname).get(h).get(l).get(k).put(null, (a: any) => res(a));
+					});
+					// Circular-hologram repair. Mutual federation can leave A/x <-> B/x
+					// hologram cycles that make Gun re-emit map().on() forever (heap
+					// blowup on the next write to that lens). Scans a lens, follows each
+					// hologram's soul chain, and deletes the LOCAL pointer of any that
+					// loops back on itself — breaking the ping-pong. Run from the
+					// console, e.g. await __repairCircular('123','quests').
+					(window as any).__repairCircular = async (holon: string, lens = 'quests') => {
+						const hs: any = holosphere;
+						const app = hs.appname;
+						const readRaw = (h: string, l: string, k: string) => new Promise<any>((resolve) => {
+							let done = false; const fin = (v: any) => { if (!done) { done = true; resolve(v); } };
+							hs.gun.get(app).get(h).get(l).get(k).once((d: any) => {
+								if (d == null) return fin(null);
+								try { fin(typeof d === 'string' ? JSON.parse(d) : d); } catch { fin(d); }
+							});
+							setTimeout(() => fin(null), 1500);
+						});
+						const keys: string[] = await new Promise((resolve) => {
+							const set = new Set<string>();
+							hs.gun.get(app).get(holon).get(lens).map().once((d: any, k: string) => { if (d != null && k !== '_') set.add(k); });
+							setTimeout(() => resolve([...set]), 2500);
+						});
+						const removed: string[] = [];
+						for (const key of keys) {
+							const item = await readRaw(holon, lens, key);
+							if (!item || !hs.isHologram(item)) continue;
+							const visited = new Set([`${holon}/${lens}/${key}`]);
+							let cur = item, hops = 0, circular = false;
+							while (cur && hs.isHologram(cur) && hops < 16) {
+								const sp = hs.parseSoulPath(cur.soul);
+								if (!sp || !sp.holon) break;
+								const id = `${sp.holon}/${sp.lens}/${sp.key}`;
+								if (visited.has(id)) { circular = true; break; }
+								visited.add(id);
+								cur = await readRaw(sp.holon, sp.lens, sp.key);
+								hops++;
+							}
+							if (circular) {
+								try { await hs.delete(holon, lens, key); removed.push(key); console.warn('[repair] deleted circular', `${holon}/${lens}/${key}`); }
+								catch (e: any) { console.warn('[repair] delete failed', key, e?.message); }
+							}
+						}
+						console.log(`[repair] ${holon}/${lens}: scanned ${keys.length}, removed ${removed.length} circular holograms:`, removed);
+						return removed;
+					};
 				}
 				console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
 			} catch (e) {
