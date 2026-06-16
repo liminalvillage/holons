@@ -19,6 +19,7 @@
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { noteColor, toPeople } from "$lib/data";
+  import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
     borrowItem,
@@ -480,6 +481,15 @@
     {:else if quest}
       <!-- ── Calendar event / task ─────────────────────────────────────── -->
       {#if !editing}
+        {#if quest.picture}
+          <img
+            class="hero"
+            src={resolveImage(quest.picture)}
+            alt={quest.title}
+            loading="lazy"
+            on:error={hideImg}
+          />
+        {/if}
         {#if quest.category}<span class="kind">{quest.category}</span>{/if}
         <h2>{quest.title}</h2>
         <p class="when">{whenText()}</p>
@@ -615,6 +625,15 @@
     line-height: 1.18;
     color: var(--ink);
     word-break: break-word;
+  }
+  .hero {
+    display: block;
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border-radius: 14px;
+    margin: 0 0 0.7rem;
+    background: rgba(0, 0, 0, 0.05);
   }
   .kind {
     display: inline-block;

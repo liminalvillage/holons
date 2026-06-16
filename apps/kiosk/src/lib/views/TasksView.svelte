@@ -14,6 +14,8 @@
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
+  import { resolveImage } from "$lib/image";
+  import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { toggleAppreciate } from "$lib/membership";
   import {
@@ -465,6 +467,15 @@
                   </button>
                 </div>
                 <h3>{task.title}</h3>
+                {#if task.picture}
+                  <img
+                    class="thumb"
+                    src={resolveImage(task.picture)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                  />
+                {/if}
                 <div class="meta">
                   {#if task.category}<span class="tag">{task.category}</span
                     >{/if}
@@ -696,6 +707,15 @@
     font-size: 1.1rem;
     line-height: 1.25;
     color: var(--ink);
+  }
+  .note .thumb {
+    display: block;
+    width: 100%;
+    max-height: 130px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin: 0.55rem 0 0.1rem;
+    background: rgba(0, 0, 0, 0.05);
   }
 
   /* Edit (pen) + complete (tick) buttons, tucked in the top-right corner. */

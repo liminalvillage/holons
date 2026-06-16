@@ -50,6 +50,10 @@ export interface Quest {
   // the rest are tasks/events/recurring quests. All share the `quests` lens.
   type?: 'task' | 'quest' | 'event' | 'recurring' | 'offer' | 'request' | 'need' | string;
   category?: string;
+  // Optional image: an absolute URL/data-URI, or a Telegram file_id resolved
+  // through the bot image server (see each UI's `resolveImage`). Set on
+  // creation (creation.ts) and marketplace offers/requests.
+  picture?: string | null;
 
   // Web-style schedule fields.
   when?: string;

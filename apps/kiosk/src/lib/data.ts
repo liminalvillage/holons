@@ -119,6 +119,8 @@ export interface BacklogTask {
   id: string;
   title: string;
   category?: string;
+  /** Optional image (URL or Telegram file_id) shown on the card. */
+  picture?: string | null;
   due?: Date | null;
   participants: number;
   /** The participants themselves, for the avatar stack. */
@@ -208,6 +210,7 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       id,
       title: q.title || "Untitled",
       category: q.category,
+      picture: q.picture ?? null,
       due: parseWhen(q.when),
       participants: countOf(q.participants),
       people: toPeople(q.participants),
