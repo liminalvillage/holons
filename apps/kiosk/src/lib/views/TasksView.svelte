@@ -639,19 +639,22 @@
     background: var(--teal-deep);
   }
 
-  /* Responsive wrap of post-its that reflow to fit the width and animate (FLIP)
-     into place as they're rearranged. */
+  /* Responsive grid of post-its that reflow to fit the width and animate (FLIP)
+     into place as they're rearranged. `auto-fill` + `minmax(min(100%, …), 1fr)`
+     means: as many ~13rem columns as fit, each stretching to share the row — and
+     when only one column fits (narrow screens) that card spans the full width.
+     `min(100%, …)` keeps it from overflowing on ultra-narrow viewports. Using
+     auto-fill (not auto-fit) keeps a lone card column-sized on wide screens
+     instead of ballooning to the whole row. */
   .wall {
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    align-content: start;
     gap: 0.9rem;
   }
   .note-wrap {
     position: relative;
-    flex: 1 1 11rem;
-    min-width: 9rem;
-    max-width: 18rem;
+    min-width: 0; /* let the grid track shrink the card on narrow screens */
   }
   .note-wrap.ghost {
     visibility: hidden; /* holds the gap while its clone follows the finger */
