@@ -521,11 +521,18 @@
 								hops++;
 							}
 							if (circular) {
-								try { await hs.delete(holon, lens, key); removed.push(key); console.warn('[repair] deleted circular', `${holon}/${lens}/${key}`); }
-								catch (e: any) { console.warn('[repair] delete failed', key, e?.message); }
+								// Raw-nuke (.put(null)) — forceful; bypasses the slow signed
+								// delete that routes through the enforce layer during a storm.
+								await new Promise((res) => {
+									let d = false; const f = () => { if (!d) { d = true; res(); } };
+									try { hs.gun.get(app).get(holon).get(lens).get(key).put(null, () => f()); } catch { f(); }
+									setTimeout(f, 2000);
+								});
+								removed.push(key);
+								console.warn('[repair] nuked circular', `${holon}/${lens}/${key}`);
 							}
 						}
-						console.log(`[repair] ${holon}/${lens}: scanned ${keys.length}, removed ${removed.length} circular holograms:`, removed);
+						console.log(`[repair] ${holon}/${lens}: scanned ${keys.length}, nuked ${removed.length} circular holograms:`, removed, '— RELOAD to resume.');
 						return removed;
 					};
 				}

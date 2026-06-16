@@ -247,9 +247,16 @@ export async function createSigner({
       const rawById = new Map((rawItems || []).filter((r) => r && r.id != null).map((r) => [String(r.id), r]));
       const ids = new Set((await mapChildren(lensRoot(holo, holon, lens))).map(([k]) => k));
       for (const k of rawById.keys()) ids.add(k);
-      for (const id of ids) {
+      // Read every item's envelopes CONCURRENTLY. A sequential `await` per id
+      // turned one lens read into N × (per-item read latency); against a real
+      // relay, where each cold envelope read waits its full timeout, that stalled
+      // a lens for tens of seconds. Order is preserved by zipping back over idList.
+      const idList = [...ids];
+      const envsList = await Promise.all(idList.map((id) => readEnvelopes(holo, holon, lens, id)));
+      for (let i = 0; i < idList.length; i++) {
+        const id = idList[i];
+        const events = envsList[i];
         report.items++;
-        const events = await readEnvelopes(holo, holon, lens, id);
         const valid = events.filter(verifyEvent);
         const authorized = valid.filter((e) => isAuth(e.pubkey, e.created_at));
         if (authorized.length) {
@@ -299,8 +306,12 @@ export async function createSigner({
         ? [String(subject)]
         : (await mapChildren(lensRoot(holo, holon, lens))).map(([k]) => k);
       const out = [];
-      for (const subj of subjects) {
-        const events = (await readEnvelopes(holo, holon, lens, subj))
+      // Concurrent reads — same rationale as authorizedView: sequential awaits
+      // here made a per-author lens scale linearly in cold-read timeouts.
+      const subjEnvs = await Promise.all(subjects.map((s) => readEnvelopes(holo, holon, lens, s)));
+      for (let si = 0; si < subjects.length; si++) {
+        const subj = subjects[si];
+        const events = subjEnvs[si]
           .filter(verifyEvent)
           .filter((e) => isAuth(e.pubkey, e.created_at));
         const latest = new Map(); // pubkey -> that author's latest event

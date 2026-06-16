@@ -63,6 +63,13 @@ export function getHolonScalespace(holon) { // Doesn't need holoInstance
 // will blow past this — warn (then back off, doubling) so the leak surfaces in
 // dev instead of silently exhausting the heap.
 const SUBSCRIBE_WARN_THRESHOLD = 64;
+// Per-lens fire-storm quarantine. If one (holon, lens) sustains more than
+// QUARANTINE_FIRE_THRESHOLD map().on() fires inside a 1s window (a corrupt
+// circular hologram makes Gun re-emit it without bound), detach every listener
+// on that lens and refuse to re-subscribe for QUARANTINE_COOLDOWN_MS so the tab
+// recovers and cleanup tools (__repairCircular) stop being starved.
+const QUARANTINE_FIRE_THRESHOLD = 2500;
+const QUARANTINE_COOLDOWN_MS = 30000;
 
 export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     if (!holon || !lens) {
@@ -105,9 +112,21 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             holoInstance._subscriptionGroups = new Map();
         }
         const groupKey = `${holon} ${lens}`;
+
+        // Fire-storm quarantine: if this lens was recently detached for a runaway
+        // map().on() storm (a corrupt circular hologram makes Gun re-emit forever),
+        // refuse to re-attach for a cooldown — otherwise a caller that re-subscribes
+        // on every update (e.g. QueryManager) instantly restarts the storm. The raw
+        // data is untouched; clean up the cycle and reload to resume live updates.
+        const qAt = holoInstance.__quarantined && holoInstance.__quarantined.get(groupKey);
+        if (qAt && Date.now() - qAt < QUARANTINE_COOLDOWN_MS) {
+            console.warn(`[holosphere.subscribe] ${holon}/${lens} is quarantined after a fire-storm — not re-subscribing. Run __repairCircular('${holon}','${lens}') (or __nuke the bad pointer) and reload.`);
+            return { unsubscribe: () => {} };
+        }
+
         let group = holoInstance._subscriptionGroups.get(groupKey);
         if (!group) {
-            group = { holon, lens, ids: new Set(), warnThreshold: SUBSCRIBE_WARN_THRESHOLD };
+            group = { holon, lens, ids: new Set(), warnThreshold: SUBSCRIBE_WARN_THRESHOLD, fires: [] };
             holoInstance._subscriptionGroups.set(groupKey, group);
         }
         group.ids.add(subscriptionId);
@@ -132,6 +151,30 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             // stack ONCE and bail (no parse/resolve/allocate) so the tab survives
             // and the culprit is identifiable.
             const __fnow = Date.now();
+            // Per-PATH fire window (on the group) so we can pin the runaway lens and
+            // QUARANTINE it specifically — not just bail instance-wide and let Gun
+            // keep re-firing forever.
+            const gfw = group.fires;
+            gfw.push(__fnow);
+            if (gfw.length > 64) { while (gfw.length && __fnow - gfw[0] > 1000) gfw.shift(); }
+            if (gfw.length > QUARANTINE_FIRE_THRESHOLD) {
+                // Sustained storm on THIS lens: detach every listener on it and mark
+                // it quarantined so re-subscribes are refused for a cooldown. The tab
+                // recovers and the lens read in __repairCircular stops being starved.
+                holoInstance.__onFireWarnedAt = __fnow; // also quiets the enforce wrapper
+                holoInstance.__quarantined ||= new Map();
+                holoInstance.__quarantined.set(groupKey, __fnow);
+                const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens (detaching listeners). Almost certainly a circular hologram; run __repairCircular('${holon}','${lens}') or __nuke the bad pointer, then reload. Stack:\n${__st}`);
+                for (const id of [...group.ids]) {
+                    const sub = holoInstance.subscriptions[id];
+                    try { sub && sub.mapChain && sub.mapChain.off(); } catch { /* ignore */ }
+                    delete holoInstance.subscriptions[id];
+                }
+                group.ids.clear();
+                holoInstance._subscriptionGroups.delete(groupKey);
+                return;
+            }
             const __fw = (holoInstance.__onFireWindow ||= []);
             __fw.push(__fnow);
             if (__fw.length > 64) { while (__fw.length && __fnow - __fw[0] > 1000) __fw.shift(); }

@@ -950,6 +950,43 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 return true;
                             }
 
+                            // Never overwrite the target's OWN real record with a
+                            // federated hologram. Propagation writes with
+                            // `disableHologramRedirection:true`, so a hologram put
+                            // here CLOBBERS whatever is at targetSpace/id. If that
+                            // slot already holds a real (non-hologram, non-deleted)
+                            // object, overwriting it with a pointer is exactly what
+                            // closes an A↔B cycle: A's source record becomes a pointer
+                            // to B while B points back to A → a circular hologram Gun
+                            // re-emits forever (the map().on() fire-storm). The
+                            // federated copy is meant to surface via the read-time
+                            // `getFederated` overlay, never by clobbering local storage.
+                            if (useHolograms && payloadToPut && typeof payloadToPut.soul === 'string') {
+                                try {
+                                    const existingAtTarget = await holosphere.get(
+                                        targetSpace, lens, data.id, null,
+                                        { resolveHolograms: false, _skipAuthorize: true, timeout: 2000 }
+                                    );
+                                    const existingIsReal = existingAtTarget &&
+                                        !holosphere.isHologram(existingAtTarget) &&
+                                        !existingAtTarget._deleted;
+                                    // The target already holds a hologram pointing back
+                                    // INTO the holon we're propagating from — writing
+                                    // ours would entrench an A↔B back-edge.
+                                    const existingPointsBack = existingAtTarget &&
+                                        holosphere.isHologram(existingAtTarget) &&
+                                        typeof existingAtTarget.soul === 'string' &&
+                                        String(parseSoulPath(existingAtTarget.soul)?.holon) === String(holon);
+                                    if (existingIsReal || existingPointsBack) {
+                                        result.skipped++;
+                                        result.messages.push(
+                                            `Skipped propagation of ${data.id} to ${targetSpace}: ${existingIsReal ? 'target holds its own real record' : 'target already points back into the source'} (would create a circular hologram).`
+                                        );
+                                        return true;
+                                    }
+                                } catch { /* read failed — fall through and write */ }
+                            }
+
                             // Store in the target space with redirection disabled and no further auto-propagation
                             await holosphere.put(targetSpace, lens, payloadToPut, null, {
                                 disableHologramRedirection: true,

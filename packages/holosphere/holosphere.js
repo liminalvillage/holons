@@ -436,24 +436,97 @@ class HoloSphere {
         // notify too.
         if (signer && holon && lens !== '_members' && (signer.enforce || annotate)) {
             const self = this;
-            const resolved = async (raw, key) => {
+
+            // Resolving an update reads the sibling `_events` envelope subtree
+            // (signer.resolveItem/aggregate) from INSIDE this lens's map().on()
+            // handler. Those reads make Gun re-emit the whole lens, re-firing
+            // this handler with VALUE-IDENTICAL echoes — a positive feedback
+            // loop. Unguarded it grows without bound: a single write to a lens
+            // with N items fans out into thousands of resolves, the event loop
+            // starves, the put never settles (write-timeout), and the new item
+            // never appears. (off/shadow pass the raw callback — no in-handler
+            // reads — so they converge; only this enforce/annotate path loops.)
+            //
+            // So we DROP value-identical echoes. But a resolve can legitimately
+            // CHANGE result without the raw changing: right after a reload the
+            // raw item often arrives (from radisk/a peer) before the local
+            // `_events` envelope has loaded, so the first resolve comes back
+            // UNVERIFIED even though the item is signed. If we deduped that away
+            // permanently, a signed item would show as unsigned until the next
+            // write. So an UNCONFIRMED result (couldn't verify a present item)
+            // gets a few TIME-SPACED re-verifications — enough to catch the
+            // late envelope, bounded so a genuinely-unsigned item settles fast
+            // and the echo storm never re-arms (retries are timer-driven, not
+            // echo-driven). A CONFIRMED result (verified item, or a real
+            // tombstone/absent) is final and dedupes its echoes.
+            const VERIFY_RETRY_MS = [400, 1200, 3000];
+            const st = new Map(); // id -> { sig, confirmed, attempts, timer, raw, holo }
+            const sig = (v) => { try { return JSON.stringify(v); } catch { return String(v); } };
+            const clearT = (e) => { if (e && e.timer) { clearTimeout(e.timer); e.timer = null; } };
+            // When Gun is runaway-re-emitting this lens (a corrupt circular
+            // hologram, a mutual-federation cycle, …) utils.subscribe sets
+            // `__onFireWarnedAt`. While that's hot, our `_events` reads would only
+            // pour fuel on the storm — so the wrapper goes dormant (no resolve, no
+            // retry) until it subsides. The raw write already landed; reads recover
+            // on the next clean update or reload.
+            const storming = () => self.__onFireWarnedAt && (Date.now() - self.__onFireWarnedAt) < 4000;
+
+            const emit = async (id) => {
+                const e = st.get(id);
+                if (!e) return;
+                const raw = e.raw;
+                let confirmed = true;
+                try {
+                    if (signer.isPerActor(lens)) {
+                        const agg = await signer.aggregate(self, holon, lens, id);
+                        confirmed = Array.isArray(agg) && agg.length > 0; // empty may be a cold read
+                        callback(agg, id);
+                    } else {
+                        const verified = await signer.resolveItem(self, holon, lens, id);
+                        if (verified) {
+                            callback(annotate ? { ...verified, _verified: true } : verified, id);
+                        } else if (raw && !raw._deleted) {
+                            // present item that didn't verify — maybe a cold envelope read
+                            confirmed = false;
+                            callback(annotate ? { ...raw, _verified: false, _unverified: true } : null, id);
+                        } else {
+                            callback(null, id); // genuine tombstone/delete/absent — final
+                        }
+                    }
+                } catch { /* ignore */ }
+                const cur = st.get(id);
+                if (!cur || cur.sig !== e.sig) return; // superseded by a newer value
+                cur.confirmed = confirmed;
+                // Retry only a present, NON-hologram item that didn't verify, and
+                // never while storming. Holograms are pointers (the SOURCE carries
+                // the signature) with no local envelope, and a cascading hologram
+                // rewrites `updated` every fire — retrying it would dodge the
+                // echo-dedup and re-arm endlessly, feeding the storm.
+                if (!confirmed && !cur.holo && cur.attempts < VERIFY_RETRY_MS.length) {
+                    const delay = VERIFY_RETRY_MS[cur.attempts++];
+                    cur.timer = setTimeout(() => {
+                        if (st.get(id) === cur && !storming()) { cur.timer = null; emit(id); }
+                    }, delay);
+                }
+            };
+
+            const resolved = (raw, key) => {
                 // Gun can re-fire an update with `key` undefined (a lens-level echo
                 // of an item-level write); fall back to the raw record's id so we
                 // resolve the right envelope instead of mis-tagging it unverified.
                 const id = key ?? raw?.id;
-                try {
-                    if (signer.isPerActor(lens)) {
-                        callback(await signer.aggregate(self, holon, lens, id), id);
-                        return;
-                    }
-                    const verified = await signer.resolveItem(self, holon, lens, id);
-                    if (!annotate) { callback(verified, id); return; }
-                    if (verified) callback({ ...verified, _verified: true }, id);
-                    else if (raw && !raw._deleted) callback({ ...raw, _verified: false, _unverified: true }, id);
-                    else callback(null, id); // genuine tombstone/delete
-                } catch { /* ignore */ }
+                if (id == null) return;
+                if (storming()) return; // don't add reads to a runaway lens
+                const s = sig(raw);
+                const e = st.get(id);
+                if (e && e.sig === s) return; // value-identical echo — drop (retries are timer-driven)
+                if (e) clearT(e);
+                const holo = !!(raw && (raw.soul || raw._hologram));
+                st.set(id, { sig: s, confirmed: false, attempts: 0, timer: null, raw, holo });
+                emit(id);
             };
-            return Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
+            const sub = Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
+            return { unsubscribe: () => { for (const e of st.values()) clearT(e); st.clear(); sub.unsubscribe(); } };
         }
         return Utils.subscribe(this, holon, lens, callback, options);
     }
