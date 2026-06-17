@@ -7,6 +7,7 @@
 
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
+import type { Role } from "@holons/core/roles";
 
 /** Warm post-it palette, indexed deterministically by category. */
 export const NOTE_COLORS = [
@@ -247,6 +248,38 @@ export interface LibraryThing {
   available: boolean;
   borrower?: string | null;
   source?: string;
+}
+
+export interface RoleCard {
+  id: string;
+  title: string;
+  description?: string;
+  /** Members holding the role, for the avatar stack. */
+  people: TaskPerson[];
+  /** Number of members. */
+  count: number;
+  source?: string;
+}
+
+/** Roles lens → display cards, alphabetical by title. */
+export function toRoles(roles: Role[], names?: Names): RoleCard[] {
+  const seen = new Set<string>();
+  return roles
+    .map((r) => ({
+      id: String(r.id ?? r.title ?? ""),
+      title: r.title || "Untitled role",
+      description: r.description || undefined,
+      people: toPeople(r.participants),
+      count: countOf(r.participants),
+      source: sourceLabel(r, names),
+    }))
+    .filter((r) => {
+      // Drop blanks and federated duplicates so view keys stay unique.
+      if (!r.id || seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    })
+    .sort((a, b) => a.title.localeCompare(b.title));
 }
 
 /** Library lens → display things, available first then alphabetical. */

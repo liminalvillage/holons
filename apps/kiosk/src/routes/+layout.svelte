@@ -13,6 +13,7 @@
   import {
     resolveHolonId,
     resolveFederated,
+    resolveRolesEnabled,
     resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
@@ -20,12 +21,14 @@
   import {
     rawQuests,
     rawLibrary,
+    rawRoles,
     holonName,
     holonId as holonIdStore,
     brandName,
     brandLogo,
     accent,
     federated,
+    rolesEnabled,
     partnerNames,
     settingsOpen,
     userMenuOpen,
@@ -38,6 +41,7 @@
   import { initAuth, loginOpen } from "$lib/auth";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
+  import type { Role } from "@holons/core/roles";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
@@ -55,15 +59,18 @@
   let boundHolon: string | null = null;
   let questsAgg: LensAggregator | null = null;
   let libraryAgg: LensAggregator | null = null;
+  let rolesAgg: LensAggregator | null = null;
 
-  async function refresh(id: string | null, fed: boolean) {
+  async function refresh(id: string | null, fed: boolean, rolesOn: boolean) {
     if (!id) {
       questsAgg?.destroy();
       libraryAgg?.destroy();
-      questsAgg = libraryAgg = null;
+      rolesAgg?.destroy();
+      questsAgg = libraryAgg = rolesAgg = null;
       boundHolon = null;
       rawQuests.set([]);
       rawLibrary.set([]);
+      rawRoles.set([]);
       partnerNames.set({});
       holonName.set("");
       booting = false;
@@ -84,6 +91,8 @@
     if (boundHolon !== id) {
       questsAgg?.destroy();
       libraryAgg?.destroy();
+      rolesAgg?.destroy();
+      rolesAgg = null; // recreated below when the Roles tab is enabled
       questsAgg = createLensAggregator<Quest>(
         hs,
         "quests",
@@ -106,9 +115,25 @@
         .catch(() => {});
     }
 
+    // The Roles lens is optional — spin its aggregator up or down to match the
+    // toggle, leaving the always-on quests/library subscriptions untouched.
+    if (rolesOn && !rolesAgg) {
+      rolesAgg = createLensAggregator<Role>(
+        hs,
+        "roles",
+        (items) => rawRoles.set(items),
+        id,
+      );
+    } else if (!rolesOn && rolesAgg) {
+      rolesAgg.destroy();
+      rolesAgg = null;
+      rawRoles.set([]);
+    }
+
     // Always show this holon immediately; partners are folded in afterwards.
     questsAgg?.setHolons([id]);
     libraryAgg?.setHolons([id]);
+    rolesAgg?.setHolons([id]);
     partnerNames.set({});
     booting = false;
 
@@ -121,6 +146,7 @@
       partnerNames.set(snap.partnerNames ?? {});
       questsAgg?.setHolons(holonIds);
       libraryAgg?.setHolons(holonIds);
+      rolesAgg?.setHolons(holonIds);
     } catch (err) {
       console.error("[kiosk] federation snapshot failed", err);
     }
@@ -129,6 +155,7 @@
   onMount(() => {
     holonIdStore.set(resolveHolonId());
     federated.set(resolveFederated());
+    rolesEnabled.set(resolveRolesEnabled());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
@@ -139,12 +166,13 @@
       teardown.forEach((fn) => fn());
       questsAgg?.destroy();
       libraryAgg?.destroy();
+      rolesAgg?.destroy();
     };
   });
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
-  $: if (mounted) refresh($holonIdStore, $federated);
+  $: if (mounted) refresh($holonIdStore, $federated, $rolesEnabled);
 
   // Apply the chosen accent as the `--teal` family on :root so every component
   // (header, views, modals) picks it up. `--teal-deep` is derived a shade darker.

@@ -4,6 +4,7 @@
   import CalendarView from "$lib/views/CalendarView.svelte";
   import TasksView from "$lib/views/TasksView.svelte";
   import LibraryView from "$lib/views/LibraryView.svelte";
+  import RolesView from "$lib/views/RolesView.svelte";
 </script>
 
 <div class="surface">
@@ -15,6 +16,8 @@
         <CalendarView />
       {:else if $activeTab === "library"}
         <LibraryView />
+      {:else if $activeTab === "roles"}
+        <RolesView />
       {/if}
     </div>
   {/key}

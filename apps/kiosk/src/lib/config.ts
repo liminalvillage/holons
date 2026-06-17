@@ -24,6 +24,7 @@ export const PRODUCTION_PEER = "https://gun.holons.io/gun";
 const HOLON_KEY = "kiosk_holon";
 const APP_KEY = "kiosk_app";
 const FEDERATED_KEY = "kiosk_federated";
+const ROLES_KEY = "kiosk_roles";
 const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
@@ -126,6 +127,19 @@ export function resolveFederated(): boolean {
 /** Persist the federated-view toggle. */
 export function setFederated(on: boolean): void {
   persist(FEDERATED_KEY, on ? "1" : "0");
+}
+
+/**
+ * Whether the optional Roles tab is shown. Off by default — a caretaker opts in
+ * from Settings, since not every hub coordinates standing roles on the screen.
+ */
+export function resolveRolesEnabled(): boolean {
+  return persisted(ROLES_KEY) === "1";
+}
+
+/** Persist the Roles-tab toggle. */
+export function setRolesEnabled(on: boolean): void {
+  persist(ROLES_KEY, on ? "1" : "0");
 }
 
 /**

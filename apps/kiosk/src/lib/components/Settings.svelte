@@ -10,6 +10,7 @@
     brandName,
     brandLogo,
     accent,
+    rolesEnabled,
     settingsOpen,
   } from "$lib/stores";
   import {
@@ -17,6 +18,7 @@
     setBrandName,
     setBrandLogo,
     setAccent,
+    setRolesEnabled,
     DEFAULT_ACCENT,
   } from "$lib/config";
 
@@ -25,6 +27,7 @@
   let draftName = $brandName;
   let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
+  let draftRoles = $rolesEnabled;
   let logoError = "";
 
   const SWATCHES = [
@@ -71,6 +74,8 @@
     brandLogo.set(draftLogo);
     setAccent(draftAccent);
     accent.set(draftAccent);
+    setRolesEnabled(draftRoles);
+    rolesEnabled.set(draftRoles);
     settingsOpen.set(false);
   }
 </script>
@@ -146,6 +151,24 @@
         />
       </label>
     </div>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >Roles tab
+      <span class="sub">— show standing roles people can take on</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={draftRoles}
+      role="switch"
+      aria-checked={draftRoles}
+      aria-label="Show the Roles tab"
+      on:click={() => (draftRoles = !draftRoles)}
+    >
+      <span class="knob"></span>
+    </button>
   </div>
 
   <div class="actions">
@@ -309,6 +332,47 @@
     opacity: 0;
     cursor: pointer;
   }
+  /* Roles-tab on/off switch */
+  .toggle-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .toggle-label {
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .switch {
+    flex: 0 0 auto;
+    width: 3.1rem;
+    height: 1.8rem;
+    border-radius: 999px;
+    background: var(--line);
+    position: relative;
+    transition: background 0.18s ease;
+  }
+  .switch.on {
+    background: var(--teal);
+  }
+  .knob {
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: var(--shadow-soft);
+    transition: transform 0.18s ease;
+  }
+  .switch.on .knob {
+    transform: translateX(1.3rem);
+  }
+
   .actions {
     display: flex;
     flex-wrap: wrap;

@@ -16,6 +16,37 @@ export interface RoleParticipant {
   username?: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  /** A fixed ("permanent") holder — holds the role every day, overriding the
+   *  week schedule. Mirrors the dashboard's `participant.isPermanent`. */
+  isPermanent?: boolean;
+  assigned_at?: string;
+}
+
+/** A user scheduled onto a role for a specific day. */
+export interface ScheduledUser {
+  id: string | number;
+  username?: string | null;
+  assignedAt?: string;
+  assignedVia?: string;
+}
+
+/** One day's holders within a {@link WeekSchedule}. */
+export interface DayAssignment {
+  /** 0 = Monday … 6 = Sunday. */
+  dayOfWeek: number;
+  /** ISO date, `YYYY-MM-DD`. */
+  date: string;
+  users: ScheduledUser[];
+}
+
+/**
+ * A role's holders for one ISO week (e.g. `"2026-W25"`). The same shape the
+ * dashboard writes, so the kiosk and dashboard share one schedule.
+ */
+export interface WeekSchedule {
+  weekKey: string;
+  assignments: DayAssignment[];
+  lastModified?: string;
 }
 
 /** A holon role. `id` mirrors `title` (titles are unique per holon). */
@@ -26,6 +57,8 @@ export interface Role {
   participants: RoleParticipant[];
   /** Optional pointer to a linked checklist in the `checklists` lens. */
   checklistId?: string | null;
+  /** Optional per-day holders for one ISO week (see {@link WeekSchedule}). */
+  weekSchedule?: WeekSchedule;
   created?: string;
   // Open shape so existing call sites that read/write extra fields keep working.
   [key: string]: unknown;

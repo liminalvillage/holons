@@ -7,7 +7,8 @@
 import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
-import { toEvents, toBacklog, toThings } from "./data";
+import type { Role } from "@holons/core/roles";
+import { toEvents, toBacklog, toThings, toRoles } from "./data";
 import { FLIP_INTERVAL_MS, RESUME_AFTER_IDLE_MS } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -30,6 +31,13 @@ export const accent = writable<string>("#0e6b66");
  * subscriptions in `+layout.svelte`.
  */
 export const federated = writable<boolean>(false);
+
+/**
+ * Whether the optional Roles tab is shown (a caretaker opt-in, persisted in
+ * config). Toggling it (de)activates the roles subscription in `+layout.svelte`
+ * and adds/removes the tab in `visibleTabs`.
+ */
+export const rolesEnabled = writable<boolean>(false);
 
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
@@ -60,6 +68,7 @@ export const userMenuOpen = writable<boolean>(false);
 
 export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
+export const rawRoles = writable<Role[]>([]);
 
 export const events = derived([rawQuests, partnerNames], ([$q, $n]) =>
   toEvents($q, $n),
@@ -69,6 +78,9 @@ export const backlog = derived([rawQuests, partnerNames], ([$q, $n]) =>
 );
 export const things = derived([rawLibrary, partnerNames], ([$l, $n]) =>
   toThings($l, $n),
+);
+export const roleCards = derived([rawRoles, partnerNames], ([$r, $n]) =>
+  toRoles($r, $n),
 );
 
 // ── Detail / zoom selection ────────────────────────────────────────────────
@@ -122,13 +134,23 @@ export const TABS = [
   { id: "tasks", label: "Tasks", glyph: "✎" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "library", label: "Library", glyph: "❖" },
+  { id: "roles", label: "Roles", glyph: "✪" },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];
 
-/** Tabs actually shown: the Library tab is hidden while it has no items. */
-export const visibleTabs = derived(things, ($things) =>
-  TABS.filter((t) => t.id !== "library" || $things.length > 0),
+/**
+ * Tabs actually shown: the Library tab is hidden while it has no items, and the
+ * optional Roles tab appears only when the caretaker has enabled it.
+ */
+export const visibleTabs = derived(
+  [things, rolesEnabled],
+  ([$things, $roles]) =>
+    TABS.filter(
+      (t) =>
+        (t.id !== "library" || $things.length > 0) &&
+        (t.id !== "roles" || $roles),
+    ),
 );
 
 /** The active view — the kiosk opens on Tasks. */
