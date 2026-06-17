@@ -19,6 +19,7 @@
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { noteColor, toPeople } from "$lib/data";
+  import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
@@ -408,7 +409,9 @@
       <span class="kind">{getTypeDisplayName(item.type)}</span>
 
       {#if !editing}
-        {#if item.description}<p class="desc">{item.description}</p>{/if}
+        {#if item.description}<p class="desc">
+            {@html linkify(item.description)}
+          </p>{/if}
         <dl class="facts">
           <div>
             <dt>Status</dt>
@@ -491,10 +494,12 @@
           />
         {/if}
         {#if quest.category}<span class="kind">{quest.category}</span>{/if}
-        <h2>{quest.title}</h2>
+        <h2>{@html linkify(quest.title)}</h2>
         <p class="when">{whenText()}</p>
         {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
-        {#if quest.description}<p class="desc">{quest.description}</p>{/if}
+        {#if quest.description}<p class="desc">
+            {@html linkify(quest.description)}
+          </p>{/if}
         {#if people.length || appreciationCount}
           <div class="facts-line">
             {#if people.length}
@@ -626,6 +631,11 @@
     color: var(--ink);
     word-break: break-word;
   }
+  h2 :global(a) {
+    color: var(--teal-deep);
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+  }
   .hero {
     display: block;
     width: 100%;
@@ -719,6 +729,15 @@
     line-height: 1.55;
     margin: 0.6rem 0 0.4rem;
     white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .desc :global(a) {
+    color: var(--teal-deep);
+    text-decoration: underline;
+    overflow-wrap: anywhere;
+  }
+  .desc :global(a:active) {
+    opacity: 0.7;
   }
   .facts {
     display: flex;
