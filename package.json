@@ -33,7 +33,7 @@
 		"overrides": {
 			"esbuild@<0.25.0": ">=0.25.0",
 			"cookie@<0.7.0": ">=0.7.0",
-			"holosphere": "workspace:*"
+			"holosphere": "1.3.0-alpha8"
 		}
 	}
 }
