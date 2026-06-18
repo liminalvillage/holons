@@ -1,8 +1,3 @@
-import type {
-  CapabilityExpiration,
-  QRCapabilityToken,
-} from "$lib/capabilities/qrCapability";
-
 export type CardType =
   | "action"
   | "task"
@@ -18,6 +13,13 @@ export interface Card {
   type: CardType;
   description: string;
   imageUrl?: string;
+  /**
+   * Storage key of an existing holon item this card targets. When set, scanning
+   * the card joins that specific item (adds the scanner to its participants /
+   * assigns the role) instead of creating a new one. Populated when cards are
+   * generated from the holon's current tasks/roles/events.
+   */
+  itemId?: string;
 }
 
 export interface TextStyle {
@@ -49,19 +51,6 @@ export interface CardStyle {
   margin: number; // card content margin in pixels
 }
 
-export interface CapabilityOptions {
-  /** Enable capability tokens for QR codes */
-  enabled: boolean;
-  /** Expiration preset for capabilities */
-  expiration: CapabilityExpiration;
-  /** Custom expiration timestamp (ms) - used when expiration is 'custom' */
-  customExpiresAt?: number;
-  /** Maximum uses per capability (null = unlimited) */
-  maxUses: number | null;
-  /** Restrict each card to its specific item title */
-  restrictToItem: boolean;
-}
-
 export interface DeckConfig {
   deckId: string;
   holonId: string;
@@ -69,8 +58,6 @@ export interface DeckConfig {
   backgroundImage?: string;
   foregroundImage?: string;
   cardStyle: CardStyle;
-  /** Capability options for securing QR codes */
-  capabilityOptions?: CapabilityOptions;
 }
 
 export interface ParsedCSVResult {
@@ -81,8 +68,6 @@ export interface ParsedCSVResult {
 export interface PDFGeneratorOptions {
   cards: Card[];
   config: DeckConfig;
-  /** Optional map of cardId -> capability token */
-  capabilities?: Map<string, QRCapabilityToken>;
   onProgress?: (current: number, total: number) => void;
 }
 
@@ -117,13 +102,6 @@ export const DEFAULT_CARD_STYLE: CardStyle = {
     left: 50,
   },
   margin: 20,
-};
-
-export const DEFAULT_CAPABILITY_OPTIONS: CapabilityOptions = {
-  enabled: true,
-  expiration: "30d",
-  maxUses: null,
-  restrictToItem: true,
 };
 
 export const CARD_TYPE_COLORS: Record<CardType, { bg: string; text: string }> =

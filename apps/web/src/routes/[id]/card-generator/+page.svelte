@@ -11,6 +11,8 @@
 	import { nostrPrivateKey } from '$lib/stores/nostr';
 	import { createQRCapability, createCapabilitiesForCards, getLensForAction } from '$lib/capabilities/qrCapability';
 	import type { QRCapabilityToken, CapabilityExpiration } from '$lib/capabilities/qrCapability';
+	import { loadCardsFromHolon, HOLON_SOURCES } from '$lib/card-generator/holon-source';
+	import type { HolonSource } from '$lib/card-generator/holon-source';
 
 	// Get holosphere context at component initialization (required by Svelte)
 	const holosphere = getContext<HoloSphere>('holosphere');
@@ -40,8 +42,15 @@
 	let previewCardIndex = 0;
 	let previewSide: 'front' | 'back' = 'front';
 
+	// Input source: load the holon's current items, upload a CSV, or enter manually
+	let inputMode: 'holon' | 'csv' | 'manual' = 'holon';
+
+	// Load-from-holon state
+	let holonSource: HolonSource = 'tasks';
+	let isLoadingHolon = false;
+	let holonLoadError = '';
+
 	// Manual input state
-	let inputMode: 'csv' | 'manual' = 'csv';
 	let manualTitle = '';
 	let manualType: CardType = 'task';
 	let manualDescription = '';
@@ -202,16 +211,37 @@
 		pdfBlob = null;
 	}
 
-	function switchInputMode(mode: 'csv' | 'manual') {
+	function switchInputMode(mode: 'holon' | 'csv' | 'manual') {
 		if (mode === inputMode) return;
 		inputMode = mode;
-		if (mode === 'manual') {
+		if (mode !== 'csv') {
 			csvFile = null;
 		}
 		cards = [];
 		parseErrors = [];
+		holonLoadError = '';
 		pdfBlob = null;
 		previewCardIndex = 0;
+	}
+
+	async function loadFromHolon() {
+		if (!holosphere || !holonId || isLoadingHolon) return;
+		isLoadingHolon = true;
+		holonLoadError = '';
+		try {
+			const loaded = await loadCardsFromHolon(holosphere, holonId, holonSource);
+			cards = loaded;
+			previewCardIndex = 0;
+			pdfBlob = null;
+			if (loaded.length === 0) {
+				holonLoadError = `No ${holonSource} found in this holon yet.`;
+			}
+		} catch (err) {
+			console.error('[Card Generator] Failed to load from holon:', err);
+			holonLoadError = `Failed to load ${holonSource}: ${err instanceof Error ? err.message : 'Unknown error'}`;
+		} finally {
+			isLoadingHolon = false;
+		}
 	}
 
 	async function handleGeneratePDF() {
@@ -372,10 +402,14 @@
 				</div>
 			</div>
 
-			<!-- Cards Input (CSV or Manual) -->
+			<!-- Cards Input (From Holon, CSV, or Manual) -->
 			<div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
 				<!-- Tab switcher -->
 				<div class="flex items-center gap-1 mb-3">
+					<button
+						on:click={() => switchInputMode('holon')}
+						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'holon' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+					>From Holon</button>
 					<button
 						on:click={() => switchInputMode('csv')}
 						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'csv' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
@@ -389,7 +423,31 @@
 					{/if}
 				</div>
 
-				{#if inputMode === 'csv'}
+				{#if inputMode === 'holon'}
+					<!-- Load current items from the holon -->
+					<div class="space-y-2">
+						<div class="flex items-center gap-2">
+							<select bind:value={holonSource} class="px-2 py-1.5 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm">
+								{#each HOLON_SOURCES as src}
+									<option value={src.value}>{src.label}</option>
+								{/each}
+							</select>
+							<button
+								on:click={loadFromHolon}
+								disabled={isLoadingHolon || !holonId}
+								class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium"
+							>{isLoadingHolon ? 'Loading…' : 'Load'}</button>
+							{#if cards.length > 0}
+								<span class="text-xs text-gray-400">{cards.length} card{cards.length !== 1 ? 's' : ''}</span>
+								<button on:click={() => { cards = []; pdfBlob = null; previewCardIndex = 0; }} class="ml-auto text-xs text-red-400 hover:text-red-300">Clear</button>
+							{/if}
+						</div>
+						<p class="text-xs text-gray-500">Pulls the holon's current {holonSource}. Scanning a card adds the signed-in user to that specific item.</p>
+						{#if holonLoadError}
+							<div class="text-amber-400 text-xs">{holonLoadError}</div>
+						{/if}
+					</div>
+				{:else if inputMode === 'csv'}
 					<!-- CSV Upload -->
 					<div
 						class="border-2 border-dashed rounded-lg p-4 text-center transition-colors {isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-gray-600'}"
@@ -545,7 +603,7 @@
 					{/if}
 				{:else}
 					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						Upload CSV or add cards manually to preview
+						Load items from the holon, upload a CSV, or add cards manually to preview
 					</div>
 				{/if}
 			</div>
@@ -774,7 +832,7 @@
 
 						{#if !canGenerate}
 							<span class="text-xs text-gray-500">
-								{#if !deckId.trim()}Enter Deck ID{:else if cards.length === 0}Upload CSV or add cards manually{/if}
+								{#if !deckId.trim()}Enter Deck ID{:else if cards.length === 0}Load items, upload a CSV, or add cards manually{/if}
 							</span>
 						{/if}
 					{/if}

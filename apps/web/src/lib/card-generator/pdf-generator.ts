@@ -9,8 +9,6 @@ import {
   CARD_WIDTH_PX,
   CARD_HEIGHT_PX,
 } from "./CardRenderer";
-import type { QRCapabilityToken } from "$lib/capabilities/qrCapability";
-import { encodeCapabilityForUrl } from "$lib/capabilities/qrCapability";
 import { shortenUrl } from "../../utils/url-shortener";
 
 // A4 dimensions in pixels at 96 DPI (landscape orientation)
@@ -47,6 +45,12 @@ export function buildQRUrl(
     desc: card.description,
     action: card.type,
   });
+
+  // For cards generated from existing holon items, carry the item's storage key
+  // so scanning joins that specific item instead of creating a new one.
+  if (card.itemId) {
+    params.set("itemId", card.itemId);
+  }
 
   // Embed capability token if provided
   if (capability) {
