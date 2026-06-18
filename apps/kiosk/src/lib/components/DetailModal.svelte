@@ -277,15 +277,20 @@
       return;
     saving = true;
     message = "";
-    try {
-      const hs = await getHolosphere();
-      await hs.delete($holonId, "quests", String(sel.quest.id));
-      closeDetail();
-    } catch (err) {
-      message = (err as Error)?.message || "Could not delete — try again.";
-    } finally {
-      saving = false;
-    }
+    // Soft-delete: write a `_deleted: true` tombstone (the bot's convention)
+    // rather than a hard `put(null)`. A hard delete leaves a husk node that Gun
+    // keeps re-emitting; the live subscription forwards it (it only swallows a
+    // clean null), so the board flips between the real card and an empty
+    // "Untitled" phantom — re-triggering the FLIP reshuffle indefinitely. A
+    // tombstone is a stable object that both `isDone` and the lens aggregator
+    // drop cleanly, so the card just leaves.
+    const tombstone: Record<string, unknown> = { ...sel.quest, _deleted: true };
+    delete tombstone._holon; // UI-only federation tag — never persist it
+    const writer = await getWriter($holonId, (m) => (message = m));
+    const ok = await writer.put("quests", tombstone);
+    saving = false;
+    if (ok) closeDetail();
+    else if (!message) message = "Could not delete — try again.";
   }
 
   async function joinQuest() {
