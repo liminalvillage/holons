@@ -9,6 +9,11 @@ import {
   validateCapability,
   isCapabilityValid,
 } from "$lib/capabilities/qrCapability";
+import { addParticipant as addTaskParticipant } from "@holons/core/tasks";
+import {
+  clearParticipants as clearRoleParticipants,
+  setPermanent as setRoleHolder,
+} from "@holons/core/roles";
 
 export interface TelegramUser {
   id: number | string;
@@ -27,6 +32,11 @@ export interface QRActionParams {
   holonID: string;
   deckId?: string;
   cardId?: string;
+  /**
+   * Storage key of an existing item to join. When present, the action adds the
+   * scanner to that specific quest/role rather than creating a new one.
+   */
+  itemId?: string;
   /** Optional capability token for authorization */
   capability?: QRCapabilityToken | null;
 }
@@ -141,6 +151,60 @@ export class QRActionService {
     } catch (err) {
       console.warn("[QRActionService] Failed to store read capability:", err);
     }
+  }
+
+  /**
+   * Builds a participant entry for the scanning user.
+   */
+  private participantFor(user: TelegramUser) {
+    return {
+      id: user.id.toString(),
+      username: user.username || `user_${user.id}`,
+      first_name: user.first_name,
+      last_name: user.last_name || "",
+      assigned_at: new Date().toISOString(),
+      assigned_via: "qr_code",
+    };
+  }
+
+  /**
+   * Creates or refreshes the scanner's user record in the holon.
+   */
+  private async saveUserRecord(
+    params: QRActionParams,
+    user: TelegramUser,
+  ): Promise<void> {
+    const existingUser = await this.holosphere.get(
+      params.holonID,
+      "users",
+      user.id.toString(),
+    );
+    const userData = existingUser || {
+      id: user.id.toString(),
+      username: user.username || `user_${user.id}`,
+      first_name: user.first_name,
+      last_name: user.last_name || "",
+      joined_at: new Date().toISOString(),
+      last_active: new Date().toISOString(),
+    };
+    userData.last_active = new Date().toISOString();
+    await this.putWithCapability(
+      params.holonID,
+      "users",
+      userData,
+      params.capability,
+    );
+  }
+
+  /**
+   * Ensures the record we're about to mutate is the one the capability
+   * authorized. The signed capability is scoped to the item's title
+   * (cap.itemId); reject if the loaded record's title no longer matches.
+   */
+  private titleAuthorized(record: any, params: QRActionParams): boolean {
+    const capTitle = params.capability?.itemId;
+    if (!capTitle) return true; // capability isn't item-scoped
+    return record?.title === capTitle;
   }
 
   /**
@@ -273,6 +337,52 @@ export class QRActionService {
       console.log(
         `[QRActionService] Starting role assignment for user ${user.id} to role: ${params.title}`,
       );
+
+      // If the card targets an existing role, add the scanner to its
+      // participants without disturbing the others. Participant management is
+      // delegated to @holons/core/roles (idempotent, normalized).
+      if (params.itemId) {
+        const existing = await this.holosphere.get(
+          params.holonID,
+          "roles",
+          params.itemId,
+        );
+        if (existing && existing.title) {
+          if (!this.titleAuthorized(existing, params)) {
+            return {
+              success: false,
+              message: "This card is not authorized for this role.",
+              error: "ITEM_MISMATCH",
+            };
+          }
+          await this.saveUserRecord(params, user);
+          // A role is held by one person: taking it over via QR kicks out the
+          // previous holder(s) and installs the scanner as the role's holder,
+          // overriding any rotation schedule (reversible by releasing the role).
+          const updated = setRoleHolder(
+            clearRoleParticipants(existing),
+            this.participantFor(user),
+          );
+          await this.putWithCapability(
+            params.holonID,
+            "roles",
+            updated,
+            params.capability,
+          );
+          console.log(
+            `[QRActionService] Assigned user ${user.id} as sole holder of role ${params.itemId}`,
+          );
+          return {
+            success: true,
+            message: `You now hold the role: ${existing.title}`,
+            assignedRole: existing.title,
+            redirectUrl: `/${params.holonID}/roles`,
+          };
+        }
+        console.warn(
+          `[QRActionService] Role ${params.itemId} not found — creating a new role instead`,
+        );
+      }
 
       // Get or create user record (roles are stored in roles collection only, not in user table)
       const existingUser = await this.holosphere.get(
@@ -586,6 +696,47 @@ export class QRActionService {
         `[QRActionService] Starting event creation for user ${user.id} to event: ${params.title}`,
       );
 
+      // If the card targets an existing event, add the scanner to it (events are
+      // stored as quests) rather than creating a new scheduled one.
+      if (params.itemId) {
+        const existing = await this.holosphere.get(
+          params.holonID,
+          "quests",
+          params.itemId,
+        );
+        if (existing && existing.title) {
+          if (!this.titleAuthorized(existing, params)) {
+            return {
+              success: false,
+              message: "This card is not authorized for this event.",
+              error: "ITEM_MISMATCH",
+            };
+          }
+          await this.saveUserRecord(params, user);
+          const updated = addTaskParticipant(
+            existing,
+            this.participantFor(user),
+          );
+          await this.putWithCapability(
+            params.holonID,
+            "quests",
+            updated,
+            params.capability,
+          );
+          console.log(
+            `[QRActionService] Added user ${user.id} to existing event ${params.itemId}`,
+          );
+          return {
+            success: true,
+            message: `You're now attending: ${existing.title}`,
+            redirectUrl: `/${params.holonID}/events`,
+          };
+        }
+        console.warn(
+          `[QRActionService] Event ${params.itemId} not found — creating a new event instead`,
+        );
+      }
+
       // Get or create user record
       const existingUser = await this.holosphere.get(
         params.holonID,
@@ -713,6 +864,47 @@ export class QRActionService {
       console.log(
         `[QRActionService] Starting task assignment for user ${user.id} to task: ${params.title}`,
       );
+
+      // If the card targets an existing quest, add the scanner to it rather than
+      // creating a new one. Participant management is delegated to @holons/core.
+      if (params.itemId) {
+        const existing = await this.holosphere.get(
+          params.holonID,
+          "quests",
+          params.itemId,
+        );
+        if (existing && existing.title) {
+          if (!this.titleAuthorized(existing, params)) {
+            return {
+              success: false,
+              message: "This card is not authorized for this item.",
+              error: "ITEM_MISMATCH",
+            };
+          }
+          await this.saveUserRecord(params, user);
+          const updated = addTaskParticipant(
+            existing,
+            this.participantFor(user),
+          );
+          await this.putWithCapability(
+            params.holonID,
+            "quests",
+            updated,
+            params.capability,
+          );
+          console.log(
+            `[QRActionService] Added user ${user.id} to existing quest ${params.itemId}`,
+          );
+          return {
+            success: true,
+            message: `Added you to: ${existing.title}`,
+            redirectUrl: `/${params.holonID}/tasks`,
+          };
+        }
+        console.warn(
+          `[QRActionService] Quest ${params.itemId} not found — creating a new task instead`,
+        );
+      }
 
       // Get or create user record
       const existingUser = await this.holosphere.get(

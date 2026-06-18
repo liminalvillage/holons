@@ -9,7 +9,7 @@
 
 	export let data: any;
 
-	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams, needsHolonLookup, capability, capabilityStatus, capabilityExpiration } = data);
+	$: ({ action, title, desc, holonID, deckId, cardId, itemId, hasValidParams, needsHolonLookup, capability, capabilityStatus, capabilityExpiration } = data);
 
 	let holosphere: HoloSphere;
 	let qrActionService: QRActionService;
@@ -97,6 +97,7 @@
 				holonID: finalHolonID,
 				deckId,
 				cardId,
+				itemId,
 				capability
 			};
 
@@ -219,7 +220,9 @@
 							<span class="text-lg font-medium">Processing {action} action...</span>
 						</div>
 						<p class="text-sm text-blue-200 mb-4">
-							{#if action === 'role'}
+							{#if itemId && (action === 'role' || action === 'event' || action === 'task' || action === 'action')}
+								Adding you to {title}...
+							{:else if action === 'role'}
 								Creating role and assigning it to you...
 							{:else if action === 'event'}
 								Creating and scheduling event for 12 hours from now...

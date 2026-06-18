@@ -14,6 +14,8 @@ export const load = async ({ url }: any) => {
   const holonID = url.searchParams.get("holonID"); // may be null for card-generator QRs
   const deckId = url.searchParams.get("deckId");
   const cardId = url.searchParams.get("cardId");
+  // Storage key of an existing item to join (cards generated from holon data)
+  const itemId = url.searchParams.get("itemId");
 
   // Try to decode capability token from URL
   const capParam = url.searchParams.get("cap");
@@ -47,6 +49,7 @@ export const load = async ({ url }: any) => {
     holonID,
     deckId,
     cardId,
+    itemId,
     hasValidParams,
     needsHolonLookup: !holonID && !!deckId, // flag for runtime lookup
     capability,
