@@ -19,6 +19,7 @@ import type { LibraryDB } from "@holons/core/library";
 import { Buffer } from "buffer";
 import { resolveAppName, resolvePeers } from "./config";
 import { actingAs } from "./auth";
+import { lookupHolonName } from "./hns";
 
 // Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
 // before the library loads.
@@ -72,6 +73,65 @@ export function getHolosphere(): Promise<HoloSphere> {
     }
   }
   return instance;
+}
+
+// Session cache of holon-id → display name. Only *resolved* names are cached;
+// an unresolved holon is left out so a later call (e.g. after its data has
+// replicated) can retry.
+const holonNameCache = new Map<string, string>();
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// One resolution attempt. Tries, in order:
+//   1. HNS — a global, signed, federation-free name table.
+//   2. The holon's own `settings/<id>` record — the source holosphere itself
+//      uses; it may come back as an object OR an array of entries, so handle
+//      both (the array case is why partner names previously read as ids).
+// Returns "" when nothing is found yet.
+async function resolveHolonName(
+  hs: HoloSphere,
+  holonId: string,
+): Promise<string> {
+  try {
+    const hns = await lookupHolonName(hs, holonId);
+    if (hns && hns.trim()) return hns;
+  } catch {
+    /* fall through to settings */
+  }
+  try {
+    const s: any = await hs.get(holonId, "settings", holonId);
+    const raw = Array.isArray(s) ? s.find((e: any) => e?.name)?.name : s?.name;
+    if (raw && String(raw).trim()) return String(raw);
+  } catch {
+    /* no name available yet */
+  }
+  return "";
+}
+
+/**
+ * Resolve a holon's friendly name, then cache it for the session. Returns ""
+ * when no name can be read (caller falls back to the id).
+ *
+ * A federation partner's settings/HNS replicate shortly *after* we subscribe
+ * to it, so a single immediate read often races and misses — we retry a few
+ * times with backoff before giving up. Only positive results are cached.
+ */
+export async function getHolonName(
+  hs: HoloSphere,
+  holonId: string,
+): Promise<string> {
+  const cached = holonNameCache.get(holonId);
+  if (cached) return cached;
+
+  for (const delay of [0, 800, 2000]) {
+    if (delay) await sleep(delay);
+    const name = await resolveHolonName(hs, holonId);
+    if (name) {
+      holonNameCache.set(holonId, name);
+      return name;
+    }
+  }
+  return "";
 }
 
 /** A `{ unsubscribe }` shape, tolerant of older promise-returning builds. */

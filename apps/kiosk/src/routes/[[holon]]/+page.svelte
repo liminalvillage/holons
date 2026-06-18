@@ -1,6 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { activeTab } from "$lib/stores";
+  import { activeTab, boardReady } from "$lib/stores";
   import CalendarView from "$lib/views/CalendarView.svelte";
   import TasksView from "$lib/views/TasksView.svelte";
   import LibraryView from "$lib/views/LibraryView.svelte";
@@ -8,19 +8,25 @@
 </script>
 
 <div class="surface">
-  {#key $activeTab}
-    <div class="view">
-      {#if $activeTab === "tasks"}
-        <TasksView />
-      {:else if $activeTab === "calendar"}
-        <CalendarView />
-      {:else if $activeTab === "library"}
-        <LibraryView />
-      {:else if $activeTab === "roles"}
-        <RolesView />
-      {/if}
-    </div>
-  {/key}
+  <!-- Mount the view only once the holon's initial data has settled (see
+       boardReady): a fresh mount on the full set plays the entrance animation
+       cleanly, the same way switching tabs does. Keyed on the tab so each
+       switch remounts and re-animates. -->
+  {#if $boardReady}
+    {#key $activeTab}
+      <div class="view">
+        {#if $activeTab === "tasks"}
+          <TasksView />
+        {:else if $activeTab === "calendar"}
+          <CalendarView />
+        {:else if $activeTab === "library"}
+          <LibraryView />
+        {:else if $activeTab === "roles"}
+          <RolesView />
+        {/if}
+      </div>
+    {/key}
+  {/if}
 </div>
 
 <style>

@@ -8,7 +8,7 @@ import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
-import { toEvents, toBacklog, toThings, toRoles } from "./data";
+import { toEvents, toBacklog, toThings, toRoles, filterBySearch } from "./data";
 import { FLIP_INTERVAL_MS, RESUME_AFTER_IDLE_MS } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -42,6 +42,13 @@ export const rolesEnabled = writable<boolean>(false);
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
 
+/**
+ * Free-text search from the header bar. Filters the visible content of every
+ * view (tasks, calendar, library, roles) through the derived stores below, so
+ * one query narrows whatever tab is on screen. Empty ⇒ no filtering.
+ */
+export const searchQuery = writable<string>("");
+
 /** Whether the Settings panel is open. */
 export const settingsOpen = writable<boolean>(false);
 
@@ -70,18 +77,31 @@ export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
 export const rawRoles = writable<Role[]>([]);
 
-export const events = derived([rawQuests, partnerNames], ([$q, $n]) =>
-  toEvents($q, $n),
+export const events = derived(
+  [rawQuests, partnerNames, searchQuery],
+  ([$q, $n, $query]) => filterBySearch(toEvents($q, $n), $query),
 );
-export const backlog = derived([rawQuests, partnerNames], ([$q, $n]) =>
-  toBacklog($q, $n),
+export const backlog = derived(
+  [rawQuests, partnerNames, searchQuery],
+  ([$q, $n, $query]) => filterBySearch(toBacklog($q, $n), $query),
 );
-export const things = derived([rawLibrary, partnerNames], ([$l, $n]) =>
-  toThings($l, $n),
+export const things = derived(
+  [rawLibrary, partnerNames, searchQuery],
+  ([$l, $n, $query]) => filterBySearch(toThings($l, $n), $query),
 );
-export const roleCards = derived([rawRoles, partnerNames], ([$r, $n]) =>
-  toRoles($r, $n),
+export const roleCards = derived(
+  [rawRoles, partnerNames, searchQuery],
+  ([$r, $n, $query]) => filterBySearch(toRoles($r, $n), $query),
 );
+
+/**
+ * Whether the board may render. False while a holon's initial data burst is
+ * still streaming in from Gun; the layout flips it true once that settles, so
+ * the active view mounts a single time on the full set and its entrance
+ * animation plays cleanly — exactly like a tab switch (which remounts on
+ * already-loaded data) — instead of animating cards one-by-one as they arrive.
+ */
+export const boardReady = writable<boolean>(false);
 
 // ── Detail / zoom selection ────────────────────────────────────────────────
 //

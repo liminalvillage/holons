@@ -311,3 +311,45 @@ export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
       return a.title.localeCompare(b.title);
     });
 }
+
+/** Text fields the kiosk search bar matches against, across every view model. */
+interface Searchable {
+  title?: string;
+  category?: string;
+  location?: string;
+  description?: string;
+  type?: string;
+  source?: string;
+  borrower?: string | null;
+  people?: TaskPerson[];
+}
+
+/**
+ * Filter view-model items by the search bar's query: case-insensitive, and an
+ * item must match *every* whitespace-separated term (AND). An empty query
+ * passes the list straight through (same reference — no needless re-render).
+ */
+export function filterBySearch<T extends Searchable>(
+  items: T[],
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+  const terms = q.split(/\s+/);
+  return items.filter((it) => {
+    const hay = [
+      it.title,
+      it.category,
+      it.location,
+      it.description,
+      it.type,
+      it.source,
+      it.borrower ?? undefined,
+      ...(it.people?.map((p) => p.name) ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
+}

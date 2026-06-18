@@ -5,6 +5,7 @@
   import { get } from "svelte/store";
   import {
     getHolosphere,
+    getHolonName,
     createLensAggregator,
     type LensAggregator,
   } from "$lib/holosphere";
@@ -30,6 +31,7 @@
     federated,
     rolesEnabled,
     partnerNames,
+    boardReady,
     settingsOpen,
     userMenuOpen,
     connected,
@@ -61,6 +63,24 @@
   let libraryAgg: LensAggregator | null = null;
   let rolesAgg: LensAggregator | null = null;
 
+  // Board reveal: hold the views hidden while a holon's initial data burst
+  // streams in, then reveal once it settles so the entrance animation plays on
+  // the full set (like a tab switch). `awaitingReady` is true only between a
+  // holon (re)bind and that first settle; later live updates fold in via the
+  // views' own FLIP transitions and never re-trigger the reveal.
+  let awaitingReady = false;
+  let readyTimer: ReturnType<typeof setTimeout> | null = null;
+  const READY_SETTLE_MS = 250;
+
+  function armReady() {
+    if (readyTimer) clearTimeout(readyTimer);
+    readyTimer = setTimeout(() => {
+      readyTimer = null;
+      awaitingReady = false;
+      boardReady.set(true);
+    }, READY_SETTLE_MS);
+  }
+
   async function refresh(id: string | null, fed: boolean, rolesOn: boolean) {
     if (!id) {
       questsAgg?.destroy();
@@ -73,6 +93,10 @@
       rawRoles.set([]);
       partnerNames.set({});
       holonName.set("");
+      awaitingReady = false;
+      if (readyTimer) clearTimeout(readyTimer);
+      readyTimer = null;
+      boardReady.set(false);
       booting = false;
       return;
     }
@@ -83,12 +107,17 @@
     } catch (err) {
       console.error("[kiosk] failed to connect", err);
       booting = false;
+      boardReady.set(true); // can't connect — reveal the (empty) board anyway
       return;
     }
     connected.set(true);
 
     // (Re)bind the aggregators when the holon itself changes.
     if (boundHolon !== id) {
+      // New holon → hide the board and wait for its data to settle before
+      // revealing, so the entrance animation plays once on the full set.
+      awaitingReady = true;
+      boardReady.set(false);
       questsAgg?.destroy();
       libraryAgg?.destroy();
       rolesAgg?.destroy();
@@ -108,11 +137,9 @@
       boundHolon = id;
       holonName.set("");
       // Holon display name (best-effort; the screen works without it).
-      hs.get(id, "settings", id)
-        .then((s: any) => {
-          if (boundHolon === id && s?.name) holonName.set(String(s.name));
-        })
-        .catch(() => {});
+      getHolonName(hs, id).then((name) => {
+        if (boundHolon === id && name) holonName.set(name);
+      });
     }
 
     // The Roles lens is optional — spin its aggregator up or down to match the
@@ -147,6 +174,22 @@
       questsAgg?.setHolons(holonIds);
       libraryAgg?.setHolons(holonIds);
       rolesAgg?.setHolons(holonIds);
+
+      // Resolve each partner's name once and fold it into the source-badge map
+      // as it lands (names replicate shortly after we subscribe, so this is
+      // async/progressive rather than blocking). Guarded so a stale holon or a
+      // federation-off toggle can't write a late result; unresolved partners
+      // stay as ids via `sourceLabel`.
+      for (const h of holonIds) {
+        if (h === id) continue;
+        void getHolonName(hs, h).then((name) => {
+          if (name && boundHolon === id && get(federated)) {
+            partnerNames.update((m) =>
+              m[h] === name ? m : { ...m, [h]: name },
+            );
+          }
+        });
+      }
     } catch (err) {
       console.error("[kiosk] federation snapshot failed", err);
     }
@@ -164,6 +207,7 @@
     const teardown = [startClock(), startRotation()];
     return () => {
       teardown.forEach((fn) => fn());
+      if (readyTimer) clearTimeout(readyTimer);
       questsAgg?.destroy();
       libraryAgg?.destroy();
       rolesAgg?.destroy();
@@ -173,6 +217,14 @@
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
   $: if (mounted) refresh($holonIdStore, $federated, $rolesEnabled);
+
+  // While awaiting the first reveal, (re)arm the settle timer on every data
+  // change — including the bind itself, so a holon with no data still reveals.
+  // Referencing the raw stores makes this re-run as the initial burst streams.
+  $: if (mounted && awaitingReady) {
+    void [$rawQuests, $rawLibrary, $rawRoles];
+    armReady();
+  }
 
   // Apply the chosen accent as the `--teal` family on :root so every component
   // (header, views, modals) picks it up. `--teal-deep` is derived a shade darker.

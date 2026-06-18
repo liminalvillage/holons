@@ -8,6 +8,7 @@
     brandName,
     brandLogo,
     userMenuOpen,
+    searchQuery,
     now,
     rotating,
     flipProgress,
@@ -46,6 +47,39 @@
         <span class="wordmark">{brandText || "kiosk"}</span>
       {/if}
     </div>
+
+    <div class="search">
+      <svg
+        class="search__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7" stroke-width="2" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" stroke-width="2" />
+      </svg>
+      <input
+        type="search"
+        class="search__input"
+        placeholder="Search…"
+        aria-label="Search visible content"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        bind:value={$searchQuery}
+      />
+      {#if $searchQuery}
+        <button
+          type="button"
+          class="search__clear"
+          on:click={() => searchQuery.set("")}
+          aria-label="Clear search">&times;</button
+        >
+      {/if}
+    </div>
+
     <div class="right">
       <button
         class="account"
@@ -123,6 +157,76 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
+  }
+
+  /* Search field: a clean pill centered between the brand and the account,
+     above the tabs and the board it filters. */
+  .search {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 26rem;
+    margin: 0 0.5rem;
+    display: flex;
+    align-items: center;
+  }
+  .search__icon {
+    position: absolute;
+    left: 0.75rem;
+    width: 1rem;
+    height: 1rem;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .search__input {
+    width: 100%;
+    height: 2.4rem;
+    padding: 0 2.2rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.95rem;
+    font-family: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background 0.15s ease;
+  }
+  .search__input::placeholder {
+    color: var(--muted);
+  }
+  .search__input:focus {
+    outline: none;
+    background: var(--card);
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 20%, transparent);
+  }
+  /* Hide the browser's native ✕ — we render our own, consistently styled. */
+  .search__input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+  .search__clear {
+    position: absolute;
+    right: 0.5rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.15rem;
+    line-height: 1;
+    color: var(--muted);
+    background: transparent;
+  }
+  .search__clear:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
+  .search__clear:active {
+    transform: scale(0.9);
   }
   .account {
     display: inline-flex;
@@ -207,6 +311,13 @@
     }
     .brand .wordmark {
       font-size: 1.2rem;
+    }
+    .search {
+      margin: 0 0.35rem;
+    }
+    .search__input {
+      height: 2.2rem;
+      padding: 0 2rem;
     }
   }
 
