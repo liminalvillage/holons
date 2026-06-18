@@ -32,11 +32,7 @@ const MARGIN_Y_PX = (A4_HEIGHT_PX - ROWS * CARD_SLOT_HEIGHT_PX) / 2;
 const QR_BASE_URL =
   import.meta.env.VITE_QR_BASE_URL || "https://dashboard.holons.io/qr";
 
-export function buildQRUrl(
-  card: Card,
-  config: DeckConfig,
-  capability?: QRCapabilityToken,
-): string {
+export function buildQRUrl(card: Card, config: DeckConfig): string {
   const params = new URLSearchParams({
     cardId: card.id,
     deckId: config.deckId,
@@ -50,11 +46,6 @@ export function buildQRUrl(
   // so scanning joins that specific item instead of creating a new one.
   if (card.itemId) {
     params.set("itemId", card.itemId);
-  }
-
-  // Embed capability token if provided
-  if (capability) {
-    params.set("cap", encodeCapabilityForUrl(capability));
   }
 
   const baseUrl = config.qrBaseUrl || QR_BASE_URL;
@@ -109,8 +100,6 @@ function sanitizeFilename(name: string): string {
 export interface QRZipOptions {
   cards: Card[];
   config: DeckConfig;
-  /** Optional map of cardId -> capability token */
-  capabilities?: Map<string, QRCapabilityToken>;
   onProgress?: (current: number, total: number) => void;
 }
 
@@ -118,13 +107,12 @@ export interface QRZipOptions {
  * Generate a zip file containing transparent PNG QR codes for all cards
  */
 export async function generateQRZip(options: QRZipOptions): Promise<Blob> {
-  const { cards, config, capabilities, onProgress } = options;
+  const { cards, config, onProgress } = options;
   const zip = new JSZip();
 
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
-    const capability = capabilities?.get(card.id);
-    const qrUrl = buildQRUrl(card, config, capability);
+    const qrUrl = buildQRUrl(card, config);
     const shortUrl = await shortenUrl(qrUrl);
     const qrDataUrl = await generateQRDataUrl(shortUrl, true, 800);
     const qrBlob = dataUrlToBlob(qrDataUrl);
@@ -241,7 +229,7 @@ async function renderPageToCanvas(
 }
 
 export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
-  const { cards, config, capabilities, onProgress } = options;
+  const { cards, config, onProgress } = options;
 
   const pdf = new jsPDF({
     orientation: "landscape",
@@ -262,8 +250,7 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
     const frontHTMLs: string[] = [];
 
     for (const card of pageCards) {
-      const capability = capabilities?.get(card.id);
-      const qrUrl = buildQRUrl(card, config, capability);
+      const qrUrl = buildQRUrl(card, config);
       const shortUrl = await shortenUrl(qrUrl);
       const useTransparentQR = config.cardStyle.qrCode.transparentBackground;
       const qrDataUrl = await generateQRDataUrl(shortUrl, useTransparentQR);
