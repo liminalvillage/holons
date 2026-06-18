@@ -4,12 +4,11 @@
 	import type { HoloSphere } from "holosphere";
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
-	import { nostrPublicKey } from '$lib/stores/nostr';
-	import { awaitName } from '$lib/stores/nameResolver';
+	import { telegramStore, telegramUser } from '$lib/stores/telegram';
 
 	export let data: any;
 
-	$: ({ action, title, desc, holonID, deckId, cardId, itemId, hasValidParams, needsHolonLookup, capability, capabilityStatus, capabilityExpiration } = data);
+	$: ({ action, title, desc, holonID, deckId, cardId, itemId, hasValidParams, needsHolonLookup } = data);
 
 	let holosphere: HoloSphere;
 	let qrActionService: QRActionService;
@@ -21,6 +20,10 @@
 
 	let isLoggedIn = false;
 
+	// The signed-in user's own holon is namespaced by their Telegram id
+	// (see +layout.svelte), so use that for "my dashboard" links.
+	$: myHolonId = $telegramUser ? String($telegramUser.id) : null;
+
 	onMount(async () => {
 		// Get holosphere context (always available — layout requires Splash auth first)
 		holosphere = getContext('holosphere');
@@ -28,30 +31,27 @@
 			qrActionService = new QRActionService(holosphere);
 		}
 
-		const clientPubKey = (holosphere as any)?.client?.publicKey;
-		isLoggedIn = !!clientPubKey;
+		// Identify the acting user by their Telegram identity — the canonical
+		// actor in a Telegram holon. The derived Nostr key still signs the write.
+		let tgUser = telegramStore.getState().user;
+		if (!tgUser) {
+			await telegramStore.init();
+			tgUser = telegramStore.getState().user;
+		}
+		isLoggedIn = !!tgUser?.id;
 
-		// If logged in and we have valid QR params with valid capability, auto-process
-		if (isLoggedIn && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
-			console.log(`[QR Page] User logged in (${clientPubKey.slice(0, 12)}...), processing QR action`);
-
-			// Resolve the user's holon name so tasks/roles show a readable name
-			let userName = clientPubKey.slice(0, 8);
-			try {
-				const resolved = await awaitName(clientPubKey);
-				if (resolved && resolved.length > 8) {
-					userName = resolved;
-				}
-			} catch (err) {
-				console.warn('[QR Page] Could not resolve holon name, using pubkey fallback');
-			}
+		// If logged in and we have valid QR params, auto-process the action
+		if (isLoggedIn && hasValidParams && qrActionService && tgUser) {
+			console.log(`[QR Page] Telegram user ${tgUser.id} logged in, processing QR action`);
 
 			processQRAction({
-				id: clientPubKey,
-				first_name: userName,
-				username: userName,
+				id: tgUser.id,
+				first_name: tgUser.first_name,
+				last_name: tgUser.last_name,
+				username: tgUser.username,
+				photo_url: tgUser.photo_url,
 				auth_date: Math.floor(Date.now() / 1000),
-				hash: clientPubKey
+				hash: ''
 			});
 		}
 	});
@@ -85,9 +85,8 @@
 				holonID: finalHolonID,
 				deckId,
 				cardId,
-				needsHolonLookup,
-				hasCapability: !!capability,
-				capabilityStatus
+				itemId,
+				needsHolonLookup
 			});
 
 			const finalParams = {
@@ -97,8 +96,7 @@
 				holonID: finalHolonID,
 				deckId,
 				cardId,
-				itemId,
-				capability
+				itemId
 			};
 
 			// Validate parameters
@@ -147,57 +145,6 @@
 			</p>
 		</div>
 
-		<!-- Capability Status -->
-		{#if capabilityStatus === 'valid'}
-			<div class="mb-6 bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-4">
-				<div class="flex items-center gap-2 text-green-400 font-semibold mb-1">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-					</svg>
-					Verified Capability
-				</div>
-				<p class="text-green-200 text-sm">
-					This QR code is authorized by the holon owner.
-				</p>
-			</div>
-		{:else if capabilityStatus === 'expired'}
-			<div class="mb-6 bg-orange-900 bg-opacity-30 border border-orange-500 rounded-lg p-4">
-				<div class="flex items-center gap-2 text-orange-400 font-semibold mb-1">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-					</svg>
-					Capability Expired
-				</div>
-				<p class="text-orange-200 text-sm">
-					This QR code has expired and can no longer be used.
-				</p>
-			</div>
-		{:else if capabilityStatus === 'invalid'}
-			<div class="mb-6 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
-				<div class="flex items-center gap-2 text-red-400 font-semibold mb-1">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-					</svg>
-					Invalid Capability
-				</div>
-				<p class="text-red-200 text-sm">
-					This QR code has an invalid or tampered capability token.
-				</p>
-			</div>
-		{:else if capabilityStatus === 'none' && hasValidParams}
-			<div class="mb-6 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
-				<div class="flex items-center gap-2 text-red-400 font-semibold mb-1">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-					</svg>
-					Unauthorized QR Code
-				</div>
-				<p class="text-red-200 text-sm">
-					This QR code is not authorized. It requires a valid capability token signed by the holon owner.
-				</p>
-			</div>
-		{/if}
-
 		<!-- Parameter Validation -->
 		{#if !hasValidParams}
 			<div class="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4 mb-6">
@@ -209,7 +156,7 @@
 		{/if}
 
 		<!-- Main Content -->
-		{#if hasValidParams && capabilityStatus === 'valid'}
+		{#if hasValidParams}
 
 			<!-- Processing State -->
 			{#if isProcessingAction}
@@ -255,16 +202,16 @@
 						<h3 class="text-lg font-semibold text-white mb-2">Action Completed</h3>
 						<p class="text-green-200 text-sm mb-4">{actionResult.message}</p>
 
-						{#if $nostrPublicKey && resolvedHolonID && $nostrPublicKey === resolvedHolonID}
+						{#if resolvedHolonID}
 							<button
 								on:click={() => goto(actionResult?.redirectUrl || `/${resolvedHolonID}/dashboard`)}
 								class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
 							>
 								Go to Holon
 							</button>
-						{:else if $nostrPublicKey}
+						{:else if myHolonId}
 							<button
-								on:click={() => goto(`/${$nostrPublicKey}/dashboard`)}
+								on:click={() => goto(`/${myHolonId}/dashboard`)}
 								class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
 							>
 								Go to My Dashboard
@@ -286,9 +233,9 @@
 						>
 							Dismiss
 						</button>
-						{#if $nostrPublicKey}
+						{#if myHolonId}
 							<button
-								on:click={() => goto(`/${$nostrPublicKey}/dashboard`)}
+								on:click={() => goto(`/${myHolonId}/dashboard`)}
 								class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1 rounded transition-colors"
 							>
 								Go to My Dashboard
@@ -297,25 +244,6 @@
 					</div>
 				</div>
 			{/if}
-		{:else if hasValidParams && capabilityStatus !== 'valid'}
-			<!-- Has params but capability is not valid - message already shown above -->
-			<div class="bg-gray-800 rounded-2xl p-6 text-center">
-				<div class="text-gray-400 mb-4">
-					<svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-					</svg>
-				</div>
-				<h3 class="text-lg font-semibold text-white mb-2">Cannot Execute Action</h3>
-				<p class="text-gray-400 text-sm">
-					{#if capabilityStatus === 'expired'}
-						This QR code has expired. Please request a new one from the holon owner.
-					{:else if capabilityStatus === 'invalid'}
-						This QR code has been tampered with or is corrupted.
-					{:else}
-						This QR code requires authorization. Please use a QR code with a valid capability token.
-					{/if}
-				</p>
-			</div>
 		{:else}
 			<!-- Invalid Parameters -->
 			<div class="bg-gray-800 rounded-2xl p-6 text-center">

@@ -1,14 +1,6 @@
 import type { HoloSphere } from "holosphere";
 // @ts-ignore — registry is exported from holosphere ESM but missing from type declarations
 import { registry } from "holosphere";
-import type {
-  QRCapabilityToken,
-  CapabilityValidationResult,
-} from "$lib/capabilities/qrCapability";
-import {
-  validateCapability,
-  isCapabilityValid,
-} from "$lib/capabilities/qrCapability";
 import { addParticipant as addTaskParticipant } from "@holons/core/tasks";
 import {
   clearParticipants as clearRoleParticipants,
@@ -37,8 +29,6 @@ export interface QRActionParams {
    * scanner to that specific quest/role rather than creating a new one.
    */
   itemId?: string;
-  /** Optional capability token for authorization */
-  capability?: QRCapabilityToken | null;
 }
 
 export interface QRActionResult {
@@ -88,45 +78,39 @@ export class QRActionService {
   }
 
   /**
-   * Writes data to holosphere with capability-based authorization.
-   * For the holon owner, writes succeed without a token.
-   * For non-owners, uses externalWriter mode — the QR capability was already
-   * validated via Schnorr signature, so holosphere skips its own auth and
-   * registers the writer's pubkey for read visibility.
+   * Writes data to holosphere on behalf of the scanning user. Same path the
+   * rest of the dashboard uses to act on a holon's lens.
    */
-  private async putWithCapability(
+  private async putItem(
     holonID: string,
     lens: string,
     data: any,
-    capability: QRCapabilityToken | null | undefined,
   ): Promise<void> {
-    const clientPubKey = (this.holosphere as any).client?.publicKey;
-    const isOwner = clientPubKey === holonID;
-
-    if (isOwner || !capability) {
-      await this.holosphere.put(holonID, lens, data);
-    } else {
-      // Non-owner with valid capability: use externalWriter to bypass holosphere auth
-      // (capability was already verified via Schnorr signature at the app level)
-      console.log(`[putWithCapability] externalWriter write`, {
-        lens,
-        holonID: holonID?.slice(0, 12),
-        writer: clientPubKey?.slice(0, 12),
-        hasCap: !!capability,
-      });
-      await (this.holosphere as any).write(holonID, lens, data, {
-        externalWriter: true,
-      });
-    }
+    await this.holosphere.put(holonID, lens, data);
   }
 
   /**
-   * Stores an inbound read capability in the scanner's federation registry
-   * so that holosphere.get() can find it via _getCapabilityForAuthor().
-   * This grants the scanning user read access to the entire holon.
+   * Reads a single item from a (possibly other) holon. On a fresh scan the
+   * item is a cold cross-holon read, so we wait for the network rather than
+   * letting Gun's synchronous miss report it as not-found.
    */
-  private async storeReadCapability(params: QRActionParams): Promise<void> {
-    if (!params.capability || !params.holonID) return;
+  private async getItem(
+    holonID: string,
+    lens: string,
+    key: string,
+  ): Promise<any> {
+    return (this.holosphere as any).get(holonID, lens, key, null, {
+      awaitNetwork: true,
+    });
+  }
+
+  /**
+   * Stores an inbound read grant in the scanner's federation registry so that
+   * holosphere.get() can find it via _getCapabilityForAuthor(). This grants the
+   * scanning user read access to the holon they just acted on.
+   */
+  private async storeReadAccess(holonID: string): Promise<void> {
+    if (!holonID) return;
 
     const hs = this.holosphere as any;
     const client = hs.client;
@@ -137,19 +121,19 @@ export class QRActionService {
       await registry.storeInboundCapability(
         client,
         appName,
-        params.holonID, // partner = the holon whose data we want to read
+        holonID, // partner = the holon whose data we want to read
         {
-          token: "qr_capability",
-          scope: { holonId: params.holonID, lensName: "*", dataId: "*" },
+          token: "qr_link",
+          scope: { holonId: holonID, lensName: "*", dataId: "*" },
           permissions: ["read"],
-          expires: params.capability.expiresAt || null,
+          expires: null,
         },
       );
       console.log(
-        `[QRActionService] Stored inbound read capability for holon ${params.holonID.slice(0, 12)}...`,
+        `[QRActionService] Stored inbound read access for holon ${holonID.slice(0, 12)}...`,
       );
     } catch (err) {
-      console.warn("[QRActionService] Failed to store read capability:", err);
+      console.warn("[QRActionService] Failed to store read access:", err);
     }
   }
 
@@ -188,73 +172,14 @@ export class QRActionService {
       last_active: new Date().toISOString(),
     };
     userData.last_active = new Date().toISOString();
-    await this.putWithCapability(
-      params.holonID,
+    await this.putItem(params.holonID,
       "users",
-      userData,
-      params.capability,
-    );
-  }
-
-  /**
-   * Ensures the record we're about to mutate is the one the capability
-   * authorized. The signed capability is scoped to the item's title
-   * (cap.itemId); reject if the loaded record's title no longer matches.
-   */
-  private titleAuthorized(record: any, params: QRActionParams): boolean {
-    const capTitle = params.capability?.itemId;
-    if (!capTitle) return true; // capability isn't item-scoped
-    return record?.title === capTitle;
-  }
-
-  /**
-   * Verifies a capability token for the requested action.
-   * Returns a validation result indicating if the action is authorized.
-   * Capability tokens are REQUIRED - actions without valid capabilities are rejected.
-   *
-   * @private
-   * @param {QRActionParams} params - The action parameters including capability
-   * @returns {CapabilityValidationResult} The validation result
-   */
-  private verifyCapability(params: QRActionParams): CapabilityValidationResult {
-    // Capability is required - reject if not provided
-    if (!params.capability) {
-      console.error(
-        `[QRActionService] No capability token provided for action: ${params.action}. Action rejected.`,
-      );
-      return {
-        valid: false,
-        reason: "Capability token required. This QR code is not authorized.",
-        code: "MALFORMED",
-      };
-    }
-
-    // Validate the capability token
-    const validation = validateCapability(
-      params.capability,
-      params.holonID,
-      params.action,
-      params.title, // itemId restriction
-    );
-
-    if (!validation.valid) {
-      console.error(
-        `[QRActionService] Capability validation failed:`,
-        validation,
-      );
-    } else {
-      console.log(
-        `[QRActionService] Capability verified successfully for action: ${params.action}`,
-      );
-    }
-
-    return validation;
+      userData);
   }
 
   /**
    * Processes a QR code action based on the provided parameters.
    * Routes to the appropriate handler based on action type.
-   * Verifies capability token before allowing any write operations.
    *
    * @async
    * @param {QRActionParams} params - The QR code action parameters
@@ -266,24 +191,9 @@ export class QRActionService {
     user: TelegramUser,
   ): Promise<QRActionResult> {
     try {
-      // Verify capability token before processing any action
-      const capabilityValidation = this.verifyCapability(params);
-      if (!capabilityValidation.valid) {
-        console.error(
-          `[QRActionService] Action blocked - capability validation failed:`,
-          capabilityValidation,
-        );
-        return {
-          success: false,
-          message: capabilityValidation.reason || "Authorization failed",
-          error: capabilityValidation.code || "UNAUTHORIZED",
-        };
-      }
-
-      // Store an inbound read capability so the scanner can read the entire holon.
-      // The QR capability was signed by the holon owner, so this is a legitimate grant.
-      // holosphere's read() calls _getCapabilityForAuthor() which checks inboundCapabilities.
-      await this.storeReadCapability(params);
+      // Grant the scanner read access to the holon they're acting on so the
+      // result (and redirect target) is readable afterwards.
+      await this.storeReadAccess(params.holonID);
 
       const normalizedAction = params.action.toLowerCase();
       switch (normalizedAction) {
@@ -342,19 +252,12 @@ export class QRActionService {
       // participants without disturbing the others. Participant management is
       // delegated to @holons/core/roles (idempotent, normalized).
       if (params.itemId) {
-        const existing = await this.holosphere.get(
+        const existing = await this.getItem(
           params.holonID,
           "roles",
           params.itemId,
         );
         if (existing && existing.title) {
-          if (!this.titleAuthorized(existing, params)) {
-            return {
-              success: false,
-              message: "This card is not authorized for this role.",
-              error: "ITEM_MISMATCH",
-            };
-          }
           await this.saveUserRecord(params, user);
           // A role is held by one person: taking it over via QR kicks out the
           // previous holder(s) and installs the scanner as the role's holder,
@@ -363,12 +266,9 @@ export class QRActionService {
             clearRoleParticipants(existing),
             this.participantFor(user),
           );
-          await this.putWithCapability(
-            params.holonID,
+          await this.putItem(params.holonID,
             "roles",
-            updated,
-            params.capability,
-          );
+            updated);
           console.log(
             `[QRActionService] Assigned user ${user.id} as sole holder of role ${params.itemId}`,
           );
@@ -404,12 +304,9 @@ export class QRActionService {
 
       // Save user data (without roles - roles are managed separately in roles collection)
       console.log(`[QRActionService] Saving user data for user ${user.id}`);
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
       console.log(`[QRActionService] User data saved successfully`);
 
       // Check if role exists, create it if it doesn't exist
@@ -518,12 +415,9 @@ export class QRActionService {
         `[QRActionService] Put parameters - HolonID: ${params.holonID}, Collection: roles, Data:`,
         roleData,
       );
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "roles",
-        roleData,
-        params.capability,
-      );
+        roleData);
       console.log(
         `[QRActionService] Role data saved successfully with key: ${roleKey}`,
       );
@@ -631,21 +525,12 @@ export class QRActionService {
             previous_participants_count: isNewRole
               ? 0
               : roleData.participants?.length || 0,
-            // Capability audit info
-            capability_used: !!params.capability,
-            capability_id: params.capability?.id || null,
-            capability_issuer:
-              params.capability?.issuerPubKey?.substring(0, 16) || null,
-            capability_expires: params.capability?.expiresAt || null,
           },
         };
 
-        await this.putWithCapability(
-          params.holonID,
+        await this.putItem(params.holonID,
           "audit_logs",
-          auditLog,
-          params.capability,
-        );
+          auditLog);
         console.log(`[QRActionService] Audit log created for role assignment`);
       } catch (auditError) {
         console.warn(
@@ -699,30 +584,20 @@ export class QRActionService {
       // If the card targets an existing event, add the scanner to it (events are
       // stored as quests) rather than creating a new scheduled one.
       if (params.itemId) {
-        const existing = await this.holosphere.get(
+        const existing = await this.getItem(
           params.holonID,
           "quests",
           params.itemId,
         );
         if (existing && existing.title) {
-          if (!this.titleAuthorized(existing, params)) {
-            return {
-              success: false,
-              message: "This card is not authorized for this event.",
-              error: "ITEM_MISMATCH",
-            };
-          }
           await this.saveUserRecord(params, user);
           const updated = addTaskParticipant(
             existing,
             this.participantFor(user),
           );
-          await this.putWithCapability(
-            params.holonID,
+          await this.putItem(params.holonID,
             "quests",
-            updated,
-            params.capability,
-          );
+            updated);
           console.log(
             `[QRActionService] Added user ${user.id} to existing event ${params.itemId}`,
           );
@@ -757,12 +632,9 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Calculate event time - 12 hours from now
       const eventTime = new Date();
@@ -812,12 +684,9 @@ export class QRActionService {
       );
 
       // Save quest data using the event ID as key
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "quests",
-        questData,
-        params.capability,
-      );
+        questData);
 
       console.log(
         `[QRActionService] Event Quest created successfully for user ${user.id} to event ${params.title}`,
@@ -868,30 +737,20 @@ export class QRActionService {
       // If the card targets an existing quest, add the scanner to it rather than
       // creating a new one. Participant management is delegated to @holons/core.
       if (params.itemId) {
-        const existing = await this.holosphere.get(
+        const existing = await this.getItem(
           params.holonID,
           "quests",
           params.itemId,
         );
         if (existing && existing.title) {
-          if (!this.titleAuthorized(existing, params)) {
-            return {
-              success: false,
-              message: "This card is not authorized for this item.",
-              error: "ITEM_MISMATCH",
-            };
-          }
           await this.saveUserRecord(params, user);
           const updated = addTaskParticipant(
             existing,
             this.participantFor(user),
           );
-          await this.putWithCapability(
-            params.holonID,
+          await this.putItem(params.holonID,
             "quests",
-            updated,
-            params.capability,
-          );
+            updated);
           console.log(
             `[QRActionService] Added user ${user.id} to existing quest ${params.itemId}`,
           );
@@ -926,12 +785,9 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Generate a unique task ID
       const taskId = `task_${params.title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`;
@@ -976,12 +832,9 @@ export class QRActionService {
       );
 
       // Save quest data using the task ID as key
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "quests",
-        questData,
-        params.capability,
-      );
+        questData);
 
       console.log(
         `[QRActionService] Task Quest created successfully for user ${user.id} to task ${params.title}`,
@@ -1040,12 +893,9 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Check if badge exists, create it if it doesn't
       const badgeKey = params.title; // Use title as consistent key
@@ -1099,12 +949,9 @@ export class QRActionService {
       badgeData.last_modified_by = user.id.toString();
 
       // Save badge data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "badges",
-        badgeData,
-        params.capability,
-      );
+        badgeData);
 
       console.log(
         `[QRActionService] Badge award completed successfully for user ${user.id} to badge ${params.title}`,
@@ -1168,12 +1015,9 @@ export class QRActionService {
       });
 
       // Save user data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Check if invite exists, create it if it doesn't
       let inviteData = await this.holosphere.get(
@@ -1211,12 +1055,9 @@ export class QRActionService {
       }
 
       // Save invite data
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "invites",
-        inviteData,
-        params.capability,
-      );
+        inviteData);
 
       return {
         success: true,
@@ -1269,12 +1110,9 @@ export class QRActionService {
       };
 
       userData.last_active = new Date().toISOString();
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Generate a unique resource ID
       const resourceId = `resource_${params.title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`;
@@ -1304,12 +1142,9 @@ export class QRActionService {
         },
       };
 
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "resources",
-        resourceData,
-        params.capability,
-      );
+        resourceData);
 
       console.log(
         `[QRActionService] Resource created successfully: ${params.title}`,
@@ -1366,12 +1201,9 @@ export class QRActionService {
       };
 
       userData.last_active = new Date().toISOString();
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "users",
-        userData,
-        params.capability,
-      );
+        userData);
 
       // Generate a unique vibe ID
       const vibeId = `vibe_${user.id}_${Date.now()}`;
@@ -1399,12 +1231,9 @@ export class QRActionService {
         },
       };
 
-      await this.putWithCapability(
-        params.holonID,
+      await this.putItem(params.holonID,
         "vibes",
-        vibeData,
-        params.capability,
-      );
+        vibeData);
 
       console.log(
         `[QRActionService] Vibe recorded successfully: ${params.title}`,
@@ -1454,12 +1283,11 @@ export class QRActionService {
    * Validates QR code parameters before processing.
    *
    * @param {QRActionParams} params - The QR code parameters to validate
-   * @returns {{isValid: boolean, errors: string[], capabilityStatus: string}} Validation result with any errors
+   * @returns {{isValid: boolean, errors: string[]}} Validation result with any errors
    */
   validateQRParams(params: QRActionParams): {
     isValid: boolean;
     errors: string[];
-    capabilityStatus?: string;
   } {
     const errors: string[] = [];
 
@@ -1484,24 +1312,9 @@ export class QRActionService {
       );
     }
 
-    // Capability is required
-    let capabilityStatus = "none";
-    if (!params.capability) {
-      errors.push("Capability token is required");
-    } else if (isCapabilityValid(params.capability)) {
-      capabilityStatus = "valid";
-    } else if (params.capability.expiresAt <= Date.now()) {
-      capabilityStatus = "expired";
-      errors.push("Capability token has expired");
-    } else {
-      capabilityStatus = "invalid";
-      errors.push("Capability token is invalid");
-    }
-
     return {
       isValid: errors.length === 0,
       errors,
-      capabilityStatus,
     };
   }
 }
