@@ -58,6 +58,32 @@
   let showAddColumn = $state(false);
   let newColumnName = $state('');
 
+  // The board fills the space from its own top down to the bottom of the
+  // viewport, measured live — so the whole interface fits the screen instead
+  // of overflowing. (The old fixed `100vh - 280px` ignored the real, variable
+  // chrome above the board.) Each column then scrolls its own cards.
+  let boardEl = $state<HTMLElement | null>(null);
+  let boardHeight = $state<number | null>(null);
+
+  $effect(() => {
+    if (!boardEl || typeof window === 'undefined') return;
+    const el = boardEl;
+    const recompute = () => {
+      const top = el.getBoundingClientRect().top;
+      // Leave room for the board's bottom padding + the surrounding card padding.
+      boardHeight = Math.max(240, Math.round(window.innerHeight - top - 40));
+    };
+    recompute();
+    window.addEventListener('resize', recompute);
+    // Recompute when anything above the board reflows (filters, banners, etc.).
+    const ro = new ResizeObserver(recompute);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      ro.disconnect();
+    };
+  });
+
   const flipDurationMs = 200;
 
   // Group quests by column
@@ -246,6 +272,8 @@
   {:else}
     <div
       class="kanban-board"
+      bind:this={boardEl}
+      style={boardHeight != null ? `height: ${boardHeight}px` : ''}
       use:dndzone={{
         items: columnItems,
         flipDurationMs,
@@ -338,7 +366,9 @@
   .kanban-board {
     display: flex;
     gap: 1rem;
-    height: calc(100vh - 280px);
+    /* Fallback height before the measured value (above) takes over on mount;
+       the inline `height` keeps the board within the viewport at runtime. */
+    height: calc(100dvh - 240px);
     overflow-x: auto;
     overflow-y: hidden;
     padding: 0 1rem 1rem;
