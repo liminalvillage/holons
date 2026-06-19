@@ -818,7 +818,7 @@
 				<h3 class="font-semibold mb-2 text-sm">Print Instructions</h3>
 				<ol class="text-xs text-gray-400 space-y-1 list-decimal list-inside">
 					<li>Generate and download PDF</li>
-					<li>Print double-sided (flip on short edge)</li>
+					<li>Print double-sided (flip on long edge)</li>
 					<li>Cut along dashed lines</li>
 				</ol>
 			</div>

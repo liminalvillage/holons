@@ -150,11 +150,15 @@ function createPageHTML(
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const index = row * COLS + col;
-      const actualCol = mirrored ? COLS - 1 - col : col;
+      // Backs are mirrored so they align with the fronts after the sheet is
+      // turned over. The page is A4 landscape, so its long edge is the
+      // horizontal (top/bottom) edge: flipping on the long edge is a vertical
+      // mirror, which means inverting the rows (not the columns).
+      const actualRow = mirrored ? ROWS - 1 - row : row;
       const cardHTML = cardHTMLs[index] || "";
 
-      const left = MARGIN_X_PX + actualCol * CARD_SLOT_WIDTH_PX;
-      const top = MARGIN_Y_PX + row * CARD_SLOT_HEIGHT_PX;
+      const left = MARGIN_X_PX + col * CARD_SLOT_WIDTH_PX;
+      const top = MARGIN_Y_PX + actualRow * CARD_SLOT_HEIGHT_PX;
 
       gridHTML += `
 				<div style="
