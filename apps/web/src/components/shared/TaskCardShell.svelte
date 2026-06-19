@@ -56,8 +56,14 @@
 
 	const completed = $derived(item.status === 'completed');
 	const hologram = $derived(!!item._hologram?.isHologram);
+	const isCanvas = $derived(variant === 'canvas');
+
+	// Card colour follows the item's category in every view. On the canvas a
+	// completed note turns green to match the minimap dot.
 	const baseBg = $derived(
-		completed ? '#374151' : getColorFromCategory(item.category, item.type),
+		completed
+			? isCanvas ? '#10b981' : '#374151'
+			: getColorFromCategory(item.category, item.type),
 	);
 	// Red overlay intensity ramps from 0 at "just due" to ~0.55 once a task is
 	// a week overdue. Capped so the title stays readable.
@@ -123,10 +129,25 @@
 		--card-radius: 0.5rem;
 	}
 	.task-card-shell--canvas {
-		--card-padding: 0.5rem;
-		--card-radius: 0.5rem;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-			0 2px 4px -1px rgba(0, 0, 0, 0.06);
+		/* Square "post-it" note (kiosk look & feel). A flex column lets the
+		   title fill the card and the footer pin to the bottom; the fixed
+		   aspect-ratio keeps the card a constant size whatever its content,
+		   which also keeps the dependency arrows (anchored to the card box)
+		   aligned when a task is completed. */
+		aspect-ratio: 1;
+		display: flex;
+		flex-direction: column;
+		--card-padding: 0.8rem 0.85rem;
+		--card-radius: 4px 16px 16px 16px;
+		box-shadow:
+			1px 6px 10px -3px rgba(28, 48, 46, 0.28),
+			0 2px 4px rgba(28, 48, 46, 0.12);
+	}
+	.task-card-shell--canvas:hover {
+		transform: translateY(-2px);
+		box-shadow:
+			2px 12px 22px -4px rgba(28, 48, 46, 0.34),
+			0 3px 6px rgba(28, 48, 46, 0.16);
 	}
 
 	.task-card-shell.is-completed {
@@ -136,6 +157,13 @@
 	.task-card-shell.is-completed :global(h3),
 	.task-card-shell.is-completed :global(h4) {
 		text-decoration: line-through;
+	}
+
+	/* On the canvas, a completed card reads as green (baseBg above, matching the
+	   minimap dot) rather than the default dimmed grey, and stays a touch more
+	   opaque than other views so the green is obvious once "show completed" is on. */
+	.task-card-shell--canvas.is-completed {
+		opacity: 0.85;
 	}
 
 	.task-card-shell.is-hologram {

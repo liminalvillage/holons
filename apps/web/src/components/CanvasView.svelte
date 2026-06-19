@@ -121,7 +121,7 @@
     let generatedInboxPositions = new Map<string, { x: number; y: number }>(); // Cache for generated inbox positions
 
     const CARD_WIDTH = 320; // Based on w-80 class (20rem * 16px/rem)
-    const CARD_HEIGHT_ESTIMATE = 120; // Estimated height for arrow connection
+    const CARD_HEIGHT_ESTIMATE = CARD_WIDTH; // canvas cards are square (see TaskCardShell)
 
     // Track card DOM elements and measure viewport-relative positions
     let cardElements = new Map<string, HTMLElement>();
@@ -392,7 +392,46 @@
     let minimapViewWidth = MINIMAP_WIDTH;
     let minimapViewHeight = MINIMAP_HEIGHT;
 
-    $: if (viewContainer && typeof window !== 'undefined') {
+    // The drawing canvas is a fixed 8000x6000, but task cards usually cluster
+    // near the origin (the inbox sits around 200,200). Mapping card coordinates
+    // against the full canvas crams every dot into the minimap's top-left
+    // corner. Instead, fit the bounding box of the actual cards into the minimap
+    // with a single uniform scale, so the dots mirror the on-screen layout.
+    $: minimapTransform = (() => {
+        const PAD = 400; // canvas-px breathing room around the content
+        const MIN_SPAN_X = 1600; // floor on span so a lone card isn't blown up
+        const MIN_SPAN_Y = 1200; // (4:3 to match the 120x90 minimap)
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const card of questCards) {
+            minX = Math.min(minX, card.x);
+            minY = Math.min(minY, card.y);
+            maxX = Math.max(maxX, card.x + CARD_WIDTH);
+            maxY = Math.max(maxY, card.y + CARD_HEIGHT_ESTIMATE);
+        }
+        if (!isFinite(minX)) {
+            // No cards yet: center on the inbox area.
+            minX = maxX = INBOX_CENTER.x;
+            minY = maxY = INBOX_CENTER.y;
+        }
+
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const spanX = Math.max(maxX - minX + PAD * 2, MIN_SPAN_X);
+        const spanY = Math.max(maxY - minY + PAD * 2, MIN_SPAN_Y);
+
+        // Uniform scale preserves aspect ratio; offsets center it in the box.
+        const scale = Math.min(MINIMAP_WIDTH / spanX, MINIMAP_HEIGHT / spanY);
+        return {
+            minX: cx - spanX / 2,
+            minY: cy - spanY / 2,
+            scale,
+            offsetX: (MINIMAP_WIDTH - spanX * scale) / 2,
+            offsetY: (MINIMAP_HEIGHT - spanY * scale) / 2
+        };
+    })();
+
+    $: if (viewContainer && typeof window !== 'undefined' && minimapTransform) {
         const containerRect = viewContainer.getBoundingClientRect();
         
         // Calculate the visible area in canvas coordinates
@@ -405,11 +444,11 @@
         const visibleWidth = containerRect.width / zoom;
         const visibleHeight = containerRect.height / zoom;
         
-        // Convert to minimap coordinates
-        const viewX = (visibleLeft / CANVAS_WIDTH) * MINIMAP_WIDTH;
-        const viewY = (visibleTop / CANVAS_HEIGHT) * MINIMAP_HEIGHT;
-        const viewWidth = (visibleWidth / CANVAS_WIDTH) * MINIMAP_WIDTH;
-        const viewHeight = (visibleHeight / CANVAS_HEIGHT) * MINIMAP_HEIGHT;
+        // Convert to minimap coordinates using the same fitted transform as the dots
+        const viewX = minimapTransform.offsetX + (visibleLeft - minimapTransform.minX) * minimapTransform.scale;
+        const viewY = minimapTransform.offsetY + (visibleTop - minimapTransform.minY) * minimapTransform.scale;
+        const viewWidth = visibleWidth * minimapTransform.scale;
+        const viewHeight = visibleHeight * minimapTransform.scale;
         
         // Update reactive variables
         minimapViewX = Math.max(0, Math.min(MINIMAP_WIDTH - viewWidth, viewX));
@@ -428,9 +467,9 @@
         const clickX = event.clientX - minimapRect.left;
         const clickY = event.clientY - minimapRect.top;
 
-        // Convert minimap coordinates to canvas coordinates
-        const canvasX = (clickX / MINIMAP_WIDTH) * CANVAS_WIDTH;
-        const canvasY = (clickY / MINIMAP_HEIGHT) * CANVAS_HEIGHT;
+        // Convert minimap coordinates to canvas coordinates (inverse of the fitted transform)
+        const canvasX = minimapTransform.minX + (clickX - minimapTransform.offsetX) / minimapTransform.scale;
+        const canvasY = minimapTransform.minY + (clickY - minimapTransform.offsetY) / minimapTransform.scale;
 
         // Center the view on the clicked point
         const containerRect = viewContainer.getBoundingClientRect();
@@ -2012,8 +2051,8 @@
                 
                 <!-- Task cards as dots -->
                 {#each questCards as card}
-                    {@const minimapX = (card.x / CANVAS_WIDTH) * 120}
-                    {@const minimapY = (card.y / CANVAS_HEIGHT) * 90}
+                    {@const minimapX = minimapTransform.offsetX + (card.x + CARD_WIDTH / 2 - minimapTransform.minX) * minimapTransform.scale}
+                    {@const minimapY = minimapTransform.offsetY + (card.y + CARD_HEIGHT_ESTIMATE / 2 - minimapTransform.minY) * minimapTransform.scale}
                     <div 
                         class="absolute rounded-full border border-white"
                         style="left: {minimapX - 2}px; 
@@ -2316,18 +2355,17 @@
             {#each questCards as card (card.key)}
                 {#if card.quest.dependencies && card.quest.dependencies.length > 0}
                     {#each card.quest.dependencies as dependencyId}
-                        <marker 
+                        <marker
                             id="arrowhead-{card.key}-{dependencyId}"
-                            markerWidth="10" 
-                            markerHeight="7" 
-                            refX="9" 
-                            refY="3.5" 
+                            markerWidth="7"
+                            markerHeight="6"
+                            refX="6"
+                            refY="3"
                             orient="auto"
                         >
-                            <polygon 
-                                points="0 0, 10 3.5, 0 7" 
-                                fill="#3B82F6" 
-                                opacity="0.8"
+                            <polygon
+                                points="0 0, 7 3, 0 6"
+                                fill="#9ca3af"
                             />
                         </marker>
                     {/each}
@@ -2382,10 +2420,10 @@
 
                                 <path
                                     d="M {start.x} {start.y} C {c1x} {c1y}, {c2x} {c2y}, {end.x} {end.y}"
-                                    stroke="#3B82F6"
-                                    stroke-width="2"
+                                    stroke="#9ca3af"
+                                    stroke-width="1.5"
                                     fill="none"
-                                    opacity="0.8"
+                                    opacity="0.7"
                                     marker-end="url(#arrowhead-{card.key}-{dependencyId})"
                                 />
                             {/if}

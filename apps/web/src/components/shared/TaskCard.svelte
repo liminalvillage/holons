@@ -113,6 +113,62 @@
 	{ariaLabel}
 	{extraClass}
 >
+	{#if variant === 'canvas'}
+		<!-- Canvas "post-it": the title is the hero; a kiosk-style footer carries
+		     the appreciation heart and the participant avatars. -->
+		<div class="note">
+			<h3 class="note-title"><span class="note-title-text">{quest.title}</span></h3>
+
+			{#if quest.picture}
+				<img
+					class="note-thumb"
+					src={resolveImage(quest.picture)}
+					alt={quest.title}
+					loading="lazy"
+					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+				/>
+			{/if}
+
+			{#if quest.category || quest.when}
+				<div class="note-meta">
+					{#if quest.category}<span class="note-tag">{quest.category}</span>{/if}
+					{#if quest.when}<span class="note-when">{formatDate(quest.when)}</span>{/if}
+				</div>
+			{/if}
+
+			<div class="note-foot">
+				<span class="note-heart" class:on={(quest.appreciation?.length ?? 0) > 0}>
+					<span class="note-heart-glyph" aria-hidden="true">♥</span>
+					{#if quest.appreciation && quest.appreciation.length > 0}
+						<span class="note-heart-count">{quest.appreciation.length}</span>
+					{/if}
+				</span>
+				{#if displayedParticipants.length > 0}
+					<div
+						class="note-avatars"
+						title={quest.participants?.map(participantLabel).join(', ') ?? ''}
+					>
+						{#each displayedParticipants as participant}
+							<span class="note-av">
+								<span class="note-av-ini">{participantInitial(participant)}</span>
+								{#if participant.id}
+									<img
+										src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+										alt=""
+										loading="lazy"
+										onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+									/>
+								{/if}
+							</span>
+						{/each}
+						{#if extraParticipants > 0}
+							<span class="note-av note-av--more"><span class="note-av-ini">+{extraParticipants}</span></span>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{:else}
 	<div class="card-body">
 		{#if quest.picture}
 			<img
@@ -236,6 +292,7 @@
 			{/if}
 		</div>
 	</div>
+	{/if}
 </TaskCardShell>
 
 <style>
@@ -481,5 +538,143 @@
 		.card-title {
 			font-size: 0.9rem;
 		}
+	}
+
+	/* ---- Canvas "post-it" note: a title-led layout with a kiosk-style footer
+	   (appreciation heart on the left, overlapping participant avatars on the
+	   right). The shell is a square flex column, so the title fills the space
+	   and the footer pins to the bottom. ---- */
+	.note {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		width: 100%;
+	}
+	.note-title {
+		flex: 1 1 auto;
+		min-height: 0;
+		margin: 0;
+		/* Centre the title in the note, both horizontally and vertically. */
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+	}
+	.note-title-text {
+		max-width: 100%;
+		font-size: 2rem;
+		font-size: clamp(1.7rem, 13cqw, 2.8rem);
+		font-weight: 800;
+		line-height: 1.15;
+		color: #20302f;
+		overflow: hidden;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 5;
+		line-clamp: 5;
+		overflow-wrap: anywhere;
+	}
+	.note-thumb {
+		flex: 0 0 auto;
+		width: 100%;
+		max-height: 40%;
+		object-fit: cover;
+		border-radius: 10px;
+		margin-top: 0.45rem;
+		background: rgba(0, 0, 0, 0.06);
+	}
+	.note-meta {
+		flex: 0 0 auto;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.5rem;
+	}
+	.note-tag {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: rgba(32, 48, 47, 0.55);
+	}
+	.note-when {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #20302f;
+		background: rgba(255, 255, 255, 0.55);
+		border-radius: 999px;
+		padding: 0.1rem 0.55rem;
+	}
+	.note-foot {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-top: 0.55rem;
+	}
+	.note-heart {
+		flex: 0 0 auto;
+		display: grid;
+		place-items: center;
+		width: 1.7rem;
+		height: 1.7rem;
+		line-height: 1;
+		color: rgba(154, 59, 47, 0.5);
+	}
+	.note-heart-glyph {
+		grid-area: 1 / 1;
+		font-size: 1.7rem;
+	}
+	.note-heart-count {
+		grid-area: 1 / 1;
+		transform: translateY(0.1em);
+		font-size: 0.6rem;
+		font-weight: 800;
+		color: #fff;
+		text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+	}
+	.note-heart.on {
+		color: #d4493a;
+	}
+	.note-avatars {
+		display: flex;
+		align-items: center;
+	}
+	.note-av {
+		flex: 0 0 auto;
+		position: relative;
+		width: 1.7rem;
+		height: 1.7rem;
+		border-radius: 50%;
+		overflow: hidden;
+		background: #34b3a0;
+		display: grid;
+		place-items: center;
+		margin-left: -0.45rem;
+		box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
+	}
+	.note-av:first-child {
+		margin-left: 0;
+	}
+	.note-av-ini {
+		font-size: 0.72rem;
+		font-weight: 800;
+		color: #fff;
+	}
+	.note-av img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.note-av--more {
+		background: rgba(32, 48, 47, 0.22);
+	}
+	.note-av--more .note-av-ini {
+		color: #20302f;
 	}
 </style>
