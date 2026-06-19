@@ -9,9 +9,12 @@
     openQuest,
     rawQuests,
     holonId,
+    selection,
+    editOnOpen,
   } from "$lib/stores";
-  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
+  import { createTask } from "@holons/core/tasks";
   import { noteColor, noteTilt, type CalendarEvent } from "$lib/data";
   import Avatars from "$lib/components/Avatars.svelte";
 
@@ -158,6 +161,127 @@
     await writer.put("quests", updated);
   }
 
+  // ── Long-press / + to create ──────────────────────────────────────────────-
+  // Holding still on an empty hour, day cell or week row for ~half a second
+  // drops a fresh draft task there and opens the detail card in edit mode. A
+  // bare day (no time component) becomes an all-day task; the hour timeline
+  // also carries the pressed time. New cards are plain tasks (not pure events)
+  // so they show on both the Tasks wall and here. The draft is only written on
+  // Save, so a cancel leaves no trace. Moving past a small threshold (a
+  // scroll/drag) or lifting early aborts, and presses that land on an existing
+  // card are ignored.
+  const LONG_PRESS_MS = 500;
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let pressX = 0;
+  let pressY = 0;
+
+  function newId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function clearPress() {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+    window.removeEventListener("pointermove", onPressMove);
+    window.removeEventListener("pointerup", clearPress);
+    window.removeEventListener("pointercancel", clearPress);
+  }
+
+  function onPressMove(e: PointerEvent) {
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > 10) clearPress();
+  }
+
+  function beginCreatePress(e: PointerEvent) {
+    if (e.button != null && e.button !== 0) return;
+    const el = e.target as HTMLElement;
+    // Never start a create-press on an existing card or control — those carry
+    // their own drag/tap/resize gestures.
+    if (
+      el.closest(
+        ".day-event, .allday-chip, .chip, .note, .resize-handle, .tray-chip",
+      )
+    )
+      return;
+    const dayEl = el.closest<HTMLElement>("[data-day]");
+    if (!dayEl) return;
+    const day = dayEl.dataset.day;
+    if (!day) return;
+    const hasHours = dayEl.dataset.hours != null;
+    const rect = dayEl.getBoundingClientRect();
+    pressX = e.clientX;
+    pressY = e.clientY;
+    const y = e.clientY;
+    pressTimer = setTimeout(() => {
+      clearPress();
+      let min: number | null = null;
+      if (hasHours) {
+        const m = Math.round(((y - rect.top) / HOUR_PX) * 4) * 15;
+        min = Math.min(24 * 60 - 15, Math.max(0, m));
+      }
+      try {
+        navigator.vibrate?.(15);
+      } catch {
+        /* haptics are best-effort */
+      }
+      void createAt(day, min);
+    }, LONG_PRESS_MS);
+    window.addEventListener("pointermove", onPressMove);
+    window.addEventListener("pointerup", clearPress);
+    window.addEventListener("pointercancel", clearPress);
+  }
+
+  // Build a draft task for `day` (and, on the hour timeline, `min` minutes from
+  // midnight) and open it in the detail modal's edit mode. Login-gated, like the
+  // other writes in this view.
+  async function createAt(day: string, min: number | null) {
+    const hid = get(holonId);
+    if (!hid) return;
+    const user = get(telegramUser);
+    if (!user) {
+      loginOpen.set(true);
+      return;
+    }
+    const draft = createTask({
+      holonId: hid,
+      initiator: {
+        id: user.id,
+        username: user.username,
+        firstName: user.first_name,
+        lastName: user.last_name,
+      },
+      title: "",
+    });
+    draft.id = newId();
+    draft.when =
+      min != null
+        ? `${day}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`
+        : day;
+    editOnOpen.set(true); // open straight in edit mode
+    selection.set({ kind: "task", quest: draft, isNew: true });
+  }
+
+  // The + button creates an all-day draft on a day that's currently in view, so
+  // the new card lands where the user is looking: the open day, or today when
+  // it falls inside the shown week/month, else the first day of that period.
+  function defaultCreateDay(): string {
+    const today = startOfDay(get(now));
+    if (mode === "day") return isoDay(anchorDay);
+    if (mode === "week")
+      return isoDay(
+        weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
+      );
+    return isoDay(
+      today.getMonth() === monthAnchor.getMonth() &&
+        today.getFullYear() === monthAnchor.getFullYear()
+        ? today
+        : monthAnchor,
+    );
+  }
+
+  function openCreate() {
+    void createAt(defaultCreateDay(), null);
+  }
+
   // ── Resize: drag a day-event's bottom edge to change its length ───────────--
   let resize: {
     id: string;
@@ -293,6 +417,8 @@
   const HOURS = Array.from({ length: 24 }, (_, h) => h);
   let scrollEl: HTMLElement;
   let rootRem = 16;
+  // Live height of the unscheduled drawer, so the + button rides above it.
+  let trayHeight = 0;
   $: HOUR_PX = Math.round(rootRem * 3.4);
 
   function measureRem() {
@@ -434,12 +560,14 @@
           {@const inMonth = day.getMonth() === monthAnchor.getMonth()}
           {@const isToday = sameDay(day, $now)}
           {@const iso = isoDay(day)}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="cell"
             class:dim={!inMonth}
             class:today={isToday}
             class:drop={dropDay === iso}
             data-day={iso}
+            on:pointerdown={beginCreatePress}
           >
             <span class="num">{day.getDate()}</span>
             <div class="chips">
@@ -471,11 +599,13 @@
           {@const evs = eventsOn(day, $events)}
           {@const isToday = sameDay(day, $now)}
           {@const iso = isoDay(day)}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="row"
             class:today={isToday}
             class:drop={dropDay === iso}
             data-day={iso}
+            on:pointerdown={beginCreatePress}
           >
             <div class="daychip">
               <span class="dow"
@@ -513,10 +643,12 @@
       <!-- day timeline -->
       {@const iso = isoDay(anchorDay)}
       {#if allDayEvents.length}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="allday"
           class:drop={dropDay === iso && dropMin === null}
           data-day={iso}
+          on:pointerdown={beginCreatePress}
         >
           <span class="allday-label">all day</span>
           <div class="allday-items">
@@ -537,11 +669,13 @@
         </div>
       {/if}
 
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="hours"
         data-day={iso}
         data-hours="1"
         style="height: {24 * HOUR_PX}px;"
+        on:pointerdown={beginCreatePress}
       >
         {#each HOURS as h}
           <div class="hour" style="top: {h * HOUR_PX}px;">
@@ -620,7 +754,7 @@
   </div>
 
   {#if unscheduled.length}
-    <div class="tray">
+    <div class="tray" bind:clientHeight={trayHeight}>
       <span class="tray-label">Unscheduled — drag onto a day</span>
       <div class="tray-items scroll">
         {#each unscheduled as task (task.id)}
@@ -640,6 +774,16 @@
       </div>
     </div>
   {/if}
+
+  <button
+    class="fab"
+    on:click={openCreate}
+    aria-label="New task"
+    title="New task"
+    style="bottom: {unscheduled.length
+      ? `calc(${trayHeight}px + 1rem)`
+      : '1.3rem'};">＋</button
+  >
 </div>
 
 {#if drag}
@@ -658,6 +802,7 @@
      shrinks/scrolls — the header (date + day/week/month) and the drawer can
      never be pushed out of view, even when the drawer appears. */
   .cal {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: grid;
@@ -666,6 +811,32 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
+  }
+
+  /* "New task" floating button — pinned to the corner, lifted above the
+     unscheduled drawer when it's present (see the inline `bottom`). */
+  .fab {
+    position: absolute;
+    right: 1.3rem;
+    width: 3.4rem;
+    height: 3.4rem;
+    border-radius: 50%;
+    font-size: 2rem;
+    line-height: 1;
+    color: #fff;
+    background: var(--teal);
+    box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
+    display: grid;
+    place-items: center;
+    z-index: 7;
+    transition:
+      transform 0.12s ease,
+      background 0.15s ease,
+      bottom 0.18s ease;
+  }
+  .fab:active {
+    transform: scale(0.92);
+    background: var(--teal-deep);
   }
   .scrollarea {
     min-width: 0;

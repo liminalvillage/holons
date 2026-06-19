@@ -74,6 +74,9 @@
   $: sel = $selection;
   $: isThing = sel?.kind === "thing";
   $: quest = sel && sel.kind !== "thing" ? sel.quest : null;
+  // A locally-built draft (e.g. long-press on the calendar) not yet written to
+  // Holosphere: Cancel discards it and Save needs a title before it can land.
+  $: isNew = !!(sel && sel.kind !== "thing" && sel.isNew);
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
 
@@ -572,8 +575,10 @@
             <button class="ghost" on:click={startEdit} disabled={saving}
               >Edit</button
             >
-            <button class="ghost danger" on:click={deleteQuest} disabled={saving}
-              >Delete</button
+            <button
+              class="ghost danger"
+              on:click={deleteQuest}
+              disabled={saving}>Delete</button
             >
           </div>
         {:else}
@@ -610,10 +615,15 @@
           <textarea bind:value={fDescription} rows="3"></textarea>
         </label>
         <div class="actions">
-          <button class="primary" on:click={saveQuest} disabled={saving}
-            >{saving ? "Saving…" : "Save"}</button
+          <button
+            class="primary"
+            on:click={saveQuest}
+            disabled={saving || (isNew && !fTitle.trim())}
+            >{saving ? "Saving…" : isNew ? "Create" : "Save"}</button
           >
-          <button class="ghost" on:click={() => (editing = false)}
+          <button
+            class="ghost"
+            on:click={() => (isNew ? closeDetail() : (editing = false))}
             >Cancel</button
           >
         </div>

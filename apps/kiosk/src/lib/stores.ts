@@ -110,8 +110,11 @@ export const boardReady = writable<boolean>(false);
 // can show every field and write edits straight back.
 
 export type Selection =
-  | { kind: "event"; quest: Quest }
-  | { kind: "task"; quest: Quest }
+  // `isNew` marks a draft built locally (e.g. long-press on the calendar) that
+  // hasn't been written to Holosphere yet — the detail modal opens straight in
+  // edit mode and Cancel discards it instead of leaving a phantom card.
+  | { kind: "event"; quest: Quest; isNew?: boolean }
+  | { kind: "task"; quest: Quest; isNew?: boolean }
   | { kind: "thing"; item: LibraryItem }
   | null;
 

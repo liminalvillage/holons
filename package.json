@@ -12,6 +12,7 @@
 		"dev": "pnpm -F harvest-web dev",
 		"dev:bot": "pnpm -F @holons/telegram-ui dev",
 		"dev:discord": "pnpm -F @holons/discord-ui dev",
+		"dev:kiosk": "pnpm -F kiosk dev",
 		"build": "pnpm -r --if-present build",
 		"typecheck": "pnpm -r --if-present typecheck",
 		"test": "pnpm -r --if-present test",
