@@ -4,7 +4,7 @@
  */
 
 import * as h3 from 'h3-js';
-import { attachHologramMeta, parseSoulPath } from './hologram.js';
+import { parseSoulPath } from './hologram.js';
 
 /**
  * Look up a holon's display name from its `settings` lens.
@@ -624,70 +624,39 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                 console.log(`Found simple reference with soul: ${item.soul}`);
                 
                 try {
-                    // Parse the soul to get the components
-                    const soulParts = item.soul.split('/');
-                    if (soulParts.length >= 4) {
-                        const originHolon = soulParts[1];
-                        const originLens = soulParts[2];
-                        const originKey = soulParts[3];
-                        
-                        console.log(`Extracting from soul - holon: ${originHolon}, lens: ${originLens}, key: ${originKey}`);
-                        
-                        // Get original data using the extracted path - always resolve references
-                        const originalData = await holosphere.get(
-                            originHolon,
-                            originLens,
-                            originKey,
-                            null,
-                            { resolveReferences: true } // Always resolve nested references
-                        );
-                        
-                        console.log(`Original data found via soul path:`, JSON.stringify(originalData));
-                        
-                        if (originalData) {
-                            // Replace the reference with the resolved data, attaching
-                            // the canonical _hologram envelope (single source of truth).
-                            const withMeta = attachHologramMeta(originalData, item.soul);
-                            // Stamp the source holon's display name so consumers
-                            // don't need a second round-trip to render it. Use
-                            // the per-call cache when possible to avoid duplicate
-                            // settings reads across many holograms from the same
-                            // source.
-                            if (withMeta._hologram?.sourceHolon) {
-                                let sourceHolonName = spaceNames.get(withMeta._hologram.sourceHolon);
-                                if (sourceHolonName === undefined) {
-                                    sourceHolonName = await getHolonName(holosphere, withMeta._hologram.sourceHolon);
-                                    spaceNames.set(withMeta._hologram.sourceHolon, sourceHolonName);
-                                }
-                                if (sourceHolonName) {
-                                    withMeta._hologram = {
-                                        ...withMeta._hologram,
-                                        sourceHolonName
-                                    };
-                                }
-                            }
-                            result[i] = withMeta;
-                        } else {
-                            // Original data not found — keep the id so callers can
-                            // identify the broken reference, and surface the error.
-                            result[i] = {
-                                id: item.id,
-                                _hologram: {
-                                    isHologram: false,
-                                    soul: item.soul,
-                                    error: 'Referenced data not found',
-                                    resolvedAt: Date.now()
-                                }
-                            };
-                        }
+                    // Resolve via the typed resolver: it reads the source with
+                    // includeDeleted + awaitNetwork, so we can distinguish a
+                    // DELETED reference from a transient miss, and it already
+                    // stamps the canonical _hologram envelope incl. sourceHolonName.
+                    const res = await holosphere.resolveHologramDetailed(
+                        { id: item.id, soul: item.soul },
+                        { followHolograms: true }
+                    );
+
+                    if (res.status === 'resolved') {
+                        result[i] = res.data;
                     } else {
-                        console.warn(`Soul doesn't match expected format: ${item.soul}`);
+                        // Replace the reference with an error stub recording WHY it
+                        // failed. `_hologram.isHologram === false` is the marker
+                        // getFederated filters out by default (see
+                        // includeUnresolvedStubs); `status`/`deleted` let opted-in
+                        // callers tell a removed reference from a transient one.
+                        const errorByStatus = {
+                            deleted: 'Referenced data deleted',
+                            unresolved: 'Referenced data not found',
+                            invalid: 'Invalid soul format',
+                            circular: 'Circular reference',
+                            depth: 'Reference chain too deep',
+                            error: res.reason || 'Error resolving reference',
+                        };
                         result[i] = {
                             id: item.id,
                             _hologram: {
                                 isHologram: false,
                                 soul: item.soul,
-                                error: 'Invalid soul format',
+                                status: res.status,
+                                deleted: res.status === 'deleted',
+                                error: errorByStatus[res.status] || 'Unresolved reference',
                                 resolvedAt: Date.now()
                             }
                         };
@@ -698,6 +667,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                         _hologram: {
                             isHologram: false,
                             soul: item.soul,
+                            status: 'error',
                             error: refError.message || 'Error resolving reference',
                             resolvedAt: Date.now()
                         }

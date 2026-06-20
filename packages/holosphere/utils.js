@@ -196,24 +196,35 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                     let parsed = await holoInstance.parse(data);
                     if (parsed && holoInstance.isHologram(parsed)) {
                         const hologramSoul = parsed.soul;
-                        const resolved = await holoInstance.resolveHologram(parsed, { followHolograms: true });
-                        if (resolved === null) {
-                            // Emit the SAME janitor-parseable warning that
-                            // `get`/`getAll` emit on an unresolved hologram. The
-                            // live subscribe path is the dashboard's primary read
-                            // channel; without this line a genuinely-dangling
-                            // pointer (source tombstoned/deleted) re-fires here on
-                            // every map update and is never garbage-collected.
-                            // `resolveHologram`'s own "Could not resolve hologram
-                            // soul" log carries only the SOURCE soul, not the
-                            // LOCAL pointer (holon/lens/key) a cleaner needs to
-                            // delete it — so a console-hook janitor can't act on
-                            // it. Note we still pass `null` to the callback below
-                            // (consumers treat it as "item absent", unchanged).
+                        const res = await holoInstance.resolveHologramDetailed(parsed, { followHolograms: true });
+                        if (res.status === 'deleted') {
+                            // The source was soft-deleted (_deleted:true) — a
+                            // DEFINITIVE removal. Notify consumers the item is
+                            // gone, exactly like a local tombstone. This is the
+                            // payoff of typed resolution: a deleted federated
+                            // source now propagates as a deletion to the live UI
+                            // instead of silently lingering. Also emit the
+                            // janitor-parseable line so the dead pointer is GC'd.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                            if (holoInstance.subscriptions[subscriptionId]) {
+                                callback(null, key);
+                            }
+                            return;
                         }
-                        if (resolved !== parsed) {
-                            parsed = resolved;
+                        if (res.status !== 'resolved') {
+                            // Transient (unresolved/error) or structural
+                            // (circular/depth/invalid). Emit the SAME
+                            // janitor-parseable warning `get`/`getAll` emit — it
+                            // carries the LOCAL pointer (holon/lens/key) a cleaner
+                            // needs, which `resolveHologram`'s own source-soul log
+                            // does not. Unlike a deletion we do NOT emit a removal:
+                            // a transient miss must not flicker the item out of a
+                            // live view; it stays until it resolves or is GC'd.
+                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                            return;
+                        }
+                        if (res.data !== parsed) {
+                            parsed = res.data;
                         }
                     }
 

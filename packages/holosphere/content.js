@@ -655,37 +655,43 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
                     // Check if this is a hologram that needs to be resolved
                     if (resolveHolograms && holoInstance.isHologram(parsed)) {
-                        const resolvedValue = await holoInstance.resolveHologram(parsed, {
+                        const res = await holoInstance.resolveHologramDetailed(parsed, {
                             followHolograms: resolveHolograms,
                             visited: visited,
                             maxDepth: options.maxDepth || 10,
                             currentDepth: options.currentDepth || 0
                         });
 
-                        if (resolvedValue === null) {
-                            // `resolveHologram` returned null. DON'T treat this
-                            // as a permission to delete — null fires for several
-                            // transient reasons:
-                            //   - source soul not in our local Gun graph yet
-                            //     (peer offline, federation propagation in flight)
-                            //   - maxDepth (10) reached on a deep hologram chain
-                            //   - circular reference detected mid-chain
-                            //   - any internal resolve error
-                            // None of these prove the pointer is permanently
-                            // broken, but the old behaviour `await delete(...)`
-                            // here permanently destroyed real data on the first
-                            // transient miss. Skip the entry instead; a real
-                            // garbage collector should own dead-pointer cleanup.
+                        if (res.status === 'deleted') {
+                            // The pointer's target was soft-deleted (_deleted:true)
+                            // — a DEFINITIVE deletion (distinct from a transient
+                            // miss). The pointer is prunable. By default the item
+                            // reads as gone; `includeDeleted` surfaces a tombstone
+                            // so admin/debug views can see it.
+                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                            if (includeDeleted) {
+                                resolve({ id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
+                            } else {
+                                resolve(null);
+                            }
+                            return;
+                        }
+
+                        if (res.status !== 'resolved') {
+                            // unresolved/error are TRANSIENT (latency, offline
+                            // peer, federation in flight, or a hard put(null));
+                            // circular/depth/invalid are structural. Either way
+                            // DON'T delete here — the old code destroyed real data
+                            // on the first transient miss. Skip; a real garbage
+                            // collector (keyed on this janitor-parseable line, and
+                            // on resolveHologramDetailed's status) owns cleanup.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
                             resolve(null);
                             return;
                         }
-                        // If resolveHologram encountered a circular ref, it would throw, not return.
-                        // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
-                        // For now, assume resolvedValue is either the resolved data or we've returned null above.
 
-                        if (resolvedValue !== parsed) {
-                            parsed = resolvedValue;
+                        if (res.data !== parsed) {
+                            parsed = res.data;
                         }
                     }
 
@@ -857,21 +863,26 @@ export async function getAll(holoInstance, holon, lens, password = null, options
 
                         if (holoInstance.isHologram(parsed)) {
                             try {
-                                const resolved = await holoInstance.resolveHologram(parsed, {
+                                const res = await holoInstance.resolveHologramDetailed(parsed, {
                                     followHolograms: true,
                                     maxDepth: 10,
                                     currentDepth: 0
                                 });
 
-                                if (resolved === null) {
-                                    // See `get()` above: null is not proof of a
-                                    // permanently dead pointer. Skip the entry
-                                    // without deleting so transient resolution
-                                    // failures don't destroy real data.
+                                if (res.status !== 'resolved') {
+                                    // See `get()` above: a transient miss is not
+                                    // proof of a dead pointer, so we skip without
+                                    // deleting. A soft-deleted source (status
+                                    // 'deleted') is definitive; surface it as a
+                                    // tombstone only when the caller opted in.
                                     console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                                    if (res.status === 'deleted' && includeDeleted) {
+                                        output.set(parsed.id, { id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
+                                    }
                                     return;
                                 }
 
+                                const resolved = res.data;
                                 if (resolved && resolved !== parsed) {
                                     if (schema) {
                                         const valid = holoInstance.validator.validate(schema, resolved);

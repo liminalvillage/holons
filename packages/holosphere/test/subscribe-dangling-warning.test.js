@@ -37,10 +37,12 @@ describe('subscribe emits a janitor-parseable warning for unresolved holograms',
 
     test('unresolved hologram on the subscribe path logs "Hologram at h/l/k did not resolve"', async () => {
         // Force the failure deterministically (and avoid the awaitNetwork
-        // deadline wait): the soul itself is irrelevant once resolution
-        // returns null — what matters is the warning carries the LOCAL coords.
-        const origResolve = hs.resolveHologram.bind(hs);
-        hs.resolveHologram = async () => null;
+        // deadline wait): the status is irrelevant once resolution fails —
+        // what matters is the warning carries the LOCAL coords. The subscribe
+        // path now uses the typed resolver, so stub that (a non-'deleted'
+        // failure status takes the transient "skipping" branch).
+        const origResolve = hs.resolveHologramDetailed.bind(hs);
+        hs.resolveHologramDetailed = async () => ({ status: 'unresolved', data: null, soul: null, reason: 'stub' });
 
         const warnings = [];
         const origWarn = console.warn;
@@ -71,7 +73,7 @@ describe('subscribe emits a janitor-parseable warning for unresolved holograms',
             expect(match[4]).toBe(soul);   // source soul
         } finally {
             console.warn = origWarn;
-            hs.resolveHologram = origResolve;
+            hs.resolveHologramDetailed = origResolve;
         }
     }, 15000);
 });

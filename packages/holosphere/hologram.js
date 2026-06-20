@@ -63,7 +63,7 @@ export function isHologram(data) {
     if (!data || typeof data !== 'object') {
         return false;
     }
-    
+
     // Basic check: Does it have an 'id' and a 'soul' which is a non-empty string?
     if (data.id && typeof data.soul === 'string' && data.soul.length > 0) {
          // Optional stricter check: Does the soul look like a valid path?
@@ -71,7 +71,7 @@ export function isHologram(data) {
          // We can use a simplified check here or rely on parseSoulPath failing later.
          if (data.soul.includes('/')) { // Simple check for path structure
             return true;
-         } 
+         }
     }
 
     return false;
@@ -104,119 +104,198 @@ export function attachHologramMeta(originalData, hologramSoul) {
 }
 
 /**
- * Resolves a hologram to its actual data.
+ * Outcome codes returned by {@link resolveHologramDetailed}.
  *
- * On success, the returned object spreads `originalData` and attaches the
- * canonical `_hologram` envelope (see {@link attachHologramMeta}).
+ * - `resolved`   – the soul's target was found and is live; `data` is populated.
+ * - `deleted`    – the target was found but carries the `_deleted: true`
+ *                  soft-tombstone. DEFINITIVE: the item is gone.
+ * - `unresolved` – the target did not arrive within the network deadline.
+ *                  AMBIGUOUS / TRANSIENT — latency, an offline peer, federation
+ *                  in flight, OR a hard `put(null)` delete that left no
+ *                  tombstone. Never a delete signal on its own.
+ * - `circular`   – the soul chain loops back on itself (see `visited`).
+ * - `depth`      – the chain exceeded `maxDepth`.
+ * - `invalid`    – the soul isn't a valid `app/holon/lens/key` path.
+ * - `error`      – an unexpected error was thrown while resolving.
+ */
+export const HOLOGRAM_STATUS = Object.freeze({
+    RESOLVED: 'resolved',
+    DELETED: 'deleted',
+    UNRESOLVED: 'unresolved',
+    CIRCULAR: 'circular',
+    DEPTH: 'depth',
+    INVALID: 'invalid',
+    ERROR: 'error',
+});
+
+/**
+ * Statuses for which the local hologram pointer is PROVABLY dead, so a garbage
+ * collector can safely delete it. `unresolved` and `error` are deliberately
+ * excluded — they're transient and deleting on them destroys real data on the
+ * first network hiccup.
+ */
+export const PRUNABLE_HOLOGRAM_STATUSES = Object.freeze(new Set([
+    HOLOGRAM_STATUS.DELETED,
+    HOLOGRAM_STATUS.CIRCULAR,
+    HOLOGRAM_STATUS.DEPTH,
+    HOLOGRAM_STATUS.INVALID,
+]));
+
+/** True when `status` means the pointer is provably dead (vs. a transient miss). */
+export function isPrunableHologramStatus(status) {
+    return PRUNABLE_HOLOGRAM_STATUSES.has(status);
+}
+
+/**
+ * Resolve a hologram and report WHY it did (or didn't) resolve.
+ *
+ * Unlike {@link resolveHologram}, which collapses every failure to `null`, this
+ * returns a typed envelope so callers can finally tell a DELETION apart from
+ * network LATENCY. The two used to be indistinguishable: a tombstoned target
+ * was filtered to `null` before the resolver ever saw it, so it looked exactly
+ * like a cold/offline miss. Here the target is read with `includeDeleted: true`,
+ * so an explicit `_deleted: true` tombstone surfaces as `status: 'deleted'`
+ * instead of masquerading as "not present".
+ *
+ * Note: only the IMMEDIATE target's tombstone is reported as `deleted`. A
+ * deletion deeper in a hologram→hologram chain surfaces as `unresolved`
+ * (the intermediate read returns `null`), which is the safe, conservative call.
+ *
+ * This function does NOT log — callers decide how to report each status.
  *
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
- * @param {object} hologram - The hologram to resolve
- * @param {object} [options] - Optional parameters
- * @param {boolean} [options.followHolograms=true] - Whether to follow nested holograms
- * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
- * @param {number} [options.maxDepth=10] - Maximum resolution depth to prevent infinite loops
- * @param {number} [options.currentDepth=0] - Current resolution depth
- * @returns {Promise<object|null>} - The resolved data with `_hologram` attached, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
+ * @param {object} hologram - The hologram (`{ id, soul }`) to resolve.
+ * @param {object} [options]
+ * @param {boolean} [options.followHolograms=true] - Follow nested holograms.
+ * @param {Set<string>} [options.visited] - Internal: souls seen on this path (cycle guard).
+ * @param {number} [options.maxDepth=10] - Maximum resolution depth.
+ * @param {number} [options.currentDepth=0] - Current resolution depth.
+ * @returns {Promise<{status: string, data: object|null, soul: string|null, reason: string}>}
  */
-export async function resolveHologram(holoInstance, hologram, options = {}) {
+export async function resolveHologramDetailed(holoInstance, hologram, options = {}) {
     if (!isHologram(hologram)) {
-        return hologram; // Not a hologram, return as is
+        // Not a hologram — pass the value straight through as already-resolved.
+        return { status: HOLOGRAM_STATUS.RESOLVED, data: hologram, soul: null, reason: 'not-a-hologram' };
     }
 
-    const { 
-        followHolograms = true, 
-        visited = new Set(), 
-        maxDepth = 10, 
-        currentDepth = 0 
+    const {
+        followHolograms = true,
+        visited = new Set(),
+        maxDepth = 10,
+        currentDepth = 0,
     } = options;
 
-    // Check depth limit first
+    const soul = hologram.soul;
+
+    // Structural guards first — these are definitive, not transient.
     if (currentDepth >= maxDepth) {
-        console.warn(`!!! Maximum resolution depth (${maxDepth}) reached for soul: ${hologram.soul}. Stopping resolution.`);
-        return null;
+        return { status: HOLOGRAM_STATUS.DEPTH, data: null, soul, reason: `max depth ${maxDepth} reached` };
+    }
+    if (soul && visited.has(soul)) {
+        return { status: HOLOGRAM_STATUS.CIRCULAR, data: null, soul, reason: 'circular soul chain' };
     }
 
-    // Check for circular hologram
-    if (hologram.soul && visited.has(hologram.soul)) {
-        console.warn(`!!! CIRCULAR hologram detected for soul: ${hologram.soul}. Breaking loop.`);
-        return null;
+    const soulInfo = parseSoulPath(soul);
+    if (!soulInfo) {
+        return { status: HOLOGRAM_STATUS.INVALID, data: null, soul, reason: 'invalid soul format' };
     }
 
-        try {
-            // Handle direct soul hologram
-            if (hologram.soul) {
-                const soulInfo = parseSoulPath(hologram.soul);
-                if (!soulInfo) {
-                    console.warn(`Invalid soul format: ${hologram.soul}`);
-                return null;
-                }
+    try {
+        const nextVisited = new Set(visited);
+        nextVisited.add(soul);
 
-                // Add current soul to visited set for THIS resolution path
-                const nextVisited = new Set(visited);
-                nextVisited.add(hologram.soul);
-
-            // Only log when actually resolving a hologram for debugging if needed
-            // console.log(`Resolving hologram: ${hologram.soul}`);
-
-            // Get original data with increased depth
-                const originalData = await holoInstance.get(
-                    soulInfo.holon,
-                    soulInfo.lens,
-                    soulInfo.key,
-                    null,
-                    {
-                        resolveHolograms: followHolograms,
-                    visited: nextVisited,
-                    maxDepth: maxDepth,
-                    currentDepth: currentDepth + 1,
-                    // The soul almost always points at a DIFFERENT holon's lens
-                    // this peer never subscribed to, so the node is cold: Gun's
-                    // `.once()` would fire `undefined` synchronously and we'd
-                    // wrongly report "target not present locally". Wait for the
-                    // network round-trip instead.
-                    awaitNetwork: true
-                    }
-                );
-
-            if (originalData && !originalData._invalidHologram) {
-                    // Attach the canonical `_hologram` envelope. This is the only
-                    // resolved-hologram indicator HoloSphere emits.
-                    const withMeta = attachHologramMeta(originalData, hologram.soul);
-                    // Stamp the source holon's display name so every consumer
-                    // (subscribe, get, getAll, getFederated) has it without a
-                    // second round-trip. Cached on the instance, so a batch of
-                    // holograms from the same source resolves the name once.
-                    if (withMeta._hologram?.sourceHolon && typeof holoInstance.getHolonName === 'function') {
-                        try {
-                            const sourceHolonName = await holoInstance.getHolonName(withMeta._hologram.sourceHolon);
-                            if (sourceHolonName) {
-                                withMeta._hologram = { ...withMeta._hologram, sourceHolonName };
-                            }
-                        } catch { /* best-effort — name lookup must not fail the resolve */ }
-                    }
-                    return withMeta;
-                } else {
-                // Note: this is informational, not a permission to delete. The
-                // source soul may simply not be reachable yet (peer offline,
-                // federation propagation in flight). Callers must decide on
-                // their own GC policy; this function only reports the miss.
-                console.warn(`Could not resolve hologram soul: ${hologram.soul} (target not present locally)`);
-
-                // Return null so the caller skips this entry.
-                return null;
-                }
-            } else {
-                 // Should not happen if isHologram() passed
-                 console.warn('!!! resolveHologram called with object missing soul:', hologram);
-            return null;
+        // Read the target across the network (it's almost always a cold
+        // cross-holon node) AND ask for tombstones. `includeDeleted: true` is
+        // exactly what lets us tell a deletion from a miss — without it `get`
+        // would filter a `_deleted: true` target to `null`. `awaitNetwork: true`
+        // skips Gun's cold synchronous `undefined` and waits (up to the read
+        // deadline) for a peer to answer.
+        const originalData = await holoInstance.get(
+            soulInfo.holon,
+            soulInfo.lens,
+            soulInfo.key,
+            null,
+            {
+                resolveHolograms: followHolograms,
+                visited: nextVisited,
+                maxDepth: maxDepth,
+                currentDepth: currentDepth + 1,
+                awaitNetwork: true,
+                includeDeleted: true,
             }
-        } catch (error) {
+        );
+
+        // Null after the deadline: ambiguous (latency / offline / in-flight /
+        // hard `put(null)` delete). Transient — never treat as a delete signal.
+        if (originalData == null || originalData._invalidHologram) {
+            return { status: HOLOGRAM_STATUS.UNRESOLVED, data: null, soul, reason: 'target not present within deadline' };
+        }
+
+        // Explicit soft-tombstone on the target: a DEFINITIVE deletion.
+        if (originalData._deleted === true) {
+            return { status: HOLOGRAM_STATUS.DELETED, data: null, soul, reason: 'target soft-deleted (_deleted:true)' };
+        }
+
+        // Resolved. Attach the canonical `_hologram` envelope, then stamp the
+        // source holon's display name so consumers don't need a second round-trip.
+        const withMeta = attachHologramMeta(originalData, soul);
+        if (withMeta._hologram?.sourceHolon && typeof holoInstance.getHolonName === 'function') {
+            try {
+                const sourceHolonName = await holoInstance.getHolonName(withMeta._hologram.sourceHolon);
+                if (sourceHolonName) {
+                    withMeta._hologram = { ...withMeta._hologram, sourceHolonName };
+                }
+            } catch { /* best-effort — name lookup must not fail the resolve */ }
+        }
+        return { status: HOLOGRAM_STATUS.RESOLVED, data: withMeta, soul, reason: 'ok' };
+    } catch (error) {
         if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
-            console.warn(`!!! Circular reference detected during hologram resolution: ${error.message}`);
-            return null;
+            return { status: HOLOGRAM_STATUS.CIRCULAR, data: null, soul, reason: 'circular reference thrown mid-chain' };
         }
         console.error(`!!! Error resolving hologram: ${error.message}`, error);
-        return null; // Return null on error to prevent loops
+        return { status: HOLOGRAM_STATUS.ERROR, data: null, soul, reason: error.message || 'resolve error' };
+    }
+}
+
+/**
+ * Resolves a hologram to its actual data (backward-compatible shape).
+ *
+ * Returns the resolved data (with `_hologram` attached) on success, the input
+ * unchanged when it isn't a hologram, or `null` for every failure — and
+ * preserves the historical console warnings so existing log-scraping janitors
+ * keep working. New code that needs to distinguish DELETION from LATENCY should
+ * call {@link resolveHologramDetailed} instead.
+ *
+ * @param {HoloSphere} holoInstance - The HoloSphere instance.
+ * @param {object} hologram - The hologram to resolve.
+ * @param {object} [options] - See {@link resolveHologramDetailed}.
+ * @returns {Promise<object|null>}
+ */
+export async function resolveHologram(holoInstance, hologram, options = {}) {
+    const { maxDepth = 10 } = options;
+    const result = await resolveHologramDetailed(holoInstance, hologram, options);
+    switch (result.status) {
+        case HOLOGRAM_STATUS.RESOLVED:
+            return result.data;
+        case HOLOGRAM_STATUS.DEPTH:
+            console.warn(`!!! Maximum resolution depth (${maxDepth}) reached for soul: ${result.soul}. Stopping resolution.`);
+            return null;
+        case HOLOGRAM_STATUS.CIRCULAR:
+            console.warn(`!!! CIRCULAR hologram detected for soul: ${result.soul}. Breaking loop.`);
+            return null;
+        case HOLOGRAM_STATUS.INVALID:
+            console.warn(`Invalid soul format: ${result.soul}`);
+            return null;
+        case HOLOGRAM_STATUS.DELETED:
+        case HOLOGRAM_STATUS.UNRESOLVED:
+            // A tombstoned target and a never-present one both report the
+            // historical message so existing janitors still match. Callers that
+            // need to tell them apart use resolveHologramDetailed.
+            console.warn(`Could not resolve hologram soul: ${result.soul} (target not present locally)`);
+            return null;
+        case HOLOGRAM_STATUS.ERROR:
+        default:
+            return null;
     }
 }
 
@@ -226,5 +305,9 @@ export default {
     parseSoulPath,
     isHologram,
     resolveHologram,
-    attachHologramMeta
+    resolveHologramDetailed,
+    attachHologramMeta,
+    HOLOGRAM_STATUS,
+    PRUNABLE_HOLOGRAM_STATUSES,
+    isPrunableHologramStatus,
 };

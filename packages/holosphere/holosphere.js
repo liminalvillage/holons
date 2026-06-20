@@ -375,6 +375,16 @@ class HoloSphere {
         return HologramOps.resolveHologram(this, hologram, options);
     }
 
+    /**
+     * Like {@link resolveHologram} but returns a typed
+     * `{ status, data, soul, reason }` envelope so callers can distinguish a
+     * DELETION (`status: 'deleted'`) from network LATENCY (`status: 'unresolved'`).
+     * See `HologramOps.HOLOGRAM_STATUS` / `isPrunableHologramStatus`.
+     */
+    async resolveHologramDetailed(hologram, options = {}) {
+        return HologramOps.resolveHologramDetailed(this, hologram, options);
+    }
+
     attachHologramMeta(originalData, hologramSoul) {
         return HologramOps.attachHologramMeta(originalData, hologramSoul);
     }
