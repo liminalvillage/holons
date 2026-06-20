@@ -30,6 +30,11 @@
     let draggedCard: { key: string; quest: any; x: number; y: number; } | null = null;
     let offset = { x: 0, y: 0 };
     let zoom = 1;
+    // Zoom range. The very low minimum lets you zoom all the way out to frame
+    // the whole board / every card ("full scope"), even when cards are spread
+    // far apart; see zoomToFit().
+    const MIN_ZOOM = 0.05;
+    const MAX_ZOOM = 2;
     let pan = { x: 0, y: 0 };
     let startPan = { x: 0, y: 0 };
     let isPanning = false;
@@ -914,7 +919,7 @@
 
             // Update zoom
             const zoomFactor = event.deltaY > 0 ? 0.95 : 1.05;
-            zoom = Math.min(Math.max(0.25, zoom * zoomFactor), 2);
+            zoom = Math.min(Math.max(MIN_ZOOM, zoom * zoomFactor), MAX_ZOOM);
 
             // Calculate new pan to keep the same canvas point under mouse
             pan = {
@@ -1006,6 +1011,43 @@
         pan = {
             x: -(centerX * zoom) + containerRect.width / 2,
             y: -(centerY * zoom) + containerRect.height / 2
+        };
+    }
+
+    // Zoom + pan so every card fits in view at once ("full scope"). Frames the
+    // bounding box of all cards (plus padding) and centres it.
+    function zoomToFit() {
+        if (!viewContainer) return;
+        if (questCards.length === 0) {
+            zoom = 1;
+            goToInbox();
+            return;
+        }
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const card of questCards) {
+            minX = Math.min(minX, card.x);
+            minY = Math.min(minY, card.y);
+            maxX = Math.max(maxX, card.x + CARD_WIDTH);
+            maxY = Math.max(maxY, card.y + CARD_HEIGHT_ESTIMATE);
+        }
+
+        const PAD = 120; // canvas-px breathing room around the content
+        minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+
+        const rect = viewContainer.getBoundingClientRect();
+        const contentW = Math.max(1, maxX - minX);
+        const contentH = Math.max(1, maxY - minY);
+        zoom = Math.min(
+            MAX_ZOOM,
+            Math.max(MIN_ZOOM, Math.min(rect.width / contentW, rect.height / contentH)),
+        );
+
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        pan = {
+            x: -(cx * zoom) + rect.width / 2,
+            y: -(cy * zoom) + rect.height / 2,
         };
     }
 
@@ -1296,7 +1338,7 @@
             
             // Calculate new zoom
             const zoomDelta = currentDistance / touchStartDistance;
-            const newZoom = Math.min(Math.max(0.25, touchStartZoom * zoomDelta), 2);
+            const newZoom = Math.min(Math.max(MIN_ZOOM, touchStartZoom * zoomDelta), MAX_ZOOM);
             
             // Calculate the point on canvas under the midpoint
             const canvasX = (lastMouseX - touchStartPan.x) / touchStartZoom;
@@ -2007,8 +2049,20 @@
             </button>
         {/if}
 
+        <!-- Fit to scope: zoom out so every card is in view -->
+        <button
+            class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
+            on:click={zoomToFit}
+            aria-label="Fit all cards in view"
+            title="Fit all cards in view"
+        >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3" />
+            </svg>
+        </button>
+
         <!-- Fullscreen toggle button -->
-        <button 
+        <button
             class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
             on:click={toggleFullscreen}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
