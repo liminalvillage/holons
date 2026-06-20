@@ -1079,42 +1079,13 @@
         }
     }
 
-    // Isotonic regression (pool-adjacent-violators): given target values in
-    // order, return the nearest non-decreasing sequence (least squares). Used
-    // to remove horizontal overlaps while staying as close as possible to each
-    // node's desired x — no left/right bias, unlike a single sweep.
-    function isotonic(targets: number[]): number[] {
-        const mean: number[] = [];
-        const weight: number[] = [];
-        const count: number[] = [];
-        for (const t of targets) {
-            let m = t;
-            let w = 1;
-            let c = 1;
-            while (mean.length > 0 && mean[mean.length - 1] >= m) {
-                const pm = mean.pop()!;
-                const pw = weight.pop()!;
-                const pc = count.pop()!;
-                m = (m * w + pm * pw) / (w + pw);
-                w += pw;
-                c += pc;
-            }
-            mean.push(m);
-            weight.push(w);
-            count.push(c);
-        }
-        const out: number[] = [];
-        for (let k = 0; k < mean.length; k++) {
-            for (let j = 0; j < count[k]; j++) out.push(mean[k]);
-        }
-        return out;
-    }
-
-    // Auto-arrange cards into a layered (Sugiyama-style) dependency graph:
-    // depth (longest path from a root) sets the vertical level so time flows
-    // top→bottom, then nodes are ordered within each level to minimise edge
-    // crossings and given x-coordinates that pull them toward their neighbours
-    // so edges run as straight as possible.
+    // Auto-arrange cards as a left→right layered dependency graph (Sugiyama
+    // style). Dependency depth (longest path from a root) sets the column, so
+    // leaf prerequisites sit on the left and everything converges rightward into
+    // the final goal. Within each column, nodes are ordered to minimise edge
+    // crossings and given y-coordinates pulled toward their neighbours so an
+    // aggregator node sits centred among the cards that feed into it.
+    // Dependency-free cards are grid-packed below the graph.
     function autoArrangeByDependencies() {
         if (!holonID || questCards.length === 0) return;
 
@@ -1125,135 +1096,211 @@
                 (d: string) => d !== id && byId.has(d),
             );
 
-        // --- 1. Layer assignment: longest path from a root → depth. ---
-        const depthCache = new Map<string, number>();
-        const visiting = new Set<string>();
-        const depthOf = (id: string): number => {
-            if (depthCache.has(id)) return depthCache.get(id)!;
-            if (visiting.has(id)) return 0; // break any dependency cycle
-            const ps = parentsOf(id);
-            if (ps.length === 0) {
-                depthCache.set(id, 0);
-                return 0;
-            }
-            visiting.add(id);
-            const d = 1 + Math.max(...ps.map(depthOf));
-            visiting.delete(id);
-            depthCache.set(id, d);
-            return d;
-        };
-
         const childrenOf = new Map<string, string[]>(ids.map((id) => [id, []]));
         for (const id of ids) {
             for (const p of parentsOf(id)) childrenOf.get(p)!.push(id);
         }
 
-        const layers = new Map<number, string[]>();
-        for (const id of ids) {
-            const d = depthOf(id);
-            if (!layers.has(d)) layers.set(d, []);
-            layers.get(d)!.push(id);
-        }
-        const depths = [...layers.keys()].sort((a, b) => a - b);
+        const hasEdge = (id: string) =>
+            parentsOf(id).length > 0 || childrenOf.get(id)!.length > 0;
+        const connectedIds = ids.filter(hasEdge);
+        const isolatedIds = ids.filter((id) => !hasEdge(id));
 
-        const orderIndex = new Map<string, number>();
-        const reindex = () => {
-            for (const d of depths) {
-                layers.get(d)!.forEach((id, i) => orderIndex.set(id, i));
-            }
-        };
-        reindex();
-
-        // --- 2. Crossing reduction: median-heuristic sweeps. ---
-        const median = (arr: number[]): number => {
-            if (arr.length === 0) return -1;
-            const s = [...arr].sort((a, b) => a - b);
-            const m = Math.floor(s.length / 2);
-            return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-        };
-        for (let it = 0; it < 8; it++) {
-            const downward = it % 2 === 0; // alternate: order by parents, then children
-            const seq = downward ? depths : [...depths].reverse();
-            for (const d of seq) {
-                const layer = layers.get(d)!;
-                const keyed = layer.map((id, i) => {
-                    const ns = (downward ? parentsOf(id) : childrenOf.get(id)!).map(
-                        (n) => orderIndex.get(n) ?? 0,
-                    );
-                    const key = median(ns);
-                    // Nodes with no neighbours keep their current slot.
-                    return { id, key: key < 0 ? i : key, fallback: i };
-                });
-                keyed.sort((a, b) => a.key - b.key || a.fallback - b.fallback);
-                layers.set(d, keyed.map((k) => k.id));
-                reindex();
-            }
-        }
-
-        // --- 3. X-coordinates: pull each node to its neighbours' barycentre,
-        // then remove overlaps with isotonic regression. Card width is fixed
-        // (w-80), so a uniform horizontal slot guarantees no overlap. ---
-        const MIN_HGAP = 60;
-        const SLOT = CARD_WIDTH + MIN_HGAP;
-        const x = new Map<string, number>();
-        for (const d of depths) {
-            layers.get(d)!.forEach((id, i) => x.set(id, i * SLOT));
-        }
-        const neighboursOf = (id: string) => [...parentsOf(id), ...childrenOf.get(id)!];
-        for (let it = 0; it < 16; it++) {
-            for (const d of depths) {
-                const layer = layers.get(d)!;
-                const desired = layer.map((id) => {
-                    const ns = neighboursOf(id).map((n) => x.get(n)!);
-                    return ns.length
-                        ? ns.reduce((a, b) => a + b, 0) / ns.length
-                        : x.get(id)!;
-                });
-                // Shift desired into a non-decreasing space, fit, shift back.
-                const fitted = isotonic(desired.map((v, i) => v - i * SLOT));
-                layer.forEach((id, i) => x.set(id, fitted[i] + i * SLOT));
-            }
-        }
-
-        // --- 4. Y-coordinates: pack levels top→bottom by measured height. ---
-        const MIN_VGAP = 80;
+        // Sizing. Layers run left→right (columns); nodes stack top→bottom (rows).
+        const COL_GAP = 200; // horizontal room between columns for curved edges
+        const COL_PITCH = CARD_WIDTH + COL_GAP;
+        const MIN_VGAP = 50;
         const DEFAULT_CARD_HEIGHT = 220;
-        const BASE_Y = 120;
-        const CENTER_X = 600;
-        // Measured rects are screen-space (canvas size × zoom); divide by zoom
-        // to get the canvas-space height our positions are stored in.
+        const BASE_X = 200;
+        const CENTER_Y = 400;
+        // Measured rects are screen-space (canvas size × zoom); divide by zoom to
+        // get the canvas-space height our positions are stored in.
         const measuredHeight = (id: string): number => {
             const m = getCardPosition(id);
             return m ? m.height / (zoom || 1) : DEFAULT_CARD_HEIGHT;
         };
-        const yOf = new Map<number, number>();
-        let cursorY = BASE_Y;
-        for (const d of depths) {
-            yOf.set(d, cursorY);
-            const levelMaxH = Math.max(
-                ...layers.get(d)!.map((id) => measuredHeight(id)),
+        const ROW_PITCH =
+            Math.max(DEFAULT_CARD_HEIGHT, ...ids.map(measuredHeight)) + MIN_VGAP;
+
+        // Isotonic regression (pool-adjacent-violators): nearest non-decreasing
+        // sequence in least squares. Removes vertical overlaps within a column
+        // while keeping each node as close as possible to its desired y.
+        const isotonic = (targets: number[]): number[] => {
+            const mean: number[] = [];
+            const weight: number[] = [];
+            const count: number[] = [];
+            for (const t of targets) {
+                let m = t, w = 1, c = 1;
+                while (mean.length > 0 && mean[mean.length - 1] >= m) {
+                    const pm = mean.pop()!, pw = weight.pop()!, pc = count.pop()!;
+                    m = (m * w + pm * pw) / (w + pw);
+                    w += pw;
+                    c += pc;
+                }
+                mean.push(m); weight.push(w); count.push(c);
+            }
+            const out: number[] = [];
+            for (let k = 0; k < mean.length; k++) {
+                for (let j = 0; j < count[k]; j++) out.push(mean[k]);
+            }
+            return out;
+        };
+
+        const finalX = new Map<string, number>();
+        const finalY = new Map<string, number>();
+        let graphBottom = CENTER_Y;
+
+        if (connectedIds.length > 0) {
+            const connectedSet = new Set(connectedIds);
+            const parentsIn = (id: string) =>
+                parentsOf(id).filter((p) => connectedSet.has(p));
+            const childrenIn = (id: string) =>
+                childrenOf.get(id)!.filter((c) => connectedSet.has(c));
+
+            // --- 1. Column assignment: longest path from a root → depth. ---
+            const depthCache = new Map<string, number>();
+            const visiting = new Set<string>();
+            const depthOf = (id: string): number => {
+                if (depthCache.has(id)) return depthCache.get(id)!;
+                if (visiting.has(id)) return 0; // break any dependency cycle
+                const ps = parentsIn(id);
+                if (ps.length === 0) { depthCache.set(id, 0); return 0; }
+                visiting.add(id);
+                const d = 1 + Math.max(...ps.map(depthOf));
+                visiting.delete(id);
+                depthCache.set(id, d);
+                return d;
+            };
+
+            const layers = new Map<number, string[]>();
+            for (const id of connectedIds) {
+                const d = depthOf(id);
+                if (!layers.has(d)) layers.set(d, []);
+                layers.get(d)!.push(id);
+            }
+            const depths = [...layers.keys()].sort((a, b) => a - b);
+
+            const orderIndex = new Map<string, number>();
+            const reindex = () => {
+                for (const d of depths) {
+                    layers.get(d)!.forEach((id, i) => orderIndex.set(id, i));
+                }
+            };
+            reindex();
+
+            // --- 2. Crossing reduction: median-heuristic sweeps. ---
+            const median = (arr: number[]): number => {
+                if (arr.length === 0) return -1;
+                const s = [...arr].sort((a, b) => a - b);
+                const m = Math.floor(s.length / 2);
+                return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+            };
+            for (let it = 0; it < 8; it++) {
+                const downward = it % 2 === 0; // order by left neighbours, then right
+                const seq = downward ? depths : [...depths].reverse();
+                for (const d of seq) {
+                    const layer = layers.get(d)!;
+                    const keyed = layer.map((id, i) => {
+                        const ns = (downward ? parentsIn(id) : childrenIn(id)).map(
+                            (n) => orderIndex.get(n) ?? 0,
+                        );
+                        const key = median(ns);
+                        return { id, key: key < 0 ? i : key, fallback: i };
+                    });
+                    keyed.sort((a, b) => a.key - b.key || a.fallback - b.fallback);
+                    layers.set(d, keyed.map((k) => k.id));
+                    reindex();
+                }
+            }
+
+            // --- 3. Y-coordinates: pull each node to its neighbours' barycentre,
+            // then remove overlaps with isotonic regression so a column never
+            // stacks two cards on top of each other. ---
+            const y = new Map<string, number>();
+            for (const d of depths) {
+                layers.get(d)!.forEach((id, i) => y.set(id, i * ROW_PITCH));
+            }
+            const neighboursOf = (id: string) => [...parentsIn(id), ...childrenIn(id)];
+            for (let it = 0; it < 16; it++) {
+                for (const d of depths) {
+                    const layer = layers.get(d)!;
+                    const desired = layer.map((id) => {
+                        const ns = neighboursOf(id).map((n) => y.get(n)!);
+                        return ns.length
+                            ? ns.reduce((a, b) => a + b, 0) / ns.length
+                            : y.get(id)!;
+                    });
+                    const fitted = isotonic(desired.map((v, i) => v - i * ROW_PITCH));
+                    layer.forEach((id, i) => y.set(id, fitted[i] + i * ROW_PITCH));
+                }
+            }
+
+            // --- 4. X by column; centre the graph vertically on CENTER_Y. ---
+            const allY = connectedIds.map((id) => y.get(id)!);
+            const shift = CENTER_Y - (Math.min(...allY) + Math.max(...allY)) / 2;
+            for (const d of depths) {
+                for (const id of layers.get(d)!) {
+                    finalX.set(id, BASE_X + d * COL_PITCH);
+                    finalY.set(id, y.get(id)! + shift);
+                }
+            }
+            graphBottom = Math.max(
+                ...connectedIds.map((id) => finalY.get(id)! + measuredHeight(id)),
             );
-            cursorY += levelMaxH + MIN_VGAP;
         }
 
-        // --- 5. Centre the whole graph horizontally on CENTER_X, then persist. ---
-        const allX = [...x.values()];
-        const graphCentre = (Math.min(...allX) + Math.max(...allX)) / 2;
-        const shift = CENTER_X - graphCentre;
-        for (const d of depths) {
-            const y = yOf.get(d)!;
-            for (const id of layers.get(d)!) {
-                persistCardPosition(id, { x: x.get(id)! + shift, y });
+        // --- Grid-pack the isolated cards below the graph (square-ish block). ---
+        if (isolatedIds.length > 0) {
+            const ISO_SLOT = CARD_WIDTH + 60;
+            const cols = Math.max(1, Math.round(Math.sqrt(isolatedIds.length * 1.6)));
+            let curY = connectedIds.length > 0 ? graphBottom + ROW_PITCH : CENTER_Y;
+            let col = 0;
+            let rowMaxH = 0;
+            for (const id of isolatedIds) {
+                finalX.set(id, BASE_X + col * ISO_SLOT);
+                finalY.set(id, curY);
+                rowMaxH = Math.max(rowMaxH, measuredHeight(id));
+                if (++col >= cols) {
+                    col = 0;
+                    curY += rowMaxH + MIN_VGAP;
+                    rowMaxH = 0;
+                }
             }
         }
 
-        // Bring the freshly arranged graph into view (centred in the viewport).
+        // Persist every card's computed position.
+        for (const id of ids) {
+            if (finalX.has(id)) {
+                persistCardPosition(id, { x: finalX.get(id)!, y: finalY.get(id)! });
+            }
+        }
+
+        // Frame the freshly arranged layout in view (zoom + centre, like the
+        // fit-all button) so the whole graph is visible at once.
         if (viewContainer) {
             const rect = viewContainer.getBoundingClientRect();
-            const graphMidY = (BASE_Y + (cursorY - MIN_VGAP)) / 2;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const id of ids) {
+                if (!finalX.has(id)) continue;
+                const fx = finalX.get(id)!;
+                const fy = finalY.get(id)!;
+                minX = Math.min(minX, fx);
+                minY = Math.min(minY, fy);
+                maxX = Math.max(maxX, fx + CARD_WIDTH);
+                maxY = Math.max(maxY, fy + measuredHeight(id));
+            }
+            const PAD = 120;
+            const contentW = Math.max(1, maxX - minX + PAD * 2);
+            const contentH = Math.max(1, maxY - minY + PAD * 2);
+            zoom = Math.min(
+                MAX_ZOOM,
+                Math.max(MIN_ZOOM, Math.min(rect.width / contentW, rect.height / contentH)),
+            );
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
             pan = {
-                x: -(CENTER_X * zoom) + rect.width / 2,
-                y: -(graphMidY * zoom) + rect.height / 2,
+                x: -(cx * zoom) + rect.width / 2,
+                y: -(cy * zoom) + rect.height / 2,
             };
         }
 
@@ -2041,7 +2088,7 @@
                 class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
                 on:click={autoArrangeByDependencies}
                 aria-label="Auto-arrange by dependencies"
-                title="Auto-arrange by dependencies (left → right)"
+                title="Auto-arrange by dependencies (prerequisites left → goal right)"
             >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 01-1.125-1.125v-3.75zM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-8.25zM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-2.25z" />
@@ -2357,6 +2404,71 @@
         {/if}
 
         {#if !isStandalone}
+            <!-- Dependency arrows: drawn in canvas (logical) coordinates inside
+                 the transformed canvas, so they pan/zoom with the cards and need
+                 no DOM measurement (they never go stale on filter/complete). -->
+            <svg
+                class="absolute inset-0 pointer-events-none z-10"
+                width="{CANVAS_WIDTH}"
+                height="{CANVAS_HEIGHT}"
+                viewBox="0 0 {CANVAS_WIDTH} {CANVAS_HEIGHT}"
+                xmlns="http://www.w3.org/2000/svg"
+                style="overflow: visible;"
+            >
+                <defs>
+                    <marker
+                        id="dep-arrowhead"
+                        markerWidth="11"
+                        markerHeight="10"
+                        refX="9"
+                        refY="5"
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                    >
+                        <polygon points="0 0, 9 5, 0 10" fill="#9ca3af" />
+                    </marker>
+                </defs>
+                {#each questCards as card (card.key)}
+                    {#if card.quest.dependencies && card.quest.dependencies.length > 0}
+                        {#each card.quest.dependencies as dependencyId}
+                            {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
+                            {#if dependencyCard}
+                                {@const depX = draggedCardVisuals && draggedCardVisuals.key === dependencyCard.key ? draggedCardVisuals.x : dependencyCard.x}
+                                {@const depY = draggedCardVisuals && draggedCardVisuals.key === dependencyCard.key ? draggedCardVisuals.y : dependencyCard.y}
+                                {@const cardX = draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.x : card.x}
+                                {@const cardY = draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.y : card.y}
+                                {@const depCX = depX + CARD_WIDTH / 2}
+                                {@const depCY = depY + CARD_HEIGHT_ESTIMATE / 2}
+                                {@const cardCX = cardX + CARD_WIDTH / 2}
+                                {@const cardCY = cardY + CARD_HEIGHT_ESTIMATE / 2}
+                                {@const start = borderPoint(depX, depY, CARD_WIDTH, CARD_HEIGHT_ESTIMATE, cardCX, cardCY)}
+                                {@const end = borderPoint(cardX, cardY, CARD_WIDTH, CARD_HEIGHT_ESTIMATE, depCX, depCY)}
+                                {@const dx = end.x - start.x}
+                                {@const dy = end.y - start.y}
+                                {@const dist = Math.hypot(dx, dy)}
+                                {@const offset = Math.max(40, Math.min(120, dist / 2.5))}
+                                {@const horizontal = Math.abs(dx) > Math.abs(dy)}
+                                {@const c1x = horizontal ? start.x + Math.sign(dx) * offset : start.x}
+                                {@const c1y = horizontal ? start.y : start.y + Math.sign(dy) * offset}
+                                {@const c2x = horizontal ? end.x - Math.sign(dx) * offset : end.x}
+                                {@const c2y = horizontal ? end.y : end.y - Math.sign(dy) * offset}
+                                <path
+                                    d="M {start.x} {start.y} C {c1x} {c1y}, {c2x} {c2y}, {end.x} {end.y}"
+                                    stroke="#9ca3af"
+                                    stroke-width="1.5"
+                                    fill="none"
+                                    opacity="0.7"
+                                    vector-effect="non-scaling-stroke"
+                                    marker-end="url(#dep-arrowhead)"
+                                />
+                            {/if}
+                        {/each}
+                    {/if}
+                {/each}
+            </svg>
+        {/if}
+
+        {#if !isStandalone}
         {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
@@ -2398,96 +2510,6 @@
 
     </div>
 
-    {#if !isStandalone}
-    <!-- Dependency arrows - outside canvas, using DOM coordinates -->
-    <svg 
-        class="absolute pointer-events-none inset-0"
-        style="width: 100%; height: 100%;"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <defs>
-            {#each questCards as card (card.key)}
-                {#if card.quest.dependencies && card.quest.dependencies.length > 0}
-                    {#each card.quest.dependencies as dependencyId}
-                        <marker
-                            id="arrowhead-{card.key}-{dependencyId}"
-                            markerWidth="7"
-                            markerHeight="6"
-                            refX="6"
-                            refY="3"
-                            orient="auto"
-                        >
-                            <polygon
-                                points="0 0, 7 3, 0 6"
-                                fill="#9ca3af"
-                            />
-                        </marker>
-                    {/each}
-                {/if}
-            {/each}
-        </defs>
-
-        <!-- Force reactivity on pan, zoom, and drag -->
-        {#key `${pan.x}-${pan.y}-${zoom}-${draggedCardVisuals?.key}-${draggedCardVisuals?.x}-${draggedCardVisuals?.y}-${measuredCardRects.size}`}
-            {#each questCards as card (card.key)}
-                {#if card.quest.dependencies && card.quest.dependencies.length > 0}
-                    {#each card.quest.dependencies as dependencyId}
-                        {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
-                        {#if dependencyCard}
-                            <!-- Get actual DOM positions with drag updates -->
-                            {@const depMeasured = getCardPosition(dependencyCard.key)}
-                            {@const cardMeasured = getCardPosition(card.key)}
-                            
-                            {#if depMeasured && cardMeasured}
-                                <!-- Use direct DOM positions - no displacement calculation needed -->
-                                {@const depX = depMeasured.x}
-                                {@const depY = depMeasured.y}
-                                {@const cardX = cardMeasured.x}
-                                {@const cardY = cardMeasured.y}
-                                
-                                <!-- Centres of both cards -->
-                                {@const depCX = depX + depMeasured.width / 2}
-                                {@const depCY = depY + depMeasured.height / 2}
-                                {@const cardCX = cardX + cardMeasured.width / 2}
-                                {@const cardCY = cardY + cardMeasured.height / 2}
-
-                                <!-- Anchor each end at the border point facing
-                                     the other card, so the arrow runs from the
-                                     closest edge of the dependency to the closest
-                                     edge of the dependent. -->
-                                {@const start = borderPoint(depX, depY, depMeasured.width, depMeasured.height, cardCX, cardCY)}
-                                {@const end = borderPoint(cardX, cardY, cardMeasured.width, cardMeasured.height, depCX, depCY)}
-
-                                <!-- Curved arrow: control points are offset
-                                     along the dominant axis of separation so the
-                                     line leaves/enters perpendicular to the
-                                     facing edge for a smooth flow. -->
-                                {@const dx = end.x - start.x}
-                                {@const dy = end.y - start.y}
-                                {@const dist = Math.hypot(dx, dy)}
-                                {@const offset = Math.max(40, Math.min(120, dist / 2.5))}
-                                {@const horizontal = Math.abs(dx) > Math.abs(dy)}
-                                {@const c1x = horizontal ? start.x + Math.sign(dx) * offset : start.x}
-                                {@const c1y = horizontal ? start.y : start.y + Math.sign(dy) * offset}
-                                {@const c2x = horizontal ? end.x - Math.sign(dx) * offset : end.x}
-                                {@const c2y = horizontal ? end.y : end.y - Math.sign(dy) * offset}
-
-                                <path
-                                    d="M {start.x} {start.y} C {c1x} {c1y}, {c2x} {c2y}, {end.x} {end.y}"
-                                    stroke="#9ca3af"
-                                    stroke-width="1.5"
-                                    fill="none"
-                                    opacity="0.7"
-                                    marker-end="url(#arrowhead-{card.key}-{dependencyId})"
-                                />
-                            {/if}
-                        {/if}
-                    {/each}
-                {/if}
-            {/each}
-        {/key}
-    </svg>
-    {/if}
 </div>
 
 <style>
@@ -2499,10 +2521,14 @@
     }
 
     .task-card {
-        transform: translate3d(0, 0, 0);
         backface-visibility: hidden;
         -webkit-font-smoothing: subpixel-antialiased;
-        position: relative; /* Ensure dots are positioned relative to the card */
+        /* Canvas cards are absolutely positioned at their (x, y). This scoped
+           rule must NOT override the `absolute` utility with `relative` — doing
+           so drops the cards into normal flow, stacking them with a growing
+           vertical offset so they no longer sit at card.x/card.y (and the
+           dependency arrows, which use those logical coords, stop matching). */
+        position: absolute;
         user-select: none;
     }
 
