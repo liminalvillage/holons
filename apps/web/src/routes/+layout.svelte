@@ -461,18 +461,27 @@
 		//            Your own key is always trusted.
 		// Guarded so it's a no-op on holosphere builds without signing.
 		const signingMode = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
-		if (signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
+		// Install console debug/repair helpers (__del / __nuke / __repairCircular /
+		// __signingReport) regardless of signing mode, then enable signing only when
+		// it's actually on. The repair helpers operate at the raw Gun layer and must
+		// stay available with signing off — that's how circular-hologram husks get
+		// cleaned up. (Previously these were nested inside the signing branch, so
+		// VITE_HOLOSPHERE_SIGNING=off silently removed them.)
+		if (typeof window !== 'undefined') {
 			try {
 				const relays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
 				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				await (holosphere as any).enableSigning({
-					relays,
-					readKeys,
-					shadow: signingMode === 'shadow',
-					enforce: signingMode === 'enforce',
-				});
+				if (signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
+					await (holosphere as any).enableSigning({
+						relays,
+						readKeys,
+						shadow: signingMode === 'shadow',
+						enforce: signingMode === 'enforce',
+					});
+					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
+				}
 				if (typeof window !== 'undefined') {
 					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
 					// Direct delete escape hatch for known-bad/storming keys, e.g.
@@ -523,7 +532,7 @@
 							if (circular) {
 								// Raw-nuke (.put(null)) — forceful; bypasses the slow signed
 								// delete that routes through the enforce layer during a storm.
-								await new Promise((res) => {
+								await new Promise<void>((res) => {
 									let d = false; const f = () => { if (!d) { d = true; res(); } };
 									try { hs.gun.get(app).get(holon).get(lens).get(key).put(null, () => f()); } catch { f(); }
 									setTimeout(f, 2000);
@@ -536,9 +545,8 @@
 						return removed;
 					};
 				}
-				console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
 			} catch (e) {
-				console.warn('[signing] enableSigning failed:', (e as any)?.message);
+				console.warn('[holosphere] signing/helper setup failed:', (e as any)?.message);
 			}
 		}
 

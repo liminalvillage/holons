@@ -1,6 +1,5 @@
 packages:
   - "apps/*"
   - "packages/*"
-  # holosphere is consumed from npm (see pnpm.overrides), not as a workspace
-  # package — exclude the vendored copy so it isn't linked or built locally.
-  - "!packages/holosphere"
+  # holosphere is vendored at packages/holosphere and consumed as a workspace
+  # package (consumers depend on it via `workspace:*`).
