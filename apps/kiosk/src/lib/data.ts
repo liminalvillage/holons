@@ -131,14 +131,30 @@ export interface BacklogTask {
   /** Ids of the appreciators, so a card can show whether *you* appreciate it. */
   appreciatedBy: (string | number)[];
   source?: string;
+  /** Who proposed the quest (the "idea" behind it), for the lightbulb chip. */
+  initiator?: TaskPerson | null;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
   orderIndex?: number;
 }
 
-/** Friendly display name for a participant/appreciator record. */
+/**
+ * Friendly display name for a person record. Tolerates both the Telegram
+ * snake_case participants (`first_name`) and the quest initiator's camelCase
+ * (`firstName`), so either shape resolves to a real name.
+ */
 function personName(p: any): string {
-  const full = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
+  const full = [p?.first_name ?? p?.firstName, p?.last_name ?? p?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   return full || (p?.username ? `@${p.username}` : `#${p?.id ?? "?"}`);
+}
+
+/** The quest's initiator as an avatar-stack person, or null when unset. */
+function toInitiator(q: Quest): TaskPerson | null {
+  const i = q.initiator;
+  if (!i || i.id == null) return null;
+  return { id: i.id, name: personName(i) };
 }
 
 /** Map a quest's participant/appreciation array to avatar-stack people. */
@@ -224,6 +240,7 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       appreciation: countOf(q.appreciation),
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
+      initiator: toInitiator(q),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
       // survives a reload.
       orderIndex:

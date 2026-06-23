@@ -9,7 +9,6 @@
     holonId,
     rawQuests,
     completionRequest,
-    editOnOpen,
     showNotice,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
@@ -31,10 +30,6 @@
 
   function openTask(id: string) {
     if (justDragged) return;
-    openQuest(id, "task");
-  }
-  function editTask(id: string) {
-    editOnOpen.set(true);
     openQuest(id, "task");
   }
   function onKey(e: KeyboardEvent, id: string) {
@@ -435,11 +430,13 @@
               <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
               <article
                 class="note tilt"
-                style="--tilt: {noteTilt(task.id)}deg; --rise-delay: {noteRiseDelay(
+                style="--tilt: {noteTilt(
                   task.id,
-                )}s; --rise-rot: {noteRiseRot(task.id)}deg; background: {noteColor(
-                  task.category,
-                )};"
+                )}deg; --rise-delay: {noteRiseDelay(
+                  task.id,
+                )}s; --rise-rot: {noteRiseRot(
+                  task.id,
+                )}deg; background: {noteColor(task.category)};"
                 role="button"
                 tabindex="0"
                 on:pointerdown={(e) => onPointerDown(e, task)}
@@ -447,15 +444,6 @@
                 on:keydown={(e) => onKey(e, task.id)}
               >
                 <div class="tools">
-                  <button
-                    class="tool"
-                    on:pointerdown|stopPropagation
-                    on:click|stopPropagation={() => editTask(task.id)}
-                    aria-label="Edit task"
-                    title="Edit"
-                  >
-                    ✎
-                  </button>
                   <button
                     class="tool check"
                     on:pointerdown|stopPropagation
@@ -467,6 +455,16 @@
                   </button>
                 </div>
                 <h3>{task.title}</h3>
+                {#if task.initiator}
+                  <div
+                    class="initiator"
+                    title="Proposed by {task.initiator.name}"
+                  >
+                    <span class="bulb" aria-hidden="true">💡</span>
+                    <Avatars people={[task.initiator]} size="1.3rem" />
+                    <span class="iname">{task.initiator.name}</span>
+                  </div>
+                {/if}
                 {#if task.picture}
                   <img
                     class="thumb"
@@ -648,9 +646,9 @@
      instead of ballooning to the whole row. */
   .wall {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 10.5rem), 1fr));
     align-content: start;
-    gap: 0.9rem;
+    gap: 0.7rem;
   }
   .note-wrap {
     position: relative;
@@ -669,7 +667,8 @@
   .note {
     position: relative;
     display: block;
-    padding: 0.95rem 1rem 1.05rem;
+    padding: 0.75rem 0.8rem 0.85rem;
+    text-align: center;
     border-radius: 4px 14px 14px 14px;
     /* Staggered entrance — each card rises in on its OWN delay (--rise-delay,
        hash-derived per card) so they arrive independently at different times
@@ -706,10 +705,34 @@
   }
   .note h3 {
     margin: 0;
-    padding-right: 3.6rem; /* clear the edit + complete buttons */
-    font-size: 1.1rem;
+    /* Symmetric clearance so the centred title never tucks under the corner
+       complete button (top-right). */
+    padding: 0 1.7rem;
+    font-size: 0.98rem;
     line-height: 1.25;
     color: var(--ink);
+  }
+
+  /* Initiator chip — who proposed the idea: a lightbulb, their avatar, name. */
+  .initiator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+  .initiator .bulb {
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .initiator .iname {
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .note .thumb {
     display: block;
@@ -821,8 +844,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
-    margin-top: 0.65rem;
+    margin-top: 0.55rem;
   }
   .tag {
     font-size: 0.72rem;
@@ -856,9 +880,9 @@
   .cardfoot {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-top: 0.6rem;
+    justify-content: center;
+    gap: 0.7rem;
+    margin-top: 0.55rem;
   }
 
   /* Appreciation heart — same footprint as an avatar (1.7rem), with the count
