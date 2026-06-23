@@ -18,7 +18,9 @@
     resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
+    resolveThemeMode,
   } from "$lib/config";
+  import { themeMode, startTheme } from "$lib/theme";
   import {
     rawQuests,
     rawLibrary,
@@ -202,9 +204,10 @@
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
+    themeMode.set(resolveThemeMode());
     initAuth();
     mounted = true;
-    const teardown = [startClock(), startRotation()];
+    const teardown = [startClock(), startRotation(), startTheme()];
     return () => {
       teardown.forEach((fn) => fn());
       if (readyTimer) clearTimeout(readyTimer);

@@ -54,6 +54,34 @@
   text-rendering: optimizeLegibility;
 }
 
+/* Dark skin — applied via `data-theme="dark"` on <html> (see lib/theme.ts),
+   switched automatically at sunset in `auto` mode. Only the palette changes:
+   surfaces go to deep slate and ink flips to near-white, so the same components
+   render unchanged. The post-it palette is re-cast as deep jewel tones because
+   notes carry `color: var(--ink)` — now light — and need a dark ground to stay
+   legible. The accent (`--teal`) is set inline from the caretaker's choice and
+   intentionally carries across both skins. */
+:root[data-theme="dark"] {
+  --paper: #14181a;
+  --paper-deep: #0d1012;
+  --card: #1c2226;
+
+  --ink: #eef2f0;
+  --ink-soft: #b3c0bd;
+  --muted: #7c8b88;
+  --line: #2c3539;
+
+  --note-sun: #5a4a1e;
+  --note-mint: #214233;
+  --note-sky: #1d3a4a;
+  --note-coral: #5a2f27;
+  --note-lav: #3a3158;
+  --note-lime: #3b4521;
+
+  --shadow-note: 0 10px 24px rgba(0, 0, 0, 0.5);
+  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.42);
+}
+
 * {
   box-sizing: border-box;
 }

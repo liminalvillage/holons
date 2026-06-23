@@ -19,8 +19,11 @@
     setBrandLogo,
     setAccent,
     setRolesEnabled,
+    setThemeMode,
     DEFAULT_ACCENT,
+    type ThemeMode,
   } from "$lib/config";
+  import { themeMode } from "$lib/theme";
 
   // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
   let draftHolon = $holonId ?? "";
@@ -28,7 +31,14 @@
   let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
   let draftRoles = $rolesEnabled;
+  let draftTheme: ThemeMode = $themeMode;
   let logoError = "";
+
+  const THEMES: { id: ThemeMode; label: string; glyph: string }[] = [
+    { id: "auto", label: "Auto", glyph: "◑" },
+    { id: "light", label: "Light", glyph: "☀" },
+    { id: "dark", label: "Dark", glyph: "☾" },
+  ];
 
   const SWATCHES = [
     DEFAULT_ACCENT,
@@ -76,6 +86,8 @@
     accent.set(draftAccent);
     setRolesEnabled(draftRoles);
     rolesEnabled.set(draftRoles);
+    setThemeMode(draftTheme);
+    themeMode.set(draftTheme);
     settingsOpen.set(false);
   }
 </script>
@@ -150,6 +162,25 @@
           aria-label="Custom accent"
         />
       </label>
+    </div>
+  </div>
+
+  <div class="field">
+    Appearance
+    <span class="sub">— Auto follows local sunset</span>
+    <div class="theme-row">
+      {#each THEMES as t (t.id)}
+        <button
+          type="button"
+          class="theme-opt"
+          class:sel={draftTheme === t.id}
+          aria-pressed={draftTheme === t.id}
+          on:click={() => (draftTheme = t.id)}
+        >
+          <span class="theme-glyph" aria-hidden="true">{t.glyph}</span>
+          {t.label}
+        </button>
+      {/each}
     </div>
   </div>
 
@@ -332,6 +363,41 @@
     opacity: 0;
     cursor: pointer;
   }
+  /* Appearance (theme) segmented control */
+  .theme-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.45rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .theme-opt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.6rem 0.4rem;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: transform 0.1s ease;
+  }
+  .theme-opt:active {
+    transform: scale(0.96);
+  }
+  .theme-opt.sel {
+    border-color: var(--teal);
+    color: var(--teal-deep);
+  }
+  .theme-glyph {
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+
   /* Roles-tab on/off switch */
   .toggle-field {
     display: flex;

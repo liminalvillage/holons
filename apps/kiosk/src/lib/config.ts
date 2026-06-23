@@ -28,9 +28,22 @@ const ROLES_KEY = "kiosk_roles";
 const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
+const THEME_KEY = "kiosk_theme";
+const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
+const GEO_KEY = "kiosk_geo";
 
 /** The kiosk's default accent (teal). */
 export const DEFAULT_ACCENT = "#0e6b66";
+
+/** How the day/night palette is chosen. `auto` follows local sunrise/sunset. */
+export type ThemeMode = "auto" | "light" | "dark";
+
+/**
+ * Hours (device-local) the fixed-schedule fallback treats as night, used only
+ * when geolocation is unavailable: dark from 19:00 until 07:00.
+ */
+export const DARK_FALLBACK_START_HOUR = 19;
+export const DARK_FALLBACK_END_HOUR = 7;
 
 /** Base URL of the full web dashboard the "holon" header button opens. */
 export const DASHBOARD_BASE = "https://dashboard.holons.io";
@@ -183,6 +196,47 @@ export function setAccent(value: string | null): void {
   } else {
     forget(ACCENT_KEY);
   }
+}
+
+/** Resolve the caretaker's theme preference; `auto` (sunset-driven) by default. */
+export function resolveThemeMode(): ThemeMode {
+  const v = persisted(THEME_KEY);
+  return v === "light" || v === "dark" ? v : "auto";
+}
+
+/** Persist (or reset to `auto`, when auto) the theme preference. */
+export function setThemeMode(mode: ThemeMode): void {
+  if (mode === "auto") forget(THEME_KEY);
+  else persist(THEME_KEY, mode);
+}
+
+/**
+ * Remember the palette last shown so a reload/power-cycle can restore it before
+ * the controller recomputes — this is what the boot script in `app.html` reads
+ * to avoid a flash of the wrong theme.
+ */
+export function setResolvedTheme(theme: "light" | "dark"): void {
+  persist(THEME_RESOLVED_KEY, theme);
+}
+
+/** Last known device coordinates, cached so sunset tracking survives offline. */
+export function resolveGeo(): { lat: number; lng: number } | null {
+  const raw = persisted(GEO_KEY);
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw) as { lat?: unknown; lng?: unknown };
+    if (typeof o.lat === "number" && typeof o.lng === "number") {
+      return { lat: o.lat, lng: o.lng };
+    }
+  } catch {
+    /* corrupt entry — ignore, fall back to fixed hours */
+  }
+  return null;
+}
+
+/** Cache the latest geolocation fix for offline sunrise/sunset computation. */
+export function setGeo(geo: { lat: number; lng: number }): void {
+  persist(GEO_KEY, JSON.stringify(geo));
 }
 
 /** Seconds each view is shown before the kiosk auto-advances to the next. */

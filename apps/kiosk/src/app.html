@@ -31,6 +31,23 @@
          (in document order) before the SvelteKit app module, so window.Telegram
          is ready at mount. -->
     <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <!-- Restore the last day/night palette before first paint so a reload or
+         power-cycle doesn't flash the wrong skin (lib/theme.ts recomputes the
+         real sunset state right after mount). -->
+    <script>
+      try {
+        var pin = localStorage.getItem("kiosk_theme");
+        var last = localStorage.getItem("kiosk_theme_resolved");
+        document.documentElement.dataset.theme =
+          pin === "dark" || pin === "light"
+            ? pin
+            : last === "dark"
+              ? "dark"
+              : "light";
+      } catch (e) {
+        /* private mode / no storage — default light skin */
+      }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="tap">
