@@ -1080,11 +1080,11 @@
     }
 
     // Auto-arrange cards as a left→right layered dependency graph (Sugiyama
-    // style). Dependency depth (longest path from a root) sets the column, so
-    // leaf prerequisites sit on the left and everything converges rightward into
-    // the final goal. Within each column, nodes are ordered to minimise edge
-    // crossings and given y-coordinates pulled toward their neighbours so an
-    // aggregator node sits centred among the cards that feed into it.
+    // style). Each card is placed as far right as possible while staying left of
+    // every card that depends on it, so leaf prerequisites stagger across the
+    // left and chains converge rightward into the final goal. Within a column,
+    // cards are ordered to minimise edge crossings and stacked by their OWN
+    // height — never overlapping — each pulled toward the cards it connects to.
     // Dependency-free cards are grid-packed below the graph.
     function autoArrangeByDependencies() {
         if (!holonID || questCards.length === 0) return;
@@ -1110,17 +1110,16 @@
         const COL_GAP = 200; // horizontal room between columns for curved edges
         const COL_PITCH = CARD_WIDTH + COL_GAP;
         const MIN_VGAP = 50;
-        const DEFAULT_CARD_HEIGHT = 220;
         const BASE_X = 200;
         const CENTER_Y = 400;
         // Measured rects are screen-space (canvas size × zoom); divide by zoom to
-        // get the canvas-space height our positions are stored in.
+        // get the canvas-space height our positions are stored in. Fall back to
+        // the known square-card size so spacing never collapses (overlapping the
+        // cards) when one hasn't been measured yet.
         const measuredHeight = (id: string): number => {
             const m = getCardPosition(id);
-            return m ? m.height / (zoom || 1) : DEFAULT_CARD_HEIGHT;
+            return m ? m.height / (zoom || 1) : CARD_HEIGHT_ESTIMATE;
         };
-        const ROW_PITCH =
-            Math.max(DEFAULT_CARD_HEIGHT, ...ids.map(measuredHeight)) + MIN_VGAP;
 
         // Isotonic regression (pool-adjacent-violators): nearest non-decreasing
         // sequence in least squares. Removes vertical overlaps within a column
@@ -1157,33 +1156,40 @@
             const childrenIn = (id: string) =>
                 childrenOf.get(id)!.filter((c) => connectedSet.has(c));
 
-            // --- 1. Column assignment: longest path from a root → depth. ---
-            const depthCache = new Map<string, number>();
-            const visiting = new Set<string>();
-            const depthOf = (id: string): number => {
-                if (depthCache.has(id)) return depthCache.get(id)!;
-                if (visiting.has(id)) return 0; // break any dependency cycle
-                const ps = parentsIn(id);
-                if (ps.length === 0) { depthCache.set(id, 0); return 0; }
-                visiting.add(id);
-                const d = 1 + Math.max(...ps.map(depthOf));
-                visiting.delete(id);
-                depthCache.set(id, d);
+            // --- 1. Column assignment: place each card as far RIGHT as possible
+            // while staying left of every card that depends on it (longest path
+            // to a sink). The final goal — which nothing depends on — lands in the
+            // rightmost column with chains converging into it, while leaves
+            // stagger across columns by how long their downstream chain is,
+            // instead of all piling into a single column 0. ---
+            const sinkCache = new Map<string, number>();
+            const sinkVisiting = new Set<string>();
+            const sinkDepthOf = (id: string): number => {
+                if (sinkCache.has(id)) return sinkCache.get(id)!;
+                if (sinkVisiting.has(id)) return 0; // break any dependency cycle
+                const cs = childrenIn(id);
+                if (cs.length === 0) { sinkCache.set(id, 0); return 0; }
+                sinkVisiting.add(id);
+                const d = 1 + Math.max(...cs.map(sinkDepthOf));
+                sinkVisiting.delete(id);
+                sinkCache.set(id, d);
                 return d;
             };
+            const maxSink = Math.max(...connectedIds.map(sinkDepthOf));
+            const columnOf = (id: string) => maxSink - sinkDepthOf(id);
 
             const layers = new Map<number, string[]>();
             for (const id of connectedIds) {
-                const d = depthOf(id);
-                if (!layers.has(d)) layers.set(d, []);
-                layers.get(d)!.push(id);
+                const c = columnOf(id);
+                if (!layers.has(c)) layers.set(c, []);
+                layers.get(c)!.push(id);
             }
-            const depths = [...layers.keys()].sort((a, b) => a - b);
+            const columns = [...layers.keys()].sort((a, b) => a - b);
 
             const orderIndex = new Map<string, number>();
             const reindex = () => {
-                for (const d of depths) {
-                    layers.get(d)!.forEach((id, i) => orderIndex.set(id, i));
+                for (const c of columns) {
+                    layers.get(c)!.forEach((id, i) => orderIndex.set(id, i));
                 }
             };
             reindex();
@@ -1196,64 +1202,81 @@
                 return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
             };
             for (let it = 0; it < 8; it++) {
-                const downward = it % 2 === 0; // order by left neighbours, then right
-                const seq = downward ? depths : [...depths].reverse();
-                for (const d of seq) {
-                    const layer = layers.get(d)!;
+                const leftward = it % 2 === 0; // order by left (prereqs), then right (dependents)
+                const seq = leftward ? columns : [...columns].reverse();
+                for (const c of seq) {
+                    const layer = layers.get(c)!;
                     const keyed = layer.map((id, i) => {
-                        const ns = (downward ? parentsIn(id) : childrenIn(id)).map(
+                        const ns = (leftward ? parentsIn(id) : childrenIn(id)).map(
                             (n) => orderIndex.get(n) ?? 0,
                         );
                         const key = median(ns);
                         return { id, key: key < 0 ? i : key, fallback: i };
                     });
                     keyed.sort((a, b) => a.key - b.key || a.fallback - b.fallback);
-                    layers.set(d, keyed.map((k) => k.id));
+                    layers.set(c, keyed.map((k) => k.id));
                     reindex();
                 }
             }
 
-            // --- 3. Y-coordinates: pull each node to its neighbours' barycentre,
-            // then remove overlaps with isotonic regression so a column never
-            // stacks two cards on top of each other. ---
-            const y = new Map<string, number>();
-            for (const d of depths) {
-                layers.get(d)!.forEach((id, i) => y.set(id, i * ROW_PITCH));
+            // --- 3. Y-coordinates: stack each column by the cards' OWN heights so
+            // they can never overlap, with a barycentre pull (on card centres) so
+            // a card sits centred on the cards it connects to. Working in
+            // cumulative-height space lets the isotonic pass keep the stack
+            // ordered and gap-respecting after each pull. ---
+            const heightOf = new Map<string, number>(
+                connectedIds.map((id) => [id, measuredHeight(id)]),
+            );
+            const colOffsets = new Map<number, number[]>();
+            const yTop = new Map<string, number>();
+            for (const c of columns) {
+                const layer = layers.get(c)!;
+                const offs: number[] = [];
+                let acc = 0;
+                for (let i = 0; i < layer.length; i++) {
+                    offs.push(acc);
+                    acc += heightOf.get(layer[i])! + MIN_VGAP;
+                }
+                colOffsets.set(c, offs);
+                layer.forEach((id, i) => yTop.set(id, offs[i]));
             }
+            const centreOf = (id: string) => yTop.get(id)! + heightOf.get(id)! / 2;
             const neighboursOf = (id: string) => [...parentsIn(id), ...childrenIn(id)];
-            for (let it = 0; it < 16; it++) {
-                for (const d of depths) {
-                    const layer = layers.get(d)!;
-                    const desired = layer.map((id) => {
-                        const ns = neighboursOf(id).map((n) => y.get(n)!);
-                        return ns.length
+            for (let it = 0; it < 20; it++) {
+                for (const c of columns) {
+                    const layer = layers.get(c)!;
+                    const offs = colOffsets.get(c)!;
+                    const desiredTop = layer.map((id) => {
+                        const ns = neighboursOf(id).map((n) => centreOf(n));
+                        const ctr = ns.length
                             ? ns.reduce((a, b) => a + b, 0) / ns.length
-                            : y.get(id)!;
+                            : centreOf(id);
+                        return ctr - heightOf.get(id)! / 2;
                     });
-                    const fitted = isotonic(desired.map((v, i) => v - i * ROW_PITCH));
-                    layer.forEach((id, i) => y.set(id, fitted[i] + i * ROW_PITCH));
+                    const fitted = isotonic(desiredTop.map((v, i) => v - offs[i]));
+                    layer.forEach((id, i) => yTop.set(id, fitted[i] + offs[i]));
                 }
             }
 
             // --- 4. X by column; centre the graph vertically on CENTER_Y. ---
-            const allY = connectedIds.map((id) => y.get(id)!);
-            const shift = CENTER_Y - (Math.min(...allY) + Math.max(...allY)) / 2;
-            for (const d of depths) {
-                for (const id of layers.get(d)!) {
-                    finalX.set(id, BASE_X + d * COL_PITCH);
-                    finalY.set(id, y.get(id)! + shift);
+            const tops = connectedIds.map((id) => yTop.get(id)!);
+            const bottoms = connectedIds.map((id) => yTop.get(id)! + heightOf.get(id)!);
+            const shift = CENTER_Y - (Math.min(...tops) + Math.max(...bottoms)) / 2;
+            for (const c of columns) {
+                for (const id of layers.get(c)!) {
+                    finalX.set(id, BASE_X + c * COL_PITCH);
+                    finalY.set(id, yTop.get(id)! + shift);
                 }
             }
-            graphBottom = Math.max(
-                ...connectedIds.map((id) => finalY.get(id)! + measuredHeight(id)),
-            );
+            graphBottom = Math.max(...bottoms) + shift;
         }
 
-        // --- Grid-pack the isolated cards below the graph (square-ish block). ---
+        // --- Grid-pack the isolated cards below the graph (square-ish block),
+        // each row advanced by the tallest card in it so they never overlap. ---
         if (isolatedIds.length > 0) {
             const ISO_SLOT = CARD_WIDTH + 60;
             const cols = Math.max(1, Math.round(Math.sqrt(isolatedIds.length * 1.6)));
-            let curY = connectedIds.length > 0 ? graphBottom + ROW_PITCH : CENTER_Y;
+            let curY = connectedIds.length > 0 ? graphBottom + CARD_HEIGHT_ESTIMATE : CENTER_Y;
             let col = 0;
             let rowMaxH = 0;
             for (const id of isolatedIds) {
