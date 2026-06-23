@@ -400,6 +400,7 @@
 
 			const q = searchQuery.trim().toLowerCase();
 			if (q) {
+				// Keep every card that contains the word anywhere in its content.
 				const tagsText = Array.isArray((quest as any).tags) ? (quest as any).tags.join(' ') : '';
 				const haystack = `${quest.title ?? ''} ${quest.description ?? ''} ${quest.category ?? ''} ${tagsText}`.toLowerCase();
 				if (!haystack.includes(q)) return false;
