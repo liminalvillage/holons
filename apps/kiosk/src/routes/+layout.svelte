@@ -237,9 +237,20 @@
     s.setProperty("--teal-deep", `color-mix(in srgb, ${$accent} 78%, #000)`);
   }
 
-  // Any pointer/touch/key/scroll counts as someone using the screen → pause
-  // the auto-flip. Capture phase so it fires before view handlers.
+  // Any pointer/touch/key/scroll counts as someone using the screen → reveal the
+  // chrome and pause the auto-flip. Capture phase so it fires before view
+  // handlers.
   function onActivity() {
+    noteInteraction();
+  }
+
+  // Mouse movement (no click) also counts as presence, but fires constantly —
+  // throttle it so we don't reset the stores on every pixel.
+  let lastMove = 0;
+  function onMove() {
+    const t = Date.now();
+    if (t - lastMove < 400) return;
+    lastMove = t;
     noteInteraction();
   }
 </script>
@@ -249,6 +260,7 @@
   on:touchstart|capture={onActivity}
   on:keydown|capture={onActivity}
   on:wheel|capture={onActivity}
+  on:pointermove|capture={onMove}
 />
 
 <div class="kiosk">

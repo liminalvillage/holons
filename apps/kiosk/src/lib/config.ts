@@ -244,3 +244,10 @@ export const FLIP_INTERVAL_MS = 16_000;
 
 /** Idle grace after the last touch before auto-rotation resumes. */
 export const RESUME_AFTER_IDLE_MS = 30_000;
+
+/**
+ * Idle grace after the last touch before the header chrome (brand, search,
+ * account, clock, tabs) fades away for an unobstructed, immersive board. Any
+ * interaction brings it straight back.
+ */
+export const IDLE_HIDE_MS = 12_000;

@@ -11,6 +11,7 @@
     searchQuery,
     now,
     rotating,
+    idle,
     flipProgress,
   } from "$lib/stores";
   import { telegramUser, displayName } from "$lib/auth";
@@ -38,7 +39,10 @@
   }
 </script>
 
-<header class="bar">
+<!-- The whole header retreats when no one's touching the screen, so the board
+     stands alone; any interaction (handled at the window level) brings it back.
+     `aria-hidden` while idle keeps it out of the accessibility tree too. -->
+<header class="bar" class:idle={$idle} aria-hidden={$idle}>
   <div class="top">
     <div class="brand">
       {#if $brandLogo}
@@ -139,6 +143,21 @@
   .bar {
     flex: 0 0 auto;
     padding: 1.1rem 1.4rem 0;
+    /* `max-height` (a value safely above the real header height) lets the bar
+       collapse smoothly so the board reclaims the space when idle. */
+    max-height: 16rem;
+    overflow: hidden;
+    transition:
+      opacity 0.5s ease,
+      max-height 0.5s ease,
+      padding 0.5s ease;
+  }
+  .bar.idle {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    pointer-events: none;
   }
 
   .top {

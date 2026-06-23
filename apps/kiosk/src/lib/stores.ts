@@ -9,7 +9,7 @@ import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import { toEvents, toBacklog, toThings, toRoles, filterBySearch } from "./data";
-import { FLIP_INTERVAL_MS, RESUME_AFTER_IDLE_MS } from "./config";
+import { FLIP_INTERVAL_MS, RESUME_AFTER_IDLE_MS, IDLE_HIDE_MS } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -203,8 +203,16 @@ export const rotating = writable<boolean>(true);
 /** Wall-clock time (ms) of the next scheduled flip, or null while paused. */
 export const flipAt = writable<number | null>(null);
 
+/**
+ * Whether no one has touched the screen recently — drives hiding the header
+ * chrome for an immersive board. Starts true (an unattended kiosk shows the
+ * board, not the chrome); any interaction clears it via `noteInteraction`.
+ */
+export const idle = writable<boolean>(true);
+
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlip() {
   flipAt.set(Date.now() + FLIP_INTERVAL_MS);
@@ -232,20 +240,29 @@ export function startRotation(): () => void {
   return () => {
     if (tickTimer) clearInterval(tickTimer);
     if (resumeTimer) clearTimeout(resumeTimer);
+    if (idleTimer) clearTimeout(idleTimer);
     tickTimer = null;
     resumeTimer = null;
+    idleTimer = null;
   };
 }
 
-/** Call on any user interaction: pause rotation, arm the resume timer. */
+/**
+ * Call on any user interaction: reveal the chrome, pause rotation, and arm both
+ * the chrome-hide and rotation-resume timers so the screen returns to its
+ * immersive, self-advancing state once everyone walks away.
+ */
 export function noteInteraction() {
   rotating.set(false);
   flipAt.set(null);
+  idle.set(false);
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
     rotating.set(true);
     scheduleFlip();
   }, RESUME_AFTER_IDLE_MS);
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
 }
 
 /** Manually select a tab by id (also counts as an interaction). */
