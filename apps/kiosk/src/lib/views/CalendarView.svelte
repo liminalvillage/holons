@@ -15,7 +15,7 @@
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
-  import { createTask } from "@holons/core/tasks";
+  import { createTask, type Quest } from "@holons/core/tasks";
   import { noteColor, noteTilt, type CalendarEvent } from "$lib/data";
   import Avatars from "$lib/components/Avatars.svelte";
 
@@ -44,6 +44,7 @@
   let drag: { id: string; title: string; x: number; y: number } | null = null;
   let dropDay: string | null = null;
   let dropMin: number | null = null; // minutes-from-midnight when over the timeline
+  let dropOnTray = false; // pointer is over the unscheduled drawer → clear the date
   let justDragged = false;
   let startX = 0;
   let startY = 0;
@@ -61,7 +62,11 @@
   // the pointer right now.
   function computeDrop(x: number, y: number) {
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
-    const dayEl = el?.closest<HTMLElement>("[data-day]") ?? null;
+    // Over the drawer (or its drag-time drop hint) → unschedule, not reschedule.
+    dropOnTray = el?.closest(".tray, .unschedule-zone") != null;
+    const dayEl = dropOnTray
+      ? null
+      : (el?.closest<HTMLElement>("[data-day]") ?? null);
     dropDay = dayEl?.dataset.day ?? null;
     if (dayEl && dayEl.dataset.hours != null) {
       const rect = dayEl.getBoundingClientRect();
@@ -94,6 +99,7 @@
     drag = null;
     dropDay = null;
     dropMin = null;
+    dropOnTray = false;
     pendingId = null;
   }
 
@@ -113,12 +119,18 @@
     const id = drag?.id ?? null;
     const day = dropDay;
     const min = dropMin;
+    const toTray = dropOnTray;
     const dragged = drag != null;
     drag = null;
     dropDay = null;
     dropMin = null;
+    dropOnTray = false;
     pendingId = null;
-    if (dragged && id && day) {
+    if (dragged && id && toTray) {
+      justDragged = true; // swallow the click that follows this pointerup
+      setTimeout(() => (justDragged = false), 0);
+      void applyUnschedule(id);
+    } else if (dragged && id && day) {
       justDragged = true; // swallow the click that follows this pointerup
       setTimeout(() => (justDragged = false), 0);
       void applyDrop(id, day, min);
@@ -158,6 +170,28 @@
       const delta = newStart.getTime() - oldStart.getTime();
       updated.ends = new Date(oldEnds.getTime() + delta).toISOString();
     }
+    const writer = await getWriter(hid);
+    await writer.put("quests", updated);
+  }
+
+  // Dropping a card back into the drawer clears its date, returning it to the
+  // unscheduled pool. Empty-string is the codebase's "no date" sentinel (see
+  // createTask), so we blank `when`/`ends`/`until` rather than deleting them.
+  // A pure calendar event only renders while it's dated — clearing the date
+  // would make it vanish from every view — so we also flip its type to a plain
+  // task, which keeps it visible in the drawer (and on the Tasks wall).
+  async function applyUnschedule(id: string) {
+    const hid = get(holonId);
+    if (!hid) return;
+    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
+    if (!q) return;
+    if (!q.when) return; // already unscheduled — nothing to clear
+    if (!get(isLoggedIn)) {
+      loginOpen.set(true);
+      return;
+    }
+    const updated: Quest = { ...q, when: "", ends: "", until: "" };
+    if (String(q.type ?? "").toLowerCase() === "event") updated.type = "task";
     const writer = await getWriter(hid);
     await writer.put("quests", updated);
   }
@@ -765,8 +799,12 @@
   </div>
 
   {#if unscheduled.length}
-    <div class="tray" bind:clientHeight={trayHeight}>
-      <span class="tray-label">Unscheduled — drag onto a day</span>
+    <div class="tray" class:drop={dropOnTray} bind:clientHeight={trayHeight}>
+      <span class="tray-label"
+        >{drag
+          ? "Drop here to unschedule"
+          : "Unscheduled — drag onto a day"}</span
+      >
       <div class="tray-items scroll">
         {#each unscheduled as task (task.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
@@ -783,6 +821,13 @@
           >
         {/each}
       </div>
+    </div>
+  {:else if drag}
+    <!-- No unscheduled tasks yet, so the drawer is hidden — surface a transient
+         drop zone during a drag so a card can still be pulled off the calendar.
+         Absolutely positioned, so revealing it doesn't reflow the timeline. -->
+    <div class="unschedule-zone" class:drop={dropOnTray} aria-hidden="true">
+      Drop here to unschedule
     </div>
   {/if}
 
@@ -935,6 +980,26 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Transient unschedule target shown mid-drag when the drawer is empty. Pinned
+     over the bottom of the calendar so appearing/vanishing never reflows the
+     timeline under the dragging finger. */
+  .unschedule-zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 8;
+    padding: 1rem 1.4rem;
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: var(--card);
+    border-top: 1px dashed var(--line);
   }
 
   /* Unscheduled-task drawer (drag source): a fixed bottom bar, never scrolls
