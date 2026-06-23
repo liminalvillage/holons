@@ -526,7 +526,11 @@
   }
 </script>
 
-<div class="cal">
+<div
+  class="cal"
+  class:has-tray={unscheduled.length}
+  style="--tray-h: {trayHeight}px;"
+>
   <header class="head">
     <div class="nav">
       <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
@@ -779,10 +783,7 @@
     class="fab"
     on:click={openCreate}
     aria-label="New task"
-    title="New task"
-    style="bottom: {unscheduled.length
-      ? `calc(${trayHeight}px + 1rem)`
-      : '1.3rem'};">＋</button
+    title="New task">＋</button
   >
 </div>
 
@@ -806,6 +807,8 @@
     flex: 1;
     min-height: 0;
     display: grid;
+    /* Width of the unscheduled drawer when it rides on the right (landscape). */
+    --tray-w: clamp(13rem, 22vw, 19rem);
     /* minmax(0, 1fr) so the single column can't be widened past the container
        by the drawer's no-wrap chips — they scroll inside the drawer instead. */
     grid-template-columns: minmax(0, 1fr);
@@ -813,11 +816,58 @@
     overflow: hidden;
   }
 
+  /* Landscape (wider than tall): the unscheduled drawer becomes a right-hand
+     sidebar spanning the full height beside the header + calendar, instead of a
+     bottom bar — better use of the extra width. Portrait keeps the bottom bar
+     (the base grid above). */
+  @media (min-aspect-ratio: 1/1) {
+    .cal.has-tray {
+      grid-template-columns: minmax(0, 1fr) var(--tray-w);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas:
+        "head tray"
+        "main tray";
+    }
+    .cal.has-tray .head {
+      grid-area: head;
+    }
+    .cal.has-tray .scrollarea {
+      grid-area: main;
+    }
+    .cal.has-tray .tray {
+      grid-area: tray;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-top: none;
+      border-left: 1px solid var(--line);
+    }
+    /* Chips stack vertically and scroll down the sidebar. */
+    .cal.has-tray .tray-items {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      overflow-x: hidden;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .cal.has-tray .tray-chip {
+      max-width: none;
+      white-space: normal;
+      /* Vertical scroll now; a horizontal drag lifts a chip onto the calendar. */
+      touch-action: pan-y;
+    }
+    /* Keep the FAB clear of the right sidebar. */
+    .cal.has-tray .fab {
+      right: calc(var(--tray-w) + 1.3rem);
+    }
+  }
+
   /* "New task" floating button — pinned to the corner, lifted above the
      unscheduled drawer when it's present (see the inline `bottom`). */
   .fab {
     position: absolute;
     right: 1.3rem;
+    bottom: 1.3rem;
     width: 3.4rem;
     height: 3.4rem;
     border-radius: 50%;
@@ -837,6 +887,12 @@
   .fab:active {
     transform: scale(0.92);
     background: var(--teal-deep);
+  }
+  /* Portrait: the drawer sits at the bottom, so lift the FAB above it. */
+  @media (max-aspect-ratio: 1/1) {
+    .cal.has-tray .fab {
+      bottom: calc(var(--tray-h, 0px) + 1rem);
+    }
   }
   .scrollarea {
     min-width: 0;
