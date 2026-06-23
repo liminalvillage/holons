@@ -82,6 +82,39 @@
   --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.42);
 }
 
+/* Card/note content that was authored with hardcoded light-theme colours —
+   dark ink (`rgba(32,48,47,…)`) for secondary labels and white pill chips —
+   doesn't follow the palette via variables, so it goes invisible on the deep
+   note grounds. Re-tint those bits here (global, so it reaches every component's
+   scoped classes; the `[data-theme]` attribute keeps specificity above the
+   component rules). Secondary labels → light ink; chips/pills → dark grounds. */
+:root[data-theme="dark"] .tag,
+:root[data-theme="dark"] .kind,
+:root[data-theme="dark"] .chip,
+:root[data-theme="dark"] .open,
+:root[data-theme="dark"] .fixednote,
+:root[data-theme="dark"] .when,
+:root[data-theme="dark"] .where,
+:root[data-theme="dark"] .src {
+  color: rgba(238, 242, 240, 0.66);
+}
+:root[data-theme="dark"] .tool,
+:root[data-theme="dark"] .src,
+:root[data-theme="dark"] .take.in {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink-soft);
+}
+/* The complete tick keeps its accent meaning but brightened so it reads on the
+   dark pill. */
+:root[data-theme="dark"] .tool.check {
+  color: color-mix(in srgb, var(--teal) 50%, #fff);
+}
+/* Ghost buttons (modal Edit/Cancel) used a translucent-white ground that turns
+   the now-light ink invisible on the dark card; give them a faint light tint. */
+:root[data-theme="dark"] .ghost {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 * {
   box-sizing: border-box;
 }
