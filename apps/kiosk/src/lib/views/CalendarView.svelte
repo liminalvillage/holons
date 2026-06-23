@@ -2,6 +2,7 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { onMount, tick } from "svelte";
   import { get } from "svelte/store";
+  import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     events,
     backlog,
@@ -496,7 +497,13 @@
     measureRem();
     window.addEventListener("resize", measureRem);
     if (mode === "day") void focusDay();
-    return () => window.removeEventListener("resize", measureRem);
+    // Kiosk displays are unattended — glide the timeline down to the end of the
+    // day once so late events are shown without anyone dragging.
+    const stopAutoScroll = scrollEl ? autoScrollToEnd(scrollEl) : () => {};
+    return () => {
+      window.removeEventListener("resize", measureRem);
+      stopAutoScroll();
+    };
   });
 
   $: allDayEvents = dayEvents.filter((e) => e.allDay);

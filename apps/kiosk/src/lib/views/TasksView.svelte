@@ -2,6 +2,8 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { flip } from "svelte/animate";
   import { get } from "svelte/store";
+  import { onMount } from "svelte";
+  import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
     now,
@@ -27,6 +29,11 @@
   import { createTask, type Quest } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
+
+  // Kiosk displays are unattended — glide the wall down to the last note once
+  // so the whole backlog is shown without anyone dragging.
+  let scrollEl: HTMLElement;
+  onMount(() => autoScrollToEnd(scrollEl));
 
   function openTask(id: string) {
     if (justDragged) return;
@@ -415,7 +422,7 @@
 </script>
 
 <div class="board">
-  <div class="tasks scroll">
+  <div class="tasks scroll" bind:this={scrollEl}>
     {#if orderedTasks.length}
       <div class="wall">
         {#each orderedTasks as task (task.id)}
