@@ -68,7 +68,12 @@ function createNostrStore() {
       if (!browser) return null;
       try {
         const publicKey = getPublicKey(privateKey);
-        localStorage.setItem(STORAGE_KEY, privateKey);
+        // Update the in-memory store FIRST so the session is usable even when
+        // persistence is unavailable. On mobile (private mode, "block site
+        // data", or a partitioned/in-app context) localStorage.setItem can
+        // throw — if we gated the store update behind it, the valid signing
+        // key we already hold would be discarded, and the layout would treat
+        // the user as having "no signing key" and dead-end on a blank screen.
         update((state) => ({
           ...state,
           privateKey,
@@ -76,6 +81,15 @@ function createNostrStore() {
           isLoading: false,
           isNewKey: false,
         }));
+        // Best-effort cache for offline reloads; never fatal.
+        try {
+          localStorage.setItem(STORAGE_KEY, privateKey);
+        } catch (storageError) {
+          console.warn(
+            "Could not persist signing key (storage blocked) — continuing in-memory:",
+            storageError,
+          );
+        }
         return { privateKey, publicKey };
       } catch (error) {
         console.error("Error adopting session signing key:", error);

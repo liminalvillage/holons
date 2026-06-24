@@ -32,6 +32,11 @@
 	let showSplash = true;
 	let splashComplete = false;
 	let holosphere: any = null;
+	// Surfaced when login succeeds but HoloSphere init fails or is missing a
+	// signing key. Without this the app would hide the splash with no holosphere
+	// instance and render nothing — a blank background, seen on mobile when
+	// storage is blocked or the relay can't be reached.
+	let initError: string | null = null;
 
 	// Subscribe to holosphere store for reactive updates
 	$: holosphere = $holosphereStore;
@@ -658,13 +663,21 @@
 			window.dispatchEvent(new CustomEvent('holosphere-init-failed', {
 				detail: { error: new Error('No signing key') }
 			}));
+			initError = 'Your session was verified but no signing key was available on this device. This can happen when site storage is blocked. Try again, or enable site data / cookies for this site.';
 			showSplash = false;
 			splashComplete = true;
 			return;
 		}
 
 		try {
-			await initHoloSphere(privateKey);
+			// Race init against a deadline so a stalled relay/storage layer
+			// surfaces an error screen instead of hanging on the splash forever.
+			await Promise.race([
+				initHoloSphere(privateKey),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error('Initialization timed out — the network or storage may be unavailable.')), 30000)
+				)
+			]);
 
 			// Telegram users are namespaced by their Telegram id, which differs
 			// from the derived Nostr pubkey ($nostrPublicKey). Pin the home holon
@@ -683,10 +696,17 @@
 			// the failure to the user instead of hanging on the loading view.
 			console.error('HoloSphere initialization failed:', err);
 			window.dispatchEvent(new CustomEvent('holosphere-init-failed', { detail: { error: err } }));
+			initError = (err instanceof Error ? err.message : String(err)) || 'HoloSphere failed to initialize.';
 		}
 
 		showSplash = false;
 		splashComplete = true;
+	}
+
+	// Retry from the error screen: reloading re-runs the verified session
+	// restore, which re-derives the signing key and re-attempts init.
+	function retryInit() {
+		if (browser) window.location.reload();
 	}
 
 	onMount(async () => {
@@ -706,6 +726,18 @@
 	<Splash on:authenticated={handleAuthenticated} />
 {/if}
 
+<!-- Init failed after a successful login: show an actionable error instead of
+     a blank background (previously the only outcome when holosphere stayed null). -->
+{#if !showSplash && !holosphere && initError}
+	<div class="init-error">
+		<div class="init-error__card">
+			<h1>Couldn't load your dashboard</h1>
+			<p>{initError}</p>
+			<button class="init-error__retry" on:click={retryInit}>Try again</button>
+		</div>
+	</div>
+{/if}
+
 <!-- Main app content (hidden while splash is showing) -->
 {#if !showSplash && holosphere}
 	<HolosphereProvider>
@@ -714,3 +746,52 @@
 		</Layout>
 	</HolosphereProvider>
 {/if}
+
+<style>
+	.init-error {
+		position: fixed;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+		background: var(--color-bg-primary, #0f172a);
+		z-index: 9999;
+	}
+	.init-error__card {
+		max-width: 420px;
+		width: 100%;
+		text-align: center;
+		background: rgba(30, 41, 59, 0.9);
+		border: 1px solid rgba(100, 116, 139, 0.3);
+		border-radius: 1rem;
+		padding: 2rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+	}
+	.init-error__card h1 {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--color-text-primary, #f1f5f9);
+		margin: 0 0 0.75rem;
+	}
+	.init-error__card p {
+		color: #94a3b8;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		margin: 0 0 1.5rem;
+	}
+	.init-error__retry {
+		width: 100%;
+		padding: 0.875rem 1rem;
+		background: #2aabee;
+		border: none;
+		border-radius: 0.5rem;
+		color: #fff;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.init-error__retry:hover {
+		background: #1d97d8;
+	}
+</style>
