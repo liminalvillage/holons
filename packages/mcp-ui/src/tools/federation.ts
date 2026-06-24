@@ -87,6 +87,10 @@ function coerceOptions(raw: string): { target: PublishTarget; opts: PublishOptio
   if (typeof parsed.federationSourceId === 'string') {
     opts.federationSourceId = parsed.federationSourceId;
   }
+  // Federation holograms are opt-in at the core layer (default off). This tool's
+  // contract is "publish as a hologram", so it defaults useHolograms to true and
+  // lets the caller opt out with an explicit `useHolograms: false`.
+  opts.useHolograms = parsed.useHolograms !== false;
   return { target, opts };
 }
 
@@ -106,7 +110,7 @@ export function registerFederationTools(server: McpServer, deps: ToolDeps): void
       options: z
         .string()
         .describe(
-          'Publish options JSON: { target: { kind: "all" } | { kind: "partner", holonId } | { kind: "hex", cell }, includeSettingsHex?, federationSourceId? }. Defaults to target.kind = "all".'
+          'Publish options JSON: { target: { kind: "all" } | { kind: "partner", holonId } | { kind: "hex", cell }, includeSettingsHex?, federationSourceId?, useHolograms? }. Defaults to target.kind = "all". useHolograms defaults to true (publish as a hologram); pass false to send a full standalone copy instead.'
         ),
     },
     async ({ context, options }) => {

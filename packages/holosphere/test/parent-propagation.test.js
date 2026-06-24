@@ -116,8 +116,12 @@ describe('Parent Propagation Tests', () => {
         value: 42
       };
 
-      // First, store the original data in the child hexagon
-      await holosphere.put(childHexagon, 'items', testData);
+      // First, store the original data in the child hexagon. Disable auto-
+      // propagation on this seed write: holograms are now opt-in, so a plain put
+      // background-propagates a *full copy* to parents, which would race the
+      // explicit hologram propagate below and clobber its `_federation`
+      // metadata. This test exercises the explicit propagate() path only.
+      await holosphere.put(childHexagon, 'items', testData, null, { autoPropagate: false });
 
       // Then propagate to parent
       await holosphere.propagate(childHexagon, 'items', testData, {

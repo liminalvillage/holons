@@ -146,7 +146,9 @@ class H3 {
             lens: 'quests',
             item: { id: messageId },
           },
-          { kind: 'hex', cell: hex }
+          { kind: 'hex', cell: hex },
+          // Federation holograms are opt-in; preserve the prior hologram publish.
+          { useHolograms: true }
         );
 
         if (outcome.publishedTo > 0) {

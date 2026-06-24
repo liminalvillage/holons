@@ -75,12 +75,27 @@ describe('publishToFederation', () => {
 		).rejects.toThrow(/item\.id is required/);
 	});
 
-	it('partner target writes once via put', async () => {
+	it('partner target writes a full copy by default (holograms opt-in)', async () => {
 		const m = mockHolosphere();
 		const out = await publishToFederation(ctx(m.holosphere), { kind: 'partner', holonId: 'p1' });
-		expect(m.put).toHaveBeenCalledWith('p1', 'quests', expect.any(Object));
+		// Default: no hologram is minted; the receiver gets the full item.
+		expect(m.createHologram).not.toHaveBeenCalled();
+		expect(m.put).toHaveBeenCalledWith('p1', 'quests', { id: 'q-1', title: 'Test' });
 		expect(out.publishedTo).toBe(1);
 		expect(out.destinations).toEqual(['p1']);
+		expect(out.usedHolograms).toBe(false);
+	});
+
+	it('partner target with useHolograms writes a bare {id,soul} hologram', async () => {
+		const m = mockHolosphere();
+		const out = await publishToFederation(
+			ctx(m.holosphere),
+			{ kind: 'partner', holonId: 'p1' },
+			{ useHolograms: true }
+		);
+		expect(m.createHologram).toHaveBeenCalledOnce();
+		expect(m.put).toHaveBeenCalledWith('p1', 'quests', expect.objectContaining({ id: 'q-1' }));
+		expect(out.usedHolograms).toBe(true);
 	});
 
 	it('hex target writes to the cell', async () => {
@@ -121,7 +136,30 @@ describe('publishToFederation', () => {
 		const out = await publishToFederation(ctx(m.holosphere), { kind: 'all' });
 		expect(m.put).toHaveBeenCalledWith('hex-cell', 'quests', expect.any(Object));
 		expect(m.propagate).toHaveBeenCalledOnce();
+		// Default propagates full copies, not holograms.
+		expect(m.propagate).toHaveBeenCalledWith(
+			'home-holon',
+			'quests',
+			expect.any(Object),
+			expect.objectContaining({ useHolograms: false })
+		);
 		expect(out.publishedTo).toBe(3); // hex-cell + 2 federated
+		expect(out.usedHolograms).toBe(false);
+	});
+
+	it('all target with useHolograms propagates holograms', async () => {
+		const m = mockHolosphere({
+			federated: ['p1'],
+			propagateResult: { success: 1, messages: [] }
+		});
+		const out = await publishToFederation(ctx(m.holosphere), { kind: 'all' }, { useHolograms: true });
+		expect(m.propagate).toHaveBeenCalledWith(
+			'home-holon',
+			'quests',
+			expect.any(Object),
+			expect.objectContaining({ useHolograms: true })
+		);
+		expect(out.usedHolograms).toBe(true);
 	});
 
 	it('all target skips settings.hex when includeSettingsHex is false', async () => {
@@ -169,6 +207,7 @@ describe('publishToFederation', () => {
 		const out = await publishToFederation(
 			{ ...ctx(m.holosphere), item: forwardedItem as any },
 			{ kind: 'partner', holonId: 'p1' },
+			{ useHolograms: true },
 		);
 
 		// The receiver should get the *bare stored hologram shape*

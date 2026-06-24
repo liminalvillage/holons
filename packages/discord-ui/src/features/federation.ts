@@ -212,7 +212,9 @@ export const federationFeature: Feature = {
         lens,
         item: { ...item, id: itemId },
       },
-      { kind: 'all' }
+      { kind: 'all' },
+      // Federation holograms are opt-in; preserve the prior hologram publish.
+      { useHolograms: true }
     );
     const errors = outcome.errors.length
       ? `\n⚠️ ${outcome.errors.length} error(s).`

@@ -90,7 +90,11 @@ export async function reflectJoin(ctx: ReflectContext): Promise<ReflectResult> {
       lens: 'quests',
       item: { ...ctx.quest, id: String(ctx.quest.id) },
     },
-    { kind: 'partner', holonId: target.callerHolonId }
+    { kind: 'partner', holonId: target.callerHolonId },
+    // Personal-holon mirror MUST be a hologram (a {id,soul} pointer back to the
+    // source), not a full copy — holograms are opt-in since the federation
+    // default is off. This is the one intentional opt-in.
+    { useHolograms: true }
   );
 
   return { reflected: true, callerHolonId: target.callerHolonId };

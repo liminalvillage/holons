@@ -210,7 +210,9 @@
 			const result = await publishToFederation(
 				{ holosphere, holonId, lens, item },
 				target,
-				extraOpts
+				// Federation holograms are opt-in; this is a manual "publish as
+				// hologram" action, so keep that behavior.
+				{ ...extraOpts, useHolograms: true }
 			);
 			outcome = result;
 			if (result.publishedTo > 0) {

@@ -1,10 +1,12 @@
 /**
  * Publish to Federation — UI-agnostic core.
  *
- * Single source of truth for "publish this item as a hologram" across UIs
- * (web, telegram, text, ai). Always wraps the item in a hologram first so
- * receivers' provenance metadata is correct. Stamping the source item with
- * `published`/`publishedAt`/`publishedTo` is the caller's responsibility.
+ * Single source of truth for "publish this item to the federation" across UIs
+ * (web, telegram, text, ai). Holograms are **opt-in**: by default the receiver
+ * gets a standalone full copy of the item; pass `useHolograms: true` to instead
+ * write a bare `{ id, soul }` hologram that links back to this holon's storage.
+ * Stamping the source item with `published`/`publishedAt`/`publishedTo` is the
+ * caller's responsibility.
  *
  * Three target shapes:
  *   - 'all'     → propagate() to every federated partner (current default)
@@ -56,6 +58,14 @@ export interface PublishOptions {
 	 * the hologram reaches every coarser level above it.
 	 */
 	upcastLevels?: number;
+	/**
+	 * Opt-in hologram creation. When `true`, write a bare `{ id, soul }` hologram
+	 * pointing back at this holon's storage (and propagate with holograms on).
+	 * When `false` (the **default**), write the full item — a standalone copy on
+	 * the receiver with no back-link. Holograms are deliberately opt-in so a
+	 * publish doesn't implicitly spread soul pointers across the federation.
+	 */
+	useHolograms?: boolean;
 }
 
 export interface PublishOutcome {
@@ -151,45 +161,54 @@ export async function publishToFederation(
 	const { holosphere, holonId, lens, item } = ctx;
 	ensureItemHasId(item);
 
-	// What gets persisted on the target holon is the *bare stored form* of a
-	// hologram: `{ id, soul }`. Anything else (`_hologram`, top-level data
-	// fields, `_federation`, …) is read-side metadata that holosphere.put
-	// strips on write, OR full data fields that would turn the receiver's
-	// record into a fully-fledged copy with no link back to the source.
+	// Holograms are opt-in (default off). See `PublishOptions.useHolograms`.
+	const useHolograms = opts.useHolograms === true;
+
+	// Decide what gets persisted on the target holon:
 	//
-	// Two cases:
-	//   • Fresh publish — `createHologram(holon, lens, item)` mints a new
-	//     soul pointing at THIS holon's storage of the item.
-	//   • Forwarding a resolved hologram — the item already carries
-	//     `_hologram.soul` pointing at the original source. We have to
-	//     hand-build the `{ id, soul }` pair from that, because
-	//     holosphere.createHologram only short-circuits on the *bare* stored
-	//     shape (top-level `soul`), not on the resolved shape we get from
-	//     `get()` / `getAll()` (where the soul lives in `_hologram.soul`).
-	//     Without this branch, createHologram falls through and mints a
-	//     fresh soul pointing at the *forwarder's* storage — the receiver
-	//     would then try to resolve back to data we don't actually have,
-	//     and after `put` strips `_hologram` they'd just see a plain task.
-	const resolvedHologramSoul = (item as any)?._hologram?.isHologram
-		? ((item as any)._hologram.soul as string | undefined)
-		: undefined;
-	const hologram = resolvedHologramSoul
-		? { id: (item as any).id, soul: resolvedHologramSoul }
-		: await (holosphere as any).createHologram(holonId, lens, item);
+	//   • useHolograms === false (default) — write the *full item*, minus the
+	//     read-side `_hologram` envelope, as a standalone copy. No `{ id, soul }`
+	//     pointer, no `_holograms` cascade hop: the receiver owns its own record.
+	//
+	//   • useHolograms === true — write the *bare stored form* of a hologram,
+	//     `{ id, soul }`, which links back to the source:
+	//       – Fresh publish: `createHologram(holon, lens, item)` mints a new soul
+	//         pointing at THIS holon's storage of the item.
+	//       – Forwarding a resolved hologram: the item already carries
+	//         `_hologram.soul` pointing at the original source, so hand-build the
+	//         `{ id, soul }` pair from that. (createHologram only short-circuits
+	//         on the *bare* stored shape, not the resolved shape from
+	//         get()/getAll() where the soul lives in `_hologram.soul`; without
+	//         this branch it would mint a fresh soul at the forwarder's storage
+	//         and the receiver would resolve back to data we don't have.)
+	let payload: unknown;
+	// Only forwards (re-publishing an existing hologram) need the local
+	// `_holograms` cascade registration — fresh publishes already register at the
+	// source's `_holograms` set on the same local instance.
+	let forwarderRegistration: { localHolonId: string; lens: string; itemId: string } | undefined;
+	if (useHolograms) {
+		const resolvedHologramSoul = (item as any)?._hologram?.isHologram
+			? ((item as any)._hologram.soul as string | undefined)
+			: undefined;
+		payload = resolvedHologramSoul
+			? { id: (item as any).id, soul: resolvedHologramSoul }
+			: await (holosphere as any).createHologram(holonId, lens, item);
+		forwarderRegistration = resolvedHologramSoul
+			? { localHolonId: holonId, lens, itemId: item.id }
+			: undefined;
+	} else {
+		const { _hologram, ...bare } = item as any;
+		payload = bare;
+		forwarderRegistration = undefined;
+	}
 	const errors: string[] = [];
 	const destinations: string[] = [];
-	// Only forwards (re-publishing an existing hologram) need the local
-	// `_holograms` cascade registration — fresh publishes already register
-	// at the source's `_holograms` set on the same local instance.
-	const forwarderRegistration = resolvedHologramSoul
-		? { localHolonId: holonId, lens, itemId: item.id }
-		: undefined;
 	const single = (t: string) =>
 		putToTarget(
 			holosphere,
 			t,
 			lens,
-			hologram,
+			payload,
 			destinations,
 			errors,
 			opts.onWriteDenied,
@@ -198,7 +217,7 @@ export async function publishToFederation(
 
 	if (target.kind === 'partner') {
 		await single(target.holonId);
-		return { publishedTo: destinations.length, destinations, errors, usedHolograms: true };
+		return { publishedTo: destinations.length, destinations, errors, usedHolograms: useHolograms };
 	}
 
 	if (target.kind === 'hex') {
@@ -210,7 +229,7 @@ export async function publishToFederation(
 				holosphere,
 				target.cell,
 				lens,
-				hologram,
+				payload,
 				destinations,
 				errors,
 				opts.onWriteDenied,
@@ -218,7 +237,7 @@ export async function publishToFederation(
 				{
 					autoPropagate: true,
 					propagationOptions: {
-						useHolograms: true,
+						useHolograms,
 						propagateToParents: true,
 						maxParentLevels: opts.upcastLevels ?? 15
 					}
@@ -227,7 +246,7 @@ export async function publishToFederation(
 		} else {
 			await single(target.cell);
 		}
-		return { publishedTo: destinations.length, destinations, errors, usedHolograms: true };
+		return { publishedTo: destinations.length, destinations, errors, usedHolograms: useHolograms };
 	}
 
 	const includeSettingsHex = opts.includeSettingsHex !== false;
@@ -243,8 +262,8 @@ export async function publishToFederation(
 	if (snapshot.federated.length > 0) {
 		const h3 = isH3(holosphere, holonId);
 		try {
-			const result: any = await (holosphere as any).propagate(holonId, lens, hologram, {
-				useHolograms: true,
+			const result: any = await (holosphere as any).propagate(holonId, lens, payload, {
+				useHolograms,
 				propagateToParents: h3,
 				maxParentLevels: h3 ? 1 : 0
 			});
@@ -266,6 +285,6 @@ export async function publishToFederation(
 		publishedTo: destinations.length,
 		destinations,
 		errors,
-		usedHolograms: true
+		usedHolograms: useHolograms
 	};
 }

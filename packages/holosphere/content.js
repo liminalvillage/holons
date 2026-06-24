@@ -494,8 +494,14 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         let propagationResult = null;
 
                         if (shouldPropagate) {
+                            // Holograms are OPT-IN: a plain put propagates full copies to
+                            // partners by default, not soul pointers. Callers that want
+                            // holograms must pass `propagationOptions.useHolograms: true`
+                            // (e.g. @holons/core publishToFederation when opted in).
+                            // NOTE: holosphere is vendored — re-apply this default if it is
+                            // ever re-synced from upstream.
                             const propagationOptions = {
-                                useHolograms: true,
+                                useHolograms: false,
                                 ...options.propagationOptions
                             };
                             const runPropagation = () => {
