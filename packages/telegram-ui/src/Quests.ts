@@ -27,6 +27,8 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
+    reflectJoin,
+    reflectLeave,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -491,8 +493,35 @@ export default class Quests {
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
 
-            // Unified save and update - pass interacting user for personal hologram DM on join
-            const interactingUser = (action === 'join') ? sender : null;
+            // Mirror a quest join/leave into the member's personal holon as a
+            // {id,soul} hologram (holograms are opt-in) so the joined quest
+            // surfaces under "my holon" across UIs. Appreciation never mirrors.
+            let joined = false;
+            if (action === 'join') {
+                joined = (quest.participants || []).some(
+                    (p) => String(p?.id) === String(sender.id)
+                );
+                const reflectCtx = {
+                    holosphere: holonDB,
+                    homeHolonId: holonId,
+                    quest: { id: String(quest.id ?? messageId) },
+                    user: sender,
+                };
+                try {
+                    if (joined) {
+                        await reflectJoin(reflectCtx);
+                    } else {
+                        await reflectLeave(reflectCtx);
+                        await this.removeTelegramHologramMessage(ctx, quest, sender.id);
+                    }
+                } catch (err) {
+                    log.warn(`reflect membership failed: ${err?.message || err}`);
+                }
+            }
+
+            // Unified save and update — only (re)send the personal DM when they
+            // actually joined; on leave the DM was removed above.
+            const interactingUser = joined ? sender : null;
             await this.updateMessage(ctx, quest, language, { interactingUser });
         });
     }
@@ -2528,6 +2557,24 @@ export default class Quests {
         } catch (err) {
             log.warn(`ensureMainTelegramMessage: failed for quest ${quest.id} in holon ${questHolon}: ${err?.message || err}`);
             return null;
+        }
+    }
+
+    // Remove a member's personal-holon DM for this quest when they leave: delete
+    // the Telegram message and drop its entry from activeHolograms (the caller
+    // persists the quest afterwards via updateMessage). Best-effort — a leftover
+    // message is harmless and a missing entry is a no-op.
+    async removeTelegramHologramMessage(ctx, quest, userId) {
+        try {
+            const uid = String(userId);
+            const entry = (quest.activeHolograms || []).find(
+                (h) => (!h.platform || h.platform === 'telegram') && String(h.holonId) === uid
+            );
+            if (!entry) return;
+            await ctx.telegram.deleteMessage(entry.holonId, entry.messageId).catch(() => {});
+            quest.activeHolograms = (quest.activeHolograms || []).filter((h) => h !== entry);
+        } catch (err) {
+            log.warn(`removeTelegramHologramMessage failed: ${err?.message || err}`);
         }
     }
 

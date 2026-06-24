@@ -38,6 +38,7 @@
     } from "@holons/core/tasks";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
+    import { reflectMembership } from "../utils/reflectMembership";
 
     export let quest: any;
     export let questId: string;
@@ -266,6 +267,16 @@
                 console.warn("[TaskModal.svelte] User action log failed:", err);
             });
         }
+
+        // Mirror into the member's personal holon + (re)send the linked DM.
+        // `isSelected` is the pre-toggle state, so joined === !isSelected.
+        void reflectMembership({
+            holosphere,
+            holonId,
+            questId: String(updatedQuest.id),
+            userId: user.id,
+            joined: !isSelected,
+        });
     }
 
     async function recordUserJoinAction(user: User, action: string, category: string) {

@@ -17,6 +17,7 @@
   } from "$lib/stores";
   import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
+  import { reflectMembership } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { noteColor, toPeople } from "$lib/data";
   import { linkify } from "$lib/linkify";
@@ -314,8 +315,16 @@
       );
       const writer = await getWriter($holonId, (m) => (message = m));
       const ok = await writer.put("quests", updated);
-      if (ok) closeDetail();
-      else if (!message) message = "Could not join.";
+      if (ok) {
+        // Mirror into the joiner's personal holon + (re)send the linked DM.
+        // Post-toggle participant state decides join vs leave. Fire-and-forget:
+        // the membership write already succeeded; the mirror/DM are best-effort.
+        const joined = (updated.participants ?? []).some(
+          (p: any) => String(p?.id) === String(user.id),
+        );
+        void reflectMembership($holonId, updated, user, joined);
+        closeDetail();
+      } else if (!message) message = "Could not join.";
     } catch (err) {
       message = (err as Error)?.message || "Could not join.";
     } finally {
