@@ -9,6 +9,8 @@
 // cancels, for component teardown.
 
 const STEP_PX_PER_SEC = 60; // gentle, readable pace
+// Hold at the top before gliding so a passer-by can read the first rows first.
+const START_DELAY_MS = 5000;
 
 export function autoScrollToEnd(
   el: HTMLElement,
@@ -55,7 +57,7 @@ export function autoScrollToEnd(
   timer = window.setTimeout(() => {
     if (cancelled) return;
     raf = requestAnimationFrame(tick);
-  }, opts.startDelayMs ?? 1200);
+  }, opts.startDelayMs ?? START_DELAY_MS);
 
   return cancel;
 }
