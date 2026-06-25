@@ -429,6 +429,42 @@
 		console.log('Global federation DM subscription active');
 	}
 
+	// Synchronous routing used to render the dashboard immediately, before the
+	// background reconciliation in initializeUserHolon resolves names/settings.
+	// The holon namespace is fully determined by the telegram id (or pubkey) and
+	// the URL — no relay I/O — so this mirrors initializeUserHolon's routing tail
+	// without any of its awaited reads/writes. initializeUserHolon then re-sets
+	// the same ID idempotently in the background.
+	function routeUserHolonSync() {
+		const userPublicKey = pendingTelegramUserId
+			? String(pendingTelegramUserId)
+			: holosphere?.client?.publicKey;
+		if (!userPublicKey) return;
+
+		// Seed a provisional name so the sidebar shows the holon immediately
+		// instead of flashing a fallback until the relay responds.
+		if (pendingHolonName) {
+			setName(userPublicKey, pendingHolonName);
+			addVisitedHolon(null, userPublicKey, pendingHolonName, 'personal');
+		}
+
+		const currentPath = $page.url.pathname;
+		const pathParts = currentPath.split('/').filter(Boolean);
+		const holonIdInUrl = pathParts.length > 0 &&
+			!['federated', 'navigator', 'global', 'sdgs', 'qr', 'demo', 'badges-demo'].includes(pathParts[0])
+			? pathParts[0]
+			: null;
+
+		if (holonIdInUrl) {
+			ID.set(holonIdInUrl);
+		} else {
+			ID.set(userPublicKey);
+			if (currentPath === '/' || currentPath === '') {
+				goto(`/${userPublicKey}/dashboard`);
+			}
+		}
+	}
+
 	// Initialize HoloSphere with the given private key
 	async function initHoloSphere(privateKey: string) {
 		if (holosphere) {
@@ -609,8 +645,20 @@
 			    !currentPath.startsWith('/federated') &&
 			    !currentPath.startsWith('/navigator') &&
 			    !currentPath.startsWith('/sdgs')) {
-				console.log('Calling initializeUserHolon...');
-				await initializeUserHolon(privateKey);
+				// Route synchronously, then reconcile in the background. The
+				// holon namespace is fully determined by the telegram id (or
+				// pubkey) and the URL — none of it needs the relay. Doing the
+				// ID/route now lets the splash hide and the dashboard render as
+				// soon as Gun is constructed; the slow part of
+				// initializeUserHolon (settings read retries, HNS lookup +
+				// register, settings/mappings writes) used to be awaited here
+				// and, on a cold device with an empty cache, stalled toward each
+				// op's timeout — the splash sat for many seconds before first
+				// paint. Now those run after paint and the name/data fill in
+				// reactively (setName + holonNameUpdated events).
+				routeUserHolonSync();
+				console.log('Calling initializeUserHolon in background...');
+				void initializeUserHolon(privateKey);
 			} else {
 				console.log('Skipping initializeUserHolon for protected route:', currentPath);
 			}
