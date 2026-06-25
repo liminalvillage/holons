@@ -30,6 +30,8 @@ export const SUBDOMAIN_HOLONS: Record<string, string> = {
   akasha: "-1003958094547",
   casaselva: "-1002964866719",
   refactory: "-1003943146280",
+  civic: "-5349529224",
+  lunation80: "-1003711659317",
 };
 
 /**
