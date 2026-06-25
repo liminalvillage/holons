@@ -21,6 +21,7 @@
   import { toggleAppreciate } from "$lib/membership";
   import {
     noteColor,
+    categoryColorMap,
     noteTilt,
     noteRiseDelay,
     noteRiseRot,
@@ -122,6 +123,13 @@
   // each quest's `orderIndex` on drop.
   let order: string[] = [];
   $: byId = new Map($backlog.map((t) => [t.id, t] as const));
+  // One palette slot per distinct category across the whole wall, so categories
+  // stay visually distinct instead of colliding on a per-label hash. Blank
+  // categories fall back to the hash (`noteColor`).
+  $: colorByCategory = categoryColorMap($backlog.map((t) => t.category));
+  const noteColorFor = (category: string | undefined): string =>
+    (category ? colorByCategory.get(category) : undefined) ??
+    noteColor(category);
   // Depends only on $backlog (syncOrder reads `order`/`drag` but isn't tracked),
   // so reassigning `order` inside can't re-trigger this statement.
   $: syncOrder($backlog);
@@ -443,7 +451,7 @@
                   task.id,
                 )}s; --rise-rot: {noteRiseRot(
                   task.id,
-                )}deg; background: {noteColor(task.category)};"
+                )}deg; background: {noteColorFor(task.category)};"
                 role="button"
                 tabindex="0"
                 on:pointerdown={(e) => onPointerDown(e, task)}
@@ -577,7 +585,10 @@
     style="left: {drag.x}px; top: {drag.y}px; width: {drag.w}px;"
     aria-hidden="true"
   >
-    <article class="note" style="background: {noteColor(drag.task.category)};">
+    <article
+      class="note"
+      style="background: {noteColorFor(drag.task.category)};"
+    >
       <h3>{drag.task.title}</h3>
       <div class="meta">
         {#if drag.task.category}<span class="tag">{drag.task.category}</span

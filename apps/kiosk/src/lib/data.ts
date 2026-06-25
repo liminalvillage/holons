@@ -29,6 +29,26 @@ export function noteColor(seed: string | undefined): string {
 }
 
 /**
+ * Build a stable category → post-it colour map for a set of cards. The distinct
+ * categories present are sorted (for determinism) and handed successive palette
+ * entries, so every category on the wall gets a *different* colour until the
+ * six-colour palette is exhausted (then it wraps). This beats hashing each
+ * category independently — independent hashes can collide, landing two large
+ * categories on the same hue and making the whole wall look monochrome. Blank
+ * categories aren't assigned here; callers fall back to {@link noteColor}.
+ */
+export function categoryColorMap(
+  categories: Iterable<string | undefined>,
+): Map<string, string> {
+  const distinct = [
+    ...new Set([...categories].filter((c): c is string => !!c && c.length > 0)),
+  ].sort();
+  const map = new Map<string, string>();
+  distinct.forEach((c, i) => map.set(c, NOTE_COLORS[i % NOTE_COLORS.length]));
+  return map;
+}
+
+/**
  * Very slight, repeatable tilt (deg) for a note, keyed by id — stable, never
  * jittery, and deliberately never 0°: every post-it sits just barely askew.
  * Magnitude 0.5°…1.1°, sign from a hash bit.
