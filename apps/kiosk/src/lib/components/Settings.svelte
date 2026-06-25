@@ -11,6 +11,7 @@
     brandLogo,
     accent,
     rolesEnabled,
+    statusEnabled,
     settingsOpen,
   } from "$lib/stores";
   import {
@@ -19,6 +20,7 @@
     setBrandLogo,
     setAccent,
     setRolesEnabled,
+    setStatusEnabled,
     setThemeMode,
     DEFAULT_ACCENT,
     type ThemeMode,
@@ -31,6 +33,7 @@
   let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
   let draftRoles = $rolesEnabled;
+  let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
   let logoError = "";
 
@@ -86,6 +89,8 @@
     accent.set(draftAccent);
     setRolesEnabled(draftRoles);
     rolesEnabled.set(draftRoles);
+    setStatusEnabled(draftStatus);
+    statusEnabled.set(draftStatus);
     setThemeMode(draftTheme);
     themeMode.set(draftTheme);
     settingsOpen.set(false);
@@ -197,6 +202,24 @@
       aria-checked={draftRoles}
       aria-label="Show the Roles tab"
       on:click={() => (draftRoles = !draftRoles)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >Status tab
+      <span class="sub">— a ranked contribution leaderboard</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={draftStatus}
+      role="switch"
+      aria-checked={draftStatus}
+      aria-label="Show the Status tab"
+      on:click={() => (draftStatus = !draftStatus)}
     >
       <span class="knob"></span>
     </button>

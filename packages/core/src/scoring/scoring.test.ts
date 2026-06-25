@@ -6,6 +6,7 @@ import {
   calculateScoreFromUserData,
   calculateTaskCompletionScores,
   calculateUserScore,
+  extractReaUsers,
   getActionScore,
   getCachedEquation,
   getScoreBreakdown,
@@ -497,5 +498,65 @@ describe('REAAggregator', () => {
     const score = await aggregator.calculateUserScore('h1', 'u1', DEFAULT_EQUATION);
     // 1 initiated + 1*2 completed = 3
     expect(score).toBe(3);
+  });
+
+  it('derives the active-user roster from the event stream', async () => {
+    const aggregator = new REAAggregator(
+      buildStore([
+        {
+          eventType: 'quest:initiated',
+          provider: { id: 'u1', type: 'user', name: 'alice' },
+          receiver: { id: 'h1', type: 'holon', name: 'h1' },
+        },
+        {
+          eventType: 'appreciation',
+          provider: { id: 'u2', type: 'user', name: 'bob' },
+          receiver: { id: 'u1', type: 'user', name: 'alice' },
+        },
+      ]),
+    );
+    const users = await aggregator.getActiveUsers('h1');
+    expect(users).toContainEqual({ id: 'u1', name: 'alice' });
+    expect(users).toContainEqual({ id: 'u2', name: 'bob' });
+    // The holon-typed receiver is not a user and must be excluded.
+    expect(users.map((u) => u.id)).not.toContain('h1');
+  });
+});
+
+describe('extractReaUsers', () => {
+  it('collects distinct user-type agents from providers and receivers', () => {
+    const users = extractReaUsers([
+      { provider: { id: 'u1', type: 'user', name: 'alice' } },
+      { receiver: { id: 'u2', type: 'user', name: 'bob' } },
+      { provider: { id: 'u1', type: 'user', name: 'alice' } }, // dup
+    ]);
+    expect(users).toHaveLength(2);
+    expect(users).toContainEqual({ id: 'u1', name: 'alice' });
+    expect(users).toContainEqual({ id: 'u2', name: 'bob' });
+  });
+
+  it('excludes holon- and external-typed agents and id-less agents', () => {
+    const users = extractReaUsers([
+      { provider: { id: 'u1', type: 'user', name: 'alice' }, receiver: { id: 'h1', type: 'holon' } },
+      { provider: { id: 'x', type: 'external', name: 'feed' } },
+      { provider: { type: 'user', name: 'ghost' } }, // no id
+    ]);
+    expect(users).toEqual([{ id: 'u1', name: 'alice' }]);
+  });
+
+  it('keeps the first non-empty name and never downgrades it to empty', () => {
+    const users = extractReaUsers([
+      { provider: { id: 'u1', type: 'user' } }, // no name yet
+      { provider: { id: 'u1', type: 'user', name: 'alice' } }, // fills it in
+      { provider: { id: 'u1', type: 'user' } }, // must not blank it
+    ]);
+    expect(users).toEqual([{ id: 'u1', name: 'alice' }]);
+  });
+
+  it('coerces numeric agent ids to strings', () => {
+    const users = extractReaUsers([
+      { provider: { id: 1578071183, type: 'user', name: 'alex' } },
+    ]);
+    expect(users).toEqual([{ id: '1578071183', name: 'alex' }]);
   });
 });

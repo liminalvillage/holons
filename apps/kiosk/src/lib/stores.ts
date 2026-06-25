@@ -9,7 +9,12 @@ import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import { toEvents, toBacklog, toThings, toRoles, filterBySearch } from "./data";
-import { FLIP_INTERVAL_MS, RESUME_AFTER_IDLE_MS, IDLE_HIDE_MS } from "./config";
+import {
+  FLIP_INTERVAL_MS,
+  RESUME_AFTER_IDLE_MS,
+  IDLE_HIDE_MS,
+  setPinnedTab,
+} from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -38,6 +43,14 @@ export const federated = writable<boolean>(false);
  * and adds/removes the tab in `visibleTabs`.
  */
 export const rolesEnabled = writable<boolean>(false);
+
+/**
+ * Whether the optional Status tab (a ranked contribution leaderboard) is shown
+ * (a caretaker opt-in, persisted in config). Toggling it adds/removes the tab in
+ * `visibleTabs`; the StatusView owns its own data subscriptions, so no aggregator
+ * is wired in `+layout.svelte`.
+ */
+export const statusEnabled = writable<boolean>(false);
 
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
@@ -158,26 +171,36 @@ export const TABS = [
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "library", label: "Library", glyph: "❖" },
   { id: "roles", label: "Roles", glyph: "✪" },
+  { id: "status", label: "Status", glyph: "♛" },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];
 
 /**
  * Tabs actually shown: the Library tab is hidden while it has no items, and the
- * optional Roles tab appears only when the caretaker has enabled it.
+ * optional Roles and Status tabs appear only when the caretaker has enabled them.
  */
 export const visibleTabs = derived(
-  [things, rolesEnabled],
-  ([$things, $roles]) =>
+  [things, rolesEnabled, statusEnabled],
+  ([$things, $roles, $status]) =>
     TABS.filter(
       (t) =>
         (t.id !== "library" || $things.length > 0) &&
-        (t.id !== "roles" || $roles),
+        (t.id !== "roles" || $roles) &&
+        (t.id !== "status" || $status),
     ),
 );
 
 /** The active view — the kiosk opens on Tasks. */
 export const activeTab = writable<TabId>("tasks");
+
+/**
+ * The tab the kiosk is pinned to, or null to auto-rotate. While pinned the
+ * screen rests on this view: rotation is suspended and, once everyone walks
+ * away, the board snaps back to it. Long-press a tab to (un)pin; persisted via
+ * config so it survives a power-cycle.
+ */
+export const pinnedTab = writable<TabId | null>(null);
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 
@@ -210,15 +233,28 @@ export const flipAt = writable<number | null>(null);
  */
 export const idle = writable<boolean>(true);
 
+/**
+ * When true, auto-rotation is suspended regardless of the idle/resume timers —
+ * a view holds this while an overlay it owns is open (e.g. the Status score
+ * breakdown) so the screen can't flip out from under someone reading it.
+ */
+export const rotationHold = writable<boolean>(false);
+
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlip() {
+  // A pinned kiosk never advances, so don't arm the progress bar either.
+  if (get(pinnedTab)) {
+    flipAt.set(null);
+    return;
+  }
   flipAt.set(Date.now() + FLIP_INTERVAL_MS);
 }
 
 function advance() {
+  if (get(pinnedTab)) return; // parked on one view — never rotate
   const tabs = get(visibleTabs);
   if (!tabs.length) return;
   const i = tabs.findIndex((t) => t.id === get(activeTab));
@@ -231,9 +267,10 @@ export function startRotation(): () => void {
   rotating.set(true);
   scheduleFlip();
   tickTimer = setInterval(() => {
-    // Never flip while a detail is zoomed forward — that would yank the card
-    // out from under whoever's reading or editing it.
-    if (!get(rotating) || get(selection) != null) return;
+    // Never flip while a detail is zoomed forward or a view holds rotation open
+    // (an open overlay) — that would yank the card out from under whoever's
+    // reading or editing it.
+    if (!get(rotating) || get(selection) != null || get(rotationHold)) return;
     const at = get(flipAt);
     if (at != null && Date.now() >= at) advance();
   }, 250);
@@ -259,6 +296,9 @@ export function noteInteraction() {
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
     rotating.set(true);
+    // A pinned kiosk snaps back to its view once everyone has walked away.
+    const pin = get(pinnedTab);
+    if (pin) activeTab.set(pin);
     scheduleFlip();
   }, RESUME_AFTER_IDLE_MS);
   if (idleTimer) clearTimeout(idleTimer);

@@ -25,6 +25,8 @@ const HOLON_KEY = "kiosk_holon";
 const APP_KEY = "kiosk_app";
 const FEDERATED_KEY = "kiosk_federated";
 const ROLES_KEY = "kiosk_roles";
+const STATUS_KEY = "kiosk_status";
+const PINNED_KEY = "kiosk_pinned";
 const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
@@ -153,6 +155,35 @@ export function resolveRolesEnabled(): boolean {
 /** Persist the Roles-tab toggle. */
 export function setRolesEnabled(on: boolean): void {
   persist(ROLES_KEY, on ? "1" : "0");
+}
+
+/**
+ * Whether the optional Status tab (a ranked contribution leaderboard) is shown.
+ * Off by default — a caretaker opts in from Settings, since not every hub wants
+ * to surface member rankings on the screen.
+ */
+export function resolveStatusEnabled(): boolean {
+  return persisted(STATUS_KEY) === "1";
+}
+
+/** Persist the Status-tab toggle. */
+export function setStatusEnabled(on: boolean): void {
+  persist(STATUS_KEY, on ? "1" : "0");
+}
+
+/**
+ * The tab the kiosk is pinned to, or null to auto-rotate. Pinning lets a
+ * caretaker park the screen on one view (e.g. always the Calendar). Persisted so
+ * it survives a power-cycle. The id is validated against live tabs by the caller.
+ */
+export function resolvePinnedTab(): string | null {
+  return persisted(PINNED_KEY);
+}
+
+/** Persist (or clear, when null) the pinned tab. */
+export function setPinnedTab(id: string | null): void {
+  if (id) persist(PINNED_KEY, id);
+  else forget(PINNED_KEY);
 }
 
 /**

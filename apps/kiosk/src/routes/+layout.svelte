@@ -15,6 +15,7 @@
     resolveHolonId,
     resolveFederated,
     resolveRolesEnabled,
+    resolveStatusEnabled,
     resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
@@ -32,6 +33,7 @@
     accent,
     federated,
     rolesEnabled,
+    statusEnabled,
     partnerNames,
     boardReady,
     settingsOpen,
@@ -201,6 +203,7 @@
     holonIdStore.set(resolveHolonId());
     federated.set(resolveFederated());
     rolesEnabled.set(resolveRolesEnabled());
+    statusEnabled.set(resolveStatusEnabled());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());

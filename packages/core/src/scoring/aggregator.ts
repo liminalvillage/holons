@@ -105,6 +105,50 @@ export function toAggregates(userData: any): UserAggregates {
   };
 }
 
+/** A user-type agent observed in the REA event stream. */
+export interface ReaUser {
+  /** Stringified agent id. */
+  id: string;
+  /**
+   * Best-known display name carried on the events, or '' when none was. The
+   * REA stream usually records a username; callers holding a richer profile
+   * (the `users` lens) can override by id.
+   */
+  name: string;
+}
+
+/** Minimal agent/event shape `extractReaUsers` reads — a subset of `REAEvent`. */
+type ReaAgentRef = { id?: string | number; type?: string; name?: string };
+type ReaEventRef = { provider?: ReaAgentRef; receiver?: ReaAgentRef };
+
+/**
+ * Derive the distinct set of user-type agents appearing in a list of REA
+ * events — as either provider or receiver. This is the canonical "who has
+ * contributed" roster: it works even when a holon's `users` profile lens is
+ * empty, because the event stream itself records every participant.
+ *
+ * Only `type === 'user'` agents count — holon- and external-typed agents (and
+ * agents with no id) are skipped. Each id keeps the first non-empty name seen,
+ * so the result is stable regardless of event order. Use this anywhere a
+ * holon's member roster is needed for scoring rather than relying on the
+ * `users` lens, which many holons never populate.
+ */
+export function extractReaUsers(events: ReaEventRef[]): ReaUser[] {
+  const names = new Map<string, string>();
+  for (const e of events) {
+    for (const agent of [e?.provider, e?.receiver]) {
+      if (!agent || agent.type !== 'user') continue;
+      const id = String(agent.id ?? '');
+      if (!id) continue;
+      const name = agent.name ? String(agent.name) : '';
+      const existing = names.get(id);
+      // First non-empty name wins; never downgrade a known name back to ''.
+      if (existing === undefined || (!existing && name)) names.set(id, name);
+    }
+  }
+  return [...names.entries()].map(([id, name]) => ({ id, name }));
+}
+
 /**
  * Minimal interface for the event store the aggregator depends on.
  * Concrete implementations live in each UI (e.g. telegram-ui's REAEventStore).
@@ -348,6 +392,19 @@ export class REAAggregator {
     }
 
     return score;
+  }
+
+  /**
+   * The holon's contribution roster, derived from the REA event stream: every
+   * user-type agent that appears as a provider or receiver. Unlike the `users`
+   * profile lens (which many holons never populate), this reflects everyone who
+   * has actually contributed, so it's the right input for `getAllUserScores`,
+   * `computeHolonUserScores`, etc. Callers with richer profiles can override the
+   * returned names by id.
+   */
+  async getActiveUsers(holonId: string | number): Promise<ReaUser[]> {
+    const events = await this.eventStore.query(String(holonId));
+    return extractReaUsers(events);
   }
 
   /**
