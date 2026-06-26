@@ -21,6 +21,7 @@ import {
   RESUME_AFTER_IDLE_MS,
   IDLE_HIDE_MS,
   setPinnedTab,
+  resolvePinnedTab,
 } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -204,8 +205,14 @@ export const visibleTabs = derived(
     ),
 );
 
-/** The active view — the kiosk opens on Tasks. */
-export const activeTab = writable<TabId>("tasks");
+// A persisted pin from a previous session, validated against the known tabs.
+const savedPin = resolvePinnedTab();
+const initialPin: TabId | null = TABS.some((t) => t.id === savedPin)
+  ? (savedPin as TabId)
+  : null;
+
+/** The active view — the kiosk opens on its pinned tab, else Tasks. */
+export const activeTab = writable<TabId>(initialPin ?? "tasks");
 
 /**
  * The tab the kiosk is pinned to, or null to auto-rotate. While pinned the
@@ -213,7 +220,7 @@ export const activeTab = writable<TabId>("tasks");
  * away, the board snaps back to it. Long-press a tab to (un)pin; persisted via
  * config so it survives a power-cycle.
  */
-export const pinnedTab = writable<TabId | null>(null);
+export const pinnedTab = writable<TabId | null>(initialPin);
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 
@@ -322,6 +329,24 @@ export function noteInteraction() {
 export function selectTab(id: TabId) {
   activeTab.set(id);
   noteInteraction();
+}
+
+/**
+ * Long-press handler: pin the kiosk to a tab (parking it there, no rotation) or
+ * unpin if it's already the pinned one. Persisted so the park survives a reload.
+ */
+export function togglePin(id: TabId) {
+  const next = get(pinnedTab) === id ? null : id;
+  pinnedTab.set(next);
+  setPinnedTab(next);
+  if (next) {
+    activeTab.set(next);
+    rotating.set(false);
+  } else {
+    rotating.set(true);
+  }
+  // Re-arm (or, while pinned, clear) the flip timer to match the new state.
+  scheduleFlip();
 }
 
 /** 0…1 progress toward the next flip, for the header indicator. */

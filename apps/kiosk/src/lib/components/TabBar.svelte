@@ -4,6 +4,8 @@
     visibleTabs,
     activeTab,
     selectTab,
+    togglePin,
+    pinnedTab,
     holonName,
     brandName,
     brandLogo,
@@ -14,7 +16,41 @@
     idle,
     flipProgress,
   } from "$lib/stores";
+  import type { TabId } from "$lib/stores";
   import { telegramUser, displayName } from "$lib/auth";
+
+  // Long-press a tab to (un)pin the kiosk to it. A press that crosses ~half a
+  // second fires the pin and swallows the click that follows, so the same
+  // gesture never both pins and navigates.
+  const LONG_PRESS_MS = 480;
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressed = false;
+
+  function onTabDown(e: PointerEvent, id: TabId) {
+    if (e.button != null && e.button !== 0) return;
+    longPressed = false;
+    cancelPress();
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      togglePin(id);
+      try {
+        navigator.vibrate?.(15);
+      } catch {
+        /* haptics are best-effort */
+      }
+    }, LONG_PRESS_MS);
+  }
+  function cancelPress() {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  function onTabClick(id: TabId) {
+    if (longPressed) {
+      longPressed = false; // this click closes out the long-press; don't navigate
+      return;
+    }
+    selectTab(id);
+  }
 
   $: timeLabel = $now.toLocaleTimeString([], {
     hour: "2-digit",
@@ -120,12 +156,32 @@
       <button
         class="tab"
         class:active={$activeTab === tab.id}
+        class:pinned={$pinnedTab === tab.id}
         aria-current={$activeTab === tab.id}
-        on:click={() => selectTab(tab.id)}
+        aria-pressed={$pinnedTab === tab.id}
+        title={$pinnedTab === tab.id
+          ? "Pinned — long-press to unpin"
+          : "Long-press to pin"}
+        on:click={() => onTabClick(tab.id)}
+        on:pointerdown={(e) => onTabDown(e, tab.id)}
+        on:pointerup={cancelPress}
+        on:pointerleave={cancelPress}
+        on:pointercancel={cancelPress}
       >
         <span class="glyph">{tab.glyph}</span>
         <span class="label">{tab.label}</span>
-        {#if $activeTab === tab.id}
+        {#if $pinnedTab === tab.id}
+          <svg
+            class="pin"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
+            />
+          </svg>
+        {:else if $activeTab === tab.id}
           <span class="rail">
             <span
               class="fill"
@@ -142,7 +198,7 @@
 <style>
   .bar {
     flex: 0 0 auto;
-    padding: 1.1rem 1.4rem 0;
+    padding: 0.7rem 1.4rem 0;
     /* `max-height` (a value safely above the real header height) lets the bar
        collapse smoothly so the board reclaims the space when idle. */
     max-height: 16rem;
@@ -343,29 +399,31 @@
   .tabs {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
-    margin-top: 0.9rem;
+    gap: 0.4rem;
+    margin-top: 0.55rem;
   }
+  /* Icon sits inline with the label so the tab strip is a single thin row. */
   .tab {
     position: relative;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 0.15rem;
-    padding: 0.7rem 0.5rem 0.9rem;
-    min-height: var(--tap);
-    border-radius: 14px 14px 0 0;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.6rem 0.5rem;
+    min-height: 2.2rem;
+    border-radius: 12px 12px 0 0;
     color: var(--muted);
     transition:
       color 0.25s ease,
       background 0.25s ease;
   }
   .tab .glyph {
-    font-size: 1.25rem;
+    font-size: 1.05rem;
     line-height: 1;
   }
   .tab .label {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
     letter-spacing: 0.01em;
   }
@@ -374,12 +432,22 @@
     background: var(--card);
     box-shadow: var(--shadow-soft);
   }
+  /* Pinned: a steady accent + the pin glyph, no rotation rail. */
+  .tab.pinned {
+    color: var(--teal-deep);
+  }
+  .tab .pin {
+    width: 0.9rem;
+    height: 0.9rem;
+    flex: 0 0 auto;
+    color: var(--teal);
+  }
 
   .rail {
     position: absolute;
     left: 12%;
     right: 12%;
-    bottom: 0.45rem;
+    bottom: 0.28rem;
     height: 3px;
     border-radius: 3px;
     background: var(--line);
