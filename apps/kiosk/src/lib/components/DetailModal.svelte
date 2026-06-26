@@ -208,11 +208,9 @@
     saving = true;
     message = "";
     let when: string | undefined = sel.quest.when;
-    // Store a timed pick as an unambiguous UTC instant (the field is local wall
-    // time → toISOString), so it reads back at the right local time and tracks
-    // the viewer's timezone. An all-day pick stays a bare date.
-    if (fDate)
-      when = fTime ? new Date(`${fDate}T${fTime}`).toISOString() : fDate;
+    // Store the picked wall-clock time verbatim (the value stored equals what
+    // the card shows and what the other UIs read — no UTC offset in between).
+    if (fDate) when = fTime ? `${fDate}T${fTime}` : fDate;
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,
