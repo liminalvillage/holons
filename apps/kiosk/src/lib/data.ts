@@ -96,9 +96,32 @@ function isDone(q: Quest): boolean {
   );
 }
 
-function parseWhen(when: unknown): Date | null {
+// A timezone-less date or datetime: "2026-06-26" or "2026-06-26T12:00[:ss]".
+const NAIVE_WHEN =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+
+/**
+ * Parse a quest's `when`/`ends`. A timezone-qualified ISO string (trailing `Z`
+ * or `±hh:mm`) is left to the engine — it's an unambiguous instant shown in the
+ * viewer's local time. A timezone-LESS date/datetime is interpreted as LOCAL
+ * explicitly, because browsers disagree on whether such a string is local or
+ * UTC (a bare date is treated as UTC, a seconds-less datetime varies) — and that
+ * ambiguity is what made event cards land on the wrong hour line / day.
+ */
+export function parseWhen(when: unknown): Date | null {
   if (!when) return null;
-  const d = new Date(when as string);
+  const s = String(when);
+  const m = NAIVE_WHEN.exec(s);
+  const d = m
+    ? new Date(
+        +m[1],
+        +m[2] - 1,
+        +m[3],
+        +(m[4] ?? 0),
+        +(m[5] ?? 0),
+        +(m[6] ?? 0),
+      )
+    : new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

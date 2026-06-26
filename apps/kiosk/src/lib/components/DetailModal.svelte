@@ -19,7 +19,7 @@
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { reflectMembership } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
-  import { noteColor, toPeople } from "$lib/data";
+  import { noteColor, toPeople, parseWhen } from "$lib/data";
   import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
@@ -162,8 +162,8 @@
 
   function whenText(): string {
     if (!quest?.when) return "No date";
-    const d = new Date(quest.when);
-    if (Number.isNaN(d.getTime())) return "No date";
+    const d = parseWhen(quest.when);
+    if (!d || Number.isNaN(d.getTime())) return "No date";
     const hasTime = /T\d\d:/.test(String(quest.when));
     return d.toLocaleDateString([], {
       weekday: "short",
@@ -187,7 +187,7 @@
       fLocation = String(q.location ?? "");
       fCategory = String(q.category ?? "");
       fDescription = String(q.description ?? "");
-      const d = q.when ? new Date(q.when) : null;
+      const d = q.when ? parseWhen(q.when) : null;
       if (d && !Number.isNaN(d.getTime())) {
         fDate = toDateInput(d);
         fTime = /T\d\d:/.test(String(q.when)) ? toTimeInput(d) : "";
@@ -208,10 +208,11 @@
     saving = true;
     message = "";
     let when: string | undefined = sel.quest.when;
-    // Store the picked wall-clock time verbatim (local, no timezone). The
-    // calendar writes and reads `when` this way, so converting to a UTC ISO
-    // string here is what shifted edited events by the UTC offset.
-    if (fDate) when = fTime ? `${fDate}T${fTime}` : fDate;
+    // Store a timed pick as an unambiguous UTC instant (the field is local wall
+    // time → toISOString), so it reads back at the right local time and tracks
+    // the viewer's timezone. An all-day pick stays a bare date.
+    if (fDate)
+      when = fTime ? new Date(`${fDate}T${fTime}`).toISOString() : fDate;
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,
@@ -826,12 +827,21 @@
   textarea {
     resize: vertical;
   }
+  /* Date + time share a row, but each can shrink (min-width:0 — native date/time
+     controls otherwise keep an intrinsic width and overflow) and wrap to stack
+     when the dialog is too narrow on mobile. */
   .row2 {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.8rem;
   }
   .row2 label {
-    flex: 1;
+    flex: 1 1 8rem;
+    min-width: 0;
+  }
+  .row2 input {
+    box-sizing: border-box;
+    max-width: 100%;
   }
 
   .actions {

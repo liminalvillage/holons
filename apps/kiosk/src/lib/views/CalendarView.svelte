@@ -17,7 +17,12 @@
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
   import { createTask, type Quest } from "@holons/core/tasks";
-  import { noteColor, noteTilt, type CalendarEvent } from "$lib/data";
+  import {
+    noteColor,
+    noteTilt,
+    parseWhen,
+    type CalendarEvent,
+  } from "$lib/data";
   import Avatars from "$lib/components/Avatars.svelte";
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
@@ -58,10 +63,11 @@
   function isoDay(d: Date): string {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
-  // Wall-clock stamp (local, no timezone) — the format `when`/`ends` are stored
-  // and read in, so a saved time always shows the same on the grid.
-  function localStamp(d: Date): string {
-    return `${isoDay(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  // Build a local Date from a "YYYY-MM-DD" day + hours/minutes. Callers then
+  // `.toISOString()` it to store an unambiguous UTC instant.
+  function localDateTime(day: string, h: number, m: number): Date {
+    const [y, mo, d] = day.split("-").map(Number);
+    return new Date(y, (mo ?? 1) - 1, d ?? 1, h, m);
   }
 
   // Which day — and, over the hour timeline, which 15-minute slot — is under
@@ -152,29 +158,30 @@
       loginOpen.set(true);
       return;
     }
-    const oldStart = new Date(q.when as string);
+    const oldStart = parseWhen(q.when) ?? new Date(NaN);
     let when: string;
     let newStart: Date;
     if (min != null) {
-      // Dropped on the hour timeline → that day at that time.
-      when = `${day}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
-      newStart = new Date(when);
+      // Dropped on the hour timeline → that day at that (local) time, stored as
+      // a UTC instant so it reads back at the right local time everywhere.
+      newStart = localDateTime(day, Math.floor(min / 60), min % 60);
+      when = newStart.toISOString();
     } else if (q.when && /T\d\d:/.test(String(q.when))) {
       // Dropped on a day cell, but it already had a time → keep the time.
-      when = `${day}T${pad2(oldStart.getHours())}:${pad2(oldStart.getMinutes())}`;
-      newStart = new Date(when);
+      newStart = localDateTime(day, oldStart.getHours(), oldStart.getMinutes());
+      when = newStart.toISOString();
     } else {
-      when = day; // all-day
-      newStart = new Date(`${day}T00:00`);
+      when = day; // all-day (bare date)
+      newStart = localDateTime(day, 0, 0);
     }
 
     const updated = { ...q, when };
     // Moving the whole card shifts the start — carry the end along by the same
     // delta so the event keeps its length.
-    const oldEnds = new Date((q.ends ?? q.until ?? "") as string);
+    const oldEnds = parseWhen(q.ends ?? q.until) ?? new Date(NaN);
     if (!Number.isNaN(oldStart.getTime()) && !Number.isNaN(oldEnds.getTime())) {
       const delta = newStart.getTime() - oldStart.getTime();
-      updated.ends = localStamp(new Date(oldEnds.getTime() + delta));
+      updated.ends = new Date(oldEnds.getTime() + delta).toISOString();
     }
     const writer = await getWriter(hid);
     await writer.put("quests", updated);
@@ -295,7 +302,7 @@
     draft.id = newId();
     draft.when =
       min != null
-        ? `${day}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`
+        ? localDateTime(day, Math.floor(min / 60), min % 60).toISOString()
         : day;
     editOnOpen.set(true); // open straight in edit mode
     selection.set({ kind: "task", quest: draft, isNew: true });
@@ -382,9 +389,9 @@
       loginOpen.set(true);
       return;
     }
-    const start = new Date(q.when as string);
-    if (Number.isNaN(start.getTime())) return;
-    const ends = localStamp(new Date(start.getTime() + durMin * 60000));
+    const start = parseWhen(q.when);
+    if (!start || Number.isNaN(start.getTime())) return;
+    const ends = new Date(start.getTime() + durMin * 60000).toISOString();
     const writer = await getWriter(hid);
     await writer.put("quests", { ...q, ends });
   }
