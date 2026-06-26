@@ -13,6 +13,7 @@ import { writable, get } from "svelte/store";
 import type { HoloSphere } from "holosphere";
 import { holosphereStore } from "./holosphere";
 import { lookupName as hnsLookup, clearHNSCache } from "../hns";
+import { userName } from "@holons/core/identity";
 
 // ─── low-level cache ────────────────────────────────────────────────
 
@@ -311,12 +312,11 @@ export function resolvedName(
   // 2. nameMap hit (HNS-resolved name)
   if (id && nameMap[id]) return nameMap[id];
 
-  // 3. User object fields
+  // 3. User object fields (via the shared core resolver: first+last → first →
+  //    username; no id/unknown fallback here — the waterfall continues below).
   if (user) {
-    if (user.first_name && user.last_name)
-      return `${user.first_name} ${user.last_name}`.trim();
-    if (user.first_name) return user.first_name;
-    if (user.username) return user.username;
+    const n = userName(user, { idFallback: false, unknown: "" });
+    if (n) return n;
   }
 
   // 4. Explicit fallback

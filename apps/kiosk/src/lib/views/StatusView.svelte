@@ -34,6 +34,7 @@
     type UserAggregates,
     type ScoreBreakdown,
   } from "@holons/core/scoring";
+  import { buildNameMap } from "@holons/core/identity";
   import {
     avatarUrl,
     avatarInitial,
@@ -84,41 +85,6 @@
   let scoreSeq = 0;
 
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-  /** Friendly display name, tolerating Telegram's snake_case member records. */
-  function nameOf(u: any): string {
-    const full = [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
-    return full || (u?.username ? `@${u.username}` : `#${u?.id ?? "?"}`);
-  }
-
-  /**
-   * Real first/last names keyed by user id, harvested from quest participants and
-   * initiators (the kiosk already streams `quests`). REA events only carry a
-   * username, so this is what lets the board show "Anna Giunta" instead of
-   * "@anna_flawsomeyoga". Only ids with an actual first/last name are mapped, so
-   * we never downgrade a username to itself. Tolerates the participant
-   * snake_case and the initiator camelCase shapes.
-   */
-  function questNameMap(): Map<string, string> {
-    const m = new Map<string, string>();
-    for (const q of get(rawQuests) as any[]) {
-      const people = [
-        ...(Array.isArray(q?.participants) ? q.participants : []),
-        q?.initiator,
-      ].filter(Boolean);
-      for (const p of people) {
-        if (p?.id == null) continue;
-        const id = String(p.id);
-        if (m.has(id)) continue;
-        const full = [p.first_name ?? p.firstName, p.last_name ?? p.lastName]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-        if (full) m.set(id, full);
-      }
-    }
-    return m;
-  }
 
   // ── Score breakdown (how the equation + ledger produced the score) ──────────
 
@@ -253,28 +219,23 @@
   }
 
   /**
-   * The contribution roster: core's `extractReaUsers` (every user-type agent in
-   * the loaded REA events) enriched by the `users` lens. The REA stream is the
-   * source of truth for *who has activity* — a holon can have a full event stream
-   * while its `users` lens is empty (e.g. profiles were never written). The lens,
-   * when present, supplies a richer display name than the username on the events.
+   * The contribution roster + display names, via core's shared name resolver
+   * (`buildNameMap`): REA agents (`extractReaUsers`) name the people with
+   * activity, quest participants upgrade those to real first/last names, and the
+   * `users` lens (when populated) wins over both. The REA stream is the source of
+   * truth for *who has activity* — a holon can have a full event stream while its
+   * `users` lens is empty (e.g. profiles were never written).
    */
   function buildRoster(): ReaUser[] {
-    const names = new Map(
-      extractReaUsers(events).map((u) => [u.id, u.name] as const),
+    const names = buildNameMap(
+      {
+        reaUsers: extractReaUsers(events),
+        quests: get(rawQuests) as any[],
+        profiles: Object.values(usersById),
+      },
+      { at: true },
     );
-    // Prefer real first/last names from quests over the REA username…
-    for (const [id, full] of questNameMap()) names.set(id, full);
-    // …and let the `users` lens (richest, when populated) win over everything.
-    for (const u of Object.values(usersById)) {
-      const id = String(u?.id ?? "");
-      if (!id) continue;
-      names.set(id, nameOf(u));
-    }
-    return [...names.entries()].map(([id, name]) => ({
-      id,
-      name: name || `#${id}`,
-    }));
+    return [...names.entries()].map(([id, name]) => ({ id, name }));
   }
 
   function teardown() {

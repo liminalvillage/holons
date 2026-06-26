@@ -1,4 +1,5 @@
 import i18next from 'i18next';
+import { userName } from '@holons/core/identity';
 
 export { i18next };
 
@@ -183,16 +184,17 @@ export const isBotAdmin = async ctx => {
   }
 };
 
-export const getDisplayName = user => {
-  if (!user) return 'Unknown';
-
-  const firstName = user.first_name || '';
-  const lastName = user.last_name || '';
-
-  if (!firstName && !lastName) return user.username || 'Unknown User';
-
-  return firstName + (lastName ? ` ${lastName.charAt(0)}.` : '');
-};
+// Bot display style: "First L." (last name abbreviated), username when no real
+// name, else "Unknown User" — delegated to the shared core resolver so every
+// surface derives names the same way.
+export const getDisplayName = user =>
+  user
+    ? userName(user, {
+        lastName: 'initial',
+        idFallback: false,
+        unknown: 'Unknown User',
+      })
+    : 'Unknown';
 
 /**
  * Retrieves the name of a Holon given its ID.
