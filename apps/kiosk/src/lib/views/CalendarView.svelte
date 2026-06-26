@@ -12,6 +12,7 @@
     holonId,
     selection,
     editOnOpen,
+    categoryColors,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -427,6 +428,11 @@
   function tiltStyle(id: string, bg: string): string {
     return `--tilt: ${noteTilt(id)}deg; background: ${bg};`;
   }
+  // Shared category→colour map (see stores) so an event's note matches the same
+  // category on the task wall; blank categories fall back to the hash.
+  const noteColorFor = (category: string | undefined): string =>
+    (category ? $categoryColors.get(category) : undefined) ??
+    noteColor(category);
 
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
   $: anchorDay = addDays(startOfDay($now), mode === "day" ? offset : 0);
@@ -443,8 +449,6 @@
     start.setDate(1 - monthAnchor.getDay());
     return Array.from({ length: 42 }, (_, i) => addDays(start, i));
   })();
-
-  $: dayEvents = eventsOn(anchorDay, $events);
 
   // ── Day timeline (hour grid + "now" line + drag-to-arrange) ───────────────-
   // Hour height tracks the (fluid) root font so the timeline scales with the
@@ -540,11 +544,67 @@
     };
   });
 
-  $: allDayEvents = dayEvents.filter((e) => e.allDay);
-  $: timedEvents = dayEvents.filter((e) => !e.allDay);
-  $: dayLayout = eventLayout(timedEvents);
-  $: isTodayAnchor = sameDay(anchorDay, $now);
-  $: nowTop = (minutesOf($now) / 60) * HOUR_PX;
+  // ── Day view: one column, or two when the screen is wide enough ────────────-
+  // On a roomy (landscape kiosk) display the day timeline gains a second column
+  // showing the *next* day side-by-side, so you can see what's coming. It folds
+  // back to a single column on narrow screens. Both columns share the hour grid
+  // and the same drag/drop/create machinery (resolved via each column's
+  // `data-day`), so the next day is fully interactive too.
+  let bodyWidth = 0;
+  const TWIN_MIN_REM = 40; // show the second column only past this width
+  $: showNextDay = mode === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
+  $: nextDay = addDays(anchorDay, 1);
+
+  interface DayColumn {
+    iso: string;
+    label: string;
+    allDay: CalendarEvent[];
+    timed: CalendarEvent[];
+    layout: Map<string, { col: number; cols: number }>;
+    isToday: boolean;
+    /** The primary (left) column keeps the hour-label gutter; the next day drops it. */
+    primary: boolean;
+  }
+  function makeColumn(day: Date, primary: boolean): DayColumn {
+    const evs = eventsOn(day, $events);
+    const timed = evs.filter((e) => !e.allDay);
+    return {
+      iso: isoDay(day),
+      label: day.toLocaleDateString([], {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }),
+      allDay: evs.filter((e) => e.allDay),
+      timed,
+      layout: eventLayout(timed),
+      isToday: sameDay(day, $now),
+      primary,
+    };
+  }
+  $: dayCols = showNextDay
+    ? [makeColumn(anchorDay, true), makeColumn(nextDay, false)]
+    : [makeColumn(anchorDay, true)];
+
+  // Inline geometry for a timed event's note. The next-day column has no hour
+  // gutter, so its events span the full column width.
+  function eventBox(
+    ev: CalendarEvent,
+    durMin: number,
+    lay: { col: number; cols: number },
+    gutter: boolean,
+  ): string {
+    const top = (minutesOf(ev.date) / 60) * HOUR_PX;
+    const height = (durMin / 60) * HOUR_PX;
+    const pad = gutter ? "3.2rem" : "0.15rem";
+    const inner = gutter ? "3.5rem" : "0.3rem";
+    return (
+      `top: ${top}px; height: ${height}px;` +
+      ` left: calc(${pad} + (100% - ${inner}) * ${lay.col} / ${lay.cols});` +
+      ` width: calc((100% - ${inner}) / ${lay.cols} - 0.2rem);` +
+      ` background: ${noteColorFor(ev.category)};`
+    );
+  }
 
   $: periodLabel =
     mode === "day"
@@ -594,7 +654,11 @@
     </div>
   </header>
 
-  <div class="scrollarea scroll" bind:this={scrollEl}>
+  <div
+    class="scrollarea scroll"
+    bind:this={scrollEl}
+    bind:clientWidth={bodyWidth}
+  >
     {#if mode === "month"}
       <div class="weekdays">
         {#each WEEKDAYS as w}<span>{w}</span>{/each}
@@ -621,7 +685,7 @@
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
                     class="chip tilt draggable"
-                    style={tiltStyle(ev.id, noteColor(ev.category))}
+                    style={tiltStyle(ev.id, noteColorFor(ev.category))}
                     title={ev.title}
                     role="button"
                     tabindex="0"
@@ -665,7 +729,7 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <article
                       class="note sm tilt draggable"
-                      style={tiltStyle(ev.id, noteColor(ev.category))}
+                      style={tiltStyle(ev.id, noteColorFor(ev.category))}
                       role="button"
                       tabindex="0"
                       on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
@@ -685,115 +749,132 @@
         {/each}
       </div>
     {:else}
-      <!-- day timeline -->
-      {@const iso = isoDay(anchorDay)}
-      {#if allDayEvents.length}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="allday"
-          class:drop={dropDay === iso && dropMin === null}
-          data-day={iso}
-          on:pointerdown={beginCreatePress}
-        >
-          <span class="allday-label">all day</span>
-          <div class="allday-items">
-            {#each allDayEvents as ev (ev.id)}
-              <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-              <span
-                class="allday-chip draggable"
-                style="background: {noteColor(ev.category)};"
-                role="button"
-                tabindex="0"
-                title={ev.title}
-                on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                on:click={() => open(ev.id)}
-                on:keydown={(e) => onKey(e, ev.id)}>{ev.title}</span
-              >
+      <!-- day timeline — one column, or two (with the next day) when wide -->
+      <div class="day-cols" class:twin={dayCols.length > 1}>
+        {#if dayCols.length > 1}
+          <div class="col-heads">
+            {#each dayCols as col (col.iso)}
+              <div class="col-head" class:today={col.isToday}>{col.label}</div>
             {/each}
           </div>
-        </div>
-      {/if}
-
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="hours"
-        data-day={iso}
-        data-hours="1"
-        style="height: {24 * HOUR_PX}px;"
-        on:pointerdown={beginCreatePress}
-      >
-        {#each HOURS as h}
-          <div class="hour" style="top: {h * HOUR_PX}px;">
-            <span class="hour-label">{fmtHour(h)}</span>
-          </div>
-        {/each}
-
-        {#if dropDay === iso && dropMin !== null}
-          <div
-            class="slot-hint"
-            style="top: {(dropMin / 60) * HOUR_PX}px;"
-          ></div>
         {/if}
 
-        {#each timedEvents as ev (ev.id)}
-          {@const durMin =
-            resize?.id === ev.id ? resize.curMin : eventDurationMin(ev)}
-          {@const lay = dayLayout.get(ev.id) ?? { col: 0, cols: 1 }}
-          <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-          <article
-            class="day-event draggable"
-            class:resizing={resize?.id === ev.id}
-            style="top: {(minutesOf(ev.date) / 60) *
-              HOUR_PX}px; height: {(durMin / 60) *
-              HOUR_PX}px; left: calc(3.2rem + (100% - 3.5rem) * {lay.col} / {lay.cols}); width: calc((100% - 3.5rem) / {lay.cols} - 0.2rem); background: {noteColor(
-              ev.category,
-            )};"
-            role="button"
-            tabindex="0"
-            on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-            on:click={() => open(ev.id)}
-            on:keydown={(e) => onKey(e, ev.id)}
-          >
-            <span class="when"
-              >{timeLabel(ev)}{#if resize?.id === ev.id}<span class="dur">
-                  · {Math.floor(durMin / 60)}h{durMin % 60
-                    ? ` ${durMin % 60}m`
-                    : ""}</span
-                >{/if}</span
-            >
-            <span class="ttl">{ev.title}</span>
-            {#if ev.location}<span class="where">{ev.location}</span>{/if}
-            {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
-            {#if ev.people.length || ev.appreciation}
-              <div class="ev-foot">
-                {#if ev.appreciation}<span class="appr"
-                    ><span class="h">♥</span> {ev.appreciation}</span
-                  >{/if}
-                {#if ev.people.length}
-                  <Avatars people={ev.people} size="1.35rem" />
-                {/if}
+        {#if dayCols.some((c) => c.allDay.length)}
+          <div class="allday-row">
+            {#each dayCols as col (col.iso)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="allday"
+                class:drop={dropDay === col.iso && dropMin === null}
+                data-day={col.iso}
+                on:pointerdown={beginCreatePress}
+              >
+                <span class="allday-label">all day</span>
+                <div class="allday-items">
+                  {#each col.allDay as ev (ev.id)}
+                    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+                    <span
+                      class="allday-chip draggable"
+                      style="background: {noteColorFor(ev.category)};"
+                      role="button"
+                      tabindex="0"
+                      title={ev.title}
+                      on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                      on:click={() => open(ev.id)}
+                      on:keydown={(e) => onKey(e, ev.id)}>{ev.title}</span
+                    >
+                  {/each}
+                </div>
               </div>
-            {/if}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span
-              class="resize-handle"
-              on:pointerdown={(e) => beginResize(e, ev)}
-              aria-hidden="true"
-            ></span>
-          </article>
-        {/each}
-
-        {#if isTodayAnchor}
-          <div class="now-line" style="top: {nowTop}px;">
-            <span class="now-dot"></span>
-            <span class="now-time"
-              >{$now.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}</span
-            >
+            {/each}
           </div>
         {/if}
+
+        <div class="hours-row">
+          {#each dayCols as col (col.iso)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="hours"
+              class:secondary={!col.primary}
+              data-day={col.iso}
+              data-hours="1"
+              style="height: {24 * HOUR_PX}px;"
+              on:pointerdown={beginCreatePress}
+            >
+              {#each HOURS as h}
+                <div class="hour" style="top: {h * HOUR_PX}px;">
+                  <span class="hour-label">{fmtHour(h)}</span>
+                </div>
+              {/each}
+
+              {#if dropDay === col.iso && dropMin !== null}
+                <div
+                  class="slot-hint"
+                  style="top: {(dropMin / 60) * HOUR_PX}px;"
+                ></div>
+              {/if}
+
+              {#each col.timed as ev (ev.id)}
+                {@const durMin =
+                  resize?.id === ev.id ? resize.curMin : eventDurationMin(ev)}
+                {@const lay = col.layout.get(ev.id) ?? { col: 0, cols: 1 }}
+                <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+                <article
+                  class="day-event draggable"
+                  class:resizing={resize?.id === ev.id}
+                  style={eventBox(ev, durMin, lay, col.primary)}
+                  role="button"
+                  tabindex="0"
+                  on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                  on:click={() => open(ev.id)}
+                  on:keydown={(e) => onKey(e, ev.id)}
+                >
+                  <span class="when"
+                    >{timeLabel(ev)}{#if resize?.id === ev.id}<span class="dur">
+                        · {Math.floor(durMin / 60)}h{durMin % 60
+                          ? ` ${durMin % 60}m`
+                          : ""}</span
+                      >{/if}</span
+                  >
+                  <span class="ttl">{ev.title}</span>
+                  {#if ev.location}<span class="where">{ev.location}</span>{/if}
+                  {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
+                  {#if ev.people.length || ev.appreciation}
+                    <div class="ev-foot">
+                      {#if ev.appreciation}<span class="appr"
+                          ><span class="h">♥</span> {ev.appreciation}</span
+                        >{/if}
+                      {#if ev.people.length}
+                        <Avatars people={ev.people} size="1.35rem" />
+                      {/if}
+                    </div>
+                  {/if}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <span
+                    class="resize-handle"
+                    on:pointerdown={(e) => beginResize(e, ev)}
+                    aria-hidden="true"
+                  ></span>
+                </article>
+              {/each}
+
+              {#if col.isToday}
+                <div
+                  class="now-line"
+                  style="top: {(minutesOf($now) / 60) * HOUR_PX}px;"
+                >
+                  <span class="now-dot"></span>
+                  <span class="now-time"
+                    >{$now.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}</span
+                  >
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
   </div>
@@ -810,7 +891,7 @@
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <span
             class="tray-chip draggable"
-            style="background: {noteColor(task.category)};"
+            style="background: {noteColorFor(task.category)};"
             role="button"
             tabindex="0"
             title={task.title}
@@ -1255,6 +1336,47 @@
   }
 
   /* ── Day timeline ──────────────────────────────────────────────────────--- */
+  /* One column normally; a second (the next day) appears side-by-side when the
+     screen is wide (`.twin`). The header / all-day / hours rows are each a flex
+     row so the two days stay column-aligned regardless of their content. */
+  .day-cols {
+    display: flex;
+    flex-direction: column;
+  }
+  .col-heads,
+  .allday-row,
+  .hours-row {
+    display: flex;
+    align-items: stretch;
+  }
+  .col-heads > .col-head,
+  .allday-row > .allday,
+  .hours-row > .hours {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  /* Divider between the two days. */
+  .day-cols.twin .col-heads > * + *,
+  .day-cols.twin .allday-row > * + *,
+  .day-cols.twin .hours-row > * + * {
+    border-left: 1px solid var(--line);
+  }
+  .col-head {
+    padding: 0.2rem 0 0.45rem;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .col-head.today {
+    color: var(--teal-deep);
+  }
+  /* The next-day column drops the (repeated) hour labels; its events fill the
+     full column width instead of clearing a label gutter (see eventBox). */
+  .hours.secondary .hour-label {
+    display: none;
+  }
+
   .allday {
     display: flex;
     align-items: flex-start;
