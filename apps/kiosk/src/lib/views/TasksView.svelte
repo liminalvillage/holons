@@ -896,7 +896,7 @@
   .cardfoot {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 0.7rem;
     margin-top: 0.55rem;
   }
