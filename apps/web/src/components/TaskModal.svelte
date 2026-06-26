@@ -36,6 +36,12 @@
         deleteTaskWithCascade,
         wouldCreateDependencyCycle,
     } from "@holons/core/tasks";
+    import {
+        parseInstant,
+        localFieldsToStored,
+        toLocalDateField,
+        toLocalTimeField,
+    } from "@holons/core/datetime";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
     import { reflectMembership } from "../utils/reflectMembership";
@@ -79,10 +85,10 @@
     let equation: ScoreEquation = getCachedEquation(holonId);
 
     let showDatePicker = false;
-    let selectedDate = quest.when ? new Date(quest.when) : new Date();
-    let selectedTime = quest.when
-        ? new Date(quest.when).toTimeString().slice(0, 5)
-        : "12:00";
+    // Local edit edge: the store is always UTC, so a stored `when` is split into
+    // the viewer's local date/time form fields, and re-assembled to UTC on save.
+    let selectedDate = toLocalDateField(quest.when) || toLocalDateField(new Date());
+    let selectedTime = toLocalTimeField(quest.when) || "12:00";
 
     // Dependency management
     let showDependencyEditor = false;
@@ -481,13 +487,10 @@
     }
 
     async function scheduleTask() {
-        const dateTime = new Date(selectedDate);
-        const [hours, minutes] = selectedTime.split(":");
-        dateTime.setHours(parseInt(hours), parseInt(minutes));
-
-        await updateQuest({
-            when: dateTime.toISOString(),
-        });
+        // Combine the local date + time fields back into a UTC instant for storage.
+        const when = localFieldsToStored(selectedDate, selectedTime);
+        if (!when) return;
+        await updateQuest({ when });
         showDatePicker = false;
     }
 
@@ -1400,7 +1403,7 @@
                             <div class="bg-gray-800 p-2 rounded text-sm">
                             <div class="flex items-center justify-between">
                                     <span class="text-gray-300">
-                                        {new Date(quest.when).toLocaleDateString()} at {new Date(quest.when).toLocaleTimeString([], {
+                                        {parseInstant(quest.when)?.toLocaleDateString()} at {parseInstant(quest.when)?.toLocaleTimeString([], {
                                             hour: "2-digit",
                                             minute: "2-digit",
                                         })}

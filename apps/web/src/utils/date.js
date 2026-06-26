@@ -1,9 +1,16 @@
+import { parseInstant } from "@holons/core/datetime";
+
+// The store is always UTC; `parseInstant` renders a stored instant in the
+// viewer's local time (and reads legacy bare wall-clock strings consistently).
+
 // Format time for display
 /**
  * @param {string | number | Date} dateTime
  */
 export function formatTime(dateTime) {
-  return new Date(dateTime).toLocaleTimeString([], {
+  const date = parseInstant(dateTime);
+  if (!date) return "";
+  return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -12,7 +19,8 @@ export function formatTime(dateTime) {
  * @param {string | number | Date} dateTime
  */
 export function formatDate(dateTime) {
-  const date = new Date(dateTime);
+  const date = parseInstant(dateTime);
+  if (!date) return "";
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);

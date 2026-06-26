@@ -20,6 +20,7 @@
   import { reflectMembership } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import { noteColor, toPeople, parseWhen } from "$lib/data";
+  import { localFieldsToStored } from "@holons/core/datetime";
   import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
@@ -208,9 +209,9 @@
     saving = true;
     message = "";
     let when: string | undefined = sel.quest.when;
-    // Store the picked wall-clock time verbatim (the value stored equals what
-    // the card shows and what the other UIs read — no UTC offset in between).
-    if (fDate) when = fTime ? `${fDate}T${fTime}` : fDate;
+    // Store is always UTC: a picked local date+time becomes a timezone-qualified
+    // ISO instant; a date with no time stays a bare all-day date.
+    if (fDate) when = localFieldsToStored(fDate, fTime) ?? when;
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,

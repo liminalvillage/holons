@@ -8,6 +8,7 @@
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
+import { parseInstant } from "@holons/core/datetime";
 
 /** Warm post-it palette, indexed deterministically by category. */
 export const NOTE_COLORS = [
@@ -96,34 +97,14 @@ function isDone(q: Quest): boolean {
   );
 }
 
-// A timezone-less date or datetime: "2026-06-26" or "2026-06-26T12:00[:ss]".
-const NAIVE_WHEN =
-  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/;
-
 /**
- * Parse a quest's `when`/`ends`. A timezone-qualified ISO string (trailing `Z`
- * or `±hh:mm`) is left to the engine — it's an unambiguous instant shown in the
- * viewer's local time. A timezone-LESS date/datetime is interpreted as LOCAL
- * explicitly, because browsers disagree on whether such a string is local or
- * UTC (a bare date is treated as UTC, a seconds-less datetime varies) — and that
- * ambiguity is what made event cards land on the wrong hour line / day.
+ * Parse a quest's `when`/`ends` into a local Date for display. The store is
+ * always UTC, so a timezone-qualified ISO instant is shown in the viewer's
+ * local time; bare wall-clock strings are legacy data read as local. The
+ * canonical parser lives in `@holons/core/datetime` — this re-export keeps the
+ * kiosk's existing call sites stable.
  */
-export function parseWhen(when: unknown): Date | null {
-  if (!when) return null;
-  const s = String(when);
-  const m = NAIVE_WHEN.exec(s);
-  const d = m
-    ? new Date(
-        +m[1],
-        +m[2] - 1,
-        +m[3],
-        +(m[4] ?? 0),
-        +(m[5] ?? 0),
-        +(m[6] ?? 0),
-      )
-    : new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+export const parseWhen = parseInstant;
 
 /**
  * In federated mode the lens subscriptions tag each partner-holon record with a

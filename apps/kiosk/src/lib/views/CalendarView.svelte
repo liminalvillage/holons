@@ -17,6 +17,7 @@
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
   import { createTask, type Quest } from "@holons/core/tasks";
+  import { toStoredInstant } from "@holons/core/datetime";
   import {
     noteColor,
     noteTilt,
@@ -63,16 +64,12 @@
   function isoDay(d: Date): string {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
-  // Build a local Date from a "YYYY-MM-DD" day + hours/minutes (used for the
-  // duration delta), and stamp a Date back as a wall-clock string.
+  // Build a local Date from a "YYYY-MM-DD" day + hours/minutes (used when a drag
+  // or create picks a wall-clock slot). The store is always UTC, so callers pass
+  // the result through `toStoredInstant` to serialize it as a UTC instant.
   function localDateTime(day: string, h: number, m: number): Date {
     const [y, mo, d] = day.split("-").map(Number);
     return new Date(y, (mo ?? 1) - 1, d ?? 1, h, m);
-  }
-  // Wall-clock stamp (local, no timezone): the value stored equals the time
-  // shown on the card and read by the other UIs — no UTC offset in between.
-  function localStamp(d: Date): string {
-    return `${isoDay(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   }
 
   // Which day — and, over the hour timeline, which 15-minute slot — is under
@@ -169,11 +166,11 @@
     if (min != null) {
       // Dropped on the hour timeline → that day at that wall-clock time.
       newStart = localDateTime(day, Math.floor(min / 60), min % 60);
-      when = localStamp(newStart);
+      when = toStoredInstant(newStart);
     } else if (q.when && /T\d\d:/.test(String(q.when))) {
       // Dropped on a day cell, but it already had a time → keep the time.
       newStart = localDateTime(day, oldStart.getHours(), oldStart.getMinutes());
-      when = localStamp(newStart);
+      when = toStoredInstant(newStart);
     } else {
       when = day; // all-day (bare date)
       newStart = localDateTime(day, 0, 0);
@@ -185,7 +182,7 @@
     const oldEnds = parseWhen(q.ends ?? q.until) ?? new Date(NaN);
     if (!Number.isNaN(oldStart.getTime()) && !Number.isNaN(oldEnds.getTime())) {
       const delta = newStart.getTime() - oldStart.getTime();
-      updated.ends = localStamp(new Date(oldEnds.getTime() + delta));
+      updated.ends = toStoredInstant(new Date(oldEnds.getTime() + delta));
     }
     const writer = await getWriter(hid);
     await writer.put("quests", updated);
@@ -306,7 +303,7 @@
     draft.id = newId();
     draft.when =
       min != null
-        ? localStamp(localDateTime(day, Math.floor(min / 60), min % 60))
+        ? toStoredInstant(localDateTime(day, Math.floor(min / 60), min % 60))
         : day;
     editOnOpen.set(true); // open straight in edit mode
     selection.set({ kind: "task", quest: draft, isNew: true });
@@ -395,7 +392,7 @@
     }
     const start = parseWhen(q.when);
     if (!start || Number.isNaN(start.getTime())) return;
-    const ends = localStamp(new Date(start.getTime() + durMin * 60000));
+    const ends = toStoredInstant(new Date(start.getTime() + durMin * 60000));
     const writer = await getWriter(hid);
     await writer.put("quests", { ...q, ends });
   }
@@ -495,8 +492,13 @@
   }
   // Vertical pixel offset for a time (minutes from midnight) within the window,
   // and its inverse (pixels → minutes). The window starts at DAY_MIN_START.
-  function yForMin(min: number): number {
-    return ((min - DAY_MIN_START) / 60) * HOUR_PX;
+  // `hpx` defaults to the live HOUR_PX for plain JS callers; markup MUST pass
+  // HOUR_PX explicitly so Svelte tracks it as a dependency and re-runs the
+  // position when the responsive root font-size (and thus HOUR_PX) changes —
+  // otherwise the hour labels freeze at the first-paint scale while events and
+  // the now-line re-render at the new one, drifting the layers apart.
+  function yForMin(min: number, hpx: number = HOUR_PX): number {
+    return ((min - DAY_MIN_START) / 60) * hpx;
   }
   function minForY(y: number): number {
     return DAY_MIN_START + (y / HOUR_PX) * 60;
@@ -633,9 +635,10 @@
     durMin: number,
     lay: { col: number; cols: number },
     gutter: boolean,
+    hpx: number = HOUR_PX,
   ): string {
-    const top = yForMin(minutesOf(ev.date));
-    const height = (durMin / 60) * HOUR_PX;
+    const top = yForMin(minutesOf(ev.date), hpx);
+    const height = (durMin / 60) * hpx;
     const pad = gutter ? "3.2rem" : "0.15rem";
     const inner = gutter ? "3.5rem" : "0.3rem";
     return (
@@ -865,7 +868,7 @@
         <div class="hours-row" style="height: {gridHeight}px;">
           <div class="hour-grid" aria-hidden="true">
             {#each HOURS as h}
-              <div class="hour" style="top: {yForMin(h * 60)}px;">
+              <div class="hour" style="top: {yForMin(h * 60, HOUR_PX)}px;">
                 <span class="hour-label">{fmtHour(h)}</span>
               </div>
             {/each}
@@ -880,7 +883,10 @@
               on:pointerdown={beginCreatePress}
             >
               {#if dropDay === col.iso && dropMin !== null}
-                <div class="slot-hint" style="top: {yForMin(dropMin)}px;"></div>
+                <div
+                  class="slot-hint"
+                  style="top: {yForMin(dropMin, HOUR_PX)}px;"
+                ></div>
               {/if}
 
               {#each col.timed as ev (ev.id)}
@@ -891,7 +897,7 @@
                 <article
                   class="day-event draggable"
                   class:resizing={resize?.id === ev.id}
-                  style={eventBox(ev, durMin, lay, col.primary)}
+                  style={eventBox(ev, durMin, lay, col.primary, HOUR_PX)}
                   role="button"
                   tabindex="0"
                   on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
@@ -930,7 +936,7 @@
               {#if col.isToday && nowInWindow}
                 <div
                   class="now-line"
-                  style="top: {yForMin(minutesOf($now))}px;"
+                  style="top: {yForMin(minutesOf($now), HOUR_PX)}px;"
                 >
                   <span class="now-dot"></span>
                   <span class="now-time"
