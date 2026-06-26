@@ -647,6 +647,11 @@
             store = {};
         }
 
+        // Union in everyone with REA activity who isn't in the `users` lens, so
+        // the leaderboard ranks all contributors even when their profile was
+        // never written (the lens can be empty for kiosk/web-only holons).
+        await mergeReaActiveUsers();
+
         // Debug logging to help diagnose user data issues
         console.log(`[Status.svelte] Loaded ${Object.keys(store).length} users for holon ${holonID}`);
         if (Object.keys(store).length > 0) {
@@ -654,6 +659,32 @@
             console.log("[Status.svelte] All user keys:", Object.keys(store));
         }
         subscribeToUsers();
+    }
+
+    // Add any REA-active user missing from `store` (the users lens) as a minimal
+    // synthesized record, keyed by id. REA events carry only a username, so that
+    // becomes the fallback name; the real scores/aggregates come from the REA
+    // stream regardless (loadScoringData). Shared with the bot + kiosk via the
+    // core `getActiveUsers` so "who has activity" is derived identically.
+    async function mergeReaActiveUsers() {
+        if (!holosphere || !holonID) return;
+        try {
+            const aggregator = new REAAggregator(getEventStore(holosphere));
+            const active = await aggregator.getActiveUsers(holonID);
+            const existingIds = new Set(
+                Object.values(store).map((u: any) => String(u.id ?? ""))
+            );
+            const next = { ...store };
+            let changed = false;
+            for (const a of active) {
+                if (store[a.id] || existingIds.has(a.id)) continue;
+                next[a.id] = { id: a.id, first_name: a.name || a.id } as User;
+                changed = true;
+            }
+            if (changed) store = next;
+        } catch (e: any) {
+            console.warn("[Status.svelte] getActiveUsers merge failed:", e?.message);
+        }
     }
 
     // Per-user REA aggregates fetched in parallel.
@@ -708,7 +739,10 @@
             reaSub = holosphere.subscribe(holonID, 'rea_events', () => {
                 if (reaRefreshTimer) clearTimeout(reaRefreshTimer);
                 reaRefreshTimer = setTimeout(() => {
-                    loadScoringData();
+                    // Fold in any newly-active contributor, then re-score. The
+                    // merge updates `store` (which reactively re-runs scoring);
+                    // the explicit call covers the no-change case.
+                    mergeReaActiveUsers().then(loadScoringData);
                 }, 250);
             });
         } catch (e: any) {

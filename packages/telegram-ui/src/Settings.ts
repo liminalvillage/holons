@@ -2511,6 +2511,23 @@ export default class Settings {
         // on the profile are not the source of truth — REA events are.
         const aggregator = new REAAggregator(new REAEventStore(this.db));
         const userList = Object.values(users).filter((u: any) => u && u.id !== undefined);
+
+        // Union in everyone with REA activity who isn't in the `users` lens, so
+        // the leaderboard reflects all contributors even when their profile was
+        // never written (the lens is empty for kiosk/web-only holons). REA events
+        // only carry a username, so synthesize a minimal profile for those ids.
+        const known = new Set(userList.map((u: any) => String(u.id)));
+        try {
+            const active = await aggregator.getActiveUsers(holonId);
+            for (const a of active) {
+                if (known.has(a.id)) continue;
+                known.add(a.id);
+                userList.push({ id: a.id, first_name: a.name || a.id, username: a.name || undefined });
+            }
+        } catch (e: any) {
+            console.warn('[Settings] getActiveUsers failed; leaderboard uses lens roster only:', e?.message);
+        }
+
         const scored = await computeHolonUserScores(aggregator, holonId, userList as any, equation);
         const byId = new Map(scored.map((s) => [s.userId, s]));
 
