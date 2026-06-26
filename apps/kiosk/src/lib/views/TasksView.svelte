@@ -12,6 +12,7 @@
     rawQuests,
     completionRequest,
     showNotice,
+    categoryColors,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -21,7 +22,6 @@
   import { toggleAppreciate } from "$lib/membership";
   import {
     noteColor,
-    categoryColorMap,
     noteTilt,
     noteRiseDelay,
     noteRiseRot,
@@ -123,12 +123,10 @@
   // each quest's `orderIndex` on drop.
   let order: string[] = [];
   $: byId = new Map($backlog.map((t) => [t.id, t] as const));
-  // One palette slot per distinct category across the whole wall, so categories
-  // stay visually distinct instead of colliding on a per-label hash. Blank
-  // categories fall back to the hash (`noteColor`).
-  $: colorByCategory = categoryColorMap($backlog.map((t) => t.category));
+  // Shared category→colour map (see stores) so a category looks the same here
+  // and in the calendar; blank categories fall back to the hash (`noteColor`).
   const noteColorFor = (category: string | undefined): string =>
-    (category ? colorByCategory.get(category) : undefined) ??
+    (category ? $categoryColors.get(category) : undefined) ??
     noteColor(category);
   // Depends only on $backlog (syncOrder reads `order`/`drag` but isn't tracked),
   // so reassigning `order` inside can't re-trigger this statement.

@@ -8,7 +8,14 @@ import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
-import { toEvents, toBacklog, toThings, toRoles, filterBySearch } from "./data";
+import {
+  toEvents,
+  toBacklog,
+  toThings,
+  toRoles,
+  filterBySearch,
+  categoryColorMap,
+} from "./data";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
@@ -97,6 +104,12 @@ export const events = derived(
 export const backlog = derived(
   [rawQuests, partnerNames, searchQuery],
   ([$q, $n, $query]) => filterBySearch(toBacklog($q, $n), $query),
+);
+// One palette slot per distinct category, derived from *all* quests (not a
+// search-filtered subset) so a category keeps the same colour across the
+// calendar and the task wall, and doesn't shift as the search narrows.
+export const categoryColors = derived(rawQuests, ($q) =>
+  categoryColorMap($q.map((x) => x.category)),
 );
 export const things = derived(
   [rawLibrary, partnerNames, searchQuery],
