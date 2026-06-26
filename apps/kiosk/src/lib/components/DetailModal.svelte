@@ -208,8 +208,10 @@
     saving = true;
     message = "";
     let when: string | undefined = sel.quest.when;
-    if (fDate)
-      when = fTime ? new Date(`${fDate}T${fTime}`).toISOString() : fDate;
+    // Store the picked wall-clock time verbatim (local, no timezone). The
+    // calendar writes and reads `when` this way, so converting to a UTC ISO
+    // string here is what shifted edited events by the UTC offset.
+    if (fDate) when = fTime ? `${fDate}T${fTime}` : fDate;
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,

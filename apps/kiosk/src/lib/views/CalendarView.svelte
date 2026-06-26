@@ -58,6 +58,11 @@
   function isoDay(d: Date): string {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
+  // Wall-clock stamp (local, no timezone) — the format `when`/`ends` are stored
+  // and read in, so a saved time always shows the same on the grid.
+  function localStamp(d: Date): string {
+    return `${isoDay(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
 
   // Which day — and, over the hour timeline, which 15-minute slot — is under
   // the pointer right now.
@@ -169,7 +174,7 @@
     const oldEnds = new Date((q.ends ?? q.until ?? "") as string);
     if (!Number.isNaN(oldStart.getTime()) && !Number.isNaN(oldEnds.getTime())) {
       const delta = newStart.getTime() - oldStart.getTime();
-      updated.ends = new Date(oldEnds.getTime() + delta).toISOString();
+      updated.ends = localStamp(new Date(oldEnds.getTime() + delta));
     }
     const writer = await getWriter(hid);
     await writer.put("quests", updated);
@@ -379,7 +384,7 @@
     }
     const start = new Date(q.when as string);
     if (Number.isNaN(start.getTime())) return;
-    const ends = new Date(start.getTime() + durMin * 60000).toISOString();
+    const ends = localStamp(new Date(start.getTime() + durMin * 60000));
     const writer = await getWriter(hid);
     await writer.put("quests", { ...q, ends });
   }
@@ -1023,6 +1028,9 @@
     .cal.has-tray .tray {
       grid-area: tray;
       min-height: 0;
+      /* Clamp the drawer to its grid area so its tall chip list can't inflate
+         the spanned rows past the viewport — that left the list unscrollable. */
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       border-top: none;
