@@ -71,8 +71,8 @@
     dropDay = dayEl?.dataset.day ?? null;
     if (dayEl && dayEl.dataset.hours != null) {
       const rect = dayEl.getBoundingClientRect();
-      const min = Math.round(((y - rect.top) / HOUR_PX) * 4) * 15;
-      dropMin = Math.min(24 * 60 - 15, Math.max(0, min));
+      const min = Math.round(minForY(y - rect.top) / 15) * 15;
+      dropMin = Math.min(windowEndMin - 15, Math.max(DAY_MIN_START, min));
     } else {
       dropMin = null;
     }
@@ -251,8 +251,8 @@
       clearPress();
       let min: number | null = null;
       if (hasHours) {
-        const m = Math.round(((y - rect.top) / HOUR_PX) * 4) * 15;
-        min = Math.min(24 * 60 - 15, Math.max(0, m));
+        const m = Math.round(minForY(y - rect.top) / 15) * 15;
+        min = Math.min(windowEndMin - 15, Math.max(DAY_MIN_START, m));
       }
       try {
         navigator.vibrate?.(15);
@@ -451,9 +451,14 @@
   })();
 
   // ── Day timeline (hour grid + "now" line + drag-to-arrange) ───────────────-
+  // The day timeline covers waking hours only (08:00–23:00) rather than a full
+  // 24h, so the grid is compact and the day's events fill it. Times outside the
+  // window are clamped onto its edges.
+  const DAY_START_HOUR = 8;
+  const DAY_END_HOUR = 23;
+  const DAY_MIN_START = DAY_START_HOUR * 60;
   // Hour height tracks the (fluid) root font so the timeline scales with the
   // rest of the kiosk — bigger rows on a large display, tighter on a phone.
-  const HOURS = Array.from({ length: 24 }, (_, h) => h);
   let scrollEl: HTMLElement;
   let rootRem = 16;
   // Live height of the unscheduled drawer, so the + button rides above it.
@@ -472,6 +477,14 @@
   function minutesOf(d: Date): number {
     return d.getHours() * 60 + d.getMinutes();
   }
+  // Vertical pixel offset for a time (minutes from midnight) within the window,
+  // and its inverse (pixels → minutes). The window starts at DAY_MIN_START.
+  function yForMin(min: number): number {
+    return ((min - DAY_MIN_START) / 60) * HOUR_PX;
+  }
+  function minForY(y: number): number {
+    return DAY_MIN_START + (y / HOUR_PX) * 60;
+  }
 
   // Scroll the timeline so the "now" line sits 1.5h from the top (today), or the
   // morning otherwise. Runs after layout (tick + rAF) so it lands reliably every
@@ -480,8 +493,10 @@
     await tick();
     requestAnimationFrame(() => {
       if (!scrollEl) return;
-      const mins = sameDay(anchorDay, get(now)) ? minutesOf(get(now)) : 8 * 60;
-      scrollEl.scrollTop = Math.max(0, (mins / 60) * HOUR_PX - HOUR_PX * 1.5);
+      const mins = sameDay(anchorDay, get(now))
+        ? minutesOf(get(now))
+        : DAY_MIN_START;
+      scrollEl.scrollTop = Math.max(0, yForMin(mins) - HOUR_PX * 1.5);
     });
   }
 
@@ -535,9 +550,15 @@
     measureRem();
     window.addEventListener("resize", measureRem);
     if (mode === "day") void focusDay();
-    // Kiosk displays are unattended — glide the timeline down to the end of the
-    // day once so late events are shown without anyone dragging.
-    const stopAutoScroll = scrollEl ? autoScrollToEnd(scrollEl) : () => {};
+    // Kiosk displays are unattended — glide the timeline once so booked content
+    // below the fold is shown without anyone dragging. Capped at the lowest
+    // booked event so it never scrolls down into empty evening hours.
+    const stopAutoScroll = scrollEl
+      ? autoScrollToEnd(scrollEl, {
+          maxScrollTop: () =>
+            Math.max(0, contentBottomPx - scrollEl.clientHeight + rootRem),
+        })
+      : () => {};
     return () => {
       window.removeEventListener("resize", measureRem);
       stopAutoScroll();
@@ -554,6 +575,9 @@
   const TWIN_MIN_REM = 40; // show the second column only past this width
   $: showNextDay = mode === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
   $: nextDay = addDays(anchorDay, 1);
+  // The "now" line only makes sense while the clock is inside the visible window.
+  $: nowInWindow =
+    minutesOf($now) >= DAY_MIN_START && minutesOf($now) <= windowEndMin;
 
   interface DayColumn {
     iso: string;
@@ -594,7 +618,7 @@
     lay: { col: number; cols: number },
     gutter: boolean,
   ): string {
-    const top = (minutesOf(ev.date) / 60) * HOUR_PX;
+    const top = yForMin(minutesOf(ev.date));
     const height = (durMin / 60) * HOUR_PX;
     const pad = gutter ? "3.2rem" : "0.15rem";
     const inner = gutter ? "3.5rem" : "0.3rem";
@@ -605,6 +629,33 @@
       ` background: ${noteColorFor(ev.category)};`
     );
   }
+
+  // The grid always covers the full 08:00–23:00 window, so every hour line is
+  // present and the user can scroll the whole day by hand. (We don't trim it to
+  // content — that left later hours unreachable on short screens.)
+  const HOURS = Array.from(
+    { length: DAY_END_HOUR - DAY_START_HOUR + 1 },
+    (_, i) => DAY_START_HOUR + i,
+  );
+  $: gridHeight = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_PX;
+  $: windowEndMin = DAY_END_HOUR * 60;
+
+  // Pixel offset of the lowest booked event (and "now" today). Used only to cap
+  // the unattended auto-scroll so it reveals booked content but never glides off
+  // into empty evening hours.
+  $: contentBottomPx = (() => {
+    let b = 0;
+    for (const col of dayCols) {
+      if (col.isToday) b = Math.max(b, yForMin(minutesOf($now)));
+      for (const ev of col.timed) {
+        b = Math.max(
+          b,
+          yForMin(minutesOf(ev.date)) + (eventDurationMin(ev) / 60) * HOUR_PX,
+        );
+      }
+    }
+    return b;
+  })();
 
   $: periodLabel =
     mode === "day"
@@ -633,14 +684,6 @@
   style="--tray-h: {trayHeight}px;"
 >
   <header class="head">
-    <div class="nav">
-      <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
-        >‹</button
-      >
-      <h2 class="period">{periodLabel}</h2>
-      <button class="arrow" on:click={() => step(1)} aria-label="Next">›</button
-      >
-    </div>
     <div class="seg" role="tablist" aria-label="Calendar view">
       {#each MODES as m}
         <button
@@ -651,6 +694,14 @@
           on:click={() => setMode(m)}>{m}</button
         >
       {/each}
+    </div>
+    <div class="nav">
+      <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
+        >‹</button
+      >
+      <h2 class="period">{periodLabel}</h2>
+      <button class="arrow" on:click={() => step(1)} aria-label="Next">›</button
+      >
     </div>
   </header>
 
@@ -751,6 +802,9 @@
     {:else}
       <!-- day timeline — one column, or two (with the next day) when wide -->
       <div class="day-cols" class:twin={dayCols.length > 1}>
+        <!-- Date band: only needed with two columns (the period header already
+             names the day in single-column view). Sticks above the timeline so
+             each column's day stays visible while the hours scroll. -->
         {#if dayCols.length > 1}
           <div class="col-heads">
             {#each dayCols as col (col.iso)}
@@ -790,28 +844,27 @@
           </div>
         {/if}
 
-        <div class="hours-row">
+        <!-- One shared hour grid behind both day columns, so the lines are drawn
+             once: they always line up across days and never glitch on scroll. -->
+        <div class="hours-row" style="height: {gridHeight}px;">
+          <div class="hour-grid" aria-hidden="true">
+            {#each HOURS as h}
+              <div class="hour" style="top: {yForMin(h * 60)}px;">
+                <span class="hour-label">{fmtHour(h)}</span>
+              </div>
+            {/each}
+          </div>
+
           {#each dayCols as col (col.iso)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="hours"
-              class:secondary={!col.primary}
+              class="hours-col"
               data-day={col.iso}
               data-hours="1"
-              style="height: {24 * HOUR_PX}px;"
               on:pointerdown={beginCreatePress}
             >
-              {#each HOURS as h}
-                <div class="hour" style="top: {h * HOUR_PX}px;">
-                  <span class="hour-label">{fmtHour(h)}</span>
-                </div>
-              {/each}
-
               {#if dropDay === col.iso && dropMin !== null}
-                <div
-                  class="slot-hint"
-                  style="top: {(dropMin / 60) * HOUR_PX}px;"
-                ></div>
+                <div class="slot-hint" style="top: {yForMin(dropMin)}px;"></div>
               {/if}
 
               {#each col.timed as ev (ev.id)}
@@ -858,10 +911,10 @@
                 </article>
               {/each}
 
-              {#if col.isToday}
+              {#if col.isToday && nowInWindow}
                 <div
                   class="now-line"
-                  style="top: {(minutesOf($now) / 60) * HOUR_PX}px;"
+                  style="top: {yForMin(minutesOf($now))}px;"
                 >
                   <span class="now-dot"></span>
                   <span class="now-time"
@@ -975,8 +1028,11 @@
       border-top: none;
       border-left: 1px solid var(--line);
     }
-    /* Chips stack vertically and scroll down the sidebar. */
+    /* Chips stack vertically and scroll down the sidebar. `flex: 1` bounds the
+       list to the drawer's height so overflowing chips scroll instead of being
+       clipped. */
     .cal.has-tray .tray-items {
+      flex: 1 1 0;
       flex-direction: column;
       flex-wrap: nowrap;
       overflow-x: hidden;
@@ -1133,13 +1189,26 @@
     filter: brightness(0.97);
   }
 
+  /* Stacked + centered by default (the day/week/month selector sits above the
+     date). Where there's width, they share one line: date on the left, selector
+     on the right. */
   .head {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.7rem;
-    padding: 1.1rem 1.4rem 0.7rem;
+    padding: 0.9rem 1.4rem 0.6rem;
+  }
+  @media (min-width: 640px) {
+    .head {
+      flex-direction: row-reverse;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .head .nav {
+      width: auto;
+    }
   }
   .nav {
     display: flex;
@@ -1337,44 +1406,47 @@
 
   /* ── Day timeline ──────────────────────────────────────────────────────--- */
   /* One column normally; a second (the next day) appears side-by-side when the
-     screen is wide (`.twin`). The header / all-day / hours rows are each a flex
-     row so the two days stay column-aligned regardless of their content. */
+     screen is wide (`.twin`). The date band, all-day strip and hours row are each
+     a flex row of N day-columns so the days stay column-aligned. */
   .day-cols {
     display: flex;
     flex-direction: column;
   }
-  .col-heads,
-  .allday-row,
-  .hours-row {
+  /* Date band: pinned above the scrolling timeline so each column's day stays
+     visible. Opaque so the hours scroll cleanly underneath it. */
+  .col-heads {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: stretch;
+    background: var(--paper);
+  }
+  .allday-row {
     display: flex;
     align-items: stretch;
   }
   .col-heads > .col-head,
-  .allday-row > .allday,
-  .hours-row > .hours {
+  .allday-row > .allday {
     flex: 1 1 0;
     min-width: 0;
   }
-  /* Divider between the two days. */
+  /* Divider between the two days (date band, all-day, and the timeline columns;
+     the column rule only matches when a second column is present). */
   .day-cols.twin .col-heads > * + *,
   .day-cols.twin .allday-row > * + *,
-  .day-cols.twin .hours-row > * + * {
+  .hours-col + .hours-col {
     border-left: 1px solid var(--line);
   }
   .col-head {
-    padding: 0.2rem 0 0.45rem;
+    padding: 0.35rem 0 0.4rem;
     text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: var(--muted);
   }
   .col-head.today {
     color: var(--teal-deep);
-  }
-  /* The next-day column drops the (repeated) hour labels; its events fill the
-     full column width instead of clearing a label gutter (see eventBox). */
-  .hours.secondary .hour-label {
-    display: none;
   }
 
   .allday {
@@ -1412,8 +1484,22 @@
     cursor: grab;
   }
 
-  .hours {
+  .hours-row {
     position: relative;
+    display: flex;
+    align-items: stretch;
+  }
+  /* The hour lines + labels live in one full-width layer behind the day columns,
+     so they're drawn a single time — guaranteeing the two days line up. */
+  .hour-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .hours-col {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .hour {
     position: absolute;

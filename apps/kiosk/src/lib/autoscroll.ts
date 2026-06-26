@@ -14,7 +14,7 @@ const START_DELAY_MS = 5000;
 
 export function autoScrollToEnd(
   el: HTMLElement,
-  opts: { startDelayMs?: number } = {},
+  opts: { startDelayMs?: number; maxScrollTop?: () => number } = {},
 ): () => void {
   if (typeof window === "undefined") return () => {};
 
@@ -44,7 +44,12 @@ export function autoScrollToEnd(
     const dt = (ts - last) / 1000;
     last = ts;
 
-    const max = el.scrollHeight - el.clientHeight;
+    // Stop at the natural bottom, or sooner if the caller caps how far to glide
+    // (the calendar caps it at the last booked event so it never drifts into
+    // empty hours). Re-read each tick so late-arriving data is respected.
+    const natural = el.scrollHeight - el.clientHeight;
+    const cap = opts.maxScrollTop ? opts.maxScrollTop() : Infinity;
+    const max = Math.min(natural, cap);
     if (max <= 0 || el.scrollTop >= max - 1) {
       cancel();
       return;
