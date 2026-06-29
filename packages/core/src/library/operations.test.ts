@@ -117,6 +117,14 @@ describe('addItem', () => {
     expect(dup.ok).toBe(false);
     expect(dup.reason).toBe('already_exists');
   });
+
+  it('honors an explicit type over the name-keyword guess', async () => {
+    const { db } = mockDb();
+    // "hammer" would auto-detect as a tool; the caller overrides to book.
+    const res = await addItem(db, 'h1', 'hammer', { type: LIBRARY_TYPES.BOOK });
+    expect(res.ok).toBe(true);
+    expect(res.item?.type).toBe(LIBRARY_TYPES.BOOK);
+  });
 });
 
 describe('removeItem / getItem / listItems / filterItems / getLibraryStats', () => {

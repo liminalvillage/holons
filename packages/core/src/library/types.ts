@@ -47,6 +47,11 @@ export interface CreateLibraryItemOptions {
   category?: string;
   description?: string;
   value?: number;
+  /**
+   * Explicit item type. When omitted, `addItem` falls back to `detectItemType`
+   * (name-keyword guess); pass this when the user picks a type directly.
+   */
+  type?: LibraryItemType;
 }
 
 /** Minimal HoloSphere-shaped storage interface this module needs. */

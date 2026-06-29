@@ -181,7 +181,9 @@ export async function addItem(
   if (await db.get(holon, LENS, itemId)) {
     return { ok: false, reason: 'already_exists' };
   }
-  const type = detectItemType(itemId);
+  // Honor a caller-supplied type (e.g. a UI type picker); otherwise guess it
+  // from the name.
+  const type = options.type ?? detectItemType(itemId);
   const item = createLibraryItem(itemId, type, options);
   await db.put(holon, LENS, item);
   return { ok: true, item };
