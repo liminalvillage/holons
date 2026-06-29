@@ -106,16 +106,67 @@ function isDone(q: Quest): boolean {
  */
 export const parseWhen = parseInstant;
 
-/**
- * In federated mode the lens subscriptions tag each partner-holon record with a
- * `_holon` source id (see `subscribeManyLens`). Resolve it to a friendly label
- * — the partner's name when known, else its id — or `undefined` for own items.
- */
 type Names = Record<string, string>;
+
+/**
+ * The originating holon id for a record that didn't come from this kiosk's own
+ * holon. Three provenance markers can surface one:
+ *   - `_holon`            — tag the kiosk's own aggregator adds to partner-holon
+ *                           records when federating (see `createLensAggregator`);
+ *   - `_hologram`         — Holosphere's resolved-hologram envelope, for an item
+ *                           mirrored from another holon (`sourceHolon`);
+ *   - `_federation`       — Holosphere's federation envelope, for an item that
+ *                           arrived via a federated partner (`origin`).
+ * `undefined` for the kiosk's own items.
+ */
+function sourceHolonId(rec: unknown): string | undefined {
+  const r = rec as {
+    _holon?: string;
+    _federation?: { origin?: string };
+    _hologram?: { isHologram?: boolean; sourceHolon?: string | null };
+  };
+  if (r._holon) return r._holon;
+  if (r._hologram?.isHologram && r._hologram.sourceHolon)
+    return r._hologram.sourceHolon;
+  if (r._federation?.origin) return r._federation.origin;
+  return undefined;
+}
+
+/**
+ * Resolve a foreign item's source holon to a friendly label — the partner's
+ * name when known (from the federation snapshot, or stamped on the provenance
+ * envelope), else its id — or `undefined` for the kiosk's own items.
+ */
 function sourceLabel(rec: unknown, names?: Names): string | undefined {
-  const h = (rec as { _holon?: string })._holon;
-  if (!h) return undefined;
-  return names?.[h] ?? h;
+  const id = sourceHolonId(rec);
+  if (!id) return undefined;
+  const r = rec as {
+    _hologram?: { sourceHolonName?: string };
+    _federation?: { originName?: string };
+  };
+  return (
+    names?.[id] ??
+    r._hologram?.sourceHolonName ??
+    r._federation?.originName ??
+    id
+  );
+}
+
+/**
+ * A stable glow-edge colour for a foreign item (one mirrored from another holon
+ * via federation or a hologram), hashed from its origin holon id so every item
+ * from the same holon shares one hue. `undefined` for the kiosk's own items —
+ * they get no glow. Returned ready to drop into a `--glow` custom property.
+ */
+export function sourceGlow(rec: unknown): string | undefined {
+  const id = sourceHolonId(rec);
+  if (!id) return undefined;
+  let hash = 0;
+  for (let i = 0; i < id.length; i++)
+    hash = (hash << 5) - hash + id.charCodeAt(i);
+  // Fixed saturation/lightness so every partner hue reads as a vivid edge
+  // against the warm post-it palette.
+  return `hsl(${Math.abs(hash) % 360} 75% 52%)`;
 }
 
 export interface CalendarEvent {
@@ -133,6 +184,8 @@ export interface CalendarEvent {
   appreciation: number;
   /** Federation partner this came from, when aggregating; own items omit it. */
   source?: string;
+  /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
+  sourceColor?: string;
 }
 
 export interface TaskPerson {
@@ -155,6 +208,8 @@ export interface BacklogTask {
   /** Ids of the appreciators, so a card can show whether *you* appreciate it. */
   appreciatedBy: (string | number)[];
   source?: string;
+  /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
+  sourceColor?: string;
   /** Who proposed the quest (the "idea" behind it), for the lightbulb chip. */
   initiator?: TaskPerson | null;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
@@ -232,6 +287,7 @@ export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
+      sourceColor: sourceGlow(q),
     });
   }
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -264,6 +320,7 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       appreciation: countOf(q.appreciation),
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
+      sourceColor: sourceGlow(q),
       initiator: toInitiator(q),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
       // survives a reload.
@@ -295,6 +352,8 @@ export interface LibraryThing {
   available: boolean;
   borrower?: string | null;
   source?: string;
+  /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
+  sourceColor?: string;
 }
 
 export interface RoleCard {
@@ -306,6 +365,8 @@ export interface RoleCard {
   /** Number of members. */
   count: number;
   source?: string;
+  /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
+  sourceColor?: string;
 }
 
 /** Roles lens → display cards, alphabetical by title. */
@@ -319,6 +380,7 @@ export function toRoles(roles: Role[], names?: Names): RoleCard[] {
       people: toPeople(r.participants),
       count: countOf(r.participants),
       source: sourceLabel(r, names),
+      sourceColor: sourceGlow(r),
     }))
     .filter((r) => {
       // Drop blanks and federated duplicates so view keys stay unique.
@@ -340,6 +402,7 @@ export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
       available: !it.borrowed,
       borrower: it.borrower ?? null,
       source: sourceLabel(it, names),
+      sourceColor: sourceGlow(it),
     }))
     .filter((t) => {
       // Drop blanks and federated duplicates so view keys stay unique.

@@ -21,6 +21,8 @@
         <article
           class="card"
           class:out={!thing.available}
+          class:is-foreign={!!thing.sourceColor}
+          style="--glow: {thing.sourceColor ?? 'transparent'};"
           role="button"
           tabindex="0"
           on:click={() => openThing(thing.id)}
@@ -108,7 +110,8 @@
   .src {
     font-size: 0.68rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    /* Tinted with the source holon's own colour (same hue as its glow edge). */
+    color: var(--glow, var(--teal-deep));
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -132,5 +135,15 @@
     text-align: center;
     padding: 3rem 1rem;
     font-size: 1.1rem;
+  }
+
+  /* Federated / hologram things — a coloured edge keyed by their source holon
+     (see `sourceGlow` in lib/data.ts, supplied as `--glow`); the soft lift is
+     kept so the card still sits off the board. */
+  .card.is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
+      var(--shadow-soft);
   }
 </style>

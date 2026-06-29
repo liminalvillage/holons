@@ -443,13 +443,16 @@
               <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
               <article
                 class="note tilt"
+                class:is-foreign={!!task.sourceColor}
                 style="--tilt: {noteTilt(
                   task.id,
                 )}deg; --rise-delay: {noteRiseDelay(
                   task.id,
                 )}s; --rise-rot: {noteRiseRot(
                   task.id,
-                )}deg; background: {noteColorFor(task.category)};"
+                )}deg; background: {noteColorFor(
+                  task.category,
+                )}; --glow: {task.sourceColor ?? 'transparent'};"
                 role="button"
                 tabindex="0"
                 on:pointerdown={(e) => onPointerDown(e, task)}
@@ -585,7 +588,9 @@
   >
     <article
       class="note"
-      style="background: {noteColorFor(drag.task.category)};"
+      class:is-foreign={!!drag.task.sourceColor}
+      style="background: {noteColorFor(drag.task.category)}; --glow: {drag.task
+        .sourceColor ?? 'transparent'};"
     >
       <h3>{drag.task.title}</h3>
       <div class="meta">
@@ -874,8 +879,9 @@
   .src {
     font-size: 0.7rem;
     font-weight: 700;
-    color: var(--teal-deep);
-    background: rgba(255, 255, 255, 0.55);
+    /* Tinted with the source holon's own colour (same hue as its glow edge). */
+    color: var(--glow, var(--teal-deep));
+    background: rgba(255, 255, 255, 0.7);
     border-radius: 999px;
     padding: 0.1rem 0.5rem;
     max-width: 9rem;
@@ -1024,5 +1030,14 @@
   }
   .add .primary:disabled {
     opacity: 0.6;
+  }
+
+  /* Federated / hologram items — a coloured edge keyed by their source holon
+     (see `sourceGlow` in lib/data.ts, supplied as `--glow`) marks them as
+     coming from elsewhere. */
+  .is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 16px 1px color-mix(in srgb, var(--glow) 55%, transparent);
   }
 </style>

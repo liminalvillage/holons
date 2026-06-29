@@ -342,11 +342,14 @@
             <span class="lift">
               <article
                 class="note tilt"
+                class:is-foreign={!!card.sourceColor}
                 style="--tilt: {noteTilt(
                   card.id,
                 )}deg; --rise-delay: {noteRiseDelay(
                   card.id,
-                )}s; background: {noteColor(card.title)};"
+                )}s; background: {noteColor(
+                  card.title,
+                )}; --glow: {card.sourceColor ?? 'transparent'};"
               >
                 {#if $isLoggedIn}
                   <button
@@ -1082,5 +1085,13 @@
   }
   .form .danger:disabled {
     opacity: 0.6;
+  }
+
+  /* Federated / hologram roles — a coloured edge keyed by their source holon
+     (see `sourceGlow` in lib/data.ts, supplied as `--glow`). */
+  .is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 16px 1px color-mix(in srgb, var(--glow) 55%, transparent);
   }
 </style>

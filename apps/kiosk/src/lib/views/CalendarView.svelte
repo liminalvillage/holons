@@ -695,6 +695,58 @@
       ? "all day"
       : e.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
+
+  // ── Thin events: inline title + shrink-to-fit ─────────────────────────────--
+  // A short event (e.g. a 15-minute slot) is too thin for the stacked
+  // time-over-title layout — the title spills past the box and gets clipped. So
+  // below this rendered height we switch to a single inline line (time then
+  // title) whose font shrinks until it fits (see `.day-event.compact` and
+  // `fitLine`). `min-height: 1.6rem` floors how thin a box actually renders, so
+  // the threshold and font sizing reckon with that effective height.
+  const MIN_EVENT_REM = 1.6;
+  $: COMPACT_PX = rootRem * 2.5;
+  function renderHeightPx(heightPx: number): number {
+    return Math.max(heightPx, rootRem * MIN_EVENT_REM);
+  }
+  // Largest line font (px) that fits a compact event's (vertically-centred)
+  // height, kept within a legible band so it never balloons or vanishes.
+  function compactFont(heightPx: number): number {
+    const fit = renderHeightPx(heightPx) / 1.3;
+    return Math.max(rootRem * 0.5, Math.min(rootRem * 0.82, fit));
+  }
+
+  // Shrink a compact event's inline line until its single (nowrap) row fits the
+  // column width, so a long title is never clipped — only made smaller. Starts
+  // from the height-derived `--ev-font` base and steps down to a legible floor.
+  // Re-runs (rAF-coalesced) whenever its key — title, duration, scale, layout —
+  // changes; the key is passed as the action parameter.
+  // `_key` is unused inside, but declaring it lets Svelte type `use:fitLine={…}`
+  // and re-invoke `update` each time the key changes.
+  function fitLine(node: HTMLElement, _key: string) {
+    let raf = 0;
+    const fit = () => {
+      raf = 0;
+      node.style.fontSize = ""; // back to the CSS base (--ev-font)
+      let px = parseFloat(getComputedStyle(node).fontSize) || 12;
+      let guard = 0;
+      while (
+        node.scrollWidth > node.clientWidth + 0.5 &&
+        px > 6 &&
+        guard++ < 60
+      ) {
+        px -= 0.5;
+        node.style.fontSize = `${px}px`;
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(fit);
+    };
+    schedule();
+    return {
+      update: (_next: string) => schedule(),
+      destroy: () => raf && cancelAnimationFrame(raf),
+    };
+  }
 </script>
 
 <div
@@ -755,7 +807,11 @@
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
                     class="chip tilt draggable"
-                    style={tiltStyle(ev.id, noteColorFor(ev.category))}
+                    class:is-foreign={!!ev.sourceColor}
+                    style="{tiltStyle(
+                      ev.id,
+                      noteColorFor(ev.category),
+                    )} --glow: {ev.sourceColor ?? 'transparent'};"
                     title={ev.title}
                     role="button"
                     tabindex="0"
@@ -799,7 +855,11 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <article
                       class="note sm tilt draggable"
-                      style={tiltStyle(ev.id, noteColorFor(ev.category))}
+                      class:is-foreign={!!ev.sourceColor}
+                      style="{tiltStyle(
+                        ev.id,
+                        noteColorFor(ev.category),
+                      )} --glow: {ev.sourceColor ?? 'transparent'};"
                       role="button"
                       tabindex="0"
                       on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
@@ -848,7 +908,10 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <span
                       class="allday-chip draggable"
-                      style="background: {noteColorFor(ev.category)};"
+                      class:is-foreign={!!ev.sourceColor}
+                      style="background: {noteColorFor(
+                        ev.category,
+                      )}; --glow: {ev.sourceColor ?? 'transparent'};"
                       role="button"
                       tabindex="0"
                       title={ev.title}
@@ -893,36 +956,68 @@
                 {@const durMin =
                   resize?.id === ev.id ? resize.curMin : eventDurationMin(ev)}
                 {@const lay = col.layout.get(ev.id) ?? { col: 0, cols: 1 }}
+                {@const heightPx = (durMin / 60) * HOUR_PX}
+                {@const compact = heightPx < COMPACT_PX}
+                {@const durLabel = `${Math.floor(durMin / 60)}h${
+                  durMin % 60 ? ` ${durMin % 60}m` : ""
+                }`}
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                 <article
                   class="day-event draggable"
                   class:resizing={resize?.id === ev.id}
-                  style={eventBox(ev, durMin, lay, col.primary, HOUR_PX)}
+                  class:is-foreign={!!ev.sourceColor}
+                  class:compact
+                  style="{eventBox(
+                    ev,
+                    durMin,
+                    lay,
+                    col.primary,
+                    HOUR_PX,
+                  )} --glow: {ev.sourceColor ??
+                    'transparent'}; --ev-font: {compactFont(heightPx)}px;"
                   role="button"
                   tabindex="0"
                   on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
                   on:click={() => open(ev.id)}
                   on:keydown={(e) => onKey(e, ev.id)}
                 >
-                  <span class="when"
-                    >{timeLabel(ev)}{#if resize?.id === ev.id}<span class="dur">
-                        · {Math.floor(durMin / 60)}h{durMin % 60
-                          ? ` ${durMin % 60}m`
-                          : ""}</span
-                      >{/if}</span
-                  >
-                  <span class="ttl">{ev.title}</span>
-                  {#if ev.location}<span class="where">{ev.location}</span>{/if}
-                  {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
-                  {#if ev.people.length || ev.appreciation}
-                    <div class="ev-foot">
-                      {#if ev.appreciation}<span class="appr"
-                          ><span class="h">♥</span> {ev.appreciation}</span
-                        >{/if}
-                      {#if ev.people.length}
-                        <Avatars people={ev.people} size="1.35rem" />
-                      {/if}
-                    </div>
+                  {#if compact}
+                    <!-- Too thin to stack: time then title on one shrink-to-fit
+                         line, so the title sits next to the hour and is never
+                         clipped (see fitLine). -->
+                    <span
+                      class="cline"
+                      use:fitLine={`${ev.title}|${durMin}|${HOUR_PX}|${lay.cols}|${bodyWidth}`}
+                    >
+                      <span class="when"
+                        >{timeLabel(ev)}{#if resize?.id === ev.id}<span
+                            class="dur">&nbsp;· {durLabel}</span
+                          >{/if}</span
+                      >
+                      <span class="ttl">{ev.title}</span>
+                    </span>
+                  {:else}
+                    <span class="when"
+                      >{timeLabel(ev)}{#if resize?.id === ev.id}<span
+                          class="dur"
+                        >
+                          · {durLabel}</span
+                        >{/if}</span
+                    >
+                    <span class="ttl">{ev.title}</span>
+                    {#if ev.location}<span class="where">{ev.location}</span
+                      >{/if}
+                    {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
+                    {#if ev.people.length || ev.appreciation}
+                      <div class="ev-foot">
+                        {#if ev.appreciation}<span class="appr"
+                            ><span class="h">♥</span> {ev.appreciation}</span
+                          >{/if}
+                        {#if ev.people.length}
+                          <Avatars people={ev.people} size="1.35rem" />
+                        {/if}
+                      </div>
+                    {/if}
                   {/if}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <span
@@ -966,7 +1061,10 @@
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <span
             class="tray-chip draggable"
-            style="background: {noteColorFor(task.category)};"
+            class:is-foreign={!!task.sourceColor}
+            style="background: {noteColorFor(
+              task.category,
+            )}; --glow: {task.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"
             title={task.title}
@@ -1063,6 +1161,10 @@
       overflow-x: hidden;
       overflow-y: auto;
       min-height: 0;
+      /* Vertical scroll clips left/right, so inset the chips there too — keeps
+         the glow edge off the sidebar boundary. */
+      padding: 0.4rem 0.7rem;
+      gap: 0.85rem;
     }
     .cal.has-tray .tray-chip {
       max-width: none;
@@ -1185,13 +1287,15 @@
   .tray-items {
     display: flex;
     min-width: 0;
-    gap: 0.5rem;
+    gap: 0.7rem;
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 0.4rem;
+    /* Inset the chips from the scrolling box so a foreign chip's glow edge has
+       room to bloom instead of being clipped by the overflow boundary. */
+    padding: 0.5rem 0.4rem 0.7rem;
   }
   .tray-chip {
     flex: 0 0 auto;
@@ -1610,7 +1714,8 @@
     margin-top: 0.15rem;
     font-size: 0.7rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    /* Tinted with the source holon's own colour (same hue as its glow edge). */
+    color: var(--glow, var(--teal-deep));
   }
   .day-event .ev-foot {
     display: flex;
@@ -1629,6 +1734,43 @@
   .day-event .appr .h {
     font-size: 1.4em;
     line-height: 1;
+  }
+
+  /* Compact (thin) event: one centred row — time then title — instead of the
+     stacked layout, so a short slot's title sits next to the hour and is never
+     clipped. The line's base size is the height-derived `--ev-font`; `fitLine`
+     shrinks it further if a long title would overflow the column width. */
+  .day-event.compact {
+    flex-direction: row;
+    align-items: center;
+    padding: 0 0.5rem;
+  }
+  .day-event.compact .cline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    width: 100%;
+    min-width: 0;
+    font-size: var(--ev-font, 0.72rem);
+    line-height: 1.12;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .day-event.compact .when {
+    flex: 0 0 auto;
+    font-size: 0.82em;
+    letter-spacing: 0;
+  }
+  .day-event.compact .ttl {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1em;
+    line-height: 1.12;
+  }
+  /* A thin box is mostly grip otherwise — slim the handle so the body stays
+     tappable to open. */
+  .day-event.compact .resize-handle {
+    height: 0.45rem;
   }
   .slot-hint {
     position: absolute;
@@ -1706,5 +1848,25 @@
     font-weight: 600;
     color: var(--ink);
     line-height: 1.15;
+  }
+
+  /* Federated / hologram events — a coloured edge keyed by their source holon
+     (see `sourceGlow` in lib/data.ts, supplied as `--glow`) marks them as
+     coming from elsewhere, across every calendar surface they appear on. The
+     surfaces that carry a soft lift keep it (re-stated here, since their own
+     `box-shadow` rule would otherwise win on specificity). */
+  .chip.is-foreign,
+  .note.is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent);
+  }
+  .day-event.is-foreign,
+  .allday-chip.is-foreign,
+  .tray-chip.is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
+      var(--shadow-soft);
   }
 </style>
