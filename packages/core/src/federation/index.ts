@@ -13,6 +13,11 @@ export {
 	type PublishTarget
 } from './publish.js';
 
-export { getFederationSnapshot, type FederationSnapshot } from './snapshot.js';
+export {
+	getFederationSnapshot,
+	partnersReceivingLens,
+	type FederationSnapshot,
+	type FederationLensDirections
+} from './snapshot.js';
 
 export { readSettingsHex } from './settings-hex.js';

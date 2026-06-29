@@ -9,7 +9,10 @@
     createLensAggregator,
     type LensAggregator,
   } from "$lib/holosphere";
-  import { getFederationSnapshot } from "@holons/core/federation";
+  import {
+    getFederationSnapshot,
+    partnersReceivingLens,
+  } from "@holons/core/federation";
   import type { HoloSphere } from "holosphere";
   import {
     resolveHolonId,
@@ -173,19 +176,36 @@
       const snap = await getFederationSnapshot(hs, id);
       // Bail if the holon changed or federation was switched off meanwhile.
       if (boundHolon !== id || !get(federated)) return;
-      const holonIds = [id, ...snap.federated.filter((h) => h && h !== id)];
+
+      // Federation is per-lens and directional: a partner only contributes a
+      // lens when WE configured that lens as inbound (receiving) from them.
+      // Subscribe each lens to its own partner set instead of one shared
+      // `federated` list, so an outbound-only or unconfigured link can't leak
+      // its data onto the board.
+      const lensPartners = (lens: string) => [
+        id,
+        ...partnersReceivingLens(snap, lens).filter((h) => h && h !== id),
+      ];
+      const questHolons = lensPartners("quests");
+      const libraryHolons = lensPartners("library");
+      const roleHolons = lensPartners("roles");
+
       partnerNames.set(snap.partnerNames ?? {});
-      questsAgg?.setHolons(holonIds);
-      libraryAgg?.setHolons(holonIds);
-      rolesAgg?.setHolons(holonIds);
+      questsAgg?.setHolons(questHolons);
+      libraryAgg?.setHolons(libraryHolons);
+      rolesAgg?.setHolons(roleHolons);
+
+      // Only resolve names for partners that actually surface on the board.
+      const shownPartners = [
+        ...new Set([...questHolons, ...libraryHolons, ...roleHolons]),
+      ].filter((h) => h !== id);
 
       // Resolve each partner's name once and fold it into the source-badge map
       // as it lands (names replicate shortly after we subscribe, so this is
       // async/progressive rather than blocking). Guarded so a stale holon or a
       // federation-off toggle can't write a late result; unresolved partners
       // stay as ids via `sourceLabel`.
-      for (const h of holonIds) {
-        if (h === id) continue;
+      for (const h of shownPartners) {
         void getHolonName(hs, h).then((name) => {
           if (name && boundHolon === id && get(federated)) {
             partnerNames.update((m) =>

@@ -197,6 +197,37 @@ describe('Federation Tests', () => {
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(0);
     });
+
+    test('only pulls a partner lens we configured as inbound from that partner', async () => {
+      const home = `${testPrefix}gf_home`;
+      const partner = `${testPrefix}gf_partner`;
+
+      // Home receives ONLY `quests` from the partner — `library` is not inbound,
+      // even though the partner is a federation member (partner-level inbound).
+      await holosphere.federate(home, partner, null, null, true, {
+        inbound: ['quests'],
+        outbound: []
+      });
+
+      // Partner holds items in both lenses.
+      await holosphere.put(partner, 'quests', { id: 'q1', title: 'Partner quest' });
+      await holosphere.put(partner, 'library', { id: 'l1', title: 'Partner book' });
+
+      // Query partners only (no local) so we're asserting which partner spaces
+      // each lens fans out to, not local hologram replication.
+      const opts = { includeLocal: false, resolveReferences: false };
+
+      // The inbound lens flows through, tagged with its source.
+      const quests = await holosphere.getFederated(home, 'quests', opts);
+      const q1 = quests.find(item => item && item.id === 'q1');
+      expect(q1).toBeDefined();
+      expect(q1._federation.origin).toBe(partner);
+
+      // The lens we did NOT opt into must not leak, despite the partner being
+      // in `inbound` at the partner level.
+      const library = await holosphere.getFederated(home, 'library', opts);
+      expect(library.some(item => item && item.id === 'l1')).toBe(false);
+    });
   });
 
   describe('propagate', () => {

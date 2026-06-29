@@ -532,7 +532,17 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         spacesToQuery.push(holon); // Add local holon first
     }
     if (includeFederated && fedInfo && fedInfo.inbound && fedInfo.inbound.length > 0) {
-        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.inbound : fedInfo.inbound.slice(0, maxFederatedSpaces);
+        // Federation is directional AND per-lens: a partner only contributes
+        // `lens` when WE configured that lens as inbound (receiving) from them
+        // in `lensConfig[partner].inbound`. `fedInfo.inbound` alone is just
+        // partner-level ("receives SOME lens"), so querying it directly would
+        // pull lenses we never opted into from that partner. Filter per-lens.
+        const lensConfig = fedInfo.lensConfig || {};
+        const receiving = fedInfo.inbound.filter(space => {
+            const inboundLenses = lensConfig[space] && lensConfig[space].inbound;
+            return Array.isArray(inboundLenses) && inboundLenses.includes(lens);
+        });
+        const federatedSpaces = maxFederatedSpaces === -1 ? receiving : receiving.slice(0, maxFederatedSpaces);
         spacesToQuery = spacesToQuery.concat(federatedSpaces);
     }
 
