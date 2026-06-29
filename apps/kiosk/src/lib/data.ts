@@ -119,7 +119,7 @@ type Names = Record<string, string>;
  *                           arrived via a federated partner (`origin`).
  * `undefined` for the kiosk's own items.
  */
-function sourceHolonId(rec: unknown): string | undefined {
+export function sourceHolonId(rec: unknown): string | undefined {
   const r = rec as {
     _holon?: string;
     _federation?: { origin?: string };
