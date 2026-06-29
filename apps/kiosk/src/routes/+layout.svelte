@@ -17,6 +17,7 @@
   import {
     resolveHolonId,
     resolveFederated,
+    resolveLibraryEnabled,
     resolveRolesEnabled,
     resolveStatusEnabled,
     resolveBrandName,
@@ -35,6 +36,7 @@
     brandLogo,
     accent,
     federated,
+    libraryEnabled,
     rolesEnabled,
     statusEnabled,
     partnerNames,
@@ -88,7 +90,12 @@
     }, READY_SETTLE_MS);
   }
 
-  async function refresh(id: string | null, fed: boolean, rolesOn: boolean) {
+  async function refresh(
+    id: string | null,
+    fed: boolean,
+    libraryOn: boolean,
+    rolesOn: boolean,
+  ) {
     if (!id) {
       questsAgg?.destroy();
       libraryAgg?.destroy();
@@ -128,17 +135,12 @@
       questsAgg?.destroy();
       libraryAgg?.destroy();
       rolesAgg?.destroy();
+      libraryAgg = null; // recreated below when the Library tab is enabled
       rolesAgg = null; // recreated below when the Roles tab is enabled
       questsAgg = createLensAggregator<Quest>(
         hs,
         "quests",
         (items) => rawQuests.set(items),
-        id,
-      );
-      libraryAgg = createLensAggregator<LibraryItem>(
-        hs,
-        "library",
-        (items) => rawLibrary.set(items),
         id,
       );
       boundHolon = id;
@@ -149,8 +151,21 @@
       });
     }
 
-    // The Roles lens is optional — spin its aggregator up or down to match the
-    // toggle, leaving the always-on quests/library subscriptions untouched.
+    // The Library and Roles lenses are toggleable — spin each aggregator up or
+    // down to match its setting, leaving the always-on quests subscription
+    // untouched. (Library defaults on, Roles off.)
+    if (libraryOn && !libraryAgg) {
+      libraryAgg = createLensAggregator<LibraryItem>(
+        hs,
+        "library",
+        (items) => rawLibrary.set(items),
+        id,
+      );
+    } else if (!libraryOn && libraryAgg) {
+      libraryAgg.destroy();
+      libraryAgg = null;
+      rawLibrary.set([]);
+    }
     if (rolesOn && !rolesAgg) {
       rolesAgg = createLensAggregator<Role>(
         hs,
@@ -222,6 +237,7 @@
   onMount(() => {
     holonIdStore.set(resolveHolonId());
     federated.set(resolveFederated());
+    libraryEnabled.set(resolveLibraryEnabled());
     rolesEnabled.set(resolveRolesEnabled());
     statusEnabled.set(resolveStatusEnabled());
     brandName.set(resolveBrandName() ?? "");
@@ -242,7 +258,8 @@
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
-  $: if (mounted) refresh($holonIdStore, $federated, $rolesEnabled);
+  $: if (mounted)
+    refresh($holonIdStore, $federated, $libraryEnabled, $rolesEnabled);
 
   // While awaiting the first reveal, (re)arm the settle timer on every data
   // change — including the bind itself, so a holon with no data still reveals.

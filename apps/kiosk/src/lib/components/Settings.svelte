@@ -10,6 +10,7 @@
     brandName,
     brandLogo,
     accent,
+    libraryEnabled,
     rolesEnabled,
     statusEnabled,
     settingsOpen,
@@ -19,6 +20,7 @@
     setBrandName,
     setBrandLogo,
     setAccent,
+    setLibraryEnabled,
     setRolesEnabled,
     setStatusEnabled,
     setThemeMode,
@@ -32,6 +34,7 @@
   let draftName = $brandName;
   let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
+  let draftLibrary = $libraryEnabled;
   let draftRoles = $rolesEnabled;
   let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
@@ -87,6 +90,8 @@
     brandLogo.set(draftLogo);
     setAccent(draftAccent);
     accent.set(draftAccent);
+    setLibraryEnabled(draftLibrary);
+    libraryEnabled.set(draftLibrary);
     setRolesEnabled(draftRoles);
     rolesEnabled.set(draftRoles);
     setStatusEnabled(draftStatus);
@@ -187,6 +192,24 @@
         </button>
       {/each}
     </div>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >Library tab
+      <span class="sub">— a shared library of things to borrow</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={draftLibrary}
+      role="switch"
+      aria-checked={draftLibrary}
+      aria-label="Show the Library tab"
+      on:click={() => (draftLibrary = !draftLibrary)}
+    >
+      <span class="knob"></span>
+    </button>
   </div>
 
   <div class="field toggle-field">

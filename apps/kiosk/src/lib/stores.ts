@@ -46,6 +46,13 @@ export const accent = writable<string>("#0e6b66");
 export const federated = writable<boolean>(false);
 
 /**
+ * Whether the Library tab is shown (a caretaker toggle, persisted in config; on
+ * by default). Toggling it (de)activates the library subscription in
+ * `+layout.svelte` and adds/removes the tab in `visibleTabs`.
+ */
+export const libraryEnabled = writable<boolean>(true);
+
+/**
  * Whether the optional Roles tab is shown (a caretaker opt-in, persisted in
  * config). Toggling it (de)activates the roles subscription in `+layout.svelte`
  * and adds/removes the tab in `visibleTabs`.
@@ -191,15 +198,18 @@ export const TABS = [
 export type TabId = (typeof TABS)[number]["id"];
 
 /**
- * Tabs actually shown: the Library tab is hidden while it has no items, and the
- * optional Roles and Status tabs appear only when the caretaker has enabled them.
+ * Tabs actually shown: the Library tab follows its caretaker toggle (on by
+ * default), and the optional Roles and Status tabs appear only when the
+ * caretaker has enabled them. Each is purely toggle-driven — an enabled tab
+ * shows even while empty (its view shows an empty state), so the board never
+ * silently drops a tab the caretaker turned on.
  */
 export const visibleTabs = derived(
-  [things, rolesEnabled, statusEnabled],
-  ([$things, $roles, $status]) =>
+  [libraryEnabled, rolesEnabled, statusEnabled],
+  ([$library, $roles, $status]) =>
     TABS.filter(
       (t) =>
-        (t.id !== "library" || $things.length > 0) &&
+        (t.id !== "library" || $library) &&
         (t.id !== "roles" || $roles) &&
         (t.id !== "status" || $status),
     ),

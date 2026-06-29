@@ -24,6 +24,7 @@ export const PRODUCTION_PEER = "https://gun.holons.io/gun";
 const HOLON_KEY = "kiosk_holon";
 const APP_KEY = "kiosk_app";
 const FEDERATED_KEY = "kiosk_federated";
+const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
 const STATUS_KEY = "kiosk_status";
 const PINNED_KEY = "kiosk_pinned";
@@ -142,6 +143,19 @@ export function resolveFederated(): boolean {
 /** Persist the federated-view toggle. */
 export function setFederated(on: boolean): void {
   persist(FEDERATED_KEY, on ? "1" : "0");
+}
+
+/**
+ * Whether the Library tab is shown. On by default — a caretaker can hide it
+ * from Settings (e.g. a hub that doesn't run a library of things).
+ */
+export function resolveLibraryEnabled(): boolean {
+  return persisted(LIBRARY_KEY) !== "0";
+}
+
+/** Persist the Library-tab toggle. */
+export function setLibraryEnabled(on: boolean): void {
+  persist(LIBRARY_KEY, on ? "1" : "0");
 }
 
 /**
