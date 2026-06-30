@@ -82,6 +82,16 @@
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
 
+  // Existing categories across all quests, for the edit-form dropdown. Sorted
+  // and de-duped; the field stays a free-text input so a new one can be typed.
+  $: categoryOptions = [
+    ...new Set(
+      $rawQuests
+        .map((q) => (q.category ?? "").trim())
+        .filter((c) => c.length > 0),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
   // Edit mode lives only while its card is on screen: closing the modal or
   // switching to another record discards the form (runs before the
   // edit-on-open hook below, which may then re-enter editing for the new card).
@@ -624,7 +634,17 @@
         </div>
         <label
           >Category
-          <input type="text" bind:value={fCategory} />
+          <input
+            type="text"
+            list="category-options"
+            bind:value={fCategory}
+            placeholder="Pick or type a category"
+          />
+          <datalist id="category-options">
+            {#each categoryOptions as opt}
+              <option value={opt}></option>
+            {/each}
+          </datalist>
         </label>
         <label
           >Location
