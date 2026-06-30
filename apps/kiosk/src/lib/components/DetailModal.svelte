@@ -375,13 +375,25 @@
     if (!sel || sel.kind !== "thing" || !$holonId) return;
     saving = true;
     message = "";
+    // A federated/hologram item is owned by another holon — edit it there, not
+    // in our own lens, or we fork a stray local copy that shadows (and unlinks)
+    // the federated original. Also drop read-side provenance tags so the kiosk's
+    // `_holon` marker (or a resolved `_hologram`/`_federation` envelope) is never
+    // persisted onto the stored item.
+    const ref = sourceRef(sel.item, String(sel.item.id));
+    const holon = ref?.holon ?? $holonId;
+    const clean: Record<string, unknown> = { ...sel.item };
+    delete clean._holon;
+    delete clean._hologram;
+    delete clean._federation;
     const updated = {
-      ...sel.item,
+      ...clean,
+      id: ref?.key ?? sel.item.id,
       type: fType,
       description: fDescription.trim(),
       value: Number(fValue) || 0,
     };
-    const writer = await getWriter($holonId, (m) => (message = m));
+    const writer = await getWriter(holon, (m) => (message = m));
     const ok = await writer.put("library", updated);
     saving = false;
     if (ok) closeDetail();
