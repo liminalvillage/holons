@@ -33,7 +33,7 @@ function generatePrivateKey() {
  * 2) stored key from utils/key-storage
  * 3) generate new key
  *
- * @param {string} [appName] - Application name (defaults to env APPNAME or 'Holons')
+ * @param {string} [appName] - Application name (defaults to env HOLONS_APP or 'Holons')
  * @param {Object} [options] - Additional HoloSphere configuration options
  * @param {string} [options.privateKey] - Override private key
  * @param {string[]} [options.relays] - Override relay list
@@ -46,7 +46,7 @@ function generatePrivateKey() {
  * await holosphere.put(holonId, 'quests', questData);
  */
 export default function createHoloSphere(appName, options = {}) {
-  const resolvedAppName = appName || process.env.APPNAME || 'Holons';
+  const resolvedAppName = appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
   const {
     privateKey: pkOverride,
     backend,
@@ -78,7 +78,7 @@ export default function createHoloSphere(appName, options = {}) {
  * The KeyManager assigns each Telegram holon its own unique keypair,
  * enabling cross-author federation between chats using capability tokens.
  *
- * @param {string} [appName] - Application name (defaults to env APPNAME or 'Holons')
+ * @param {string} [appName] - Application name (defaults to env HOLONS_APP or 'Holons')
  * @param {Object} [options] - Configuration options
  * @param {string} [options.privateKey] - Override master private key
  * @param {string[]} [options.relays] - Override relay list
@@ -96,7 +96,7 @@ export default function createHoloSphere(appName, options = {}) {
  * await keyManager.federateHolons(chatA, chatB, 'quests');
  */
 export function createKeyManager(appName, options = {}) {
-  const resolvedAppName = appName || process.env.APPNAME || 'Holons';
+  const resolvedAppName = appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
 
   // Create master HoloSphere (bot's identity)
   const masterHolosphere = createHoloSphere(resolvedAppName, options);

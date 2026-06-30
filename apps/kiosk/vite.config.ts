@@ -7,7 +7,7 @@ import { dirname } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  // Share the monorepo-root .env so VITE_HOLONS_APP / VITE_KIOSK_HOLON line up
+  // Share the monorepo-root .env so HOLONS_APP / VITE_KIOSK_HOLON line up
   // with the web app, bot, and mcp-ui — one source of truth.
   envDir: resolve(__dirname, "../.."),
   plugins: [sveltekit()],

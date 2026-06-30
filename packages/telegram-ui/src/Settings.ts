@@ -4129,7 +4129,7 @@ export default class Settings {
             await ctx.reply(`⏳ Looking up ${lens.slice(0, -1)}...`);
 
             // Read from GunDB
-            const appName = this.db.appname || process.env.APPNAME || 'Holons';
+            const appName = this.db.appname || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
             console.log(`[Deeplink] Reading: ${appName} > ${targetHolonId} > ${lens} > ${itemId}`);
 
             const item = await new Promise((resolve) => {

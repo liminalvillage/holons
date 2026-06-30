@@ -42,7 +42,7 @@
 	$: holosphere = $holosphereStore;
 
 	// Single source of truth: $lib/stores/appName.getEffectiveAppName(), which
-	// reads VITE_HOLONS_APP from root .env unless a localStorage override is
+	// reads HOLONS_APP from root .env unless a localStorage override is
 	// active (toggled from the BrowserPanel footer in dev mode).
 	let environmentName: string = getEffectiveAppName();
 

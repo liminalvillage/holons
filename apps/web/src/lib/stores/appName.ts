@@ -1,6 +1,6 @@
 // Effective HoloSphere appName resolution for the web client.
 //
-// Default comes from VITE_HOLONS_APP (or env mode). In dev builds a localStorage
+// Default comes from HOLONS_APP (or env mode). In dev builds a localStorage
 // override lets you flip into production data without changing .env — see the
 // toggle in BrowserPanel's footer. Three call sites read this:
 //   - routes/+layout.svelte (HoloSphere construction)
@@ -15,7 +15,7 @@ const STORAGE_KEY = "holons_app_override";
 const ALLOW_OVERRIDE = import.meta.env.DEV === true;
 
 function envDefault(): string {
-  const v = import.meta.env.VITE_HOLONS_APP;
+  const v = import.meta.env.HOLONS_APP;
   if (v) return String(v);
   return import.meta.env.MODE === "production" ? "Holons" : "HolonsDebug";
 }

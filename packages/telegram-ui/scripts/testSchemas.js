@@ -27,7 +27,7 @@ function generatePrivateKey() {
 }
 
 // Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
-const appName = process.env.APPNAME || 'Holons';
+const appName = process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
 const privateKey =
   process.env.HOLOSPHERE_PRIVATE_KEY ||
   getOrCreateKey(appName, generatePrivateKey);
@@ -309,7 +309,7 @@ function generatePrivateKey() {
 }
 
 // Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
-const appName = process.env.APPNAME || 'Holons';
+const appName = process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
 const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
 
 const holosphere = new HoloSphere({

@@ -18,9 +18,14 @@ const pkg = JSON.parse(
 const holosphereVersion = pkg.dependencies?.holosphere ?? "unknown";
 
 export default defineConfig({
-  // Load .env from the monorepo root so HOLONS_APP / VITE_HOLONS_APP share a
-  // single source of truth with mcp-ui and the bot.
+  // Load .env from the monorepo root so the namespace knob is a single source
+  // of truth with mcp-ui and the bot.
   envDir: resolve(__dirname, "../.."),
+  // Expose HOLONS_* to client code (import.meta.env.HOLONS_APP) alongside the
+  // default VITE_ prefix — so HOLONS_APP is the ONE namespace var across server
+  // and browser, with no separate VITE_HOLONS_APP. Only HOLONS_APP / HOLONS_PEER
+  // live under this prefix; never put a secret under HOLONS_*.
+  envPrefix: ["VITE_", "HOLONS_"],
   plugins: [sveltekit()],
   test: {
     include: ["src/**/*.{test,spec}.{js,ts}"],

@@ -9,7 +9,7 @@
 //   app   : ?app=<name>  →  Settings / localStorage  →  VITE_KIOSK_APP    →  "Holons"
 //
 // The kiosk reads PRODUCTION by default: the app namespace falls back to
-// "Holons" (not the shared dev `VITE_HOLONS_APP`, which the web/bot point at
+// "Holons" (not the shared dev `HOLONS_APP`, which the web/bot point at
 // HolonsDebug), and the Gun peer falls back to the production relay. Override
 // only via the kiosk-specific `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
 //

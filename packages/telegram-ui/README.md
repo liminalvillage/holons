@@ -160,7 +160,7 @@ npm start
 TELEGRAM_BOT_TOKEN=your_bot_token
 
 # Optional
-APPNAME=Holons                    # Application name
+HOLONS_APP=Holons                    # Application name
 LANGUAGE=en                       # Default language
 DASHBOARD_ADDRESS=https://...     # Web dashboard URL
 SHOW_QUESTS_AS_IMAGES=true       # Enable image mode

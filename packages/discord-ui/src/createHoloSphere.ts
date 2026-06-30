@@ -26,7 +26,7 @@ export interface CreateHoloSphereOptions {
  *   3. stored key (or a freshly generated + persisted one)
  */
 export function createHoloSphere(
-  appName = process.env.APPNAME || 'Holons',
+  appName = process.env.HOLONS_APP || process.env.APPNAME || 'Holons',
   options: CreateHoloSphereOptions = {}
 ) {
   const privateKey =
