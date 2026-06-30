@@ -214,9 +214,36 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         data.id = targetKey; // Assign the generated ID back to the data
     }
 
+    // --- Start: Source-Envelope Hologram Redirection Logic ---
+    // When `data` is an item that was RESOLVED from a hologram, it still carries
+    // the canonical `_hologram` envelope (sourceHolon/sourceLens/sourceKey parsed
+    // from the original soul — see `attachHologramMeta`). A write of such an item
+    // — e.g. a borrow/return that read a federated/mirrored item, mutated it, and
+    // put it back — must land on the ORIGINAL in its owner's graph, never fork a
+    // local copy. We redirect to the source up front, BEFORE any storage read.
+    //
+    // This is stronger than the path-based redirection below: it needs no local
+    // hologram pointer at the destination, so it also handles an item surfaced by
+    // a cross-holon read where nothing is stored locally. A bare `{ id, soul }`
+    // hologram has NO `_hologram` envelope (its soul is top-level, not nested), so
+    // deliberately CREATING a hologram (publishToFederation) is unaffected. The
+    // envelope itself is stripped from the stored value further below, so the
+    // source item is written clean.
+    let redirectedBySourceEnvelope = false;
+    if (!isGlobal && !disableHologramRedirection && data._hologram?.sourceHolon) {
+        const env = data._hologram;
+        const soulInfo = env.soul ? holoInstance.parseSoulPath(env.soul) : null;
+        targetHolon = env.sourceHolon ?? soulInfo?.holon ?? targetHolon;
+        targetLens = env.sourceLens ?? soulInfo?.lens ?? targetLens;
+        targetKey = env.sourceKey ?? soulInfo?.key ?? targetKey;
+        redirectedBySourceEnvelope = true;
+    }
+    // --- End: Source-Envelope Hologram Redirection Logic ---
+
     // --- Start: Target Path Hologram Redirection Logic ---
-    // (skipped for global tables — they aren't holon-scoped or holographic)
-    if (!isGlobal) try {
+    // (skipped for global tables, and when the source-envelope redirect above
+    // already pinned the destination to the item's true owner.)
+    if (!isGlobal && !redirectedBySourceEnvelope) try {
         // Get the item at the original target path, WITHOUT resolving holograms
         const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, password, { resolveHolograms: false });
 
