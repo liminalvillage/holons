@@ -133,6 +133,29 @@ export function sourceHolonId(rec: unknown): string | undefined {
 }
 
 /**
+ * Where a foreign item actually lives, for a write that must land in the owner's
+ * graph (borrow/return), not a local copy. Returns the source `{ holon, key }`,
+ * or `undefined` for the kiosk's own items (write them in place).
+ *
+ * The holon comes from {@link sourceHolonId}. The key matters for a resolved
+ * hologram: its local pointer can sit under a different key than the source's
+ * own (`_hologram.sourceKey` is the authoritative one parsed from the soul);
+ * federated/`_holon` partners share the id, so we fall back to `localId`. This
+ * mirrors HoloSphere's own put-redirection, which rewrites a write landing on a
+ * hologram to `soul.holon`/`soul.key` — we just target it directly.
+ */
+export function sourceRef(
+  rec: unknown,
+  localId: string,
+): { holon: string; key: string } | undefined {
+  const holon = sourceHolonId(rec);
+  if (!holon) return undefined;
+  const sourceKey = (rec as { _hologram?: { sourceKey?: string | null } })
+    ._hologram?.sourceKey;
+  return { holon, key: sourceKey || localId };
+}
+
+/**
  * Resolve a foreign item's source holon to a friendly label — the partner's
  * name when known (from the federation snapshot, or stamped on the provenance
  * envelope), else its id — or `undefined` for the kiosk's own items.

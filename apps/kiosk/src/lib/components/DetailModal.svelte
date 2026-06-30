@@ -19,7 +19,7 @@
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { reflectMembership } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
-  import { noteColor, toPeople, parseWhen, sourceHolonId } from "$lib/data";
+  import { noteColor, toPeople, parseWhen, sourceRef } from "$lib/data";
   import { localFieldsToStored } from "@holons/core/datetime";
   import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
@@ -386,16 +386,13 @@
     message = "";
     const db = await getLibraryDb();
     // A federated/hologram item lives in its owner's graph, not ours — borrow
-    // against the source holon so the write lands where the item actually is.
-    const ownerHolon = sourceHolonId(sel.item) ?? $holonId;
+    // against the source holon + key so the write lands on the real item, not a
+    // fresh local copy.
+    const ref = sourceRef(sel.item, String(sel.item.id));
+    const holon = ref?.holon ?? $holonId;
+    const key = ref?.key ?? String(sel.item.id);
     const due = new Date(Date.now() + 7 * 86_400_000);
-    const res = await borrowItem(
-      db,
-      ownerHolon,
-      String(sel.item.id),
-      actor,
-      due,
-    );
+    const res = await borrowItem(db, holon, key, actor, due);
     saving = false;
     if (res.ok) closeDetail();
     else
@@ -412,8 +409,10 @@
     saving = true;
     message = "";
     const db = await getLibraryDb();
-    const ownerHolon = sourceHolonId(sel.item) ?? $holonId;
-    const res = await returnItem(db, ownerHolon, String(sel.item.id), actor);
+    const ref = sourceRef(sel.item, String(sel.item.id));
+    const holon = ref?.holon ?? $holonId;
+    const key = ref?.key ?? String(sel.item.id);
+    const res = await returnItem(db, holon, key, actor);
     saving = false;
     if (res.ok) closeDetail();
     else
