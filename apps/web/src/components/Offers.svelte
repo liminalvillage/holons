@@ -269,251 +269,109 @@
 	let questSubscriptionOff = null;
 
 	// Subscribe to changes in the specified holon
+	// One live federation-aware offers/needs stream. subscribeFederated folds in
+	// the local holon plus inbound `quests` partners (tagged `_federation`), and
+	// `setFederated` toggles partners live. Two overlays are re-merged on every
+	// emit and refreshed one-shot in federated mode only: the per-USER-holon
+	// offers fan-out (`_userSpecific` — a DIFFERENT aggregation than federation,
+	// so it can't fold into subscribeFederated) and the participations lens.
+	let offersSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
+	let latestOfferItems: any[] = [];
+	let userSpecificOverlay: Record<string, any> = {};
+	let participationsMap = new Map<string, any[]>();
+
+	function rebuildOffersStore() {
+		const next: Record<string, any> = {};
+		for (const item of latestOfferItems) {
+			if (!item?.id) continue;
+			const key = item.key || item.id;
+			const processed: any = { ...item, key };
+			const parts = participationsMap.get(item.id);
+			if (parts && parts.length) {
+				const merged = [...(processed.participants || [])];
+				for (const p of parts) {
+					if (!merged.some((x: any) => x && x.id === p.id)) merged.push(p);
+				}
+				processed.participants = merged;
+			}
+			next[key] = processed;
+		}
+		// User-specific offers overlay on top (distinct `user_<holon>_<id>` keys).
+		for (const [k, v] of Object.entries(userSpecificOverlay)) next[k] = v;
+		store = next;
+	}
+
+	// Refresh the federated-only overlays (participations + per-user-holon
+	// offers); clear them when federation is off. Triggers a store rebuild.
+	async function refreshOfferOverlays() {
+		if (!holosphere || !holonID) return;
+		if (!$showFederated) {
+			participationsMap = new Map();
+			userSpecificOverlay = {};
+			rebuildOffersStore();
+			return;
+		}
+		try {
+			const participationData = await holosphere.getAll(holonID, "participations");
+			const map = new Map<string, any[]>();
+			if (Array.isArray(participationData)) {
+				for (const p of participationData as any[]) {
+					if (p && p.itemId) {
+						if (!map.has(p.itemId)) map.set(p.itemId, []);
+						map.get(p.itemId)!.push(p.participant);
+					}
+				}
+			}
+			participationsMap = map;
+		} catch (error) {
+			console.error("[Offers] participations fetch error:", error);
+		}
+		try {
+			const userOffers = await fetchUserSpecificOffers();
+			const overlay: Record<string, any> = {};
+			for (const item of userOffers as any[]) {
+				if (!item?.id) continue;
+				const key = item.key || item.id;
+				overlay[key] = { ...item, key };
+			}
+			userSpecificOverlay = overlay;
+		} catch (error) {
+			console.error("[Offers] user-specific offers error:", error);
+		}
+		rebuildOffersStore();
+	}
+
 	async function subscribeToOffersAndNeeds() {
 		try {
-			// Clean up any existing subscription
-			if (questSubscriptionOff) {
-				try {
-					questSubscriptionOff();
-				} catch (error) {
-					// Silently handle cleanup errors
-				}
-				questSubscriptionOff = null;
+			if (offersSub) {
+				offersSub.unsubscribe();
+				offersSub = undefined;
 			}
-
 			store = {};
-			if (holosphere && holonID) {
-				if (includeFederatedOffers) {
-					// Use federated data retrieval
-					await fetchFederatedOffersAndNeeds();
-				} else {
-					// First, load initial data with getAll (subscription only gets
-					// updates, not existing data). holosphere.getAll resolves to
-					// Array<T>. Always key by `item.id` so the subscribe callback
-					// below can't land the same item under a second key.
-					try {
-						const items = (await holosphere.getAll(holonID, "quests")) ?? [];
-						for (const item of items) {
-							if (item?.id) store[item.id] = { ...item, key: item.id };
-						}
-						store = store; // Trigger reactivity
-					} catch (error) {
-						console.error('Error loading initial offers data:', error);
-					}
+			latestOfferItems = [];
+			userSpecificOverlay = {};
+			participationsMap = new Map();
+			if (!holosphere || !holonID) return;
 
-					// Then set up subscription for live updates.
-					// Canonicalise on `newItem.id` so the subscribe callback
-					// and getAll above always land on the same store slot —
-					// otherwise a stale gun key produces a duplicate entry.
-					const subscribedHolonId = holonID;
-					const subscription = await holosphere.subscribe(holonID, "quests", (newItem, key) => {
-						try {
-							if (holonID !== subscribedHolonId) {
-								return; // Ignore updates from old holon subscription
-							}
-							const storeKey = newItem?.id || key;
-							if (!storeKey) return;
-							if (newItem) {
-								const parsedItem = { ...newItem, key: storeKey };
-								store[storeKey] = parsedItem;
-							} else {
-								delete store[storeKey];
-							}
-							store = store; // Trigger reactivity
-						} catch (error) {
-							// Silently handle subscription item processing errors
-						}
-					});
-					if (subscription && typeof (subscription as any).unsubscribe === 'function') {
-						questSubscriptionOff = (subscription as any).unsubscribe;
-					} else if (typeof subscription === 'function') {
-						questSubscriptionOff = subscription as any;
-					}
-				}
-			}
+			const boundHolon = holonID;
+			offersSub = holosphere.subscribeFederated(
+				boundHolon,
+				"quests",
+				(items: any[]) => {
+					if (holonID !== boundHolon) return; // stale (holon switched)
+					latestOfferItems = items;
+					rebuildOffersStore();
+				},
+				{ includeFederated: $showFederated }
+			);
+			questSubscriptionOff = () => offersSub?.unsubscribe();
+			void refreshOfferOverlays();
 		} catch (error) {
 			// Set component as ready even if subscription fails to not block navigation
 			componentReady = true;
 		}
 	}
 
-	// Fetch federated offers and needs
-	async function fetchFederatedOffersAndNeeds() {
-		if (!holosphere || !holonID) return;
-		
-		loadingFederated = true;
-		try {
-			console.log("Fetching federated offers and needs...");
-			console.log("Current holonID:", holonID);
-			
-			// First, let's check what's in the local holon directly
-			console.log("Checking local data first...");
-			const localData = await holosphere.getAll(holonID, "quests");
-			console.log("Local data:", localData);
-			
-			// Fetch participation data for federated items
-			console.log("Fetching participation data...");
-			const participationData = await holosphere.getAll(holonID, "participations");
-			console.log("Participation data:", participationData);
-			
-			// Create a map of item participations
-			const participationsMap = new Map();
-			if (Array.isArray(participationData)) {
-				participationData.forEach((participation) => {
-					if (participation && participation.itemId) {
-						if (!participationsMap.has(participation.itemId)) {
-							participationsMap.set(participation.itemId, []);
-						}
-						participationsMap.get(participation.itemId).push(participation.participant);
-					}
-				});
-			}
-			
-			// Get federated data from connected holons
-			const federatedData = await holosphere.getFederated(holonID, "quests", {
-				includeLocal: true,
-				includeFederated: true,
-				resolveReferences: true,
-				aggregate: false,
-				includeUnverified: true
-			});
-			
-			console.log("Federated data result:", federatedData);
-			
-			// Get user-specific offers from each user's personal holon
-			console.log("Fetching user-specific offers...");
-			const userOffers = await fetchUserSpecificOffers();
-			console.log("User-specific offers:", userOffers);
-			
-			// Combine all data sources
-			const allData = [...federatedData, ...userOffers];
-			console.log("Combined data:", allData);
-			
-			// Convert array to keyed object for consistency with subscription format
-			const keyedStore = {};
-			
-			// Handle all data (federated + user-specific)
-			allData.forEach((item, index) => {
-				if (item && item.id) {
-					// For federated data, we need to preserve the original key structure
-					// If the item has a key from the original subscription, use it
-					// Otherwise, use the id as the key
-					const key = item.key || item.id || `combined_${index}`;
-					
-					// Add federation metadata if it's from a federated source
-					const processedItem = {
-						...item,
-						key: key
-					};
-					
-					// If this item has federation metadata, it's from a federated source
-					if (item._federation) {
-						processedItem._federation = item._federation;
-					}
-
-					// Hologram metadata is now automatically added by HoloSphere via _hologram
-					// No manual assignment needed - resolved holograms have _hologram.isHologram = true
-					if (item._hologram) {
-						processedItem._hologram = item._hologram;
-					}
-					
-					// Mark user-specific offers
-					if (item._userSpecific) {
-						processedItem._userSpecific = item._userSpecific;
-					}
-					
-					// Check if this item has participation data and merge it
-					const participations = participationsMap.get(item.id);
-					if (participations && participations.length > 0) {
-						// Merge participation data with existing participants
-						const existingParticipants = processedItem.participants || [];
-						const mergedParticipants = [...existingParticipants];
-						
-						// Add participations that aren't already in the participants list
-						participations.forEach((participation) => {
-							const alreadyExists = mergedParticipants.some((p) => p.id === participation.id);
-							if (!alreadyExists) {
-								mergedParticipants.push(participation);
-							}
-						});
-						
-						processedItem.participants = mergedParticipants;
-					}
-					
-					keyedStore[key] = processedItem;
-					console.log(`Added item to store with key ${key}:`, processedItem);
-					console.log(`Item type: ${processedItem.type}, is offer: ${processedItem.type === 'offer'}`);
-				}
-			});
-			
-			// If no data was found, fall back to local data only
-			if (allData.length === 0 && localData.length > 0) {
-				console.log("No combined data found, using local data only");
-				localData.forEach((item, index) => {
-					if (item && item.id) {
-						const key = item.key || item.id || `local_${index}`;
-						
-						// Check if this item has participation data and merge it
-						const participations = participationsMap.get(item.id);
-						if (participations && participations.length > 0) {
-							// Merge participation data with existing participants
-							const existingParticipants = item.participants || [];
-							const mergedParticipants = [...existingParticipants];
-							
-							// Add participations that aren't already in the participants list
-							participations.forEach((participation) => {
-								const alreadyExists = mergedParticipants.some((p) => p.id === participation.id);
-								if (!alreadyExists) {
-									mergedParticipants.push(participation);
-								}
-							});
-							
-							item.participants = mergedParticipants;
-						}
-						
-						keyedStore[key] = {
-							...item,
-							key: key
-						};
-					}
-				});
-			}
-			
-			store = keyedStore;
-			console.log(`Final store:`, store);
-			console.log(`Fetched ${federatedData.length} federated items + ${userOffers.length} user items, store has ${Object.keys(store).length} keys`);
-			
-			// Debug: Check what's in the store after processing
-			const storeValues = Object.values(store);
-			console.log("Store values:", storeValues);
-			console.log("Items with type 'offer':", storeValues.filter(item => item.type === 'offer'));
-			console.log("Items with type 'request':", storeValues.filter(item => item.type === 'request'));
-		} catch (error) {
-			console.error("Error fetching federated data:", error);
-			// Fallback to local data only
-			try {
-				console.log("Falling back to local data only...");
-				const localData = await holosphere.getAll(holonID, "quests");
-				const keyedStore = {};
-				localData.forEach((item, index) => {
-					if (item && item.id) {
-						const key = item.key || item.id || `local_${index}`;
-						keyedStore[key] = {
-							...item,
-							key: key
-						};
-					}
-				});
-				store = keyedStore;
-				console.log(`Fallback: Loaded ${localData.length} local items`);
-			} catch (fallbackError) {
-				console.error("Error in fallback to local data:", fallbackError);
-				store = {};
-			}
-		} finally {
-			loadingFederated = false;
-		}
-	}
 
 	// Fetch offers from each user's personal holon
 	async function fetchUserSpecificOffers() {
@@ -568,15 +426,13 @@
 		return userOffers;
 	}
 
-	// Handle federated toggle change. Invoked via the FeatureToolbar binding.
-	async function handleFederatedToggle() {
-		await subscribeToOffersAndNeeds();
-	}
-	// Kick off re-subscription when the federation toggle flips.
+	// Flip partners in/out live on the existing stream and refresh the
+	// federated-only overlays — no re-subscribe, so local offers never blink out.
 	let lastFederatedFlag = $showFederated;
 	$: if ($showFederated !== lastFederatedFlag) {
 		lastFederatedFlag = $showFederated;
-		handleFederatedToggle();
+		offersSub?.setFederated($showFederated);
+		void refreshOfferOverlays();
 	}
 
 
