@@ -761,6 +761,147 @@ function isResolved(item) {
 }
 
 /**
+ * Live federated read — the streaming equivalent of {@link getFederated}.
+ *
+ * Subscribes to `lens` on `holon` AND on every partner that `holon` *receives*
+ * `lens` from (per-lens inbound direction, identical to getFederated's space
+ * selection — NOT the coarse partner-level `inbound`, which would pull lenses we
+ * never opted into). Partner items are stamped with the canonical `_federation`
+ * envelope (`{ origin, sourceLens, originName }`); the holon's own items are left
+ * untagged so consumers tell own-vs-external by its presence. `callback(items)`
+ * fires after every change with a fresh, id-deduped snapshot — on an id
+ * collision across spaces the LOCAL item wins (a holon's own record shadows a
+ * partner's), matching getFederated's local-first `Map` fill.
+ *
+ * This is the one place federation fan-out lives for live reads, so a UI can
+ * `subscribeFederated(...)` once instead of re-implementing partner aggregation
+ * (and re-inventing a provenance tag) itself.
+ *
+ * The federation config is read ONCE at setup: the local subscription attaches
+ * synchronously and partner subscriptions attach after that async read resolves.
+ * A federation link added/removed at runtime is not picked up live — resubscribe
+ * to pick up a changed partner set (callers already do this on a holon/toggle
+ * change). Symmetric with getFederated, which is likewise a point-in-time read.
+ *
+ * @param {object} holosphere - The HoloSphere instance.
+ * @param {string} holon - The viewing holon.
+ * @param {string} lens - The lens to aggregate.
+ * @param {(items: object[]) => void} callback - Fired with a deduped snapshot.
+ * @param {object} [options]
+ * @param {boolean} [options.includeLocal=true] - Include the holon's own items.
+ * @param {boolean} [options.includeFederated=true] - Fold in inbound partners.
+ * @param {boolean} [options.dedupe=true] - Collapse cross-space id collisions (local wins).
+ * @param {string} [options.idField='id'] - Field used as the item id.
+ * @param {number} [options.maxFederatedSpaces=-1] - Cap partner count (-1 = all).
+ * @returns {{ unsubscribe: () => void }} - Handle; tears down every sub-subscription.
+ */
+export function subscribeFederated(holosphere, holon, lens, callback, options = {}) {
+    if (!holosphere || !holon || !lens || typeof callback !== 'function') {
+        throw new Error('subscribeFederated: Missing required parameters');
+    }
+    const {
+        includeLocal = true,
+        includeFederated = true,
+        dedupe = true,
+        idField = 'id',
+        maxFederatedSpaces = -1,
+    } = options;
+
+    const SEP = ' ';
+    // key `${space} ${id}` → already-tagged item. Namespaced by space so
+    // identical ids across holons don't collide before dedup.
+    const store = new Map();
+    const subs = new Map(); // space → unsubscribe()
+    let closed = false;
+
+    const emit = () => {
+        if (closed) return;
+        if (!dedupe) {
+            callback([...store.values()]);
+            return;
+        }
+        // Two passes so a local item always wins an id collision with a partner.
+        const byId = new Map();
+        for (const [k, item] of store) {
+            if (k.slice(0, k.indexOf(SEP)) !== holon) continue;
+            const id = item && item[idField];
+            if (id != null) byId.set(String(id), item);
+        }
+        for (const [k, item] of store) {
+            if (k.slice(0, k.indexOf(SEP)) === holon) continue;
+            const id = item && item[idField];
+            if (id != null && !byId.has(String(id))) byId.set(String(id), item);
+        }
+        callback([...byId.values()]);
+    };
+
+    const tagWithSource = (item, space, originName) => {
+        if (!item || space === holon) return item;
+        const fed = { ...(item._federation || {}), origin: space, sourceLens: lens };
+        if (originName) fed.originName = originName;
+        return { ...item, _federation: fed };
+    };
+
+    const addSpace = (space, originName) => {
+        if (closed || subs.has(space)) return;
+        const raw = holosphere.subscribe(space, lens, (data, key) => {
+            if (closed) return;
+            const id = String((data && (data[idField] ?? key)) ?? key ?? '');
+            if (!id) return;
+            const k = `${space}${SEP}${id}`;
+            if (data == null || data._deleted) {
+                store.delete(k);
+            } else {
+                store.set(k, tagWithSource(data, space, originName));
+            }
+            emit();
+        });
+        subs.set(space, raw && typeof raw.unsubscribe === 'function'
+            ? () => raw.unsubscribe()
+            : () => {});
+    };
+
+    // Local first (synchronous), then one emit so an empty lens still clears
+    // any "loading" state before partners resolve.
+    if (includeLocal) addSpace(holon, null);
+    emit();
+
+    if (includeFederated) {
+        (async () => {
+            try {
+                const fedInfo = await getFederation(holosphere, holon);
+                if (closed || !fedInfo || !Array.isArray(fedInfo.inbound)) return;
+                const lensConfig = fedInfo.lensConfig || {};
+                let receiving = fedInfo.inbound.filter(space => {
+                    const inb = lensConfig[space] && lensConfig[space].inbound;
+                    return Array.isArray(inb) && inb.includes(lens);
+                });
+                if (maxFederatedSpaces !== -1) receiving = receiving.slice(0, maxFederatedSpaces);
+                await Promise.all(receiving.map(async space => {
+                    if (closed || space === holon) return;
+                    const name = await getHolonName(holosphere, space).catch(() => null);
+                    addSpace(space, name);
+                }));
+                emit();
+            } catch (err) {
+                console.warn(`subscribeFederated: federation setup failed for ${holon}/${lens}: ${err.message}`);
+            }
+        })();
+    }
+
+    return {
+        unsubscribe() {
+            closed = true;
+            for (const un of subs.values()) {
+                try { un(); } catch { /* best-effort teardown */ }
+            }
+            subs.clear();
+            store.clear();
+        },
+    };
+}
+
+/**
  * Propagates data to federated spaces
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} holon - The holon identifier
@@ -1353,6 +1494,7 @@ export default {
     unfederate,
     removeNotify,
     getFederated,
+    subscribeFederated,
     propagate,
     federateMessage,
     getFederatedMessages,

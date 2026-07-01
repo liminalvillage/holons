@@ -679,6 +679,17 @@ class HoloSphere {
         return Federation.getFederated(this, holon, lens, options);
     }
 
+    /**
+     * Live federated read — the streaming equivalent of {@link getFederated}.
+     * Subscribes to `lens` on this holon plus every partner it receives `lens`
+     * from, merging into one id-deduped stream (local wins on collision) with
+     * partner items tagged `_federation`. Returns `{ unsubscribe }` synchronously.
+     * See {@link Federation.subscribeFederated} for the full contract.
+     */
+    subscribeFederated(holon, lens, callback, options = {}) {
+        return Federation.subscribeFederated(this, holon, lens, callback, options);
+    }
+
     async federateMessage(originalChatId, messageId, federatedChatId, federatedMessageId, type = 'generic') {
         return Federation.federateMessage(this, originalChatId, messageId, federatedChatId, federatedMessageId, type);
     }
