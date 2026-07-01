@@ -216,60 +216,26 @@
 
         isLoading = true;
 
-        // Checklists: federated mode delegates to getFederated (one-shot,
-        // returns local+federated rows). Local mode uses the streaming
-        // subscribe so per-item updates arrive as Gun resolves them.
-        if (targetFed) {
-            holosphere
-                .getFederated(targetHolon, 'checklists', {
-                    includeLocal: true,
-                    includeFederated: true,
-                    resolveReferences: true,
-                    aggregate: false,
-                    includeUnverified: true
-                })
-                .then((result) => {
-                    if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
-                    const keyed: Record<string, any> = {};
-                    if (Array.isArray(result)) {
-                        result.forEach((item: any, idx: number) => {
-                            if (!item || item._deleted) return;
-                            const key = item.key || item.id || `fed_${idx}`;
-                            const processed: any = { ...item };
-                            if (item._federation) processed._federation = item._federation;
-                            if (item._hologram) processed._hologram = item._hologram;
-                            keyed[key] = processed;
-                        });
-                    } else if (result && typeof result === 'object') {
-                        Object.assign(keyed, result);
-                    }
-                    allChecklists = keyed;
-                    isLoading = false;
-                })
-                .catch((error) => {
-                    console.error('Checklists: federated fetch error:', error);
-                    isLoading = false;
-                });
-        } else {
-            allChecklists = {};
-            checklistsUnsubscribe = queryManager.subscribe({
-                holonId: targetHolon,
-                lens: 'checklists',
-                onUpdate: (items) => {
-                    if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
-                    const next: Record<string, Checklist> = {};
-                    for (const item of items as Checklist[]) {
-                        if (item && item.id) next[item.id] = item;
-                    }
-                    allChecklists = next;
-                    isLoading = false;
-                },
-                onError: (error) => {
-                    console.error('Checklists: checklists subscription error:', error);
-                    isLoading = false;
+        // Checklists: one live federation-aware stream. subscribeFederated emits
+        // the local holon's checklists immediately and folds in inbound partners
+        // (tagged `_federation`) when `includeFederated` is on — so federated mode
+        // is now LIVE, not a one-shot getFederated snapshot.
+        allChecklists = {};
+        const checklistSub = holosphere.subscribeFederated(
+            targetHolon,
+            'checklists',
+            (items: any[]) => {
+                if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+                const next: Record<string, Checklist> = {};
+                for (const item of items as Checklist[]) {
+                    if (item && item.id) next[item.id] = item;
                 }
-            });
-        }
+                allChecklists = next;
+                isLoading = false;
+            },
+            { includeFederated: targetFed }
+        );
+        checklistsUnsubscribe = () => checklistSub.unsubscribe();
 
         rolesUnsubscribe = queryManager.subscribe({
             holonId: targetHolon,
