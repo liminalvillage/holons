@@ -52,7 +52,14 @@
     let holonID: string = '';
     let localList: ShoppingChecklist | null = null;
     let federatedItems: ShoppingItem[] = [];
-    let unsubscribeFn: (() => void) | undefined;
+    // One live federation-aware subscription over the checklists collection. The
+    // shopping doc shares one key across the holon and every partner, so we keep
+    // dedupe OFF and split by `_federation`: the untagged doc is ours, tagged
+    // docs are partners' (flattened into `federatedItems`). `setFederated` folds
+    // partners in/out live. Replaces the local subscribe + one-shot getFederated.
+    let shoppingSub:
+        | { unsubscribe: () => void; setFederated: (on: boolean) => void }
+        | undefined;
 
     let filters = loadFilters('shopping', {
         searchQuery: '',
@@ -112,93 +119,64 @@
     let showAddModal = false;
     let inputText = "";
 
-    async function fetchData() {
+    function fetchData() {
         if (!holosphere || !holonID) return;
 
-        if (unsubscribeFn) {
-            unsubscribeFn();
-            unsubscribeFn = undefined;
+        if (shoppingSub) {
+            shoppingSub.unsubscribe();
+            shoppingSub = undefined;
         }
 
         localList = null;
         federatedItems = [];
 
         try {
-            await fetchLocalShopping();
-            if ($showFederated) {
-                await fetchFederatedShopping();
-            }
+            // One live stream over the checklists collection across the holon and
+            // its inbound partners. The shopping doc shares a single key, so dedupe
+            // is off; we sort each emit into the untagged local doc vs. tagged
+            // partner docs (flattened into federatedItems). The bot writes the
+            // whole container per mutation, so one callback per write refreshes it.
+            const lensHolon = holonID;
+            shoppingSub = holosphere.subscribeFederated(
+                lensHolon,
+                CHECKLISTS_COLLECTION,
+                (docs: any[]) => {
+                    if (holonID !== lensHolon) return; // stale subscription
+                    let local: ShoppingChecklist | null = null;
+                    const fedItems: ShoppingItem[] = [];
+                    for (const doc of docs) {
+                        if (!isShoppingDoc(doc)) continue;
+                        if (doc._federation) {
+                            const docItems = Array.isArray(doc.items) ? doc.items : [];
+                            for (const item of docItems) {
+                                if (!item || item.id == null || item._deleted) continue;
+                                const tagged: ShoppingItem = { ...item, _federation: doc._federation };
+                                if (doc._hologram) tagged._hologram = doc._hologram;
+                                fedItems.push(tagged);
+                            }
+                        } else {
+                            local = normalizeChecklist(doc);
+                        }
+                    }
+                    localList = local;
+                    federatedItems = fedItems;
+                },
+                { includeFederated: $showFederated, dedupe: false },
+            );
         } catch (error) {
             console.error('Error fetching shopping list:', error);
         }
     }
 
-    async function fetchLocalShopping() {
-        const data = await holosphere.get(holonID, CHECKLISTS_COLLECTION, SHOPPING_KEY);
-        localList = normalizeChecklist(data);
-
-        // Subscribe to the checklists collection; pluck out shopping updates only.
-        // The bot writes the whole container on every mutation, so a single
-        // callback per write is enough to refresh the list.
-        const subscription = await holosphere.subscribe(
-            holonID,
-            CHECKLISTS_COLLECTION,
-            (doc: any, key?: string) => {
-                if (!isShoppingDoc(doc, key) && key !== SHOPPING_KEY) return;
-                if (!doc || doc._deleted) {
-                    if (key === SHOPPING_KEY || (doc && doc.id === SHOPPING_KEY)) {
-                        localList = null;
-                    }
-                    return;
-                }
-                if (isShoppingDoc(doc, key)) {
-                    localList = normalizeChecklist(doc);
-                }
-            }
-        );
-
-        if (typeof subscription === 'function') {
-            unsubscribeFn = subscription;
-        } else if (subscription && typeof subscription === 'object' && 'unsubscribe' in subscription) {
-            unsubscribeFn = (subscription as any).unsubscribe;
-        }
-    }
-
-    async function fetchFederatedShopping() {
-        const federatedData = await holosphere.getFederated(holonID, CHECKLISTS_COLLECTION, {
-            includeLocal: false,
-            includeFederated: true,
-            resolveReferences: true,
-            aggregate: false,
-            includeUnverified: true
-        });
-
-        const items: ShoppingItem[] = [];
-        if (Array.isArray(federatedData)) {
-            for (const doc of federatedData) {
-                if (!isShoppingDoc(doc)) continue;
-                const docItems = Array.isArray(doc.items) ? doc.items : [];
-                for (const item of docItems) {
-                    if (!item || item.id == null || item._deleted) continue;
-                    const tagged: ShoppingItem = { ...item };
-                    if (doc._federation) tagged._federation = doc._federation;
-                    if (doc._hologram) tagged._hologram = doc._hologram;
-                    items.push(tagged);
-                }
-            }
-        }
-        federatedItems = items;
-    }
-
     let lastShoppingFedFlag = $showFederated;
     $: if (holonID && holosphere && $showFederated !== lastShoppingFedFlag) {
         lastShoppingFedFlag = $showFederated;
-        fetchData();
+        shoppingSub?.setFederated($showFederated);
     }
 
     onMount(() => {
         return () => {
-            if (unsubscribeFn) unsubscribeFn();
+            if (shoppingSub) shoppingSub.unsubscribe();
         };
     });
 
