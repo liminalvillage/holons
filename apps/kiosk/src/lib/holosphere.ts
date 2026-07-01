@@ -195,74 +195,11 @@ export function subscribeLens<T extends { id?: string | number }>(
   return normalizeSub(raw);
 }
 
-export interface LensAggregator {
-  /** Set the exact holon set to aggregate; adds/removes subscriptions to match. */
-  setHolons: (holonIds: string[]) => void;
-  /** Tear down every subscription. */
-  destroy: () => void;
-}
-
-/**
- * Aggregate one lens across a CHANGING set of holons (the kiosk's own holon plus
- * its federation partners). The holon set is updated live via `setHolons`
- * without dropping holons that stay — so the kiosk's own holon never blinks out
- * while the federated toggle adds or removes partners. Partner items are tagged
- * with a `_holon` source id; `selfId`'s items stay untagged. Keys are namespaced
- * by holon so identical local ids across holons don't collide.
- */
-export function createLensAggregator<T extends { id?: string | number }>(
-  holosphere: HoloSphere,
-  lens: string,
-  onChange: (items: T[]) => void,
-  selfId: string,
-): LensAggregator {
-  const subs = new Map<string, () => void>();
-  const items = new Map<string, T>();
-  const emit = () => onChange([...items.values()]);
-
-  function add(holon: string) {
-    if (subs.has(holon)) return;
-    const raw = holosphere.subscribe(holon, lens, (data: any, key?: string) => {
-      const id = String((data && (data.id ?? key)) ?? key ?? "");
-      if (!id) return;
-      const k = `${holon} ${id}`;
-      if (data == null || data._deleted) {
-        items.delete(k);
-      } else {
-        items.set(
-          k,
-          holon === selfId ? data : ({ ...data, _holon: holon } as T),
-        );
-      }
-      emit();
-    });
-    subs.set(holon, normalizeSub(raw).unsubscribe);
-  }
-
-  function remove(holon: string) {
-    subs.get(holon)?.();
-    subs.delete(holon);
-    for (const k of [...items.keys()]) {
-      if (k.startsWith(`${holon} `)) items.delete(k);
-    }
-  }
-
-  return {
-    setHolons(holonIds: string[]) {
-      const wanted = new Set(holonIds);
-      for (const holon of [...subs.keys()]) {
-        if (!wanted.has(holon)) remove(holon);
-      }
-      for (const holon of holonIds) add(holon);
-      emit();
-    },
-    destroy() {
-      for (const un of subs.values()) un();
-      subs.clear();
-      items.clear();
-    },
-  };
-}
+// NOTE: federation aggregation used to live here as `createLensAggregator`
+// (which tagged partner items with a bespoke `_holon` marker). That job now
+// belongs to HoloSphere's `subscribeFederated`, which folds in per-lens inbound
+// partners and stamps the canonical `_federation` envelope — one aggregated read
+// path shared by every surface. `+layout.svelte` subscribes through it directly.
 
 /**
  * An identity-aware writer bound to a holon. Every `put` attaches the logged-in

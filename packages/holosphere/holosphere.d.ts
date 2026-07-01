@@ -328,6 +328,20 @@ declare class HoloSphere {
     getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ inbound: string[], outbound: string[] } | null>;
     removeNotify(holonId1: string, holonId2: string, password1?: string | null): Promise<boolean>;
     getFederated(holon: string, lens: string, options?: GetFederatedOptions): Promise<Array<any>>;
+    /**
+     * Live federation-aware read — the streaming equivalent of `getFederated`.
+     * Subscribes to `lens` on `holon` plus every partner it receives `lens` from,
+     * merging into one id-deduped stream (local wins) with partner items tagged
+     * `_federation`. The returned handle can toggle partners live via
+     * `setFederated(on)` without disturbing the local subscription.
+     */
+    subscribeFederated(holon: string, lens: string, callback: (items: any[]) => void, options?: {
+        includeLocal?: boolean;
+        includeFederated?: boolean;
+        dedupe?: boolean;
+        idField?: string;
+        maxFederatedSpaces?: number;
+    }): { unsubscribe: () => void; setFederated: (on: boolean) => void };
     federateMessage(originalChatId: string, messageId: string, federatedChatId: string, federatedMessageId: string, type?: string): Promise<void>;
     getFederatedMessages(originalChatId: string, messageId: string): Promise<object | null>;
     updateFederatedMessages(originalChatId: string, messageId: string, updateCallback: (chatId: string, messageId: string) => Promise<void>): Promise<void>;

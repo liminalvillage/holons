@@ -110,22 +110,19 @@ type Names = Record<string, string>;
 
 /**
  * The originating holon id for a record that didn't come from this kiosk's own
- * holon. Three provenance markers can surface one:
- *   - `_holon`            — tag the kiosk's own aggregator adds to partner-holon
- *                           records when federating (see `createLensAggregator`);
- *   - `_hologram`         — Holosphere's resolved-hologram envelope, for an item
- *                           mirrored from another holon (`sourceHolon`);
- *   - `_federation`       — Holosphere's federation envelope, for an item that
- *                           arrived via a federated partner (`origin`).
+ * holon. Two provenance envelopes (both stamped by Holosphere) can surface one:
+ *   - `_hologram`   — resolved-hologram envelope, for an item mirrored from
+ *                     another holon (`sourceHolon`);
+ *   - `_federation` — federation envelope, for an item that arrived via a
+ *                     federated partner (`origin`) — what `subscribeFederated`
+ *                     tags every partner item with.
  * `undefined` for the kiosk's own items.
  */
 export function sourceHolonId(rec: unknown): string | undefined {
   const r = rec as {
-    _holon?: string;
     _federation?: { origin?: string };
     _hologram?: { isHologram?: boolean; sourceHolon?: string | null };
   };
-  if (r._holon) return r._holon;
   if (r._hologram?.isHologram && r._hologram.sourceHolon)
     return r._hologram.sourceHolon;
   if (r._federation?.origin) return r._federation.origin;
@@ -140,7 +137,7 @@ export function sourceHolonId(rec: unknown): string | undefined {
  * The holon comes from {@link sourceHolonId}. The key matters for a resolved
  * hologram: its local pointer can sit under a different key than the source's
  * own (`_hologram.sourceKey` is the authoritative one parsed from the soul);
- * federated/`_holon` partners share the id, so we fall back to `localId`. This
+ * federated (`_federation`) partners share the id, so we fall back to `localId`. This
  * mirrors HoloSphere's own put-redirection, which rewrites a write landing on a
  * hologram to `soul.holon`/`soul.key` — we just target it directly.
  */

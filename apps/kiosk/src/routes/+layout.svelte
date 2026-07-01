@@ -2,17 +2,7 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import "../app.css";
   import { onMount } from "svelte";
-  import { get } from "svelte/store";
-  import {
-    getHolosphere,
-    getHolonName,
-    createLensAggregator,
-    type LensAggregator,
-  } from "$lib/holosphere";
-  import {
-    getFederationSnapshot,
-    partnersReceivingLens,
-  } from "@holons/core/federation";
+  import { getHolosphere, getHolonName } from "$lib/holosphere";
   import type { HoloSphere } from "holosphere";
   import {
     resolveHolonId,
@@ -39,7 +29,6 @@
     libraryEnabled,
     rolesEnabled,
     statusEnabled,
-    partnerNames,
     boardReady,
     settingsOpen,
     userMenuOpen,
@@ -63,14 +52,20 @@
 
   let booting = true;
   let mounted = false;
-  // One aggregator per lens, bound to the current holon. The federated toggle
-  // only changes which holons each aggregates — the kiosk's own holon is always
-  // subscribed first, so toggling never blanks the screen even if the
-  // federation lookup is slow or fails.
+  // One federation-aware subscription per lens, bound to the current holon.
+  // HoloSphere's `subscribeFederated` folds in the partners this holon receives
+  // each lens from (tagging partner items `_federation`) and, via `setFederated`,
+  // adds/drops them live — so the federated toggle never blanks the local
+  // subscription. This replaces the kiosk's old hand-rolled aggregator.
+  type FederatedSub = {
+    unsubscribe: () => void;
+    setFederated: (on: boolean) => void;
+  };
   let boundHolon: string | null = null;
-  let questsAgg: LensAggregator | null = null;
-  let libraryAgg: LensAggregator | null = null;
-  let rolesAgg: LensAggregator | null = null;
+  let boundFed = false;
+  let questsSub: FederatedSub | null = null;
+  let librarySub: FederatedSub | null = null;
+  let rolesSub: FederatedSub | null = null;
 
   // Board reveal: hold the views hidden while a holon's initial data burst
   // streams in, then reveal once it settles so the entrance animation plays on
@@ -97,15 +92,14 @@
     rolesOn: boolean,
   ) {
     if (!id) {
-      questsAgg?.destroy();
-      libraryAgg?.destroy();
-      rolesAgg?.destroy();
-      questsAgg = libraryAgg = rolesAgg = null;
+      questsSub?.unsubscribe();
+      librarySub?.unsubscribe();
+      rolesSub?.unsubscribe();
+      questsSub = librarySub = rolesSub = null;
       boundHolon = null;
       rawQuests.set([]);
       rawLibrary.set([]);
       rawRoles.set([]);
-      partnerNames.set({});
       holonName.set("");
       awaitingReady = false;
       if (readyTimer) clearTimeout(readyTimer);
@@ -126,24 +120,28 @@
     }
     connected.set(true);
 
-    // (Re)bind the aggregators when the holon itself changes.
+    // (Re)bind the lens subscriptions when the holon itself changes. Each
+    // `subscribeFederated` folds in the partners this holon receives that lens
+    // from (per-lens/directional, handled inside HoloSphere) and tags their
+    // items `_federation`; the local holon's own items stream immediately.
     if (boundHolon !== id) {
       // New holon → hide the board and wait for its data to settle before
       // revealing, so the entrance animation plays once on the full set.
       awaitingReady = true;
       boardReady.set(false);
-      questsAgg?.destroy();
-      libraryAgg?.destroy();
-      rolesAgg?.destroy();
-      libraryAgg = null; // recreated below when the Library tab is enabled
-      rolesAgg = null; // recreated below when the Roles tab is enabled
-      questsAgg = createLensAggregator<Quest>(
-        hs,
-        "quests",
-        (items) => rawQuests.set(items),
+      questsSub?.unsubscribe();
+      librarySub?.unsubscribe();
+      rolesSub?.unsubscribe();
+      librarySub = null; // recreated below when the Library tab is enabled
+      rolesSub = null; // recreated below when the Roles tab is enabled
+      questsSub = hs.subscribeFederated(
         id,
+        "quests",
+        (items) => rawQuests.set(items as Quest[]),
+        { includeFederated: fed },
       );
       boundHolon = id;
+      boundFed = fed;
       holonName.set("");
       // Holon display name (best-effort; the screen works without it).
       getHolonName(hs, id).then((name) => {
@@ -151,87 +149,45 @@
       });
     }
 
-    // The Library and Roles lenses are toggleable — spin each aggregator up or
+    // The Library and Roles lenses are toggleable — spin each subscription up or
     // down to match its setting, leaving the always-on quests subscription
     // untouched. (Library defaults on, Roles off.)
-    if (libraryOn && !libraryAgg) {
-      libraryAgg = createLensAggregator<LibraryItem>(
-        hs,
-        "library",
-        (items) => rawLibrary.set(items),
+    if (libraryOn && !librarySub) {
+      librarySub = hs.subscribeFederated(
         id,
+        "library",
+        (items) => rawLibrary.set(items as LibraryItem[]),
+        { includeFederated: fed },
       );
-    } else if (!libraryOn && libraryAgg) {
-      libraryAgg.destroy();
-      libraryAgg = null;
+    } else if (!libraryOn && librarySub) {
+      librarySub.unsubscribe();
+      librarySub = null;
       rawLibrary.set([]);
     }
-    if (rolesOn && !rolesAgg) {
-      rolesAgg = createLensAggregator<Role>(
-        hs,
-        "roles",
-        (items) => rawRoles.set(items),
+    if (rolesOn && !rolesSub) {
+      rolesSub = hs.subscribeFederated(
         id,
+        "roles",
+        (items) => rawRoles.set(items as Role[]),
+        { includeFederated: fed },
       );
-    } else if (!rolesOn && rolesAgg) {
-      rolesAgg.destroy();
-      rolesAgg = null;
+    } else if (!rolesOn && rolesSub) {
+      rolesSub.unsubscribe();
+      rolesSub = null;
       rawRoles.set([]);
     }
 
-    // Always show this holon immediately; partners are folded in afterwards.
-    questsAgg?.setHolons([id]);
-    libraryAgg?.setHolons([id]);
-    rolesAgg?.setHolons([id]);
-    partnerNames.set({});
-    booting = false;
-
-    if (!fed) return;
-    try {
-      const snap = await getFederationSnapshot(hs, id);
-      // Bail if the holon changed or federation was switched off meanwhile.
-      if (boundHolon !== id || !get(federated)) return;
-
-      // Federation is per-lens and directional: a partner only contributes a
-      // lens when WE configured that lens as inbound (receiving) from them.
-      // Subscribe each lens to its own partner set instead of one shared
-      // `federated` list, so an outbound-only or unconfigured link can't leak
-      // its data onto the board.
-      const lensPartners = (lens: string) => [
-        id,
-        ...partnersReceivingLens(snap, lens).filter((h) => h && h !== id),
-      ];
-      const questHolons = lensPartners("quests");
-      const libraryHolons = lensPartners("library");
-      const roleHolons = lensPartners("roles");
-
-      partnerNames.set(snap.partnerNames ?? {});
-      questsAgg?.setHolons(questHolons);
-      libraryAgg?.setHolons(libraryHolons);
-      rolesAgg?.setHolons(roleHolons);
-
-      // Only resolve names for partners that actually surface on the board.
-      const shownPartners = [
-        ...new Set([...questHolons, ...libraryHolons, ...roleHolons]),
-      ].filter((h) => h !== id);
-
-      // Resolve each partner's name once and fold it into the source-badge map
-      // as it lands (names replicate shortly after we subscribe, so this is
-      // async/progressive rather than blocking). Guarded so a stale holon or a
-      // federation-off toggle can't write a late result; unresolved partners
-      // stay as ids via `sourceLabel`.
-      for (const h of shownPartners) {
-        void getHolonName(hs, h).then((name) => {
-          if (name && boundHolon === id && get(federated)) {
-            partnerNames.update((m) =>
-              m[h] === name ? m : { ...m, [h]: name },
-            );
-          }
-        });
-      }
-    } catch (err) {
-      console.error("[kiosk] federation snapshot failed", err);
+    // Federated toggle flipped (holon unchanged) → fold partners in/out live on
+    // every active lens, without tearing down the local subscription so the
+    // board never blanks.
+    if (boundFed !== fed) {
+      boundFed = fed;
+      questsSub?.setFederated(fed);
+      librarySub?.setFederated(fed);
+      rolesSub?.setFederated(fed);
     }
+
+    booting = false;
   }
 
   onMount(() => {
@@ -250,9 +206,9 @@
     return () => {
       teardown.forEach((fn) => fn());
       if (readyTimer) clearTimeout(readyTimer);
-      questsAgg?.destroy();
-      libraryAgg?.destroy();
-      rolesAgg?.destroy();
+      questsSub?.unsubscribe();
+      librarySub?.unsubscribe();
+      rolesSub?.unsubscribe();
     };
   });
 
