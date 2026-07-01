@@ -609,7 +609,7 @@ class UI {
 
   async valuescloud(ctx) {
     const holonId = ctx.message.chat.id;
-    let values = []; // = this.getFederatedValues(holonId)
+    let values = [];
     const language = await this.settings.getLanguage(holonId);
 
     const entities = ctx.message.entities;
@@ -692,7 +692,7 @@ class UI {
     }
   }
   async needscloud(ctx) {
-    let needs = []; // = this.getFederatedValues(holonId)
+    let needs = [];
     const holonId = ctx.message.chat.id;
     const language = await this.settings.getLanguage(holonId);
     const entities = ctx.message.entities;
