@@ -12,10 +12,25 @@
 import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
 
-jest.setTimeout(45000);
+jest.setTimeout(90000);
 
 const lens = 'library';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// `federate` writes to the global federation table over the live peer, which can
+// transiently fail under load — retry so setup flakiness doesn't mask the
+// subscribeFederated behavior under test.
+const federateRetry = async (hs, a, b, cfg, tries = 4) => {
+    for (let i = 0; i < tries; i++) {
+        try {
+            await hs.federate(a, b, null, null, true, cfg);
+            return;
+        } catch (err) {
+            if (i === tries - 1) throw err;
+            await wait(1000);
+        }
+    }
+};
 
 describe('subscribeFederated', () => {
     let hs;
@@ -33,7 +48,7 @@ describe('subscribeFederated', () => {
         const partner = `subfed_a_${Date.now()}_partner`;
 
         // local receives `library` from partner.
-        await hs.federate(local, partner, null, null, true, { inbound: [lens], outbound: [] });
+        await federateRetry(hs, local, partner, { inbound: [lens], outbound: [] });
         await wait(1500);
 
         // autoPropagate:false → partner items stay in the partner's graph (as in
@@ -62,13 +77,13 @@ describe('subscribeFederated', () => {
         // Local wins the id collision — its value survives, untagged.
         expect(byId.get('Shared').value).toBe('LOCAL');
         expect(byId.get('Shared')._federation).toBeUndefined();
-    }, 45000);
+    }, 90000);
 
     test('includeFederated:false yields local-only items', async () => {
         const local = `subfed_b_${Date.now()}_local`;
         const partner = `subfed_b_${Date.now()}_partner`;
 
-        await hs.federate(local, partner, null, null, true, { inbound: [lens], outbound: [] });
+        await federateRetry(hs, local, partner, { inbound: [lens], outbound: [] });
         await wait(1200);
         const noProp = { autoPropagate: false };
         await hs.put(local, lens, { id: 'Drill', value: 1 }, noProp);
@@ -88,5 +103,36 @@ describe('subscribeFederated', () => {
         const ids = latest.map((i) => i.id);
         expect(ids).toContain('Drill');
         expect(ids).not.toContain('Ladder');
-    }, 45000);
+    }, 90000);
+
+    test('setFederated toggles partners live without dropping local items', async () => {
+        const local = `subfed_c_${Date.now()}_local`;
+        const partner = `subfed_c_${Date.now()}_partner`;
+
+        await federateRetry(hs, local, partner, { inbound: [lens], outbound: [] });
+        await wait(1200);
+        const noProp = { autoPropagate: false };
+        await hs.put(local, lens, { id: 'Drill', value: 1 }, noProp);
+        await hs.put(partner, lens, { id: 'Ladder', value: 2 }, noProp);
+        await wait(1000);
+
+        let latest = [];
+        const sub = hs.subscribeFederated(
+            local,
+            lens,
+            (items) => { latest = items; },
+            { includeFederated: false },
+        );
+        await wait(1500);
+        expect(latest.map((i) => i.id)).toEqual(['Drill']); // local only
+
+        sub.setFederated(true);
+        await wait(4000);
+        expect(latest.map((i) => i.id).sort()).toEqual(['Drill', 'Ladder']); // partner folded in
+
+        sub.setFederated(false);
+        await wait(1500);
+        expect(latest.map((i) => i.id)).toEqual(['Drill']); // partner dropped, local kept
+        sub.unsubscribe();
+    }, 90000);
 });

@@ -861,35 +861,71 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
             : () => {});
     };
 
+    const removeSpace = (space) => {
+        const un = subs.get(space);
+        if (!un) return;
+        try { un(); } catch { /* best-effort teardown */ }
+        subs.delete(space);
+        for (const k of [...store.keys()]) {
+            if (k.slice(0, k.indexOf(SEP)) === space) store.delete(k);
+        }
+    };
+
+    // Attach a subscription to every partner this holon receives `lens` from.
+    // Idempotent and guarded by a token so a rapid toggle can't attach a stale
+    // partner set after the async config read resolves.
+    let attachToken = 0;
+    let partnersOn = false;
+    const attachPartners = async () => {
+        if (closed) return;
+        partnersOn = true;
+        const token = ++attachToken;
+        try {
+            const fedInfo = await getFederation(holosphere, holon);
+            if (closed || !partnersOn || token !== attachToken) return;
+            if (!fedInfo || !Array.isArray(fedInfo.inbound)) return;
+            const lensConfig = fedInfo.lensConfig || {};
+            let receiving = fedInfo.inbound.filter(space => {
+                const inb = lensConfig[space] && lensConfig[space].inbound;
+                return Array.isArray(inb) && inb.includes(lens);
+            });
+            if (maxFederatedSpaces !== -1) receiving = receiving.slice(0, maxFederatedSpaces);
+            await Promise.all(receiving.map(async space => {
+                if (closed || !partnersOn || token !== attachToken || space === holon) return;
+                const name = await getHolonName(holosphere, space).catch(() => null);
+                addSpace(space, name);
+            }));
+            if (!closed && partnersOn && token === attachToken) emit();
+        } catch (err) {
+            console.warn(`subscribeFederated: federation setup failed for ${holon}/${lens}: ${err.message}`);
+        }
+    };
+    const detachPartners = () => {
+        partnersOn = false;
+        attachToken++; // cancel any in-flight attach
+        for (const space of [...subs.keys()]) {
+            if (space !== holon) removeSpace(space);
+        }
+        emit();
+    };
+
     // Local first (synchronous), then one emit so an empty lens still clears
     // any "loading" state before partners resolve.
     if (includeLocal) addSpace(holon, null);
     emit();
-
-    if (includeFederated) {
-        (async () => {
-            try {
-                const fedInfo = await getFederation(holosphere, holon);
-                if (closed || !fedInfo || !Array.isArray(fedInfo.inbound)) return;
-                const lensConfig = fedInfo.lensConfig || {};
-                let receiving = fedInfo.inbound.filter(space => {
-                    const inb = lensConfig[space] && lensConfig[space].inbound;
-                    return Array.isArray(inb) && inb.includes(lens);
-                });
-                if (maxFederatedSpaces !== -1) receiving = receiving.slice(0, maxFederatedSpaces);
-                await Promise.all(receiving.map(async space => {
-                    if (closed || space === holon) return;
-                    const name = await getHolonName(holosphere, space).catch(() => null);
-                    addSpace(space, name);
-                }));
-                emit();
-            } catch (err) {
-                console.warn(`subscribeFederated: federation setup failed for ${holon}/${lens}: ${err.message}`);
-            }
-        })();
-    }
+    if (includeFederated) attachPartners();
 
     return {
+        /**
+         * Fold inbound partners in (`true`) or drop them (`false`) live, WITHOUT
+         * disturbing the local subscription — so a UI's federation toggle never
+         * blanks the board. Re-reads the federation config on each enable.
+         */
+        setFederated(on) {
+            if (closed) return;
+            if (on) attachPartners();
+            else detachPartners();
+        },
         unsubscribe() {
             closed = true;
             for (const un of subs.values()) {
