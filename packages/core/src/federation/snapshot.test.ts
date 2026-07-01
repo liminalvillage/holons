@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getFederationSnapshot, partnersReceivingLens } from './snapshot.js';
+import { getFederationSnapshot } from './snapshot.js';
 import type { HoloSphere } from 'holosphere';
 
 function mockHolosphere(fedInfo: any): HoloSphere {
@@ -50,34 +50,5 @@ describe('getFederationSnapshot', () => {
 		const hs = { getFederation } as unknown as HoloSphere;
 		await getFederationSnapshot(hs, 'home', 'nostr-key');
 		expect(getFederation).toHaveBeenCalledWith('nostr-key');
-	});
-});
-
-describe('partnersReceivingLens', () => {
-	const snap = {
-		federated: ['A', 'B', 'C'],
-		partnerNames: {},
-		lensConfig: {
-			A: { inbound: ['quests', 'library'], outbound: ['quests'] },
-			B: { inbound: ['library'], outbound: [] },
-			// C is federated but has no inbound flow configured at all.
-			C: { inbound: [], outbound: ['quests'] }
-		}
-	};
-
-	it('returns only partners whose inbound list includes the lens', () => {
-		expect(partnersReceivingLens(snap, 'quests')).toEqual(['A']);
-		expect(partnersReceivingLens(snap, 'library')).toEqual(['A', 'B']);
-	});
-
-	it('excludes outbound-only and unconfigured partners', () => {
-		// C only sends quests (outbound); it must not leak its quests back to us.
-		expect(partnersReceivingLens(snap, 'quests')).not.toContain('C');
-		expect(partnersReceivingLens(snap, 'roles')).toEqual([]);
-	});
-
-	it('excludes a partner present in `federated` but missing from lensConfig', () => {
-		const s = { federated: ['A', 'Z'], partnerNames: {}, lensConfig: { A: { inbound: ['quests'], outbound: [] } } };
-		expect(partnersReceivingLens(s, 'quests')).toEqual(['A']);
 	});
 });

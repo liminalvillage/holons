@@ -54,13 +54,7 @@ export async function getFederationSnapshot(
 	};
 }
 
-/**
- * Partner ids this holon receives `lens` FROM — partners whose inbound lens
- * list (from our perspective) includes `lens`. Receivers opt in per lens, so a
- * partner present in `federated` but without `lens` inbound is excluded. This
- * is the read-side mirror of the receiver-inbound allowlist enforced on the
- * announcements publish path.
- */
-export function partnersReceivingLens(snapshot: FederationSnapshot, lens: string): string[] {
-	return snapshot.federated.filter((id) => snapshot.lensConfig[id]?.inbound?.includes(lens));
-}
+// NOTE: `partnersReceivingLens` (read-side per-lens inbound partner filter) was
+// removed — HoloSphere's `getFederated`/`subscribeFederated` now do that inbound
+// filtering internally, and no surface enumerated partners for reads anymore.
+// Federation config for PUBLISHING still flows through `getFederationSnapshot`.

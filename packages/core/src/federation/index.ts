@@ -15,7 +15,6 @@ export {
 
 export {
 	getFederationSnapshot,
-	partnersReceivingLens,
 	type FederationSnapshot,
 	type FederationLensDirections
 } from './snapshot.js';
