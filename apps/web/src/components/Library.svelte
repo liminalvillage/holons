@@ -15,7 +15,6 @@
     import { telegramStore } from '$lib/stores/telegram';
     import { nostrPublicKey } from '$lib/stores/nostr';
     import CalendarComponent from './Calendar.svelte';
-    import { queryManager } from '$lib/holosphere/QueryManager';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -161,7 +160,13 @@
     });
     $: saveFilters('library', filters);
     $: activeFilter = filters.activeFilter;
-    let libraryItemsUnsubscribe: (() => void) | undefined;
+    // One live federation-aware subscription (local holon + inbound `library`
+    // partners folded in and tagged `_federation` by HoloSphere). `setFederated`
+    // toggles partners without dropping the local stream — replacing the old
+    // local queryManager.subscribe + one-shot getFederated fork.
+    let librarySub:
+        | { unsubscribe: () => void; setFederated: (on: boolean) => void }
+        | undefined;
     let hologramSourceNames = new Map<string, string>();
 
     // Add item form state
@@ -311,79 +316,45 @@
         }
     }
 
-    async function fetchData() {
+    function fetchData() {
         if (!holosphere || !holonID) return;
 
-        if (libraryItemsUnsubscribe) {
-            libraryItemsUnsubscribe();
-            libraryItemsUnsubscribe = undefined;
+        if (librarySub) {
+            librarySub.unsubscribe();
+            librarySub = undefined;
         }
 
         try {
-            if ($showFederated) {
-                await fetchFederatedLibrary();
-            } else {
-                await fetchLocalLibrary();
-            }
+            // Local-first + progressive AND federation-aware in one stream:
+            // subscribeFederated emits the local holon's items immediately, then
+            // folds in each inbound `library` partner (tagged `_federation`) as it
+            // resolves. Federated mode is now LIVE, not a one-shot overlay.
+            const lensHolon = holonID;
+            librarySub = holosphere.subscribeFederated(
+                lensHolon,
+                'library',
+                (items: any[]) => {
+                    if (holonID !== lensHolon) return; // stale subscription, ignore
+                    const next: Record<string, LibraryItem> = {};
+                    for (const item of items as LibraryItem[]) {
+                        if (item && item.id) next[item.id] = item;
+                    }
+                    store = next;
+                    preResolveHologramNames(items as LibraryItem[]);
+                },
+                { includeFederated: $showFederated },
+            );
         } catch (error) {
             console.error('Error fetching library:', error);
         }
     }
 
-    function fetchLocalLibrary() {
-        // Local-first + progressive: queryManager.subscribe emits the cached
-        // snapshot synchronously, then streams items in as they arrive from
-        // Gun's local graph first and federated peers after. No blocking
-        // getAll round-trip on the render path.
-        queryManager.init(holosphere);
-        const lensHolon = holonID;
-        libraryItemsUnsubscribe = queryManager.subscribe({
-            holonId: lensHolon,
-            lens: 'library',
-            onUpdate: (items) => {
-                if (holonID !== lensHolon) return; // stale subscription, ignore
-                const next: Record<string, LibraryItem> = {};
-                for (const item of items as LibraryItem[]) {
-                    if (item && item.id) next[item.id] = item;
-                }
-                store = next;
-                preResolveHologramNames(items as LibraryItem[]);
-            },
-            onError: (error) => {
-                console.error('Library subscription error:', error);
-            }
-        });
-    }
-
-    async function fetchFederatedLibrary() {
-        const federatedData = await holosphere.getFederated(holonID, "library", {
-            includeLocal: true,
-            includeFederated: true,
-            resolveReferences: true,
-            aggregate: false,
-            includeUnverified: true
-        });
-
-        // holosphere.getFederated resolves to Array<T> and filters
-        // unresolved-hologram error stubs by default.
-        const newStore: Record<string, LibraryItem> = {};
-        (federatedData ?? []).forEach((item: any, index: number) => {
-            if (!item?.id || item._deleted) return;
-            const key = item.key || item.id || `fed_${index}`;
-            const processed: any = { ...item, id: item.id };
-            if (item._federation) processed._federation = item._federation;
-            if (item._hologram) processed._hologram = item._hologram;
-            newStore[key] = processed as LibraryItem;
-        });
-        store = newStore;
-
-        await preResolveHologramNames(Object.values(store));
-    }
-
+    // Toggle partners in/out live on the existing subscription — no re-subscribe,
+    // so the local items never blink out while federation flips.
     let lastLibraryFedFlag = $showFederated;
     $: if (holonID && holosphere && $showFederated !== lastLibraryFedFlag) {
         lastLibraryFedFlag = $showFederated;
-        fetchData();
+        librarySub?.setFederated($showFederated);
     }
 
     onMount(() => {
@@ -395,7 +366,7 @@
         }
 
         return () => {
-            if (libraryItemsUnsubscribe) libraryItemsUnsubscribe();
+            if (librarySub) librarySub.unsubscribe();
         };
     });
 
