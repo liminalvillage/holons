@@ -24,7 +24,6 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
-	import { queryManager } from '$lib/holosphere/QueryManager';
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
 	/**
@@ -123,6 +122,10 @@
 
 	let idStoreUnsubscribe: (() => void) | undefined;
 	let rolesSubscriptionUnsubscribe: (() => void) | undefined;
+	// Live federation-aware roles subscription; `setFederated` toggles partners
+	// without a re-subscribe. Replaces the local subscribe + fragile one-shot
+	// getFederated overlay (which the next local update used to clobber).
+	let rolesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 	let usersSubscriptionUnsubscribe: (() => void) | undefined;
 
 	function normalizeRoleKey(role: any, fallback: string): string {
@@ -144,17 +147,15 @@
 
 		if (!holosphere || !holonIdToLoad) return;
 
-		queryManager.init(holosphere);
 		const subscribedHolonId = holonIdToLoad;
 
-		// Local-first + progressive: queryManager.subscribe paints whatever
-		// is already cached, then streams items in via Gun's map().on() —
-		// local graph first, federated peers as they respond. No await on
-		// the render path.
-		rolesSubscriptionUnsubscribe = queryManager.subscribe({
-			holonId: holonIdToLoad,
-			lens: 'roles',
-			onUpdate: (items) => {
+		// One live federation-aware stream: the local holon's roles arrive
+		// immediately and inbound partners fold in (tagged `_federation`) when the
+		// federation toggle is on — no separate overlay to be clobbered.
+		rolesFedSub = holosphere.subscribeFederated(
+			holonIdToLoad,
+			'roles',
+			(items: any[]) => {
 				if (activeHolonId !== subscribedHolonId) return;
 				const next: Record<string, any> = {};
 				for (let i = 0; i < items.length; i++) {
@@ -165,8 +166,9 @@
 				}
 				store = next;
 			},
-			onError: (e) => console.error(`[Roles.svelte] roles subscribe error:`, e)
-		});
+			{ includeFederated: $showFederated }
+		);
+		rolesSubscriptionUnsubscribe = () => rolesFedSub?.unsubscribe();
 
 		usersSubscriptionUnsubscribe = subscribeHolonUsers({
 			holonId: holonIdToLoad,
@@ -181,30 +183,6 @@
 			}
 		});
 
-		// Federated overlay: when the federation toggle is on, also fetch
-		// cross-holon roles in the background and merge into the store.
-		// Local subscribe items take precedence (latest write wins).
-		if ($showFederated) {
-			holosphere.getFederated(holonIdToLoad, 'roles', {
-				includeLocal: true,
-				includeFederated: true,
-				resolveReferences: true,
-				aggregate: false,
-				includeUnverified: true
-			}).then((federatedRoles) => {
-				if (activeHolonId !== subscribedHolonId) return;
-				if (!Array.isArray(federatedRoles) || federatedRoles.length === 0) return;
-				const merged: Record<string, any> = {};
-				federatedRoles.forEach((role: any, i: number) => {
-					if (!role) return;
-					merged[normalizeRoleKey(role, role.id || `fed_${i}`)] = role;
-				});
-				// Local subscribe state overlays the federated baseline.
-				store = { ...merged, ...store };
-			}).catch((e) => {
-				console.error(`[Roles.svelte] federated roles error:`, e);
-			});
-		}
 	}
 
 	onMount(() => {
@@ -263,7 +241,8 @@
 	let lastRolesFedFlag = $showFederated;
 	$: if (activeHolonId && holosphere && $showFederated !== lastRolesFedFlag) {
 		lastRolesFedFlag = $showFederated;
-		loadAndSubscribeData(activeHolonId);
+		// Toggle partners live on the existing stream — no re-subscribe.
+		rolesFedSub?.setFederated($showFederated);
 	}
 
 	// Format time for display
