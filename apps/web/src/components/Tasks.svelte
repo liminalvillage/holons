@@ -228,6 +228,10 @@
 	let isAddingTask = $state(false);
 
 	let questsUnsubscribe: (() => void) | undefined;
+	// Live federation-aware quests stream; `setFederated` toggles partners without
+	// a re-subscribe. Replaces the separate local (fetchData) + federated-overlay
+	// (fetchFederatedTasks) paths.
+	let questsSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 
 	// Add initialization state tracking
 	let isLoading = $state(true);
@@ -1018,76 +1022,6 @@
 		}
 	}
 
-	// Federated mode: local stream via queryManager (so the spinner clears
-	// immediately even on a cold/empty graph), plus a one-shot getFederated
-	// overlay merged on top. Federated items overlay the local baseline —
-	// later local subscribe events will still update their own entries.
-	async function fetchFederatedTasks() {
-		if (!holosphere || !holonID || !isValidHolonId(holonID)) return;
-
-		const loadKey = `${holonID}:fed`;
-		if (questsLoadKey === loadKey && questsUnsubscribe) return;
-
-		if (questsUnsubscribe) {
-			questsUnsubscribe();
-			questsUnsubscribe = undefined;
-		}
-
-		queryManager.init(holosphere);
-		questsLoadKey = loadKey;
-		isLoading = true;
-		loadingFederated = true;
-		store = {};
-
-		const subscribedHolonID = holonID;
-
-		questsUnsubscribe = queryManager.subscribe({
-			holonId: subscribedHolonID,
-			lens: 'quests',
-			onUpdate: (items) => {
-				if (questsLoadKey !== loadKey) return;
-				// Merge local items, preserving any federated overlay that arrived first.
-				const localStore = buildStoreFromItems(items);
-				store = { ...store, ...localStore };
-				isLoading = false;
-				preResolveHologramNames(Object.entries(store));
-				maybeOpenSelectedTask();
-			},
-			onError: (error) => {
-				console.error('[Tasks] federated local subscription error:', error);
-				isLoading = false;
-			}
-		});
-
-		try {
-			const federatedData = await holosphere.getFederated(subscribedHolonID, 'quests', {
-				includeLocal: true,
-				includeFederated: true,
-				resolveReferences: true,
-				aggregate: false,
-				includeUnverified: true
-			});
-			if (questsLoadKey !== loadKey) return; // user switched holon mid-flight
-			if (Array.isArray(federatedData) && federatedData.length > 0) {
-				const merged: Store = {};
-				for (const q of federatedData as any[]) {
-					if (!isQuestRecord(q)) continue;
-					if (!q.participants) q.participants = [];
-					const key = (q as any).key || q.id;
-					merged[key] = q as Quest;
-				}
-				if (Object.keys(merged).length > 0) {
-					store = { ...store, ...merged };
-				}
-			}
-		} catch (error) {
-			console.error('[Tasks] federated overlay error:', error);
-		} finally {
-			loadingFederated = false;
-			isLoading = false;
-		}
-	}
-
 	// Handle federated toggle change. Updates the shared store so the choice
 	// carries across every lens view; the reactive watcher below kicks off
 	// the appropriate fetch.
@@ -1101,13 +1035,13 @@
 
 	let lastTasksFedFlag = $showFederated;
 	$effect(() => {
-		// Re-fetch only when the user actually flips the toggle. Initial
-		// load is handled by the page-params effect below.
+		// Flip partners in/out live on the existing stream — no re-subscribe, so
+		// local quests never blink out while federation toggles.
 		if ($showFederated !== lastTasksFedFlag) {
 			lastTasksFedFlag = $showFederated;
 			if (!holosphere || !holonID) return;
-			if ($showFederated) fetchFederatedTasks();
-			else fetchData();
+			loadingFederated = $showFederated;
+			questsSub?.setFederated($showFederated);
 		}
 	});
 
@@ -1144,43 +1078,42 @@
 		selectedTaskId = null;
 	}
 
-	// Local-first + progressive load via queryManager.subscribe. The cached
-	// snapshot fires synchronously (next microtask), so isLoading clears
-	// immediately even when the lens is empty — no more spinner forever
-	// waiting on Gun's `.once()` that never fires on cold empty paths.
+	// One live federation-aware quests stream. subscribeFederated emits the local
+	// holon's quests immediately (spinner clears even on a cold/empty graph) and
+	// folds in inbound partners (tagged `_federation`) when `includeFederated` is
+	// on — replacing the separate local + federated-overlay paths. Federation is
+	// toggled live via `setFederated` (see the effect above), not a re-subscribe.
 	function fetchData() {
 		if (!holonID || !holosphere || !connectionReady || !isValidHolonId(holonID)) {
 			return;
 		}
 
-		const loadKey = `${holonID}:local`;
-		if (questsLoadKey === loadKey && questsUnsubscribe) return;
+		const loadKey = `${holonID}`;
+		if (questsLoadKey === loadKey && questsSub) return;
 
-		if (questsUnsubscribe) {
-			questsUnsubscribe();
-			questsUnsubscribe = undefined;
+		if (questsSub) {
+			questsSub.unsubscribe();
+			questsSub = undefined;
 		}
 
-		queryManager.init(holosphere);
 		questsLoadKey = loadKey;
 		isLoading = true;
 		store = {};
 
-		questsUnsubscribe = queryManager.subscribe({
-			holonId: holonID,
-			lens: 'quests',
-			onUpdate: (items) => {
+		questsSub = holosphere.subscribeFederated(
+			holonID,
+			'quests',
+			(items: any[]) => {
 				if (questsLoadKey !== loadKey) return; // stale (user switched holon)
 				store = buildStoreFromItems(items);
 				isLoading = false;
+				loadingFederated = false;
 				preResolveHologramNames(Object.entries(store));
 				maybeOpenSelectedTask();
 			},
-			onError: (error) => {
-				console.error('[Tasks] quests subscription error:', error);
-				isLoading = false; // Never leave the spinner stuck on error.
-			}
-		});
+			{ includeFederated: $showFederated }
+		);
+		questsUnsubscribe = () => questsSub?.unsubscribe();
 	}
 
 	function handleDialogKeydown(event: KeyboardEvent) {
@@ -1223,13 +1156,11 @@
 		};
 		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
 
-		// Listen for federation changes (e.g. holon removed from federation)
+		// Listen for federation changes (e.g. holon removed from federation).
+		// Re-subscribe from scratch so a changed partner set is picked up.
 		const handleFederationChanged = () => {
-			if ($showFederated) {
-				fetchFederatedTasks();
-			} else {
-				fetchData();
-			}
+			questsLoadKey = null;
+			fetchData();
 		};
 		window.addEventListener('federationChanged', handleFederationChanged);
 
@@ -1257,8 +1188,7 @@
 			connectionReady = true;
 			isLoading = true;
 			lastTasksFedFlag = $showFederated;
-			if ($showFederated) fetchFederatedTasks();
-			else fetchData();
+			fetchData();
 			// Resolve holon name reactively
 			resolveName(holonID);
 			// Preload settings + users for TaskModal (instant cache hit when modal opens)
