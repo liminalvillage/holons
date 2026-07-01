@@ -42,7 +42,6 @@
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
-	import { queryManager } from '$lib/holosphere/QueryManager';
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
 	interface Expense {
@@ -192,7 +191,6 @@
 		if (subscribedHolonId === targetHolon && subscribedFedFlag === targetFed) return;
 
 		cleanupSubscriptions();
-		queryManager.init(holosphere);
 		subscribedHolonId = targetHolon;
 		subscribedFedFlag = targetFed;
 		isLoading = true;
@@ -201,11 +199,15 @@
 		reaUserIds = [];
 		reaCurrencies = [];
 
-		// Expenses stream
-		const expensesOff = queryManager.subscribe({
-			holonId: targetHolon,
-			lens: 'expenses',
-			onUpdate: (items) => {
+		// Expenses stream — one live federation-aware subscription: the local
+		// holon's expenses plus inbound partners (tagged `_federation`) when the
+		// federation toggle is on, folded in and deduped by HoloSphere. Replaces
+		// the local subscribe + one-shot getFederated overlay (and its fragile
+		// row-preservation), so federated expenses are now LIVE.
+		const expensesSub = holosphere.subscribeFederated(
+			targetHolon,
+			'expenses',
+			(items: any[]) => {
 				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
 				const next: Record<string, Expense> = {};
 				for (const item of items as any[]) {
@@ -213,21 +215,12 @@
 					const key = item.key || item.id;
 					next[key] = item as Expense;
 				}
-				// In federated mode, preserve any federated overlay rows already merged in.
-				if (targetFed) {
-					for (const [key, val] of Object.entries(expenses)) {
-						if (!next[key] && (val as any)?._federation) next[key] = val as Expense;
-					}
-				}
 				expenses = next;
 				isLoading = false;
 			},
-			onError: (error) => {
-				console.error('[Expenses] expenses subscribe error:', error);
-				isLoading = false;
-			}
-		});
-		unsubscribeFunctions.push(expensesOff);
+			{ includeFederated: targetFed }
+		);
+		unsubscribeFunctions.push(() => expensesSub.unsubscribe());
 
 		// Users stream
 		const usersOff = subscribeHolonUsers({
@@ -282,48 +275,27 @@
 			void maybeAutoMergeOrphanCurrencies(settingsData || {});
 		}).catch((err: unknown) => console.error('[Expenses] settings fetch error:', err));
 
-		// Federated overlay (one-shot, in background). Merged on top of
-		// the local stream — local subscribe events keep updating their
-		// own entries.
+		// Federated `users` — names for remote-holon participants that show up in
+		// federated expenses but aren't in the local users lens. A live
+		// partners-only stream (includeLocal:false) that folds in as they resolve;
+		// empty when the toggle is off. The expenses federated rows are already
+		// covered by the single expenses subscription above.
 		if (targetFed) {
-			holosphere.getFederated(targetHolon, 'expenses', {
-				includeLocal: true,
-				includeFederated: true,
-				resolveReferences: true,
-				aggregate: false,
-				includeUnverified: true
-			}).then((data: any) => {
-				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
-				if (!Array.isArray(data) || data.length === 0) return;
-				const merged: Record<string, Expense> = {};
-				data.forEach((item: any, idx: number) => {
-					if (!item?.id) return;
-					const key = item.key || item.id || `fed_${idx}`;
-					const processed: any = { ...item };
-					if (item._federation) processed._federation = item._federation;
-					if (item._hologram) processed._hologram = item._hologram;
-					merged[key] = processed;
-				});
-				expenses = { ...expenses, ...merged };
-			}).catch((err: unknown) => console.error('[Expenses] federated overlay error:', err));
-
-			// Federated `users` overlay — names for remote-holon participants that
-			// show up in federated expenses but aren't in the local users lens.
-			holosphere.getFederated(targetHolon, 'users', {
-				includeLocal: false,
-				includeFederated: true,
-				resolveReferences: true,
-				aggregate: false
-			}).then((data: any) => {
-				if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
-				if (!Array.isArray(data) || data.length === 0) return;
-				const merged: Record<string, User> = {};
-				for (const u of data as any[]) {
-					if (!u || u.id == null) continue;
-					merged[String(u.id)] = u as User;
-				}
-				fedUsers = merged;
-			}).catch((err: unknown) => console.error('[Expenses] federated users overlay error:', err));
+			const fedUsersSub = holosphere.subscribeFederated(
+				targetHolon,
+				'users',
+				(items: any[]) => {
+					if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
+					const merged: Record<string, User> = {};
+					for (const u of items as any[]) {
+						if (!u || u.id == null) continue;
+						merged[String(u.id)] = u as User;
+					}
+					fedUsers = merged;
+				},
+				{ includeLocal: false, includeFederated: true }
+			);
+			unsubscribeFunctions.push(() => fedUsersSub.unsubscribe());
 		}
 	}
 
