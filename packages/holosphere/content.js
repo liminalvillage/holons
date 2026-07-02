@@ -185,8 +185,7 @@ function sanitizeForStorage(value, path = '', seen = new WeakSet(), warnings = [
  * get/put without a holon.)
  */
 export function holonLens(holoInstance, holon, lens) {
-    const base = holoInstance.gun.get(holoInstance.appname);
-    return (holon === null || holon === undefined || holon === '') ? base.get(lens) : base.get(holon).get(lens);
+    return holoInstance._backend._path(holon, lens);
 }
 const isGlobalHolon = (holon) => holon === null || holon === undefined || holon === '';
 
@@ -303,7 +302,10 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
     try {
         let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(targetHolon); // Use targetHolon for put
                 user.auth(userNameString, password, (authAck) => {
@@ -313,7 +315,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             if (createAck.err) {
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created during put, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
@@ -344,254 +346,292 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
             });
         }
 
-        const ackPromise = new Promise((resolve, reject) => {
-            try {
-                // Sanitize before serialization so undefined/NaN/Infinity etc.
-                // can never produce a malformed payload like `"initiated":,`
-                // (which is what causes per-character parse warnings on read).
-                const sanitizeWarnings = [];
-                let dataToStore = sanitizeForStorage(data, '', new WeakSet(), sanitizeWarnings) || {};
-                if (sanitizeWarnings.length > 0) {
-                    console.warn(
-                        `holosphere.put: sanitized ${sanitizeWarnings.length} field(s) at ${targetHolon}/${targetLens}/${targetKey} (id=${data.id}):`,
-                        sanitizeWarnings
-                    );
-                }
-                // Strip read-side envelopes that must never be persisted
-                // (they're attached at resolution time).
-                //
-                // `_hologram` and `_meta` are always read-side-only.
-                //
-                // `_federation` is also read-side for ordinary writes — it
-                // describes where data was fetched from, not where it
-                // currently lives. The one legitimate carrier is federation
-                // propagation, which writes hologram envelopes (top-level
-                // `id` + `soul`) tagged with `_federation` provenance; we
-                // detect that via `isHologram(data)` and leave it alone.
-                // Without this, a UI that reads a federated record and puts
-                // it back ends up persisting stale `_federation.origin`
-                // metadata, which then drives downstream code (federation
-                // propagators, hologram resolvers) to write or follow
-                // pointers that don't match the current storage location —
-                // producing "broken hologram" garbage-collection cascades
-                // that silently delete the user's write.
-                if (dataToStore._meta !== undefined) delete dataToStore._meta;
-                if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
-                if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
-                const payload = JSON.stringify(dataToStore); // The data being stored
+        // Sanitize before serialization so undefined/NaN/Infinity etc.
+        // can never produce a malformed payload like `"initiated":,`
+        // (which is what causes per-character parse warnings on read).
+        const sanitizeWarnings = [];
+        let dataToStore = sanitizeForStorage(data, '', new WeakSet(), sanitizeWarnings) || {};
+        if (sanitizeWarnings.length > 0) {
+            console.warn(
+                `holosphere.put: sanitized ${sanitizeWarnings.length} field(s) at ${targetHolon}/${targetLens}/${targetKey} (id=${data.id}):`,
+                sanitizeWarnings
+            );
+        }
+        // Strip read-side envelopes that must never be persisted
+        // (they're attached at resolution time).
+        //
+        // `_hologram` and `_meta` are always read-side-only.
+        //
+        // `_federation` is also read-side for ordinary writes — it
+        // describes where data was fetched from, not where it
+        // currently lives. The one legitimate carrier is federation
+        // propagation, which writes hologram envelopes (top-level
+        // `id` + `soul`) tagged with `_federation` provenance; we
+        // detect that via `isHologram(data)` and leave it alone.
+        // Without this, a UI that reads a federated record and puts
+        // it back ends up persisting stale `_federation.origin`
+        // metadata, which then drives downstream code (federation
+        // propagators, hologram resolvers) to write or follow
+        // pointers that don't match the current storage location —
+        // producing "broken hologram" garbage-collection cascades
+        // that silently delete the user's write.
+        if (dataToStore._meta !== undefined) delete dataToStore._meta;
+        if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
+        if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
+        const payload = JSON.stringify(dataToStore); // The data being stored
 
-                const putCallback = async (ack) => {
-                    if (ack.err) {
-                        reject(new Error(ack.err));
+        // --- Post-write side effects (hologram tracking, notification, propagation) ---
+        // Extracted so both the Gun callback path and backend await path can share it.
+        const runPostWriteSideEffects = async () => {
+            // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
+            if (isHologram) {
+                try {
+                    const storedDataSoulInfo = holoInstance.parseSoulPath(data.soul);
+                    if (storedDataSoulInfo) {
+                        const targetNodeRef = holoInstance.getNodeRef(data.soul); // Target of the data *being put*
+                        // Soul of the hologram that was *actually stored* at targetHolon/targetLens/targetKey
+                        const storedHologramInstanceSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
+
+                        targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
                     } else {
-                        // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
-                        if (isHologram) {
-                            try {
-                                const storedDataSoulInfo = holoInstance.parseSoulPath(data.soul);
-                                if (storedDataSoulInfo) {
-                                    const targetNodeRef = holoInstance.getNodeRef(data.soul); // Target of the data *being put*
-                                    // Soul of the hologram that was *actually stored* at targetHolon/targetLens/targetKey
-                                    const storedHologramInstanceSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
-                                    
-                                    targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
-                                } else {
-                                    console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${data.soul} for tracking.`);
-                                }
-                            } catch (trackingError) {
-                                console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${data.soul}):`, trackingError);
-                            }
-                        }
-                        // --- End: Hologram Tracking Logic ---
-                        
-                        // --- Start: Active Hologram Update Logic ---
-                        //
-                        // Walks this node's `_holograms` set and stamps every
-                        // registered hologram with `updated: now` so consumers
-                        // re-resolve and see the latest source data.
-                        //
-                        // Runs for BOTH original-data puts and hologram-update
-                        // puts so updates cascade through multi-hop forwards
-                        // (A → B → C → …) even when the second hop's
-                        // cross-holon registration on the original source
-                        // can't be relied on to make it across the Gun mesh.
-                        // Each hop maintains its own local `_holograms` set
-                        // tracking the next hops, and we walk that set on
-                        // every put — cycle-protected via
-                        // `options._cascadeVisited`.
-                        let updatedHolograms = [];
-                        const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
-                        const cascadeVisited = new Set(options._cascadeVisited || []);
-                        if (!cascadeVisited.has(currentDataSoul)) {
-                            cascadeVisited.add(currentDataSoul);
-                            try {
-                                const currentNodeRef = holoInstance.getNodeRef(currentDataSoul);
-
-                                // Get the _holograms set for this node
-                                await new Promise((resolveHologramUpdate) => {
-                                    currentNodeRef.get('_holograms').once(async (hologramsSet) => {
-                                        if (hologramsSet) {
-                                            const hologramSouls = Object.keys(hologramsSet).filter(k =>
-                                                k !== '_' && hologramsSet[k] === true && !cascadeVisited.has(k)
-                                            );
-
-                                            if (hologramSouls.length > 0) {
-                                // Update each active hologram with an 'updated' timestamp
-                                                const updatePromises = hologramSouls.map(async (hologramSoul) => {
-                                                    try {
-                                                        const hologramSoulInfo = holoInstance.parseSoulPath(hologramSoul);
-                                                        if (hologramSoulInfo) {
-                                                            // Get the current hologram data
-                                                            const currentHologram = await holoInstance.get(
-                                                                hologramSoulInfo.holon,
-                                                                hologramSoulInfo.lens,
-                                                                hologramSoulInfo.key,
-                                                                null,
-                                                                { resolveHolograms: false }
-                                                            );
-
-                                                            if (currentHologram) {
-                                                                // Update the hologram with an 'updated' timestamp
-                                                                const updatedHologram = {
-                                                                    ...currentHologram,
-                                                                    updated: Date.now()
-                                                                };
-
-                                                                await holoInstance.put(
-                                                                    hologramSoulInfo.holon,
-                                                                    hologramSoulInfo.lens,
-                                                                    updatedHologram,
-                                                                    null,
-                                                                    {
-                                                                        autoPropagate: false, // Don't auto-propagate hologram updates
-                                                                        disableHologramRedirection: true, // Prevent redirection when updating holograms
-                                                                        isHologramUpdate: true,
-                                                                        // Carry the visited set forward so the
-                                                                        // recursive put keeps cascading through
-                                                                        // this hop's `_holograms` set without
-                                                                        // looping back through us.
-                                                                        _cascadeVisited: cascadeVisited
-                                                                    }
-                                                                );
-
-                                                                                                                // Add to the list of updated holograms
-                                                                updatedHolograms.push({
-                                                                    soul: hologramSoul,
-                                                                    holon: hologramSoulInfo.holon,
-                                                                    lens: hologramSoulInfo.lens,
-                                                                    key: hologramSoulInfo.key,
-                                                                    id: hologramSoulInfo.key,
-                                                                    timestamp: updatedHologram.updated
-                                                                });
-                                                            }
-                                                        }
-                                                    } catch (hologramUpdateError) {
-                                                        console.warn(`Error updating hologram ${hologramSoul}:`, hologramUpdateError);
-                                                    }
-                                                });
-
-                                                await Promise.all(updatePromises);
-                                            }
-                                        }
-                                        resolveHologramUpdate(); // Resolve the promise to continue with the main put logic
-                                    });
-                                });
-                            } catch (hologramUpdateError) {
-                                console.warn(`Error checking for active holograms to update:`, hologramUpdateError);
-                            }
-                        }
-                        // --- End: Active Hologram Update Logic ---
-                        
-                        // Only notify subscribers for actual data, not holograms
-                        if (!isHologram) {
-                            holoInstance.notifySubscribers({
-                                holon: targetHolon, // Notify with final target
-                                lens: targetLens,
-                                ...data // The data that was put
-                            });
-                        }
-
-                        // Auto-propagate to federation by default (if data *being put* is not a hologram).
-                        // Permissionless write: the LOCAL write already acked, so propagating a
-                        // hologram of this item to federation partners is a BACKGROUND cascade and
-                        // must NOT block the caller's save (a partner that's slow/unreachable, or a
-                        // multi-hop parent-hexagon walk, would otherwise stall every write — the
-                        // receiving holon filters on READ, not on our write). Fire-and-forget by
-                        // default; callers that need the result can pass `{ awaitPropagation: true }`.
-                        const shouldPropagate = options.autoPropagate !== false && !isHologram && !isGlobal;
-                        let propagationResult = null;
-
-                        if (shouldPropagate) {
-                            // Holograms are OPT-IN: a plain put propagates full copies to
-                            // partners by default, not soul pointers. Callers that want
-                            // holograms must pass `propagationOptions.useHolograms: true`
-                            // (e.g. @holons/core publishToFederation when opted in).
-                            // NOTE: holosphere is vendored — re-apply this default if it is
-                            // ever re-synced from upstream.
-                            const propagationOptions = {
-                                useHolograms: false,
-                                ...options.propagationOptions
-                            };
-                            const runPropagation = () => {
-                                return holoInstance.propagate(targetHolon, targetLens, data, propagationOptions)
-                                    .then((r) => {
-                                        if (r && r.errors > 0) console.warn('Auto-propagation had errors:', r);
-                                        return r;
-                                    })
-                                    .catch((propError) => { console.warn('Error in auto-propagation:', propError); return null; });
-                            };
-                            if (options.awaitPropagation) {
-                                propagationResult = await runPropagation();
-                            } else {
-                                // Background — don't block the write on federation propagation.
-                                runPropagation();
-                            }
-                        }
-
-                        resolve({
-                            success: true,
-                            isHologramAtPath: isHologram, // whether the data *put* was a hologram
-                            pathHolon: targetHolon,
-                            pathLens: targetLens,
-                            pathKey: targetKey,
-                            propagationResult,
-                            updatedHolograms: updatedHolograms // List of holograms that were updated
-                        });
+                        console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${data.soul} for tracking.`);
                     }
-                };
-
-                // Use targetHolon, targetLens, and targetKey for the actual storage path
-                const dataPath = password ?
-                    user.get('private').get(targetLens).get(targetKey) :
-                    holonLens(holoInstance, targetHolon, targetLens).get(targetKey);
-
-                // Race-free signing: issue the signed envelope BEFORE the raw write
-                // so reads/subscribers resolve against a consistent envelope the
-                // instant the raw write lands. No-op unless signing is enabled.
-                if (!isHologram && !isGlobal && !options._skipSign && holoInstance._signer) {
-                    try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, data); }
-                    catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
+                } catch (trackingError) {
+                    console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${data.soul}):`, trackingError);
                 }
-                dataPath.put(payload, putCallback);
-            } catch (error) {
-                reject(error);
             }
-        });
+            // --- End: Hologram Tracking Logic ---
 
-        // Bound the wait on Gun's put ack so an offline/partitioned mesh
-        // doesn't hang the caller forever. Gun keeps the local write and
-        // its eventual ack callback (subscriber notify, hologram cascade,
-        // propagation) still runs when a peer reappears — we just stop
-        // blocking the awaiting consumer in the meantime.
-        return withWriteTimeout(ackPromise, writeTimeoutMs, {
-            success: true,
-            queued: true,
-            isHologramAtPath: isHologram,
-            pathHolon: targetHolon,
-            pathLens: targetLens,
-            pathKey: targetKey,
-            propagationResult: null,
-            updatedHolograms: []
-        });
+            // --- Start: Active Hologram Update Logic ---
+            //
+            // Walks this node's `_holograms` set and stamps every
+            // registered hologram with `updated: now` so consumers
+            // re-resolve and see the latest source data.
+            //
+            // Runs for BOTH original-data puts and hologram-update
+            // puts so updates cascade through multi-hop forwards
+            // (A → B → C → …) even when the second hop's
+            // cross-holon registration on the original source
+            // can't be relied on to make it across the Gun mesh.
+            // Each hop maintains its own local `_holograms` set
+            // tracking the next hops, and we walk that set on
+            // every put — cycle-protected via
+            // `options._cascadeVisited`.
+            let updatedHolograms = [];
+            const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
+            const cascadeVisited = new Set(options._cascadeVisited || []);
+            if (!cascadeVisited.has(currentDataSoul)) {
+                cascadeVisited.add(currentDataSoul);
+                try {
+                    const currentNodeRef = holoInstance.getNodeRef(currentDataSoul);
+
+                    // Get the _holograms set for this node
+                    await new Promise((resolveHologramUpdate) => {
+                        currentNodeRef.get('_holograms').once(async (hologramsSet) => {
+                            if (hologramsSet) {
+                                const hologramSouls = Object.keys(hologramsSet).filter(k =>
+                                    k !== '_' && hologramsSet[k] === true && !cascadeVisited.has(k)
+                                );
+
+                                if (hologramSouls.length > 0) {
+                                    // Update each active hologram with an 'updated' timestamp
+                                    const updatePromises = hologramSouls.map(async (hologramSoul) => {
+                                        try {
+                                            const hologramSoulInfo = holoInstance.parseSoulPath(hologramSoul);
+                                            if (hologramSoulInfo) {
+                                                // Get the current hologram data
+                                                const currentHologram = await holoInstance.get(
+                                                    hologramSoulInfo.holon,
+                                                    hologramSoulInfo.lens,
+                                                    hologramSoulInfo.key,
+                                                    null,
+                                                    { resolveHolograms: false }
+                                                );
+
+                                                if (currentHologram) {
+                                                    // Update the hologram with an 'updated' timestamp
+                                                    const updatedHologram = {
+                                                        ...currentHologram,
+                                                        updated: Date.now()
+                                                    };
+
+                                                    await holoInstance.put(
+                                                        hologramSoulInfo.holon,
+                                                        hologramSoulInfo.lens,
+                                                        updatedHologram,
+                                                        null,
+                                                        {
+                                                            autoPropagate: false, // Don't auto-propagate hologram updates
+                                                            disableHologramRedirection: true, // Prevent redirection when updating holograms
+                                                            isHologramUpdate: true,
+                                                            // Carry the visited set forward so the
+                                                            // recursive put keeps cascading through
+                                                            // this hop's `_holograms` set without
+                                                            // looping back through us.
+                                                            _cascadeVisited: cascadeVisited
+                                                        }
+                                                    );
+
+                                                    // Add to the list of updated holograms
+                                                    updatedHolograms.push({
+                                                        soul: hologramSoul,
+                                                        holon: hologramSoulInfo.holon,
+                                                        lens: hologramSoulInfo.lens,
+                                                        key: hologramSoulInfo.key,
+                                                        id: hologramSoulInfo.key,
+                                                        timestamp: updatedHologram.updated
+                                                    });
+                                                }
+                                            }
+                                        } catch (hologramUpdateError) {
+                                            console.warn(`Error updating hologram ${hologramSoul}:`, hologramUpdateError);
+                                        }
+                                    });
+
+                                    await Promise.all(updatePromises);
+                                }
+                            }
+                            resolveHologramUpdate(); // Resolve the promise to continue with the main put logic
+                        });
+                    });
+                } catch (hologramUpdateError) {
+                    console.warn(`Error checking for active holograms to update:`, hologramUpdateError);
+                }
+            }
+            // --- End: Active Hologram Update Logic ---
+
+            // Only notify subscribers for actual data, not holograms
+            if (!isHologram) {
+                holoInstance.notifySubscribers({
+                    holon: targetHolon, // Notify with final target
+                    lens: targetLens,
+                    ...data // The data that was put
+                });
+            }
+
+            // Auto-propagate to federation by default (if data *being put* is not a hologram).
+            // Permissionless write: the LOCAL write already acked, so propagating a
+            // hologram of this item to federation partners is a BACKGROUND cascade and
+            // must NOT block the caller's save (a partner that's slow/unreachable, or a
+            // multi-hop parent-hexagon walk, would otherwise stall every write — the
+            // receiving holon filters on READ, not on our write). Fire-and-forget by
+            // default; callers that need the result can pass `{ awaitPropagation: true }`.
+            const shouldPropagate = options.autoPropagate !== false && !isHologram && !isGlobal;
+            let propagationResult = null;
+
+            if (shouldPropagate) {
+                // Holograms are OPT-IN: a plain put propagates full copies to
+                // partners by default, not soul pointers. Callers that want
+                // holograms must pass `propagationOptions.useHolograms: true`
+                // (e.g. @holons/core publishToFederation when opted in).
+                // NOTE: holosphere is vendored — re-apply this default if it is
+                // ever re-synced from upstream.
+                const propagationOptions = {
+                    useHolograms: false,
+                    ...options.propagationOptions
+                };
+                const runPropagation = () => {
+                    return holoInstance.propagate(targetHolon, targetLens, data, propagationOptions)
+                        .then((r) => {
+                            if (r && r.errors > 0) console.warn('Auto-propagation had errors:', r);
+                            return r;
+                        })
+                        .catch((propError) => { console.warn('Error in auto-propagation:', propError); return null; });
+                };
+                if (options.awaitPropagation) {
+                    propagationResult = await runPropagation();
+                } else {
+                    // Background — don't block the write on federation propagation.
+                    runPropagation();
+                }
+            }
+
+            return {
+                success: true,
+                isHologramAtPath: isHologram,
+                pathHolon: targetHolon,
+                pathLens: targetLens,
+                pathKey: targetKey,
+                propagationResult,
+                updatedHolograms
+            };
+        };
+
+        // Race-free signing: issue the signed envelope BEFORE the raw write
+        // so reads/subscribers resolve against a consistent envelope the
+        // instant the raw write lands. No-op unless signing is enabled.
+        // Only for Gun backend — AD4M handles signing internally.
+        if (!isHologram && !isGlobal && !options._skipSign && holoInstance._signer) {
+            if (holoInstance._backend.type !== 'ad4m') {
+                try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, data); }
+                catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
+            }
+        }
+
+        if (password) {
+            // Password path — Gun-specific user auth
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const ackPromise = new Promise((resolve, reject) => {
+                try {
+                    const dataPath = user.get('private').get(targetLens).get(targetKey);
+                    const putCallback = async (ack) => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            try {
+                                const result = await runPostWriteSideEffects();
+                                resolve(result);
+                            } catch (sideEffectError) {
+                                reject(sideEffectError);
+                            }
+                        }
+                    };
+                    dataPath.put(payload, putCallback);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+
+            // Bound the wait on Gun's put ack so an offline/partitioned mesh
+            // doesn't hang the caller forever. Gun keeps the local write and
+            // its eventual ack callback (subscriber notify, hologram cascade,
+            // propagation) still runs when a peer reappears — we just stop
+            // blocking the awaiting consumer in the meantime.
+            return withWriteTimeout(ackPromise, writeTimeoutMs, {
+                success: true,
+                queued: true,
+                isHologramAtPath: isHologram,
+                pathHolon: targetHolon,
+                pathLens: targetLens,
+                pathKey: targetKey,
+                propagationResult: null,
+                updatedHolograms: []
+            });
+        } else {
+            // Non-password path — delegate to pluggable backend
+            const backendResult = await holoInstance._backend.put(targetHolon, targetLens, targetKey, payload, { timeout: writeTimeoutMs });
+            if (!backendResult.ok) {
+                throw new Error('Backend write failed');
+            }
+            if (backendResult.queued) {
+                // Backend accepted the write but hasn't confirmed peer ack yet
+                // (local-first). Return immediately; side effects run when the
+                // backend confirms later (or not at all if offline forever).
+                return {
+                    success: true,
+                    queued: true,
+                    isHologramAtPath: isHologram,
+                    pathHolon: targetHolon,
+                    pathLens: targetLens,
+                    pathKey: targetKey,
+                    propagationResult: null,
+                    updatedHolograms: []
+                };
+            }
+            return runPostWriteSideEffects();
+        }
     } catch (error) {
         console.error('Error in put:', error);
         throw error;
@@ -645,122 +685,119 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
         }
     }
 
+    // Shared post-read processing: parse, tombstone check, hologram resolution, schema validation.
+    const handleData = async (data) => {
+        let parsed = null;
+        if (!data) {
+            return null;
+        }
+
+        try {
+            parsed = await holoInstance.parse(data);
+
+            if (!parsed) {
+                return null;
+            }
+
+            // Treat the harvest-side `_deleted: true` soft-tombstone
+            // as "not found" by default. Callers that want to see
+            // tombstones can pass `{ includeDeleted: true }`.
+            if (!includeDeleted && parsed._deleted === true) {
+                return null;
+            }
+
+            // Check if this is a hologram that needs to be resolved
+            if (resolveHolograms && holoInstance.isHologram(parsed)) {
+                const res = await holoInstance.resolveHologramDetailed(parsed, {
+                    followHolograms: resolveHolograms,
+                    visited: visited,
+                    maxDepth: options.maxDepth || 10,
+                    currentDepth: options.currentDepth || 0
+                });
+
+                if (res.status === 'deleted') {
+                    // The pointer's target was soft-deleted (_deleted:true)
+                    // — a DEFINITIVE deletion (distinct from a transient
+                    // miss). The pointer is prunable. By default the item
+                    // reads as gone; `includeDeleted` surfaces a tombstone
+                    // so admin/debug views can see it.
+                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                    if (includeDeleted) {
+                        return { id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } };
+                    } else {
+                        return null;
+                    }
+                }
+
+                if (res.status !== 'resolved') {
+                    // unresolved/error are TRANSIENT (latency, offline
+                    // peer, federation in flight, or a hard put(null));
+                    // circular/depth/invalid are structural. Either way
+                    // DON'T delete here — the old code destroyed real data
+                    // on the first transient miss. Skip; a real garbage
+                    // collector (keyed on this janitor-parseable line, and
+                    // on resolveHologramDetailed's status) owns cleanup.
+                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                    return null;
+                }
+
+                if (res.data !== parsed) {
+                    parsed = res.data;
+                }
+            }
+
+            // Perform schema validation if needed
+            if (schema) {
+                const valid = holoInstance.validator.validate(schema, parsed);
+                if (!valid) {
+                    console.error('get: Invalid data according to schema:', holoInstance.validator.errors);
+                    if (holoInstance.strict) {
+                        return null;
+                    }
+                }
+            }
+
+            return parsed;
+        } catch (error) {
+            if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
+                 console.warn(`Caught circular reference during get/handleData for key ${key}. Resolving null.`);
+                 return null;
+            } else {
+                console.error('Error processing data in get/handleData:', error);
+                return null;
+            }
+        }
+    };
+
     try {
-        let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            // Password path — Gun-specific user auth
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for get
+                const userNameString = holoInstance.userName(holon);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        // If auth fails, reject immediately. Do not attempt to create user.
                         reject(new Error(`Authentication failed for ${userNameString} during get: ${authAck.err}`));
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
-        }
 
-        return new Promise((resolve) => {
-            const handleData = async (data) => {
-                let parsed = null; // Declare parsed here to make it available in catch
-                if (!data) {
-                    resolve(null);
-                    return;
-                }
-
-                try {
-                    parsed = await holoInstance.parse(data); // Assign to the outer scoped parsed
-
-                    if (!parsed) {
-                        resolve(null);
-                        return;
-                    }
-
-                    // Treat the harvest-side `_deleted: true` soft-tombstone
-                    // as "not found" by default. Callers that want to see
-                    // tombstones can pass `{ includeDeleted: true }`.
-                    if (!includeDeleted && parsed._deleted === true) {
-                        resolve(null);
-                        return;
-                    }
-
-                    // Check if this is a hologram that needs to be resolved
-                    if (resolveHolograms && holoInstance.isHologram(parsed)) {
-                        const res = await holoInstance.resolveHologramDetailed(parsed, {
-                            followHolograms: resolveHolograms,
-                            visited: visited,
-                            maxDepth: options.maxDepth || 10,
-                            currentDepth: options.currentDepth || 0
-                        });
-
-                        if (res.status === 'deleted') {
-                            // The pointer's target was soft-deleted (_deleted:true)
-                            // — a DEFINITIVE deletion (distinct from a transient
-                            // miss). The pointer is prunable. By default the item
-                            // reads as gone; `includeDeleted` surfaces a tombstone
-                            // so admin/debug views can see it.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
-                            if (includeDeleted) {
-                                resolve({ id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
-                            } else {
-                                resolve(null);
-                            }
-                            return;
-                        }
-
-                        if (res.status !== 'resolved') {
-                            // unresolved/error are TRANSIENT (latency, offline
-                            // peer, federation in flight, or a hard put(null));
-                            // circular/depth/invalid are structural. Either way
-                            // DON'T delete here — the old code destroyed real data
-                            // on the first transient miss. Skip; a real garbage
-                            // collector (keyed on this janitor-parseable line, and
-                            // on resolveHologramDetailed's status) owns cleanup.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
-                            resolve(null);
-                            return;
-                        }
-
-                        if (res.data !== parsed) {
-                            parsed = res.data;
-                        }
-                    }
-
-                    // Perform schema validation if needed
-                    if (schema) {
-                        const valid = holoInstance.validator.validate(schema, parsed);
-                        if (!valid) {
-                            console.error('get: Invalid data according to schema:', holoInstance.validator.errors);
-                            if (holoInstance.strict) {
-                                resolve(null);
-                                return;
-                            }
-                        }
-                    }
-
-                    resolve(parsed);
-                } catch (error) {
-                    if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
-                         console.warn(`Caught circular reference during get/handleData for key ${key}. Resolving null.`);
-                         resolve(null); 
-                    } else {
-                        console.error('Error processing data in get/handleData:', error);
-                        resolve(null); // For other errors, resolve null
-                    }
-                }
-            };
-
-            const dataPath = password ?
-                user.get('private').get(lens).get(key) :
-                holonLens(holoInstance, holon, lens).get(key);
-
+            const dataPath = user.get('private').get(lens).get(key);
             // `.once()` wrapped in a deadline — cold-path reads (peer offline,
             // never-written key) used to hang forever otherwise. After
             // `timeout` ms with no Gun response we treat it as "not found".
-            onceWithTimeout(dataPath, timeout, { awaitNetwork }).then(handleData);
-        });
+            const rawData = await onceWithTimeout(dataPath, timeout, { awaitNetwork });
+            return handleData(rawData);
+        } else {
+            // Non-password path — delegate to pluggable backend
+            const rawData = await holoInstance._backend.get(holon, lens, key, { timeout, awaitNetwork });
+            return handleData(rawData);
+        }
     } catch (error) {
         console.error('Error in get:', error);
         return null;
@@ -796,12 +833,80 @@ export async function getAll(holoInstance, holon, lens, password = null, options
         throw new Error('getAll: Schema required in strict mode');
     }
 
+    // Shared per-item processing: parse, tombstone check, hologram resolution, schema validation.
+    const output = new Map();
+    const processItem = async (itemData, key) => {
+        if (!itemData) return;
+        try {
+            const parsed = await holoInstance.parse(itemData);
+            if (!parsed || !parsed.id) return;
+
+            // Drop `_deleted: true` soft-tombstones by default;
+            // callers wanting them in the result pass
+            // `{ includeDeleted: true }` to `getAll`.
+            if (!includeDeleted && parsed._deleted === true) return;
+
+            if (holoInstance.isHologram(parsed)) {
+                try {
+                    const res = await holoInstance.resolveHologramDetailed(parsed, {
+                        followHolograms: true,
+                        maxDepth: 10,
+                        currentDepth: 0
+                    });
+
+                    if (res.status !== 'resolved') {
+                        // See `get()` above: a transient miss is not
+                        // proof of a dead pointer, so we skip without
+                        // deleting. A soft-deleted source (status
+                        // 'deleted') is definitive; surface it as a
+                        // tombstone only when the caller opted in.
+                        console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                        if (res.status === 'deleted' && includeDeleted) {
+                            output.set(parsed.id, { id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
+                        }
+                        return;
+                    }
+
+                    const resolved = res.data;
+                    if (resolved && resolved !== parsed) {
+                        if (schema) {
+                            const valid = holoInstance.validator.validate(schema, resolved);
+                            if (valid || !holoInstance.strict) {
+                                output.set(resolved.id, resolved);
+                            }
+                        } else {
+                            output.set(resolved.id, resolved);
+                        }
+                        return;
+                    }
+                } catch (hologramError) {
+                    console.error(`Error resolving hologram for key ${key}:`, hologramError);
+                    return;
+                }
+            }
+
+            if (schema) {
+                const valid = holoInstance.validator.validate(schema, parsed);
+                if (valid || !holoInstance.strict) {
+                    output.set(parsed.id, parsed);
+                }
+            } else {
+                output.set(parsed.id, parsed);
+            }
+        } catch (error) {
+            console.error('Error processing data:', error);
+        }
+    };
+
     try {
-        let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            // Password path — Gun-specific user auth
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for getAll
+                const userNameString = holoInstance.userName(holon);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during getAll, attempting to create...`);
@@ -809,18 +914,18 @@ export async function getAll(holoInstance, holon, lens, password = null, options
                             if (createAck.err) {
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created during getAll, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
                                 console.log(`User ${userNameString} created successfully during getAll, attempting auth...`);
@@ -834,143 +939,64 @@ export async function getAll(holoInstance, holon, lens, password = null, options
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
-        }
 
-        return new Promise((resolve) => {
-            const output = new Map();
-            const pendingProcessing = [];
+            // Gun password path — shallow probe + iterate via Gun chain
+            return new Promise((resolve) => {
+                const dataPath = user.get('private').get(lens);
 
-            const dataPath = password ?
-                user.get('private').get(lens) :
-                holonLens(holoInstance, holon, lens);
+                const shallowOnce = () => onceWithTimeout(dataPath, timeout);
 
-            // PASS 1: Get shallow node to determine expected item count.
-            // Wrapped in a deadline (see `onceWithTimeout`) so cold paths
-            // resolve `null` after `timeout` ms instead of hanging forever.
-            // We still retry once below — Gun's `.once()` reads from local
-            // cache, which may be cold immediately after startup before
-            // peers have synced.
-            const shallowOnce = () => onceWithTimeout(dataPath, timeout);
-
-            const processShallow = (data) => {
-                if (!data) {
-                    resolve([]);
-                    return;
-                }
-
-                // Filter out Gun metadata, null/deleted entries, and Gun soul references
-                const keys = Object.keys(data).filter(key => {
-                    if (key === '_') return false;
-                    const val = data[key];
-                    if (val === null) return false;
-                    // Filter out Gun graph references (sub-nodes)
-                    if (typeof val === 'object' && val['#']) return false;
-                    return true;
-                });
-                const expectedCount = keys.length;
-
-                if (expectedCount === 0) {
-                    resolve([]);
-                    return;
-                }
-
-                // PASS 2: iterate explicitly over the filtered keys.
-                // Using dataPath.map().once() here is unsafe when the parent
-                // node has tombstoned siblings (null values): map() fires for
-                // every child, and a null sibling's callback can satisfy
-                // receivedCount before real items are processed, resolving [].
-                const processItem = async (itemData, key) => {
-                    if (!itemData) return;
-                    try {
-                        const parsed = await holoInstance.parse(itemData);
-                        if (!parsed || !parsed.id) return;
-
-                        // Drop `_deleted: true` soft-tombstones by default;
-                        // callers wanting them in the result pass
-                        // `{ includeDeleted: true }` to `getAll`.
-                        if (!includeDeleted && parsed._deleted === true) return;
-
-                        if (holoInstance.isHologram(parsed)) {
-                            try {
-                                const res = await holoInstance.resolveHologramDetailed(parsed, {
-                                    followHolograms: true,
-                                    maxDepth: 10,
-                                    currentDepth: 0
-                                });
-
-                                if (res.status !== 'resolved') {
-                                    // See `get()` above: a transient miss is not
-                                    // proof of a dead pointer, so we skip without
-                                    // deleting. A soft-deleted source (status
-                                    // 'deleted') is definitive; surface it as a
-                                    // tombstone only when the caller opted in.
-                                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
-                                    if (res.status === 'deleted' && includeDeleted) {
-                                        output.set(parsed.id, { id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
-                                    }
-                                    return;
-                                }
-
-                                const resolved = res.data;
-                                if (resolved && resolved !== parsed) {
-                                    if (schema) {
-                                        const valid = holoInstance.validator.validate(schema, resolved);
-                                        if (valid || !holoInstance.strict) {
-                                            output.set(resolved.id, resolved);
-                                        }
-                                    } else {
-                                        output.set(resolved.id, resolved);
-                                    }
-                                    return;
-                                }
-                            } catch (hologramError) {
-                                console.error(`Error resolving hologram for key ${key}:`, hologramError);
-                                return;
-                            }
-                        }
-
-                        if (schema) {
-                            const valid = holoInstance.validator.validate(schema, parsed);
-                            if (valid || !holoInstance.strict) {
-                                output.set(parsed.id, parsed);
-                            }
-                        } else {
-                            output.set(parsed.id, parsed);
-                        }
-                    } catch (error) {
-                        console.error('Error processing data:', error);
+                const processShallow = (data) => {
+                    if (!data) {
+                        resolve([]);
+                        return;
                     }
+
+                    const keys = Object.keys(data).filter(key => {
+                        if (key === '_') return false;
+                        const val = data[key];
+                        if (val === null) return false;
+                        if (typeof val === 'object' && val['#']) return false;
+                        return true;
+                    });
+
+                    if (keys.length === 0) {
+                        resolve([]);
+                        return;
+                    }
+
+                    Promise.all(keys.map((key) => {
+                        const inline = data[key];
+                        if (typeof inline !== 'object' || inline === null) {
+                            return processItem(inline, key);
+                        }
+                        return onceWithTimeout(dataPath.get(key), timeout)
+                            .then((itemData) => processItem(itemData, key));
+                    })).then(() => resolve(Array.from(output.values())));
                 };
 
-                Promise.all(keys.map((key) => {
-                    const inline = data[key];
-                    // If shallow already inlined the leaf (holosphere stores
-                    // payloads as JSON strings), process it directly. This
-                    // avoids a redundant round-trip and the map() race.
-                    if (typeof inline !== 'object' || inline === null) {
-                        return processItem(inline, key);
+                (async () => {
+                    let data = await shallowOnce();
+                    if (!data) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        data = await shallowOnce();
                     }
-                    // Otherwise fetch the leaf — sub-graph reference path.
-                    // Same deadline as the shallow probe; a single missing
-                    // leaf can't stall the whole batch.
-                    return onceWithTimeout(dataPath.get(key), timeout)
-                        .then((itemData) => processItem(itemData, key));
-                })).then(() => resolve(Array.from(output.values())));
-            };
-
-            (async () => {
-                let data = await shallowOnce();
-                if (!data) {
-                    await new Promise(r => setTimeout(r, 1500));
-                    data = await shallowOnce();
-                }
-                processShallow(data);
-            })();
-        });
+                    processShallow(data);
+                })();
+            });
+        } else {
+            // Non-password path — delegate to pluggable backend
+            const rawMap = await holoInstance._backend.getAll(holon, lens, { timeout });
+            // Process each entry through the existing parsing/hologram/schema logic
+            await Promise.all(
+                Array.from(rawMap).map(([key, rawData]) => processItem(rawData, key))
+            );
+            return Array.from(output.values());
+        }
     } catch (error) {
         console.error('Error in getAll:', error);
         return [];
@@ -1051,12 +1077,59 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         throw new Error('delete: Missing required parameters');
     }
 
+    // --- Hologram Tracking Removal helper ---
+    // Reads the data at the path before deletion to check if it's a hologram.
+    // If so, removes the hologram reference from the target's _holograms set.
+    const runHologramTrackingRemoval = async (rawDataToDelete) => {
+        let dataToDelete = null;
+        try {
+            if (typeof rawDataToDelete === 'string') {
+                dataToDelete = JSON.parse(rawDataToDelete);
+            } else {
+                dataToDelete = rawDataToDelete;
+            }
+        } catch(e) {
+            console.warn("[deleteFunc] Could not JSON parse data for deletion check:", rawDataToDelete, e);
+            dataToDelete = null;
+        }
+
+        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
+
+        if (isDataHologram) {
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
+
+                    await new Promise((resolveTrack) => {
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                            if (ack.err) {
+                                console.warn(`[deleteFunc] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                            }
+                            resolveTrack();
+                        });
+                    });
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error initiating hologram reference removal from target ${dataToDelete.soul}:`, trackingError);
+            }
+        }
+    };
+
     try {
-        let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            // Password path — Gun-specific user auth
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for deleteFunc
+                const userNameString = holoInstance.userName(holon);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during deleteFunc, attempting to create...`);
@@ -1064,7 +1137,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
                             if (createAck.err) {
                                 if (createAck.err.includes("already created")) {
                                     console.log(`User ${userNameString} already existed during deleteFunc, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             reject(new Error(`Failed to auth with fresh user object after create attempt (user existed) for ${userNameString} during deleteFunc: ${secondAuthAck.err}`));
@@ -1087,86 +1160,36 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
-        }
 
-        const dataPath = password ?
-            user.get('private').get(lens).get(key) :
-            holonLens(holoInstance, holon, lens).get(key);
+            const dataPath = user.get('private').get(lens).get(key);
 
-        // --- Start: Hologram Tracking Removal ---
-        let trackingRemovalPromise = Promise.resolve(); // Default to resolved promise
-        
-        // 1. Get the data first to check if it's a hologram.
-        // Use the shared deadline wrapper — a bare `.once()` hangs forever on a
-        // cold read (peer offline / missing key), which would stall the whole
-        // delete. On timeout we proceed as "not a hologram" (null), which just
-        // skips the forward-reference cleanup — the node removal below still runs.
-        const rawDataToDelete = await onceWithTimeout(dataPath, READ_TIMEOUT_MS);
-        let dataToDelete = null;
-        try {
-            if (typeof rawDataToDelete === 'string') {
-                dataToDelete = JSON.parse(rawDataToDelete);
-            } else {
-                // Handle cases where it might already be an object (though likely string)
-                dataToDelete = rawDataToDelete; 
-            }
-        } catch(e) {
-            console.warn("[deleteFunc] Could not JSON parse data for deletion check:", rawDataToDelete, e);
-            dataToDelete = null; // Ensure it's null if parsing fails
-        }
+            // Read current data for hologram tracking removal
+            const rawDataToDelete = await onceWithTimeout(dataPath, READ_TIMEOUT_MS);
+            await runHologramTrackingRemoval(rawDataToDelete);
 
-        // 2. If it is a hologram, try to remove its reference from the target
-        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
-        
-        if (isDataHologram) {
-            try {
-                const targetSoul = dataToDelete.soul;
-                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
-                
-                if (targetSoulInfo) {
-                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
-
-                    // Create a promise that resolves when the hologram is removed from the list
-                    trackingRemovalPromise = new Promise((resolveTrack) => { // No reject needed, just warn on error
-                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => { // Remove the hologram entry completely
-                            if (ack.err) {
-                                console.warn(`[deleteFunc] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
-                            }
-                            resolveTrack(); // Resolve regardless of ack error to not block main delete
-                        });
-                    });
-                } else {
-                    // Keep this warning
-                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal.`);
-                }
-            } catch (trackingError) {
-                 // Keep this warning
-                console.warn(`Error initiating hologram reference removal from target ${dataToDelete.soul}:`, trackingError);
-                // Ensure trackingRemovalPromise remains resolved if setup fails
-                trackingRemovalPromise = Promise.resolve(); 
-            }
-        }
-        // --- End: Hologram Tracking Removal ---
-
-        // 3. Wait for the tracking removal attempt to be acknowledged
-        await trackingRemovalPromise;
-        // Log removed
-
-        // 4. Proceed with the actual deletion of the hologram node itself
-        return new Promise((resolve, reject) => {
-            dataPath.put(null, ack => {
-                if (ack.err) {
-                    reject(new Error(ack.err));
-                } else {
-                    resolve(true);
-                }
+            // Proceed with the actual deletion
+            return new Promise((resolve, reject) => {
+                dataPath.put(null, ack => {
+                    if (ack.err) {
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve(true);
+                    }
+                });
             });
-        });
+        } else {
+            // Non-password path — delegate to pluggable backend
+            // 1. Read the current data for hologram tracking removal
+            const rawDataToDelete = await holoInstance._backend.get(holon, lens, key, { timeout: READ_TIMEOUT_MS });
+            await runHologramTrackingRemoval(rawDataToDelete);
+
+            // 2. Proceed with the actual deletion via backend
+            return holoInstance._backend.delete(holon, lens, key);
+        }
     } catch (error) {
         console.error('Error in delete:', error);
         throw error;
@@ -1187,12 +1210,57 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
         return false;
     }
 
+    // Shared hologram tracking removal for each key
+    const removeHologramTracking = async (rawDataToDelete, key) => {
+        let dataToDelete = null;
+        try {
+            if (typeof rawDataToDelete === 'string') {
+                dataToDelete = JSON.parse(rawDataToDelete);
+            } else {
+                dataToDelete = rawDataToDelete;
+            }
+        } catch(e) {
+            console.warn("[deleteAll] Could not JSON parse data for deletion check:", rawDataToDelete, e);
+            dataToDelete = null;
+        }
+
+        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
+
+        if (isDataHologram) {
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
+
+                    await new Promise((resolveTrack) => {
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                            if (ack.err) {
+                                console.warn(`[deleteAll] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                            }
+                            resolveTrack();
+                        });
+                    });
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAll.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAll:`, trackingError);
+            }
+        }
+    };
+
     try {
-        let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            // Password path — Gun-specific user auth
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for deleteAll
+                const userNameString = holoInstance.userName(holon);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during deleteAll, attempting to create...`);
@@ -1200,18 +1268,18 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                             if (createAck.err) {
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created during deleteAll, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
                                 console.log(`User ${userNameString} created successfully during deleteAll, attempting auth...`);
@@ -1225,122 +1293,78 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
-        }
 
-        return new Promise((resolve) => {
-            let deletionPromises = [];
+            // Gun password path — iterate via Gun chain
+            return new Promise((resolve) => {
+                let deletionPromises = [];
+                const dataPath = user.get('private').get(lens);
 
-            const dataPath = password ?
-                user.get('private').get(lens) :
-                holonLens(holoInstance, holon, lens);
-
-            // First get all the data to find keys to delete
-            dataPath.once(async (data) => {
-                if (!data) {
-                    resolve(true); // Nothing to delete
-                    return;
-                }
-
-                // Get all keys except Gun's metadata key '_'
-                const keys = Object.keys(data).filter(key => key !== '_');
-
-                // Process each key to handle holograms properly
-                for (const key of keys) {
-                    try {
-                        // Get the data to check if it's a hologram
-                        const itemPath = password ?
-                            user.get('private').get(lens).get(key) :
-                            holonLens(holoInstance, holon, lens).get(key);
-
-                        const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
-                        let dataToDelete = null;
-                        
-                        try {
-                            if (typeof rawDataToDelete === 'string') {
-                                dataToDelete = JSON.parse(rawDataToDelete);
-                            } else {
-                                dataToDelete = rawDataToDelete;
-                            }
-                        } catch(e) {
-                            console.warn("[deleteAll] Could not JSON parse data for deletion check:", rawDataToDelete, e);
-                            dataToDelete = null;
-                        }
-
-                        // Check if it's a hologram and handle accordingly
-                        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
-                        
-                        if (isDataHologram) {
-                            // Handle hologram deletion - remove from target's _holograms list
-                            try {
-                                const targetSoul = dataToDelete.soul;
-                                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
-                                
-                                if (targetSoulInfo) {
-                                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
-
-                                    // Remove the hologram from target's _holograms list
-                                    await new Promise((resolveTrack) => {
-                                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
-                                            if (ack.err) {
-                                                console.warn(`[deleteAll] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
-                                                                                    }
-                                        resolveTrack();
-                                        });
-                                    });
-                                } else {
-                                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAll.`);
-                                }
-                            } catch (trackingError) {
-                                console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAll:`, trackingError);
-                            }
-                        }
-
-                        // Create deletion promise for this key (whether it's a hologram or not)
-                        deletionPromises.push(
-                            new Promise((resolveDelete) => {
-                                const deletePath = password ?
-                                    user.get('private').get(lens).get(key) :
-                                    holonLens(holoInstance, holon, lens).get(key);
-
-                                deletePath.put(null, ack => {
-                                    resolveDelete(!!ack.ok); // Convert to boolean
-                                });
-                            })
-                        );
-                    } catch (error) {
-                        console.warn(`Error processing key ${key} during deleteAll:`, error);
-                        // Still try to delete the item even if hologram processing failed
-                        deletionPromises.push(
-                            new Promise((resolveDelete) => {
-                                const deletePath = password ?
-                                    user.get('private').get(lens).get(key) :
-                                    holonLens(holoInstance, holon, lens).get(key);
-
-                                deletePath.put(null, ack => {
-                                    resolveDelete(!!ack.ok);
-                                });
-                            })
-                        );
+                dataPath.once(async (data) => {
+                    if (!data) {
+                        resolve(true);
+                        return;
                     }
-                }
 
-                // Wait for all deletions to complete
-                Promise.all(deletionPromises)
-                    .then(results => {
-                        const allSuccessful = results.every(result => result === true);
-                        resolve(allSuccessful);
-                    })
-                    .catch(error => {
-                        console.error('Error in deleteAll:', error);
-                        resolve(false);
-                    });
+                    const keys = Object.keys(data).filter(key => key !== '_');
+
+                    for (const key of keys) {
+                        try {
+                            const itemPath = user.get('private').get(lens).get(key);
+                            const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
+                            await removeHologramTracking(rawDataToDelete, key);
+
+                            deletionPromises.push(
+                                new Promise((resolveDelete) => {
+                                    itemPath.put(null, ack => {
+                                        resolveDelete(!!ack.ok);
+                                    });
+                                })
+                            );
+                        } catch (error) {
+                            console.warn(`Error processing key ${key} during deleteAll:`, error);
+                            deletionPromises.push(
+                                new Promise((resolveDelete) => {
+                                    const deletePath = user.get('private').get(lens).get(key);
+                                    deletePath.put(null, ack => {
+                                        resolveDelete(!!ack.ok);
+                                    });
+                                })
+                            );
+                        }
+                    }
+
+                    Promise.all(deletionPromises)
+                        .then(results => {
+                            const allSuccessful = results.every(result => result === true);
+                            resolve(allSuccessful);
+                        })
+                        .catch(error => {
+                            console.error('Error in deleteAll:', error);
+                            resolve(false);
+                        });
+                });
             });
-        });
+        } else {
+            // Non-password path — delegate to pluggable backend
+            const rawMap = await holoInstance._backend.getAll(holon, lens, {});
+
+            if (rawMap.size === 0) return true;
+
+            // Process hologram tracking removal for all keys, then delete
+            const keys = Array.from(rawMap.keys());
+            for (const key of keys) {
+                await removeHologramTracking(rawMap.get(key), key);
+            }
+
+            const results = await Promise.all(
+                keys.map(key => holoInstance._backend.delete(holon, lens, key))
+            );
+            return results.every(result => result === true);
+        }
     } catch (error) {
         console.error('Error in deleteAll:', error);
         return false;

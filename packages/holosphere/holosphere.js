@@ -7,7 +7,6 @@
  */
 
 import * as h3 from 'h3-js';
-import Gun from 'gun'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
 import * as SchemaOps from './schema.js';
@@ -17,6 +16,7 @@ import * as GlobalOps from './global.js';
 import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
+import { GunBackend } from './backends/gun.js';
 
 // Named exports (v2-compatible)
 import { nostrUtils } from './nostr-utils-shim.js';
@@ -110,34 +110,48 @@ class HoloSphere {
             validateSchema: true
         });
 
-        // Define default Gun options with radisk enabled
-        const defaultGunOptions = {
-            peers: ['https://gun.holons.io/gun'],
-            axe: false,
-            radisk: true,
-            file: './holosphere',
-            // Gun's websocket layer spends a per-peer reconnect budget
-            // (`peer.retry`, stock default 60) that is decremented on every
-            // rapid retry and NEVER replenished by a successful reconnect —
-            // one ~2-minute relay outage (or short blips accumulated over
-            // days of uptime) exhausts it, after which the page silently
-            // never reconnects. Long-lived surfaces (kiosk screens,
-            // dashboards, bots) must retry forever; callers can still
-            // override via gunOptions.
-            retry: Infinity
-        };
+        // Backend selection
+        const backendType = this.config?.backend ?? 'gun';
 
-        // In browser environment, disable localStorage when radisk is enabled
-        if (typeof window !== 'undefined' && (gunOptions.radisk !== false)) {
-            defaultGunOptions.localStorage = false;
+        if (backendType === 'ad4m') {
+            // AD4M backend loaded lazily in ready() — keeps the browser bundle
+            // free of Node-only @coasys/ad4m imports.
+            this._pendingAd4mConfig = {
+                url: this.config?.ad4m?.url ?? 'ws://localhost:12000/graphql',
+                token: this.config?.ad4m?.token,
+                schemas: this.config?.ad4m?.schemas,
+                schemaDir: this.config?.ad4m?.schemaDir,
+            };
+            this._backend = null;
+            this._gun = null;
+        } else {
+            // Define default Gun options with radisk enabled
+            const defaultGunOptions = {
+                peers: ['https://gun.holons.io/gun'],
+                axe: false,
+                radisk: true,
+                file: './holosphere',
+                // Gun's websocket layer spends a per-peer reconnect budget
+                // (`peer.retry`, stock default 60) that is decremented on every
+                // rapid retry and NEVER replenished by a successful reconnect —
+                // one ~2-minute relay outage (or short blips accumulated over
+                // days of uptime) exhausts it, after which the page silently
+                // never reconnects. Long-lived surfaces (kiosk screens,
+                // dashboards, bots) must retry forever; callers can still
+                // override via gunOptions.
+                retry: Infinity
+            };
+
+            if (typeof window !== 'undefined' && (gunOptions.radisk !== false)) {
+                defaultGunOptions.localStorage = false;
+            }
+
+            const finalGunOptions = { ...defaultGunOptions, ...gunOptions };
+            console.log("Initializing Gun with options:", finalGunOptions);
+
+            this._backend = new GunBackend(this.appname, finalGunOptions);
+            this._gun = this._backend.gun;
         }
-
-        // Merge provided options with defaults
-        const finalGunOptions = { ...defaultGunOptions, ...gunOptions };
-        console.log("Initializing Gun with options:", finalGunOptions);
-
-        // Use provided Gun instance or create new one with final options
-        this.gun = Gun(finalGunOptions);
 
         // OpenAI is optional - callers can set this.openai directly if needed
         this.openai = null;
@@ -175,10 +189,21 @@ class HoloSphere {
 
     /**
      * Waits for the HoloSphere instance to be ready.
-     * GunDB connects eagerly, so this resolves immediately.
      * @returns {Promise<HoloSphere>} - The ready instance
      */
+    get gun() { return this._gun; }
+    set gun(v) {
+        this._gun = v;
+        if (this._backend && this._backend.type === 'gun') this._backend.gun = v;
+    }
+
     async ready() {
+        if (this._pendingAd4mConfig) {
+            const { AD4MBackend } = await import('./backends/ad4m.js');
+            this._backend = new AD4MBackend(this.appname, this._pendingAd4mConfig);
+            this._pendingAd4mConfig = null;
+        }
+        await this._backend.ready();
         return this;
     }
 
