@@ -62,6 +62,8 @@
     "handshake-shim.js",
     "nostr-events.js",
     "signing.js",
+    "backends/",
+    "subjects/",
     "README.md",
     "SIGNING.md",
     "LICENSE",
@@ -107,7 +109,8 @@
   "homepage": "https://github.com/rvalenti/holosphere#readme",
   "peerDependencies": {
     "gun": "^0.2020.1240",
-    "h3-js": "^4.1.0"
+    "h3-js": "^4.1.0",
+    "@coasys/ad4m": ">=0.13.0"
   },
   "peerDependenciesMeta": {
     "openai": {
@@ -115,6 +118,9 @@
     },
     "gun": {
       "optional": false
+    },
+    "@coasys/ad4m": {
+      "optional": true
     }
   },
   "optionalDependencies": {

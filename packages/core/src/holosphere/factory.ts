@@ -25,8 +25,19 @@ export interface CreateHoloSphereOptions {
   appName: string;
   /** Private key as hex string or raw bytes. Resolved by the caller. */
   privateKey?: Uint8Array | string | null;
-  /** Backend selector — defaults to whatever holosphere picks (Gun in 1.3). */
-  backend?: string;
+  /** Backend selector — `'gun'` (default) or `'ad4m'`. */
+  backend?: 'gun' | 'ad4m';
+  /** AD4M backend config (only used when backend is `'ad4m'`). */
+  ad4m?: {
+    /** AD4M executor WebSocket URL. Defaults to `ws://localhost:12000/graphql`. */
+    url?: string;
+    /** Authentication token for the AD4M executor. */
+    token?: string;
+    /** Pre-loaded schema map (lens name → JSON Schema object). */
+    schemas?: Map<string, object>;
+    /** Path to directory containing JSON Schema files. */
+    schemaDir?: string;
+  };
   /** Holosphere log level (`'INFO'`, `'DEBUG'`, ...). */
   logLevel?: string;
   /** Strict-mode toggle for holosphere. */
@@ -51,12 +62,13 @@ export function createHoloSphere(
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, backend, logLevel, strict, awaitReady, extra } = options;
+  const { appName, privateKey, backend, ad4m, logLevel, strict, awaitReady, extra } = options;
 
   const config: Record<string, unknown> = {
     appName,
     ...(privateKey !== undefined ? { privateKey } : {}),
     ...(backend ? { backend } : {}),
+    ...(ad4m ? { ad4m } : {}),
     ...(logLevel ? { logLevel } : {}),
     ...(strict !== undefined ? { strict } : {}),
     ...(extra ?? {}),

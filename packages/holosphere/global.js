@@ -37,9 +37,28 @@ export async function putGlobal(holoInstance, tableName, data, password = null, 
             throw new Error('Table name and data are required');
         }
 
+        // Create a copy of data, stripping read-side envelopes that
+        // must never be persisted (they're attached at resolution time).
+        let dataToStore = { ...data };
+        if (dataToStore._meta !== undefined) {
+            delete dataToStore._meta;
+        }
+        if (dataToStore._hologram !== undefined) {
+            delete dataToStore._hologram;
+        }
+        const payload = JSON.stringify(dataToStore);
+
+        // Check if the data being stored is a hologram
+        const isHologram = holoInstance.isHologram(dataToStore);
+
+        const writeTimeoutMs = options.timeout !== undefined ? options.timeout : WRITE_TIMEOUT_MS;
+
         let user = null;
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(tableName);
                 user.auth(userNameString, password, (authAck) => {
@@ -50,22 +69,19 @@ export async function putGlobal(holoInstance, tableName, data, password = null, 
                             if (createAck.err) {
                                 // Check if error is "User already created"
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
-                                    // This means user exists but password might be wrong, or some other issue
-                                    // Proceed with auth again, it might have been a temporary glitch or race.
-                                    // Or, it could be that the password is indeed wrong.
                                     console.log(`User ${userNameString} already existed or being created, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
                                 // After successful creation, authenticate again
@@ -84,107 +100,102 @@ export async function putGlobal(holoInstance, tableName, data, password = null, 
                     }
                 });
             });
+
+            // Password path — still uses Gun ack callbacks directly
+            const ackPromise = new Promise((resolve, reject) => {
+                try {
+                    const dataPath = user.get('private').get(tableName);
+
+                    if (data.id) {
+                        dataPath.get(data.id).put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                // --- Hologram Tracking ---
+                                if (isHologram) {
+                                    try {
+                                        const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
+                                        if (storedDataSoulInfo) {
+                                            const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul);
+                                            const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}/${data.id}`;
+                                            targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
+                                        } else {
+                                            console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
+                                        }
+                                    } catch (trackingError) {
+                                        console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${dataToStore.soul}):`, trackingError);
+                                    }
+                                }
+                                resolve();
+                            }
+                        });
+                    } else {
+                        dataPath.put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                // --- Hologram Tracking ---
+                                if (isHologram) {
+                                    try {
+                                        const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
+                                        if (storedDataSoulInfo) {
+                                            const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul);
+                                            const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}`;
+                                            targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
+                                        } else {
+                                            console.warn(`Data being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
+                                        }
+                                    } catch (trackingError) {
+                                        console.warn(`Error updating _holograms set for the target of the data being put (soul: ${dataToStore.soul}):`, trackingError);
+                                    }
+                                }
+                                resolve();
+                            }
+                        });
+                    }
+                } catch (error) {
+                    reject(error);
+                }
+            });
+
+            const ACK_OK = Symbol('ackOk');
+            return withWriteTimeout(
+                ackPromise.then(() => ACK_OK),
+                writeTimeoutMs,
+                undefined
+            ).then((result) => {
+                if (result !== ACK_OK) {
+                    console.warn(`putGlobal: no ack within ${writeTimeoutMs}ms for table=${tableName} — write queued locally, will replay on reconnect`);
+                }
+                return undefined;
+            });
         }
 
-        const writeTimeoutMs = options.timeout !== undefined ? options.timeout : WRITE_TIMEOUT_MS;
+        // Non-password path — delegate to backend
+        const key = data.id || undefined;
+        const result = await holoInstance._backend.put(null, tableName, key, payload, { timeout: writeTimeoutMs });
 
-        const ackPromise = new Promise((resolve, reject) => {
+        // --- Hologram Tracking ---
+        if (isHologram) {
             try {
-                // Create a copy of data, stripping read-side envelopes that
-                // must never be persisted (they're attached at resolution time).
-                let dataToStore = { ...data };
-                if (dataToStore._meta !== undefined) {
-                    delete dataToStore._meta;
-                }
-                if (dataToStore._hologram !== undefined) {
-                    delete dataToStore._hologram;
-                }
-                const payload = JSON.stringify(dataToStore);
-
-                // Check if the data being stored is a hologram
-                const isHologram = holoInstance.isHologram(dataToStore);
-
-                const dataPath = password ?
-                    user.get('private').get(tableName) :
-                    holoInstance.gun.get(holoInstance.appname).get(tableName);
-
-                if (data.id) {
-                    const itemPath = dataPath.get(data.id);
-                    itemPath.put(payload, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
-                            if (isHologram) {
-                                try {
-                                    const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
-                                    if (storedDataSoulInfo) {
-                                        const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul); // Target of the data *being put*
-                                        // Soul of the hologram that was *actually stored* at tableName/data.id
-                                        const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}/${data.id}`;
-                                        
-                                                                        targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
-                            } else {
-                                        console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
-                                    }
-                                } catch (trackingError) {
-                                    console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${dataToStore.soul}):`, trackingError);
-                                }
-                            }
-                            // --- End: Hologram Tracking Logic ---
-                            
-                            resolve();
-                        }
-                    });
+                const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
+                if (storedDataSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul);
+                    const storedHologramInstanceSoul = data.id
+                        ? `${holoInstance.appname}/${tableName}/${data.id}`
+                        : `${holoInstance.appname}/${tableName}`;
+                    targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
                 } else {
-                    dataPath.put(payload, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
-                            if (isHologram) {
-                                try {
-                                    const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
-                                    if (storedDataSoulInfo) {
-                                        const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul); // Target of the data *being put*
-                                        // Soul of the hologram that was *actually stored* at tableName (without specific key)
-                                        const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}`;
-                                        
-                                                                    targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
-                        } else {
-                                        console.warn(`Data being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
-                                    }
-                                } catch (trackingError) {
-                                    console.warn(`Error updating _holograms set for the target of the data being put (soul: ${dataToStore.soul}):`, trackingError);
-                                }
-                            }
-                            // --- End: Hologram Tracking Logic ---
-                            
-                            resolve();
-                        }
-                    });
+                    console.warn(`Data being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
                 }
-            } catch (error) {
-                reject(error);
+            } catch (trackingError) {
+                console.warn(`Error updating _holograms set for the target of the data being put (soul: ${dataToStore.soul}):`, trackingError);
             }
-        });
+        }
 
-        // Bound the wait on Gun's put ack so an offline mesh doesn't hang
-        // the caller forever. Gun keeps the write locally and replays it
-        // when a peer reappears. We tag the ack-arrived branch with a
-        // unique sentinel so we can warn (once) when the timeout fired
-        // and still keep the public Promise<void> contract.
-        const ACK_OK = Symbol('ackOk');
-        return withWriteTimeout(
-            ackPromise.then(() => ACK_OK),
-            writeTimeoutMs,
-            undefined
-        ).then((result) => {
-            if (result !== ACK_OK) {
-                console.warn(`putGlobal: no ack within ${writeTimeoutMs}ms for table=${tableName} — write queued locally, will replay on reconnect`);
-            }
-            return undefined;
-        });
+        if (result.queued) {
+            console.warn(`putGlobal: write queued for table=${tableName} — will replay on reconnect`);
+        }
     } catch (error) {
         console.error('Error in putGlobal:', error);
         throw error;
@@ -201,35 +212,68 @@ export async function putGlobal(holoInstance, tableName, data, password = null, 
  */
 export async function getGlobal(holoInstance, tableName, key, password = null) {
     try {
-        let user = null;
+        const handleData = async (data) => {
+            if (!data) return null;
+
+            try {
+                const parsed = await holoInstance.parse(data);
+                if (!parsed) return null;
+
+                // Check if this is a hologram that needs to be resolved
+                if (holoInstance.isHologram(parsed)) {
+                    const resolved = await holoInstance.resolveHologram(parsed, {
+                        followHolograms: true
+                    });
+
+                    if (resolved === null) {
+                        try {
+                            await holoInstance.deleteGlobal(tableName, key, password);
+                        } catch (deleteError) {
+                            console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
+                        }
+                        return null;
+                    }
+
+                    if (resolved !== parsed) {
+                        return resolved;
+                    }
+                }
+
+                return parsed;
+            } catch (e) {
+                console.error('Error parsing data in getGlobal:', e);
+                return null;
+            }
+        };
+
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(tableName);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        // If auth fails, try to create the user
                         console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
                         user.create(userNameString, password, (createAck) => {
                             if (createAck.err) {
-                                 // Check if error is "User already created"
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
-                                // After successful creation, authenticate again
                                 console.log(`User ${userNameString} created successfully, attempting auth...`);
                                 user.auth(userNameString, password, (secondAuthAck) => {
                                     if (secondAuthAck.err) {
@@ -241,65 +285,22 @@ export async function getGlobal(holoInstance, tableName, key, password = null) {
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
+                });
+            });
+
+            // Password path — Gun user chain directly
+            return new Promise(async (resolve) => {
+                user.get('private').get(tableName).get(key).once(async (data) => {
+                    resolve(await handleData(data));
                 });
             });
         }
 
-        return new Promise(async (resolve) => {
-            const handleData = async (data) => {
-                if (!data) {
-                    resolve(null);
-                    return;
-                }
-
-                try {
-                    // The data should be a stringified JSON from putGlobal
-                    const parsed = await holoInstance.parse(data); // Use instance's parse
-
-                    if (!parsed) {
-                        resolve(null);
-                        return;
-                    }
-
-                    // Check if this is a hologram that needs to be resolved
-                    if (holoInstance.isHologram(parsed)) { // Use instance's isHologram
-                        const resolved = await holoInstance.resolveHologram(parsed, { // Use instance's resolveHologram
-                            followHolograms: true // Always follow holograms
-                        });
-
-                        if (resolved === null) {
-                            try {
-                                await holoInstance.deleteGlobal(tableName, key, password); // Use instance's deleteGlobal
-                            } catch (deleteError) {
-                                console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
-                            }
-                            resolve(null); // Return null as the hologram is invalid
-                            return;
-                        }
-
-                        if (resolved !== parsed) {
-                            // Hologram was resolved successfully
-                            resolve(resolved);
-                            return;
-                        }
-                    }
-
-                    resolve(parsed);
-                } catch (e) {
-                    console.error('Error parsing data in getGlobal:', e);
-                    resolve(null);
-                }
-            };
-
-            const dataPath = password ?
-                user.get('private').get(tableName) :
-                holoInstance.gun.get(holoInstance.appname).get(tableName);
-
-            const itemPath = dataPath.get(key);
-            itemPath.once(handleData);
-        });
+        // Non-password path — delegate to backend
+        const data = await holoInstance._backend.get(null, tableName, key);
+        return await handleData(data);
     } catch (error) {
         console.error('Error in getGlobal:', error);
         return null;
@@ -319,35 +320,64 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
     }
 
     try {
-        let user = null;
+        const processItem = async (itemData, key) => {
+            if (!itemData) return null;
+            try {
+                const parsed = await holoInstance.parse(itemData);
+                if (!parsed) return null;
+
+                if (holoInstance.isHologram(parsed)) {
+                    const resolved = await holoInstance.resolveHologram(parsed, {
+                        followHolograms: true
+                    });
+
+                    if (resolved === null) {
+                        try {
+                            await holoInstance.deleteGlobal(tableName, key, password);
+                        } catch (deleteError) {
+                            console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
+                        }
+                        return null;
+                    }
+
+                    return resolved !== parsed ? resolved : parsed;
+                }
+
+                return parsed;
+            } catch (error) {
+                console.error('Error parsing data:', error);
+                return null;
+            }
+        };
+
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(tableName);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        // If auth fails, try to create the user
                         console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
                         user.create(userNameString, password, (createAck) => {
                             if (createAck.err) {
-                                 // Check if error is "User already created"
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
-                                // After successful creation, authenticate again
                                 console.log(`User ${userNameString} created successfully, attempting auth...`);
                                 user.auth(userNameString, password, (secondAuthAck) => {
                                     if (secondAuthAck.err) {
@@ -359,105 +389,59 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
+
+            // Password path — Gun user chain directly
+            return new Promise((resolve) => {
+                const dataPath = user.get('private').get(tableName);
+                const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
+
+                (async () => {
+                    let data = await shallowOnce();
+                    if (!data) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        data = await shallowOnce();
+                    }
+                    if (!data) { resolve([]); return; }
+
+                    const keys = Object.keys(data).filter(key => {
+                        if (key === '_') return false;
+                        const val = data[key];
+                        if (val === null) return false;
+                        if (typeof val === 'object' && val['#']) return false;
+                        return true;
+                    });
+                    if (keys.length === 0) { resolve([]); return; }
+
+                    const output = [];
+                    await Promise.all(keys.map((key) => {
+                        const inline = data[key];
+                        if (typeof inline !== 'object' || inline === null) {
+                            return processItem(inline, key).then(r => { if (r) output.push(r); });
+                        }
+                        return new Promise((resolveItem) => {
+                            dataPath.get(key).once((itemData) => {
+                                processItem(itemData, key).then(r => { if (r) output.push(r); resolveItem(); }, resolveItem);
+                            });
+                        });
+                    }));
+                    resolve(output);
+                })();
+            });
         }
 
-        return new Promise((resolve) => {
-            const output = [];
-            const pendingProcessing = [];
-
-            const dataPath = password ?
-                user.get('private').get(tableName) :
-                holoInstance.gun.get(holoInstance.appname).get(tableName);
-
-            // PASS 1: Get shallow node to determine expected item count.
-            // Retry once if empty — Gun's .once() reads from local cache, which
-            // may be cold immediately after startup before peers have synced.
-            const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
-
-            const processShallow = (data) => {
-                if (!data) {
-                    resolve([]);
-                    return;
-                }
-
-                // Filter out Gun metadata, null/deleted entries, and Gun soul references
-                const keys = Object.keys(data).filter(key => {
-                    if (key === '_') return false;
-                    const val = data[key];
-                    if (val === null) return false;
-                    // Filter out Gun graph references (sub-nodes)
-                    if (typeof val === 'object' && val['#']) return false;
-                    return true;
-                });
-                const expectedCount = keys.length;
-
-                if (expectedCount === 0) {
-                    resolve([]);
-                    return;
-                }
-
-                // PASS 2: iterate explicitly over the filtered keys.
-                // Avoid dataPath.map().once() — it fires for null tombstone
-                // siblings and can resolve before real items are processed.
-                const processItem = async (itemData, key) => {
-                    if (!itemData) return;
-                    try {
-                        const parsed = await holoInstance.parse(itemData);
-                        if (!parsed) return;
-
-                        if (holoInstance.isHologram(parsed)) {
-                            const resolved = await holoInstance.resolveHologram(parsed, {
-                                followHolograms: true
-                            });
-
-                            if (resolved === null) {
-                                try {
-                                    await holoInstance.deleteGlobal(tableName, key, password);
-                                } catch (deleteError) {
-                                    console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
-                                }
-                                return;
-                            }
-
-                            if (resolved !== parsed) {
-                                output.push(resolved);
-                            } else {
-                                output.push(parsed);
-                            }
-                        } else {
-                            output.push(parsed);
-                        }
-                    } catch (error) {
-                        console.error('Error parsing data:', error);
-                    }
-                };
-
-                Promise.all(keys.map((key) => {
-                    const inline = data[key];
-                    if (typeof inline !== 'object' || inline === null) {
-                        return processItem(inline, key);
-                    }
-                    return new Promise((resolveItem) => {
-                        dataPath.get(key).once((itemData) => {
-                            processItem(itemData, key).then(resolveItem, resolveItem);
-                        });
-                    });
-                })).then(() => resolve(output));
-            };
-
-            (async () => {
-                let data = await shallowOnce();
-                if (!data) {
-                    await new Promise(r => setTimeout(r, 1500));
-                    data = await shallowOnce();
-                }
-                processShallow(data);
-            })();
-        });
+        // Non-password path — delegate to backend
+        const entries = await holoInstance._backend.getAll(null, tableName);
+        const output = [];
+        const promises = [];
+        for (const [key, value] of entries) {
+            promises.push(processItem(value, key).then(r => { if (r) output.push(r); }));
+        }
+        await Promise.all(promises);
+        return output;
     } catch (error) {
         console.error('Error in getAllGlobal:', error);
         return [];
@@ -478,37 +462,72 @@ export async function deleteGlobal(holoInstance, tableName, key, password = null
     }
 
     try {
-        // console.log('deleteGlobal - Starting deletion:', { tableName, key, hasPassword: !!password }); // Optional logging
+        // Helper: read existing data to check for hologram tracking removal
+        const readAndRemoveHologramTracking = async (rawData) => {
+            let dataToDelete = null;
+            try {
+                if (typeof rawData === 'string') {
+                    dataToDelete = JSON.parse(rawData);
+                } else {
+                    dataToDelete = rawData;
+                }
+            } catch(e) {
+                console.warn("[deleteGlobal] Could not JSON parse data for deletion check:", rawData, e);
+                return;
+            }
 
-        let user = null;
+            if (!dataToDelete || !holoInstance.isHologram(dataToDelete)) return;
+
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${key}`;
+                    await new Promise((resolveTrack) => {
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                            if (ack.err) {
+                                console.warn(`[deleteGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                            }
+                            resolveTrack();
+                        });
+                    });
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteGlobal.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error initiating hologram reference removal from target ${dataToDelete.soul} during deleteGlobal:`, trackingError);
+            }
+        };
+
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(tableName);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        // If auth fails, try to create the user
                         console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
                         user.create(userNameString, password, (createAck) => {
                             if (createAck.err) {
-                                 // Check if error is "User already created"
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test operations.`);
-                                            resolve(); // Resolve anyway to allow test operations
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for operations): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test operations
+                                    resolve();
                                 }
                             } else {
-                                // After successful creation, authenticate again
                                 console.log(`User ${userNameString} created successfully, attempting auth...`);
                                 user.auth(userNameString, password, (secondAuthAck) => {
                                     if (secondAuthAck.err) {
@@ -520,83 +539,35 @@ export async function deleteGlobal(holoInstance, tableName, key, password = null
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
+                    }
+                });
+            });
+
+            // Password path — Gun user chain directly
+            const dataPath = user.get('private').get(tableName).get(key);
+
+            // Read existing data for hologram tracking removal
+            const rawDataToDelete = await new Promise((resolve) => dataPath.once(resolve));
+            await readAndRemoveHologramTracking(rawDataToDelete);
+
+            return new Promise((resolve, reject) => {
+                dataPath.put(null, ack => {
+                    if (ack.err) {
+                        console.error('deleteGlobal - Deletion error:', ack.err);
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve(true);
                     }
                 });
             });
         }
 
-        const dataPath = password ?
-            user.get('private').get(tableName).get(key) :
-            holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
+        // Non-password path — read existing data for hologram tracking, then delegate delete
+        const rawDataToDelete = await holoInstance._backend.get(null, tableName, key);
+        await readAndRemoveHologramTracking(rawDataToDelete);
 
-        // --- Start: Hologram Tracking Removal ---
-        let trackingRemovalPromise = Promise.resolve(); // Default to resolved promise
-        
-        // 1. Get the data first to check if it's a hologram
-        const rawDataToDelete = await new Promise((resolve) => dataPath.once(resolve));
-        let dataToDelete = null;
-        try {
-            if (typeof rawDataToDelete === 'string') {
-                dataToDelete = JSON.parse(rawDataToDelete);
-            } else {
-                // Handle cases where it might already be an object (though likely string)
-                dataToDelete = rawDataToDelete; 
-            }
-        } catch(e) {
-            console.warn("[deleteGlobal] Could not JSON parse data for deletion check:", rawDataToDelete, e);
-            dataToDelete = null; // Ensure it's null if parsing fails
-        }
-
-        // 2. If it is a hologram, try to remove its reference from the target
-        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
-        
-        if (isDataHologram) {
-            try {
-                const targetSoul = dataToDelete.soul;
-                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
-                
-                if (targetSoulInfo) {
-                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                    const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${key}`;
-
-                    // Create a promise that resolves when the hologram is removed from the list
-                    trackingRemovalPromise = new Promise((resolveTrack) => { // No reject needed, just warn on error
-                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => { // Remove the hologram entry completely
-                            if (ack.err) {
-                                console.warn(`[deleteGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
-                            }
-                            resolveTrack(); // Resolve regardless of ack error to not block main delete
-                        });
-                    });
-                } else {
-                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteGlobal.`);
-                }
-            } catch (trackingError) {
-                console.warn(`Error initiating hologram reference removal from target ${dataToDelete.soul} during deleteGlobal:`, trackingError);
-                // Ensure trackingRemovalPromise remains resolved if setup fails
-                trackingRemovalPromise = Promise.resolve(); 
-            }
-        }
-        // --- End: Hologram Tracking Removal ---
-
-        // 3. Wait for the tracking removal attempt to be acknowledged
-        await trackingRemovalPromise;
-
-        // 4. Proceed with the actual deletion of the hologram node itself
-        return new Promise((resolve, reject) => {
-            // Request deletion
-            dataPath.put(null, ack => {
-                // console.log('deleteGlobal - Deletion acknowledgment:', ack); // Optional logging
-                if (ack.err) {
-                    console.error('deleteGlobal - Deletion error:', ack.err);
-                    reject(new Error(ack.err));
-                } else {
-                    // Resolve directly on success, like deleteFunc
-                    resolve(true); 
-                }
-            });
-        });
+        return await holoInstance._backend.delete(null, tableName, key);
     } catch (error) {
         console.error('Error in deleteGlobal:', error);
         throw error;
@@ -616,35 +587,72 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
     }
 
     try {
-        let user = null;
+        // Helper: remove hologram tracking for a single key's data
+        const removeHologramTracking = async (rawData, itemKey) => {
+            let dataToDelete = null;
+            try {
+                if (typeof rawData === 'string') {
+                    dataToDelete = JSON.parse(rawData);
+                } else {
+                    dataToDelete = rawData;
+                }
+            } catch(e) {
+                console.warn("[deleteAllGlobal] Could not JSON parse data for deletion check:", rawData, e);
+                return;
+            }
+
+            if (!dataToDelete || !holoInstance.isHologram(dataToDelete)) return;
+
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${itemKey}`;
+                    await new Promise((resolveTrack) => {
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                            if (ack.err) {
+                                console.warn(`[deleteAllGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                            }
+                            resolveTrack();
+                        });
+                    });
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAllGlobal.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAllGlobal:`, trackingError);
+            }
+        };
+
         if (password) {
-            user = holoInstance.gun.user();
+            if (!holoInstance._backend.gun) {
+                throw new Error('Password-protected operations require the Gun backend');
+            }
+            const user = holoInstance._backend.gun.user();
             await new Promise((resolve, reject) => {
                 const userNameString = holoInstance.userName(tableName);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        // If auth fails, try to create the user
                         console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
                         user.create(userNameString, password, (createAck) => {
                             if (createAck.err) {
-                                 // Check if error is "User already created"
                                 if (createAck.err.includes("already created") || createAck.err.includes("already being created")) {
                                     console.log(`User ${userNameString} already existed or being created, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    const freshUser = holoInstance._backend.gun.user();
                                     freshUser.auth(userNameString, password, (secondAuthAck) => {
                                         if (secondAuthAck.err) {
                                             console.log(`Auth still failed after user existed check: ${secondAuthAck.err}. Resolving anyway for test cleanup.`);
-                                            resolve(); // Resolve anyway to allow test cleanup
+                                            resolve();
                                         } else {
                                             resolve();
                                         }
                                     });
                                 } else {
                                     console.log(`Create user error (resolving anyway for cleanup): ${createAck.err}`);
-                                    resolve(); // Resolve anyway to allow test cleanup
+                                    resolve();
                                 }
                             } else {
-                                // After successful creation, authenticate again
                                 console.log(`User ${userNameString} created successfully, attempting auth...`);
                                 user.auth(userNameString, password, (secondAuthAck) => {
                                     if (secondAuthAck.err) {
@@ -656,127 +664,74 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
                             }
                         });
                     } else {
-                        resolve(); // Auth successful
+                        resolve();
                     }
                 });
             });
+
+            // Password path — Gun user chain directly
+            return new Promise((resolve, reject) => {
+                try {
+                    const dataPath = user.get('private').get(tableName);
+                    let timeout = setTimeout(() => resolve(true), 5000);
+
+                    dataPath.once(async (data) => {
+                        if (!data) { clearTimeout(timeout); resolve(true); return; }
+
+                        const keys = Object.keys(data).filter(k => k !== '_');
+
+                        // Process hologram tracking removal
+                        for (const itemKey of keys) {
+                            try {
+                                const rawData = await new Promise((res) => dataPath.get(itemKey).once(res));
+                                await removeHologramTracking(rawData, itemKey);
+                            } catch (error) {
+                                console.warn(`Error processing key ${itemKey} during deleteAllGlobal:`, error);
+                            }
+                        }
+
+                        // Delete all items
+                        try {
+                            await Promise.all(keys.map(itemKey =>
+                                new Promise((res, rej) => {
+                                    dataPath.get(itemKey).put(null, ack => {
+                                        if (ack.err) { console.error(`Failed to delete ${itemKey}:`, ack.err); rej(new Error(ack.err)); }
+                                        else res();
+                                    });
+                                })
+                            ));
+                            dataPath.put(null);
+                            clearTimeout(timeout);
+                            resolve(true);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+                } catch (error) {
+                    reject(error);
+                }
+            });
         }
 
-        return new Promise((resolve, reject) => {
+        // Non-password path — delegate to backend
+        const entries = await holoInstance._backend.getAll(null, tableName);
+
+        // Process hologram tracking removal for all entries
+        for (const [itemKey, rawData] of entries) {
             try {
-                const deletions = new Set();
-                let timeout = setTimeout(() => {
-                    if (deletions.size === 0) {
-                        resolve(true); // No data to delete
-                    }
-                }, 5000);
-
-                const dataPath = password ?
-                    user.get('private').get(tableName) :
-                    holoInstance.gun.get(holoInstance.appname).get(tableName);
-
-                dataPath.once(async (data) => {
-                    if (!data) {
-                        clearTimeout(timeout);
-                        resolve(true);
-                        return;
-                    }
-
-                    const keys = Object.keys(data).filter(key => key !== '_');
-                    
-                    // Process each key to handle holograms properly
-                    for (const key of keys) {
-                        try {
-                            // Get the data to check if it's a hologram
-                            const itemPath = password ?
-                                user.get('private').get(tableName).get(key) :
-                                holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
-
-                            const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
-                            let dataToDelete = null;
-                            
-                            try {
-                                if (typeof rawDataToDelete === 'string') {
-                                    dataToDelete = JSON.parse(rawDataToDelete);
-                                } else {
-                                    dataToDelete = rawDataToDelete;
-                                }
-                            } catch(e) {
-                                console.warn("[deleteAllGlobal] Could not JSON parse data for deletion check:", rawDataToDelete, e);
-                                dataToDelete = null;
-                            }
-
-                            // Check if it's a hologram and handle accordingly
-                            const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
-                            
-                            if (isDataHologram) {
-                                // Handle hologram deletion - remove from target's _holograms list
-                                try {
-                                    const targetSoul = dataToDelete.soul;
-                                    const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
-                                    
-                                    if (targetSoulInfo) {
-                                        const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                                        const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${key}`;
-
-                                        // Remove the hologram from target's _holograms list
-                                        await new Promise((resolveTrack) => {
-                                            targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
-                                                if (ack.err) {
-                                                    console.warn(`[deleteAllGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
-                                                                                    }
-                                    resolveTrack();
-                                            });
-                                        });
-                                    } else {
-                                        console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAllGlobal.`);
-                                    }
-                                } catch (trackingError) {
-                                    console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAllGlobal:`, trackingError);
-                                }
-                            }
-
-                            // Add to deletions set for tracking
-                            deletions.add(key);
-                        } catch (error) {
-                            console.warn(`Error processing key ${key} during deleteAllGlobal:`, error);
-                            // Still add to deletions set even if hologram processing failed
-                            deletions.add(key);
-                        }
-                    }
-
-                    // Now delete all the items
-                    const promises = keys.map(key =>
-                        new Promise((resolveDelete, rejectDelete) => {
-                            const deletePath = password ?
-                                user.get('private').get(tableName).get(key) :
-                                holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
-
-                            deletePath.put(null, ack => {
-                                if (ack.err) {
-                                    console.error(`Failed to delete ${key}:`, ack.err);
-                                    rejectDelete(new Error(ack.err));
-                                } else {
-                                    resolveDelete();
-                                }
-                            });
-                        })
-                    );
-
-                    try {
-                        await Promise.all(promises);
-                        // Finally delete the table itself
-                        dataPath.put(null);
-                        clearTimeout(timeout);
-                        resolve(true);
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
+                await removeHologramTracking(rawData, itemKey);
             } catch (error) {
-                reject(error);
+                console.warn(`Error processing key ${itemKey} during deleteAllGlobal:`, error);
             }
-        });
+        }
+
+        // Delete all entries
+        const deletePromises = [];
+        for (const [itemKey] of entries) {
+            deletePromises.push(holoInstance._backend.delete(null, tableName, itemKey));
+        }
+        await Promise.all(deletePromises);
+        return true;
     } catch (error) {
         console.error('Error in deleteAllGlobal:', error);
         throw error;
@@ -797,50 +752,30 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
  * @returns {{ unsubscribe: () => void, stop: () => void }}
  */
 export function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
-    const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
     let active = true;
 
-    if (key) {
-        // Subscribe to a specific key
-        dataPath.get(key).on(async (data) => {
-            if (!active || !data) return;
-            try {
-                const parsed = await holoInstance.parse(data);
-                if (parsed) callback(parsed, key);
-            } catch (e) {
-                console.warn('[subscribeGlobal] Error parsing data:', e);
-            }
-        });
-    } else {
-        // Subscribe to all keys in the table
-        dataPath.map().on(async (data, k) => {
-            if (!active || !data || k === '_') return;
-            try {
-                const parsed = await holoInstance.parse(data);
-                if (parsed) callback(parsed, k);
-            } catch (e) {
-                console.warn('[subscribeGlobal] Error parsing data:', e);
-            }
-        });
-    }
+    // Backend subscribe fires (key, data) for every key mutation in the lens.
+    // For single-key subscriptions we filter in the wrapper callback.
+    const sub = holoInstance._backend.subscribe(null, tableName, async (k, data) => {
+        if (!active) return;
+        if (key && k !== key) return; // single-key filter
+        if (!data || k === '_') return;
+        try {
+            const parsed = await holoInstance.parse(data);
+            if (parsed) callback(parsed, k);
+        } catch (e) {
+            console.warn('[subscribeGlobal] Error parsing data:', e);
+        }
+    });
+
+    const teardown = () => {
+        active = false;
+        if (sub && sub.unsubscribe) sub.unsubscribe();
+    };
 
     return {
-        unsubscribe: () => {
-            active = false;
-            if (key) {
-                dataPath.get(key).off();
-            } else {
-                dataPath.off();
-            }
-        },
-        stop: () => {
-            active = false;
-            if (key) {
-                dataPath.get(key).off();
-            } else {
-                dataPath.off();
-            }
-        }
+        unsubscribe: teardown,
+        stop: teardown
     };
 }
 

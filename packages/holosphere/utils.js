@@ -139,36 +139,25 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             group.warnThreshold *= 2;
         }
 
-        // Get the Gun chain up to the map()
-        const mapChain = holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).map();
-
-        // Create the subscription by calling .on() on the map chain
-        const gunListener = mapChain.on(async (data, key) => {
-            // Fire-storm breaker. A write to a cyclic / over-subscribed federated
-            // node can make Gun re-fire map().on() handlers in an unbounded burst,
-            // exhausting the heap before any await yields. Count instance-wide
-            // fires in a 1s window; past a clear-runaway threshold, log the path +
-            // stack ONCE and bail (no parse/resolve/allocate) so the tab survives
-            // and the culprit is identifiable.
+        // Delegate to the backend's subscribe method.  The backend handles
+        // the raw storage subscription (Gun map().on() or AD4M model query);
+        // we keep the orchestration concerns here: parse, hologram resolution,
+        // object-only filtering, fire-storm detection.
+        const backendSub = holoInstance._backend.subscribe(holon, lens, async (key, data) => {
+            // Fire-storm breaker (backend-agnostic).
             const __fnow = Date.now();
-            // Per-PATH fire window (on the group) so we can pin the runaway lens and
-            // QUARANTINE it specifically — not just bail instance-wide and let Gun
-            // keep re-firing forever.
             const gfw = group.fires;
             gfw.push(__fnow);
             if (gfw.length > 64) { while (gfw.length && __fnow - gfw[0] > 1000) gfw.shift(); }
             if (gfw.length > QUARANTINE_FIRE_THRESHOLD) {
-                // Sustained storm on THIS lens: detach every listener on it and mark
-                // it quarantined so re-subscribes are refused for a cooldown. The tab
-                // recovers and the lens read in __repairCircular stops being starved.
-                holoInstance.__onFireWarnedAt = __fnow; // also quiets the enforce wrapper
+                holoInstance.__onFireWarnedAt = __fnow;
                 holoInstance.__quarantined ||= new Map();
                 holoInstance.__quarantined.set(groupKey, __fnow);
                 const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
-                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens (detaching listeners). Almost certainly a circular hologram; run __repairCircular('${holon}','${lens}') or __nuke the bad pointer, then reload. Stack:\n${__st}`);
+                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens. Stack:\n${__st}`);
                 for (const id of [...group.ids]) {
                     const sub = holoInstance.subscriptions[id];
-                    try { sub && sub.mapChain && sub.mapChain.off(); } catch { /* ignore */ }
+                    try { sub?.backendSub?.unsubscribe(); } catch { /* ignore */ }
                     delete holoInstance.subscriptions[id];
                 }
                 group.ids.clear();
@@ -182,14 +171,12 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 if (!holoInstance.__onFireWarnedAt || __fnow - holoInstance.__onFireWarnedAt > 2000) {
                     holoInstance.__onFireWarnedAt = __fnow;
                     const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
-                    console.error(`[subscribe] FIRE-STORM: ${__fw.length} map().on() fires/s — runaway. Latest path=${holon}/${lens} key=${key}. Stack:\n${__st}`);
+                    console.error(`[subscribe] FIRE-STORM: ${__fw.length} fires/s — runaway. Latest path=${holon}/${lens} key=${key}. Stack:\n${__st}`);
                 }
                 return;
             }
-            // Check if subscription ID still exists (might have been unsubscribed)
-            if (!holoInstance.subscriptions[subscriptionId]) {
-                return;
-            }
+
+            if (!holoInstance.subscriptions[subscriptionId]) return;
 
             if (data) {
                 try {
@@ -198,13 +185,6 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         const hologramSoul = parsed.soul;
                         const res = await holoInstance.resolveHologramDetailed(parsed, { followHolograms: true });
                         if (res.status === 'deleted') {
-                            // The source was soft-deleted (_deleted:true) — a
-                            // DEFINITIVE removal. Notify consumers the item is
-                            // gone, exactly like a local tombstone. This is the
-                            // payoff of typed resolution: a deleted federated
-                            // source now propagates as a deletion to the live UI
-                            // instead of silently lingering. Also emit the
-                            // janitor-parseable line so the dead pointer is GC'd.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
                             if (holoInstance.subscriptions[subscriptionId]) {
                                 callback(null, key);
@@ -212,14 +192,6 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                             return;
                         }
                         if (res.status !== 'resolved') {
-                            // Transient (unresolved/error) or structural
-                            // (circular/depth/invalid). Emit the SAME
-                            // janitor-parseable warning `get`/`getAll` emit — it
-                            // carries the LOCAL pointer (holon/lens/key) a cleaner
-                            // needs, which `resolveHologram`'s own source-soul log
-                            // does not. Unlike a deletion we do NOT emit a removal:
-                            // a transient miss must not flicker the item out of a
-                            // live view; it stays until it resolves or is GC'd.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
                             return;
                         }
@@ -228,18 +200,11 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         }
                     }
 
-                    // Subscribers expect `object | null`. `parse()` can return
-                    // a string/number/boolean when a legacy or corrupted leaf
-                    // happened to be a JSON-encoded primitive (e.g.
-                    // `'"hello"'` parses to `'hello'`). Drop those so every
-                    // consumer can stop guarding with
-                    // `typeof x === 'string' ? JSON.parse(x) : x`.
                     if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
                         console.warn(`[holosphere.subscribe] dropping non-object payload at ${holon}/${lens}/${key}:`, typeof parsed);
                         return;
                     }
 
-                    // Check again if subscription ID still exists before calling callback
                     if (holoInstance.subscriptions[subscriptionId]) {
                         callback(parsed, key);
                     }
@@ -247,42 +212,27 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                     console.error('Error processing subscribed data:', error);
                 }
             } else if (includeDeletes && key && key !== '_' && holoInstance.subscriptions[subscriptionId]) {
-                // delete / tombstone — notify consumers the item is gone
                 callback(null, key);
             }
-        });
+        }, { includeDeletes });
 
-        // Store the subscription with its ID on the instance
         holoInstance.subscriptions[subscriptionId] = {
             id: subscriptionId,
             holon,
             lens,
             callback,
-            mapChain,
-            gunListener,
+            backendSub,
             groupKey,
         };
 
-        // Return an object with unsubscribe method.
-        // `unsubscribe` is sync — nothing it does (`mapChain.off()`,
-        // `delete subscriptions[id]`) blocks. Keeping it sync means the
-        // returned shape is `{ unsubscribe: () => void }` rather than
-        // `() => Promise<void>`, matching what callers expect when they
-        // store it in a `() => void` cleanup slot.
         return {
             unsubscribe: () => {
                 const sub = holoInstance.subscriptions[subscriptionId];
-                if (!sub) {
-                    return;
-                }
+                if (!sub) return;
 
                 try {
-                    // Turn off THIS subscriber's own Gun listener.
-                    if (sub.mapChain) {
-                        sub.mapChain.off();
-                    }
+                    if (sub.backendSub?.unsubscribe) sub.backendSub.unsubscribe();
 
-                    // Drop it from the per-path counter (for the leak warnings).
                     const g = holoInstance._subscriptionGroups &&
                         holoInstance._subscriptionGroups.get(groupKey);
                     if (g) {
@@ -292,7 +242,6 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         }
                     }
 
-                    // Remove from subscriptions object AFTER turning off listener
                     delete holoInstance.subscriptions[subscriptionId];
                 } catch (error) {
                     console.error(`Error during unsubscribe logic for ${subscriptionId}:`, error);
@@ -346,111 +295,25 @@ export function generateId() { // Doesn't need holoInstance
  */
 export async function close(holoInstance) {
     try {
-        if (holoInstance.gun) {
-            // Unsubscribe from all subscriptions
-            const subscriptionIds = Object.keys(holoInstance.subscriptions);
-            for (const id of subscriptionIds) {
-                try {
-                    const subscription = holoInstance.subscriptions[id];
-                    if (subscription) {
-                        // Turn off the Gun subscription using the stored mapChain reference
-                        if (subscription.mapChain) {
-                            subscription.mapChain.off();
-                        } // Also turn off listener directly? Might be redundant.
-                        // if (subscription.gunListener) {
-                        //     subscription.gunListener.off();
-                        // }
-                    }
-                } catch (error) {
-                    console.warn(`Error cleaning up subscription ${id}:`, error);
-                }
-            }
-
-            // Clear subscriptions (the loop above already `.off()`'d the
-            // shared map chains) and drop the dedup registry so a reopened
-            // instance starts with zero listener groups.
-            holoInstance.subscriptions = {};
-            if (holoInstance._subscriptionGroups) {
-                holoInstance._subscriptionGroups.clear();
-            }
-
-            // Clear schema cache using instance method
-            holoInstance.clearSchemaCache();
-
-            // Close Gun connections
-            if (holoInstance.gun.back) {
-                try {
-                    // Clean up mesh connections
-                    const mesh = holoInstance.gun.back('opt.mesh');
-                    if (mesh) {
-                        // Clean up mesh.hear
-                        if (mesh.hear) {
-                            try {
-                                // Safely clear mesh.hear without modifying function properties
-                                const hearKeys = Object.keys(mesh.hear);
-                                for (const key of hearKeys) {
-                                    // Check if it's an array before trying to clear it
-                                    if (Array.isArray(mesh.hear[key])) {
-                                        mesh.hear[key] = [];
-                                    }
-                                }
-
-                                // Create a new empty object for mesh.hear
-                                // Only if mesh.hear is not a function
-                                if (typeof mesh.hear !== 'function') {
-                                    mesh.hear = {};
-                                }
-                            } catch (meshError) {
-                                console.warn('Error cleaning up Gun mesh hear:', meshError);
-                            }
-                        }
-
-                        // Close any open sockets in the mesh
-                        if (mesh.way) {
-                            try {
-                                Object.values(mesh.way).forEach(connection => {
-                                    if (connection && connection.wire && connection.wire.close) {
-                                        connection.wire.close();
-                                    }
-                                });
-                            } catch (sockError) {
-                                console.warn('Error closing mesh sockets:', sockError);
-                            }
-                        }
-
-                        // Clear the peers list
-                        if (mesh.opt && mesh.opt.peers) {
-                            mesh.opt.peers = {};
-                        }
-                    }
-
-                    // Attempt to clean up any TCP connections
-                    if (holoInstance.gun.back('opt.web')) {
-                        try {
-                            const server = holoInstance.gun.back('opt.web');
-                            if (server && server.close) {
-                                server.close();
-                            }
-                        } catch (webError) {
-                            console.warn('Error closing web server:', webError);
-                        }
-                    }
-                } catch (error) {
-                    console.warn('Error accessing Gun mesh:', error);
-                }
-            }
-
-            // Clear all Gun instance listeners
+        // Unsubscribe from all subscriptions
+        for (const [id, sub] of Object.entries(holoInstance.subscriptions)) {
             try {
-                holoInstance.gun.off();
+                if (sub.backendSub?.unsubscribe) sub.backendSub.unsubscribe();
             } catch (error) {
-                console.warn('Error turning off Gun listeners:', error);
+                console.warn(`Error cleaning up subscription ${id}:`, error);
             }
-
-            // Wait a moment for cleanup to complete
-            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
+        holoInstance.subscriptions = {};
+        if (holoInstance._subscriptionGroups) {
+            holoInstance._subscriptionGroups.clear();
+        }
+
+        holoInstance.clearSchemaCache();
+
+        await holoInstance._backend.close();
+
+        await new Promise(resolve => setTimeout(resolve, 100));
         console.log('HoloSphere instance closed successfully');
     } catch (error) {
         console.error('Error closing HoloSphere instance:', error);

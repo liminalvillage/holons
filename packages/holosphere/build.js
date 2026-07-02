@@ -54,7 +54,7 @@ if (typeof global !== 'undefined') {
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [], // Bundle everything
+    external: ['@coasys/ad4m', 'fs', 'path', 'url'],
   });
 
   console.log('✅ Bundle created: holosphere-bundle.js');
@@ -78,7 +78,7 @@ if (typeof global !== 'undefined') {
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [],
+    external: ['@coasys/ad4m', 'fs', 'path', 'url'],
   });
 
   console.log('✅ Minified bundle created: holosphere-bundle.min.js');
@@ -105,7 +105,7 @@ if (typeof global !== 'undefined') {
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [],
+    external: ['@coasys/ad4m', 'fs', 'path', 'url'],
   });
 
   console.log('✅ ESM bundle created: holosphere-bundle.esm.js');
