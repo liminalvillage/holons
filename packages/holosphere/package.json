@@ -110,7 +110,7 @@
   "peerDependencies": {
     "gun": "^0.2020.1240",
     "h3-js": "^4.1.0",
-    "@coasys/ad4m": ">=0.13.0"
+    "@coasys/ad4m": ">=0.13.0-0"
   },
   "peerDependenciesMeta": {
     "openai": {
