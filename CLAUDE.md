@@ -18,8 +18,11 @@ packages/ai-ui/        Claude tool-use NL interface
 packages/mcp-ui/       Model Context Protocol server
 ```
 
-Data layer: **Holosphere**, a decentralized [GUN](https://gun.eco) graph,
-namespaced per holon, peer-to-peer and local-first.
+Data layer: **Holosphere**, namespaced per holon, over a pluggable
+`StorageBackend`. Default is a decentralized [GUN](https://gun.eco) graph
+(peer-to-peer, local-first); an optional [AD4M](https://ad4m.dev) backend maps
+holons→perspectives and lenses→subject classes. Select via
+`VITE_HOLOSPHERE_BACKEND` (`gun` default, or `ad4m`).
 
 License: **AGPL-3.0-or-later** with a commercial option — see
 [`LICENSING.md`](./LICENSING.md). New source files get the SPDX header.
@@ -66,6 +69,35 @@ pnpm dev                           # web UI  → http://localhost:5173
 pnpm dev:bot                       # Telegram bot
 pnpm -F @holons/text-ui exec holons --help
 ```
+
+## AD4M backend (optional)
+
+Holosphere storage is pluggable (`packages/holosphere/backends/`). GUN is the
+default; AD4M is opt-in via `VITE_HOLOSPHERE_BACKEND=ad4m`. Mapping: holon →
+perspective, lens → subject class, item → subject instance, key →
+base-expression URI.
+
+- **Two modes.** Given lens JSON Schemas (`packages/core/schemas/`, bundled for
+  the browser by `core/holosphere/ad4mSchemas.ts`), each lens gets a *dedicated*
+  typed subject class that persists only its declared properties. Given an empty
+  schema map, the backend runs *opaque*: every lens uses one `GenericLensModel`
+  that round-trips the whole payload as a JSON string. Apps run dedicated; the
+  conformance suite runs opaque (the opaque-KV contract GUN also satisfies).
+- **Gotcha — never declare an `id` property on a subject model.** AD4M reserves
+  `id` as the alias for a subject's base-expression URI. If a model declares `id`
+  as data, `findAll` hydrates each instance from the `id` *link value* (the
+  logical key) instead of the full URI, so lens-prefix scoping in `getAll`
+  filters every instance out — a silent empty result. The generic model stores
+  only `data` and recovers the logical id from the base URI's last segment.
+- **Browser safety.** The browser path must not pull Node builtins: schemas are
+  supplied in memory (`import.meta.glob`), and `subjects/index.js` imports
+  `fs/path/url` lazily only on the Node disk-reading branch.
+- **Conformance tests are opt-in.** The GUN half of
+  `test/backend-conformance.test.js` runs everywhere; the AD4M half runs only
+  when `AD4M_TEST_URL` is set and must point at a *disposable* executor (the
+  suite creates and deletes perspectives). Boot one with
+  `node packages/holosphere/scripts/dev-executor.mjs` (all config via env), then:
+  `AD4M_TEST_URL=http://127.0.0.1:<port> AD4M_TEST_TOKEN=<tok> pnpm -F holosphere test -- backend-conformance`.
 
 ## When unsure
 

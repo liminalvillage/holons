@@ -12,6 +12,8 @@
 import {
   createHoloSphere,
   createHolonWriter,
+  loadAd4mSchemas,
+  type CreateHoloSphereOptions,
   type HolonWriter,
 } from "@holons/core/holosphere";
 import type { HoloSphere } from "holosphere";
@@ -52,20 +54,46 @@ function deviceKeyHex(): string {
 
 let instance: Promise<HoloSphere> | null = null;
 
+/**
+ * Assemble the factory options for the configured backend.
+ *
+ * `VITE_HOLOSPHERE_BACKEND` selects the storage backend (`gun`, the default,
+ * or `ad4m`). The AD4M path talks to an executor over its RPC WebSocket
+ * (`VITE_AD4M_URL` is the executor's HTTP origin, default
+ * `http://localhost:12000`; the client derives the ws:// RPC URL) and supplies
+ * the lens JSON Schemas in memory (no filesystem in the browser). Gun keeps its
+ * production relay peers.
+ */
+function holosphereOptions(): CreateHoloSphereOptions & { awaitReady: true } {
+  const base = {
+    appName: resolveAppName(),
+    privateKey: deviceKeyHex(),
+    logLevel: "ERROR",
+    awaitReady: true as const,
+  };
+  const backend = (
+    import.meta.env.VITE_HOLOSPHERE_BACKEND ?? "gun"
+  ).toLowerCase();
+  if (backend === "ad4m") {
+    return {
+      ...base,
+      backend: "ad4m",
+      ad4m: {
+        url: import.meta.env.VITE_AD4M_URL || "http://localhost:12000",
+        token: import.meta.env.VITE_AD4M_TOKEN || undefined,
+        schemas: loadAd4mSchemas(),
+      },
+    };
+  }
+  // Read from the production Gun relay (overridable via VITE_KIOSK_PEER).
+  return { ...base, extra: { peers: resolvePeers() } };
+}
+
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
     // Promise.resolve normalises the factory's overloaded return type.
-    instance = Promise.resolve(
-      createHoloSphere({
-        appName: resolveAppName(),
-        privateKey: deviceKeyHex(),
-        logLevel: "ERROR",
-        awaitReady: true,
-        // Read from the production Gun relay (overridable via VITE_KIOSK_PEER).
-        extra: { peers: resolvePeers() },
-      }),
-    );
+    instance = Promise.resolve(createHoloSphere(holosphereOptions()));
     // Dev-only: expose the instance so the kiosk can be poked from the console
     // (and from headless smoke tests). Tree-shaken out of production builds.
     if (import.meta.env.DEV && typeof window !== "undefined") {

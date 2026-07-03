@@ -3,3 +3,10 @@ packages:
   - "packages/*"
   # holosphere is vendored at packages/holosphere and consumed as a workspace
   # package (consumers depend on it via `workspace:*`).
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: true
+  esbuild: true
+  puppeteer: true
+  sharp: true
+  svelte-preprocess: true

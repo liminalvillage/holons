@@ -108,7 +108,7 @@ class HoloSphere {
             // AD4M backend loaded lazily in ready() — keeps the browser bundle
             // free of Node-only @coasys/ad4m imports.
             this._pendingAd4mConfig = {
-                url: this.config?.ad4m?.url ?? 'ws://localhost:12000/graphql',
+                url: this.config?.ad4m?.url ?? 'http://localhost:12000',
                 token: this.config?.ad4m?.token,
                 schemas: this.config?.ad4m?.schemas,
                 schemaDir: this.config?.ad4m?.schemaDir,
@@ -167,6 +167,11 @@ class HoloSphere {
 
     async ready() {
         if (this._pendingAd4mConfig) {
+            // Load the AD4M backend lazily so it only enters the bundle as a
+            // separate chunk fetched when backend==='ad4m'. The backend and its
+            // subject-class registry are browser-safe when schemas are supplied
+            // in memory (fs/path/url are imported lazily only on the Node
+            // disk-reading path — see subjects/index.js).
             const { AD4MBackend } = await import('./backends/ad4m.js');
             this._backend = new AD4MBackend(this.appname, this._pendingAd4mConfig);
             this._pendingAd4mConfig = null;

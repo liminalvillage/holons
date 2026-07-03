@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { handshake } from "holosphere"
-	import { createHoloSphere } from '@holons/core/holosphere';
+	import { createHoloSphere, loadAd4mSchemas } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -477,12 +477,26 @@
 		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
 		// render). `awaitReady: true` returns the instance after ready()
 		// has resolved, which is a no-op in alpha7 but keeps the contract.
+		// `VITE_HOLOSPHERE_BACKEND` selects the storage backend (`gun`, default,
+		// or `ad4m`). The AD4M path talks to an executor over its RPC WebSocket
+		// (`VITE_AD4M_URL` is the executor's HTTP origin, default
+		// `http://localhost:12000`; the client derives the ws:// RPC URL) and
+		// supplies the lens JSON Schemas in memory (no filesystem in the browser).
+		const backend = (import.meta.env.VITE_HOLOSPHERE_BACKEND ?? 'gun').toLowerCase();
 		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
 			awaitReady: true,
-			// Holosphere 2: pass `backend: 'nostr'` + `extra: { nostr: { peers: [...] } }`
-			// once the Nostr backend lands.
+			...(backend === 'ad4m'
+				? {
+						backend: 'ad4m' as const,
+						ad4m: {
+							url: import.meta.env.VITE_AD4M_URL || 'http://localhost:12000',
+							token: import.meta.env.VITE_AD4M_TOKEN || undefined,
+							schemas: loadAd4mSchemas(),
+						},
+					}
+				: {}),
 		});
 
 		// Log the public key for verification
@@ -524,6 +538,10 @@
 					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
 				}
 				if (typeof window !== 'undefined') {
+					// Dev-only handle for console/headless inspection (mirrors the
+					// kiosk's `window.__kiosk`). Lets a smoke test read the active
+					// backend (`__holosphere._backend.type`) and drive round-trips.
+					if (import.meta.env.DEV) (window as any).__holosphere = holosphere;
 					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
 					// Direct delete escape hatch for known-bad/storming keys, e.g.
 					// await __del('123','quests','moufplh7i0t').
