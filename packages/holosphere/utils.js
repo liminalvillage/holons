@@ -144,7 +144,13 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
         // we keep the orchestration concerns here: parse, hologram resolution,
         // object-only filtering, fire-storm detection.
         const backendSub = holoInstance._backend.subscribe(holon, lens, async (key, data) => {
-            // Fire-storm breaker (backend-agnostic).
+            // Fire-storm breaker (backend-agnostic). A write to a cyclic /
+            // over-subscribed federated node can make the backend re-fire the
+            // subscription handler in an unbounded burst (Gun map().on() or an
+            // AD4M model query), exhausting the heap before any await yields.
+            // Count fires in a 1s window; past a clear-runaway threshold, log
+            // the path + stack ONCE and bail (no parse/resolve/allocate) so the
+            // tab survives and the culprit is identifiable.
             const __fnow = Date.now();
             // Already quarantined? Listeners can outlive the detach below — gun
             // 0.2020's map().off() doesn't reliably unhook per-child listeners —
@@ -157,18 +163,22 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 if (__fnow - __qAt < QUARANTINE_COOLDOWN_MS) return;
                 holoInstance.__quarantined.delete(groupKey);
             }
-            // Per-PATH fire window (on the group) so we can pin the runaway lens and
-            // QUARANTINE it specifically — not just bail instance-wide and let Gun
-            // keep re-firing forever.
+            // Per-PATH fire window (on the group) so we can pin the runaway lens
+            // and QUARANTINE it specifically — not just bail instance-wide and
+            // let the backend keep re-firing forever.
             const gfw = group.fires;
             gfw.push(__fnow);
             if (gfw.length > 64) { while (gfw.length && __fnow - gfw[0] > 1000) gfw.shift(); }
             if (gfw.length > QUARANTINE_FIRE_THRESHOLD) {
+                // Sustained storm on THIS lens: detach every listener on it and
+                // mark it quarantined so re-subscribes are refused for a
+                // cooldown. The tab recovers and the lens read in
+                // __repairCircular stops being starved.
                 holoInstance.__onFireWarnedAt = __fnow;
                 holoInstance.__quarantined ||= new Map();
                 holoInstance.__quarantined.set(groupKey, __fnow);
                 const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
-                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens. Stack:\n${__st}`);
+                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens (detaching listeners). Almost certainly a circular hologram; run __repairCircular('${holon}','${lens}') or __nuke the bad pointer, then reload. Stack:\n${__st}`);
                 for (const id of [...group.ids]) {
                     const sub = holoInstance.subscriptions[id];
                     try { sub?.backendSub?.unsubscribe(); } catch { /* ignore */ }
@@ -199,6 +209,13 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         const hologramSoul = parsed.soul;
                         const res = await holoInstance.resolveHologramDetailed(parsed, { followHolograms: true });
                         if (res.status === 'deleted') {
+                            // The source was soft-deleted (_deleted:true) — a
+                            // DEFINITIVE removal. Notify consumers the item is
+                            // gone, exactly like a local tombstone. This is the
+                            // payoff of typed resolution: a deleted federated
+                            // source now propagates as a deletion to the live UI
+                            // instead of silently lingering. Also emit the
+                            // janitor-parseable line so the dead pointer is GC'd.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
                             if (holoInstance.subscriptions[subscriptionId]) {
                                 callback(null, key);
@@ -206,6 +223,14 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                             return;
                         }
                         if (res.status !== 'resolved') {
+                            // Transient (unresolved/error) or structural
+                            // (circular/depth/invalid). Emit the SAME
+                            // janitor-parseable warning `get`/`getAll` emit — it
+                            // carries the LOCAL pointer (holon/lens/key) a cleaner
+                            // needs, which `resolveHologram`'s own source-soul log
+                            // does not. Unlike a deletion we do NOT emit a removal:
+                            // a transient miss must not flicker the item out of a
+                            // live view; it stays until it resolves or is GC'd.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
                             return;
                         }
@@ -214,11 +239,18 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         }
                     }
 
+                    // Subscribers expect `object | null`. `parse()` can return
+                    // a string/number/boolean when a legacy or corrupted leaf
+                    // happened to be a JSON-encoded primitive (e.g.
+                    // `'"hello"'` parses to `'hello'`). Drop those so every
+                    // consumer can stop guarding with
+                    // `typeof x === 'string' ? JSON.parse(x) : x`.
                     if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
                         console.warn(`[holosphere.subscribe] dropping non-object payload at ${holon}/${lens}/${key}:`, typeof parsed);
                         return;
                     }
 
+                    // Check again if subscription ID still exists before calling callback
                     if (holoInstance.subscriptions[subscriptionId]) {
                         callback(parsed, key);
                     }
@@ -226,10 +258,12 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                     console.error('Error processing subscribed data:', error);
                 }
             } else if (includeDeletes && key && key !== '_' && holoInstance.subscriptions[subscriptionId]) {
+                // delete / tombstone — notify consumers the item is gone
                 callback(null, key);
             }
         }, { includeDeletes });
 
+        // Store the subscription with its ID on the instance
         holoInstance.subscriptions[subscriptionId] = {
             id: subscriptionId,
             holon,
@@ -239,14 +273,22 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             groupKey,
         };
 
+        // Return an object with unsubscribe method.
+        // `unsubscribe` is sync — nothing it does (`backendSub.unsubscribe()`,
+        // `delete subscriptions[id]`) blocks. Keeping it sync means the
+        // returned shape is `{ unsubscribe: () => void }` rather than
+        // `() => Promise<void>`, matching what callers expect when they
+        // store it in a `() => void` cleanup slot.
         return {
             unsubscribe: () => {
                 const sub = holoInstance.subscriptions[subscriptionId];
                 if (!sub) return;
 
                 try {
+                    // Turn off THIS subscriber's own backend listener.
                     if (sub.backendSub?.unsubscribe) sub.backendSub.unsubscribe();
 
+                    // Drop it from the per-path counter (for the leak warnings).
                     const g = holoInstance._subscriptionGroups &&
                         holoInstance._subscriptionGroups.get(groupKey);
                     if (g) {
@@ -256,6 +298,7 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                         }
                     }
 
+                    // Remove from subscriptions object AFTER turning off listener
                     delete holoInstance.subscriptions[subscriptionId];
                 } catch (error) {
                     console.error(`Error during unsubscribe logic for ${subscriptionId}:`, error);

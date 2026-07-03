@@ -47,6 +47,11 @@ export class GunBackend {
         finish({ ok: !ack.err, queued: false });
       });
 
+      // Bound the wait on Gun's put ack so an offline mesh can't hang the
+      // caller forever. Gun keeps the write locally and replays it when a
+      // peer reappears, so a missed ack is a *queued* write, not a failure:
+      // report `{ ok, queued:true }` rather than rejecting. Callers that
+      // gate side effects on a confirmed write check `queued`.
       if (timeout > 0) {
         setTimeout(() => finish({ ok: true, queued: true }), timeout);
       }
