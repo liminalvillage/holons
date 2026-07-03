@@ -400,6 +400,10 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                 const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
 
                 (async () => {
+                    // PASS 1: Get shallow node to determine expected item count.
+                    // Retry once if empty — Gun's .once() reads from local cache,
+                    // which may be cold immediately after startup before peers
+                    // have synced.
                     let data = await shallowOnce();
                     if (!data) {
                         await new Promise(r => setTimeout(r, 1500));
@@ -407,15 +411,20 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                     }
                     if (!data) { resolve([]); return; }
 
+                    // Filter out Gun metadata, null/deleted entries, and Gun soul references
                     const keys = Object.keys(data).filter(key => {
                         if (key === '_') return false;
                         const val = data[key];
                         if (val === null) return false;
+                        // Filter out Gun graph references (sub-nodes)
                         if (typeof val === 'object' && val['#']) return false;
                         return true;
                     });
                     if (keys.length === 0) { resolve([]); return; }
 
+                    // PASS 2: iterate explicitly over the filtered keys.
+                    // Avoid dataPath.map().once() — it fires for null tombstone
+                    // siblings and can resolve before real items are processed.
                     const output = [];
                     await Promise.all(keys.map((key) => {
                         const inline = data[key];
@@ -673,10 +682,16 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
             return new Promise((resolve, reject) => {
                 try {
                     const dataPath = user.get('private').get(tableName);
-                    let timeout = setTimeout(() => resolve(true), 5000);
+                    // Safety net for the empty/offline case only: if `once` never
+                    // delivers data, resolve after 5s. Once real processing starts
+                    // we defer to its own completion — matching the base guard,
+                    // which no-op'd the timeout while a deletion was in flight.
+                    let started = false;
+                    let timeout = setTimeout(() => { if (!started) resolve(true); }, 5000);
 
                     dataPath.once(async (data) => {
                         if (!data) { clearTimeout(timeout); resolve(true); return; }
+                        started = true;
 
                         const keys = Object.keys(data).filter(k => k !== '_');
 
