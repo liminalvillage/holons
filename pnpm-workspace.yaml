@@ -10,3 +10,9 @@ allowBuilds:
   puppeteer: true
   sharp: true
   svelte-preprocess: true
+# Security pins + workspace linkage. pnpm >=10.x reads overrides from here;
+# the legacy `pnpm.overrides` field in package.json is ignored by pnpm 11.
+overrides:
+  esbuild@<0.25.0: '>=0.25.0'
+  cookie@<0.7.0: '>=0.7.0'
+  holosphere: workspace:*

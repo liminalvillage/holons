@@ -26,15 +26,5 @@
 	"engines": {
 		"node": ">=20",
 		"pnpm": ">=10"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"puppeteer"
-		],
-		"overrides": {
-			"esbuild@<0.25.0": ">=0.25.0",
-			"cookie@<0.7.0": ">=0.7.0",
-			"holosphere": "workspace:*"
-		}
 	}
 }
