@@ -7,6 +7,7 @@
  */
 
 export { createHoloSphere, type CreateHoloSphereOptions } from './factory.js';
+export { loadAd4mSchemas } from './ad4mSchemas.js';
 export {
   writeWithIdentity,
   createHolonWriter,

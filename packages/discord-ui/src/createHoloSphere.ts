@@ -13,7 +13,7 @@ function generatePrivateKey(): string {
 
 export interface CreateHoloSphereOptions {
   privateKey?: string;
-  backend?: string;
+  backend?: 'gun' | 'ad4m';
   logLevel?: string;
 }
 
@@ -37,7 +37,7 @@ export function createHoloSphere(
   return coreCreateHoloSphere({
     appName,
     privateKey,
-    backend: options.backend || 'nostr',
+    backend: options.backend,
     logLevel: options.logLevel || 'INFO',
   });
 }
