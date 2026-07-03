@@ -25,6 +25,7 @@
     type CalendarEvent,
   } from "$lib/data";
   import Avatars from "$lib/components/Avatars.svelte";
+  import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
   $: unscheduled = $backlog.filter((t) => !t.due);
@@ -1085,12 +1086,15 @@
     </div>
   {/if}
 
-  <button
-    class="fab"
-    on:click={openCreate}
-    aria-label="New task"
-    title="New task">＋</button
-  >
+  <div class="fabrow">
+    <VoiceButtons />
+    <button
+      class="fab"
+      on:click={openCreate}
+      aria-label="New task"
+      title="New task">＋</button
+    >
+  </div>
 </div>
 
 {#if drag}
@@ -1172,18 +1176,25 @@
       /* Vertical scroll now; a horizontal drag lifts a chip onto the calendar. */
       touch-action: pan-y;
     }
-    /* Keep the FAB clear of the right sidebar. */
-    .cal.has-tray .fab {
+    /* Keep the FAB row clear of the right sidebar. */
+    .cal.has-tray .fabrow {
       right: calc(var(--tray-w) + 1.3rem);
     }
   }
 
-  /* "New task" floating button — pinned to the corner, lifted above the
-     unscheduled drawer when it's present (see the inline `bottom`). */
-  .fab {
+  /* "New task" floating button — pinned to the corner with the voice buttons
+     in one row, lifted above the unscheduled drawer when it's present. */
+  .fabrow {
     position: absolute;
     right: 1.3rem;
     bottom: 1.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    z-index: 7;
+    transition: bottom 0.18s ease;
+  }
+  .fab {
     width: 3.4rem;
     height: 3.4rem;
     border-radius: 50%;
@@ -1194,19 +1205,17 @@
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
     place-items: center;
-    z-index: 7;
     transition:
       transform 0.12s ease,
-      background 0.15s ease,
-      bottom 0.18s ease;
+      background 0.15s ease;
   }
   .fab:active {
     transform: scale(0.92);
     background: var(--teal-deep);
   }
-  /* Portrait: the drawer sits at the bottom, so lift the FAB above it. */
+  /* Portrait: the drawer sits at the bottom, so lift the FAB row above it. */
   @media (max-aspect-ratio: 1/1) {
-    .cal.has-tray .fab {
+    .cal.has-tray .fabrow {
       bottom: calc(var(--tray-h, 0px) + 1rem);
     }
   }

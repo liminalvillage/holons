@@ -9,6 +9,7 @@
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
+	import AssistantWidget from '../components/AssistantWidget.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
 	import { homeHolonIdOverride } from '$lib/stores/homeHolonId';
 	import { holosphereStore } from '$lib/stores/holosphere';
@@ -793,6 +794,9 @@
 			<slot />
 		</Layout>
 	</HolosphereProvider>
+	<!-- Text-input agent (kiosk voice widget's input-only sibling); renders
+	     only while a local @holons/voice-ui server is reachable. -->
+	<AssistantWidget />
 {/if}
 
 <style>

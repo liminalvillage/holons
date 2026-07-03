@@ -1,16 +1,23 @@
-// Anthropic tool-use loop over the @holons/core/commands registry.
+// Claude tool-use loop over the @holons/core/commands registry.
 //
-// Architecture:
-//   - System prompt + tools are cached (cache_control: ephemeral) since they
-//     don't change across turns within a session.
-//   - On each turn we send the running message history. When the assistant
-//     emits tool_use blocks, we dispatch them through the registry and feed
-//     tool_result blocks back. Loop terminates on stop_reason === 'end_turn'
-//     (or when no tool_use blocks are present, defensive against API drift).
+// This is a thin default wiring of the provider-neutral loop in ./providers:
+//   - LLM backend: AnthropicProvider (Claude), system+tools cached.
+//   - Tool source: the commands registry, dispatched via cmd.execute().
+// The generalized primitives (runAgentLoop, LLMProvider, providers) are
+// exported for embedders (e.g. voice-ui) that supply their own tool source
+// (MCP) and/or LLM provider (local mlx_lm.server).
 
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { loadTools, type ToolDefinition } from './tools.js';
 import type { CommandRegistry } from './commands.js';
+import { AnthropicProvider } from './providers/anthropic.js';
+import { runAgentLoop } from './providers/loop.js';
+import type {
+  AgentTool,
+  ToolCall,
+  ToolDispatcher,
+  ToolResult,
+} from './providers/types.js';
 
 export interface AgentOptions {
   /** Anthropic model ID. */
@@ -39,12 +46,45 @@ export interface AgentResult {
   messages: Anthropic.MessageParam[];
 }
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_SYSTEM =
   'You are the Holons assistant. You help users manage tasks, hours, and ' +
   'shopping lists across their holons by calling the available tools. Always ' +
   'call a tool when the user requests an action; never fabricate results. ' +
   'After tools complete, summarize what was done in one sentence.';
+
+/** Adapt an Anthropic tool definition to the neutral AgentTool shape. */
+function toAgentTool(t: ToolDefinition): AgentTool {
+  return {
+    name: t.name,
+    description: t.description ?? '',
+    inputSchema: t.input_schema as unknown as Record<string, unknown>,
+  };
+}
+
+/** Build a dispatcher that routes tool calls through the commands registry. */
+function registryDispatcher(registry: CommandRegistry): ToolDispatcher {
+  return async (call: ToolCall): Promise<ToolResult> => {
+    const cmd = registry.get(call.name);
+    if (!cmd) {
+      return {
+        id: call.id,
+        content: `error: unknown tool "${call.name}"`,
+        isError: true,
+      };
+    }
+    try {
+      const result = await cmd.execute(call.input);
+      return {
+        id: call.id,
+        content: JSON.stringify(result),
+        isError: !result.ok,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { id: call.id, content: `error: ${msg}`, isError: true };
+    }
+  };
+}
 
 /**
  * Run the agent loop against a natural-language prompt. Returns when the
@@ -54,12 +94,6 @@ export async function runAgent(
   prompt: string,
   options: AgentOptions = {},
 ): Promise<AgentResult> {
-  const client = options.client ?? new Anthropic();
-  const model = options.model ?? DEFAULT_MODEL;
-  const maxIterations = options.maxIterations ?? 10;
-  const maxTokens = options.maxTokens ?? 4096;
-  const system = options.system ?? DEFAULT_SYSTEM;
-
   let registry = options.registry;
   let tools = options.tools;
   if (!registry || !tools) {
@@ -68,87 +102,25 @@ export async function runAgent(
     tools = tools ?? loaded.tools;
   }
 
-  // Render order is tools → system → messages, so a single cache_control
-  // breakpoint on the system block caches both tools and system together.
-  // Keeps us well under the 4-breakpoint cap and avoids needless writes.
-  const systemBlocks: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
-  ];
+  const provider = new AnthropicProvider({
+    client: options.client,
+    model: options.model,
+    maxTokens: options.maxTokens,
+  });
 
-  const messages: Anthropic.MessageParam[] = [
-    { role: 'user', content: prompt },
-  ];
-
-  let iterations = 0;
-  let stopReason: string | null = null;
-  const textChunks: string[] = [];
-
-  while (iterations < maxIterations) {
-    iterations++;
-    const response = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system: systemBlocks,
-      tools,
-      messages,
-    });
-
-    stopReason = response.stop_reason;
-    messages.push({ role: 'assistant', content: response.content });
-
-    // Collect any text the assistant produced this turn.
-    for (const block of response.content) {
-      if (block.type === 'text') textChunks.push(block.text);
-    }
-
-    const toolUses = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    );
-
-    if (toolUses.length === 0 || response.stop_reason === 'end_turn') {
-      break;
-    }
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
-      const cmd = registry.get(tu.name);
-      if (!cmd) {
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tu.id,
-          content: `error: unknown tool "${tu.name}"`,
-          is_error: true,
-        });
-        continue;
-      }
-      try {
-        const result = await cmd.execute(
-          (tu.input ?? {}) as Record<string, unknown>,
-        );
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tu.id,
-          content: JSON.stringify(result),
-          is_error: !result.ok,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tu.id,
-          content: `error: ${msg}`,
-          is_error: true,
-        });
-      }
-    }
-
-    messages.push({ role: 'user', content: toolResults });
-  }
+  const result = await runAgentLoop({
+    provider,
+    tools: tools.map(toAgentTool),
+    dispatch: registryDispatcher(registry),
+    system: options.system ?? DEFAULT_SYSTEM,
+    prompt,
+    maxIterations: options.maxIterations,
+  });
 
   return {
-    text: textChunks.join('\n'),
-    iterations,
-    stopReason,
-    messages,
+    text: result.text,
+    iterations: result.iterations,
+    stopReason: result.stopReason,
+    messages: result.transcript as Anthropic.MessageParam[],
   };
 }

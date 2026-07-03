@@ -49,6 +49,7 @@
   import UserMenu from "$lib/components/UserMenu.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
+  import VoiceWidget from "$lib/components/VoiceWidget.svelte";
 
   let booting = true;
   let mounted = false;
@@ -313,6 +314,10 @@
 
 <!-- Participant confirmation before a completion records REA. -->
 <CompleteConfirm />
+
+<!-- Push-to-talk voice agent; renders only when a voice server is reachable.
+     Sends the displayed holon + active view + open record as turn context. -->
+<VoiceWidget />
 
 <!-- Transient one-line feedback for taps that can't proceed. -->
 {#if $notice}

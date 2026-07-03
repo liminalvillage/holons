@@ -51,6 +51,6 @@ holosphere/
 !apps/web/src/lib/holosphere/
 # Gun RAD temp files written to CWD (e.g. holosphere-!-xyz.tmp)
 holosphere-!-*
-
+holosphere-*
 # ── Generated API docs ────────────────────────────────────────────────────
 docs/api/*

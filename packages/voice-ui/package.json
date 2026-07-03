@@ -1,0 +1,35 @@
+{
+  "name": "@holons/voice-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Near-realtime voice adapter for Holons: browser mic → STT → LLM (Claude/local) → Holons MCP tools → TTS. Providers switch API↔local per leg.",
+  "license": "AGPL-3.0-or-later",
+  "main": "dist/index.js",
+  "bin": {
+    "holons-voice": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@holons/ai-ui": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.2.3",
+    "kokoro-js": "^1.2.1",
+    "nodejs-whisper": "^0.3.0",
+    "openai": "^4.104.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}

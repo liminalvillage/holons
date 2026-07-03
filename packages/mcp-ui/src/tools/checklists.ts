@@ -28,6 +28,7 @@ import {
   type ChecklistStore,
   type ChecklistType,
 } from '@holons/core/checklists';
+import { saveTaskToHolon, type Quest } from '@holons/core/tasks';
 import type { ToolDeps } from './index.js';
 
 const CHECKLIST_TYPE_VALUES = Object.values(CHECKLIST_TYPES) as ChecklistType[];
@@ -127,25 +128,92 @@ export function registerChecklistsTools(server: McpServer, deps: ToolDeps): void
     },
   );
 
-  // subtask_add — append a single item to an existing checklist.
+  // subtask_add — append a single item to a checklist, resolving through the
+  // task when given a quest id (the common case for LLM/voice callers).
   server.registerTool(
     'subtask_add',
     {
       description:
-        'Append a subtask (ChecklistItem) to an existing checklist. Wraps @holons/core/checklists addItemsToChecklist with a single item.',
+        'Append a subtask (ChecklistItem) to a checklist. Accepts a checklist id OR a task/quest id: given a task id, the task\'s linked checklist is used, and when the task has none a checklist is created and linked to it (quest.checklistId) automatically. Wraps @holons/core/checklists addItemsToChecklist with a single item.',
       inputSchema: {
         holon: z.string(),
-        checklistId: z.string().describe('Existing checklist id.'),
+        checklistId: z
+          .string()
+          .describe('Checklist id, or a task/quest id to resolve its checklist.'),
         title: z.string().min(1).describe('Subtask text.'),
       },
     },
     async (args) => {
       try {
         const hs = (await deps.getHoloSphere()) as ChecklistStore;
+        let checklistId = args.checklistId;
+        let checklist = await getChecklist(hs, args.holon, checklistId);
+
+        if (!checklist) {
+          // Not a checklist id — try it as a quest id.
+          const quest = (await hs.get(args.holon, 'quests', args.checklistId)) as
+            | Quest
+            | null;
+
+          if (quest) {
+            if (quest.checklistId) {
+              checklist = await getChecklist(hs, args.holon, String(quest.checklistId));
+            }
+            if (!checklist) {
+              // Adopt an existing checklist for this quest (a previous caller
+              // may have created one without writing quest.checklistId back).
+              const title = `${String(quest.title ?? quest.id)} checklist`
+                .replace(/_/g, ' ')
+                .trim();
+              const all = ((await hs.getAll(args.holon, 'checklists')) ??
+                []) as Checklist[];
+              checklist =
+                all.find(
+                  (c) => String((c as { questId?: unknown }).questId) === String(quest.id),
+                ) ??
+                all.find((c) => c.id === title) ??
+                null;
+            }
+            if (!checklist) {
+              // No checklist anywhere — create one.
+              const actor = deps.resolveActor();
+              const title = `${String(quest.title ?? quest.id)} checklist`
+                .replace(/_/g, ' ')
+                .trim();
+              const created = await createChecklist(hs, args.holon, title, {
+                creator: actor.id,
+                type: CHECKLIST_TYPES.QUEST,
+                questId: String(quest.id),
+                parentTitle: String(quest.title ?? title),
+                holonId: args.holon,
+              });
+              if (!created.ok) {
+                return fail(`Cannot create checklist for task: ${created.reason}`, {
+                  reason: created.reason,
+                });
+              }
+              checklist = created.checklist;
+            }
+            checklistId = checklist.id;
+            if (quest.checklistId !== checklist.id) {
+              quest.checklistId = checklist.id;
+              await saveTaskToHolon(
+                hs as Parameters<typeof saveTaskToHolon>[0],
+                args.holon,
+                quest,
+              );
+            }
+          }
+        }
+
+        if (!checklist) {
+          return fail('Cannot add subtask: not_found', { reason: 'not_found' });
+        }
+
         const result = await addItemsToChecklist(
           hs,
           args.holon,
-          args.checklistId,
+          checklistId,
           args.title,
         );
         if (!result.ok) {

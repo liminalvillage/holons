@@ -30,6 +30,7 @@
   import { createTask, type Quest } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
+  import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   // Kiosk displays are unattended — glide the wall down to the last note once
   // so the whole backlog is shown without anyone dragging.
@@ -535,9 +536,12 @@
     {/if}
   </div>
 
-  <button class="fab" on:click={openAdd} aria-label="Add task" title="Add task">
-    ＋
-  </button>
+  <div class="fabrow">
+    <VoiceButtons />
+    <button class="fab" on:click={openAdd} aria-label="Add task" title="Add task">
+      ＋
+    </button>
+  </div>
 </div>
 
 {#if confirmDrop}
@@ -634,10 +638,18 @@
   }
 
   /* Add-task floating button — pinned to the corner of the board. */
-  .fab {
+  /* One control cluster, bottom-right: [⌨] [🎤] [＋] (voice buttons appear
+     only while a voice server is reachable). */
+  .fabrow {
     position: absolute;
     right: 1.3rem;
     bottom: 1.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    z-index: 6;
+  }
+  .fab {
     width: 3.4rem;
     height: 3.4rem;
     border-radius: 50%;
@@ -648,7 +660,6 @@
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
     place-items: center;
-    z-index: 6;
     transition:
       transform 0.12s ease,
       background 0.15s ease;

@@ -18,3 +18,30 @@ export {
   type CoreCommandParam,
   type CommandRegistry,
 } from './commands.js';
+
+// Provider-neutral agent primitives — for embedders that supply their own
+// tool source (e.g. an MCP client) and/or LLM backend (e.g. local mlx_lm).
+export {
+  runAgentLoop,
+  type AgentLoopParams,
+  type AgentLoopResult,
+} from './providers/loop.js';
+export {
+  type AgentTool,
+  type ToolCall,
+  type ToolResult,
+  type ToolDispatcher,
+  type TurnOutput,
+  type HistoryMessage,
+  type LLMProvider,
+  type LLMTurnRunner,
+} from './providers/types.js';
+export {
+  AnthropicProvider,
+  ANTHROPIC_DEFAULT_MODEL,
+  type AnthropicProviderOptions,
+} from './providers/anthropic.js';
+export {
+  OpenAICompatProvider,
+  type OpenAICompatProviderOptions,
+} from './providers/openai-compat.js';

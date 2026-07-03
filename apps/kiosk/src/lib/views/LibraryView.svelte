@@ -5,6 +5,7 @@
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
   import Modal from "$lib/components/Modal.svelte";
+  import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
     addItem,
     getItemIcon,
@@ -124,14 +125,17 @@
     {/if}
   </div>
 
-  <button
-    class="fab"
-    on:click={openAdd}
-    aria-label="Share an item"
-    title="Share an item"
-  >
-    ＋
-  </button>
+  <div class="fabrow">
+    <VoiceButtons />
+    <button
+      class="fab"
+      on:click={openAdd}
+      aria-label="Share an item"
+      title="Share an item"
+    >
+      ＋
+    </button>
+  </div>
 </div>
 
 {#if addOpen}
@@ -287,11 +291,18 @@
       var(--shadow-soft);
   }
 
-  /* Share-item floating button (mirrors the Roles/Tasks add FAB). */
-  .fab {
+  /* Share-item floating button (mirrors the Roles/Tasks add FAB), in one
+     row with the voice buttons: [⌨] [🎤] [＋]. */
+  .fabrow {
     position: absolute;
     right: 1.3rem;
     bottom: 1.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    z-index: 6;
+  }
+  .fab {
     width: 3.4rem;
     height: 3.4rem;
     border-radius: 50%;
@@ -302,7 +313,6 @@
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
     place-items: center;
-    z-index: 6;
     transition:
       transform 0.12s ease,
       background 0.15s ease;

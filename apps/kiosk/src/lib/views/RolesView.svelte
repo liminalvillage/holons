@@ -38,6 +38,7 @@
     type ScheduledUser,
   } from "@holons/core/roles";
   import Modal from "$lib/components/Modal.svelte";
+  import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   type ViewMode = "cards" | "week";
   let viewMode: ViewMode = "cards";
@@ -479,9 +480,12 @@
     {/if}
   </div>
 
-  <button class="fab" on:click={openAdd} aria-label="Add role" title="Add role">
-    ＋
-  </button>
+  <div class="fabrow">
+    <VoiceButtons />
+    <button class="fab" on:click={openAdd} aria-label="Add role" title="Add role">
+      ＋
+    </button>
+  </div>
 </div>
 
 {#if addOpen}
@@ -928,11 +932,17 @@
     font-size: 1.1rem;
   }
 
-  /* Add-role floating button */
-  .fab {
+  /* Add-role floating button, in one row with the voice buttons. */
+  .fabrow {
     position: absolute;
     right: 1.3rem;
     bottom: 1.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    z-index: 6;
+  }
+  .fab {
     width: 3.4rem;
     height: 3.4rem;
     border-radius: 50%;
@@ -943,7 +953,6 @@
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
     place-items: center;
-    z-index: 6;
     transition:
       transform 0.12s ease,
       background 0.15s ease;

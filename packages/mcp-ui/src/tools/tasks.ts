@@ -80,6 +80,42 @@ function normalizeParticipant(user: QuestParticipant): QuestParticipant {
   return { ...user, id: String(user.id) };
 }
 
+/**
+ * Build the canonical participant record the UIs expect —
+ * { id, username, firstName, lastName } — from whatever the caller passed
+ * (often just an id or a username). Missing fields are filled from the
+ * holon's `users` lens, whose profiles carry snake_case first_name/last_name.
+ */
+async function resolveParticipant(
+  deps: ToolDeps,
+  holon: string,
+  user: QuestParticipant,
+): Promise<QuestParticipant> {
+  const out = normalizeParticipant(user);
+  const complete =
+    out.id && out.username && out.firstName !== undefined && out.lastName !== undefined;
+  if (complete) return out;
+
+  const hs = await deps.getHoloSphere();
+  const profiles = ((await hs.getAll(holon, 'users')) ?? []) as Array<
+    Record<string, unknown>
+  >;
+  const match = profiles.find(
+    (p) =>
+      (out.id != null && String(p.id) === String(out.id)) ||
+      (out.username &&
+        String(p.username ?? '').toLowerCase() === String(out.username).toLowerCase()),
+  );
+  if (!match) return out;
+  return {
+    ...out,
+    id: String(out.id ?? match.id),
+    username: out.username ?? (match.username as string | undefined),
+    firstName: out.firstName ?? (match.first_name as string | undefined) ?? '',
+    lastName: out.lastName ?? (match.last_name as string | undefined) ?? '',
+  };
+}
+
 // Match the web UI's generateId() exactly: base36 ms + 3 base36 random chars,
 // NO underscores. The Telegram bot parses callback_data by splitting on `_`,
 // so any underscore in a task id makes the bot misroute or drop it (which
@@ -357,6 +393,43 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
+  // task_update — patch simple fields on an existing Quest and persist.
+  server.registerTool(
+    'task_update',
+    {
+      description:
+        'Update fields of an existing task/quest and persist it: title, description, category, when/until (ISO 8601 timestamps — use for scheduling/rescheduling), orderIndex. Only the fields passed are changed.',
+      inputSchema: {
+        holon: z.string(),
+        taskId: z.string(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        when: z
+          .string()
+          .optional()
+          .describe('New scheduled start, ISO 8601 (e.g. 2026-07-03T14:00:00).'),
+        until: z.string().optional().describe('New scheduled end, ISO 8601.'),
+        orderIndex: z.number().int().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        return await mutateAndSave(deps, args.holon, args.taskId, (t) => ({
+          ...t,
+          ...(args.title !== undefined ? { title: args.title } : {}),
+          ...(args.description !== undefined ? { description: args.description } : {}),
+          ...(args.category !== undefined ? { category: args.category } : {}),
+          ...(args.when !== undefined ? { when: args.when } : {}),
+          ...(args.until !== undefined ? { until: args.until } : {}),
+          ...(args.orderIndex !== undefined ? { orderIndex: args.orderIndex } : {}),
+        }));
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
   // task_get — fetch a single Quest by id from HoloSphere.
   server.registerTool(
     'task_get',
@@ -429,7 +502,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
+        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           addParticipant(t, user),
         );
@@ -477,7 +550,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
+        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           toggleParticipant(t, user),
         );
@@ -501,7 +574,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
+        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           addAppreciation(t, user),
         );
@@ -549,7 +622,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) => {
       try {
-        const user = normalizeParticipant(args.user ?? actorAsParticipant(deps.resolveActor()));
+        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
         return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
           toggleAppreciation(t, user),
         );
