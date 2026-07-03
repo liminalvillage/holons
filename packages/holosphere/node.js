@@ -20,7 +20,10 @@ export async function putNode(holoInstance, holon, lens, data) {
         throw new Error('putNode: Backend write failed');
     }
 
-    if (isHologram) {
+    // Only track holograms after a *confirmed* write. A queued write (backend
+    // returned before the peer acked) mirrors the base behaviour, which ran
+    // tracking exclusively inside the `!ack.err` branch — never optimistically.
+    if (isHologram && !result.queued) {
         try {
             const storedDataSoulInfo = holoInstance.parseSoulPath(data.value.soul);
             if (storedDataSoulInfo) {
