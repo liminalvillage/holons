@@ -760,6 +760,13 @@ function isResolved(item) {
     return item._hologram?.isHologram !== false;
 }
 
+// subscribeFederated's federation-config read is a point-in-time gun.once():
+// on a cold graph (fresh page load, empty radisk) it fires with null before
+// the relay has synced the config node, and a single failed read would
+// silently attach ZERO partners for the life of the subscription. Retry on
+// this ladder (delays before attempts 2..n) until the config shows up.
+const FEDERATION_CONFIG_RETRY_MS = [1000, 3000, 8000];
+
 /**
  * Live federated read — the streaming equivalent of {@link getFederated}.
  *
@@ -777,11 +784,13 @@ function isResolved(item) {
  * `subscribeFederated(...)` once instead of re-implementing partner aggregation
  * (and re-inventing a provenance tag) itself.
  *
- * The federation config is read ONCE at setup: the local subscription attaches
- * synchronously and partner subscriptions attach after that async read resolves.
- * A federation link added/removed at runtime is not picked up live — resubscribe
- * to pick up a changed partner set (callers already do this on a holon/toggle
- * change). Symmetric with getFederated, which is likewise a point-in-time read.
+ * The federation config is read at setup (with a short retry ladder — a cold
+ * graph's first `gun.once()` read loses the race against the relay handshake
+ * and returns null; see FEDERATION_CONFIG_RETRY_MS): the local subscription
+ * attaches synchronously and partner subscriptions attach after that async read
+ * resolves. A federation link added/removed at runtime is still not picked up
+ * live — resubscribe to pick up a changed partner set (callers already do this
+ * on a holon/toggle change).
  *
  * @param {object} holosphere - The HoloSphere instance.
  * @param {string} holon - The viewing holon.
@@ -844,14 +853,20 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
 
     const addSpace = (space, originName) => {
         if (closed || subs.has(space)) return;
+        // Live tombstones seen for this space. The getAll seed below resolves
+        // AFTER the live subscription attaches, so without this a slow seed
+        // could resurrect an item a live event already deleted.
+        const tombstones = new Set();
         const raw = holosphere.subscribe(space, lens, (data, key) => {
             if (closed) return;
             const id = String((data && (data[idField] ?? key)) ?? key ?? '');
             if (!id) return;
             const k = `${space}${SEP}${id}`;
             if (data == null || data._deleted) {
+                tombstones.add(k);
                 store.delete(k);
             } else {
+                tombstones.delete(k);
                 store.set(k, tagWithSource(data, space, originName));
             }
             emit();
@@ -859,6 +874,29 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         subs.set(space, raw && typeof raw.unsubscribe === 'function'
             ? () => raw.unsubscribe()
             : () => {});
+        // Seed with a point-in-time snapshot. Gun does NOT replay the in-memory
+        // graph to a newly attached map().on() listener — only radisk/wire/put
+        // events fire it — so a re-subscribe on a warm instance (page remount,
+        // federation toggle off→on) would start empty and STAY empty until the
+        // next write. getAll reads the graph directly and fills that gap; live
+        // events win on overlap (they're newer by construction).
+        Promise.resolve()
+            .then(() => holosphere.getAll(space, lens))
+            .then((items) => {
+                if (closed || !subs.has(space) || !Array.isArray(items)) return;
+                let added = false;
+                for (const item of items) {
+                    if (!item || item._deleted) continue;
+                    const id = item[idField];
+                    if (id == null) continue;
+                    const k = `${space}${SEP}${String(id)}`;
+                    if (store.has(k) || tombstones.has(k)) continue;
+                    store.set(k, tagWithSource(item, space, originName));
+                    added = true;
+                }
+                if (added) emit();
+            })
+            .catch(() => { /* seed is best-effort; the live sub still streams */ });
     };
 
     const removeSpace = (space) => {
@@ -881,7 +919,15 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         partnersOn = true;
         const token = ++attachToken;
         try {
-            const fedInfo = await getFederation(holosphere, holon);
+            // Cold-graph resilience: the first gun.once() read of the config
+            // races the relay handshake and can return null even though the
+            // holon IS federated — retry before concluding "no partners".
+            let fedInfo = await getFederation(holosphere, holon);
+            for (let i = 0; !fedInfo && i < FEDERATION_CONFIG_RETRY_MS.length; i++) {
+                await new Promise((r) => setTimeout(r, FEDERATION_CONFIG_RETRY_MS[i]));
+                if (closed || !partnersOn || token !== attachToken) return;
+                fedInfo = await getFederation(holosphere, holon);
+            }
             if (closed || !partnersOn || token !== attachToken) return;
             if (!fedInfo || !Array.isArray(fedInfo.inbound)) return;
             const lensConfig = fedInfo.lensConfig || {};
