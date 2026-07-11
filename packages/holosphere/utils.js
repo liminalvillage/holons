@@ -151,6 +151,17 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             // stack ONCE and bail (no parse/resolve/allocate) so the tab survives
             // and the culprit is identifiable.
             const __fnow = Date.now();
+            // Already quarantined? Listeners can outlive the detach below — gun
+            // 0.2020's map().off() doesn't reliably unhook per-child listeners —
+            // and each surviving fire used to re-enter the quarantine branch and
+            // re-log the storm (a console.error per fire, thousands/s). Swallow
+            // silently for the cooldown; afterwards lift the quarantine so a
+            // repaired lens resumes without a reload.
+            const __qAt = holoInstance.__quarantined && holoInstance.__quarantined.get(groupKey);
+            if (__qAt) {
+                if (__fnow - __qAt < QUARANTINE_COOLDOWN_MS) return;
+                holoInstance.__quarantined.delete(groupKey);
+            }
             // Per-PATH fire window (on the group) so we can pin the runaway lens and
             // QUARANTINE it specifically — not just bail instance-wide and let Gun
             // keep re-firing forever.
