@@ -144,6 +144,7 @@ export function downloadZip(blob: Blob, filename: string): void {
 function createPageHTML(
   cardHTMLs: string[],
   mirrored: boolean = false,
+  sheetLabel: string = "",
 ): string {
   let gridHTML = "";
 
@@ -179,6 +180,23 @@ function createPageHTML(
     }
   }
 
+  // Sheet label for duplex registration. It sits at the bottom edge on
+  // fronts and the top edge on backs, so after a long-edge flip both labels
+  // land on the same physical edge of the paper: matching numbers on the
+  // same edge = sheets paired and oriented correctly. Kept ≥17px from the
+  // page edge to stay inside typical printer margins (~4.5mm).
+  const labelHTML = sheetLabel
+    ? `<div style="
+			position: absolute;
+			left: 0;
+			width: 100%;
+			${mirrored ? "top: 17px;" : "bottom: 17px;"}
+			text-align: center;
+			font: 9px Arial, sans-serif;
+			color: #999;
+		">${sheetLabel}</div>`
+    : "";
+
   return `
 		<div style="
 			width: ${A4_WIDTH_PX}px;
@@ -187,6 +205,7 @@ function createPageHTML(
 			position: relative;
 		">
 			${gridHTML}
+			${labelHTML}
 		</div>
 	`;
 }
@@ -268,7 +287,11 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 
     // Page 1: fronts (normal order)
     if (pageGroup > 0) pdf.addPage();
-    const frontPageHTML = createPageHTML(frontHTMLs, false);
+    const frontPageHTML = createPageHTML(
+      frontHTMLs,
+      false,
+      `Sheet ${pageGroup + 1} — fronts`,
+    );
     const frontCanvas = await renderPageToCanvas(frontPageHTML);
     pdf.addImage(frontCanvas.toDataURL("image/png"), "PNG", 0, 0, 297, 210);
 
@@ -277,7 +300,11 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 
     // Page 2: backs (mirrored so they align when paper is flipped)
     pdf.addPage();
-    const backPageHTML = createPageHTML(backHTMLs, true);
+    const backPageHTML = createPageHTML(
+      backHTMLs,
+      true,
+      `Sheet ${pageGroup + 1} — backs`,
+    );
     const backCanvas = await renderPageToCanvas(backPageHTML);
     pdf.addImage(backCanvas.toDataURL("image/png"), "PNG", 0, 0, 297, 210);
 

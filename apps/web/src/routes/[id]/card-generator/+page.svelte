@@ -817,8 +817,9 @@
 			<div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
 				<h3 class="font-semibold mb-2 text-sm">Print Instructions</h3>
 				<ol class="text-xs text-gray-400 space-y-1 list-decimal list-inside">
-					<li>Generate and download PDF</li>
-					<li>Print double-sided (flip on long edge)</li>
+					<li>Generate and download PDF — odd pages are card fronts, even pages are the matching QR backs</li>
+					<li>Print double-sided, flip on long edge, at 100% scale (not "fit to page")</li>
+					<li>No duplex printer? Print odd pages only, re-insert the stack, then print even pages. Test with one sheet first: the sheet label ("Sheet 1 — fronts" / "Sheet 1 — backs") must match on both sides of each sheet and sit on the same paper edge. If numbers mismatch, print the even pages in reverse order; if the label lands on the opposite edge, flip the stack the other way.</li>
 					<li>Cut along dashed lines</li>
 				</ol>
 			</div>
