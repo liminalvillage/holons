@@ -1014,8 +1014,10 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
     const __last = __recent.get(__dedupKey);
     const PROPAGATE_DEDUP_MS = 4000;
     if (__last && (__now - __last) < PROPAGATE_DEDUP_MS) {
+        // Working as designed (the guard exists to swallow echoes), so keep the
+        // console clean: debug-level, visible only under the Verbose filter.
         const __stack = (new Error().stack || '').split('\n').slice(2, 7).join('\n');
-        console.warn(`[propagate] DEDUP skip ${__dedupKey} (${__now - __last}ms since last) — federation cascade echo. Trigger:\n${__stack}`);
+        console.debug(`[propagate] dedup skip ${__dedupKey} (${__now - __last}ms since last) — federation cascade echo. Trigger:\n${__stack}`);
         return { success: 0, errors: 0, skipped: 1, messages: ['deduped: recent propagation'], parentPropagation: { success: 0, errors: 0, skipped: 0, messages: [] } };
     }
     __recent.set(__dedupKey, __now);
