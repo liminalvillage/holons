@@ -63,7 +63,9 @@ export const showHolograms: Writable<boolean> = writable(initial.showHolograms);
  * display/migration only — never trust `_unverified` items. No-op unless
  * holosphere signing is in enforce mode (off/shadow already show everything).
  */
-export const showUnverified: Writable<boolean> = writable(initial.showUnverified);
+export const showUnverified: Writable<boolean> = writable(
+  initial.showUnverified,
+);
 
 if (browser) {
   showFederated.subscribe((value) => writeSnapshot({ showFederated: value }));

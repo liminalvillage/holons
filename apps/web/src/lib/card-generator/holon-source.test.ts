@@ -14,7 +14,13 @@ describe("loadCardsFromHolon", () => {
   it("maps active tasks to cards carrying the item's storage key", async () => {
     const hs = stubHolosphere({
       quests: [
-        { id: "q1", title: "Clean Kitchen", description: "Tidy up", type: "task", status: "pending" },
+        {
+          id: "q1",
+          title: "Clean Kitchen",
+          description: "Tidy up",
+          type: "task",
+          status: "pending",
+        },
         { id: "q2", title: "Water Plants", type: "task" },
       ],
     });
@@ -22,8 +28,20 @@ describe("loadCardsFromHolon", () => {
     const cards = await loadCardsFromHolon(hs, "holon1", "tasks");
 
     expect(cards).toEqual([
-      { id: "q1", itemId: "q1", title: "Clean Kitchen", type: "task", description: "Tidy up" },
-      { id: "q2", itemId: "q2", title: "Water Plants", type: "task", description: "" },
+      {
+        id: "q1",
+        itemId: "q1",
+        title: "Clean Kitchen",
+        type: "task",
+        description: "Tidy up",
+      },
+      {
+        id: "q2",
+        itemId: "q2",
+        title: "Water Plants",
+        type: "task",
+        description: "",
+      },
     ]);
   });
 
@@ -53,21 +71,38 @@ describe("loadCardsFromHolon", () => {
     const cards = await loadCardsFromHolon(hs, "holon1", "events");
 
     expect(cards).toEqual([
-      { id: "e1", itemId: "e1", title: "Standup", type: "event", description: "" },
+      {
+        id: "e1",
+        itemId: "e1",
+        title: "Standup",
+        type: "event",
+        description: "",
+      },
     ]);
   });
 
   it("maps roles to role cards keyed by role id", async () => {
     const hs = stubHolosphere({
       roles: [
-        { id: "Facilitator", title: "Facilitator", description: "Runs meetings", participants: [] },
+        {
+          id: "Facilitator",
+          title: "Facilitator",
+          description: "Runs meetings",
+          participants: [],
+        },
       ],
     });
 
     const cards = await loadCardsFromHolon(hs, "holon1", "roles");
 
     expect(cards).toEqual([
-      { id: "Facilitator", itemId: "Facilitator", title: "Facilitator", type: "role", description: "Runs meetings" },
+      {
+        id: "Facilitator",
+        itemId: "Facilitator",
+        title: "Facilitator",
+        type: "role",
+        description: "Runs meetings",
+      },
     ]);
   });
 
@@ -82,7 +117,13 @@ describe("loadCardsFromHolon", () => {
     const cards = await loadCardsFromHolon(hs, "holon1", "tasks");
 
     expect(cards).toEqual([
-      { id: "No Id Task", itemId: "No Id Task", title: "No Id Task", type: "task", description: "" },
+      {
+        id: "No Id Task",
+        itemId: "No Id Task",
+        title: "No Id Task",
+        type: "task",
+        description: "",
+      },
     ]);
   });
 });

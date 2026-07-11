@@ -173,9 +173,7 @@ export class QRActionService {
       last_active: new Date().toISOString(),
     };
     userData.last_active = new Date().toISOString();
-    await this.putItem(params.holonID,
-      "users",
-      userData);
+    await this.putItem(params.holonID, "users", userData);
   }
 
   /**
@@ -267,9 +265,7 @@ export class QRActionService {
             clearRoleParticipants(existing),
             this.participantFor(user),
           );
-          await this.putItem(params.holonID,
-            "roles",
-            updated);
+          await this.putItem(params.holonID, "roles", updated);
           console.log(
             `[QRActionService] Assigned user ${user.id} as sole holder of role ${params.itemId}`,
           );
@@ -305,9 +301,7 @@ export class QRActionService {
 
       // Save user data (without roles - roles are managed separately in roles collection)
       console.log(`[QRActionService] Saving user data for user ${user.id}`);
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
       console.log(`[QRActionService] User data saved successfully`);
 
       // Check if role exists, create it if it doesn't exist
@@ -416,9 +410,7 @@ export class QRActionService {
         `[QRActionService] Put parameters - HolonID: ${params.holonID}, Collection: roles, Data:`,
         roleData,
       );
-      await this.putItem(params.holonID,
-        "roles",
-        roleData);
+      await this.putItem(params.holonID, "roles", roleData);
       console.log(
         `[QRActionService] Role data saved successfully with key: ${roleKey}`,
       );
@@ -529,9 +521,7 @@ export class QRActionService {
           },
         };
 
-        await this.putItem(params.holonID,
-          "audit_logs",
-          auditLog);
+        await this.putItem(params.holonID, "audit_logs", auditLog);
         console.log(`[QRActionService] Audit log created for role assignment`);
       } catch (auditError) {
         console.warn(
@@ -596,9 +586,7 @@ export class QRActionService {
             existing,
             this.participantFor(user),
           );
-          await this.putItem(params.holonID,
-            "quests",
-            updated);
+          await this.putItem(params.holonID, "quests", updated);
           // Mirror into the joiner's personal holon + send the linked DM.
           void reflectMembership({
             holosphere: this.holosphere,
@@ -641,9 +629,7 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Calculate event time - 12 hours from now
       const eventTime = new Date();
@@ -693,9 +679,7 @@ export class QRActionService {
       );
 
       // Save quest data using the event ID as key
-      await this.putItem(params.holonID,
-        "quests",
-        questData);
+      await this.putItem(params.holonID, "quests", questData);
 
       // Mirror into the creator/participant's personal holon + send the DM.
       void reflectMembership({
@@ -766,9 +750,7 @@ export class QRActionService {
             existing,
             this.participantFor(user),
           );
-          await this.putItem(params.holonID,
-            "quests",
-            updated);
+          await this.putItem(params.holonID, "quests", updated);
           // Mirror into the joiner's personal holon + send the linked DM.
           void reflectMembership({
             holosphere: this.holosphere,
@@ -811,9 +793,7 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Generate a unique task ID
       const taskId = `task_${params.title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`;
@@ -858,9 +838,7 @@ export class QRActionService {
       );
 
       // Save quest data using the task ID as key
-      await this.putItem(params.holonID,
-        "quests",
-        questData);
+      await this.putItem(params.holonID, "quests", questData);
 
       // Mirror into the assignee/participant's personal holon + send the DM.
       void reflectMembership({
@@ -928,9 +906,7 @@ export class QRActionService {
       userData.last_active = new Date().toISOString();
 
       // Save user data
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Check if badge exists, create it if it doesn't
       const badgeKey = params.title; // Use title as consistent key
@@ -984,9 +960,7 @@ export class QRActionService {
       badgeData.last_modified_by = user.id.toString();
 
       // Save badge data
-      await this.putItem(params.holonID,
-        "badges",
-        badgeData);
+      await this.putItem(params.holonID, "badges", badgeData);
 
       console.log(
         `[QRActionService] Badge award completed successfully for user ${user.id} to badge ${params.title}`,
@@ -1050,9 +1024,7 @@ export class QRActionService {
       });
 
       // Save user data
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Check if invite exists, create it if it doesn't
       let inviteData = await this.holosphere.get(
@@ -1090,9 +1062,7 @@ export class QRActionService {
       }
 
       // Save invite data
-      await this.putItem(params.holonID,
-        "invites",
-        inviteData);
+      await this.putItem(params.holonID, "invites", inviteData);
 
       return {
         success: true,
@@ -1145,9 +1115,7 @@ export class QRActionService {
       };
 
       userData.last_active = new Date().toISOString();
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Generate a unique resource ID
       const resourceId = `resource_${params.title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`;
@@ -1177,9 +1145,7 @@ export class QRActionService {
         },
       };
 
-      await this.putItem(params.holonID,
-        "resources",
-        resourceData);
+      await this.putItem(params.holonID, "resources", resourceData);
 
       console.log(
         `[QRActionService] Resource created successfully: ${params.title}`,
@@ -1236,9 +1202,7 @@ export class QRActionService {
       };
 
       userData.last_active = new Date().toISOString();
-      await this.putItem(params.holonID,
-        "users",
-        userData);
+      await this.putItem(params.holonID, "users", userData);
 
       // Generate a unique vibe ID
       const vibeId = `vibe_${user.id}_${Date.now()}`;
@@ -1266,9 +1230,7 @@ export class QRActionService {
         },
       };
 
-      await this.putItem(params.holonID,
-        "vibes",
-        vibeData);
+      await this.putItem(params.holonID, "vibes", vibeData);
 
       console.log(
         `[QRActionService] Vibe recorded successfully: ${params.title}`,

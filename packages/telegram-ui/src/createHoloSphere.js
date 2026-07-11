@@ -46,7 +46,8 @@ function generatePrivateKey() {
  * await holosphere.put(holonId, 'quests', questData);
  */
 export default function createHoloSphere(appName, options = {}) {
-  const resolvedAppName = appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
+  const resolvedAppName =
+    appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
   const {
     privateKey: pkOverride,
     backend,
@@ -96,7 +97,8 @@ export default function createHoloSphere(appName, options = {}) {
  * await keyManager.federateHolons(chatA, chatB, 'quests');
  */
 export function createKeyManager(appName, options = {}) {
-  const resolvedAppName = appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
+  const resolvedAppName =
+    appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
 
   // Create master HoloSphere (bot's identity)
   const masterHolosphere = createHoloSphere(resolvedAppName, options);

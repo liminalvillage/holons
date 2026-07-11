@@ -8,7 +8,10 @@
 //   them back-to-back via Web Audio and can stop instantly for barge-in.
 
 /** Encode mono Float32 samples as a 16-bit PCM WAV. */
-export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
+export function encodeWav(
+  samples: Float32Array,
+  sampleRate: number,
+): Uint8Array {
   const bytes = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(bytes);
   const writeStr = (off: number, s: string) => {

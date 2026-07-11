@@ -538,7 +538,12 @@
 
   <div class="fabrow">
     <VoiceButtons />
-    <button class="fab" on:click={openAdd} aria-label="Add task" title="Add task">
+    <button
+      class="fab"
+      on:click={openAdd}
+      aria-label="Add task"
+      title="Add task"
+    >
       ＋
     </button>
   </div>
