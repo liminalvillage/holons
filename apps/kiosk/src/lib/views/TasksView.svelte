@@ -15,7 +15,7 @@
     categoryColors,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
-  import { getWriter } from "$lib/holosphere";
+  import { getHolosphere, getWriter } from "$lib/holosphere";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
@@ -27,7 +27,11 @@
     noteRiseRot,
     type BacklogTask,
   } from "$lib/data";
-  import { createTask, type Quest } from "@holons/core/tasks";
+  import {
+    createTask,
+    deleteTaskWithCascade,
+    type Quest,
+  } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -102,6 +106,43 @@
     if (task) void doAppreciate(task);
   }
 
+  // ── Delete: ✕ on the card, confirmed, cascading to published forwards ─────-
+  // Local cards only — a federated card's source lives in another holon the
+  // kiosk can't write to, so foreign post-its don't get the ✕.
+  let confirmDelete: BacklogTask | null = null;
+  // Ids deleted locally and hidden right away, until Gun's tombstone catches
+  // up and drops them from the backlog (pruned in syncOrder).
+  let removedIds = new Set<string>();
+
+  function askDelete(task: BacklogTask) {
+    if (!get(telegramUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    confirmDelete = task;
+  }
+
+  async function doDelete() {
+    const task = confirmDelete;
+    confirmDelete = null;
+    const hid = get(holonId);
+    if (!task || !hid) return;
+    try {
+      const hs = await getHolosphere();
+      // Cascade so forwards published into other holons don't dangle.
+      const result = await deleteTaskWithCascade(hs, hid, task.id);
+      if (!result.sourceDeleted) throw new Error("source delete failed");
+      removedIds = new Set(removedIds).add(task.id);
+    } catch (err) {
+      console.error("[kiosk] delete failed", err);
+      showNotice(
+        (err as { name?: string })?.name === "AuthorizationError"
+          ? "You don't have permission to delete tasks in this holon."
+          : "Couldn't delete the task — try again.",
+      );
+    }
+  }
+
   function dueLabel(t: BacklogTask): string | null {
     if (!t.due) return null;
     const today = new Date($now);
@@ -134,7 +175,7 @@
   $: syncOrder($backlog);
   $: orderedTasks = order
     .map((id) => byId.get(id))
-    .filter((t): t is BacklogTask => t != null);
+    .filter((t): t is BacklogTask => t != null && !removedIds.has(t.id));
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -148,6 +189,12 @@
     // Drop completion state for quests that have left the backlog.
     for (const id of Object.keys(completing)) {
       if (!have.has(id)) uncomplete(id);
+    }
+    // Once a deleted quest's tombstone lands (it left the backlog), the
+    // optimistic hide has done its job — forget the id.
+    if (removedIds.size) {
+      const still = [...removedIds].filter((id) => have.has(id));
+      if (still.length !== removedIds.size) removedIds = new Set(still);
     }
     const next = touched ? reconcile(order, tasks) : tasks.map((t) => t.id); // adopt the persisted order on load
     if (next.length !== order.length || next.some((id, i) => id !== order[i])) {
@@ -460,6 +507,19 @@
                 on:click={() => openTask(task.id)}
                 on:keydown={(e) => onKey(e, task.id)}
               >
+                {#if !task.sourceColor}
+                  <div class="tools tools-left">
+                    <button
+                      class="tool xdel"
+                      on:pointerdown|stopPropagation
+                      on:click|stopPropagation={() => askDelete(task)}
+                      aria-label="Delete task"
+                      title="Delete task"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                {/if}
                 <div class="tools">
                   <button
                     class="tool check"
@@ -538,7 +598,12 @@
 
   <div class="fabrow">
     <VoiceButtons />
-    <button class="fab" on:click={openAdd} aria-label="Add task" title="Add task">
+    <button
+      class="fab"
+      on:click={openAdd}
+      aria-label="Add task"
+      title="Add task"
+    >
       ＋
     </button>
   </div>
@@ -556,6 +621,24 @@
       <div class="actions">
         <button class="primary" on:click={confirmAppreciate}>Appreciate</button>
         <button class="ghost" on:click={() => (confirmDrop = null)}
+          >Cancel</button
+        >
+      </div>
+    </div>
+  </Modal>
+{/if}
+
+{#if confirmDelete}
+  <Modal on:close={() => (confirmDelete = null)}>
+    <div class="add">
+      <div class="glyph x-glyph" aria-hidden="true">✕</div>
+      <h3>Delete this task?</h3>
+      <p class="lead">
+        “{confirmDelete.title}” will be removed for everyone in this holon.
+      </p>
+      <div class="actions">
+        <button class="primary danger" on:click={doDelete}>Delete</button>
+        <button class="ghost" on:click={() => (confirmDelete = null)}
           >Cancel</button
         >
       </div>
@@ -809,6 +892,19 @@
     background: var(--teal);
     color: #fff;
   }
+  /* Delete ✕ — mirrored to the top-LEFT corner so the title keeps its
+     symmetric clearance (one button per side). */
+  .tools-left {
+    left: 0.5rem;
+    right: auto;
+  }
+  .tool.xdel {
+    color: rgba(154, 59, 47, 0.7);
+  }
+  .tool.xdel:active {
+    background: #d4493a;
+    color: #fff;
+  }
 
   /* Completion: the post-it drops away while confetti bursts from it. */
   .note-wrap.done .note {
@@ -986,6 +1082,9 @@
     color: #d4493a;
     font-size: 2.2rem;
   }
+  .add .glyph.x-glyph {
+    color: #d4493a;
+  }
   .add h3 {
     margin: 0.2rem 0 0.3rem;
     font-size: 1.3rem;
@@ -1030,6 +1129,9 @@
     background: var(--teal);
     color: #fff;
     box-shadow: var(--shadow-soft);
+  }
+  .add .primary.danger {
+    background: #d4493a;
   }
   .add .ghost {
     background: rgba(255, 255, 255, 0.5);
