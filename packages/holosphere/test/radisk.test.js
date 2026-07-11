@@ -20,8 +20,11 @@ describe('HoloSphere Radisk Tests', () => {
     test('should initialize with radisk enabled by default', () => {
         const stats = holosphere.getRadiskStats();
         expect(stats.enabled).toBe(true);
-        expect(stats.filePath).toBe('./radata');
-        expect(stats.retry).toBe(3);
+        // The constructor's default Gun store path (see defaultGunOptions).
+        expect(stats.filePath).toBe('./holosphere');
+        // Websocket reconnect budget — unlimited by default so long-lived
+        // pages never stop reconnecting (see holosphere.js constructor).
+        expect(stats.retry).toBe(Infinity);
         expect(stats.timeout).toBe(5000);
     });
 
@@ -45,7 +48,7 @@ describe('HoloSphere Radisk Tests', () => {
         const stats = holosphere.getRadiskStats();
 
         expect(stats.filePath).toBe('./partial-test');
-        expect(stats.retry).toBe(3); // Should keep default
+        expect(stats.retry).toBe(Infinity); // reconnect budget untouched
         expect(stats.timeout).toBe(5000); // Should keep default
     });
 
@@ -133,7 +136,7 @@ describe('HoloSphere Radisk Tests', () => {
 
         const stats = holosphere.getRadiskStats();
         expect(stats.filePath).toBe('./radata'); // Should use default
-        expect(stats.retry).toBe(3); // Should use default
+        expect(stats.retry).toBe(Infinity); // undefined must not clobber the reconnect budget
         expect(stats.timeout).toBe(5000); // Should use default
     });
 });

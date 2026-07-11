@@ -28,6 +28,15 @@ import * as handshake from './handshake-shim.js';
 const HOLOSPHERE_VERSION = '1.3.0';
 const version = HOLOSPHERE_VERSION;
 
+// Connection resilience tuning (see _setupConnectionResilience).
+// Resync debounce: long enough for a reconnect flap to settle, short enough
+// that a kiosk catches up within a couple of seconds of the wire returning.
+const RECONNECT_RESYNC_DEBOUNCE_MS = 2000;
+// Zombie-socket heartbeat: a peer silent for two intervals (once pinged) is
+// force-closed so Gun's reconnect machinery takes over. Also serves as a
+// NAT/proxy keepalive, so keep it comfortably under common 60s idle timeouts.
+const HEARTBEAT_INTERVAL_MS = 25000;
+
 class HoloSphere {
     /**
      * Initializes a new instance of the HoloSphere class.
@@ -106,7 +115,16 @@ class HoloSphere {
             peers: ['https://gun.holons.io/gun'],
             axe: false,
             radisk: true,
-            file: './holosphere'
+            file: './holosphere',
+            // Gun's websocket layer spends a per-peer reconnect budget
+            // (`peer.retry`, stock default 60) that is decremented on every
+            // rapid retry and NEVER replenished by a successful reconnect —
+            // one ~2-minute relay outage (or short blips accumulated over
+            // days of uptime) exhausts it, after which the page silently
+            // never reconnects. Long-lived surfaces (kiosk screens,
+            // dashboards, bots) must retry forever; callers can still
+            // override via gunOptions.
+            retry: Infinity
         };
 
         // In browser environment, disable localStorage when radisk is enabled
@@ -139,6 +157,20 @@ class HoloSphere {
 
         // Phase 1 signing layer (null until enableSigning() is called)
         this._signer = null;
+
+        // Connection resilience (see _setupConnectionResilience): keep the
+        // websocket reconnect loop alive forever and resync live
+        // subscriptions after every reconnect, so long-lived pages never go
+        // silently stale.
+        this._closed = false;
+        this._sawBye = false;
+        this._resyncTimer = null;
+        this._heartbeatTimer = null;
+        this._lastHeard = 0;
+        // The peers configured at construction (Gun keys opt.peers by url).
+        // Only these are ever auto-restored after a drop.
+        this._resilientPeers = new Set(Object.keys(this.gun?._?.opt?.peers || {}));
+        this._setupConnectionResilience();
     }
 
     /**
@@ -152,6 +184,136 @@ class HoloSphere {
 
     getGun() {
         return this.gun;
+    }
+
+    // ============================ CONNECTION RESILIENCE ============================
+    //
+    // Gun's stock websocket layer has three gaps that make a long-lived page
+    // (kiosk screen, dashboard, bot) go silently stale after a disconnect:
+    //
+    //   1. Its `bye` handler deletes the peer from `opt.peers`, and its
+    //      reconnect loop refuses to retry a peer missing from `opt.peers` —
+    //      so if the single automatic retry ~2s after a drop fails (any
+    //      outage longer than a blip), the peer is orphaned forever.
+    //   2. The reconnect budget (`peer.retry`) is never replenished on
+    //      success (mitigated by the `retry: Infinity` default above).
+    //   3. A half-open TCP connection (NAT/proxy idle timeout, silent wifi
+    //      drop) never fires `close`, so the reconnect machinery never even
+    //      starts: the socket looks OPEN but hears nothing.
+    //
+    // This layer (a) re-registers dropped peers so the retry loop keeps
+    // going, (b) resyncs every live-subscribed lens after a reconnect —
+    // Gun re-asks for live souls on `hi`, but its `ask` bookkeeping doesn't
+    // reliably cover `map().on()` children, so we re-read through `getAll`,
+    // whose wire replies merge into the graph and fire the already-attached
+    // listeners — and (c) sends a periodic DAM ping and force-closes a peer
+    // that stays silent across two intervals, which kicks (a)+(b) in.
+
+    _setupConnectionResilience() {
+        const root = this.gun && this.gun._;
+        if (!root || typeof root.on !== 'function') return;
+        const self = this;
+
+        // Gun's onto emitter chains listeners — propagate with
+        // `this.to.next(peer)` first, exactly like Gun's own hooks, so a
+        // later listener is never starved.
+        root.on('bye', function (peer) {
+            this.to.next(peer);
+            self._sawBye = true;
+            // Gun's mesh `bye` handler deletes `opt.peers[id]` AFTER this
+            // chain runs; restore the entry a tick later so the websocket
+            // reconnect loop (which bails on a missing entry) keeps retrying.
+            const url = peer && (peer.url || peer.id);
+            if (!url || !self._resilientPeers.has(url)) return;
+            setTimeout(() => {
+                const peers = self.gun?._?.opt?.peers;
+                if (self._closed || !peers || peers[url]) return;
+                peers[url] = peer;
+            }, 0);
+        });
+
+        root.on('hi', function (peer) {
+            this.to.next(peer);
+            if (self._closed || !self._sawBye) return; // first connect — nothing missed
+            self._sawBye = false;
+            self._scheduleResync();
+        });
+
+        this._heartbeatTimer = setInterval(
+            () => this._heartbeatTick(),
+            HEARTBEAT_INTERVAL_MS,
+        );
+        // Don't hold a short-lived Node process open for the heartbeat.
+        if (typeof this._heartbeatTimer.unref === 'function') {
+            this._heartbeatTimer.unref();
+        }
+    }
+
+    // Debounced so a flapping connection (or several peers reconnecting at
+    // once) coalesces into one resync pass after the wire settles.
+    _scheduleResync() {
+        if (this._closed || this._resyncTimer) return;
+        this._resyncTimer = setTimeout(() => {
+            this._resyncTimer = null;
+            this.resyncSubscriptions().catch(() => { /* best-effort */ });
+        }, RECONNECT_RESYNC_DEBOUNCE_MS);
+        if (typeof this._resyncTimer.unref === 'function') {
+            this._resyncTimer.unref();
+        }
+    }
+
+    /**
+     * Re-reads every (holon, lens) path that has a live `subscribe()` so the
+     * relay's current state flows through the existing `map().on()`
+     * listeners — catching up on anything written while the wire was down.
+     * Runs automatically (debounced) after a reconnect; safe to call
+     * manually, e.g. from a browser `online` handler.
+     */
+    async resyncSubscriptions() {
+        if (this._closed) return;
+        const groups = this._subscriptionGroups;
+        if (!groups || groups.size === 0) return;
+        const paths = [...groups.values()].map((g) => ({ holon: g.holon, lens: g.lens }));
+        await Promise.allSettled(
+            paths.map(({ holon, lens }) => this.getAll(holon, lens)),
+        );
+    }
+
+    // Half-open (zombie) socket detection. `mesh.hear.c` counts every raw
+    // message received across all peers; if a whole interval passes with no
+    // traffic, ping each OPEN peer (a DAM `?`, which the relay acks) and, if
+    // the next interval is still silent, force-close the wire — Gun's
+    // `onclose` then drives the normal reconnect + resync path. The counter
+    // is instance-wide, so with several peers a chatty one can mask a zombie;
+    // every production surface here runs a single relay, and the ping doubles
+    // as a NAT keepalive either way.
+    _heartbeatTick() {
+        if (this._closed) return;
+        const opt = this.gun?._?.opt;
+        const mesh = opt && opt.mesh;
+        if (!mesh || typeof mesh.say !== 'function') return;
+        const heard = (mesh.hear && mesh.hear.c) || 0;
+        const quiet = heard <= this._lastHeard;
+        this._lastHeard = heard;
+        for (const url of this._resilientPeers) {
+            const peer = opt.peers && opt.peers[url];
+            const wire = peer && peer.wire;
+            if (!wire || wire.readyState !== 1 /* OPEN */) {
+                if (peer) peer.__hbPinged = false; // reconnect loop owns it
+                continue;
+            }
+            if (!quiet) {
+                peer.__hbPinged = false;
+                continue;
+            }
+            if (peer.__hbPinged) {
+                peer.__hbPinged = false;
+                try { wire.close(); } catch { /* already dead */ }
+            } else {
+                peer.__hbPinged = true;
+                try { mesh.say({ dam: '?', pid: opt.pid }, peer); } catch { /* ignore */ }
+            }
+        }
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -1085,6 +1247,17 @@ class HoloSphere {
     // ================================ END FEDERATION FUNCTIONS ================================
 
     async close() {
+        // Stop the resilience layer first so it can't restore peers or
+        // schedule resyncs while the instance tears down.
+        this._closed = true;
+        if (this._resyncTimer) {
+            clearTimeout(this._resyncTimer);
+            this._resyncTimer = null;
+        }
+        if (this._heartbeatTimer) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
         return Utils.close(this);
     }
 
@@ -1101,11 +1274,15 @@ class HoloSphere {
             file: './radata',
             radisk: true,
             until: null,
-            retry: 3,
             timeout: 5000
         };
 
         const radiskOptions = { ...defaultOptions, ...options };
+        // `retry` is NOT a radisk option — Gun reads opt.retry only as the
+        // websocket reconnect budget (defaulted to Infinity in the
+        // constructor). Pass it through only when explicitly set, so
+        // configuring radisk can't silently cap reconnection.
+        if (radiskOptions.retry === undefined) delete radiskOptions.retry;
 
         if (this.gun && this.gun._.opt) {
             Object.assign(this.gun._.opt, radiskOptions);
@@ -1124,7 +1301,8 @@ class HoloSphere {
         return {
             enabled: options.radisk || false,
             filePath: options.file || './radata',
-            retry: options.retry || 3,
+            // The live websocket reconnect budget (not a radisk knob).
+            retry: options.retry,
             timeout: options.timeout || 5000,
             until: options.until || null,
             peers: options.peers || [],

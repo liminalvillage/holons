@@ -315,6 +315,14 @@ declare class HoloSphere {
     // call styles produce the same `{ unsubscribe }` shape.
     subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void, options?: SubscribeOptions): { unsubscribe: () => void };
 
+    /**
+     * Re-reads every (holon, lens) path with a live `subscribe()` so relay
+     * state written while the wire was down flows through the existing
+     * listeners. Runs automatically (debounced) after a websocket reconnect;
+     * safe to call manually, e.g. from a browser `online` handler.
+     */
+    resyncSubscriptions(): Promise<void>;
+
     // Federation - v1 style
     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
     unfederate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null): Promise<boolean>;
