@@ -18,9 +18,13 @@ export interface ToolAudit {
   ok: boolean;
 }
 
-/** Tool names that mutate state (vs. read/compute). */
+/**
+ * Tool names that mutate state (vs. read/compute). `navigate` is a UI action,
+ * not a data write, but it counts here so a fulfilled "go to the calendar"
+ * passes the write checks — the server excludes it from lens-cache flushes.
+ */
 const WRITE_NAME =
-  /(create|add|remove|delete|toggle|save|complete|update|set|join|leave|borrow|return|publish|seed|rsvp|clear|apply|put|migrate|normalize)/;
+  /(create|add|remove|delete|toggle|save|complete|update|set|join|leave|borrow|return|publish|seed|rsvp|clear|apply|put|migrate|normalize|navigate)/;
 
 export function isWriteTool(name: string): boolean {
   if (name.startsWith('lens_get')) return false;
@@ -38,7 +42,7 @@ export function hasSuccessfulWrite(audit: ToolAudit[]): boolean {
  * state ("the task marked done is …") don't trigger a correction pass.
  */
 const CLAIM =
-  /\b(i(?:'ve| have| already)?|has been|have been|is now|are now|successfully|it's been)\b[^.!?]{0,80}\b(deleted|removed|created|added|completed|marked|saved|updated|renamed|assigned|joined|borrowed|returned|cleared|cancell?ed|done)\b/i;
+  /\b(i(?:'ve| have| already)?|has been|have been|is now|are now|successfully|it's been)\b[^.!?]{0,80}\b(deleted|removed|created|added|completed|marked|saved|updated|renamed|assigned|joined|borrowed|returned|cleared|cancell?ed|done|switched|opened)\b/i;
 
 export function claimsCompletedAction(reply: string): boolean {
   return CLAIM.test(reply);
@@ -51,7 +55,7 @@ export function claimsCompletedAction(reply: string): boolean {
  * models fall into.
  */
 const ACTION_REQUEST =
-  /\b(add|create|make|new|delete|remove|complete|finish|mark|schedule|move|reschedule|rename|change|update|set|assign|join|leave|borrow|return|cancel|clear|put)\b/i;
+  /\b(add|create|make|new|delete|remove|complete|finish|mark|schedule|move|reschedule|rename|change|update|set|assign|join|leave|borrow|return|cancel|clear|put|switch|go to|navigate)\b/i;
 
 export function looksLikeActionRequest(text: string): boolean {
   return ACTION_REQUEST.test(text);
@@ -110,21 +114,34 @@ export type FuzzyResult =
  * Find the item whose title is best covered by the needle (the bogus id plus
  * the user's utterance). Coverage = fraction of the title's words present in
  * the needle; a clear winner is returned, close calls come back as
- * candidates, and no plausible match is null.
+ * candidates, and no plausible match is null. STT splits and joins compound
+ * words ("futurecasting" ⇄ "future casting"), so a title whose squashed form
+ * appears whole in the squashed needle counts as fully covered.
  */
 export function fuzzyFindByTitle(
   needle: string,
   items: Array<Record<string, unknown>>,
 ): FuzzyResult {
   const bag = new Set(normTokens(needle));
+  const squashedNeedle = normTokens(needle).join('');
   const scored = items
     .map((it) => {
       const title = String(it?.title ?? '');
       const words = normTokens(title);
-      const score =
+      let score =
         it?.id == null || words.length === 0
           ? 0
           : words.filter((w) => bag.has(w)).length / words.length;
+      const squashedTitle = words.join('');
+      // Length floor keeps short titles ("do") from matching everywhere.
+      if (
+        score < 1 &&
+        it?.id != null &&
+        squashedTitle.length >= 6 &&
+        squashedNeedle.includes(squashedTitle)
+      ) {
+        score = 1;
+      }
       return { id: String(it?.id), title, score };
     })
     .filter((x) => x.score >= 0.6)
@@ -135,6 +152,34 @@ export function fuzzyFindByTitle(
     return { id: scored[0].id, title: scored[0].title };
   }
   return { candidates: scored.slice(0, 3).map(({ id, title }) => ({ id, title })) };
+}
+
+/** Words too generic to prove the user meant a particular title. */
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'to', 'of', 'for', 'in', 'on', 'at', 'and', 'or', 'my',
+  'me', 'it', 'this', 'that', 'task', 'one',
+]);
+
+/**
+ * Cross-check a VALID record id against the user's utterance. A weak model
+ * sometimes grabs the wrong (but existing) id from the snapshot — observed
+ * live: "move the future casting to tomorrow" → task_update on a valid id
+ * titled "clear out external kitchen". Flag it only when the utterance
+ * clearly names a DIFFERENT item AND shares not a single meaningful word
+ * with the chosen title — pronoun-only follow-ups ("move it to 5") match no
+ * title and never trigger, and partial overlap is trusted as intentional.
+ */
+export function titleMismatch(
+  utterance: string,
+  chosen: { id: string; title: string },
+  items: Array<Record<string, unknown>>,
+): { id: string; title: string } | null {
+  const found = fuzzyFindByTitle(utterance, items);
+  if (!found || !('id' in found) || found.id === chosen.id) return null;
+  const bag = new Set(normTokens(utterance));
+  const meaningful = normTokens(chosen.title).filter((w) => !STOPWORDS.has(w));
+  if (meaningful.some((w) => bag.has(w))) return null;
+  return found;
 }
 
 /** Compact digest rows from a lens_get_all / users_list result payload. */

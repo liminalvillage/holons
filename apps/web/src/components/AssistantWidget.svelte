@@ -8,10 +8,26 @@
 	// the same agent pipeline (LLM + Holons MCP tools). No microphone and no
 	// audio playback — TTS frames from the server are ignored.
 	import { onDestroy, onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { ID } from '../dashboard/store';
 
 	const WS_URL = (import.meta.env.VITE_VOICE_WS_URL as string | undefined) ?? 'ws://localhost:8787';
+	/** Views the agent may navigate to (each is a /[id]/<view> route). */
+	const NAV_VIEWS = [
+		'dashboard',
+		'tasks',
+		'calendar',
+		'checklists',
+		'shopping',
+		'library',
+		'roles',
+		'expenses',
+		'events',
+		'map',
+		'schedule',
+		'settings'
+	];
 	/** How often to re-probe for a server while none is reachable. */
 	const RETRY_MS = 30_000;
 	/** How long the reply bubble lingers after the agent answers. */
@@ -52,6 +68,9 @@
 		const route = $page.route.id ?? '';
 		const view = route.split('/').filter((s) => s && !s.startsWith('[')).pop();
 		ctx.view = view || 'dashboard';
+		// Advertise where the agent may send us — the server validates
+		// ui_navigate calls against this list.
+		if (holon) ctx.views = NAV_VIEWS.join(',');
 		try {
 			ctx.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		} catch {
@@ -100,6 +119,8 @@
 				available = true;
 				// Announce where we are so the server pre-warms this holon's data.
 				ws?.send(JSON.stringify({ type: 'context', context: uiContext() }));
+				// Text-only widget: tell the server not to synthesize TTS at all.
+				ws?.send(JSON.stringify({ type: 'mute', muted: true }));
 				break;
 			case 'tool':
 				activeTool = String(msg.name);
@@ -112,6 +133,14 @@
 				showBubble();
 				armBubbleFade();
 				break;
+			case 'navigate': {
+				// Agent-driven view switch (the ui_navigate tool). Server already
+				// validated against NAV_VIEWS; re-check anyway before routing.
+				const view = String(msg.view ?? '');
+				const holon = $ID;
+				if (holon && NAV_VIEWS.includes(view)) void goto(`/${holon}/${view}`);
+				break;
+			}
 			case 'error':
 				activeTool = null;
 				thinking = false;

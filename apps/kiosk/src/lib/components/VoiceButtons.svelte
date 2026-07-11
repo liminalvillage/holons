@@ -4,7 +4,8 @@
   // Inline voice controls, rendered by each view INSIDE its fab row so the
   // cluster reads [⌨] [🎤] [＋]. Renders nothing unless a voice server is
   // reachable — a kiosk without one shows just the ＋ as before. Styling
-  // mirrors the views' .fab exactly (size, color, shadow).
+  // mirrors the views' .fab exactly (size, color, shadow). Mute lives in the
+  // chat popup (VoiceWidget), next to its close button.
   import { holonId } from "$lib/stores";
   import {
     available,
@@ -72,13 +73,13 @@
   .fab-btn.open {
     background: var(--teal-deep);
   }
-  .mic {
-    touch-action: none;
-  }
-  .mic svg {
+  .fab-btn svg {
     width: 1.6rem;
     height: 1.6rem;
     pointer-events: none;
+  }
+  .mic {
+    touch-action: none;
   }
   .mic.live {
     background: #dc2626;

@@ -82,6 +82,10 @@ const DEFAULT_SYSTEM_PROMPT =
   'Recipe — scheduling/editing: use task_update to change a task\'s when/until (full ' +
   'ISO 8601 local timestamps computed from the current date/time given above), title, ' +
   'description, or category. ' +
+  'Recipe — navigation: when the user asks to see, open, show, switch to, or go to a ' +
+  'different part of the app ("go to the calendar", "show the library"), call ' +
+  'ui_navigate with a view id from the "views" list in the UI context. It only changes ' +
+  'what is on screen, never data. ' +
   'Honesty: only claim an action happened if a tool call SUCCEEDED this turn. If a tool ' +
   'failed or you called none, say so plainly and say what went wrong — never pretend.';
 

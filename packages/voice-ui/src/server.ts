@@ -5,12 +5,14 @@
 //   client → server:
 //     { type: 'utterance', mime, audio: <base64> }   one complete utterance
 //     { type: 'barge_in' }                            user started talking; cancel output
+//     { type: 'mute', muted }                         true: skip TTS entirely (text-only)
 //   server → client:
 //     { type: 'ready', sampleRate }
 //     { type: 'transcript', text }
 //     { type: 'assistant', text }
 //     { type: 'tool', name }
 //     { type: 'tts_start', sampleRate } / { type: 'tts', audio } / { type: 'tts_end' }
+//     { type: 'navigate', view }    switch the client UI to another view/tab
 //     { type: 'error', message }
 //
 // One utterance is processed at a time per connection; a new utterance or an
@@ -38,19 +40,28 @@ import {
   idSpecFor,
   localIso,
   looksLikeActionRequest,
+  titleMismatch,
   type ToolAudit,
 } from './harness.js';
 import { slideWindow } from './history.js';
+import {
+  UI_NAVIGATE,
+  navigateOutcome,
+  uiNavigateTool,
+  viewsFromContext,
+} from './ui-tools.js';
 import { connectHolonsMcp, type HolonsMcp } from './mcp-client.js';
 import { makeLLM, makeSTT, makeTTS } from './factory.js';
 import type { STTProvider } from './providers/stt/types.js';
 import type { TTSProvider } from './providers/tts/types.js';
 
 interface ClientMessage {
-  type: 'utterance' | 'barge_in' | 'text' | 'context';
+  type: 'utterance' | 'barge_in' | 'text' | 'context' | 'mute';
   mime?: string;
   audio?: string;
   text?: string;
+  /** For type 'mute': whether spoken replies are off. */
+  muted?: boolean;
   /** What the client UI is showing (holon, view, open record) — see context.ts. */
   context?: unknown;
 }
@@ -138,8 +149,12 @@ function withNotFoundHint(dispatch: ToolDispatcher): ToolDispatcher {
 
 class Session {
   private turn: AbortController | null = null;
+  /** Client asked for text-only replies — skip TTS synthesis entirely. */
+  private muted = false;
   /** Sliding window of past exchanges, replayed each turn (see history.ts). */
   private history: HistoryMessage[] = [];
+  /** The context holon the history belongs to (see the reset in respond). */
+  private historyHolon: string | null = null;
   /**
    * Session-level lens cache, stale-while-revalidate. Holosphere's getAll
    * blocks up to 8s on a cold or EMPTY lens (READ_TIMEOUT_MS) and resolves
@@ -180,6 +195,10 @@ class Session {
     }
     if (msg.type === 'barge_in') {
       this.abort();
+      return;
+    }
+    if (msg.type === 'mute') {
+      this.muted = msg.muted === true;
       return;
     }
     if (msg.type === 'context') {
@@ -253,18 +272,30 @@ class Session {
       const holon = call.input.holon;
       if (spec && typeof holon === 'string') {
         const given = call.input[spec.field] as string;
-        let known = false;
+        let chosen: Record<string, unknown> | undefined;
         for (const lens of spec.lenses) {
-          if (
-            (await this.fetchLens(holon, lens, 10_000)).some(
-              (it) => String(it?.id) === given,
-            )
-          ) {
-            known = true;
-            break;
-          }
+          chosen = (await this.fetchLens(holon, lens, 10_000)).find(
+            (it) => String(it?.id) === given,
+          );
+          if (chosen) break;
         }
-        if (!known) {
+        if (chosen) {
+          // The id is real — but is it the record the user actually named?
+          // Observed failure: a valid id belonging to a completely different
+          // task than the one spoken. The utterance is authoritative.
+          const better = titleMismatch(
+            utterance,
+            { id: given, title: String(chosen.title ?? '') },
+            await this.fetchLens(holon, spec.lenses[0], 10_000),
+          );
+          if (better) {
+            console.error(
+              `[harness] ${call.name}: ${spec.field} "${given}" ("${chosen.title}") ` +
+                `contradicts the utterance → ${better.id} ("${better.title}")`,
+            );
+            call = { ...call, input: { ...call.input, [spec.field]: better.id } };
+          }
+        } else {
           const found = fuzzyFindByTitle(
             `${given} ${utterance}`,
             await this.fetchLens(holon, spec.lenses[0], 10_000),
@@ -288,6 +319,25 @@ class Session {
         }
       }
       return dispatch(call);
+    };
+  }
+
+  /**
+   * Intercept client-side UI tools (ui_navigate): they never reach MCP — the
+   * effect is a frame pushed to the client, which owns the actual view switch.
+   * Target views are validated against the list the client advertised in this
+   * turn's context, so the model can't send the UI somewhere it can't go.
+   */
+  private uiTools(
+    dispatch: ToolDispatcher,
+    utterance: string,
+    context?: unknown,
+  ): ToolDispatcher {
+    return async (call) => {
+      if (call.name !== UI_NAVIGATE) return dispatch(call);
+      const outcome = navigateOutcome(call.input, viewsFromContext(context), utterance);
+      if (outcome.ok) this.send({ type: 'navigate', view: outcome.view });
+      return { id: call.id, content: outcome.message, isError: !outcome.ok };
     };
   }
 
@@ -384,10 +434,28 @@ class Session {
     console.error(`[turn] heard: "${text}"`);
     this.send({ type: 'transcript', text });
 
+    // A holon switch voids the conversation: "it"/"that one" can no longer
+    // resolve, and record ids quoted in old exchanges belong to the PREVIOUS
+    // holon — a weak model happily reuses them on the new one. Fresh holon,
+    // fresh history.
+    const turnHolon = Session.contextHolon(context);
+    if (turnHolon && turnHolon !== this.historyHolon) {
+      if (this.historyHolon && this.history.length > 0) {
+        console.error(
+          `[harness] context holon ${this.historyHolon} → ${turnHolon}: history reset`,
+        );
+        this.history = [];
+      }
+      this.historyHolon = turnHolon;
+    }
+
     const provider = makeLLM(this.config);
     const audit: ToolAudit[] = [];
     const dispatch = this.auditing(
-      this.resolvingIds(withNotFoundHint(this.mcp.dispatch), text),
+      this.resolvingIds(
+        withNotFoundHint(this.uiTools(this.mcp.dispatch, text, context)),
+        text,
+      ),
       audit,
     );
     // The model's internal sense of "today" is its training cutoff — years
@@ -462,7 +530,11 @@ class Session {
         correctionHistory(this.history, text, speech),
       );
     }
-    if (hasSuccessfulWrite(audit)) this.lens.clear();
+    // Navigation counts as a write for the claim check but moves no data, so
+    // it must not flush the lens cache (a needless cold refetch next turn).
+    if (hasSuccessfulWrite(audit.filter((a) => a.name !== UI_NAVIGATE))) {
+      this.lens.clear();
+    }
 
     // Record the exchange even if the client barged in — the tools already
     // ran, so the next turn's "it"/"that one" must still resolve against it.
@@ -470,7 +542,7 @@ class Session {
     if (signal.aborted) return;
     console.error(`[turn] reply: "${speech}"`);
     this.send({ type: 'assistant', text: speech });
-    if (!speech) return;
+    if (!speech || this.muted) return;
 
     this.send({ type: 'tts_start', sampleRate: this.tts.sampleRate });
     for await (const chunk of this.tts.synthesize(speech, signal)) {
@@ -551,6 +623,10 @@ export async function startVoiceServer(config: VoiceConfig): Promise<VoiceServer
     );
     console.error(`[holons-voice] tools: ${mcp.tools.length}/${total} exposed to voice`);
   }
+  // Client-side tools ride alongside the MCP tools on every model call —
+  // including the warmup, so the primed prompt-cache prefix stays byte-stable
+  // with real turns.
+  mcp.tools = [...mcp.tools, uiNavigateTool];
   const stt = makeSTT(config);
   const tts = makeTTS(config);
 

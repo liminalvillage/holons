@@ -6,20 +6,44 @@
 // when no voice server is reachable the buttons render nothing.
 
 import { get, writable } from "svelte/store";
-import { holonId, holonName, activeTab, selection, type Selection } from "$lib/stores";
-import { encodeWav, bytesToBase64, base64ToBytes, PcmPlayer } from "$lib/voice/audio";
+import {
+  holonId,
+  holonName,
+  activeTab,
+  selection,
+  selectTab,
+  visibleTabs,
+  type Selection,
+} from "$lib/stores";
+import {
+  encodeWav,
+  bytesToBase64,
+  base64ToBytes,
+  PcmPlayer,
+} from "$lib/voice/audio";
 
 const WS_URL =
   (import.meta.env.VITE_VOICE_WS_URL as string | undefined) ??
   "ws://localhost:8787";
-/** How often to re-probe for a voice server while none is reachable. */
-const RETRY_MS = 30_000;
+/**
+ * Re-probe schedule while no voice server is reachable. Every attempt makes
+ * the browser print an uncatchable "WebSocket connection failed" console line,
+ * so back off exponentially: kiosks without a voice server go quiet instead of
+ * spamming a line every 30s forever. Resets to the floor on a successful open.
+ */
+const RETRY_MIN_MS = 30_000;
+const RETRY_MAX_MS = 600_000;
 /** How long the reply bubble lingers after the agent finishes speaking. */
 const BUBBLE_LINGER_MS = 8_000;
 
 export const available = writable(false);
 export const status = writable<"ready" | "recording" | "thinking" | "speaking">(
   "ready",
+);
+/** Spoken replies off — the agent still works, answers appear as text only. */
+export const muted = writable(
+  typeof localStorage !== "undefined" &&
+    localStorage.getItem("voice-muted") === "1",
 );
 export const recording = writable(false);
 export const youSaid = writable("");
@@ -36,6 +60,7 @@ let sourceNode: MediaStreamAudioSourceNode | null = null;
 let procNode: ScriptProcessorNode | null = null;
 let pcmChunks: Float32Array[] = [];
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = RETRY_MIN_MS;
 let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
 let destroyed = false;
 let inited = false;
@@ -46,6 +71,27 @@ function showBubble() {
   bubbleTimer = null;
 }
 
+/**
+ * Toggle spoken replies. Muting cuts any playback mid-word and tells the
+ * server to stop synthesizing TTS at all (text frames keep flowing).
+ */
+export function toggleMute() {
+  muted.update((m) => {
+    const next = !m;
+    try {
+      localStorage.setItem("voice-muted", next ? "1" : "0");
+    } catch {
+      /* private mode — mute just won't survive a reload */
+    }
+    if (next) {
+      player?.stop();
+      status.update((s) => (s === "speaking" ? "ready" : s));
+    }
+    ws?.send(JSON.stringify({ type: "mute", muted: next }));
+    return next;
+  });
+}
+
 function armBubbleFade() {
   if (bubbleTimer) clearTimeout(bubbleTimer);
   bubbleTimer = setTimeout(() => {
@@ -54,11 +100,28 @@ function armBubbleFade() {
   }, BUBBLE_LINGER_MS);
 }
 
+/**
+ * Dismiss the popup: cut any playback, cancel the in-flight turn (barge-in,
+ * same as starting to talk over it), and hide the bubble immediately.
+ */
+export function closeBubble() {
+  player?.stop();
+  ws?.send(JSON.stringify({ type: "barge_in" }));
+  status.set("ready");
+  activeTool.set(null);
+  bubbleOpen.set(false);
+  if (bubbleTimer) {
+    clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+  }
+}
+
 function selectionSummary(sel: Selection): string | null {
   if (!sel) return null;
   if (sel.kind === "thing") {
     const it = sel.item;
-    const from = typeof it._holon === "string" ? ` from holon ${it._holon}` : "";
+    const from =
+      typeof it._holon === "string" ? ` from holon ${it._holon}` : "";
     return `library item "${it.description || it.id}" (id ${it.id})${from}`;
   }
   const q = sel.quest as Record<string, unknown>;
@@ -74,6 +137,11 @@ function uiContext(): Record<string, string> {
   const name = get(holonName);
   if (name) ctx.holonName = name;
   ctx.view = get(activeTab);
+  // Advertise the tabs the agent may switch to — the server validates
+  // ui_navigate calls against this list.
+  ctx.views = get(visibleTabs)
+    .map((t) => t.id)
+    .join(",");
   // Browser-local IANA timezone, so "today at 2" schedules in the user's
   // local time even when the voice server runs elsewhere.
   try {
@@ -100,6 +168,7 @@ function connect() {
   sock.onmessage = onServerMessage;
   sock.onopen = () => {
     ws = sock;
+    retryDelay = RETRY_MIN_MS;
   };
   sock.onerror = () => {
     /* onclose follows; retry is scheduled there */
@@ -118,7 +187,8 @@ function scheduleRetry() {
   retryTimer = setTimeout(() => {
     retryTimer = null;
     connect();
-  }, RETRY_MS);
+  }, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
 }
 
 function onServerMessage(ev: MessageEvent) {
@@ -136,6 +206,8 @@ function onServerMessage(ev: MessageEvent) {
       // Announce where we are so the server pre-warms this holon's data
       // before the first utterance (cold lens reads take seconds).
       ws?.send(JSON.stringify({ type: "context", context: uiContext() }));
+      // Restore a persisted mute so the server skips TTS from the first turn.
+      if (get(muted)) ws?.send(JSON.stringify({ type: "mute", muted: true }));
       break;
     case "transcript":
       youSaid.set(String(msg.text));
@@ -153,15 +225,24 @@ function onServerMessage(ev: MessageEvent) {
       showBubble();
       break;
     case "tts_start":
-      status.set("speaking");
+      if (!get(muted)) status.set("speaking");
       break;
     case "tts":
-      player?.enqueuePcm16(base64ToBytes(String(msg.audio)));
+      // In-flight audio may still arrive right after muting — drop it.
+      if (!get(muted)) player?.enqueuePcm16(base64ToBytes(String(msg.audio)));
       break;
     case "tts_end":
       status.set("ready");
       armBubbleFade();
       break;
+    case "navigate": {
+      // Agent-driven tab switch (the ui_navigate tool). selectTab also counts
+      // as an interaction, pausing auto-rotation like a touch would.
+      const view = String(msg.view ?? "");
+      const tab = get(visibleTabs).find((t) => t.id === view);
+      if (tab) selectTab(tab.id);
+      break;
+    }
     case "error":
       activeTool.set(null);
       holonsSaid.set(`⚠ ${String(msg.message)}`);
@@ -193,9 +274,11 @@ export async function startRecording(): Promise<void> {
   if (get(recording) || !ws) return; // released while permission prompt was up
 
   pcmChunks = [];
-  audioCtx = new (window.AudioContext ??
+  audioCtx = new (
+    window.AudioContext ??
     (window as unknown as { webkitAudioContext: typeof AudioContext })
-      .webkitAudioContext)();
+      .webkitAudioContext
+  )();
   sourceNode = audioCtx.createMediaStreamSource(stream);
   procNode = audioCtx.createScriptProcessor(4096, 1, 1);
   procNode.onaudioprocess = (e) => {
@@ -265,7 +348,9 @@ export function sendTyped(text: string): boolean {
   if (!trimmed || !ws || !get(available)) return false;
   player?.stop();
   ws.send(JSON.stringify({ type: "barge_in" }));
-  ws.send(JSON.stringify({ type: "text", text: trimmed, context: uiContext() }));
+  ws.send(
+    JSON.stringify({ type: "text", text: trimmed, context: uiContext() }),
+  );
   typeOpen.set(false);
   youSaid.set(trimmed);
   holonsSaid.set("");

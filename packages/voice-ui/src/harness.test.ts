@@ -12,6 +12,7 @@ import {
   isWriteTool,
   localIso,
   looksLikeActionRequest,
+  titleMismatch,
 } from './harness.js';
 
 describe('isWriteTool', () => {
@@ -26,6 +27,7 @@ describe('isWriteTool', () => {
       'tasks_save',
       'library_borrow',
       'holon_join',
+      'ui_navigate',
     ]) {
       expect(isWriteTool(w), w).toBe(true);
     }
@@ -63,6 +65,7 @@ describe('claimsCompletedAction', () => {
     expect(claimsCompletedAction('The task has been removed as requested.')).toBe(true);
     expect(claimsCompletedAction('I added you to the roof task.')).toBe(true);
     expect(claimsCompletedAction('It has been successfully saved.')).toBe(true);
+    expect(claimsCompletedAction("I've switched you to the calendar.")).toBe(true);
   });
 
   it('ignores descriptions and questions', () => {
@@ -77,6 +80,8 @@ describe('looksLikeActionRequest / hasWriteAttempt', () => {
     expect(looksLikeActionRequest('Add me to the roof task at 2pm.')).toBe(true);
     expect(looksLikeActionRequest('delete the cleaning task')).toBe(true);
     expect(looksLikeActionRequest('Move mop the floor to tomorrow.')).toBe(true);
+    expect(looksLikeActionRequest('go to the calendar')).toBe(true);
+    expect(looksLikeActionRequest('switch to the library tab')).toBe(true);
   });
 
   it('leaves questions and chat alone', () => {
@@ -136,6 +141,65 @@ describe('id resolution', () => {
 
   it('gives up when nothing plausibly matches', () => {
     expect(fuzzyFindByTitle('buy groceries tomorrow', items)).toBeNull();
+  });
+
+  it('matches split/joined compound words via the squashed form', () => {
+    const quests = [
+      { id: 'fc', title: 'Futurecasting' },
+      { id: 'ek', title: 'clear out external kitchen' },
+    ];
+    expect(fuzzyFindByTitle('move the future casting to tomorrow', quests)).toEqual({
+      id: 'fc',
+      title: 'Futurecasting',
+    });
+  });
+});
+
+describe('titleMismatch', () => {
+  // The live failure: a VALID id, but of a completely different task.
+  const quests = [
+    { id: 'mr9dq', title: 'Future Casting' },
+    { id: 'mqv77', title: 'clear out external kitchen' },
+    { id: 'mr9fb', title: 'Artizen Call' },
+  ];
+
+  it('flags a valid id whose title contradicts the utterance', () => {
+    const r = titleMismatch(
+      'Move the future casting to tomorrow.',
+      { id: 'mqv77', title: 'clear out external kitchen' },
+      quests,
+    );
+    expect(r).toEqual({ id: 'mr9dq', title: 'Future Casting' });
+  });
+
+  it('trusts the chosen id when the utterance names it', () => {
+    expect(
+      titleMismatch(
+        'reschedule the artizen call',
+        { id: 'mr9fb', title: 'Artizen Call' },
+        quests,
+      ),
+    ).toBeNull();
+  });
+
+  it('never triggers on pronoun-only follow-ups', () => {
+    expect(
+      titleMismatch(
+        'move it to 8pm instead',
+        { id: 'mqv77', title: 'clear out external kitchen' },
+        quests,
+      ),
+    ).toBeNull();
+  });
+
+  it('trusts partial overlap with the chosen title', () => {
+    expect(
+      titleMismatch(
+        'add buy soap to the kitchen task',
+        { id: 'mqv77', title: 'clear out external kitchen' },
+        quests,
+      ),
+    ).toBeNull();
   });
 });
 
