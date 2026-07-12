@@ -15,7 +15,7 @@
     categoryColors,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
-  import { getWriter } from "$lib/holosphere";
+  import { getHolosphere, getWriter } from "$lib/holosphere";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
@@ -25,9 +25,14 @@
     noteTilt,
     noteRiseDelay,
     noteRiseRot,
+    sourceRef,
     type BacklogTask,
   } from "$lib/data";
-  import { createTask, type Quest } from "@holons/core/tasks";
+  import {
+    createTask,
+    deleteTaskWithCascade,
+    type Quest,
+  } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -371,6 +376,48 @@
     }, 700);
   }
 
+  // ── Delete ──────────────────────────────────────────────────────────────-─
+  // The task awaiting delete confirmation; null when no prompt is pending.
+  let confirmDelete: BacklogTask | null = null;
+  let deleting = false;
+
+  function onDelete(task: BacklogTask) {
+    if (!get(telegramUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    confirmDelete = task;
+  }
+
+  async function doDelete() {
+    const task = confirmDelete;
+    const hid = get(holonId);
+    if (!task || !hid) return;
+    deleting = true;
+    try {
+      // A federated/hologram card lives in its owner's graph — delete the
+      // source there (cascading over its forwards); deleting the local pointer
+      // would only orphan it. Own items delete in place.
+      const q = get(rawQuests).find((x) => String(x.id ?? x.title) === task.id);
+      const ref = q ? sourceRef(q, task.id) : undefined;
+      const hs = await getHolosphere();
+      const result = await deleteTaskWithCascade(
+        hs as any,
+        ref?.holon ?? hid,
+        ref?.key ?? task.id,
+      );
+      if (!result.sourceDeleted) {
+        showNotice("Couldn't delete — you may not have permission.");
+      }
+    } catch (err) {
+      console.error("[kiosk] delete failed", err);
+      showNotice("Couldn't delete this task.");
+    } finally {
+      deleting = false;
+      confirmDelete = null;
+    }
+  }
+
   // ── Add task(s) — one per line ────────────────────────────────────────────-
   let addOpen = false;
   let addDraft = "";
@@ -460,6 +507,17 @@
                 on:click={() => openTask(task.id)}
                 on:keydown={(e) => onKey(e, task.id)}
               >
+                <div class="tools left">
+                  <button
+                    class="tool del"
+                    on:pointerdown|stopPropagation
+                    on:click|stopPropagation={() => onDelete(task)}
+                    aria-label="Delete task"
+                    title="Delete task"
+                  >
+                    ✕
+                  </button>
+                </div>
                 <div class="tools">
                   <button
                     class="tool check"
@@ -561,6 +619,26 @@
       <div class="actions">
         <button class="primary" on:click={confirmAppreciate}>Appreciate</button>
         <button class="ghost" on:click={() => (confirmDrop = null)}
+          >Cancel</button
+        >
+      </div>
+    </div>
+  </Modal>
+{/if}
+
+{#if confirmDelete}
+  <Modal on:close={() => (confirmDelete = null)}>
+    <div class="add">
+      <div class="glyph del-glyph" aria-hidden="true">✕</div>
+      <h3>Delete task?</h3>
+      <p class="lead">
+        “{confirmDelete.title}” will be removed for everyone.
+      </p>
+      <div class="actions">
+        <button class="primary danger" on:click={doDelete} disabled={deleting}
+          >{deleting ? "Deleting…" : "Delete"}</button
+        >
+        <button class="ghost" on:click={() => (confirmDelete = null)}
           >Cancel</button
         >
       </div>
@@ -806,12 +884,23 @@
       color 0.15s ease,
       transform 0.1s ease;
   }
+  .tools.left {
+    right: auto;
+    left: 0.5rem;
+  }
   .tool.check {
     color: var(--teal-deep);
   }
   .tool:active {
     transform: scale(0.88);
     background: var(--teal);
+    color: #fff;
+  }
+  .tool.del {
+    color: rgba(154, 59, 47, 0.75);
+  }
+  .tool.del:active {
+    background: #d4493a;
     color: #fff;
   }
 
@@ -991,6 +1080,9 @@
     color: #d4493a;
     font-size: 2.2rem;
   }
+  .add .glyph.del-glyph {
+    color: #d4493a;
+  }
   .add h3 {
     margin: 0.2rem 0 0.3rem;
     font-size: 1.3rem;
@@ -1035,6 +1127,9 @@
     background: var(--teal);
     color: #fff;
     box-shadow: var(--shadow-soft);
+  }
+  .add .primary.danger {
+    background: #d4493a;
   }
   .add .ghost {
     background: rgba(255, 255, 255, 0.5);
