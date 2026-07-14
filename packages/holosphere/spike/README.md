@@ -1,6 +1,6 @@
 # Spike: Nostr signing + relay persistence
 
-Proves the core of [`../NOSTR-SIGNING-PLAN.md`](../NOSTR-SIGNING-PLAN.md): HoloSphere
+Proves the core of the signing layer (see [`../SIGNING.md`](../SIGNING.md)): HoloSphere
 records can be signed NIP-01 events (via **nostr-tools**) and persisted by a Nostr
 relay (**strfry**), so GunDB data loss is recoverable.
 

@@ -10,7 +10,7 @@
  * Opt-in: nothing runs unless `sphere.enableSigning(...)` is called. Loaded
  * dynamically so `nostr-tools` is only needed when enabled. The Gun store still
  * holds raw items at their normal path; signed events live in a reserved
- * `_events` sidecar that ordinary reads never touch. See NOSTR-SIGNING-PLAN.md.
+ * `_events` sidecar that ordinary reads never touch. See SIGNING.md.
  */
 
 import {

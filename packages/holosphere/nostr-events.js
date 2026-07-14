@@ -3,7 +3,7 @@
  *
  * Turns a HoloSphere (holon, lens, item) write into a signed, self-verifying
  * Nostr event so it can be (a) authorized at read time and (b) persisted by any
- * Nostr relay (strfry, etc.). See NOSTR-SIGNING-PLAN.md.
+ * Nostr relay (strfry, etc.). See SIGNING.md.
  *
  * Uses NIP-33 parameterized-replaceable semantics via tags:
  *   [["h", holonId], ["l", lens], ["d", itemId], ...]

@@ -929,7 +929,7 @@ class HoloSphere {
     // Opt-in NIP-01 signing: sign-on-write + dual-publish to Nostr relay(s),
     // plus relay-backed recover and relay migration. Non-breaking — the Gun
     // store is unchanged; signed events are published alongside. Requires the
-    // optional `nostr-tools` dependency. See NOSTR-SIGNING-PLAN.md.
+    // optional `nostr-tools` dependency. See SIGNING.md.
 
     /**
      * Enable signing. Every subsequent put publishes a signed event to the
@@ -1183,7 +1183,7 @@ class HoloSphere {
     // add/remove, as-of-time). Use this when the *space* defines who may write
     // (e.g. a shared treasury), rather than each reader choosing whose keys to
     // read. Only consulted when signing was enabled with `enforce: 'membership'`.
-    // See NOSTR-SIGNING-PLAN.md §6.
+    // See the membership section of SIGNING.md.
 
     /** Pin the trusted genesis pubkey for a holon (else TOFU = earliest genesis). */
     setGenesis(holon, pubkey) {

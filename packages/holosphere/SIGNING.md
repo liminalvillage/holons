@@ -3,7 +3,7 @@
 Opt-in NIP-01 signing for HoloSphere. When enabled, every `put` also publishes a
 **signed Nostr event** to your relay(s), so your data is durable beyond GunDB and
 portable across relays. Non-breaking: the Gun store is unchanged; signed events are
-published alongside. Design & roadmap: [`NOSTR-SIGNING-PLAN.md`](./NOSTR-SIGNING-PLAN.md).
+published alongside.
 
 Requires the optional `nostr-tools` dependency (loaded lazily, only when enabled).
 

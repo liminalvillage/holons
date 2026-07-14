@@ -1,6 +1,6 @@
 /**
  * NIP-01 signing primitives for HoloSphere events.
- * See nostr-events.js and NOSTR-SIGNING-PLAN.md.
+ * See nostr-events.js and SIGNING.md.
  */
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex } from '@noble/hashes/utils';
