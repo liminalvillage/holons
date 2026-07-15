@@ -1,6 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { flip } from "svelte/animate";
+  import { glide } from "$lib/glide";
   import { get } from "svelte/store";
   import { onMount, tick } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
@@ -236,8 +236,8 @@
     grabY: number;
   } | null = null;
   let justDragged = false;
-  // How long a displaced card's FLIP glide lasts (animate:flip duration plus
-  // a frame of slack) — the swap-cooldown window in onMove.
+  // How long a displaced card's glide lasts (animate:glide duration plus a
+  // frame of slack) — the swap-cooldown window in onMove.
   const FLIP_SETTLE_MS = 260;
   // The card that triggered the last mid-drag reorder and when — see the
   // swap-cooldown note in onMove.
@@ -669,7 +669,7 @@
               class:ghost={drag?.id === task.id}
               class:done={completing[task.id]}
               data-task={task.id}
-              animate:flip={{ duration: 220 }}
+              animate:glide={{ duration: 220 }}
             >
               <span class="lift">
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->

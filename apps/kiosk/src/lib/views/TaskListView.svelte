@@ -5,7 +5,7 @@
   // component only renders). Rows share the wall's drag-to-reorder machinery:
   // TasksView's pointer handlers key off the rows' data-task attributes, and
   // the resulting order persists as each quest's orderIndex.
-  import { flip } from "svelte/animate";
+  import { glide } from "$lib/glide";
   import Avatars from "$lib/components/Avatars.svelte";
   import { telegramUser } from "$lib/auth";
   import type { BacklogTask } from "$lib/data";
@@ -40,7 +40,7 @@
   <ul class="rows">
     {#each tasks as task (task.id)}
       <li
-        animate:flip={{ duration: 220 }}
+        animate:glide={{ duration: 220 }}
         class:done={!!completing[task.id]}
         class:ghost={dragId === task.id}
         data-task={task.id}
