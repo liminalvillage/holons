@@ -1261,7 +1261,9 @@
 	<!-- Main Content Container -->
 	<div class="flex flex-col xl:flex-row gap-4">
 		<!-- Tasks Panel -->
-		<div class="xl:flex-1 bg-gray-800 rounded-2xl shadow-xl min-h-[600px]">
+		<!-- min-w-0 lets the kanban board scroll horizontally inside the panel
+		     instead of inflating the flex item to the board's intrinsic width -->
+		<div class="xl:flex-1 min-w-0 bg-gray-800 rounded-2xl shadow-xl min-h-[600px]">
 			<div class="p-3 sm:p-6">
 				<!-- Inline Stats Bar - Always Visible -->
 				<div class="stats-bar mb-4">
