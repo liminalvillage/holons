@@ -833,6 +833,16 @@
       >
         <span class="rowdot"></span>
         <span class="rowtitle">{drag.task.title}</span>
+        <span class="rowside">
+          {#if drag.task.appreciation}
+            <span class="rowheart" aria-hidden="true"
+              >♥ {drag.task.appreciation}</span
+            >
+          {/if}
+          {#if drag.task.people.length}
+            <Avatars people={drag.task.people} size="1.4rem" />
+          {/if}
+        </span>
       </div>
     {:else}
       <article
@@ -1298,6 +1308,7 @@
     background: var(--dot);
   }
   .rowclone .rowtitle {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1305,6 +1316,17 @@
     font-weight: 700;
     font-size: 0.98rem;
     color: var(--ink);
+  }
+  .rowclone .rowside {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .rowclone .rowheart {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #d4493a;
   }
 
   /* Add-task dialog */

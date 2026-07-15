@@ -14,7 +14,11 @@
     (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
   }
   export function showImg(e: Event) {
-    (e.currentTarget as HTMLImageElement).style.visibility = "visible";
+    // Remove the override rather than force `visible`: an explicit inline
+    // `visibility: visible` beats any hidden ANCESTOR (visibility inherits but
+    // children can override it) — it made loaded avatars float free of a
+    // drag-ghosted card and glide to the drop slot on their own.
+    (e.currentTarget as HTMLImageElement).style.removeProperty("visibility");
   }
 </script>
 
