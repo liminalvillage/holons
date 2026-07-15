@@ -75,6 +75,7 @@ describe('buildBreakdownPrompt', () => {
     });
     expect(system).toContain('NEVER recreate');
     expect(system).toContain('INDEPENDENT, PARALLEL');
+    expect(system).toContain('achieved state');
     expect(system).toContain('atomic');
     expect(user).toContain('Community garden');
     expect(user).toContain('"id":"a"');

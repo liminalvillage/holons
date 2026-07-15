@@ -103,7 +103,9 @@ export const PROPOSE_STEPS_TOOL: {
           properties: {
             title: {
               type: 'string',
-              description: "Short imperative title, e.g. 'Draft venue shortlist'.",
+              description:
+                'Short achieved-state title the group can verify, e.g. ' +
+                "'We have agreed on a design' or 'Materials are collected'.",
             },
             description: {
               type: 'string',
@@ -209,10 +211,11 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     '   Use dependsOnSteps ONLY when a step literally cannot start before',
     "   another finishes (its output is the other's input). Never chain steps",
     '   just because you listed them in order — a pure chain is rarely correct.',
-    '4. Every step must be a concrete, completable unit of work with a clear',
+    '4. Every step must be a concrete, achievable outcome with a clear',
     '   definition of done. No vague steps like "plan" or "finalize".',
-    '5. Titles are short and imperative. Do not repeat the parent task itself',
-    '   as a step.',
+    '5. Phrase each title as an achieved state the group can verify — e.g.',
+    '   "We have agreed on a design", "Materials are collected" — never as a',
+    '   command. Do not repeat the parent task itself as a step.',
     'Call propose_steps exactly once.',
   ].join('\n');
 
