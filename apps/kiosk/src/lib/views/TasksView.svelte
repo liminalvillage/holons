@@ -236,6 +236,12 @@
     grabY: number;
   } | null = null;
   let justDragged = false;
+  // How long a displaced card's FLIP glide lasts (animate:flip duration plus
+  // a frame of slack) — the swap-cooldown window in onMove.
+  const FLIP_SETTLE_MS = 260;
+  // The card that triggered the last mid-drag reorder and when — see the
+  // swap-cooldown note in onMove.
+  let lastSwap: { id: string; t: number } | null = null;
   let pendingId: string | null = null;
   let pendingRect: DOMRect | null = null;
   let armed = false; // drag allowed (immediately for mouse, after long-press for touch)
@@ -260,6 +266,7 @@
     holdTimer = null;
     pendingId = null;
     pendingRect = null;
+    lastSwap = null;
     armed = false;
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
@@ -322,13 +329,27 @@
     ) as HTMLElement | null;
     const overId = el?.closest<HTMLElement>("[data-task]")?.dataset.task;
     if (overId && overId !== drag.id) {
-      const from = order.indexOf(drag.id);
-      const to = order.indexOf(overId);
-      if (from !== -1 && to !== -1 && from !== to) {
-        const next = order.slice();
-        next.splice(from, 1);
-        next.splice(to, 0, drag.id);
-        order = next;
+      // Swap cooldown. elementFromPoint hits cards at their VISUAL, mid-FLIP
+      // positions: right after a swap, the displaced card flies back across
+      // the pointer's path and re-triggers the swap the other way — an
+      // oscillation that reads as jitter, while each interrupted flip
+      // re-measures rects mid-transform and deforms the next one. So a re-hit
+      // of the SAME partner is ignored until its flip has settled; a card
+      // resting under the pointer after that is a genuine target, and
+      // crossing onto a different card is always instant.
+      const settling =
+        lastSwap?.id === overId &&
+        performance.now() - lastSwap.t < FLIP_SETTLE_MS;
+      if (!settling) {
+        const from = order.indexOf(drag.id);
+        const to = order.indexOf(overId);
+        if (from !== -1 && to !== -1 && from !== to) {
+          const next = order.slice();
+          next.splice(from, 1);
+          next.splice(to, 0, drag.id);
+          order = next;
+          lastSwap = { id: overId, t: performance.now() };
+        }
       }
     }
   }
@@ -343,6 +364,7 @@
     armed = false;
     const moved = drag != null;
     drag = null;
+    lastSwap = null;
     pendingId = null;
     pendingRect = null;
     if (moved) {
