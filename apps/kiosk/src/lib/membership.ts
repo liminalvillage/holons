@@ -21,6 +21,14 @@ export type TgUser = {
   last_name?: string;
 };
 
+/**
+ * Where a federated/hologram quest actually lives (see `sourceRef` in data.ts).
+ * A foreign card's membership must be written to its owner holon — writing the
+ * local pointer would fork a stray copy that shadows the original. Own items
+ * pass `undefined` and are written in place.
+ */
+export type SourceRef = { holon: string; key: string };
+
 /** A participant record without undefined fields (Holosphere warns on those). */
 function person(u: TgUser): QuestParticipant {
   const p: QuestParticipant = { id: u.id };
@@ -42,16 +50,22 @@ async function freshQuest(
   }
 }
 
-/** Toggle the user's appreciation (removes them from participants). */
+/**
+ * Toggle the user's appreciation (removes them from participants). Returns
+ * whether the write landed.
+ */
 export async function toggleAppreciate(
   holonId: string,
   questId: string,
   user: TgUser,
-): Promise<void> {
-  const q = await freshQuest(holonId, questId);
-  if (!q) return;
-  const writer = await getWriter(holonId);
-  await writer.put("quests", toggleAppreciation(q, person(user)));
+  ref?: SourceRef,
+): Promise<boolean> {
+  const holon = ref?.holon ?? holonId;
+  const key = ref?.key ?? questId;
+  const q = await freshQuest(holon, key);
+  if (!q) return false;
+  const writer = await getWriter(holon);
+  return !!(await writer.put("quests", toggleAppreciation(q, person(user))));
 }
 
 /** Is the user a participant of the (already-toggled) quest? */
@@ -105,21 +119,86 @@ export async function reflectMembership(
   }
 }
 
-/** Toggle the user's participation (removes them from appreciation). */
+/**
+ * Toggle the user's participation (removes them from appreciation). Returns
+ * whether the write landed.
+ */
 export async function toggleJoin(
   holonId: string,
   questId: string,
   user: TgUser,
-): Promise<void> {
-  const q = await freshQuest(holonId, questId);
-  if (!q) return;
+  ref?: SourceRef,
+): Promise<boolean> {
+  const holon = ref?.holon ?? holonId;
+  const key = ref?.key ?? questId;
+  const q = await freshQuest(holon, key);
+  if (!q) return false;
   const updated = toggleParticipant(q, person(user));
-  const writer = await getWriter(holonId);
-  await writer.put("quests", updated);
+  const writer = await getWriter(holon);
+  const ok = await writer.put("quests", updated);
+  if (!ok) return false;
+  // Mirror into the joiner's personal holon + (re)send the linked DM.
+  // Best-effort: the membership write already succeeded.
   await reflectMembership(
-    holonId,
+    holon,
     updated,
     user,
     isParticipant(updated, user.id),
   );
+  return true;
+}
+
+/**
+ * One-way membership for the swipe deck: a swipe must never *undo* anything, so
+ * these check the freshest copy and become no-ops (`"already"`) instead of
+ * toggling off. `"failed"` means the read or write didn't land.
+ */
+export async function joinOnly(
+  holonId: string,
+  questId: string,
+  user: TgUser,
+  ref?: SourceRef,
+): Promise<"joined" | "already" | "failed"> {
+  const holon = ref?.holon ?? holonId;
+  const key = ref?.key ?? questId;
+  const q = await freshQuest(holon, key);
+  if (!q) return "failed";
+  if (isParticipant(q, user.id)) return "already";
+  try {
+    const updated = toggleParticipant(q, person(user));
+    const writer = await getWriter(holon);
+    const ok = await writer.put("quests", updated);
+    if (!ok) return "failed";
+    await reflectMembership(holon, updated, user, true);
+    return "joined";
+  } catch {
+    return "failed";
+  }
+}
+
+/** Is the user among the quest's appreciators? */
+function isAppreciating(quest: Quest, userId: number): boolean {
+  const list = (quest.appreciation ?? []) as QuestParticipant[];
+  return list.some((p) => String(p?.id) === String(userId));
+}
+
+/** One-way appreciation for the swipe deck — see {@link joinOnly}. */
+export async function appreciateOnly(
+  holonId: string,
+  questId: string,
+  user: TgUser,
+  ref?: SourceRef,
+): Promise<"liked" | "already" | "failed"> {
+  const holon = ref?.holon ?? holonId;
+  const key = ref?.key ?? questId;
+  const q = await freshQuest(holon, key);
+  if (!q) return "failed";
+  if (isAppreciating(q, user.id)) return "already";
+  try {
+    const writer = await getWriter(holon);
+    const ok = await writer.put("quests", toggleAppreciation(q, person(user)));
+    return ok ? "liked" : "failed";
+  } catch {
+    return "failed";
+  }
 }

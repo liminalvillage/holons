@@ -2,7 +2,7 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { flip } from "svelte/animate";
   import { get } from "svelte/store";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
@@ -13,13 +13,20 @@
     completionRequest,
     showNotice,
     categoryColors,
+    taskViewMode,
   } from "$lib/stores";
+  import { setTaskView, type TaskViewMode } from "$lib/config";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
-  import { toggleAppreciate } from "$lib/membership";
+  import {
+    appreciateOnly,
+    joinOnly,
+    toggleAppreciate,
+    toggleJoin,
+  } from "$lib/membership";
   import {
     noteColor,
     noteTilt,
@@ -36,11 +43,40 @@
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
+  import TaskListView from "./TaskListView.svelte";
+  import TaskSwipeView from "./TaskSwipeView.svelte";
 
   // Kiosk displays are unattended — glide the wall down to the last note once
-  // so the whole backlog is shown without anyone dragging.
-  let scrollEl: HTMLElement;
-  onMount(() => autoScrollToEnd(scrollEl));
+  // so the whole backlog is shown without anyone dragging. (The scroll
+  // container only exists in cards/list mode; the swipe deck doesn't scroll.)
+  let scrollEl: HTMLElement | undefined;
+  onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
+
+  // ── View mode: post-it wall / compact list / swipe deck ────────────────────
+  const MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
+    { id: "cards", glyph: "▦", label: "Wall" },
+    { id: "list", glyph: "☰", label: "List" },
+    { id: "swipe", glyph: "🃏", label: "Swipe" },
+  ];
+  let switchEl: HTMLElement | undefined;
+
+  function setMode(m: TaskViewMode) {
+    taskViewMode.set(m);
+    setTaskView(m);
+  }
+
+  // Roving focus for the radiogroup: ←/→ move selection and keep focus on it.
+  async function onSwitchKey(e: KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = e.key === "ArrowRight" ? 1 : MODES.length - 1;
+    const i = MODES.findIndex((m) => m.id === get(taskViewMode));
+    setMode(MODES[(i + step) % MODES.length].id);
+    await tick();
+    switchEl
+      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+      ?.focus();
+  }
 
   function openTask(id: string) {
     if (justDragged) return;
@@ -95,7 +131,15 @@
     const user = get(telegramUser);
     if (!hid || !user) return;
     try {
-      await toggleAppreciate(hid, task.id, user);
+      // A federated card's appreciation belongs to its owner holon (same
+      // routing as delete below) — writing locally would fork a stray copy.
+      const q = get(rawQuests).find((x) => String(x.id ?? x.title) === task.id);
+      await toggleAppreciate(
+        hid,
+        task.id,
+        user,
+        q ? sourceRef(q, task.id) : undefined,
+      );
     } catch (err) {
       console.error("[kiosk] appreciate failed", err);
     }
@@ -418,6 +462,52 @@
     }
   }
 
+  // ── Swipe-deck actions ─────────────────────────────────────────────────────
+  // One-way join/like for TaskSwipeView (a swipe never un-does), routed to a
+  // federated card's owner holon like delete above. The view stays
+  // holosphere-free; it only sees these handlers.
+  function swipeRef(taskId: string) {
+    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === taskId);
+    return q ? sourceRef(q, taskId) : undefined;
+  }
+
+  async function onSwipeJoin(
+    task: BacklogTask,
+  ): Promise<"joined" | "already" | "failed"> {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) return "failed";
+    return joinOnly(hid, task.id, user, swipeRef(task.id));
+  }
+
+  async function onSwipeLike(
+    task: BacklogTask,
+  ): Promise<"liked" | "already" | "failed"> {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) return "failed";
+    return appreciateOnly(hid, task.id, user, swipeRef(task.id));
+  }
+
+  // Undo chip: the full toggles revert what the swipe just wrote.
+  async function onSwipeRevert(
+    task: BacklogTask,
+    kind: "join" | "like",
+  ): Promise<void> {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) return;
+    try {
+      if (kind === "join") {
+        await toggleJoin(hid, task.id, user, swipeRef(task.id));
+      } else {
+        await toggleAppreciate(hid, task.id, user, swipeRef(task.id));
+      }
+    } catch (err) {
+      console.error("[kiosk] swipe undo failed", err);
+    }
+  }
+
   // ── Add task(s) — one per line ────────────────────────────────────────────-
   let addOpen = false;
   let addDraft = "";
@@ -476,123 +566,169 @@
 </script>
 
 <div class="board">
-  <div class="tasks scroll" bind:this={scrollEl}>
-    {#if orderedTasks.length}
-      <div class="wall">
-        {#each orderedTasks as task (task.id)}
-          <div
-            class="note-wrap"
-            class:ghost={drag?.id === task.id}
-            class:done={completing[task.id]}
-            data-task={task.id}
-            animate:flip={{ duration: 220 }}
-          >
-            <span class="lift">
-              <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-              <article
-                class="note tilt"
-                class:is-foreign={!!task.sourceColor}
-                style="--tilt: {noteTilt(
-                  task.id,
-                )}deg; --rise-delay: {noteRiseDelay(
-                  task.id,
-                )}s; --rise-rot: {noteRiseRot(
-                  task.id,
-                )}deg; background: {noteColorFor(
-                  task.category,
-                )}; --glow: {task.sourceColor ?? 'transparent'};"
-                role="button"
-                tabindex="0"
-                on:pointerdown={(e) => onPointerDown(e, task)}
-                on:click={() => openTask(task.id)}
-                on:keydown={(e) => onKey(e, task.id)}
-              >
-                <div class="tools left">
-                  <button
-                    class="tool del"
-                    on:pointerdown|stopPropagation
-                    on:click|stopPropagation={() => onDelete(task)}
-                    aria-label="Delete task"
-                    title="Delete task"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div class="tools">
-                  <button
-                    class="tool check"
-                    on:pointerdown|stopPropagation
-                    on:click|stopPropagation={() => onComplete(task)}
-                    aria-label="Mark complete"
-                    title="Mark complete"
-                  >
-                    ✓
-                  </button>
-                </div>
-                <h3>{task.title}</h3>
-                {#if task.initiator}
-                  <div
-                    class="initiator"
-                    title="Proposed by {task.initiator.name}"
-                  >
-                    <span class="bulb" aria-hidden="true">💡</span>
-                    <Avatars people={[task.initiator]} size="1.3rem" />
-                    <span class="iname">{task.initiator.name}</span>
-                  </div>
-                {/if}
-                {#if task.picture}
-                  <img
-                    class="thumb"
-                    src={resolveImage(task.picture)}
-                    alt=""
-                    loading="lazy"
-                    on:error={hideImg}
-                  />
-                {/if}
-                <div class="meta">
-                  {#if task.category}<span class="tag">{task.category}</span
-                    >{/if}
-                  {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
-                  {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
-                    >{/if}
-                </div>
-                <div class="cardfoot">
-                  <button
-                    class="heart"
-                    class:on={amAppreciating(task)}
-                    on:pointerdown|stopPropagation
-                    on:click|stopPropagation={() => toggleAppr(task)}
-                    aria-label="Appreciate"
-                    aria-pressed={amAppreciating(task)}
-                    title="Appreciate"
-                  >
-                    <span class="glyph" aria-hidden="true">♥</span>
-                    {#if task.appreciation}
-                      <span class="count">{task.appreciation}</span>
-                    {/if}
-                  </button>
-                  {#if task.people.length}
-                    <Avatars people={task.people} />
-                  {/if}
-                </div>
-              </article>
-            </span>
-            {#if completing[task.id]}
-              <div class="confetti" aria-hidden="true">
-                {#each completing[task.id] as c, i (i)}
-                  <span
-                    style="--x: {c.x}px; --rot: {c.rot}deg; --delay: {c.delay}ms; --dur: {c.dur}ms; --hue: {c.hue}; --size: {c.size}px;"
-                  ></span>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    {:else}
-      <p class="empty">The backlog is clear. ✶</p>
-    {/if}
+  <div
+    class="viewswitch"
+    role="radiogroup"
+    aria-label="Task view layout"
+    bind:this={switchEl}
+  >
+    {#each MODES as m (m.id)}
+      <button
+        role="radio"
+        aria-checked={$taskViewMode === m.id}
+        class:active={$taskViewMode === m.id}
+        tabindex={$taskViewMode === m.id ? 0 : -1}
+        on:click={() => setMode(m.id)}
+        on:keydown={onSwitchKey}
+        aria-label="{m.label} view"
+        title="{m.label} view"
+      >
+        {m.glyph}
+      </button>
+    {/each}
   </div>
+
+  {#if $taskViewMode === "swipe"}
+    <TaskSwipeView
+      tasks={orderedTasks}
+      colorFor={noteColorFor}
+      {dueLabel}
+      onOpen={openTask}
+      onJoin={onSwipeJoin}
+      onLike={onSwipeLike}
+      onRevert={onSwipeRevert}
+    />
+  {:else}
+    <div class="tasks scroll" bind:this={scrollEl}>
+      {#if $taskViewMode === "list"}
+        <TaskListView
+          tasks={orderedTasks}
+          colorFor={noteColorFor}
+          {dueLabel}
+          {completing}
+          onOpen={openTask}
+          {onComplete}
+          {onDelete}
+          onToggleAppreciate={toggleAppr}
+        />
+      {:else if orderedTasks.length}
+        <div class="wall">
+          {#each orderedTasks as task (task.id)}
+            <div
+              class="note-wrap"
+              class:ghost={drag?.id === task.id}
+              class:done={completing[task.id]}
+              data-task={task.id}
+              animate:flip={{ duration: 220 }}
+            >
+              <span class="lift">
+                <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+                <article
+                  class="note tilt"
+                  class:is-foreign={!!task.sourceColor}
+                  style="--tilt: {noteTilt(
+                    task.id,
+                  )}deg; --rise-delay: {noteRiseDelay(
+                    task.id,
+                  )}s; --rise-rot: {noteRiseRot(
+                    task.id,
+                  )}deg; background: {noteColorFor(
+                    task.category,
+                  )}; --glow: {task.sourceColor ?? 'transparent'};"
+                  role="button"
+                  tabindex="0"
+                  on:pointerdown={(e) => onPointerDown(e, task)}
+                  on:click={() => openTask(task.id)}
+                  on:keydown={(e) => onKey(e, task.id)}
+                >
+                  <div class="tools left">
+                    <button
+                      class="tool del"
+                      on:pointerdown|stopPropagation
+                      on:click|stopPropagation={() => onDelete(task)}
+                      aria-label="Delete task"
+                      title="Delete task"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div class="tools">
+                    <button
+                      class="tool check"
+                      on:pointerdown|stopPropagation
+                      on:click|stopPropagation={() => onComplete(task)}
+                      aria-label="Mark complete"
+                      title="Mark complete"
+                    >
+                      ✓
+                    </button>
+                  </div>
+                  <h3>{task.title}</h3>
+                  {#if task.initiator}
+                    <div
+                      class="initiator"
+                      title="Proposed by {task.initiator.name}"
+                    >
+                      <span class="bulb" aria-hidden="true">💡</span>
+                      <Avatars people={[task.initiator]} size="1.3rem" />
+                      <span class="iname">{task.initiator.name}</span>
+                    </div>
+                  {/if}
+                  {#if task.picture}
+                    <img
+                      class="thumb"
+                      src={resolveImage(task.picture)}
+                      alt=""
+                      loading="lazy"
+                      on:error={hideImg}
+                    />
+                  {/if}
+                  <div class="meta">
+                    {#if task.category}<span class="tag">{task.category}</span
+                      >{/if}
+                    {#if task.source}<span class="src">⇄ {task.source}</span
+                      >{/if}
+                    {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
+                      >{/if}
+                  </div>
+                  <div class="cardfoot">
+                    <button
+                      class="heart"
+                      class:on={amAppreciating(task)}
+                      on:pointerdown|stopPropagation
+                      on:click|stopPropagation={() => toggleAppr(task)}
+                      aria-label="Appreciate"
+                      aria-pressed={amAppreciating(task)}
+                      title="Appreciate"
+                    >
+                      <span class="glyph" aria-hidden="true">♥</span>
+                      {#if task.appreciation}
+                        <span class="count">{task.appreciation}</span>
+                      {/if}
+                    </button>
+                    {#if task.people.length}
+                      <Avatars people={task.people} />
+                    {/if}
+                  </div>
+                </article>
+              </span>
+              {#if completing[task.id]}
+                <div class="confetti" aria-hidden="true">
+                  {#each completing[task.id] as c, i (i)}
+                    <span
+                      style="--x: {c.x}px; --rot: {c.rot}deg; --delay: {c.delay}ms; --dur: {c.dur}ms; --hue: {c.hue}; --size: {c.size}px;"
+                    ></span>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="empty">The backlog is clear. ✶</p>
+      {/if}
+    </div>
+  {/if}
 
   <div class="fabrow">
     <VoiceButtons />
@@ -718,6 +854,41 @@
     flex: 1;
     min-height: 0;
     padding: 1.3rem 1.4rem 1.6rem;
+  }
+
+  /* Wall / list / swipe segmented control. */
+  .viewswitch {
+    display: flex;
+    align-self: center;
+    gap: 0.15rem;
+    margin: 0.7rem 0 0;
+    padding: 0.25rem;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 999px;
+    box-shadow: var(--shadow-soft);
+    z-index: 5;
+  }
+  .viewswitch button {
+    width: 3rem;
+    height: 2.6rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    touch-action: manipulation;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease,
+      transform 0.1s ease;
+  }
+  .viewswitch button.active {
+    background: var(--teal);
+    color: #fff;
+  }
+  .viewswitch button:active {
+    transform: scale(0.92);
   }
 
   /* Add-task floating button — pinned to the corner of the board. */

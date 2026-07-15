@@ -1,5 +1,6 @@
 import { sveltekit } from "@sveltejs/kit/vite";
-import { defineConfig } from "vite";
+// vitest's defineConfig = vite's + the typed `test` block below.
+import { defineConfig } from "vitest/config";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -43,5 +44,10 @@ export default defineConfig({
       strict: false,
       allow: [".."],
     },
+  },
+  test: {
+    // Pure-logic specs only (e.g. the swipe deck's geometry) — no DOM needed.
+    include: ["src/**/*.test.ts"],
+    environment: "node",
   },
 });

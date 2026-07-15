@@ -34,6 +34,7 @@ const ACCENT_KEY = "kiosk_accent";
 const THEME_KEY = "kiosk_theme";
 const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
 const GEO_KEY = "kiosk_geo";
+const TASK_VIEW_KEY = "kiosk_task_view";
 
 /** The kiosk's default accent (teal). */
 export const DEFAULT_ACCENT = "#0e6b66";
@@ -253,6 +254,24 @@ export function resolveThemeMode(): ThemeMode {
 export function setThemeMode(mode: ThemeMode): void {
   if (mode === "auto") forget(THEME_KEY);
   else persist(THEME_KEY, mode);
+}
+
+/**
+ * How the Tasks view lays out the backlog: the post-it wall, a compact list, or
+ * a one-card-at-a-time swipe deck. Anyone can switch it from the view's
+ * segmented control; the choice sticks per device.
+ */
+export type TaskViewMode = "cards" | "list" | "swipe";
+
+/** Resolve the persisted Tasks view mode; the post-it wall by default. */
+export function resolveTaskView(): TaskViewMode {
+  const v = persisted(TASK_VIEW_KEY);
+  return v === "list" || v === "swipe" ? v : "cards";
+}
+
+/** Persist the Tasks view mode. */
+export function setTaskView(mode: TaskViewMode): void {
+  persist(TASK_VIEW_KEY, mode);
 }
 
 /**

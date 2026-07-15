@@ -22,6 +22,7 @@ import {
   IDLE_HIDE_MS,
   setPinnedTab,
   resolvePinnedTab,
+  type TaskViewMode,
 } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -79,6 +80,20 @@ export const searchQuery = writable<string>("");
 
 /** Whether the Settings panel is open. */
 export const settingsOpen = writable<boolean>(false);
+
+/**
+ * How the Tasks view lays out the backlog (wall / list / swipe deck). Persisted
+ * per device via config; initialized in `+layout.svelte`.
+ */
+export const taskViewMode = writable<TaskViewMode>("cards");
+
+/**
+ * Task ids the swipe deck has dealt with this session — skipped, joined, or
+ * liked — so the deck strictly advances. A module store (not component state)
+ * because tab auto-rotation remounts the Tasks view every flip; deliberately
+ * never persisted, so skipped cards return next session.
+ */
+export const swipeDismissed = writable<Set<string>>(new Set());
 
 // ── Transient notice (toast) ───────────────────────────────────────────────
 //

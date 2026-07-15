@@ -217,6 +217,8 @@ export interface BacklogTask {
   id: string;
   title: string;
   category?: string;
+  /** Full description, shown on the swipe deck's big card (the wall omits it). */
+  description?: string;
   /** Optional image (URL or Telegram file_id) shown on the card. */
   picture?: string | null;
   due?: Date | null;
@@ -333,6 +335,7 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
       id,
       title: q.title || "Untitled",
       category: q.category,
+      description: q.description || undefined,
       picture: q.picture ?? null,
       due: parseWhen(q.when),
       participants: countOf(q.participants),

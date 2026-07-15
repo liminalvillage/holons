@@ -14,6 +14,7 @@
     resolveBrandLogo,
     resolveAccent,
     resolveThemeMode,
+    resolveTaskView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
   import {
@@ -29,6 +30,7 @@
     libraryEnabled,
     rolesEnabled,
     statusEnabled,
+    taskViewMode,
     boardReady,
     settingsOpen,
     userMenuOpen,
@@ -197,6 +199,7 @@
     libraryEnabled.set(resolveLibraryEnabled());
     rolesEnabled.set(resolveRolesEnabled());
     statusEnabled.set(resolveStatusEnabled());
+    taskViewMode.set(resolveTaskView());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
