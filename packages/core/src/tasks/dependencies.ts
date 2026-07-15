@@ -26,6 +26,45 @@ function dependencyMap(quests: Quest[]): Map<string, string[]> {
 }
 
 /**
+ * Is this quest settled — completed, cancelled, or deleted — so it neither
+ * blocks its successors nor is actionable itself? Stopped (vetoed) quests are
+ * NOT settled: the work never happened, so successors keep waiting.
+ */
+export function isQuestSettled(quest: Quest): boolean {
+  const s = String(quest.status ?? '').toLowerCase();
+  return (
+    s === 'completed' ||
+    s === 'cancelled' ||
+    quest.completed === true ||
+    quest._deleted === true
+  );
+}
+
+/**
+ * For every open quest, the ids of its predecessors that are still open — the
+ * dependencies actually standing in its way. An empty array means the quest is
+ * actionable *now*: self-standing, or every predecessor already settled.
+ * Settled quests are omitted entirely, and dangling/self references never
+ * block (`dependencyMap` drops them). Only direct predecessors are consulted:
+ * a chain blocks each link on the one before it, not transitively.
+ */
+export function unmetDependencies(quests: Quest[]): Map<string, string[]> {
+  const settled = new Set(
+    quests.filter(isQuestSettled).map((q) => String(q.id)),
+  );
+  const map = dependencyMap(quests);
+  const out = new Map<string, string[]>();
+  for (const [id, deps] of map) {
+    if (settled.has(id)) continue;
+    out.set(
+      id,
+      deps.filter((d) => !settled.has(d)),
+    );
+  }
+  return out;
+}
+
+/**
  * Would making `fromId` depend on `newDepId` introduce a cycle? True when they
  * are the same task, or when `newDepId` already (transitively) depends on
  * `fromId` — in which case adding the edge would close a loop.
