@@ -58,7 +58,7 @@ License: **AGPL-3.0-or-later** with a commercial option — see
 ## Common commands
 
 ```bash
-pnpm install                       # workspace install (committed lockfile)
+pnpm install                       # workspace install (lockfile not committed)
 pnpm -r typecheck                  # typecheck all packages
 pnpm test                          # vitest across packages
 pnpm -F @holons/core test          # one package

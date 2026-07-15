@@ -8,8 +8,7 @@
 node_modules
 /package
 .package-lock.json
-# NOTE: pnpm-lock.yaml IS committed — it pins the whole workspace for
-# reproducible installs and CI. Do not add it back here.
+pnpm-lock.yaml
 
 # ── Build output ──────────────────────────────────────────────────────────
 build/
