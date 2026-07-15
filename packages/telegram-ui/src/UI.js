@@ -286,10 +286,11 @@ class UI {
   getPuppeteerLaunchOptions() {
     return {
       headless: 'new',
-      // Fast-fail on stuck CDP commands so the existing recovery path
-      // (discard page, relaunch browser) kicks in quickly. Screenshots of
-      // our cards should complete in well under a second.
-      protocolTimeout: 8000,
+      // Tall quest boards (1400x3000+) legitimately need >8s to lay out and
+      // rasterize on low-RAM hosts, so an aggressive fast-fail kills healthy
+      // renders mid-capture. Genuinely stuck commands still hit the recovery
+      // path (discard page, relaunch browser), just slower.
+      protocolTimeout: 30000,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -2216,8 +2217,19 @@ class UI {
               return null;
             }
 
+            // Downscale large boards: it's a chat picture, and Telegram
+            // recompresses anyway. Fewer pixels = faster raster + encode.
+            // deviceScaleFactor only shrinks the output bitmap — layout and
+            // clip coordinates stay in CSS pixels.
+            const MAX_OUTPUT_PIXELS = 2_000_000;
+            const outputPixels = newViewport.width * newViewport.height;
+            newViewport.deviceScaleFactor =
+              outputPixels > MAX_OUTPUT_PIXELS
+                ? Math.max(0.5, Math.sqrt(MAX_OUTPUT_PIXELS / outputPixels))
+                : 1;
+
             console.log(
-              `Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`
+              `Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height} @${newViewport.deviceScaleFactor.toFixed(2)}x`
             );
             await page.setViewport(newViewport);
             await page.evaluate(
@@ -2257,6 +2269,17 @@ class UI {
           }
         }
       } catch (clipError) {
+        // A protocol-level failure means the CDP connection is wedged; the
+        // fallback full-page screenshot would just hang on the same
+        // connection. Bail out so the outer handler restarts the browser.
+        if (
+          clipError.message?.includes('Protocol error') ||
+          clipError.message?.includes('Connection closed') ||
+          clipError.message?.includes('Target closed') ||
+          clipError.message?.includes('timed out')
+        ) {
+          throw clipError;
+        }
         console.warn(
           'Element clipping failed, using full page screenshot:',
           clipError.message
