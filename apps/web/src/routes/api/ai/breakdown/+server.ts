@@ -5,7 +5,8 @@
 //
 // The client sends the target task plus a compact snapshot of every task in
 // the holon (so the model links to existing work instead of recreating it);
-// we make a single forced-tool Anthropic call and return the validated
+// we make a single forced-tool LLM call — Anthropic when a key is configured,
+// falling back to OpenAI chat completions — and return the validated
 // proposal. All Holosphere writes happen back in the browser, where the
 // user's identity/signing already works — this route never touches GUN.
 //
@@ -32,21 +33,134 @@ import {
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
 
-// Matches ai-ui's ANTHROPIC_DEFAULT_MODEL; HOLONS_AI_MODEL overrides both.
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+// Matches ai-ui's ANTHROPIC_DEFAULT_MODEL; HOLONS_AI_MODEL overrides it.
+const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const DEFAULT_OPENAI_MODEL = "gpt-4o";
 
-function apiKey(): string {
-  // Prefer the server-only key; fall back to the legacy VITE_-prefixed entry
-  // already present in the root .env (that one is client-bundled — adding a
-  // plain ANTHROPIC_API_KEY is the recommended setup).
+// Anthropic is preferred when configured; otherwise fall back to the OpenAI
+// key already present in the root .env. The VITE_-prefixed entries are
+// client-bundled legacies — plain server-only names are the recommended
+// setup for both providers.
+function anthropicKey(): string {
   return (env.ANTHROPIC_API_KEY || env.VITE_ANTHROPIC_API_KEY || "").trim();
+}
+function openaiKey(): string {
+  return (
+    env.OPENAI_API_KEY ||
+    env.OPENAI ||
+    env.VITE_OPENAI_API_KEY ||
+    ""
+  ).trim();
+}
+
+interface BreakdownPrompt {
+  system: string;
+  user: string;
+}
+
+/** One forced-tool Anthropic turn; returns the raw tool input + model used. */
+async function callAnthropic(
+  key: string,
+  prompt: BreakdownPrompt,
+): Promise<{ input: unknown; model: string }> {
+  const client = new Anthropic({ apiKey: key });
+  const model = (env.HOLONS_AI_MODEL || "").trim() || DEFAULT_ANTHROPIC_MODEL;
+  const resp = await client.messages.create({
+    model,
+    max_tokens: 8192,
+    system: prompt.system,
+    tools: [PROPOSE_STEPS_TOOL as Anthropic.Tool],
+    tool_choice: {
+      type: "tool",
+      name: PROPOSE_STEPS_TOOL_NAME,
+      disable_parallel_tool_use: true,
+    },
+    messages: [{ role: "user", content: prompt.user }],
+  });
+  const toolUse = resp.content.find(
+    (b): b is Anthropic.ToolUseBlock =>
+      b.type === "tool_use" && b.name === PROPOSE_STEPS_TOOL_NAME,
+  );
+  if (!toolUse)
+    throw new BreakdownValidationError("the model returned no proposal");
+  return { input: toolUse.input, model: resp.model };
+}
+
+/** Thrown when the OpenAI HTTP call fails, carrying the upstream status. */
+class OpenAIError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "OpenAIError";
+    this.status = status;
+  }
+}
+
+/**
+ * Same forced tool call through OpenAI chat completions (plain fetch — the
+ * schema is provider-neutral, so no extra SDK is needed for the fallback).
+ */
+async function callOpenAI(
+  key: string,
+  prompt: BreakdownPrompt,
+): Promise<{ input: unknown; model: string }> {
+  const model = (env.OPENAI_MODEL || "").trim() || DEFAULT_OPENAI_MODEL;
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: PROPOSE_STEPS_TOOL.name,
+            description: PROPOSE_STEPS_TOOL.description,
+            parameters: PROPOSE_STEPS_TOOL.input_schema,
+          },
+        },
+      ],
+      tool_choice: {
+        type: "function",
+        function: { name: PROPOSE_STEPS_TOOL_NAME },
+      },
+    }),
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    throw new OpenAIError(resp.status, detail.slice(0, 300));
+  }
+  const data = await resp.json();
+  const args =
+    data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+  if (typeof args !== "string") {
+    throw new BreakdownValidationError("the model returned no proposal");
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(args);
+  } catch {
+    throw new BreakdownValidationError("the model returned malformed JSON");
+  }
+  return { input, model: data?.model ?? model };
 }
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
-  const key = apiKey();
-  if (!key) {
+  const aKey = anthropicKey();
+  const oKey = openaiKey();
+  if (!aKey && !oKey) {
     return json(
-      { error: "AI breakdown is not configured (missing ANTHROPIC_API_KEY)." },
+      {
+        error:
+          "AI breakdown is not configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY).",
+      },
       { status: 503 },
     );
   }
@@ -95,33 +209,12 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     holonContext,
   });
 
-  const client = new Anthropic({ apiKey: key });
-  const model = (env.HOLONS_AI_MODEL || "").trim() || DEFAULT_MODEL;
   try {
-    const resp = await client.messages.create({
-      model,
-      max_tokens: 8192,
-      system: prompt.system,
-      tools: [PROPOSE_STEPS_TOOL as Anthropic.Tool],
-      tool_choice: {
-        type: "tool",
-        name: PROPOSE_STEPS_TOOL_NAME,
-        disable_parallel_tool_use: true,
-      },
-      messages: [{ role: "user", content: prompt.user }],
-    });
-    const toolUse = resp.content.find(
-      (b): b is Anthropic.ToolUseBlock =>
-        b.type === "tool_use" && b.name === PROPOSE_STEPS_TOOL_NAME,
-    );
-    if (!toolUse) {
-      return json(
-        { error: "The model returned no proposal." },
-        { status: 502 },
-      );
-    }
-    const proposal = parseBreakdownProposal(toolUse.input);
-    return json({ proposal, model: resp.model });
+    const { input, model } = aKey
+      ? await callAnthropic(aKey, prompt)
+      : await callOpenAI(oKey, prompt);
+    const proposal = parseBreakdownProposal(input);
+    return json({ proposal, model });
   } catch (err) {
     if (err instanceof BreakdownValidationError) {
       return json(
@@ -142,6 +235,25 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
       );
     }
     if (err instanceof Anthropic.BadRequestError) {
+      return json(
+        { error: "AI request was rejected by the provider." },
+        { status: 422 },
+      );
+    }
+    if (err instanceof OpenAIError) {
+      if (err.status === 401 || err.status === 403) {
+        return json(
+          { error: "AI provider rejected the configured API key." },
+          { status: 502 },
+        );
+      }
+      if (err.status === 429) {
+        return json(
+          { error: "AI provider rate limit hit — try again shortly." },
+          { status: 429 },
+        );
+      }
+      console.error("AI breakdown (OpenAI) failed:", err.status, err.message);
       return json(
         { error: "AI request was rejected by the provider." },
         { status: 422 },
