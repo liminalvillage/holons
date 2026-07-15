@@ -1693,6 +1693,16 @@ class UI {
   }
 
   async getQuestsTable(quests, holonId, ctx) {
+    // Big boards make slow, unreadably tall chat pictures — skip the image
+    // and let the caller fall back to the buttons-only reply.
+    const MAX_QUESTS_FOR_IMAGE = 13;
+    if (quests.length > MAX_QUESTS_FOR_IMAGE) {
+      console.log(
+        `Quest board has ${quests.length} quests (> ${MAX_QUESTS_FOR_IMAGE}), skipping image generation`
+      );
+      return null;
+    }
+
     const language = await this.settings.getLanguage(holonId);
     const settings = await this.settings.getSettings(holonId);
     const isDark = (settings?.theme || 'dark') !== 'light';
