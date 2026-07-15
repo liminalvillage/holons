@@ -106,6 +106,19 @@
     );
   }
 
+  // Notes whose staggered entrance (kiosk-rise) has finished. Reordering a
+  // keyed {#each} MOVES the DOM node, and a moved node restarts its CSS
+  // animations — without this flag every drag/live reshuffle replayed the
+  // entrance from opacity 0 and cards blinked out for up to ~1s. Once risen,
+  // the animation is removed (its end state is the note's natural state).
+  let risen: Record<string, true> = {};
+  function onNoteAnimEnd(e: AnimationEvent, id: string) {
+    // Scoped keyframes keep the original name as a substring.
+    if (e.animationName.includes("kiosk-rise") && !risen[id]) {
+      risen = { ...risen, [id]: true };
+    }
+  }
+
   // The task whose appreciation needs confirming because it'd remove the user
   // as a participant; null when no prompt is pending.
   let confirmDrop: BacklogTask | null = null;
@@ -640,6 +653,7 @@
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                 <article
                   class="note tilt"
+                  class:risen={!!risen[task.id]}
                   class:is-foreign={!!task.sourceColor}
                   style="--tilt: {noteTilt(
                     task.id,
@@ -655,6 +669,7 @@
                   on:pointerdown={(e) => onPointerDown(e, task)}
                   on:click={() => openTask(task.id)}
                   on:keydown={(e) => onKey(e, task.id)}
+                  on:animationend={(e) => onNoteAnimEnd(e, task.id)}
                 >
                   <div class="tools left">
                     <button
@@ -1033,6 +1048,14 @@
     to {
       rotate: 0deg;
     }
+  }
+  /* Entrance done: drop the animation entirely so a DOM move (keyed reorder
+     during drag or a live reshuffle) can't restart it — a restarted `both`
+     fill parks the card at opacity 0 for its whole stagger delay. Must stay
+     ABOVE the `.note-wrap.done .note` rule so the completion drop still wins
+     by source order. */
+  .note.risen {
+    animation: none;
   }
   .note:active {
     filter: brightness(0.97);
