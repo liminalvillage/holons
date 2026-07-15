@@ -124,8 +124,9 @@ Under the hood it runs on **GunDB**, not raw Nostr:
 
 `@holons/core/federation` is the UI-agnostic publish layer:
 
-- `publishToFederation()` — wraps an item in a hologram and routes it to
-  `all` federated partners, one `partner`, or one `hex` (H3 cell).
+- `publishToFederation()` — routes an item to `all` federated partners, one
+  `partner`, or one `hex` (H3 cell). By default it writes a standalone copy;
+  hologram (soul-pointer) publication is opt-in via `useHolograms`.
 - `getFederationSnapshot()` / `readSettingsHex()` — read federation state.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
