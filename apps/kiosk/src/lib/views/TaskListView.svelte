@@ -63,6 +63,12 @@
               {#if task.category}<span class="tag">{task.category}</span>{/if}
               {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
               {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if task.unmetDeps > 0}<span
+                  class="waits"
+                  title="{task.unmetDeps} open {task.unmetDeps === 1
+                    ? 'dependency'
+                    : 'dependencies'} first">⛓ waits on {task.unmetDeps}</span
+                >{/if}
             </div>
           </div>
           <button
@@ -210,6 +216,16 @@
     font-size: 0.7rem;
     font-weight: 700;
     color: var(--ink-soft);
+  }
+  /* Blocked by open dependencies — the row sorts after the current leaves. */
+  .waits {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--line) 40%, transparent);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    white-space: nowrap;
   }
   .who {
     flex: 0 0 auto;

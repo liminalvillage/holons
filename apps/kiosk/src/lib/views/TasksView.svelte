@@ -742,6 +742,13 @@
                       >{/if}
                     {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
                       >{/if}
+                    {#if task.unmetDeps > 0}<span
+                        class="waits"
+                        title="{task.unmetDeps} open {task.unmetDeps === 1
+                          ? 'dependency'
+                          : 'dependencies'} first"
+                        >⛓ waits on {task.unmetDeps}</span
+                      >{/if}
                   </div>
                   <div class="cardfoot">
                     <button
@@ -895,6 +902,9 @@
           {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span
             >{/if}
           {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
+            >{/if}
+          {#if drag.task.unmetDeps > 0}<span class="waits"
+              >⛓ waits on {drag.task.unmetDeps}</span
             >{/if}
         </div>
         <div class="cardfoot">
@@ -1265,6 +1275,16 @@
     background: rgba(255, 255, 255, 0.55);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
+  }
+  /* Blocked by open dependencies — the card sorts after the current leaves. */
+  .waits {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: rgba(32, 48, 47, 0.6);
+    background: rgba(255, 255, 255, 0.55);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    white-space: nowrap;
   }
   /* Footer row: appreciation heart on the left, participant avatars on the
      right — each on its own side, matching sizes. */

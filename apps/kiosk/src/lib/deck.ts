@@ -55,12 +55,14 @@ export function cardTransform(dx: number, dy: number): string {
 
 /**
  * The deck in dealing order: the (already search-filtered, user-ordered)
- * backlog minus the cards this session has dealt with. Tasks the user already
- * joined stay in — they show a JOINED ribbon and a right-swipe is a no-op.
+ * backlog minus the cards this session has dealt with, and minus tasks still
+ * blocked by open dependencies — the deck is "where should focus go now", so
+ * it deals only the graph's current leaves. Tasks the user already joined
+ * stay in — they show a JOINED ribbon and a right-swipe is a no-op.
  */
 export function deckTasks(
   tasks: BacklogTask[],
   dismissed: ReadonlySet<string>,
 ): BacklogTask[] {
-  return tasks.filter((t) => !dismissed.has(t.id));
+  return tasks.filter((t) => t.unmetDeps === 0 && !dismissed.has(t.id));
 }

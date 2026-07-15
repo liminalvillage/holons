@@ -5,6 +5,7 @@
 //   - `library` → the library of things
 // Core owns the meaning of these records; here we only shape them for display.
 
+import { isQuestSettled, unmetDependencies } from "@holons/core/tasks";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
@@ -87,15 +88,9 @@ export function noteRiseRot(seed: string): number {
   return (hash & 2 ? 1 : -1) * mag;
 }
 
-function isDone(q: Quest): boolean {
-  const s = String(q.status ?? "").toLowerCase();
-  return (
-    s === "completed" ||
-    s === "cancelled" ||
-    q.completed === true ||
-    q._deleted === true
-  );
-}
+// Settled = completed/cancelled/deleted — core owns the rule (it also drives
+// which dependencies still block, so the two must never drift apart).
+const isDone = isQuestSettled;
 
 /**
  * Parse a quest's `when`/`ends` into a local Date for display. The store is
@@ -236,6 +231,12 @@ export interface BacklogTask {
   initiator?: TaskPerson | null;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
   orderIndex?: number;
+  /**
+   * How many of this task's dependencies are still open. 0 ⇒ a current leaf
+   * of the graph (self-standing, or every predecessor completed): actionable
+   * now. Blocked tasks sort after the leaves and stay out of the swipe deck.
+   */
+  unmetDeps: number;
 }
 
 /**
@@ -319,6 +320,9 @@ export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
 export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
+  // Computed over the FULL quest list (including settled quests) so a
+  // dependency on a completed quest no longer blocks its successor.
+  const unmet = unmetDependencies(quests);
   for (const q of quests) {
     if (isDone(q)) continue;
     // A hard `put(null)` delete (vs the `_deleted` tombstone) leaves a husk node
@@ -351,10 +355,17 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
         q.orderIndex != null && Number.isFinite(Number(q.orderIndex))
           ? Number(q.orderIndex)
           : undefined,
+      unmetDeps: unmet.get(id)?.length ?? 0,
     });
   }
-  // Manually-ordered tasks first (by orderIndex), then the rest alphabetically.
+  // Current leaves first — a task blocked by open dependencies can't be acted
+  // on yet, so it never outranks actionable work regardless of manual order.
+  // Within each group: manually-ordered tasks (by orderIndex), then the rest
+  // alphabetically.
   return out.sort((a, b) => {
+    const ablocked = a.unmetDeps > 0;
+    const bblocked = b.unmetDeps > 0;
+    if (ablocked !== bblocked) return ablocked ? 1 : -1;
     const ai = a.orderIndex;
     const bi = b.orderIndex;
     if (ai != null && bi != null) {

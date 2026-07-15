@@ -5,7 +5,7 @@ import type { BacklogTask } from "./data";
 
 const T = 100; // threshold used throughout
 
-function task(id: string): BacklogTask {
+function task(id: string, unmetDeps = 0): BacklogTask {
   return {
     id,
     title: `Task ${id}`,
@@ -13,6 +13,7 @@ function task(id: string): BacklogTask {
     people: [],
     appreciation: 0,
     appreciatedBy: [],
+    unmetDeps,
   };
 }
 
@@ -105,5 +106,10 @@ describe("deckTasks", () => {
   it("handles an emptied deck", () => {
     expect(deckTasks([task("a")], new Set(["a"]))).toEqual([]);
     expect(deckTasks([], new Set())).toEqual([]);
+  });
+
+  it("never deals a task still blocked by open dependencies", () => {
+    const tasks = [task("a"), task("b", 2), task("c")];
+    expect(deckTasks(tasks, new Set()).map((t) => t.id)).toEqual(["a", "c"]);
   });
 });
