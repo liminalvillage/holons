@@ -372,6 +372,36 @@ html[data-skin="whiteboard"] .border-red-600 {
 }
 
 /* ==========================================================================
+   AI breakdown (TaskModal) — purple accent button + proposal preview panel.
+   Pastel purple fills keep dark ink labels (same rule as the status fills).
+   ========================================================================== */
+html[data-skin="whiteboard"] .bg-gray-800\/70 {
+  background-color: rgba(32, 48, 47, 0.05);
+}
+html[data-skin="whiteboard"] .bg-purple-700\/70,
+html[data-skin="whiteboard"] .bg-purple-600 {
+  background-color: #c3aef0;
+}
+html[data-skin="whiteboard"] .hover\:bg-purple-600:hover,
+html[data-skin="whiteboard"] .hover\:bg-purple-500:hover {
+  background-color: #b299e9;
+}
+html[data-skin="whiteboard"] .text-purple-100 {
+  color: var(--wb-ink);
+}
+/* Panel heading — deep readable purple on paper (mirrors the link blues). */
+html[data-skin="whiteboard"] .text-purple-300 {
+  color: #6d4fc1;
+}
+html[data-skin="whiteboard"] .border-purple-500\/40 {
+  border-color: #b299e9;
+}
+/* Warning lines — amber ink; the pastel warning token is too pale as text. */
+html[data-skin="whiteboard"] .text-yellow-500\/80 {
+  color: #a8752e;
+}
+
+/* ==========================================================================
    Hover / focus variants — keep interactive states winning & light-correct
    ========================================================================== */
 html[data-skin="whiteboard"] .hover\:bg-gray-700:hover {
