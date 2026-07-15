@@ -141,6 +141,9 @@
     cursor: grab;
     /* Vertical pan scrolls the list; a long-press arms drag-to-reorder. */
     touch-action: pan-y;
+    /* No selection callout while the long-press hold arms a drag. */
+    user-select: none;
+    -webkit-user-select: none;
   }
   .row:active {
     filter: brightness(0.97);
@@ -281,6 +284,18 @@
     padding: 3rem 1rem;
     font-size: 1.1rem;
   }
+
+  /* Phone widths: a slimmer row — heart + avatars only. The due chip and the
+     complete/delete tools live in the detail card (tap the row); hiding them
+     here keeps titles readable on a narrow screen. */
+  @media (max-width: 560px) {
+    .due,
+    .tool.check,
+    .tool.del {
+      display: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .rows {
       animation: none;

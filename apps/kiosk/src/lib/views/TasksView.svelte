@@ -232,6 +232,16 @@
   let grabX = 0;
   let grabY = 0;
 
+  // Pointer events can't stop the browser's pan once `touch-action: pan-y`
+  // hands it the gesture — it just fires pointercancel and the drag dies. A
+  // NON-PASSIVE touchmove listener can: swallowing the first move after the
+  // long-press has armed keeps the browser from ever starting the scroll.
+  // Without this, vertical reorders (the only direction list rows move) are
+  // stolen by the pan on every touch device.
+  function onTouchMove(e: TouchEvent) {
+    if (armed || drag) e.preventDefault();
+  }
+
   function clearPending() {
     if (holdTimer) clearTimeout(holdTimer);
     holdTimer = null;
@@ -241,6 +251,7 @@
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onUp);
+    window.removeEventListener("touchmove", onTouchMove);
   }
 
   function onPointerDown(e: PointerEvent, task: BacklogTask) {
@@ -261,6 +272,7 @@
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
   }
 
   function onMove(e: PointerEvent) {
@@ -312,6 +324,7 @@
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onUp);
+    window.removeEventListener("touchmove", onTouchMove);
     if (holdTimer) clearTimeout(holdTimer);
     holdTimer = null;
     armed = false;
