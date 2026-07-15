@@ -121,8 +121,9 @@ export const PROPOSE_STEPS_TOOL: {
               items: { type: 'integer' },
               description:
                 '0-based indices of other steps in this array that must be ' +
-                'completed first. Use only where ordering is real; leave ' +
-                'empty for steps that can start immediately or in parallel.',
+                'completed first. Usually EMPTY — steps default to running ' +
+                'in parallel as direct prerequisites of the goal. Only set ' +
+                "when this step literally consumes another step's output.",
             },
             dependsOnExisting: {
               type: 'array',
@@ -203,8 +204,11 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     '   list is provided; if an existing task covers a step, reference it via',
     '   existingTaskId (to reuse it as the step) or dependsOnExisting (as a',
     '   prerequisite) instead of duplicating it.',
-    '3. Steps need not form a single chain — use dependsOnSteps only where the',
-    '   ordering is real; independent steps can run in parallel.',
+    '3. Default to INDEPENDENT, PARALLEL steps: the broken-down task is the',
+    '   goal, and each step should be a prerequisite feeding directly into it.',
+    '   Use dependsOnSteps ONLY when a step literally cannot start before',
+    "   another finishes (its output is the other's input). Never chain steps",
+    '   just because you listed them in order — a pure chain is rarely correct.',
     '4. Every step must be a concrete, completable unit of work with a clear',
     '   definition of done. No vague steps like "plan" or "finalize".',
     '5. Titles are short and imperative. Do not repeat the parent task itself',

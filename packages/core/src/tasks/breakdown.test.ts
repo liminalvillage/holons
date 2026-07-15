@@ -74,6 +74,7 @@ describe('buildBreakdownPrompt', () => {
       holonContext: 'Community garden',
     });
     expect(system).toContain('NEVER recreate');
+    expect(system).toContain('INDEPENDENT, PARALLEL');
     expect(system).toContain('atomic');
     expect(user).toContain('Community garden');
     expect(user).toContain('"id":"a"');
