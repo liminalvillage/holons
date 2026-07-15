@@ -610,6 +610,8 @@
           {onComplete}
           {onDelete}
           onToggleAppreciate={toggleAppr}
+          onRowPointerDown={onPointerDown}
+          dragId={drag?.id ?? null}
         />
       {:else if orderedTasks.length}
         <div class="wall">
@@ -809,36 +811,49 @@
     style="left: {drag.x}px; top: {drag.y}px; width: {drag.w}px;"
     aria-hidden="true"
   >
-    <article
-      class="note"
-      class:is-foreign={!!drag.task.sourceColor}
-      style="background: {noteColorFor(drag.task.category)}; --glow: {drag.task
-        .sourceColor ?? 'transparent'};"
-    >
-      <h3>{drag.task.title}</h3>
-      <div class="meta">
-        {#if drag.task.category}<span class="tag">{drag.task.category}</span
-          >{/if}
-        {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span>{/if}
-        {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
-          >{/if}
+    {#if $taskViewMode === "list"}
+      <div
+        class="rowclone"
+        class:is-foreign={!!drag.task.sourceColor}
+        style="--dot: {noteColorFor(drag.task.category)}; --glow: {drag.task
+          .sourceColor ?? 'transparent'};"
+      >
+        <span class="rowdot"></span>
+        <span class="rowtitle">{drag.task.title}</span>
       </div>
-      <div class="cardfoot">
-        <span
-          class="heart"
-          class:on={amAppreciating(drag.task)}
-          aria-hidden="true"
-        >
-          <span class="glyph">♥</span>
-          {#if drag.task.appreciation}
-            <span class="count">{drag.task.appreciation}</span>
+    {:else}
+      <article
+        class="note"
+        class:is-foreign={!!drag.task.sourceColor}
+        style="background: {noteColorFor(drag.task.category)}; --glow: {drag
+          .task.sourceColor ?? 'transparent'};"
+      >
+        <h3>{drag.task.title}</h3>
+        <div class="meta">
+          {#if drag.task.category}<span class="tag">{drag.task.category}</span
+            >{/if}
+          {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span
+            >{/if}
+          {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
+            >{/if}
+        </div>
+        <div class="cardfoot">
+          <span
+            class="heart"
+            class:on={amAppreciating(drag.task)}
+            aria-hidden="true"
+          >
+            <span class="glyph">♥</span>
+            {#if drag.task.appreciation}
+              <span class="count">{drag.task.appreciation}</span>
+            {/if}
+          </span>
+          {#if drag.task.people.length}
+            <Avatars people={drag.task.people} />
           {/if}
-        </span>
-        {#if drag.task.people.length}
-          <Avatars people={drag.task.people} />
-        {/if}
-      </div>
-    </article>
+        </div>
+      </article>
+    {/if}
   </div>
 {/if}
 
@@ -1245,6 +1260,38 @@
     animation: none;
     transform: scale(1.04) rotate(-1.5deg);
     box-shadow: 0 18px 36px rgba(28, 48, 46, 0.28);
+  }
+
+  /* List mode's lifted clone: a slim row, not a post-it. */
+  .rowclone {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.65rem 0.8rem;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    transform: scale(1.02);
+    box-shadow: 0 18px 36px rgba(28, 48, 46, 0.28);
+  }
+  .rowclone.is-foreign {
+    border-left: 4px solid var(--glow);
+  }
+  .rowclone .rowdot {
+    flex: 0 0 auto;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 50%;
+    background: var(--dot);
+  }
+  .rowclone .rowtitle {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 0.98rem;
+    color: var(--ink);
   }
 
   /* Add-task dialog */

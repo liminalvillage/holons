@@ -2,8 +2,9 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   // Compact list mode for the Tasks view: one row per backlog task, same data
   // and action handlers as the post-it wall (TasksView owns those — this
-  // component only renders). Rows follow the wall's saved order; reordering
-  // stays a cards-mode gesture.
+  // component only renders). Rows share the wall's drag-to-reorder machinery:
+  // TasksView's pointer handlers key off the rows' data-task attributes, and
+  // the resulting order persists as each quest's orderIndex.
   import { flip } from "svelte/animate";
   import Avatars from "$lib/components/Avatars.svelte";
   import { telegramUser } from "$lib/auth";
@@ -18,6 +19,10 @@
   export let onComplete: (t: BacklogTask) => void;
   export let onDelete: (t: BacklogTask) => void;
   export let onToggleAppreciate: (t: BacklogTask) => void;
+  /** The wall's shared drag-to-reorder entry point (long-press arms on touch). */
+  export let onRowPointerDown: (e: PointerEvent, t: BacklogTask) => void;
+  /** Id of the row currently lifted as a drag clone; it holds its gap. */
+  export let dragId: string | null = null;
 
   $: uid = $telegramUser?.id;
   function amAppreciating(t: BacklogTask): boolean {
@@ -34,7 +39,12 @@
 {#if tasks.length}
   <ul class="rows">
     {#each tasks as task (task.id)}
-      <li animate:flip={{ duration: 220 }} class:done={!!completing[task.id]}>
+      <li
+        animate:flip={{ duration: 220 }}
+        class:done={!!completing[task.id]}
+        class:ghost={dragId === task.id}
+        data-task={task.id}
+      >
         <div
           class="row"
           class:is-foreign={!!task.sourceColor}
@@ -42,6 +52,7 @@
             'transparent'};"
           role="button"
           tabindex="0"
+          on:pointerdown={(e) => onRowPointerDown(e, task)}
           on:click={() => onOpen(task.id)}
           on:keydown={(e) => onKey(e, task.id)}
         >
@@ -57,6 +68,7 @@
           <button
             class="heart"
             class:on={amAppreciating(task)}
+            on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onToggleAppreciate(task)}
             aria-label="Appreciate"
             aria-pressed={amAppreciating(task)}
@@ -74,6 +86,7 @@
           {/if}
           <button
             class="tool check"
+            on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onComplete(task)}
             aria-label="Mark complete"
             title="Mark complete"
@@ -82,6 +95,7 @@
           </button>
           <button
             class="tool del"
+            on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onDelete(task)}
             aria-label="Delete task"
             title="Delete task"
@@ -112,6 +126,9 @@
     opacity: 0.35;
     transition: opacity 0.4s ease;
   }
+  li.ghost {
+    visibility: hidden; /* holds the gap while its clone follows the finger */
+  }
   .row {
     display: flex;
     align-items: center;
@@ -121,7 +138,9 @@
     border: 1.5px solid var(--line);
     border-radius: 14px;
     box-shadow: var(--shadow-soft);
-    cursor: pointer;
+    cursor: grab;
+    /* Vertical pan scrolls the list; a long-press arms drag-to-reorder. */
+    touch-action: pan-y;
   }
   .row:active {
     filter: brightness(0.97);
