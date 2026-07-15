@@ -140,15 +140,23 @@
   .text {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
   }
   .text h3 {
     margin: 0;
     font-size: 0.98rem;
     line-height: 1.3;
     color: var(--ink);
+    /* Wrap to two clamped lines rather than nowrap-ellipsis: a nowrap title's
+       full width counts as min-content and propagates up the flex ancestors,
+       overflowing a phone viewport; wrapped text only contributes its longest
+       word. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .meta {
     display: flex;

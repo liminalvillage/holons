@@ -263,10 +263,20 @@ export function setThemeMode(mode: ThemeMode): void {
  */
 export type TaskViewMode = "cards" | "list" | "swipe";
 
-/** Resolve the persisted Tasks view mode; the post-it wall by default. */
+/** Below this width the kiosk is a phone, not a wall display (matches TabBar). */
+const MOBILE_MAX_WIDTH_PX = 560;
+
+/**
+ * Resolve the Tasks view mode. A saved choice always wins; with none, phones
+ * default to the one-hand swipe deck and larger displays to the post-it wall.
+ */
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
-  return v === "list" || v === "swipe" ? v : "cards";
+  if (v === "cards" || v === "list" || v === "swipe") return v;
+  const mobile =
+    typeof window !== "undefined" &&
+    window.matchMedia?.(`(max-width: ${MOBILE_MAX_WIDTH_PX}px)`).matches;
+  return mobile ? "swipe" : "cards";
 }
 
 /** Persist the Tasks view mode. */

@@ -446,9 +446,11 @@
   }
   .deck {
     position: relative;
-    width: min(24rem, 88vw);
+    /* 100% of the stage's content box, so the view's own padding is respected
+       on narrow screens (vw units would ignore it and overflow). */
+    width: min(24rem, 100%);
     flex: 1;
-    min-height: 16rem;
+    min-height: 14rem;
     max-height: 34rem;
     outline: none;
   }
@@ -852,6 +854,25 @@
     font-size: 0.78rem;
     font-weight: 600;
     color: var(--muted);
+  }
+
+  /* Phone widths: slimmer action buttons so the centred row clears the
+     add-task FAB pinned to the board's bottom-right corner. */
+  @media (max-width: 560px) {
+    .actions {
+      gap: 0.85rem;
+    }
+    .act.skip,
+    .act.like {
+      width: 3rem;
+      height: 3rem;
+      font-size: 1.25rem;
+    }
+    .act.join {
+      width: 3.6rem;
+      height: 3.6rem;
+      font-size: 1.6rem;
+    }
   }
 
   .undo {

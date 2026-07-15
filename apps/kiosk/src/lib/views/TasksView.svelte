@@ -891,6 +891,16 @@
     transform: scale(0.92);
   }
 
+  /* Phone widths: tighter gutters so the wall/list/deck get the room. */
+  @media (max-width: 560px) {
+    .tasks {
+      padding: 0.8rem 0.7rem 1.2rem;
+    }
+    .viewswitch {
+      margin-top: 0.5rem;
+    }
+  }
+
   /* Add-task floating button — pinned to the corner of the board. */
   /* One control cluster, bottom-right: [⌨] [🎤] [＋] (voice buttons appear
      only while a voice server is reachable). */
