@@ -35,6 +35,10 @@
         executeCompletionPlan,
         deleteTaskWithCascade,
         wouldCreateDependencyCycle,
+        toBreakdownContext,
+        applyBreakdownProposal,
+        saveTasksToHolon,
+        type ApplyBreakdownResult,
     } from "@holons/core/tasks";
     import {
         parseInstant,
@@ -92,8 +96,14 @@
 
     // Dependency management
     let showDependencyEditor = false;
-    let availableTasks: Array<{id: string, title: string, dependencies: string[]}> = [];
+    let availableTasks: Array<{id: string, title: string, description?: string, status?: string, orderIndex?: number, dependencies: string[]}> = [];
     let dependencyError = '';
+
+    // AI breakdown into dependency steps (see @holons/core/tasks breakdown.ts)
+    let isBreakingDown = false;
+    let breakdownError = '';
+    let breakdownInfo = '';
+    let breakdownPreview: ApplyBreakdownResult | null = null;
 
     // Recurring task management
     let showRecurringEditor = false;
@@ -192,7 +202,7 @@
                 const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any) => {
                     if (updatedQuest?.id && updatedQuest.id !== questId) {
                         const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
-                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task', dependencies: (updatedQuest.dependencies ?? []).map(String) };
+                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task', description: updatedQuest.description, status: updatedQuest.status, orderIndex: updatedQuest.orderIndex, dependencies: (updatedQuest.dependencies ?? []).map(String) };
                         if (existingIndex >= 0) {
                             availableTasks[existingIndex] = newTask;
                             availableTasks = availableTasks;
@@ -212,7 +222,7 @@
             holosphere.getAll(holonId, "quests").then((quests: any[]) => {
                 availableTasks = (quests ?? [])
                     .filter((q: any) => q?.id && q.id !== questId)
-                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task', dependencies: (q.dependencies ?? []).map(String) }));
+                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task', description: q.description, status: q.status, orderIndex: q.orderIndex, dependencies: (q.dependencies ?? []).map(String) }));
             }).catch(() => {});
         }
 
@@ -819,6 +829,110 @@
         await updateQuest({ dependencies: updatedDependencies });
     }
 
+    // --- AI breakdown: decompose this task into steps wired as dependencies ---
+
+    function breakdownInitiator() {
+        const telegramUser = telegramStore.getState().user;
+        if (telegramUser) {
+            return {
+                id: telegramUser.id.toString(),
+                username: telegramUser.username || 'Telegram User',
+                firstName: telegramUser.first_name || '',
+                lastName: telegramUser.last_name || '',
+            };
+        }
+        const nostrPubKey = $nostrPublicKey;
+        if (nostrPubKey) {
+            return { id: nostrPubKey, username: nostrPubKey.slice(0, 8) + '...', firstName: 'Nostr', lastName: 'User' };
+        }
+        return undefined; // core falls back to the parent task's initiator
+    }
+
+    // The current quest + every other task in the holon, as Quest-shaped
+    // records for the breakdown context and cycle gate.
+    function questsForBreakdown(): any[] {
+        return [
+            { ...quest, id: String(quest.id ?? questId) },
+            ...availableTasks.map((t) => ({
+                id: t.id,
+                title: t.title,
+                description: t.description,
+                status: t.status ?? 'ongoing',
+                orderIndex: t.orderIndex,
+                dependencies: t.dependencies,
+                participants: [],
+            })),
+        ];
+    }
+
+    async function requestBreakdown() {
+        if (isBreakingDown) return;
+        isBreakingDown = true;
+        breakdownError = '';
+        breakdownInfo = '';
+        breakdownPreview = null;
+        try {
+            const allQuests = questsForBreakdown();
+            const [taskContext] = toBreakdownContext([allQuests[0]]);
+            const res = await fetch('/api/ai/breakdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task: taskContext,
+                    allTasks: toBreakdownContext(allQuests),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data?.error || `AI breakdown failed (${res.status}).`);
+            }
+            const proposal = data.proposal;
+            if (proposal.atomic || proposal.steps.length === 0) {
+                breakdownInfo = proposal.reasoning || 'This task is already a single actionable step.';
+                return;
+            }
+            breakdownPreview = applyBreakdownProposal({
+                proposal,
+                parent: allQuests[0],
+                allQuests,
+                initiator: breakdownInitiator(),
+            });
+        } catch (e: any) {
+            breakdownError = e?.message || 'AI breakdown failed.';
+        } finally {
+            isBreakingDown = false;
+        }
+    }
+
+    async function confirmBreakdown() {
+        if (!breakdownPreview || !holosphere) return;
+        const preview = breakdownPreview;
+        try {
+            // Steps first, parent last — a partial failure leaves the goal
+            // unwired rather than depending on tasks that don't exist.
+            const saved = await saveTasksToHolon(holosphere as any, holonId, preview.newQuests);
+            if (saved < preview.newQuests.length) {
+                breakdownError = `Only ${saved} of ${preview.newQuests.length} steps could be saved — dependencies were not updated.`;
+                return;
+            }
+            await updateQuest({ dependencies: preview.parentDependencies });
+            breakdownPreview = null;
+        } catch (e: any) {
+            if (e?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                breakdownError = e?.message || 'Could not create the steps.';
+            }
+        }
+    }
+
+    /** Resolve a dependency id in the preview to a human title. */
+    function breakdownDepTitle(id: string): string {
+        const step = breakdownPreview?.newQuests.find((q) => String(q.id) === id);
+        if (step) return step.title;
+        return availableTasks.find((t) => t.id === id)?.title ?? id;
+    }
+
     async function saveRecurringSettings() {
         const updates: any = {};
         
@@ -1283,6 +1397,16 @@
                             </svg>
                             Dependencies
                             </h4>
+                        <div class="flex items-center gap-2">
+                            <button
+                                class="px-2 py-1 bg-purple-700/70 text-purple-100 rounded hover:bg-purple-600 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                on:click={requestBreakdown}
+                                disabled={isBreakingDown || !!quest._hologram}
+                                title={quest._hologram ? 'Open the source holon to break down this task' : 'Use AI to break this task into steps'}
+                                type="button"
+                            >
+                                {isBreakingDown ? '⏳ Breaking down…' : '✨ Break down'}
+                            </button>
                         <button
                                 class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors"
                             on:click={() => showDependencyEditor = !showDependencyEditor}
@@ -1290,7 +1414,54 @@
                         >
                                 {showDependencyEditor ? 'Cancel' : 'Edit'}
                         </button>
+                        </div>
                     </div>
+
+                    {#if breakdownError}
+                        <p class="text-red-400 text-xs mb-2">{breakdownError}</p>
+                    {/if}
+                    {#if breakdownInfo}
+                        <p class="text-gray-400 text-xs mb-2 italic">Not broken down: {breakdownInfo}</p>
+                    {/if}
+                    {#if breakdownPreview}
+                        <div class="bg-gray-800/70 border border-purple-500/40 rounded p-2 mb-2 space-y-1">
+                            <p class="text-xs text-purple-300 font-medium">Proposed steps</p>
+                            {#each breakdownPreview.newQuests as stepQuest, i}
+                                <div class="text-sm text-gray-200">
+                                    <span class="text-gray-500">{i + 1}.</span>
+                                    {stepQuest.title}
+                                    {#if stepQuest.dependencies?.length}
+                                        <span class="text-xs text-gray-500">— after {stepQuest.dependencies.map((d) => breakdownDepTitle(String(d))).join(', ')}</span>
+                                    {/if}
+                                    {#if stepQuest.description}
+                                        <p class="text-xs text-gray-500 ml-4">{stepQuest.description}</p>
+                                    {/if}
+                                </div>
+                            {/each}
+                            {#if breakdownPreview.reusedExistingIds.length > 0}
+                                <p class="text-xs text-gray-400">Reuses existing: {breakdownPreview.reusedExistingIds.map((d) => breakdownDepTitle(d)).join(', ')}</p>
+                            {/if}
+                            {#each breakdownPreview.warnings as warning}
+                                <p class="text-xs text-yellow-500/80">⚠ {warning}</p>
+                            {/each}
+                            <div class="flex gap-2 pt-1">
+                                <button
+                                    class="px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-500 text-xs transition-colors"
+                                    on:click={confirmBreakdown}
+                                    type="button"
+                                >
+                                    Create {breakdownPreview.newQuests.length} step{breakdownPreview.newQuests.length === 1 ? '' : 's'}
+                                </button>
+                                <button
+                                    class="px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 text-xs transition-colors"
+                                    on:click={() => { breakdownPreview = null; breakdownError = ''; }}
+                                    type="button"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
 
                     {#if showDependencyEditor}
                             <div class="space-y-2">
