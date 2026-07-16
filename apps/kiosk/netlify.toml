@@ -29,6 +29,10 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Netlify's own install step runs before the build command and detects the
+  # package manager from lockfiles; with pnpm-lock.yaml untracked it falls
+  # back to npm, which chokes on workspace:* deps — force pnpm.
+  NETLIFY_USE_PNPM = "true"
   NPM_FLAGS = "--prefer-online"
   # These VITE_* values are public-by-design (inlined into the client bundle by
   # contract). Whitelist them so Netlify's secrets scanner doesn't flag them.

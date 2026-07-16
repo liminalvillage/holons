@@ -18,6 +18,11 @@
 [build.environment]
   # Node.js version for builds
   NODE_VERSION = "20"
+  # Netlify runs its own dependency install BEFORE the build command, in the
+  # base directory, choosing the package manager by lockfile detection. With
+  # pnpm-lock.yaml deliberately untracked it falls back to npm, which cannot
+  # parse workspace:* specifiers (EUNSUPPORTEDPROTOCOL) — force pnpm.
+  NETLIFY_USE_PNPM = "true"
   # Force clean install to avoid stale cached node_modules
   NPM_FLAGS = "--prefer-online"
   # Holosphere signing mode for the deployed client. MUST stay "off" for the
