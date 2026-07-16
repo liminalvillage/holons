@@ -14,8 +14,9 @@ set -euo pipefail
 # Repo root, regardless of where this is invoked from.
 cd "$(dirname "$0")/../.."
 
-echo "▸ Building @holons/core (apps consume the compiled dist)…"
+echo "▸ Building @holons/core + @holons/ai-ui (apps consume the compiled dist)…"
 pnpm -F @holons/core build
+pnpm -F @holons/ai-ui build
 
 echo "▸ Building the kiosk…"
 pnpm -F kiosk build

@@ -24,9 +24,12 @@
     setRolesEnabled,
     setStatusEnabled,
     setThemeMode,
+    resolveVoiceKey,
+    setVoiceKey,
     DEFAULT_ACCENT,
     type ThemeMode,
   } from "$lib/config";
+  import { refreshVoice } from "$lib/voice/controller";
   import { themeMode } from "$lib/theme";
 
   // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
@@ -38,6 +41,7 @@
   let draftRoles = $rolesEnabled;
   let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
+  let draftVoiceKey = resolveVoiceKey() ?? "";
   let logoError = "";
 
   const THEMES: { id: ThemeMode; label: string; glyph: string }[] = [
@@ -98,6 +102,8 @@
     statusEnabled.set(draftStatus);
     setThemeMode(draftTheme);
     themeMode.set(draftTheme);
+    setVoiceKey(draftVoiceKey);
+    refreshVoice();
     settingsOpen.set(false);
   }
 </script>
@@ -247,6 +253,21 @@
       <span class="knob"></span>
     </button>
   </div>
+
+  <label class="field"
+    >Voice
+    <span class="sub"
+      >— OpenAI API key for spoken interaction, kept on this device only; empty
+      = voice off</span
+    >
+    <input
+      type="password"
+      bind:value={draftVoiceKey}
+      placeholder="sk-…"
+      autocomplete="off"
+      on:keydown={(e) => e.key === "Enter" && apply()}
+    />
+  </label>
 
   <div class="actions">
     <button class="primary" on:click={apply}>Apply</button>

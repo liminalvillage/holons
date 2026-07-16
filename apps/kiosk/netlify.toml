@@ -25,7 +25,7 @@
   publish = "build"
   # --no-frozen-lockfile: pnpm-lock.yaml is deliberately untracked, and pnpm
   # defaults frozen-lockfile to ON when CI=true, so it must be disabled here.
-  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F kiosk build"
+  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F @holons/ai-ui build && pnpm -F kiosk build"
 
 [build.environment]
   NODE_VERSION = "20"
@@ -37,6 +37,11 @@
   # These VITE_* values are public-by-design (inlined into the client bundle by
   # contract). Whitelist them so Netlify's secrets scanner doesn't flag them.
   # NEVER add a private key here.
+  #
+  # Voice note: do NOT set VITE_OPENAI_API_KEY on Netlify — it would bake the
+  # key into the public bundle. The "direct" voice mode takes its key from the
+  # kiosk's Settings panel instead, per device (localStorage); the env var is a
+  # local-dev fallback only.
   SECRETS_SCAN_OMIT_KEYS = "VITE_KIOSK_HOLON,VITE_KIOSK_APP,VITE_KIOSK_PEER,VITE_HOLONS_APP,VITE_TELEGRAM_BOT_USERNAME"
 
 # Long-cache the content-hashed build assets; never cache the HTML shell.

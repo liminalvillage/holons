@@ -1,38 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Voice session controller — one WebSocket to @holons/voice-ui shared by the
-// inline VoiceButtons (rendered in each view's fab row) and the VoiceWidget
-// overlay (bubble + type panel). Probes the server and exposes `available`;
-// when no voice server is reachable the buttons render nothing.
+// Voice session controller — one backend shared by the inline VoiceButtons
+// (rendered in each view's fab row) and the VoiceWidget overlay (bubble +
+// type panel). The controller owns the mic, the speaker, and the widget
+// state; the pipeline itself runs behind the VoiceBackend seam:
+//
+//   ws     — a @holons/voice-ui server (local/self-hosted), the original mode
+//   direct — straight from the browser to the OpenAI API (Whisper/GPT/tts-1),
+//            for kiosks deployed with no companion server
+//
+// Selection: VITE_VOICE_MODE=ws|direct wins; otherwise an explicit
+// VITE_VOICE_WS_URL keeps ws, else a baked-in VITE_OPENAI_API_KEY enables
+// direct, else ws probes localhost. When neither is reachable/configured the
+// buttons render nothing.
 
 import { get, writable } from "svelte/store";
 import {
+  activeTab,
   holonId,
   holonName,
-  activeTab,
   selection,
   selectTab,
   visibleTabs,
   type Selection,
 } from "$lib/stores";
-import {
-  encodeWav,
-  bytesToBase64,
-  base64ToBytes,
-  PcmPlayer,
-} from "$lib/voice/audio";
+import { encodeWav, PcmPlayer } from "$lib/voice/audio";
+import type {
+  BackendEvent,
+  VoiceBackend,
+  VoiceContext,
+} from "$lib/voice/backend";
+import { WsVoiceBackend } from "$lib/voice/ws";
+import { DirectVoiceBackend, hasDirectVoiceKey } from "$lib/voice/direct";
 
-const WS_URL =
-  (import.meta.env.VITE_VOICE_WS_URL as string | undefined) ??
-  "ws://localhost:8787";
+const WS_URL_ENV = import.meta.env.VITE_VOICE_WS_URL as string | undefined;
+const MODE_ENV = (import.meta.env.VITE_VOICE_MODE as string | undefined)
+  ?.trim()
+  .toLowerCase();
+
 /**
- * Re-probe schedule while no voice server is reachable. Every attempt makes
- * the browser print an uncatchable "WebSocket connection failed" console line,
- * so back off exponentially: kiosks without a voice server go quiet instead of
- * spamming a line every 30s forever. Resets to the floor on a successful open.
+ * Which pipeline to talk to. Resolved on every (re)init, not once at module
+ * load, because direct availability depends on the caretaker's device-local
+ * key (Settings) which can appear or vanish while the app runs.
  */
-const RETRY_MIN_MS = 30_000;
-const RETRY_MAX_MS = 600_000;
+function resolveVoiceMode(): "ws" | "direct" {
+  if (MODE_ENV === "ws" || MODE_ENV === "direct") return MODE_ENV;
+  if (WS_URL_ENV) return "ws";
+  return hasDirectVoiceKey() ? "direct" : "ws";
+}
+
 /** How long the reply bubble lingers after the agent finishes speaking. */
 const BUBBLE_LINGER_MS = 8_000;
 
@@ -52,17 +68,14 @@ export const activeTool = writable<string | null>(null);
 export const bubbleOpen = writable(false);
 export const typeOpen = writable(false);
 
-let ws: WebSocket | null = null;
+let backend: VoiceBackend | null = null;
 let player: PcmPlayer | null = null;
 let stream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 let procNode: ScriptProcessorNode | null = null;
 let pcmChunks: Float32Array[] = [];
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let retryDelay = RETRY_MIN_MS;
 let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
-let destroyed = false;
 let inited = false;
 
 function showBubble() {
@@ -73,7 +86,7 @@ function showBubble() {
 
 /**
  * Toggle spoken replies. Muting cuts any playback mid-word and tells the
- * server to stop synthesizing TTS at all (text frames keep flowing).
+ * backend to stop synthesizing TTS at all (text frames keep flowing).
  */
 export function toggleMute() {
   muted.update((m) => {
@@ -87,7 +100,7 @@ export function toggleMute() {
       player?.stop();
       status.update((s) => (s === "speaking" ? "ready" : s));
     }
-    ws?.send(JSON.stringify({ type: "mute", muted: next }));
+    backend?.setMuted(next);
     return next;
   });
 }
@@ -106,7 +119,7 @@ function armBubbleFade() {
  */
 export function closeBubble() {
   player?.stop();
-  ws?.send(JSON.stringify({ type: "barge_in" }));
+  backend?.bargeIn();
   status.set("ready");
   activeTool.set(null);
   bubbleOpen.set(false);
@@ -130,122 +143,85 @@ function selectionSummary(sel: Selection): string | null {
   return `${kind} "${String(q.title ?? "")}" (id ${String(q.id ?? "")})${from}`;
 }
 
-function uiContext(): Record<string, string> {
-  const ctx: Record<string, string> = { app: "kiosk" };
+function uiContext(): VoiceContext {
+  const ctx: VoiceContext = { app: "kiosk" };
   const holon = get(holonId);
   if (holon) ctx.holon = holon;
   const name = get(holonName);
   if (name) ctx.holonName = name;
   ctx.view = get(activeTab);
-  // Advertise the tabs the agent may switch to — the server validates
-  // ui_navigate calls against this list.
+  // Advertise the tabs the agent may switch to — the backend validates
+  // navigate calls against this list.
   ctx.views = get(visibleTabs)
     .map((t) => t.id)
     .join(",");
   // Browser-local IANA timezone, so "today at 2" schedules in the user's
-  // local time even when the voice server runs elsewhere.
+  // local time even when the pipeline runs elsewhere.
   try {
     ctx.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {
-    /* leave unset — server falls back to its own zone */
+    /* leave unset — the backend falls back to its own zone */
   }
   const editing = selectionSummary(get(selection));
   if (editing) ctx.editing = editing;
   return ctx;
 }
 
-// ── Server probe / connection ─────────────────────────────────────────────
+// ── Backend events ─────────────────────────────────────────────────────────
 
-function connect() {
-  if (destroyed || ws) return;
-  let sock: WebSocket;
-  try {
-    sock = new WebSocket(WS_URL);
-  } catch {
-    scheduleRetry();
-    return;
-  }
-  sock.onmessage = onServerMessage;
-  sock.onopen = () => {
-    ws = sock;
-    retryDelay = RETRY_MIN_MS;
-  };
-  sock.onerror = () => {
-    /* onclose follows; retry is scheduled there */
-  };
-  sock.onclose = () => {
-    if (ws === sock) ws = null;
-    available.set(false);
-    stopRecording(true);
-    player?.stop();
-    scheduleRetry();
-  };
-}
-
-function scheduleRetry() {
-  if (destroyed || retryTimer) return;
-  retryTimer = setTimeout(() => {
-    retryTimer = null;
-    connect();
-  }, retryDelay);
-  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
-}
-
-function onServerMessage(ev: MessageEvent) {
-  let msg: Record<string, unknown>;
-  try {
-    msg = JSON.parse(ev.data as string);
-  } catch {
-    return;
-  }
-  switch (msg.type) {
+function onBackendEvent(ev: BackendEvent) {
+  switch (ev.type) {
     case "ready":
-      player = new PcmPlayer(Number(msg.sampleRate) || 24000);
+      player = new PcmPlayer(ev.sampleRate);
       available.set(true);
       status.set("ready");
-      // Announce where we are so the server pre-warms this holon's data
+      // Announce where we are so the backend can pre-warm this holon's data
       // before the first utterance (cold lens reads take seconds).
-      ws?.send(JSON.stringify({ type: "context", context: uiContext() }));
-      // Restore a persisted mute so the server skips TTS from the first turn.
-      if (get(muted)) ws?.send(JSON.stringify({ type: "mute", muted: true }));
+      backend?.context(uiContext());
+      // Restore a persisted mute so the backend skips TTS from the first turn.
+      if (get(muted)) backend?.setMuted(true);
+      break;
+    case "down":
+      available.set(false);
+      stopRecording(true);
+      player?.stop();
       break;
     case "transcript":
-      youSaid.set(String(msg.text));
+      youSaid.set(ev.text);
       holonsSaid.set("");
       status.set("thinking");
       showBubble();
       break;
     case "tool":
-      activeTool.set(String(msg.name));
+      activeTool.set(ev.name);
       showBubble();
       break;
     case "assistant":
       activeTool.set(null);
-      holonsSaid.set(String(msg.text));
+      holonsSaid.set(ev.text);
       showBubble();
       break;
     case "tts_start":
       if (!get(muted)) status.set("speaking");
       break;
-    case "tts":
+    case "tts_pcm":
       // In-flight audio may still arrive right after muting — drop it.
-      if (!get(muted)) player?.enqueuePcm16(base64ToBytes(String(msg.audio)));
+      if (!get(muted)) player?.enqueuePcm16(ev.pcm);
       break;
     case "tts_end":
       status.set("ready");
       armBubbleFade();
       break;
     case "navigate": {
-      // Agent-driven tab switch (the ui_navigate tool). selectTab also counts
+      // Agent-driven tab switch (the navigate tool). selectTab also counts
       // as an interaction, pausing auto-rotation like a touch would.
-      const view = String(msg.view ?? "");
-      const tab = get(visibleTabs).find((t) => t.id === view);
+      const tab = get(visibleTabs).find((t) => t.id === ev.view);
       if (tab) selectTab(tab.id);
       break;
     }
     case "error":
       activeTool.set(null);
-      holonsSaid.set(`⚠ ${String(msg.message)}`);
+      holonsSaid.set(`⚠ ${ev.message}`);
       status.set("ready");
       showBubble();
       armBubbleFade();
@@ -256,10 +232,10 @@ function onServerMessage(ev: MessageEvent) {
 // ── Push-to-talk capture (mic acquired lazily on first press) ─────────────
 
 export async function startRecording(): Promise<void> {
-  if (get(recording) || !get(available) || !ws) return;
-  // Barge-in: cut any playback and tell the server to cancel output.
+  if (get(recording) || !get(available) || !backend) return;
+  // Barge-in: cut any playback and tell the backend to cancel output.
   player?.stop();
-  ws.send(JSON.stringify({ type: "barge_in" }));
+  backend.bargeIn();
 
   if (!stream) {
     try {
@@ -271,7 +247,7 @@ export async function startRecording(): Promise<void> {
       return;
     }
   }
-  if (get(recording) || !ws) return; // released while permission prompt was up
+  if (get(recording) || !backend) return; // released while permission prompt was up
 
   pcmChunks = [];
   audioCtx = new (
@@ -319,21 +295,13 @@ export function stopRecording(discard = false): void {
   pcmChunks = [];
   const rate = ctx.sampleRate;
   void ctx.close();
-  if (discard || pcm.length === 0 || !ws) {
+  if (discard || pcm.length === 0 || !backend) {
     status.set("ready");
     return;
   }
 
-  // Send WAV at the native capture rate; the server's STT normalizes it.
-  const wav = encodeWav(pcm, rate);
-  ws.send(
-    JSON.stringify({
-      type: "utterance",
-      mime: "audio/wav",
-      audio: bytesToBase64(wav),
-      context: uiContext(),
-    }),
-  );
+  // Send WAV at the native capture rate; the STT normalizes it.
+  backend.utterance(encodeWav(pcm, rate), uiContext());
   // Immediate feedback: the bubble opens with animated dots right away —
   // STT + the first model pass can take a while and must not look frozen.
   youSaid.set("");
@@ -345,12 +313,10 @@ export function stopRecording(discard = false): void {
 /** Run pasted/typed text through the same agent pipeline (STT skipped). */
 export function sendTyped(text: string): boolean {
   const trimmed = text.trim();
-  if (!trimmed || !ws || !get(available)) return false;
+  if (!trimmed || !backend || !get(available)) return false;
   player?.stop();
-  ws.send(JSON.stringify({ type: "barge_in" }));
-  ws.send(
-    JSON.stringify({ type: "text", text: trimmed, context: uiContext() }),
-  );
+  backend.bargeIn();
+  backend.text(trimmed, uiContext());
   typeOpen.set(false);
   youSaid.set(trimmed);
   holonsSaid.set("");
@@ -359,22 +325,42 @@ export function sendTyped(text: string): boolean {
   return true;
 }
 
-/** Start probing; returns a teardown. Safe to call once from the layout. */
+function makeBackend(): VoiceBackend {
+  return resolveVoiceMode() === "direct"
+    ? new DirectVoiceBackend()
+    : new WsVoiceBackend(WS_URL_ENV ?? "ws://localhost:8787");
+}
+
+/**
+ * Re-evaluate mode + availability after a Settings change (e.g. the caretaker
+ * added or cleared the device's voice API key) — no reload needed.
+ */
+export function refreshVoice(): void {
+  if (!inited || !backend) return;
+  stopRecording(true);
+  player?.stop();
+  backend.stop();
+  available.set(false);
+  status.set("ready");
+  backend = makeBackend();
+  backend.start(onBackendEvent);
+}
+
+/** Start the backend; returns a teardown. Safe to call once from the layout. */
 export function initVoice(): () => void {
   if (inited) return () => {};
   inited = true;
-  destroyed = false;
-  connect();
+  backend = makeBackend();
+  backend.start(onBackendEvent);
   return () => {
-    destroyed = true;
     inited = false;
-    if (retryTimer) clearTimeout(retryTimer);
     if (bubbleTimer) clearTimeout(bubbleTimer);
     stopRecording(true);
     player?.stop();
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
-    ws?.close();
-    ws = null;
+    backend?.stop();
+    backend = null;
+    available.set(false);
   };
 }

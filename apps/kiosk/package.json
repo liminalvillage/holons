@@ -35,6 +35,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@holons/ai-ui": "workspace:*",
     "@holons/core": "workspace:*",
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",

@@ -75,6 +75,31 @@ so a single `/setdomain hubs.network` authorises every `*.hubs.network` kiosk.
 In dev, `VITE_DEV_TELEGRAM_USER_*` auto-signs-in so you can exercise editing
 without the widget.
 
+## Voice
+
+The voice widget (hold-to-talk + typed transcripts) runs one of two pipelines
+behind the same UI:
+
+| Mode     | Pipeline                                                                                                                          | Enable with                                                          |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `ws`     | A [`@holons/voice-ui`](../../packages/voice-ui) server owns STT → agent → TTS (local models or hosted APIs)                       | `VITE_VOICE_WS_URL` (defaults to probing `ws://localhost:8787`)      |
+| `direct` | The browser itself calls the OpenAI API: Whisper STT → chat-completions agent loop with in-page tools over Holosphere → tts-1 TTS | An OpenAI API key entered in **Settings** (kept on that device only) |
+
+Direct mode needs no companion server — a deployed kiosk speaks on its own.
+The caretaker pastes an OpenAI API key into **Settings → Voice**; it is stored
+in the device's `localStorage` (never in the deployed bundle) and applies
+immediately, so each kiosk site/device carries its own key. Clearing the field
+turns voice off again. Use a dedicated, spending-capped key per hub, since
+anyone with physical access to the device could read it.
+
+`VITE_VOICE_MODE=ws|direct` picks the mode explicitly; otherwise an explicit
+`VITE_VOICE_WS_URL` keeps `ws`, else an available key enables `direct`. With
+neither, the buttons stay hidden. For local dev, `VITE_OPENAI_API_KEY` in the
+root `.env` acts as a fallback key (do **not** set it on Netlify — it would
+bake the key into the public bundle). Optional model overrides:
+`VITE_VOICE_LLM_MODEL` (`gpt-4o-mini`), `VITE_VOICE_STT_MODEL` (`whisper-1`),
+`VITE_VOICE_TTS_MODEL` (`tts-1`), `VITE_VOICE_TTS_VOICE` (`alloy`).
+
 ## Develop
 
 ```bash

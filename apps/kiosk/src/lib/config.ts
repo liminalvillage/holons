@@ -35,6 +35,7 @@ const THEME_KEY = "kiosk_theme";
 const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
 const GEO_KEY = "kiosk_geo";
 const TASK_VIEW_KEY = "kiosk_task_view";
+const VOICE_KEY_KEY = "kiosk_voice_key";
 
 /** The kiosk's default accent (teal). */
 export const DEFAULT_ACCENT = "#0e6b66";
@@ -228,6 +229,26 @@ export function resolveBrandLogo(): string | null {
 export function setBrandLogo(value: string | null): void {
   if (value && value.trim()) persist(BRAND_LOGO_KEY, value);
   else forget(BRAND_LOGO_KEY);
+}
+
+/**
+ * OpenAI API key for the serverless "direct" voice mode — entered by the
+ * caretaker in Settings and kept on THIS device only (localStorage), so a
+ * public multi-tenant deploy never ships a key in its bundle. The
+ * VITE_OPENAI_API_KEY env var remains as a dev/self-hosted fallback; anything
+ * baked that way is readable by whoever can load the site.
+ */
+export function resolveVoiceKey(): string | null {
+  const stored = persisted(VOICE_KEY_KEY);
+  if (stored && stored.trim()) return stored.trim();
+  const env = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+  return env && env.trim() ? env.trim() : null;
+}
+
+/** Persist (or clear, when null/blank) this device's voice API key. */
+export function setVoiceKey(value: string | null): void {
+  if (value && value.trim()) persist(VOICE_KEY_KEY, value.trim());
+  else forget(VOICE_KEY_KEY);
 }
 
 /** The accent colour (hex), used for the teal-derived UI. Defaults to teal. */
