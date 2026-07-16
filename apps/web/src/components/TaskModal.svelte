@@ -16,6 +16,7 @@
     } from "../lib/scoring/ContributionScoring";
     import {
         getCachedEquation,
+        getCachedSettings,
         getCachedUsersObject,
         preloadHolon,
         subscribeToHolon,
@@ -38,7 +39,9 @@
         toBreakdownContext,
         applyBreakdownProposal,
         saveTasksToHolon,
+        BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
         type ApplyBreakdownResult,
+        type BreakdownStep,
     } from "@holons/core/tasks";
     import {
         parseInstant,
@@ -99,10 +102,16 @@
     let availableTasks: Array<{id: string, title: string, description?: string, status?: string, orderIndex?: number, dependencies: string[]}> = [];
     let dependencyError = '';
 
-    // AI breakdown into dependency steps (see @holons/core/tasks breakdown.ts)
+    // AI breakdown into dependency steps (see @holons/core/tasks breakdown.ts).
+    // The model's proposal lands in `breakdownSteps` as an editable draft —
+    // the user can remove steps, add their own, or regenerate — and the
+    // preview (ids, wiring, warnings) is rebuilt from the draft on each edit.
     let isBreakingDown = false;
     let breakdownError = '';
     let breakdownInfo = '';
+    let breakdownSteps: BreakdownStep[] | null = null;
+    let breakdownReasoning = '';
+    let newStepTitle = '';
     let breakdownPreview: ApplyBreakdownResult | null = null;
 
     // Recurring task management
@@ -849,10 +858,18 @@
     }
 
     // The current quest + every other task in the holon, as Quest-shaped
-    // records for the breakdown context and cycle gate.
+    // records for the breakdown context and cycle gate. The parent carries
+    // the freshest description — an in-progress (unsaved) edit counts, since
+    // it is what the user is looking at when they hit "Break down".
     function questsForBreakdown(): any[] {
         return [
-            { ...quest, id: String(quest.id ?? questId) },
+            {
+                ...quest,
+                id: String(quest.id ?? questId),
+                description: editingDescription
+                    ? tempDescription
+                    : quest.description,
+            },
             ...availableTasks.map((t) => ({
                 id: t.id,
                 title: t.title,
@@ -865,21 +882,108 @@
         ];
     }
 
+    /** Holon name/purpose from the settings cache, to ground the decomposition. */
+    function breakdownHolonContext(): string | undefined {
+        const settings = getCachedSettings(holonId);
+        if (!settings) return undefined;
+        const parts: string[] = [];
+        if (settings.name) parts.push(`Holon: ${settings.name}.`);
+        if (settings.purpose) parts.push(`Purpose: ${settings.purpose}`);
+        return parts.length > 0 ? parts.join(' ') : undefined;
+    }
+
+    /** Rebuild the materialized preview (wiring, ids, warnings) from the draft. */
+    function rebuildBreakdownPreview() {
+        if (!breakdownSteps || breakdownSteps.length === 0) {
+            breakdownPreview = null;
+            return;
+        }
+        const allQuests = questsForBreakdown();
+        try {
+            breakdownPreview = applyBreakdownProposal({
+                proposal: { atomic: false, reasoning: breakdownReasoning, steps: breakdownSteps },
+                parent: allQuests[0],
+                allQuests,
+                initiator: breakdownInitiator(),
+            });
+            breakdownError = '';
+        } catch (e: any) {
+            breakdownPreview = null;
+            breakdownError = e?.message || 'These steps cannot be wired up.';
+        }
+    }
+
+    /** Click a proposed piece away; step-index references shift down with it. */
+    function removeBreakdownStep(index: number) {
+        if (!breakdownSteps) return;
+        breakdownSteps = breakdownSteps
+            .filter((_, i) => i !== index)
+            .map((s) => ({
+                ...s,
+                dependsOnSteps: s.dependsOnSteps
+                    .filter((j) => j !== index)
+                    .map((j) => (j > index ? j - 1 : j)),
+            }));
+        rebuildBreakdownPreview();
+    }
+
+    /** Add a user-written step (a parallel prerequisite of the goal). */
+    function addBreakdownStep() {
+        const title = newStepTitle.trim();
+        if (!title) return;
+        breakdownSteps = [
+            ...(breakdownSteps ?? []),
+            { title, description: '', existingTaskId: '', dependsOnSteps: [], dependsOnExisting: [] },
+        ];
+        newStepTitle = '';
+        rebuildBreakdownPreview();
+    }
+
+    function cancelBreakdown() {
+        breakdownSteps = null;
+        breakdownPreview = null;
+        breakdownReasoning = '';
+        breakdownError = '';
+        breakdownInfo = '';
+        newStepTitle = '';
+    }
+
+    /** A draft step's prerequisites, as human titles (steps + existing tasks). */
+    function stepDepsLabel(step: BreakdownStep): string {
+        const names = [
+            ...step.dependsOnSteps.map((j) => breakdownSteps?.[j]?.title ?? `step ${j + 1}`),
+            ...step.dependsOnExisting.map((id) => availableTasks.find((t) => t.id === id)?.title ?? id),
+        ];
+        return names.join(', ');
+    }
+
+    /** The existing task a draft step reuses, as a human title ('' if new). */
+    function stepReuseTitle(step: BreakdownStep): string {
+        if (!step.existingTaskId) return '';
+        return availableTasks.find((t) => t.id === step.existingTaskId)?.title ?? step.existingTaskId;
+    }
+
     async function requestBreakdown() {
         if (isBreakingDown) return;
         isBreakingDown = true;
         breakdownError = '';
         breakdownInfo = '';
-        breakdownPreview = null;
+        // The current draft/preview stays visible while regenerating and
+        // survives a failed request — only a fresh proposal replaces it.
         try {
             const allQuests = questsForBreakdown();
-            const [taskContext] = toBreakdownContext([allQuests[0]]);
+            // Goal task keeps its (nearly) full description; only the context
+            // list is aggressively truncated.
+            const [taskContext] = toBreakdownContext([allQuests[0]], {
+                maxDescriptionChars: BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
+            });
             const res = await fetch('/api/ai/breakdown', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     task: taskContext,
                     allTasks: toBreakdownContext(allQuests),
+                    holonContext: breakdownHolonContext(),
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -887,16 +991,17 @@
                 throw new Error(data?.error || `AI breakdown failed (${res.status}).`);
             }
             const proposal = data.proposal;
+            breakdownReasoning = proposal.reasoning || '';
             if (proposal.atomic || proposal.steps.length === 0) {
+                // The model declined — keep the panel open, empty, so the
+                // user can still add their own steps (or regenerate).
                 breakdownInfo = proposal.reasoning || 'This task is already a single actionable step.';
+                breakdownSteps = [];
+                breakdownPreview = null;
                 return;
             }
-            breakdownPreview = applyBreakdownProposal({
-                proposal,
-                parent: allQuests[0],
-                allQuests,
-                initiator: breakdownInitiator(),
-            });
+            breakdownSteps = proposal.steps;
+            rebuildBreakdownPreview();
         } catch (e: any) {
             breakdownError = e?.message || 'AI breakdown failed.';
         } finally {
@@ -916,7 +1021,7 @@
                 return;
             }
             await updateQuest({ dependencies: preview.parentDependencies });
-            breakdownPreview = null;
+            cancelBreakdown();
         } catch (e: any) {
             if (e?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -1420,47 +1525,97 @@
                     {#if breakdownError}
                         <p class="text-red-400 text-xs mb-2">{breakdownError}</p>
                     {/if}
-                    {#if breakdownInfo}
-                        <p class="text-gray-400 text-xs mb-2 italic">Not broken down: {breakdownInfo}</p>
-                    {/if}
-                    {#if breakdownPreview}
+                    {#if breakdownSteps}
                         <div class="bg-gray-800/70 border border-purple-500/40 rounded p-2 mb-2 space-y-1">
-                            <p class="text-xs text-purple-300 font-medium">Proposed steps</p>
-                            {#each breakdownPreview.newQuests as stepQuest, i}
-                                <div class="text-sm text-gray-200">
-                                    <span class="text-gray-500">{i + 1}.</span>
-                                    {stepQuest.title}
-                                    {#if stepQuest.dependencies?.length}
-                                        <span class="text-xs text-gray-500">— after {stepQuest.dependencies.map((d) => breakdownDepTitle(String(d))).join(', ')}</span>
-                                    {/if}
-                                    {#if stepQuest.description}
-                                        <p class="text-xs text-gray-500 ml-4">{stepQuest.description}</p>
-                                    {/if}
+                            <p class="text-xs text-purple-300 font-medium">
+                                Proposed steps
+                                <span class="text-gray-500 font-normal">— remove ✕, add your own, or regenerate</span>
+                            </p>
+                            {#if breakdownInfo}
+                                <p class="text-gray-400 text-xs italic">Not broken down: {breakdownInfo}</p>
+                            {:else if breakdownReasoning}
+                                <p class="text-gray-500 text-xs italic">{breakdownReasoning}</p>
+                            {/if}
+                            {#each breakdownSteps as step, i (step.title + i)}
+                                <div class="flex items-start gap-2 text-sm text-gray-200">
+                                    <div class="flex-1 min-w-0">
+                                        <span class="text-gray-500">{i + 1}.</span>
+                                        {step.title}
+                                        {#if stepReuseTitle(step)}
+                                            <span class="text-xs text-purple-300">— reuses “{stepReuseTitle(step)}”</span>
+                                        {/if}
+                                        {#if stepDepsLabel(step)}
+                                            <span class="text-xs text-gray-500">— after {stepDepsLabel(step)}</span>
+                                        {/if}
+                                        {#if step.description}
+                                            <p class="text-xs text-gray-500 ml-4">{step.description}</p>
+                                        {/if}
+                                    </div>
+                                    <button
+                                        class="text-gray-500 hover:text-red-400 text-xs px-1 transition-colors shrink-0"
+                                        on:click={() => removeBreakdownStep(i)}
+                                        title="Remove this step"
+                                        aria-label="Remove step {i + 1}: {step.title}"
+                                        type="button"
+                                    >
+                                        ✕
+                                    </button>
                                 </div>
                             {/each}
-                            {#if breakdownPreview.reusedExistingIds.length > 0}
+                            {#if breakdownSteps.length === 0}
+                                <p class="text-xs text-gray-500 italic">No steps yet — add one below, or regenerate.</p>
+                            {/if}
+                            <div class="flex gap-1 pt-1">
+                                <input
+                                    class="flex-1 bg-gray-900/70 text-gray-200 rounded border border-gray-600 px-2 py-1 text-xs placeholder-gray-500"
+                                    placeholder="Add your own step…"
+                                    bind:value={newStepTitle}
+                                    on:keydown={(e) => e.key === 'Enter' && (e.preventDefault(), addBreakdownStep())}
+                                />
+                                <button
+                                    class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors disabled:opacity-50"
+                                    on:click={addBreakdownStep}
+                                    disabled={!newStepTitle.trim()}
+                                    type="button"
+                                >
+                                    Add
+                                </button>
+                            </div>
+                            {#if breakdownPreview && breakdownPreview.reusedExistingIds.length > 0}
                                 <p class="text-xs text-gray-400">Reuses existing: {breakdownPreview.reusedExistingIds.map((d) => breakdownDepTitle(d)).join(', ')}</p>
                             {/if}
-                            {#each breakdownPreview.warnings as warning}
+                            {#each breakdownPreview?.warnings ?? [] as warning}
                                 <p class="text-xs text-yellow-500/80">⚠ {warning}</p>
                             {/each}
                             <div class="flex gap-2 pt-1">
+                                {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
+                                    <button
+                                        class="px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-500 text-xs transition-colors"
+                                        on:click={confirmBreakdown}
+                                        type="button"
+                                    >
+                                        Create {breakdownPreview.newQuests.length} step{breakdownPreview.newQuests.length === 1 ? '' : 's'}{breakdownPreview.reusedExistingIds.length > 0 ? ` + link ${breakdownPreview.reusedExistingIds.length}` : ''}
+                                    </button>
+                                {/if}
                                 <button
-                                    class="px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-500 text-xs transition-colors"
-                                    on:click={confirmBreakdown}
+                                    class="px-2 py-1 bg-purple-700/50 text-purple-200 rounded hover:bg-purple-600/60 text-xs transition-colors disabled:opacity-50"
+                                    on:click={requestBreakdown}
+                                    disabled={isBreakingDown}
                                     type="button"
                                 >
-                                    Create {breakdownPreview.newQuests.length} step{breakdownPreview.newQuests.length === 1 ? '' : 's'}
+                                    {isBreakingDown ? '⏳ Regenerating…' : '↻ Regenerate'}
                                 </button>
                                 <button
                                     class="px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 text-xs transition-colors"
-                                    on:click={() => { breakdownPreview = null; breakdownError = ''; }}
+                                    on:click={cancelBreakdown}
                                     type="button"
                                 >
                                     Cancel
                                 </button>
                             </div>
                         </div>
+                    {:else if breakdownInfo}
+                        <p class="text-gray-400 text-xs mb-2 italic">Not broken down: {breakdownInfo}</p>
                     {/if}
 
                     {#if showDependencyEditor}
@@ -1668,7 +1823,7 @@
                                                 {/if}
                                             </div>
                                             <img
-                                                src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+                                                src={`/api/avatar?user_id=${user.id}`}
                                                 alt={resolvedName(user.id, $nameMap, user)}
                                                 class="w-7 h-7 rounded-full"
                                                 loading="lazy"

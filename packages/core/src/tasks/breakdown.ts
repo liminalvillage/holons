@@ -148,15 +148,29 @@ export const PROPOSE_STEPS_TOOL: {
 /** Prompt-size guards, applied on both client and server. */
 export const BREAKDOWN_MAX_CONTEXT_TASKS = 200;
 export const BREAKDOWN_MAX_DESCRIPTION_CHARS = 280;
+/**
+ * Description budget for the GOAL task (the one being broken down). Context
+ * tasks are aggressively truncated because there can be hundreds of them; the
+ * goal's description is the single richest input to the decomposition, so it
+ * keeps far more of its text.
+ */
+export const BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS = 2000;
 /** Soft cap on proposal size — beyond this a warning is recorded, not an error. */
 export const BREAKDOWN_SOFT_MAX_STEPS = 9;
 
 /**
  * Compact quests into the context shape sent to the LLM. Skips deleted
  * records, prefers active tasks when the cap bites, and truncates long
- * descriptions so hundreds of tasks can't blow the prompt budget.
+ * descriptions so hundreds of tasks can't blow the prompt budget. Pass a
+ * higher `maxDescriptionChars` when compacting the goal task alone (see
+ * BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS).
  */
-export function toBreakdownContext(quests: Quest[]): BreakdownContextTask[] {
+export function toBreakdownContext(
+  quests: Quest[],
+  opts?: { maxDescriptionChars?: number },
+): BreakdownContextTask[] {
+  const maxDescriptionChars =
+    opts?.maxDescriptionChars ?? BREAKDOWN_MAX_DESCRIPTION_CHARS;
   const active: Quest[] = [];
   const settled: Quest[] = [];
   for (const q of quests) {
@@ -171,9 +185,7 @@ export function toBreakdownContext(quests: Quest[]): BreakdownContextTask[] {
       return {
         id: String(q.id),
         title: q.title ?? '',
-        ...(desc
-          ? { description: desc.slice(0, BREAKDOWN_MAX_DESCRIPTION_CHARS) }
-          : {}),
+        ...(desc ? { description: desc.slice(0, maxDescriptionChars) } : {}),
         status: q.status ?? 'ongoing',
         dependencies: ((q.dependencies as string[] | undefined) ?? []).map(String),
       };

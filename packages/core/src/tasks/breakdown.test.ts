@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BREAKDOWN_MAX_CONTEXT_TASKS,
   BREAKDOWN_MAX_DESCRIPTION_CHARS,
+  BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
   BreakdownValidationError,
   applyBreakdownProposal,
   buildBreakdownPrompt,
@@ -51,6 +52,17 @@ describe('toBreakdownContext', () => {
     expect(ctx[0].id).toBe('a');
     expect(ctx[0].description!.length).toBe(BREAKDOWN_MAX_DESCRIPTION_CHARS);
     expect(ctx[0].dependencies).toEqual(['b']);
+  });
+
+  it('honours a larger description budget for the goal task', () => {
+    const quests = [q('goal', { description: 'y'.repeat(5000) })];
+    const ctx = toBreakdownContext(quests, {
+      maxDescriptionChars: BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
+    });
+    expect(ctx[0].description!.length).toBe(BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS);
+    expect(BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS).toBeGreaterThan(
+      BREAKDOWN_MAX_DESCRIPTION_CHARS,
+    );
   });
 
   it('caps the task count, preferring active tasks over settled ones', () => {

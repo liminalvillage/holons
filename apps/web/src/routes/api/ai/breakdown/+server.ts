@@ -21,6 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PROPOSE_STEPS_TOOL,
   PROPOSE_STEPS_TOOL_NAME,
+  BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
   BreakdownValidationError,
   buildBreakdownPrompt,
   parseBreakdownProposal,
@@ -202,7 +203,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
       ? body.holonContext.slice(0, 500)
       : undefined;
 
-  const [taskContext] = toBreakdownContext([{ ...task, participants: [] }]);
+  // The goal task keeps a much larger description budget than the context
+  // list — its description is the single richest input to the decomposition.
+  const [taskContext] = toBreakdownContext([{ ...task, participants: [] }], {
+    maxDescriptionChars: BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
+  });
   const prompt = buildBreakdownPrompt({
     task: taskContext ?? { ...task, dependencies: [] },
     allTasks,
