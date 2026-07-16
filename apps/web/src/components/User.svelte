@@ -544,7 +544,7 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-4">
                         <img
-                            src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+                            src={`/api/avatar?user_id=${user.id}`}
                             alt={resolvedName(user.id, $nameMap, user)}
                             class="w-16 h-16 rounded-full object-cover border-2 border-gray-300"
                             on:error={(e) => {

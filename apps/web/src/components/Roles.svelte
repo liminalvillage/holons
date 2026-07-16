@@ -446,7 +446,7 @@
 											<div class="relative group">
 												<img
 													class="w-8 h-8 rounded-full border-2 border-white/30 object-cover"
-													src={`https://telegram.holons.io/getavatar?user_id=${todayAssignment.id}`}
+													src={`/api/avatar?user_id=${todayAssignment.id}`}
 													alt={todayAssignment.username}
 													on:error={(e) => {
 														e.currentTarget.style.display = 'none';
@@ -509,7 +509,7 @@
 											<div class="relative">
 												<img
 													class="w-16 h-16 rounded-full border-4 border-white/30 object-cover"
-													src={`https://telegram.holons.io/getavatar?user_id=${todayAssignment.id}`}
+													src={`/api/avatar?user_id=${todayAssignment.id}`}
 													alt={todayAssignment.username}
 													on:error={(e) => {
 														e.currentTarget.style.display = 'none';

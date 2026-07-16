@@ -3,9 +3,10 @@
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
-  // who isn't already listed. Avatars come from telegram.holons.io/getavatar.
+  // who isn't already listed. Avatars come from the kiosk's /api/avatar route.
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
+  import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
   import { getHolosphere } from "$lib/holosphere";
   import type { Quest } from "@holons/core/tasks";
@@ -66,9 +67,7 @@
     return (p?.first_name?.[0] ?? p?.username?.[0] ?? "·").toUpperCase();
   }
   function avatar(id: string | number | undefined): string {
-    return id != null
-      ? `https://telegram.holons.io/getavatar?user_id=${id}`
-      : "";
+    return id != null ? avatarUrl(id) : "";
   }
 
   // Members not already in the list, for the "add" dropdown.

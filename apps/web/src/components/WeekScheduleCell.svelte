@@ -126,7 +126,7 @@
 			<div class="week-cell__user">
 				<img
 					class="week-cell__avatar"
-					src={`https://telegram.holons.io/getavatar?user_id=${assignedUser.id}`}
+					src={`/api/avatar?user_id=${assignedUser.id}`}
 					alt={assignedUser.username}
 					on:error={(e) => {
 						e.currentTarget.style.display = 'none';
@@ -190,7 +190,7 @@
 					>
 						<img
 							class="week-cell__dropdown-avatar"
-							src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
+							src={`/api/avatar?user_id=${user.id || userId}`}
 							alt={resolvedName(user.id || userId, $nameMap, user)}
 							on:error={(e) => {
 								e.currentTarget.style.display = 'none';

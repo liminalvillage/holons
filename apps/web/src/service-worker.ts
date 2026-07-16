@@ -23,13 +23,12 @@ const CACHE = `holons-cache-${version}`;
 const AVATAR_CACHE = "holons-avatars-v1"; // version-independent: avatars are content-stable per user_id
 const PRECACHE_URLS = [...build, ...files];
 
-// User avatars come from `https://telegram.holons.io/getavatar?user_id=...`
-// across the app (offers, roles, modals). Cache them stale-while-revalidate
-// so they render instantly on revisit and survive offline. Versioned cache
-// name stays separate from the build precache so a new release doesn't
-// evict the user's avatar history.
-const AVATAR_HOSTS = new Set(["telegram.holons.io"]);
-const AVATAR_PATHS = ["/getavatar"];
+// User avatars come from the app's own `/api/avatar?user_id=...` route
+// (Bot API getUserProfilePhotos → getFile) across the app (offers, roles,
+// modals). Cache them stale-while-revalidate so they render instantly on
+// revisit and survive offline. Versioned cache name stays separate from the
+// build precache so a new release doesn't evict the user's avatar history.
+const AVATAR_PATH = "/api/avatar";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -61,17 +60,14 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
-  // User-avatar cross-origin requests: stale-while-revalidate.
-  if (
-    AVATAR_HOSTS.has(url.hostname) &&
-    AVATAR_PATHS.some((p) => url.pathname.startsWith(p))
-  ) {
+  const sameOrigin = url.origin === self.location.origin;
+  if (!sameOrigin) return;
+
+  // User-avatar requests: stale-while-revalidate.
+  if (url.pathname.startsWith(AVATAR_PATH)) {
     event.respondWith(staleWhileRevalidate(request, AVATAR_CACHE));
     return;
   }
-
-  const sameOrigin = url.origin === self.location.origin;
-  if (!sameOrigin) return;
 
   const isPrecached = PRECACHE_URLS.includes(url.pathname);
 
@@ -106,9 +102,9 @@ async function staleWhileRevalidate(
   const cached = await cache.match(request);
   const fetchAndUpdate = fetch(request)
     .then((response) => {
-      // Only cache successful 200s — telegram.holons.io returns 404s
-      // for missing avatars, and caching those would pin the empty
-      // state for the lifetime of the cache.
+      // Only cache successful 200s — /api/avatar returns 404s for
+      // missing avatars, and caching those would pin the empty state
+      // for the lifetime of the cache.
       if (response.ok) cache.put(request, response.clone());
       return response;
     })

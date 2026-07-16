@@ -779,7 +779,7 @@ import ItemModal from "./ItemModal.svelte";
                                                         {#each role.participants.slice(0, 3) as participant}
                                                             <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                 <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+                                                                    src={`/api/avatar?user_id=${participant.id}`}
                                                                     alt={getUserDisplayName(participant.id)}
                                                                     class="w-full h-full object-cover rounded-full"
                                                                     on:error={(e) => {
@@ -881,7 +881,7 @@ import ItemModal from "./ItemModal.svelte";
                                                             {#each event.participants.slice(0, 3) as participant}
                                                                 <div class="w-4 h-4 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                     <img 
-                                                                        src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+                                                                        src={`/api/avatar?user_id=${participant.id}`}
                                                                         alt={getUserDisplayName(participant.id)}
                                                                         class="w-full h-full object-cover rounded-full"
                                                                         on:error={(e) => {
@@ -995,7 +995,7 @@ import ItemModal from "./ItemModal.svelte";
                                                         {#each task.participants.slice(0, 3) as participant}
                                                             <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                 <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+                                                                    src={`/api/avatar?user_id=${participant.id}`}
                                                                     alt={getUserDisplayName(participant.id)}
                                                                     class="w-full h-full object-cover rounded-full"
                                                                     on:error={(e) => {
@@ -1091,7 +1091,7 @@ import ItemModal from "./ItemModal.svelte";
                                                         {#each badge.recipients.slice(0, 3) as recipient}
                                                             <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(recipient.id)}>
                                                                 <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${recipient.id}`}
+                                                                    src={`/api/avatar?user_id=${recipient.id}`}
                                                                     alt={getUserDisplayName(recipient.id)}
                                                                     class="w-full h-full object-cover rounded-full"
                                                                     on:error={(e) => {

@@ -368,7 +368,7 @@
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
                                         <img
-                                            src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+                                            src={`/api/avatar?user_id=${participant.id}`}
                                             alt={resolvedName(participant.id, $nameMap, participant)}
                                             class="w-8 h-8 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
@@ -420,7 +420,7 @@
                                 >
                                     <div class="flex items-center gap-2 flex-1">
                                         <img
-                                            src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
+                                            src={`/api/avatar?user_id=${user.id || userId}`}
                                             alt={resolvedName(user.id || userId, $nameMap, user)}
                                             class="w-6 h-6 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {

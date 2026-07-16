@@ -444,7 +444,7 @@
                                                 {/if}
                                             </div>
                                             <img
-                                                src={`https://telegram.holons.io/getavatar?user_id=${userId}`}
+                                                src={`/api/avatar?user_id=${userId}`}
                                                 alt={resolvedName(userId, $nameMap, user)}
                                                 class="w-7 h-7 rounded-full"
                                                 loading="lazy"

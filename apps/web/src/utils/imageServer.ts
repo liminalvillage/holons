@@ -1,13 +1,3 @@
-const PROD_HOST = "https://telegram.holons.io";
-const DEV_HOST = "http://localhost:8080";
-
-export function imageServerBase(): string {
-  if (typeof window === "undefined") return PROD_HOST;
-  const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1") return DEV_HOST;
-  return PROD_HOST;
-}
-
 // Magic base64 prefixes for the image formats Telegram / the dashboard store.
 const B64_SIGNATURES: ReadonlyArray<readonly [string, string]> = [
   ["/9j/", "image/jpeg"],
@@ -32,7 +22,9 @@ function base64ImageMime(s: string): string | null {
  * Resolve a `picture` value to a displayable URL:
  *   - already a usable URL / data-URI / blob / absolute path → used as-is
  *   - raw base64 image payload (no `data:` prefix) → inlined as a data-URI
- *   - otherwise → treated as a Telegram file_id, fetched via the image server
+ *   - otherwise → treated as a Telegram file_id, resolved by our own
+ *     /api/image route through the Bot API getFile (the old external
+ *     telegram.holons.io/getimage server hid failures behind a 1×1 pixel)
  */
 export function resolveImage(src: string | null | undefined): string {
   if (!src) return "";
@@ -41,5 +33,5 @@ export function resolveImage(src: string | null | undefined): string {
   const clean = s.replace(/\s+/g, "");
   const mime = base64ImageMime(clean);
   if (mime) return `data:${mime};base64,${clean}`;
-  return `${imageServerBase()}/getimage?file_id=${encodeURIComponent(s)}`;
+  return `/api/image?file_id=${encodeURIComponent(s)}`;
 }

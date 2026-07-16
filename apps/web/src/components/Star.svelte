@@ -516,7 +516,7 @@
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+															src={`/api/avatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 														<div
@@ -730,7 +730,7 @@
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+															src={`/api/avatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 														<div

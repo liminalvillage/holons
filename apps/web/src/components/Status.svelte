@@ -858,7 +858,7 @@
             percentage,
             color: '',  // Will be assigned by the chart component
             breakdown,
-            avatarUrl: user.id ? `https://telegram.holons.io/getavatar?user_id=${user.id}` : undefined
+            avatarUrl: user.id ? `/api/avatar?user_id=${user.id}` : undefined
         };
     }).filter(user => user.percentage > 0); // Only include users with a non-zero percentage
     
@@ -1014,7 +1014,7 @@
                                             >
                                                 <div class="relative flex-shrink-0">
                                                     <img
-                                                        src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
+                                                        src={`/api/avatar?user_id=${user.id || userId}`}
                                                         alt={resolvedName(user.id || userId, $nameMap, user)}
                                                         class="w-8 h-8 rounded-full object-cover border border-gray-500 aspect-square flex-shrink-0"
                                                         onerror={(e) => {

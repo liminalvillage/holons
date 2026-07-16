@@ -1,9 +1,10 @@
 <script lang="ts" context="module">
   // Shared avatar primitives (also used by the detail modal's people chips).
 
-  /** Telegram profile photo for a user id, served by the avatar service. */
+  /** Telegram profile photo for a user id, resolved by the kiosk's own
+   *  /api/avatar route through the Bot API (getUserProfilePhotos → getFile). */
   export function avatarUrl(id: string | number): string {
-    return `https://telegram.holons.io/getavatar?user_id=${encodeURIComponent(String(id))}`;
+    return `/api/avatar?user_id=${encodeURIComponent(String(id))}`;
   }
   /** First letter of the human part of the name ("@user" → "U", not "@"). */
   export function avatarInitial(name: string): string {

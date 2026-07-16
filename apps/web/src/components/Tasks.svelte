@@ -1685,7 +1685,7 @@
 									{/if}
 								</div>
 								<img
-									src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+									src={`/api/avatar?user_id=${user.id}`}
 									alt={user.firstName}
 									class="w-10 h-10 rounded-full"
 									loading="lazy"

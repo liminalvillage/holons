@@ -101,7 +101,7 @@
 					{#if item.initiator?.id}
 						<img
 							class="detail__avatar"
-							src={`https://telegram.holons.io/getavatar?user_id=${item.initiator.id}`}
+							src={`/api/avatar?user_id=${item.initiator.id}`}
 							alt={item.initiator.firstName || item.initiator.username || 'User'}
 						/>
 					{/if}
@@ -186,7 +186,7 @@
 							>
 								<img
 									class="detail__user-avatar"
-									src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+									src={`/api/avatar?user_id=${user.id}`}
 									alt={resolvedName(user.id, $nameMap, user)}
 								/>
 								<span class="detail__user-name">
@@ -206,7 +206,7 @@
 							<li class="detail__participant">
 								<img
 									class="detail__user-avatar"
-									src={`https://telegram.holons.io/getavatar?user_id=${p.id}`}
+									src={`/api/avatar?user_id=${p.id}`}
 									alt={resolvedName(p.id, $nameMap, { first_name: p.firstName, last_name: p.lastName, username: p.username })}
 								/>
 								<span class="detail__user-name">

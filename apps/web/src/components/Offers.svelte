@@ -808,7 +808,7 @@
 											{#if offer.initiator?.id}
 												<img 
 													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
-													src={`https://telegram.holons.io/getavatar?user_id=${offer.initiator.id}`} 
+													src={`/api/avatar?user_id=${offer.initiator.id}`} 
 													alt={offer.initiator.firstName || offer.initiator.username || 'User'} 
 												/>
 											{:else}
@@ -935,7 +935,7 @@
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
-																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+																	src={`/api/avatar?user_id=${participant.id}`}
 																	alt={resolvedName(participant.id, $nameMap, { first_name: participant.firstName, last_name: participant.lastName, username: participant.username })}
 																/>
 															</div>
@@ -1024,7 +1024,7 @@
 											{#if need.initiator?.id}
 												<img 
 													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
-													src={`https://telegram.holons.io/getavatar?user_id=${need.initiator.id}`} 
+													src={`/api/avatar?user_id=${need.initiator.id}`} 
 													alt={need.initiator.firstName || need.initiator.username || 'User'} 
 												/>
 											{:else}
@@ -1151,7 +1151,7 @@
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
-																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+																	src={`/api/avatar?user_id=${participant.id}`}
 																	alt={resolvedName(participant.id, $nameMap, { first_name: participant.firstName, last_name: participant.lastName, username: participant.username })}
 																/>
 															</div>

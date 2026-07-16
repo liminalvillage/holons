@@ -153,7 +153,7 @@
 								<span class="note-av-ini">{participantInitial(participant)}</span>
 								{#if participant.id}
 									<img
-										src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+										src={`/api/avatar?user_id=${participant.id}`}
 										alt=""
 										loading="lazy"
 										onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
@@ -259,7 +259,7 @@
 						{#if participant.id}
 							<img
 								class="avatar"
-								src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
+								src={`/api/avatar?user_id=${participant.id}`}
 								alt={participantLabel(participant)}
 								onerror={(e) => {
 									const img = e.currentTarget as HTMLImageElement;
