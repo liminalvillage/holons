@@ -55,3 +55,4 @@ holosphere-!-*
 holosphere-*
 # ── Generated API docs ────────────────────────────────────────────────────
 docs/api/*
+.codex/
