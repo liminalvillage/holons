@@ -288,6 +288,18 @@ export type TaskViewMode = "cards" | "list" | "swipe";
 const MOBILE_MAX_WIDTH_PX = 560;
 
 /**
+ * True on a phone-sized display: EITHER dimension under the mobile breakpoint,
+ * so a rotated phone is still a phone. Tablets and wall displays (both
+ * dimensions larger) are not — they keep kiosk behaviours like auto-rotation.
+ */
+export function isPhoneDisplay(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia(
+    `(max-width: ${MOBILE_MAX_WIDTH_PX}px), (max-height: ${MOBILE_MAX_WIDTH_PX}px)`,
+  ).matches;
+}
+
+/**
  * Resolve the Tasks view mode. A saved choice always wins; with none, phones
  * default to the one-hand swipe deck and larger displays to the post-it wall.
  */

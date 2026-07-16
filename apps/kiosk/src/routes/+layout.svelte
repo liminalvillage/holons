@@ -255,6 +255,12 @@
   }
 </script>
 
+<svelte:head>
+  <!-- Browser-tab / PWA title: the holon's name (caretaker override first),
+       falling back to the generic app name until one is known. -->
+  <title>{$brandName || $holonName || "kiosk"}</title>
+</svelte:head>
+
 <svelte:window
   on:pointerdown|capture={onActivity}
   on:touchstart|capture={onActivity}

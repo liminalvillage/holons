@@ -52,11 +52,11 @@
   let scrollEl: HTMLElement | undefined;
   onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
 
-  // ── View mode: post-it wall / compact list / swipe deck ────────────────────
+  // ── View mode: swipe deck (one card) / compact list / post-it wall ────────
   const MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
-    { id: "cards", glyph: "▦", label: "Wall" },
+    { id: "swipe", glyph: "▢", label: "Card" },
     { id: "list", glyph: "☰", label: "List" },
-    { id: "swipe", glyph: "🃏", label: "Swipe" },
+    { id: "cards", glyph: "▦", label: "Cards" },
   ];
   let switchEl: HTMLElement | undefined;
 

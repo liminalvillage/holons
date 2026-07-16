@@ -13,6 +13,7 @@
     searchQuery,
     now,
     rotating,
+    autoRotates,
     idle,
     flipProgress,
   } from "$lib/stores";
@@ -170,18 +171,37 @@
       >
         <span class="glyph">{tab.glyph}</span>
         <span class="label">{tab.label}</span>
-        {#if $pinnedTab === tab.id}
-          <svg
-            class="pin"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
+        <!-- Pin affordance: the active tab always shows a pin — muted while
+             unpinned (tap to park the kiosk here), accent once pinned. A
+             stopped pointerdown keeps it from arming the long-press timer. -->
+        {#if $pinnedTab === tab.id || $activeTab === tab.id}
+          <span
+            class="pinbtn"
+            class:on={$pinnedTab === tab.id}
+            role="button"
+            tabindex="0"
+            aria-label={$pinnedTab === tab.id
+              ? `Unpin ${tab.label}`
+              : `Pin to ${tab.label}`}
+            title={$pinnedTab === tab.id ? "Unpin this view" : "Pin this view"}
+            on:pointerdown|stopPropagation
+            on:click|stopPropagation={() => togglePin(tab.id)}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                togglePin(tab.id);
+              }
+            }}
           >
-            <path
-              d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-            />
-          </svg>
-        {:else if $activeTab === tab.id}
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
+              />
+            </svg>
+          </span>
+        {/if}
+        {#if $pinnedTab !== tab.id && $activeTab === tab.id && $autoRotates}
           <span class="rail">
             <span
               class="fill"
@@ -379,20 +399,40 @@
     font-size: 0.78rem;
   }
 
-  /* Narrow portrait screens: collapse the header so it never clips. */
+  /* Narrow portrait screens: strip the header down to search + account —
+     the clock and the title go, so the search bar owns the row. */
   @media (max-width: 560px) {
     .account .who {
       display: none;
     }
+    .clock {
+      display: none;
+    }
+    /* The title goes; a caretaker's custom logo (an image) stays. */
     .brand .wordmark {
-      font-size: 1.2rem;
+      display: none;
+    }
+    .brand {
+      min-height: 0;
+    }
+    .brand:not(:has(.logo)) {
+      display: none;
+    }
+    .top {
+      gap: 0.5rem;
     }
     .search {
-      margin: 0 0.35rem;
+      margin: 0;
+      max-width: none;
     }
     .search__input {
-      height: 2.2rem;
-      padding: 0 2rem;
+      height: 2.7rem;
+      font-size: 1.05rem;
+      padding: 0 2.3rem;
+    }
+    .search__icon {
+      width: 1.15rem;
+      height: 1.15rem;
     }
   }
 
@@ -436,11 +476,33 @@
   .tab.pinned {
     color: var(--teal-deep);
   }
-  .tab .pin {
+  /* Tappable pin on the active tab: muted while unpinned (an invitation),
+     accent once the kiosk is parked here. */
+  .pinbtn {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-left: 0.05rem;
+    border-radius: 50%;
+    color: var(--muted);
+    opacity: 0.55;
+    transition:
+      color 0.15s ease,
+      opacity 0.15s ease,
+      transform 0.1s ease;
+  }
+  .pinbtn svg {
     width: 0.9rem;
     height: 0.9rem;
-    flex: 0 0 auto;
+  }
+  .pinbtn.on {
     color: var(--teal);
+    opacity: 1;
+  }
+  .pinbtn:active {
+    transform: scale(0.88);
   }
 
   .rail {

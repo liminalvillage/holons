@@ -20,6 +20,7 @@ import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
   IDLE_HIDE_MS,
+  isPhoneDisplay,
   setPinnedTab,
   resolvePinnedTab,
   type TaskViewMode,
@@ -272,6 +273,14 @@ export const rotating = writable<boolean>(true);
 export const flipAt = writable<number | null>(null);
 
 /**
+ * Whether this display auto-rotates at all. Phones never do — a handheld
+ * screen flipping views under your thumb is disorienting; tablets and wall
+ * displays keep the kiosk behaviour. Decided once on boot (startRotation);
+ * the header hides the flip-progress rail when it's off.
+ */
+export const autoRotates = writable<boolean>(true);
+
+/**
  * Whether no one has touched the screen recently — drives hiding the header
  * chrome for an immersive board. Starts true (an unattended kiosk shows the
  * board, not the chrome); any interaction clears it via `noteInteraction`.
@@ -290,8 +299,8 @@ let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlip() {
-  // A pinned kiosk never advances, so don't arm the progress bar either.
-  if (get(pinnedTab)) {
+  // A pinned kiosk or a phone never advances, so don't arm the progress bar.
+  if (get(pinnedTab) || !get(autoRotates)) {
     flipAt.set(null);
     return;
   }
@@ -299,7 +308,7 @@ function scheduleFlip() {
 }
 
 function advance() {
-  if (get(pinnedTab)) return; // parked on one view — never rotate
+  if (get(pinnedTab) || !get(autoRotates)) return; // parked / handheld — never rotate
   const tabs = get(visibleTabs);
   if (!tabs.length) return;
   const i = tabs.findIndex((t) => t.id === get(activeTab));
@@ -309,6 +318,7 @@ function advance() {
 
 /** Begin the rotation loop. Returns a teardown function. */
 export function startRotation(): () => void {
+  autoRotates.set(!isPhoneDisplay());
   rotating.set(true);
   scheduleFlip();
   tickTimer = setInterval(() => {
