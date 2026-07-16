@@ -23,7 +23,9 @@
 [build]
   base = "apps/kiosk"
   publish = "build"
-  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile && pnpm -F @holons/core build && pnpm -F kiosk build"
+  # --no-frozen-lockfile: pnpm-lock.yaml is deliberately untracked, and pnpm
+  # defaults frozen-lockfile to ON when CI=true, so it must be disabled here.
+  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F kiosk build"
 
 [build.environment]
   NODE_VERSION = "20"

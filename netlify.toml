@@ -11,7 +11,9 @@
   # workspace is intact and @holons/core is built BEFORE harvest-web,
   # then the final `pnpm run build` runs from apps/web so the adapter
   # writes its output where Netlify expects it.
-  command = "cd ../.. && corepack enable && pnpm install --frozen-lockfile && pnpm -F @holons/core build && pnpm -F harvest-web build"
+  # --no-frozen-lockfile is required: pnpm-lock.yaml is deliberately not
+  # committed, and pnpm turns frozen-lockfile ON by default when CI=true.
+  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F harvest-web build"
 
 [build.environment]
   # Node.js version for builds
