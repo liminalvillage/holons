@@ -278,12 +278,11 @@ export async function proxyAvatar(
 // people who later hid their photo from bots 404 above even though the
 // community bot cached their avatar on disk while it was still visible. That
 // cache (telegram-ui Server.js /getavatar) is the only remaining source for
-// them. Raster images only: the endpoint's identicon fallback is SVG and is
-// deliberately rejected by the magic-byte sniff, so members with no real
-// photo anywhere fall through to the UIs' own initials fallback instead of
-// a synthetic pattern. No hop/loop concerns — the bot server never calls
-// back into these routes. BOT_API_URL / VITE_BOT_API_URL override the
-// default; "off" disables.
+// them. Members with no real photo anywhere get the endpoint's deterministic
+// jdenticon (SVG) passed through — the same mark the bot shows — after a
+// benign-SVG check, served sandboxed. No hop/loop concerns — the bot server
+// never calls back into these routes. BOT_API_URL / VITE_BOT_API_URL
+// override the default; "off" disables.
 
 const DEFAULT_BOT_SERVER = "https://telegram.holons.io";
 
@@ -296,6 +295,29 @@ function botServerBase(): string | null {
   if (raw === "off" || raw === "0" || raw === "false") return null;
   const base = raw.replace(/\/+$/, "");
   return /^https?:\/\//.test(base) ? base : null;
+}
+
+/**
+ * Whether a body is a benign SVG document — the shape jdenticon produces.
+ * Anything with active content is rejected outright; real photos never take
+ * this path (they're sniffed as raster images first).
+ */
+function isPlainSvg(bytes: Uint8Array): boolean {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return false;
+  }
+  const head = text.trimStart().toLowerCase();
+  if (!head.startsWith("<svg") && !head.startsWith("<?xml")) return false;
+  const all = text.toLowerCase();
+  return (
+    !all.includes("<script") &&
+    !all.includes("javascript:") &&
+    !all.includes("<foreignobject") &&
+    !/\son\w+\s*=/.test(all)
+  );
 }
 
 /** A user's avatar from the community bot's on-disk cache. */
@@ -311,9 +333,26 @@ export async function avatarFromBotCache(
     );
     if (!resp.ok) return null;
     const bytes = new Uint8Array(await resp.arrayBuffer());
-    return bytes.length > 0 && sniffImageMime(bytes)
-      ? imageResponse(bytes, "avatar", cacheControl)
-      : null;
+    if (bytes.length === 0) return null;
+    if (sniffImageMime(bytes)) {
+      return imageResponse(bytes, "avatar", cacheControl);
+    }
+    // Photo-less members: the bot's deterministic identicon, passed through
+    // sandboxed (CSP) so an SVG from the upstream can never run anything.
+    if (isPlainSvg(bytes)) {
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": "image/svg+xml",
+          "Content-Length": String(bytes.length),
+          "Content-Disposition": 'inline; filename="avatar.svg"',
+          "Cache-Control": cacheControl,
+          "Content-Security-Policy":
+            "default-src 'none'; style-src 'unsafe-inline'",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+    return null;
   } catch {
     return null; // bot host unreachable — the caller 404s
   }

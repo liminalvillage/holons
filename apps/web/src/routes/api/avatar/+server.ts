@@ -54,8 +54,9 @@ export const GET: RequestHandler = async ({ url, request }) => {
   );
   if (proxied) return proxied;
 
-  // … and finally the bot's on-disk avatar cache, which still has the photos
-  // of members whose privacy settings now hide them from the Bot API.
+  // … and finally the bot's on-disk avatar cache: photos of members whose
+  // privacy settings now hide them from the Bot API, or the bot's identicon
+  // for members with no photo at all.
   const cachedAvatar = await avatarFromBotCache(userId, CACHE);
   if (cachedAvatar) return cachedAvatar;
 
