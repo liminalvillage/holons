@@ -10,31 +10,48 @@ import type { RequestHandler } from "./$types";
 import {
   forgetResolved,
   hasBotToken,
+  hasProxyConfigured,
+  PROXY_HOP_HEADER,
+  proxyAvatar,
   resolveAvatarFile,
   streamFile,
 } from "$lib/server/telegramFiles";
 
 const USER_ID_RE = /^-?\d{1,20}$/;
 
-export const GET: RequestHandler = async ({ url }) => {
+// Avatars change occasionally — cache for a day, not immutable.
+const CACHE = "public, max-age=86400";
+
+export const GET: RequestHandler = async ({ url, request }) => {
   const userId = url.searchParams.get("user_id")?.trim() ?? "";
   if (!USER_ID_RE.test(userId)) {
     return new Response("invalid user_id", { status: 400 });
   }
-  if (!hasBotToken()) {
-    return new Response("no bot token configured", { status: 503 });
+  if (!hasBotToken() && !hasProxyConfigured()) {
+    return new Response("no bot token or image proxy configured", {
+      status: 503,
+    });
   }
 
-  const resolved = await resolveAvatarFile(userId);
-  if (!resolved) {
-    return new Response("no profile photo", { status: 404 });
+  // Directly via the configured tokens first — no extra hop …
+  if (hasBotToken()) {
+    const resolved = await resolveAvatarFile(userId);
+    if (resolved) {
+      const response = await streamFile(resolved, CACHE);
+      if (response) return response;
+      forgetResolved("avatar", userId); // path may have expired — retry fresh
+    }
   }
 
-  // Avatars change occasionally — cache for a day, not immutable.
-  const response = await streamFile(resolved, "public, max-age=86400");
-  if (!response) {
-    forgetResolved("avatar", userId); // path may have expired — retry fresh
-    return new Response("file fetch failed", { status: 404 });
-  }
-  return response;
+  // … then one hop through a peer deploy whose token has actually met the
+  // community's members (getUserProfilePhotos needs that).
+  const proxied = await proxyAvatar(
+    userId,
+    CACHE,
+    url.origin,
+    request.headers.has(PROXY_HOP_HEADER),
+  );
+  if (proxied) return proxied;
+
+  return new Response("no profile photo", { status: 404 });
 };

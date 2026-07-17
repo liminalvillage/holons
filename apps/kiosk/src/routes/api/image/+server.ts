@@ -9,6 +9,9 @@ import type { RequestHandler } from "./$types";
 import {
   forgetResolved,
   hasBotToken,
+  hasProxyConfigured,
+  PROXY_HOP_HEADER,
+  proxyImage,
   resolveFileById,
   streamFile,
 } from "$lib/server/telegramFiles";
@@ -16,28 +19,39 @@ import {
 /** Telegram file_ids never contain anything outside this set. */
 const FILE_ID_RE = /^[A-Za-z0-9_-]{10,128}$/;
 
-export const GET: RequestHandler = async ({ url }) => {
+// A file_id's content never changes — let browsers/CDNs keep it.
+const CACHE = "public, max-age=604800, immutable";
+
+export const GET: RequestHandler = async ({ url, request }) => {
   const fileId = url.searchParams.get("file_id")?.trim() ?? "";
   if (!FILE_ID_RE.test(fileId)) {
     return new Response("invalid file_id", { status: 400 });
   }
-  if (!hasBotToken()) {
-    return new Response("no bot token configured", { status: 503 });
+  if (!hasBotToken() && !hasProxyConfigured()) {
+    return new Response("no bot token or image proxy configured", {
+      status: 503,
+    });
   }
 
-  const resolved = await resolveFileById(fileId);
-  if (!resolved) {
-    return new Response("file not found via getFile", { status: 404 });
+  // Directly via the configured tokens first — no extra hop …
+  if (hasBotToken()) {
+    const resolved = await resolveFileById(fileId);
+    if (resolved) {
+      const response = await streamFile(resolved, CACHE);
+      if (response) return response;
+      forgetResolved("file", fileId); // path may have expired — retry fresh
+    }
   }
 
-  // A file_id's content never changes — let browsers/CDNs keep it.
-  const response = await streamFile(
-    resolved,
-    "public, max-age=604800, immutable",
+  // … then one hop through a peer deploy that holds the token this deploy
+  // doesn't (file_ids are scoped to the community bot).
+  const proxied = await proxyImage(
+    fileId,
+    CACHE,
+    url.origin,
+    request.headers.has(PROXY_HOP_HEADER),
   );
-  if (!response) {
-    forgetResolved("file", fileId); // path may have expired — retry fresh
-    return new Response("file fetch failed", { status: 404 });
-  }
-  return response;
+  if (proxied) return proxied;
+
+  return new Response("file not found", { status: 404 });
 };

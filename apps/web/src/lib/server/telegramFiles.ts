@@ -13,6 +13,12 @@
 // and the dev login bot. Every configured token is therefore tried in order
 // until one resolves — which also keeps dev-bot content rendering while the
 // community bot's token is revoked or rotated.
+//
+// Deploys WITHOUT a suitable token can delegate to a peer deploy that has
+// one (IMAGE_PROXY_URL, e.g. https://dashboard.holons.io/api) — see the
+// peer-proxy fallback below. The token itself is env-only on whichever host
+// holds it: read exclusively through $env/dynamic/private at runtime, never
+// VITE_-prefixed, so it cannot reach a client bundle or the repo.
 
 import { env } from "$env/dynamic/private";
 
@@ -163,8 +169,18 @@ export async function streamFile(
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length === 0) return null;
   const ext = resolved.path.split(".").pop()?.toLowerCase() ?? "";
-  const type = sniffImageMime(bytes) ?? MIME_BY_EXT[ext] ?? "image/jpeg";
   const name = resolved.path.split("/").pop() ?? "image";
+  return imageResponse(bytes, name, cacheControl, MIME_BY_EXT[ext]);
+}
+
+/** Build the inline-image response (real type sniffed from magic bytes). */
+function imageResponse(
+  bytes: Uint8Array<ArrayBuffer>,
+  name: string,
+  cacheControl: string,
+  fallbackType?: string,
+): Response {
+  const type = sniffImageMime(bytes) ?? fallbackType ?? "image/jpeg";
   return new Response(bytes, {
     headers: {
       "Content-Type": type,
@@ -173,6 +189,87 @@ export async function streamFile(
       "Cache-Control": cacheControl,
     },
   });
+}
+
+// ── Peer-app proxy fallback ─────────────────────────────────────────────────
+//
+// One deploy holds the community bot's token (env-only); every other deploy —
+// other hubs' kiosks, self-hosted dashboards — can point IMAGE_PROXY_URL at
+// that deploy's API base (default https://dashboard.holons.io/api) and its
+// /image and /avatar routes are used as a one-hop upstream of the exact same
+// shape, honest 404s included. Two guards keep this from ever looping:
+// a hop-marker header (a proxied request is never re-proxied) and a
+// same-origin check (a deploy never proxies to itself). Set IMAGE_PROXY_URL
+// to "off" to disable the fallback entirely.
+
+const DEFAULT_IMAGE_PROXY = "https://dashboard.holons.io/api";
+
+/** Marks a proxied request so the upstream never proxies it onward. */
+export const PROXY_HOP_HEADER = "x-holons-image-proxy";
+
+function proxyBase(): string | null {
+  const raw = (env.IMAGE_PROXY_URL || DEFAULT_IMAGE_PROXY).trim();
+  if (raw === "off" || raw === "0" || raw === "false") return null;
+  const base = raw.replace(/\/+$/, "");
+  return /^https?:\/\//.test(base) ? base : null;
+}
+
+/** Whether the peer-proxy fallback is configured (503 vs 404 gating). */
+export function hasProxyConfigured(): boolean {
+  return proxyBase() !== null;
+}
+
+async function proxyFetch(
+  pathAndQuery: string,
+  requestOrigin: string,
+  hopped: boolean,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (hopped) return null; // already one hop deep — never chain proxies
+  const base = proxyBase();
+  if (!base) return null;
+  try {
+    if (new URL(base).origin === requestOrigin) return null; // self → loop
+    const resp = await fetch(`${base}${pathAndQuery}`, {
+      headers: { [PROXY_HOP_HEADER]: "1" },
+    });
+    if (!resp.ok) return null;
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    // Accept only something that really is an image — error bodies must not
+    // be cached as pictures.
+    return bytes.length > 0 && sniffImageMime(bytes) ? bytes : null;
+  } catch {
+    return null; // upstream unreachable — the caller 404s
+  }
+}
+
+/** Proxy a picture file_id through the peer deploy's /image route. */
+export async function proxyImage(
+  fileId: string,
+  cacheControl: string,
+  requestOrigin: string,
+  hopped: boolean,
+): Promise<Response | null> {
+  const bytes = await proxyFetch(
+    `/image?file_id=${encodeURIComponent(fileId)}`,
+    requestOrigin,
+    hopped,
+  );
+  return bytes ? imageResponse(bytes, "image", cacheControl) : null;
+}
+
+/** Proxy a user avatar through the peer deploy's /avatar route. */
+export async function proxyAvatar(
+  userId: string,
+  cacheControl: string,
+  requestOrigin: string,
+  hopped: boolean,
+): Promise<Response | null> {
+  const bytes = await proxyFetch(
+    `/avatar?user_id=${encodeURIComponent(userId)}`,
+    requestOrigin,
+    hopped,
+  );
+  return bytes ? imageResponse(bytes, "avatar", cacheControl) : null;
 }
 
 /** Drop a cached resolution (after a failed fetch — the path expired). */
