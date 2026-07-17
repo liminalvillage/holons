@@ -239,10 +239,21 @@ export function setBrandLogo(value: string | null): void {
  * baked that way is readable by whoever can load the site.
  */
 export function resolveVoiceKey(): string | null {
-  const stored = persisted(VOICE_KEY_KEY);
-  if (stored && stored.trim()) return stored.trim();
+  const device = deviceVoiceKey();
+  if (device) return device;
   const env = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
   return env && env.trim() ? env.trim() : null;
+}
+
+/**
+ * Just the caretaker-entered key on THIS device (no env fallback). Its
+ * presence is an explicit "speak via the API" choice, so the voice mode
+ * resolution lets it outrank a VITE_VOICE_WS_URL baked into the build —
+ * a dev machine's localhost WS URL means nothing on a kiosk device.
+ */
+export function deviceVoiceKey(): string | null {
+  const stored = persisted(VOICE_KEY_KEY);
+  return stored && stored.trim() ? stored.trim() : null;
 }
 
 /** Persist (or clear, when null/blank) this device's voice API key. */

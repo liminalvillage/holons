@@ -32,6 +32,7 @@ import type {
 } from "$lib/voice/backend";
 import { WsVoiceBackend } from "$lib/voice/ws";
 import { DirectVoiceBackend, hasDirectVoiceKey } from "$lib/voice/direct";
+import { deviceVoiceKey } from "$lib/config";
 
 const WS_URL_ENV = import.meta.env.VITE_VOICE_WS_URL as string | undefined;
 const MODE_ENV = (import.meta.env.VITE_VOICE_MODE as string | undefined)
@@ -42,9 +43,16 @@ const MODE_ENV = (import.meta.env.VITE_VOICE_MODE as string | undefined)
  * Which pipeline to talk to. Resolved on every (re)init, not once at module
  * load, because direct availability depends on the caretaker's device-local
  * key (Settings) which can appear or vanish while the app runs.
+ *
+ * A key pasted in Settings outranks a VITE_VOICE_WS_URL baked into the
+ * build: deploys built on a dev machine inherit that machine's localhost WS
+ * URL from the shared .env, which is unreachable from a kiosk device — it
+ * must never mute the caretaker's explicit "speak via the API" choice.
+ * Explicit VITE_VOICE_MODE still wins over everything.
  */
 function resolveVoiceMode(): "ws" | "direct" {
   if (MODE_ENV === "ws" || MODE_ENV === "direct") return MODE_ENV;
+  if (deviceVoiceKey()) return "direct";
   if (WS_URL_ENV) return "ws";
   return hasDirectVoiceKey() ? "direct" : "ws";
 }
