@@ -8,6 +8,7 @@
 
 import type { RequestHandler } from "./$types";
 import {
+  avatarFromBotCache,
   forgetResolved,
   hasBotToken,
   hasProxyConfigured,
@@ -44,7 +45,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
   }
 
   // … then one hop through a peer deploy whose token has actually met the
-  // community's members (getUserProfilePhotos needs that).
+  // community's members (getUserProfilePhotos needs that) …
   const proxied = await proxyAvatar(
     userId,
     CACHE,
@@ -52,6 +53,11 @@ export const GET: RequestHandler = async ({ url, request }) => {
     request.headers.has(PROXY_HOP_HEADER),
   );
   if (proxied) return proxied;
+
+  // … and finally the bot's on-disk avatar cache, which still has the photos
+  // of members whose privacy settings now hide them from the Bot API.
+  const cachedAvatar = await avatarFromBotCache(userId, CACHE);
+  if (cachedAvatar) return cachedAvatar;
 
   return new Response("no profile photo", { status: 404 });
 };

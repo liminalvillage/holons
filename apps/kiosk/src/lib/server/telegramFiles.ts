@@ -272,6 +272,53 @@ export async function proxyAvatar(
   return bytes ? imageResponse(bytes, "avatar", cacheControl) : null;
 }
 
+// ── Bot-server avatar cache (last resort, avatars only) ────────────────────
+//
+// getUserProfilePhotos respects each member's CURRENT privacy settings, so
+// people who later hid their photo from bots 404 above even though the
+// community bot cached their avatar on disk while it was still visible. That
+// cache (telegram-ui Server.js /getavatar) is the only remaining source for
+// them. Raster images only: the endpoint's identicon fallback is SVG and is
+// deliberately rejected by the magic-byte sniff, so members with no real
+// photo anywhere fall through to the UIs' own initials fallback instead of
+// a synthetic pattern. No hop/loop concerns — the bot server never calls
+// back into these routes. BOT_API_URL / VITE_BOT_API_URL override the
+// default; "off" disables.
+
+const DEFAULT_BOT_SERVER = "https://telegram.holons.io";
+
+function botServerBase(): string | null {
+  const raw = (
+    env.BOT_API_URL ||
+    env.VITE_BOT_API_URL ||
+    DEFAULT_BOT_SERVER
+  ).trim();
+  if (raw === "off" || raw === "0" || raw === "false") return null;
+  const base = raw.replace(/\/+$/, "");
+  return /^https?:\/\//.test(base) ? base : null;
+}
+
+/** A user's avatar from the community bot's on-disk cache. */
+export async function avatarFromBotCache(
+  userId: string,
+  cacheControl: string,
+): Promise<Response | null> {
+  const base = botServerBase();
+  if (!base) return null;
+  try {
+    const resp = await fetch(
+      `${base}/getavatar?user_id=${encodeURIComponent(userId)}`,
+    );
+    if (!resp.ok) return null;
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    return bytes.length > 0 && sniffImageMime(bytes)
+      ? imageResponse(bytes, "avatar", cacheControl)
+      : null;
+  } catch {
+    return null; // bot host unreachable — the caller 404s
+  }
+}
+
 /** Drop a cached resolution (after a failed fetch — the path expired). */
 export function forgetResolved(kind: "file" | "avatar", id: string): void {
   cache.delete(`${kind}:${id}`);
