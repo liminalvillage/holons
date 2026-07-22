@@ -41,6 +41,7 @@
     noteInteraction,
   } from "$lib/stores";
   import { initAuth, loginOpen } from "$lib/auth";
+  import { startSwAutoReload } from "$lib/swUpdate";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
@@ -206,7 +207,12 @@
     themeMode.set(resolveThemeMode());
     initAuth();
     mounted = true;
-    const teardown = [startClock(), startRotation(), startTheme()];
+    const teardown = [
+      startClock(),
+      startRotation(),
+      startTheme(),
+      startSwAutoReload(),
+    ];
     return () => {
       teardown.forEach((fn) => fn());
       if (readyTimer) clearTimeout(readyTimer);
