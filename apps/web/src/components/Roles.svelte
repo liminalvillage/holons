@@ -25,6 +25,7 @@
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
+	import { queryManager } from '$lib/holosphere/QueryManager';
 
 	/**
 	 * @type {Record<string, any>}
@@ -146,6 +147,8 @@
 		isUserStoreReady = false;
 
 		if (!holosphere || !holonIdToLoad) return;
+
+		queryManager.init(holosphere);
 
 		const subscribedHolonId = holonIdToLoad;
 
