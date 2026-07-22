@@ -63,7 +63,10 @@ export function getHolosphere(): Promise<HoloSphere> {
         logLevel: "ERROR",
         awaitReady: true,
         // Read from the production Gun relay (overridable via VITE_KIOSK_PEER).
-        extra: { peers: resolvePeers() },
+        // Must go through `gunOptions` — the v2 config constructor only honors
+        // `gunOptions.peers` / `nostr.relays`; a top-level `peers` key is
+        // silently dropped and the instance falls back to the built-in default.
+        extra: { gunOptions: { peers: resolvePeers() } },
       }),
     );
     // Dev-only: expose the instance so the kiosk can be poked from the console
