@@ -13,6 +13,7 @@
     selection,
     editOnOpen,
     categoryColors,
+    showNotice,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -22,6 +23,7 @@
     noteColor,
     noteTilt,
     parseWhen,
+    sourceRef,
     type CalendarEvent,
   } from "$lib/data";
   import Avatars from "$lib/components/Avatars.svelte";
@@ -29,6 +31,33 @@
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
   $: unscheduled = $backlog.filter((t) => !t.due);
+
+  // One write path for every calendar gesture (move / unschedule / resize):
+  // a federated card's write is routed to its owner holon under its source key
+  // (writing it locally would fork a stray copy that unlinks from the
+  // original), the UI-only provenance tags are stripped, and any denial or
+  // error surfaces as an on-screen notice — a wall display has no console, so
+  // a silent failure is indistinguishable from a dead app.
+  async function saveQuest(q: Quest, updated: Quest, verb: string) {
+    const hid = get(holonId);
+    if (!hid) return;
+    const ref = sourceRef(q, String(q.id ?? q.title));
+    const writer = await getWriter(ref?.holon ?? hid, (m) =>
+      showNotice(`Couldn't ${verb} — ${m}`),
+    );
+    const clean: Record<string, unknown> = { ...updated };
+    if (ref) clean.id = ref.key;
+    delete clean._holon;
+    delete clean._federation;
+    try {
+      await writer.put("quests", clean);
+    } catch (err) {
+      console.error(`[kiosk] calendar ${verb} failed`, err);
+      showNotice(
+        `Couldn't ${verb} — ${err instanceof Error ? err.message : "write failed"}`,
+      );
+    }
+  }
 
   function open(id: string) {
     if (justDragged) return;
@@ -185,8 +214,7 @@
       const delta = newStart.getTime() - oldStart.getTime();
       updated.ends = toStoredInstant(new Date(oldEnds.getTime() + delta));
     }
-    const writer = await getWriter(hid);
-    await writer.put("quests", updated);
+    await saveQuest(q, updated, "move");
   }
 
   // Dropping a card back into the drawer clears its date, returning it to the
@@ -207,8 +235,7 @@
     }
     const updated: Quest = { ...q, when: "", ends: "", until: "" };
     if (String(q.type ?? "").toLowerCase() === "event") updated.type = "task";
-    const writer = await getWriter(hid);
-    await writer.put("quests", updated);
+    await saveQuest(q, updated, "unschedule");
   }
 
   // ── Long-press / + to create ──────────────────────────────────────────────-
@@ -394,8 +421,7 @@
     const start = parseWhen(q.when);
     if (!start || Number.isNaN(start.getTime())) return;
     const ends = toStoredInstant(new Date(start.getTime() + durMin * 60000));
-    const writer = await getWriter(hid);
-    await writer.put("quests", { ...q, ends });
+    await saveQuest(q, { ...q, ends }, "resize");
   }
 
   type Mode = "day" | "week" | "month";

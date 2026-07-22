@@ -383,14 +383,28 @@
       return;
     }
     const quests = get(rawQuests);
-    const writer = await getWriter(hid);
-    for (let i = 0; i < order.length; i++) {
-      const q = quests.find((x) => String(x.id ?? x.title) === order[i]);
-      if (!q || Number(q.orderIndex) === i) continue; // only write what changed
-      // Drop the UI-only `_holon` federation tag before persisting.
-      const clean: Record<string, unknown> = { ...q };
-      delete clean._holon;
-      await writer.put("quests", { ...clean, orderIndex: i });
+    // Surface denied writes on screen — a wall display has no console, so a
+    // silent failure reads as "the app is broken" with no way to tell why.
+    const writer = await getWriter(hid, (msg) =>
+      showNotice(`Couldn't save the new order — ${msg}`),
+    );
+    try {
+      for (let i = 0; i < order.length; i++) {
+        const q = quests.find((x) => String(x.id ?? x.title) === order[i]);
+        if (!q || Number(q.orderIndex) === i) continue; // only write what changed
+        // A federated/hologram card lives in its owner's graph — writing it
+        // into THIS holon's quests would fork a stray local copy (same rule as
+        // delete/appreciate above). Its dragged position stays view-local.
+        if ((q as any)._federation || (q as any)._holon) continue;
+        const clean: Record<string, unknown> = { ...q };
+        delete clean._holon;
+        if (!(await writer.put("quests", { ...clean, orderIndex: i }))) return;
+      }
+    } catch (err) {
+      console.error("[kiosk] reorder failed", err);
+      showNotice(
+        `Couldn't save the new order — ${err instanceof Error ? err.message : "write failed"}`,
+      );
     }
   }
 
@@ -597,16 +611,26 @@
       lastName: user.last_name,
     };
     try {
-      const writer = await getWriter(hid);
+      // Route denials to the on-screen notice — a silent false return here
+      // looked like "add does nothing" on unattended displays.
+      const writer = await getWriter(hid, (msg) =>
+        showNotice(`Couldn't add — ${msg}`),
+      );
+      let allSaved = true;
       for (const title of titles) {
         const task = createTask({ holonId: hid, initiator, title });
         task.id = newId();
-        await writer.put("quests", task);
+        if (!(await writer.put("quests", task))) allSaved = false;
       }
-      addOpen = false;
-      addDraft = "";
+      if (allSaved) {
+        addOpen = false;
+        addDraft = "";
+      }
     } catch (err) {
       console.error("[kiosk] add task failed", err);
+      showNotice(
+        `Couldn't add — ${err instanceof Error ? err.message : "write failed"}`,
+      );
     } finally {
       adding = false;
     }
