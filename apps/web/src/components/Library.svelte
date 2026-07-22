@@ -12,9 +12,17 @@
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { Package, Plus, Calendar, List } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
-    import { telegramStore } from '$lib/stores/telegram';
+    import { telegramStore, telegramUser } from '$lib/stores/telegram';
     import { nostrPublicKey } from '$lib/stores/nostr';
     import CalendarComponent from './Calendar.svelte';
+    import {
+        type Booking,
+        dayKey,
+        isBookingActive,
+        getDisplayBookings,
+        getItemColor,
+        buildBookingSpans
+    } from '$lib/util/libraryBookings';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -23,17 +31,6 @@
         EQUIPMENT: 'equipment',
         OTHER: 'other'
     };
-
-    interface Booking {
-        id: string;
-        start: string;        // YYYY-MM-DD (or ISO; we always read .slice(0,10))
-        end: string;          // YYYY-MM-DD
-        borrowerId: string;
-        borrower: string;     // display name
-        borrowerInitials?: string | null;
-        /** Canonical creation timestamp (ISO). */
-        created: string;
-    }
 
     interface LibraryItem {
         id: string;
@@ -121,12 +118,20 @@
                         when: dayIso,
                         ends: addHours(dayIso, 1),
                         color,
-                        _libraryItemId: item.id
+                        _libraryItemId: item.id,
+                        // Month view draws bookings as continuous span lines
+                        // (see bookingSpans); the per-day sessions only feed
+                        // the week/day views.
+                        _hideInMonth: true
                     };
                 }
             }
             return acc;
         }, {} as Record<string, any>);
+
+    // One span per booking for the calendar views: a thin line in the item's
+    // stable colour across the whole booked period.
+    $: bookingSpans = buildBookingSpans(libraryItems.map(([_, item]) => item));
 
     function startOfDay(date: Date): Date {
         const d = new Date(date);
@@ -176,9 +181,11 @@
     let newItemCategory = "";
     let newItemDescription = "";
 
-    // Booking modal state.
+    // Booking modal state. `editingBookingId` switches the modal from
+    // "create a new booking" to "change this existing booking's dates".
     let showBorrowModal = false;
     let borrowingItem: LibraryItem | null = null;
+    let editingBookingId: string | null = null;
     let selectedStartDate: string = "";
     let selectedReturnDate: string = "";
     let currentMonth = new Date();
@@ -229,33 +236,9 @@
         };
     }
 
-    // Read-side: collect the canonical list of bookings for an item, falling
-    // back to a synthesized one from the legacy single-borrow fields so old
-    // data keeps showing up. New writes always go through `item.bookings`.
-    function getDisplayBookings(item: LibraryItem): Booking[] {
-        const list: Booking[] = Array.isArray(item.bookings) ? [...item.bookings] : [];
-        if (list.length === 0 && item.borrowed && item.borrowedAt) {
-            list.push({
-                id: 'legacy',
-                start: (item.borrowedAt as string).slice(0, 10),
-                end: item.returnBy || (item.borrowedAt as string).slice(0, 10),
-                borrowerId: item.borrowerId || '',
-                borrower: item.borrower || item.borrowerInitials || 'Unknown',
-                borrowerInitials: item.borrowerInitials,
-                created: item.borrowedAt as string
-            });
-        }
-        list.sort((a, b) => a.start.localeCompare(b.start));
-        return list;
-    }
-
-    function isBookingActive(b: Booking, on: Date = new Date()): boolean {
-        const today = formatDate(on);
-        const start = b.start.length > 10 ? b.start.slice(0, 10) : b.start;
-        const end = b.end.length > 10 ? b.end.slice(0, 10) : b.end;
-        return today >= start && today <= end;
-    }
-
+    // getDisplayBookings / isBookingActive / getItemColor / dayKey come from
+    // $lib/util/libraryBookings, shared with the main Calendar's booking
+    // overlay so both derive periods identically.
     function getActiveBooking(item: LibraryItem): Booking | null {
         return getDisplayBookings(item).find(b => isBookingActive(b)) ?? null;
     }
@@ -264,15 +247,43 @@
         return getActiveBooking(item) !== null;
     }
 
-    // Stable per-item color so each library item is visually distinguishable
-    // both in the list and across its borrowing-session entries on the calendar.
-    function getItemColor(itemId: string): string {
-        let hash = 0;
-        for (let i = 0; i < itemId.length; i++) {
-            hash = itemId.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const hue = ((hash % 360) + 360) % 360;
-        return `hsl(${hue}, 65%, 55%)`;
+    // All identities the logged-in user can appear under in a booking: the
+    // legacy localStorage id/username, the Telegram id/@username (what
+    // resolveBorrowerIdentity writes), and the Nostr public key. Kept as
+    // reactive sets so booking action buttons appear/disappear with login state.
+    $: myBorrowerIds = new Set(
+        [currentUserId, $telegramUser ? String($telegramUser.id) : '', $nostrPublicKey || '']
+            .filter(Boolean)
+    );
+    $: myBorrowerNames = new Set(
+        [currentUsername, $telegramUser?.username ? `@${$telegramUser.username}` : '']
+            .filter(Boolean)
+    );
+
+    function isMyBooking(b: Booking | null, ids: Set<string>, names: Set<string>): boolean {
+        if (!b) return false;
+        return (
+            (!!b.borrowerId && ids.has(String(b.borrowerId))) ||
+            (!!b.borrower && names.has(b.borrower))
+        );
+    }
+
+    // Rebuild an item around a new bookings list, recomputing the legacy
+    // single-borrow mirror fields from whichever booking (if any) covers today,
+    // so old readers of `borrowed`/`returnBy` stay consistent after a booking
+    // is added, changed or cancelled.
+    function withBookings(item: LibraryItem, bookings: Booking[]): LibraryItem {
+        const active = bookings.find(b => isBookingActive(b)) ?? null;
+        return {
+            ...item,
+            bookings,
+            borrowed: active !== null,
+            borrower: active?.borrower ?? null,
+            borrowerId: active?.borrowerId ?? null,
+            borrowerInitials: active?.borrowerInitials ?? null,
+            borrowedAt: active ? new Date(`${dayKey(active.start)}T00:00:00`).toISOString() : null,
+            returnBy: active?.end ?? null
+        };
     }
 
     // Item detail modal state
@@ -477,12 +488,35 @@
 
     function openBorrowModal(item: LibraryItem) {
         borrowingItem = item;
+        editingBookingId = null;
         borrowNow = true;
         selectedStartDate = formatDate(new Date());
         selectedReturnDate = "";
         currentMonth = new Date();
         startCalendarMonth = new Date();
         showBorrowModal = true;
+    }
+
+    // Re-open the booking modal pre-filled with an existing booking's dates.
+    // Confirming replaces that booking's range instead of appending a new one.
+    function openEditBooking(item: LibraryItem, booking: Booking) {
+        borrowingItem = item;
+        editingBookingId = booking.id;
+        selectedStartDate = dayKey(booking.start);
+        selectedReturnDate = dayKey(booking.end);
+        // Only pin-to-today when the booking already starts today; otherwise
+        // show the start calendar so the stored start date isn't clobbered.
+        borrowNow = selectedStartDate === formatDate(new Date());
+        startCalendarMonth = new Date(`${selectedStartDate}T00:00:00`);
+        currentMonth = new Date(`${selectedReturnDate}T00:00:00`);
+        showItemDetail = false;
+        showBorrowModal = true;
+    }
+
+    function closeBorrowModal() {
+        showBorrowModal = false;
+        borrowingItem = null;
+        editingBookingId = null;
     }
 
     // Keep the start date pinned to today while "borrow now" is on; the user
@@ -504,36 +538,32 @@
             return;
         }
 
-        const borrower = await resolveBorrowerIdentity();
-
-        const newBooking: Booking = {
-            id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            start: selectedStartDate,
-            end: selectedReturnDate,
-            borrowerId: borrower.id,
-            borrower: borrower.displayName,
-            borrowerInitials: borrower.initials,
-            created: new Date().toISOString()
-        };
-
-        const existing = Array.isArray(borrowingItem.bookings) ? borrowingItem.bookings : [];
-        const updatedBookings = [...existing, newBooking];
-
-        // Mirror onto legacy single-borrow fields if this booking covers today,
-        // so callers/UI that still read those fields stay in sync.
-        const isActiveNow = isBookingActive(newBooking);
-        const updatedItem: LibraryItem = {
-            ...borrowingItem,
-            bookings: updatedBookings,
-            ...(isActiveNow ? {
-                borrowed: true,
-                borrower: borrower.displayName,
+        // Base on the display list (which materialises a legacy single-borrow
+        // into a synthetic booking) so editing legacy data migrates it cleanly
+        // into the `bookings` array.
+        const base = getDisplayBookings(borrowingItem);
+        let updatedBookings: Booking[];
+        if (editingBookingId) {
+            updatedBookings = base.map(b =>
+                b.id === editingBookingId
+                    ? { ...b, start: selectedStartDate, end: selectedReturnDate }
+                    : b
+            );
+        } else {
+            const borrower = await resolveBorrowerIdentity();
+            updatedBookings = [...base, {
+                id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                start: selectedStartDate,
+                end: selectedReturnDate,
                 borrowerId: borrower.id,
+                borrower: borrower.displayName,
                 borrowerInitials: borrower.initials,
-                borrowedAt: new Date(`${selectedStartDate}T00:00:00`).toISOString(),
-                returnBy: selectedReturnDate
-            } : {})
-        };
+                created: new Date().toISOString()
+            }];
+        }
+
+        const updatedItem = withBookings(borrowingItem, updatedBookings);
+        const previousItem = borrowingItem;
 
         store = { ...store, [updatedItem.id]: updatedItem };
 
@@ -541,11 +571,13 @@
             await holosphere.put(holonID, "library", updatedItem);
         } catch (err) {
             console.error("Failed to save booking", err);
-            store = { ...store, [borrowingItem.id]: borrowingItem };
+            store = { ...store, [previousItem.id]: previousItem };
         }
 
-        showBorrowModal = false;
-        borrowingItem = null;
+        if (showItemDetail && selectedItem?.id === updatedItem.id) {
+            selectedItem = updatedItem;
+        }
+        closeBorrowModal();
     }
 
     async function handleReturn(item: LibraryItem) {
@@ -567,19 +599,8 @@
             return;
         }
 
-        const remainingBookings = (Array.isArray(item.bookings) ? item.bookings : [])
-            .filter(b => b.id !== active?.id);
-
-        const updatedItem: LibraryItem = {
-            ...item,
-            bookings: remainingBookings,
-            borrowed: false,
-            borrower: null,
-            borrowerId: null,
-            borrowerInitials: null,
-            borrowedAt: null,
-            returnBy: null
-        };
+        const remainingBookings = getDisplayBookings(item).filter(b => b.id !== active?.id);
+        const updatedItem = withBookings(item, remainingBookings);
 
         store = { ...store, [updatedItem.id]: updatedItem };
 
@@ -587,6 +608,37 @@
             await holosphere.put(holonID, "library", updatedItem);
         } catch (err) {
             console.error("Failed to return item", err);
+            store = { ...store, [item.id]: item };
+        }
+
+        if (showItemDetail && selectedItem?.id === item.id) {
+            selectedItem = updatedItem;
+        }
+    }
+
+    // Drop a booking entirely — the borrower's "cancel". Unlike return this
+    // also works on future bookings that haven't started yet.
+    async function cancelBooking(item: LibraryItem, booking: Booking) {
+        if (!holonID) return;
+
+        if (!isMyBooking(booking, myBorrowerIds, myBorrowerNames)) {
+            alert(`Only ${booking.borrower || 'the borrower'} can cancel this booking.`);
+            return;
+        }
+        if (!confirm(
+            `Cancel the booking of ${item.id} ` +
+            `(${formatReturnDate(booking.start)} → ${formatReturnDate(booking.end)})?`
+        )) return;
+
+        const remainingBookings = getDisplayBookings(item).filter(b => b.id !== booking.id);
+        const updatedItem = withBookings(item, remainingBookings);
+
+        store = { ...store, [updatedItem.id]: updatedItem };
+
+        try {
+            await holosphere.put(holonID, "library", updatedItem);
+        } catch (err) {
+            console.error("Failed to cancel booking", err);
             store = { ...store, [item.id]: item };
         }
 
@@ -651,17 +703,19 @@
     // Bookings are stored as YYYY-MM-DD strings, so plain string comparison
     // gives the right ordering for half-open ranges.
 
-    function dayKey(s: string): string {
-        return s.length > 10 ? s.slice(0, 10) : s;
-    }
-
     function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
         return dayKey(aStart) <= dayKey(bEnd) && dayKey(aEnd) >= dayKey(bStart);
     }
 
+    // Bookings that count as conflicts in the booking modal. When changing an
+    // existing booking, its own current range must not block the calendar.
+    function conflictBookings(item: LibraryItem): Booking[] {
+        return getDisplayBookings(item).filter(b => b.id !== editingBookingId);
+    }
+
     function isDayBooked(item: LibraryItem, dateStr: string): boolean {
         const day = dayKey(dateStr);
-        return getDisplayBookings(item).some(b =>
+        return conflictBookings(item).some(b =>
             day >= dayKey(b.start) && day <= dayKey(b.end)
         );
     }
@@ -671,14 +725,14 @@
     // existing one.
     function getNextBookingAfter(item: LibraryItem, startDate: string): Booking | null {
         const cutoff = dayKey(startDate);
-        const future = getDisplayBookings(item)
+        const future = conflictBookings(item)
             .filter(b => dayKey(b.start) > cutoff)
             .sort((a, b) => dayKey(a.start).localeCompare(dayKey(b.start)));
         return future[0] ?? null;
     }
 
     function findOverlappingBooking(item: LibraryItem, start: string, end: string): Booking | null {
-        for (const b of getDisplayBookings(item)) {
+        for (const b of conflictBookings(item)) {
             if (rangesOverlap(start, end, b.start, b.end)) return b;
         }
         return null;
@@ -926,6 +980,7 @@
             {#if libraryView === 'calendar'}
                 <CalendarComponent
                     customItems={borrowedAsTasks}
+                    spans={bookingSpans}
                     readOnly
                     embedded
                     onTaskClick={handleCalendarTaskClick}
@@ -1021,7 +1076,7 @@
                                         >
                                             Book
                                         </button>
-                                    {:else if activeBooking && (activeBooking.borrowerId === currentUserId || activeBooking.borrower === currentUsername)}
+                                    {:else if isMyBooking(activeBooking, myBorrowerIds, myBorrowerNames)}
                                         <button
                                             on:click|stopPropagation={() => handleReturn(item)}
                                             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
@@ -1194,8 +1249,8 @@
 {#if showBorrowModal && borrowingItem}
     <div
         class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-        on:click|self={() => { showBorrowModal = false; borrowingItem = null; }}
-        on:keydown|self={(e) => e.key === 'Escape' && (showBorrowModal = false, borrowingItem = null)}
+        on:click|self={closeBorrowModal}
+        on:keydown|self={(e) => e.key === 'Escape' && closeBorrowModal()}
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -1208,10 +1263,10 @@
                 <div class="flex items-center justify-between mb-6">
                     <h3 id="borrow-title" class="text-white text-xl font-bold flex items-center gap-2">
                         <span class="text-2xl">{getItemIcon(borrowingItem)}</span>
-                        Book {borrowingItem.id}
+                        {editingBookingId ? `Change booking — ${borrowingItem.id}` : `Book ${borrowingItem.id}`}
                     </h3>
                     <button
-                        on:click={() => { showBorrowModal = false; borrowingItem = null; }}
+                        on:click={closeBorrowModal}
                         class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
                         aria-label="Close"
                     >
@@ -1221,7 +1276,7 @@
                     </button>
                 </div>
 
-                {#if borrowingItem.value > 0}
+                {#if borrowingItem.value > 0 && !editingBookingId}
                     <div class="mb-4 p-3 bg-emerald-900/30 border border-emerald-600/30 rounded-lg">
                         <p class="text-emerald-300 text-sm">
                             <span class="font-medium">💳 Booking cost:</span> {borrowingItem.value} credits
@@ -1375,7 +1430,7 @@
                 <div class="flex justify-end gap-3 pt-4">
                     <button
                         type="button"
-                        on:click={() => { showBorrowModal = false; borrowingItem = null; }}
+                        on:click={closeBorrowModal}
                         class="btn btn--secondary"
                     >
                         Cancel
@@ -1386,7 +1441,7 @@
                         class="btn btn--primary"
                         disabled={!selectedReturnDate || !selectedStartDate || !!bookingConflict}
                     >
-                        Confirm Booking
+                        {editingBookingId ? 'Save Changes' : 'Confirm Booking'}
                     </button>
                 </div>
                 {#if bookingConflict}
@@ -1461,12 +1516,33 @@
                             <ul class="space-y-1">
                                 {#each detailBookings as booking (booking.id)}
                                     {@const active = isBookingActive(booking)}
-                                    <li class="flex items-center justify-between gap-2 text-sm
+                                    {@const mine = isMyBooking(booking, myBorrowerIds, myBorrowerNames)}
+                                    <li class="flex items-center justify-between gap-2 text-sm flex-wrap
                                         {active ? 'text-amber-200' : 'text-gray-300'}">
                                         <span class="truncate">{booking.borrower || '—'}</span>
                                         <span class="whitespace-nowrap">
                                             {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
                                         </span>
+                                        {#if mine}
+                                            <span class="flex gap-2 flex-shrink-0 ml-auto">
+                                                <button
+                                                    type="button"
+                                                    on:click={() => openEditBooking(selectedItem!, booking)}
+                                                    class="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-xs font-medium transition-colors border border-indigo-600/30"
+                                                    aria-label="Change this booking"
+                                                >
+                                                    Change
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    on:click={() => cancelBooking(selectedItem!, booking)}
+                                                    class="px-2 py-0.5 rounded bg-red-600/20 hover:bg-red-600/40 text-red-300 text-xs font-medium transition-colors border border-red-600/30"
+                                                    aria-label="Cancel this booking"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </span>
+                                        {/if}
                                     </li>
                                 {/each}
                             </ul>
@@ -1531,7 +1607,7 @@
                         >
                             Book
                         </button>
-                        {#if selectedItem && detailActive && (detailActive.borrowerId === currentUserId || detailActive.borrower === currentUsername)}
+                        {#if selectedItem && isMyBooking(detailActive, myBorrowerIds, myBorrowerNames)}
                             <button
                                 type="button"
                                 on:click={() => handleReturn(selectedItem!)}

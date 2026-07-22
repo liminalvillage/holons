@@ -35,6 +35,18 @@
     export let users: Record<string, User> = {};
     export let tasks: Record<string, any> = {};
     export let externalEvents: ExternalCalendarEvent[] = [];
+    // Multi-day period bars (e.g. library bookings): drawn as horizontal lines
+    // along the bottom of the timeline, one lane per overlapping span.
+    // start/end are inclusive YYYY-MM-DD dates. Clicks dispatch `taskClick`
+    // with the span as the task, so callers reuse their task-click handler.
+    export let spans: Array<{
+        id: string;
+        title: string;
+        start: string;
+        end: string;
+        color: string;
+        [key: string]: any;
+    }> = [];
 
     // Layout constants — keep in sync with the {#each} square-stacking styles below.
     const MIN_HEIGHT_PX = 128; // matches the original h-32
@@ -124,9 +136,56 @@
         const extPx = Math.max(0, maxExternalItems - 1) * EXTERNAL_ROW_PX + 24;
         // Each stack occupies ~30% of container, so required container height is stackPx / 0.30.
         const needed = Math.max(taskPx, extPx) / 0.30;
-        return Math.max(MIN_HEIGHT_PX, Math.ceil(needed));
+        // Span lanes are bottom-anchored in absolute px — grow the container
+        // by one row per lane so they never collide with the stays band.
+        return Math.max(MIN_HEIGHT_PX, Math.ceil(needed)) + spanLaneCount * 8;
     })();
     
+    // Position of a date as a percentage of the *displayed* year (clamped, so
+    // spans crossing a year boundary pin to the timeline edges).
+    function positionInDisplayedYear(date: Date): number {
+        const yearStart = new Date(currentDate.getFullYear(), 0, 1);
+        const yearEnd = new Date(currentDate.getFullYear() + 1, 0, 1);
+        const pos = ((date.getTime() - yearStart.getTime()) / (yearEnd.getTime() - yearStart.getTime())) * 100;
+        return Math.min(100, Math.max(0, pos));
+    }
+
+    // Spans visible in the displayed year, with a greedy lane assignment so
+    // overlapping periods stack instead of drawing on top of each other.
+    $: yearSpans = (() => {
+        const year = currentDate.getFullYear();
+        const yearStartStr = `${year}-01-01`;
+        const yearEndStr = `${year}-12-31`;
+        const sorted = spans
+            .filter((s) => s.start <= yearEndStr && s.end >= yearStartStr)
+            .sort(
+                (a, b) =>
+                    a.start.localeCompare(b.start) ||
+                    a.end.localeCompare(b.end) ||
+                    String(a.id).localeCompare(String(b.id))
+            );
+        const laneEnds: string[] = [];
+        return sorted.map((s) => {
+            let lane = laneEnds.findIndex((end) => end < s.start);
+            if (lane === -1) {
+                lane = laneEnds.length;
+                laneEnds.push(s.end);
+            } else {
+                laneEnds[lane] = s.end;
+            }
+            // End day is inclusive: the bar runs to the start of the next day.
+            const endExclusive = new Date(`${s.end}T00:00:00`);
+            endExclusive.setDate(endExclusive.getDate() + 1);
+            return {
+                ...s,
+                lane,
+                startPos: positionInDisplayedYear(new Date(`${s.start}T00:00:00`)),
+                endPos: positionInDisplayedYear(endExclusive)
+            };
+        });
+    })();
+    $: spanLaneCount = yearSpans.reduce((m, s) => Math.max(m, s.lane + 1), 0);
+
     // Get all stays for the current year
     $: yearStays = Object.entries(profiles)
         .filter(([_, profile]) => {
@@ -384,6 +443,25 @@
                     {#if stay.profile.purpose}
                         <div>Purpose: {stay.profile.purpose}</div>
                     {/if}
+                </div>
+            </div>
+        {/each}
+
+        <!-- Booking/period spans: one line per period, stacked by lane along
+             the bottom edge of the timeline -->
+        {#each yearSpans as s (s.id)}
+            <div
+                class="absolute h-1.5 rounded-full group cursor-pointer transition-all hover:h-2"
+                style="left: {s.startPos}%; width: {Math.max(s.endPos - s.startPos, 0.2)}%; min-width: 4px; bottom: {2 + s.lane * 8}px; background-color: {s.color};"
+                role="button"
+                tabindex="0"
+                aria-label={s.title}
+                on:click|stopPropagation={() => dispatch('taskClick', { key: String(s.id), task: s })}
+                on:keydown={(e) => e.key === 'Enter' && dispatch('taskClick', { key: String(s.id), task: s })}
+            >
+                <!-- Tooltip -->
+                <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                    {s.title}
                 </div>
             </div>
         {/each}

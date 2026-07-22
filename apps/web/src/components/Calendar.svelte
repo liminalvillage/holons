@@ -17,6 +17,7 @@
     import { Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { queryManager } from '$lib/holosphere/QueryManager';
+    import { buildBookingSpans, type BookableItem } from '$lib/util/libraryBookings';
     import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
     interface CalendarEvents {
@@ -30,6 +31,27 @@
     export let readOnly: boolean = false;
     export let customTitle: string | null = null;
     export let onTaskClick: ((key: string, task: any) => void) | null = null;
+    // Multi-day period bars for the month view (e.g. library bookings): each
+    // span is drawn as a thin continuous line across every day in
+    // [start, end] (YYYY-MM-DD, inclusive). Clicks are forwarded to
+    // onTaskClick with the span itself.
+    export let spans: Array<{
+        id: string;
+        title: string;
+        start: string;
+        end: string;
+        color: string;
+        [key: string]: any;
+    }> = [];
+
+    // In normal (non-customItems) mode the calendar also subscribes to the
+    // holon's `library` lens and overlays its booking periods as spans, so
+    // bookings are visible on the main calendar and its year timeline — not
+    // only inside the Library feature's embedded calendar.
+    let libraryItemsForSpans: BookableItem[] = [];
+    let libraryUnsubscribe: (() => void) | undefined;
+    $: librarySpans = buildBookingSpans(libraryItemsForSpans);
+    $: allSpans = [...spans, ...librarySpans];
     // Hide TitleBar + FeatureToolbar for embedded use (host renders its own).
     export let embedded: boolean = false;
 
@@ -360,6 +382,7 @@
 
         loadProfiles();
         loadTasks();
+        loadLibrarySpans();
         loadImportedCalendars();
 
         // Resolve holon name reactively
@@ -404,6 +427,10 @@
             questsUnsubscribe();
             questsUnsubscribe = undefined;
         }
+        if (libraryUnsubscribe) {
+            libraryUnsubscribe();
+            libraryUnsubscribe = undefined;
+        }
         if (usersUnsubscribe) {
             usersUnsubscribe();
             usersUnsubscribe = undefined;
@@ -421,6 +448,7 @@
     function reloadData() {
         loadProfiles();
         loadTasks();
+        loadLibrarySpans();
     }
 
     // Update navigation functions to trigger data reload
@@ -601,7 +629,9 @@
     function getDayEvents(date: Date) {
         const dateStr = date.toDateString();
         const dayTasks = monthTasks
-            .filter(task => new Date(task.when).toDateString() === dateStr)
+            // `_hideInMonth` items are represented by a span line in the month
+            // view instead of a per-day chip (they still show in week/day views).
+            .filter(task => new Date(task.when).toDateString() === dateStr && !task._hideInMonth)
             .map(task => ({
                 ...task,
                 color: task.color || '#6366f1',
@@ -643,6 +673,75 @@
             events: events[currentDate.toDateString()] || [] 
         });
     }
+
+    // Give every span a persistent lane (Gantt-style greedy assignment) so a
+    // span keeps the same vertical slot in every day cell it crosses — the
+    // per-day segments then join up into one continuous line.
+    function assignSpanLanes(list: typeof spans): Array<(typeof spans)[number] & { lane: number }> {
+        const sorted = [...list].sort(
+            (a, b) =>
+                a.start.localeCompare(b.start) ||
+                a.end.localeCompare(b.end) ||
+                String(a.id).localeCompare(String(b.id))
+        );
+        const laneEnds: string[] = [];
+        return sorted.map((s) => {
+            let lane = laneEnds.findIndex((end) => end < s.start);
+            if (lane === -1) {
+                lane = laneEnds.length;
+                laneEnds.push(s.end);
+            } else {
+                laneEnds[lane] = s.end;
+            }
+            return { ...s, lane };
+        });
+    }
+    $: laneSpans = assignSpanLanes(allSpans);
+
+    // Spans covering a given day, expanded to a dense lane list (missing lanes
+    // become invisible placeholders so occupied lanes keep their row).
+    // `minLanes` pads the list so parallel day columns (week view) all render
+    // the same number of rows and stay vertically aligned.
+    function getSpansForDay(date: Date, minLanes = 0) {
+        if (laneSpans.length === 0) return [];
+        const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const covering = laneSpans.filter((s) => day >= s.start && day <= s.end);
+        if (covering.length === 0 && minLanes === 0) return [];
+        const byLane = new Map(covering.map((s) => [s.lane, s]));
+        const maxLane = Math.max(minLanes - 1, ...covering.map((s) => s.lane));
+        const rows: Array<{
+            key: string;
+            span: (typeof covering)[number] | null;
+            isStart: boolean;
+            isEnd: boolean;
+        }> = [];
+        for (let lane = 0; lane <= maxLane; lane++) {
+            const s = byLane.get(lane) ?? null;
+            rows.push({
+                key: s ? String(s.id) : `gap-${lane}`,
+                span: s,
+                isStart: s !== null && s.start === day,
+                isEnd: s !== null && s.end === day
+            });
+        }
+        return rows;
+    }
+
+    // Highest lane used by any span overlapping [dates[0], dates[last]] —
+    // the shared row count for a week's span strips.
+    function laneCountForRange(dates: Date[]): number {
+        if (laneSpans.length === 0 || dates.length === 0) return 0;
+        const key = (d: Date) =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const start = key(dates[0]);
+        const end = key(dates[dates.length - 1]);
+        let count = 0;
+        for (const s of laneSpans) {
+            if (s.start <= end && s.end >= start) count = Math.max(count, s.lane + 1);
+        }
+        return count;
+    }
+    $: weekSpanLanes = laneCountForRange(weekData);
 
     function getStaysForDay(date: Date) {
         const dateStr = date.toDateString();
@@ -743,6 +842,33 @@
                 tasks = next;
             },
             onError: (error) => console.error('[Calendar] tasks subscription error:', error)
+        });
+    }
+
+    // Same local-first pattern as loadTasks, for the `library` lens: booking
+    // periods render as span lines. Skipped in external-data mode — there the
+    // caller (e.g. the Library feature) passes spans in directly.
+    function loadLibrarySpans() {
+        if (customItems !== null) return;
+        if (!holosphere || !$ID) return;
+
+        if (libraryUnsubscribe) {
+            libraryUnsubscribe();
+            libraryUnsubscribe = undefined;
+        }
+        queryManager.init(holosphere);
+        const targetHolon = $ID;
+
+        libraryUnsubscribe = queryManager.subscribe({
+            holonId: targetHolon,
+            lens: 'library',
+            onUpdate: (items) => {
+                if ($ID !== targetHolon) return; // stale subscription
+                libraryItemsForSpans = (items as BookableItem[]).filter(
+                    (item) => item && item.id
+                );
+            },
+            onError: (error) => console.error('[Calendar] library subscription error:', error)
         });
     }
 
@@ -866,6 +992,12 @@
     function handleTaskClick(key: string, task: any) {
         if (onTaskClick) {
             onTaskClick(key, task);
+            return;
+        }
+        // A library booking span on the main calendar: there is no task to
+        // open, so jump to the Library feature instead.
+        if (task?._libraryItemId) {
+            if ($ID) goto(`/${$ID}/library`);
             return;
         }
         // For expanded recurring-task instances, open the base series but remember which
@@ -2217,6 +2349,7 @@
         users={users}
         tasks={expandedTasksRecord}
         externalEvents={visibleExternalEvents}
+        spans={allSpans}
         on:dateSelect={handleTimelineDateSelect}
         on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.task)}
     />
@@ -2427,6 +2560,7 @@
             {#each monthData as date}
                 {@const dateEvents = getDayEvents(date)}
                 {@const stays = getStaysForDay(date)}
+                {@const daySpans = getSpansForDay(date)}
                 <button
                     class="p-2 min-h-[100px] text-left bg-gray-800 relative group transition-colors hover:bg-gray-700"
                     class:opacity-50={!isCurrentMonth(date)}
@@ -2446,7 +2580,33 @@
                     >
                         {date.getDate()}
                     </span>
-                    
+
+                    {#if daySpans.length > 0}
+                        <!-- Booking/period lines: one thin bar per span lane. A
+                             segment bleeds over the cell padding + grid gap on
+                             sides where the span continues, so adjacent day
+                             segments read as one continuous line. -->
+                        <div class="mt-1 space-y-0.5">
+                            {#each daySpans as row (row.key)}
+                                {#if row.span}
+                                    {@const span = row.span}
+                                    <div
+                                        class="h-1.5 {row.isStart ? 'rounded-l-full' : '-ml-[9px]'} {row.isEnd ? 'rounded-r-full' : '-mr-[9px]'}"
+                                        style="background-color: {span.color};"
+                                        title={span.title}
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label={span.title}
+                                        onclick={(e) => { e.stopPropagation(); handleTaskClick(String(span.id), span); }}
+                                        onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleTaskClick(String(span.id), span); } }}
+                                    ></div>
+                                {:else}
+                                    <div class="h-1.5"></div>
+                                {/if}
+                            {/each}
+                        </div>
+                    {/if}
+
                     <div class="mt-1 space-y-1">
                         {#each stays as stay}
                             <div 
@@ -2514,14 +2674,39 @@
                         <div class="text-gray-400 font-medium">
                             {date.toLocaleString('default', { weekday: 'short' })}
                         </div>
-                        <div 
+                        <div
                             class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white mt-1
                             {isToday(date) ? 'bg-indigo-500' : ''}"
                         >
                             {date.getDate()}
                         </div>
                     </div>
-                    
+
+                    {#if weekSpanLanes > 0}
+                        <!-- Booking/period lines: every column renders the same
+                             lane count (weekSpanLanes) so rows stay aligned and
+                             segments join into continuous lines across days. -->
+                        <div class="py-0.5 space-y-0.5 border-b border-gray-700">
+                            {#each getSpansForDay(date, weekSpanLanes) as row (row.key)}
+                                {#if row.span}
+                                    {@const span = row.span}
+                                    <div
+                                        class="h-1.5 {row.isStart ? 'rounded-l-full ml-0.5' : '-ml-px'} {row.isEnd ? 'rounded-r-full mr-0.5' : '-mr-px'}"
+                                        style="background-color: {span.color};"
+                                        title={span.title}
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label={span.title}
+                                        onclick={(e) => { e.stopPropagation(); handleTaskClick(String(span.id), span); }}
+                                        onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleTaskClick(String(span.id), span); } }}
+                                    ></div>
+                                {:else}
+                                    <div class="h-1.5"></div>
+                                {/if}
+                            {/each}
+                        </div>
+                    {/if}
+
                     <div class="relative">
                         <div class="divide-y divide-gray-700">
                             {#each Array(18) as _, i}
@@ -2673,14 +2858,37 @@
                 <div class="text-gray-400 font-medium">
                     {currentDate.toLocaleString('default', { weekday: 'long' })}
                 </div>
-                <div 
+                <div
                     class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white mt-1
                     {isToday(currentDate) ? 'bg-indigo-500' : ''}"
                 >
                     {currentDate.getDate()}
                 </div>
             </div>
-            
+
+            {#if getSpansForDay(currentDate).some((row) => row.span)}
+                <!-- Bookings/periods covering this day: labelled all-day bars. -->
+                <div class="px-2 py-1.5 space-y-1 border-b border-gray-700">
+                    {#each getSpansForDay(currentDate) as row (row.key)}
+                        {#if row.span}
+                            {@const span = row.span}
+                            <div
+                                class="text-xs px-2 py-1 rounded text-white truncate cursor-pointer"
+                                style="background-color: {span.color};"
+                                title={span.title}
+                                role="button"
+                                tabindex="0"
+                                aria-label={span.title}
+                                onclick={(e) => { e.stopPropagation(); handleTaskClick(String(span.id), span); }}
+                                onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleTaskClick(String(span.id), span); } }}
+                            >
+                                {span.title}
+                            </div>
+                        {/if}
+                    {/each}
+                </div>
+            {/if}
+
             <div class="relative">
                 <div class="divide-y divide-gray-700">
                     {#each Array(18) as _, i}
