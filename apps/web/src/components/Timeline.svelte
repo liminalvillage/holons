@@ -2,6 +2,7 @@
     import { createEventDispatcher } from 'svelte';
     import { phase } from 'lune';
     import type { ExternalCalendarEvent } from '../lib/services/icalParser';
+    import { questColor } from '$lib/util/questColors';
 
     // Type definitions
     interface Profile {
@@ -52,6 +53,8 @@
     const MIN_HEIGHT_PX = 128; // matches the original h-32
     const TASK_ROW_PX = 10;
     const EXTERNAL_ROW_PX = 10;
+    // Gap between the baseline and the first task dot, so stacks don't crowd the line.
+    const TASK_STACK_BASE_PX = 12;
 
     // Group external events by day for the current year.
     type ExternalDay = { date: Date; items: Array<{ id: string; event: ExternalCalendarEvent }> };
@@ -118,21 +121,16 @@
         return Array.from(groups.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
     })();
 
-    const TASK_SQUARE_COLOR = {
-        'completed': 'bg-emerald-400',
-        'ongoing-future': 'bg-blue-500',
-        'ongoing-past': 'bg-blue-400/60',
-    } as const;
-
     // Auto-scale the timeline height so dense days don't overflow.
-    // Tasks stack from ~20% of container height downward; externals from ~55%.
+    // Tasks stack upward from the baseline (50%) into the 20%→50% band, like
+    // mountains; externals mirror them downward from ~55%.
     // We compute the pixel space each stack needs and grow the container.
     $: maxTaskItems = tasksByDay.reduce((m, d) => Math.max(m, d.items.length), 0);
     $: maxExternalItems = externalByDay.reduce((m, d) => Math.max(m, d.items.length), 0);
     // The task stack lives in the 20%→50% band (30% of height). Externals live in 55%→85% (30%).
     // Required total height for each stack: (itemCount-1) * rowPx + padding, mapped to 30% of container.
     $: timelineHeight = (() => {
-        const taskPx = Math.max(0, maxTaskItems - 1) * TASK_ROW_PX + 24;
+        const taskPx = Math.max(0, maxTaskItems - 1) * TASK_ROW_PX + TASK_STACK_BASE_PX + 24;
         const extPx = Math.max(0, maxExternalItems - 1) * EXTERNAL_ROW_PX + 24;
         // Each stack occupies ~30% of container, so required container height is stackPx / 0.30.
         const needed = Math.max(taskPx, extPx) / 0.30;
@@ -466,16 +464,18 @@
             </div>
         {/each}
 
-        <!-- Task day overlay: dashed vertical line + stacked squares per day -->
+        <!-- Task day overlay: dashed vertical line + squares stacked upward
+             from the baseline per day, so dense days rise like mountains -->
         {#each tasksByDay as day (day.date.toISOString())}
             {@const leftPct = getPositionInYear(day.date)}
             <div class="absolute h-full pointer-events-none" style="left: {leftPct}%;">
-                <div class="absolute top-[18%] bottom-[52%] left-0 w-0 border-l border-dashed border-gray-400/40"></div>
+                <div class="absolute left-0 w-0 border-l border-dashed border-gray-400/40" style="bottom: 50%; height: {TASK_STACK_BASE_PX + day.items.length * TASK_ROW_PX}px;"></div>
                 {#each day.items as item, i (item.key)}
                     <button
                         type="button"
-                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform {item.task.color ? '' : TASK_SQUARE_COLOR[item.status]}"
-                        style="top: calc(20% + {i * 10}px);{item.task.color ? ` background-color: ${item.task.color};` : ''}"
+                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform"
+                        class:opacity-50={item.status !== 'ongoing-future'}
+                        style="top: calc(50% - {TASK_STACK_BASE_PX + (i + 1) * TASK_ROW_PX}px); background-color: {questColor(item.task)};"
                         on:click|stopPropagation={() => dispatch('taskClick', { key: item.key, task: item.task })}
                         aria-label={item.task.title || 'Untitled task'}
                     >

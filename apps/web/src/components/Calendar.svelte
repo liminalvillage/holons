@@ -18,6 +18,7 @@
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { queryManager } from '$lib/holosphere/QueryManager';
     import { buildBookingSpans, type BookableItem } from '$lib/util/libraryBookings';
+    import { questColor } from '$lib/util/questColors';
     import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
     interface CalendarEvents {
@@ -51,7 +52,10 @@
     let libraryItemsForSpans: BookableItem[] = [];
     let libraryUnsubscribe: (() => void) | undefined;
     $: librarySpans = buildBookingSpans(libraryItemsForSpans);
-    $: allSpans = [...spans, ...librarySpans];
+    $: unfilteredSpans = [...spans, ...librarySpans];
+    $: allSpans = searchNeedle
+        ? unfilteredSpans.filter((s) => matchesSearch(searchNeedle, s.title, (s as Record<string, unknown>).category, s._libraryItemId))
+        : unfilteredSpans;
     // Hide TitleBar + FeatureToolbar for embedded use (host renders its own).
     export let embedded: boolean = false;
 
@@ -78,11 +82,20 @@
         searchQuery: '',
     });
     $: saveFilters('calendar', filters);
+
+    // The search box filters everything drawn on the calendar and timeline —
+    // task dots, booking/library span lines, and imported events — by name or
+    // category. Matching is a case-insensitive substring test.
+    $: searchNeedle = filters.searchQuery.trim().toLowerCase();
+    function matchesSearch(needle: string, ...fields: Array<unknown>): boolean {
+        return fields.some((f) => typeof f === 'string' && f.toLowerCase().includes(needle));
+    }
     
     // Drag and drop state
     let draggedTask: { key: string; task: any } | null = null;
     let dragOverDate: Date | null = null;
     let dragOverTime: number | null = null; // Hour of day (0-23)
+    let dragOverDrawer = false; // hovering the unscheduled drawer (drop = unschedule)
 
     // Touch drag (HTML5 drag/drop is broken on mobile — we hand-roll it via
     // pointer events when pointerType === 'touch'). Long-press initiates the
@@ -117,6 +130,17 @@
     const PANEL_WIDTH_DEFAULT = 192;
     let panelWidth = PANEL_WIDTH_DEFAULT;
     let panelOpen = false; // drawer closed by default
+
+    // Drawer placement: right of the calendar in landscape, below it in
+    // portrait (viewport aspect ratio via the orientation media query).
+    let isPortrait = false;
+    onMount(() => {
+        const mql = window.matchMedia('(orientation: portrait)');
+        isPortrait = mql.matches;
+        const onOrientationChange = (e: MediaQueryListEvent) => { isPortrait = e.matches; };
+        mql.addEventListener('change', onOrientationChange);
+        return () => mql.removeEventListener('change', onOrientationChange);
+    });
     let panelResizeState: { startX: number; startWidth: number; pointerId: number } | null = null;
 
     function togglePanel() {
@@ -231,7 +255,11 @@
         const e = new Date(); e.setMonth(e.getMonth() + 18);
         return { start: s, end: e };
     })();
-    $: expandedTaskEntries = expandTasks(tasks, expansionWindow.start, expansionWindow.end);
+    $: allExpandedTaskEntries = expandTasks(tasks, expansionWindow.start, expansionWindow.end);
+    $: expandedTaskEntries = searchNeedle
+        ? allExpandedTaskEntries.filter((e) =>
+              matchesSearch(searchNeedle, e.task.title, e.task.name, e.task.category, e.task.description))
+        : allExpandedTaskEntries;
     $: expandedTasksRecord = Object.fromEntries(expandedTaskEntries.map(e => [e.key, e.task]));
 
     function resolveOriginalKey(keyOrInstance: string, task?: any): string {
@@ -258,7 +286,9 @@
     // Hidden imported calendars (persisted across sessions)
     const HIDDEN_CALENDARS_KEY = 'calendar_hidden_imports';
     let hiddenCalendarIds: Set<string> = new Set();
-    $: visibleExternalEvents = externalEvents.filter(e => !hiddenCalendarIds.has(e.calendarId ?? ''));
+    $: visibleExternalEvents = externalEvents.filter(e =>
+        !hiddenCalendarIds.has(e.calendarId ?? '') &&
+        (!searchNeedle || matchesSearch(searchNeedle, e.title, e.calendarName)));
 
     function toggleCalendarVisibility(id: string) {
         const next = new Set(hiddenCalendarIds);
@@ -634,7 +664,7 @@
             .filter(task => new Date(task.when).toDateString() === dateStr && !task._hideInMonth)
             .map(task => ({
                 ...task,
-                color: task.color || '#6366f1',
+                color: questColor(task),
                 isHolonEvent: true
             }));
 
@@ -987,6 +1017,7 @@
     // Unscheduled tasks (no 'when' date, not yet completed) — available for drag/drop onto calendar
     $: unassignedTasks = Object.entries(tasks)
         .filter(([_, task]) => !task.when && task.status !== 'completed')
+        .filter(([_, task]) => !searchNeedle || matchesSearch(searchNeedle, task.title, task.name, task.category, task.description))
         .map(([key, task]) => ({ key, ...task }));
 
     function handleTaskClick(key: string, task: any) {
@@ -1129,7 +1160,8 @@
 
     function handlePanelResizeMove(e: PointerEvent) {
         if (!panelResizeState || e.pointerId !== panelResizeState.pointerId) return;
-        panelWidth = clampPanelWidth(panelResizeState.startWidth + (e.clientX - panelResizeState.startX));
+        // The panel sits to the RIGHT of the handle, so dragging left widens it.
+        panelWidth = clampPanelWidth(panelResizeState.startWidth - (e.clientX - panelResizeState.startX));
     }
 
     function handlePanelResizeEnd(e: PointerEvent) {
@@ -1298,6 +1330,61 @@
         }
     }
 
+    // Drop on the unscheduled drawer: clear the schedule so the task moves
+    // back to the unassigned list. `when: null` + status 'ongoing' matches
+    // the TaskModal unschedule convention.
+    async function performUnschedule() {
+        if (!draggedTask || !$ID) {
+            draggedTask = null;
+            dragOverDate = null;
+            dragOverTime = null;
+            dragOverDrawer = false;
+            return;
+        }
+        const { key, task } = draggedTask;
+        try {
+            const updatedTask = { ...task, when: null, ends: null, status: 'ongoing' };
+            tasks[key] = updatedTask;
+            tasks = tasks;
+            await holosphere.put($ID, 'quests', updatedTask);
+            // Reveal the drawer so the user sees where the task landed.
+            if (!panelOpen) {
+                panelOpen = true;
+                try { localStorage.setItem(PANEL_OPEN_KEY, '1'); } catch {}
+            }
+        } catch (error) {
+            console.error('Error unscheduling task:', error);
+            tasks[key] = task;
+            tasks = tasks;
+        } finally {
+            draggedTask = null;
+            dragOverDate = null;
+            dragOverTime = null;
+            dragOverDrawer = false;
+        }
+    }
+
+    function handleDrawerDragOver(event: DragEvent) {
+        if (!draggedTask) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        dragOverDrawer = true;
+        dragOverDate = null;
+        dragOverTime = null;
+    }
+
+    function handleDrawerDragLeave(event: DragEvent) {
+        // Ignore leave events caused by moving over the drawer's children.
+        const el = event.currentTarget as HTMLElement;
+        if (event.relatedTarget instanceof Node && el.contains(event.relatedTarget)) return;
+        dragOverDrawer = false;
+    }
+
+    async function handleDrawerDrop(event: DragEvent) {
+        event.preventDefault();
+        await performUnschedule();
+    }
+
     // --- Touch drag handlers (long-press to start) ---
     // We attach pointermove/up/cancel on window (not the source) so the
     // gesture can roam outside the source element without losing events —
@@ -1393,7 +1480,12 @@
             touchDrag.ghostEl.style.top = e.clientY + 'px';
         }
         const target = elementUnderPoint(e.clientX, e.clientY);
-        if (target) {
+        if (target?.hasAttribute('data-drop-unschedule')) {
+            dragOverDrawer = true;
+            dragOverDate = null;
+            dragOverTime = null;
+        } else if (target) {
+            dragOverDrawer = false;
             const dateStr = target.getAttribute('data-drop-date');
             const hourStr = target.getAttribute('data-drop-hour');
             if (dateStr) {
@@ -1401,6 +1493,7 @@
                 dragOverTime = hourStr !== null && hourStr !== '' ? Number(hourStr) : null;
             }
         } else {
+            dragOverDrawer = false;
             dragOverDate = null;
             dragOverTime = null;
         }
@@ -1423,6 +1516,10 @@
         // modal doesn't reopen.
         touchDragEndedAt = Date.now();
         if (target) {
+            if (target.hasAttribute('data-drop-unschedule')) {
+                await performUnschedule();
+                return;
+            }
             const dateStr = target.getAttribute('data-drop-date');
             const hourStr = target.getAttribute('data-drop-hour');
             if (dateStr) {
@@ -1435,6 +1532,7 @@
         draggedTask = null;
         dragOverDate = null;
         dragOverTime = null;
+        dragOverDrawer = false;
     }
 
     function suppressClickIfRecentDrop(ev: MouseEvent) {
@@ -1461,7 +1559,7 @@
         const els = document.elementsFromPoint(x, y);
         if (ghost) ghost.style.display = prev ?? '';
         for (const el of els) {
-            const target = (el as HTMLElement).closest('[data-drop-date]');
+            const target = (el as HTMLElement).closest('[data-drop-date], [data-drop-unschedule]');
             if (target) return target as HTMLElement;
         }
         return null;
@@ -2459,25 +2557,40 @@
         </div>
     {/if}
 
-    <!-- Unassigned tasks panel + calendar in flex layout -->
-    <div class="flex gap-2 items-stretch">
+    <!-- Calendar + unassigned tasks drawer: drawer sits to the right in
+         landscape, below the calendar in portrait (flex order, not DOM order). -->
+    <div class="flex gap-2 items-stretch" class:flex-col={isPortrait}>
     <!-- Unassigned tasks drawer -->
     {#if !panelOpen}
         <!-- Collapsed rail: click to open -->
         <button
             type="button"
-            class="shrink-0 self-stretch w-8 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex flex-col items-center justify-start py-2 gap-2 sticky top-2 h-[calc(100vh-180px)]"
+            class="shrink-0 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 order-3 {isPortrait ? 'w-full h-9 flex-row justify-center px-2' : 'self-stretch w-8 flex-col justify-start py-2 sticky top-2 h-[calc(100vh-180px)]'}"
+            class:ring-2={dragOverDrawer}
+            class:ring-indigo-400={dragOverDrawer}
+            data-drop-unschedule="true"
+            ondragover={handleDrawerDragOver}
+            ondragleave={handleDrawerDragLeave}
+            ondrop={handleDrawerDrop}
             onclick={togglePanel}
             aria-label="Open unscheduled tasks drawer"
             title="Unscheduled tasks ({unassignedTasks.length})"
         >
             <span class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-semibold">{unassignedTasks.length}</span>
-            <span class="text-gray-400 text-[10px] font-medium uppercase tracking-wider [writing-mode:vertical-rl] rotate-180">Unscheduled</span>
+            <span class="text-gray-400 text-[10px] font-medium uppercase tracking-wider {isPortrait ? '' : '[writing-mode:vertical-rl] rotate-180'}">Unscheduled</span>
         </button>
     {:else}
         <div
-            class="shrink-0 bg-gray-800 rounded-lg relative flex flex-col sticky top-2 self-start h-[calc(100vh-180px)]"
-            style="width: {panelWidth}px;"
+            class="shrink-0 bg-gray-800 rounded-lg relative flex flex-col order-3 {isPortrait ? 'w-full max-h-72 min-h-[7rem]' : 'sticky top-2 self-start h-[calc(100vh-180px)]'}"
+            class:ring-2={dragOverDrawer}
+            class:ring-indigo-400={dragOverDrawer}
+            data-drop-unschedule="true"
+            style={isPortrait ? '' : `width: ${panelWidth}px;`}
+            role="list"
+            aria-label="Unscheduled tasks (drop here to unschedule)"
+            ondragover={handleDrawerDragOver}
+            ondragleave={handleDrawerDragLeave}
+            ondrop={handleDrawerDrop}
         >
             <div class="bg-gray-800 flex items-center justify-between px-2 pt-2 pb-1 rounded-t-lg shrink-0">
                 <div class="text-xs text-gray-400 font-medium uppercase">Unscheduled ({unassignedTasks.length})</div>
@@ -2493,10 +2606,10 @@
                     </svg>
                 </button>
             </div>
-            <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+            <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2 {isPortrait ? 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-1 content-start' : ''}">
                 {#each unassignedTasks as task (task.key)}
                     <div
-                        class="mb-1 cursor-move select-none"
+                        class="cursor-move select-none {isPortrait ? '' : 'mb-1'}"
                         class:opacity-50={draggedTask?.key === task.key}
                         style="-webkit-touch-callout:none;-webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                         draggable={!isTouchDevice}
@@ -2534,20 +2647,22 @@
                 Add Task
             </button>
         </div>
-        <div
-            class="w-1 shrink-0 self-stretch cursor-col-resize bg-transparent hover:bg-indigo-500/50 transition-colors touch-none"
-            class:bg-indigo-500={panelResizeState}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize unassigned tasks panel"
-            onpointerdown={handlePanelResizeStart}
-            onpointermove={handlePanelResizeMove}
-            onpointerup={handlePanelResizeEnd}
-            onpointercancel={handlePanelResizeEnd}
-    ></div>
+        {#if !isPortrait}
+            <div
+                class="w-1 shrink-0 self-stretch cursor-col-resize bg-transparent hover:bg-indigo-500/50 transition-colors touch-none order-2"
+                class:bg-indigo-500={panelResizeState}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize unassigned tasks panel"
+                onpointerdown={handlePanelResizeStart}
+                onpointermove={handlePanelResizeMove}
+                onpointerup={handlePanelResizeEnd}
+                onpointercancel={handlePanelResizeEnd}
+            ></div>
+        {/if}
     {/if}
     <!-- Calendar views -->
-    <div class="flex-1 min-w-0">
+    <div class="flex-1 min-w-0 order-1">
 
     {#if viewMode === 'month'}
         <div class="grid grid-cols-7 gap-px bg-gray-700">
@@ -2631,7 +2746,7 @@
                             {#if event.id && tasks[event.id]}
                                 <!-- This is a task, make it draggable -->
                                 <div
-                                    class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move select-none"
+                                    class="text-xs p-1 rounded bg-opacity-90 text-gray-900 truncate cursor-move select-none"
                                     class:opacity-50={draggedTask?.key === event.id}
                                     style="background-color: {event.color || '#4B5563'}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                                     draggable={!isTouchDevice}
@@ -2649,8 +2764,8 @@
                                 </div>
                             {:else}
                                 <!-- Regular event, not draggable -->
-                                <div 
-                                    class="text-xs p-1 rounded bg-opacity-90 truncate"
+                                <div
+                                    class="text-xs p-1 rounded bg-opacity-90 text-gray-900 truncate"
                                     style="background-color: {event.color || '#4B5563'}"
                                 >
                                     {event.title}
@@ -2741,7 +2856,7 @@
                             {@const endHour = (overrideEnd ?? (task.ends ? new Date(task.ends) : null))?.getHours() ?? startHour + 1}
                             {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
                             <div
-                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden select-none"
+                                class="rounded bg-opacity-90 text-gray-900 cursor-move hover:brightness-110 transition-all absolute z-10 overflow-hidden select-none"
                                 class:opacity-50={draggedTask?.key === key}
                                 class:ring-2={resizingEvent?.key === key}
                                 class:ring-white={resizingEvent?.key === key}
@@ -2762,7 +2877,7 @@
                                 role="button"
                                 tabindex="0"
                                 title={task.title || 'Untitled'}
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {questColor(task)}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                             >
                                 <SourceBadge item={task} currentHolonId={$ID} lensRoute="calendar" />
                                 <div class="font-bold truncate leading-tight">
@@ -2932,7 +3047,7 @@
                     {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                     {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns} + 2px))` : '0.25rem'}
                     <div
-                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden select-none"
+                        class="text-xs p-2 rounded bg-opacity-90 text-gray-900 cursor-move hover:brightness-110 transition-all absolute z-10 overflow-hidden select-none"
                         class:opacity-50={draggedTask?.key === key}
                         class:ring-2={resizingEvent?.key === key}
                         class:ring-white={resizingEvent?.key === key}
@@ -2949,7 +3064,7 @@
                         role="button"
                         tabindex="0"
                         title={task.title || 'Untitled'}
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {questColor(task)}; -webkit-touch-callout:none; -webkit-user-drag:{isTouchDevice ? 'none' : 'element'};"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
@@ -3158,6 +3273,10 @@
         holonId={$ID}
         occurrenceWhen={selectedTask.occurrenceWhen}
         on:close={closeTaskModal}
+        on:updated={(e) => {
+            tasks[e.detail.questId] = e.detail.quest;
+            tasks = tasks;
+        }}
     />
 {/if}
 

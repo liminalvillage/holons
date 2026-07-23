@@ -29,6 +29,7 @@
         CHECKLIST_TYPES,
         createChecklistObject,
     } from "@holons/core/checklists";
+    import { getColorFromCategory } from "@holons/core/categories";
     import {
         toggleParticipant as coreToggleParticipant,
         applyTaskCompletion,
@@ -99,7 +100,7 @@
 
     // Dependency management
     let showDependencyEditor = false;
-    let availableTasks: Array<{id: string, title: string, description?: string, status?: string, orderIndex?: number, dependencies: string[]}> = [];
+    let availableTasks: Array<{id: string, title: string, description?: string, status?: string, orderIndex?: number, category?: string, dependencies: string[]}> = [];
     let dependencyError = '';
 
     // AI breakdown into dependency steps (see @holons/core/tasks breakdown.ts).
@@ -146,6 +147,33 @@
 
     let editingDescription = false;
     let tempDescription = quest.description || "";
+
+    // Category editing: free text with suggestions drawn from the categories
+    // already in use across this holon's quests (availableTasks doubles as
+    // the source since it mirrors the whole quests lens).
+    let editingCategory = false;
+    let tempCategory = "";
+    $: existingCategories = [...new Set(
+        availableTasks.map((t) => t.category).filter((c): c is string => !!c)
+    )].sort();
+
+    async function handleCategoryEdit() {
+        const next = tempCategory.trim();
+        if (next !== (quest.category || "")) {
+            await updateQuest({ category: next || null });
+        }
+        editingCategory = false;
+    }
+
+    function handleCategoryKeydown(event: KeyboardEvent) {
+        if (event.key === "Enter") {
+            (event.target as HTMLInputElement).blur();
+        } else if (event.key === "Escape") {
+            // Reset before closing so the blur handler sees no change.
+            tempCategory = quest.category || "";
+            editingCategory = false;
+        }
+    }
 
     let pictureInput: HTMLInputElement | null = null;
     let pictureUploading = false;
@@ -211,7 +239,7 @@
                 const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any) => {
                     if (updatedQuest?.id && updatedQuest.id !== questId) {
                         const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
-                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task', description: updatedQuest.description, status: updatedQuest.status, orderIndex: updatedQuest.orderIndex, dependencies: (updatedQuest.dependencies ?? []).map(String) };
+                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task', description: updatedQuest.description, status: updatedQuest.status, orderIndex: updatedQuest.orderIndex, category: updatedQuest.category, dependencies: (updatedQuest.dependencies ?? []).map(String) };
                         if (existingIndex >= 0) {
                             availableTasks[existingIndex] = newTask;
                             availableTasks = availableTasks;
@@ -231,7 +259,7 @@
             holosphere.getAll(holonId, "quests").then((quests: any[]) => {
                 availableTasks = (quests ?? [])
                     .filter((q: any) => q?.id && q.id !== questId)
-                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task', description: q.description, status: q.status, orderIndex: q.orderIndex, dependencies: (q.dependencies ?? []).map(String) }));
+                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task', description: q.description, status: q.status, orderIndex: q.orderIndex, category: q.category, dependencies: (q.dependencies ?? []).map(String) }));
             }).catch(() => {});
         }
 
@@ -274,10 +302,12 @@
 
         const previousQuest = quest;
         quest = updatedQuest;
+        dispatch("updated", { questId, quest: updatedQuest });
 
         // Sync quest in background — roll back on failure.
         holosphere.put(holonId, "quests", updatedQuest).catch((error: any) => {
             quest = previousQuest;
+            dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
             } else {
@@ -347,6 +377,10 @@
             // For holograms, holosphere automatically routes writes to the source holon
             await holosphere.put(holonId, "quests", updatedQuest);
             quest = updatedQuest;
+            // Let the host view (Calendar, Tasks, …) merge the change into its
+            // own task map immediately — the Gun subscription echo of a local
+            // put isn't reliable enough to repaint chips/cards without it.
+            dispatch("updated", { questId, quest: updatedQuest });
 
             if (shouldClose) {
                 dispatch("close");
@@ -498,6 +532,7 @@
             }
 
             quest = result.task;
+            dispatch("updated", { questId, quest: result.task });
             dispatch("taskCompleted", { questId });
             dispatch("close");
         } else {
@@ -1240,13 +1275,45 @@
                             {formatDate(quest.created)}
                             </span>
                         {/if}
-                    {#if quest.category}
-                        <span class="flex items-center gap-1">
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06z"/>
-                            </svg>
-                            {quest.category}
-                        </span>
+                    {#if editingCategory}
+                        <input
+                            type="text"
+                            bind:value={tempCategory}
+                            list="task-category-options"
+                            placeholder="Category…"
+                            class="bg-gray-700 text-white text-xs px-2 py-0.5 rounded border border-gray-500 focus:border-blue-400 outline-none w-32"
+                            on:blur={handleCategoryEdit}
+                            on:keydown={handleCategoryKeydown}
+                            use:focusOnMount
+                        />
+                        <datalist id="task-category-options">
+                            {#each existingCategories as cat}
+                                <option value={cat}></option>
+                            {/each}
+                        </datalist>
+                    {:else}
+                        <button
+                            type="button"
+                            class="flex items-center gap-1 hover:text-white transition-colors"
+                            title={quest.category ? 'Change category' : 'Add category'}
+                            on:click={() => {
+                                tempCategory = quest.category || '';
+                                editingCategory = true;
+                            }}
+                        >
+                            {#if quest.category}
+                                <span
+                                    class="inline-block w-2 h-2 rounded-full"
+                                    style="background-color: {getColorFromCategory(quest.category, quest.type)};"
+                                ></span>
+                                {quest.category}
+                            {:else}
+                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06z"/>
+                                </svg>
+                                Add category
+                            {/if}
+                        </button>
                     {/if}
                     <SourceBadge item={quest} currentHolonId={holonId} lensRoute="tasks" />
                             </div>

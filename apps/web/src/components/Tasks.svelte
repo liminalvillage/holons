@@ -1512,6 +1512,9 @@
 		holonId={holonID}
 		on:close={handleTaskDeleted}
 		on:taskCompleted={handleTaskCompleted}
+		on:updated={(e) => {
+			store = { ...store, [e.detail.questId]: e.detail.quest };
+		}}
 	/>
 {/if}
 
