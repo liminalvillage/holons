@@ -94,6 +94,19 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     // budget is NOT reset, so an echoing lens can't re-arm retries forever).
     const HOLO_RETRY_MS = [1200, 3000, 8000, 15000];
     const holoRetries = new Map();
+    // Value-identical echo dedup for hologram keys: key → last pointer
+    // signature handled. Resolving a pointer READS its source (and envelope)
+    // subtree, and those reads make Gun re-emit this whole lens — so on a
+    // lens with many pointers, resolve-per-fire is a positive feedback loop:
+    // one write fans out into re-emission × re-resolution until the
+    // fire-storm guard quarantines the lens (observed 2026-07-23 on a lens
+    // with 19 perfectly healthy holograms — no cycle required). A pointer
+    // whose VALUE hasn't changed needs no re-resolution: source updates
+    // reach us as pointer bumps (`updated` via the redirected-put refresh /
+    // `_holograms` cascade), which change the signature and resolve afresh;
+    // transient-miss retries are timer-driven (scheduleHoloRetry), not
+    // echo-driven. (Same design as the enforce wrapper's echo dedup.)
+    const holoSigs = new Map();
     const scheduleHoloRetry = (key, pointer) => {
         const e = holoRetries.get(key) ?? { attempts: 0, timer: null, sig: null };
         // A genuinely NEW pointer value (e.g. the source stamped `updated`)
@@ -248,6 +261,13 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 try {
                     let parsed = await holoInstance.parse(data);
                     if (parsed && holoInstance.isHologram(parsed)) {
+                        // Drop value-identical echoes BEFORE resolving — see
+                        // holoSigs above. Recorded up front so concurrent
+                        // fires of the same value collapse into one resolve.
+                        let holoSig;
+                        try { holoSig = JSON.stringify(parsed); } catch { holoSig = String(parsed); }
+                        if (holoSigs.get(key) === holoSig) return;
+                        holoSigs.set(key, holoSig);
                         const hologramSoul = parsed.soul;
                         // A fresh fire is a fresh resolution attempt — supersede
                         // any retry pending for this key.
@@ -314,7 +334,10 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                     console.error('Error processing subscribed data:', error);
                 }
             } else if (includeDeletes && key && key !== '_' && holoInstance.subscriptions[subscriptionId]) {
-                // delete / tombstone — notify consumers the item is gone
+                // delete / tombstone — notify consumers the item is gone.
+                // Forget the key's echo signature so a later re-add of the
+                // same pointer value resolves fresh instead of being dropped.
+                holoSigs.delete(key);
                 callback(null, key);
             }
         });
