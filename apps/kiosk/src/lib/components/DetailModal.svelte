@@ -259,6 +259,7 @@
         title,
         description: "",
         existingTaskId: "",
+        category: "",
         dependsOnSteps: [],
         dependsOnExisting: [],
       },
@@ -910,6 +911,9 @@
                       <span class="bd-num">{i + 1}.</span>
                       <div class="bd-body">
                         <span class="bd-title">{step.title}</span>
+                        {#if step.category && step.category !== (quest?.category || "")}
+                          <span class="bd-tag">{step.category}</span>
+                        {/if}
                         {#if stepReuseTitle(step)}
                           <span class="bd-tag"
                             >reuses “{stepReuseTitle(step)}”</span

@@ -28,6 +28,7 @@ export interface BreakdownContextTask {
   title: string;
   description?: string;
   status: string;
+  category?: string;
   dependencies: string[];
 }
 
@@ -37,6 +38,12 @@ export interface BreakdownStep {
   description: string;
   /** '' for a new task; an existing quest id to reuse that task as this step. */
   existingTaskId: string;
+  /**
+   * Category for the step: the parent task's category or one already in use
+   * on the canvas ('' inherits the parent's). Invented names are dropped by
+   * the materializer — the model must pick, never mint.
+   */
+  category: string;
   /** 0-based indices of other steps in the batch that must come first. */
   dependsOnSteps: number[];
   /** Ids of existing tasks that must come first. */
@@ -97,6 +104,7 @@ export const PROPOSE_STEPS_TOOL: {
             'title',
             'description',
             'existingTaskId',
+            'category',
             'dependsOnSteps',
             'dependsOnExisting',
           ],
@@ -117,6 +125,14 @@ export const PROPOSE_STEPS_TOOL: {
                 'Empty string for a new task. If an EXISTING task from the ' +
                 'provided list already covers this step, put its id here so ' +
                 'no duplicate is created.',
+            },
+            category: {
+              type: 'string',
+              description:
+                "The step's category: the task being broken down keeps its " +
+                'own, so use an EMPTY string to inherit it, or pick a ' +
+                'category already in use on the canvas when it fits this ' +
+                'step better. NEVER invent a new category.',
             },
             dependsOnSteps: {
               type: 'array',
@@ -182,11 +198,13 @@ export function toBreakdownContext(
     .slice(0, BREAKDOWN_MAX_CONTEXT_TASKS)
     .map((q) => {
       const desc = typeof q.description === 'string' ? q.description : '';
+      const cat = typeof q.category === 'string' ? q.category.trim() : '';
       return {
         id: String(q.id),
         title: q.title ?? '',
         ...(desc ? { description: desc.slice(0, maxDescriptionChars) } : {}),
         status: q.status ?? 'ongoing',
+        ...(cat ? { category: cat.slice(0, 60) } : {}),
         dependencies: ((q.dependencies as string[] | undefined) ?? []).map(String),
       };
     });
@@ -228,8 +246,21 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     '5. Phrase each title as an achieved state the group can verify — e.g.',
     '   "We have agreed on a design", "Materials are collected" — never as a',
     '   command. Do not repeat the parent task itself as a step.',
+    "6. Give each step a category: '' inherits the broken-down task's own,",
+    '   or pick one from the "Categories in use" list when it fits the step',
+    '   better. Never invent a new category.',
     'Call propose_steps exactly once.',
   ].join('\n');
+
+  // Categories already in use (goal task first, then the canvas) — the closed
+  // set the model may assign steps to.
+  const categories = [
+    ...new Set(
+      [input.task, ...input.allTasks]
+        .map((t) => t.category?.trim())
+        .filter((c): c is string => !!c),
+    ),
+  ];
 
   const lines: string[] = [];
   if (input.holonContext) {
@@ -238,6 +269,11 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
   lines.push('## Task to break down');
   lines.push(JSON.stringify(input.task));
   lines.push('');
+  if (categories.length > 0) {
+    lines.push('## Categories in use (assign steps ONLY from these)');
+    lines.push(categories.join(', '));
+    lines.push('');
+  }
   lines.push(
     '## All tasks currently on the canvas (one JSON object per line; ' +
       "status 'completed'/'cancelled' means already done)",
@@ -298,6 +334,10 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
     if (typeof existingTaskId !== 'string') {
       throw new BreakdownValidationError(`steps[${i}].existingTaskId must be a string`);
     }
+    const category = s.category ?? '';
+    if (typeof category !== 'string') {
+      throw new BreakdownValidationError(`steps[${i}].category must be a string`);
+    }
     const dependsOnSteps = s.dependsOnSteps ?? [];
     if (
       !Array.isArray(dependsOnSteps) ||
@@ -317,6 +357,7 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
       title: s.title.trim(),
       description: description.trim(),
       existingTaskId: existingTaskId.trim(),
+      category: category.trim(),
       dependsOnSteps: dependsOnSteps as number[],
       dependsOnExisting,
     };
@@ -547,14 +588,38 @@ export function applyBreakdownProposal(input: ApplyBreakdownInput): ApplyBreakdo
     ...allQuests.map((q) => (typeof q.orderIndex === 'number' ? q.orderIndex : 0)),
     typeof parent.orderIndex === 'number' ? parent.orderIndex : 0,
   );
+  // Categories the model may assign: the parent's plus everything already in
+  // use on the canvas. Matched case-insensitively and stored with the
+  // canonical (existing) casing; an invented name falls back to the parent's
+  // category with a warning — the model picks, it never mints.
+  const canonicalCategory = new Map<string, string>();
+  for (const src of [parent, ...allQuests]) {
+    const c = typeof src.category === 'string' ? src.category.trim() : '';
+    if (c && !canonicalCategory.has(c.toLowerCase())) {
+      canonicalCategory.set(c.toLowerCase(), c);
+    }
+  }
+
   const newQuests: Quest[] = [];
   steps.forEach((s, i) => {
     if (reuseId[i]) return;
+    let category = parent.category;
+    if (s.category) {
+      const canonical = canonicalCategory.get(s.category.toLowerCase());
+      if (canonical) {
+        category = canonical;
+      } else {
+        warnings.push(
+          `Step ${i + 1} ("${s.title}") used unknown category "${s.category}" — ` +
+            (parent.category ? `inherited "${parent.category}" instead.` : 'left uncategorized.'),
+        );
+      }
+    }
     const quest = createTask({
       holonId: parent.holon ?? '',
       initiator: input.initiator ?? parent.initiator,
       title: s.title,
-      category: parent.category,
+      category,
       dependencies: newStepDeps[i],
       now,
     });

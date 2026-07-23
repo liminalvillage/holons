@@ -911,6 +911,7 @@
                 description: t.description,
                 status: t.status ?? 'ongoing',
                 orderIndex: t.orderIndex,
+                category: t.category,
                 dependencies: t.dependencies,
                 participants: [],
             })),
@@ -968,7 +969,7 @@
         if (!title) return;
         breakdownSteps = [
             ...(breakdownSteps ?? []),
-            { title, description: '', existingTaskId: '', dependsOnSteps: [], dependsOnExisting: [] },
+            { title, description: '', existingTaskId: '', category: '', dependsOnSteps: [], dependsOnExisting: [] },
         ];
         newStepTitle = '';
         rebuildBreakdownPreview();
@@ -1608,6 +1609,9 @@
                                     <div class="flex-1 min-w-0">
                                         <span class="text-gray-500">{i + 1}.</span>
                                         {step.title}
+                                        {#if step.category && step.category !== (quest.category || '')}
+                                            <span class="text-xs px-1.5 py-0.5 rounded bg-gray-700 text-gray-300">{step.category}</span>
+                                        {/if}
                                         {#if stepReuseTitle(step)}
                                             <span class="text-xs text-purple-300">— reuses “{stepReuseTitle(step)}”</span>
                                         {/if}

@@ -25,6 +25,7 @@ function step(title: string, extra: Partial<BreakdownStep> = {}): BreakdownStep 
     title,
     description: `${title} done`,
     existingTaskId: '',
+    category: '',
     dependsOnSteps: [],
     dependsOnExisting: [],
     ...extra,
@@ -65,6 +66,12 @@ describe('toBreakdownContext', () => {
     );
   });
 
+  it('carries each task category into the context', () => {
+    const ctx = toBreakdownContext([q('a', { category: 'Garden' }), q('b')]);
+    expect(ctx[0].category).toBe('Garden');
+    expect(ctx[1].category).toBeUndefined();
+  });
+
   it('caps the task count, preferring active tasks over settled ones', () => {
     const quests: Quest[] = [];
     for (let i = 0; i < BREAKDOWN_MAX_CONTEXT_TASKS; i++) {
@@ -92,6 +99,25 @@ describe('buildBreakdownPrompt', () => {
     expect(user).toContain('Community garden');
     expect(user).toContain('"id":"a"');
     expect(user).toContain('"id":"b"');
+  });
+
+  it('lists the categories already in use and the category rule', () => {
+    const ctx = toBreakdownContext([
+      q('a', { category: 'Garden' }),
+      q('b', { category: 'Kitchen' }),
+      q('c'),
+    ]);
+    const { system, user } = buildBreakdownPrompt({ task: ctx[2], allTasks: ctx });
+    expect(system).toContain('category');
+    expect(user).toContain('## Categories in use');
+    expect(user).toContain('Garden');
+    expect(user).toContain('Kitchen');
+  });
+
+  it('omits the category section when nothing is categorized', () => {
+    const ctx = toBreakdownContext([q('a'), q('b')]);
+    const { user } = buildBreakdownPrompt({ task: ctx[0], allTasks: ctx });
+    expect(user).not.toContain('## Categories in use');
   });
 });
 
@@ -128,9 +154,26 @@ describe('parseBreakdownProposal', () => {
       title: 't',
       description: '',
       existingTaskId: '',
+      category: '',
       dependsOnSteps: [],
       dependsOnExisting: [],
     });
+  });
+
+  it('accepts and trims a step category; rejects a non-string one', () => {
+    const p = parseBreakdownProposal({
+      atomic: false,
+      reasoning: '',
+      steps: [{ title: 't', category: '  Garden  ' }],
+    });
+    expect(p.steps[0].category).toBe('Garden');
+    expect(() =>
+      parseBreakdownProposal({
+        atomic: false,
+        reasoning: '',
+        steps: [{ title: 't', category: 7 }],
+      }),
+    ).toThrow(/category/);
   });
 
   it('rejects malformed shapes', () => {
@@ -376,6 +419,34 @@ describe('applyBreakdownProposal', () => {
     expect(t.initiator).toEqual({ id: 42, username: 'rob' });
     expect(t.created).toBe(new Date(1_000_000).toISOString());
     expect(t.status).toBe('ongoing');
+  });
+
+  it("applies a step's category when it matches one already in use (canonical casing)", () => {
+    const parent = q('p', { category: 'Garden' });
+    const res = applyBreakdownProposal({
+      proposal: proposal([
+        step('A', { category: 'kitchen' }), // existing, different casing
+        step('B'), // empty → inherit the parent's
+      ]),
+      parent,
+      allQuests: [parent, q('other', { category: 'Kitchen' })],
+      generateId: seqId(),
+    });
+    expect(res.newQuests[0].category).toBe('Kitchen');
+    expect(res.newQuests[1].category).toBe('Garden');
+    expect(res.warnings).toEqual([]);
+  });
+
+  it('falls back to the parent category on an invented one, with a warning', () => {
+    const parent = q('p', { category: 'Garden' });
+    const res = applyBreakdownProposal({
+      proposal: proposal([step('A', { category: 'Blockchain' })]),
+      parent,
+      allQuests: [parent],
+      generateId: seqId(),
+    });
+    expect(res.newQuests[0].category).toBe('Garden');
+    expect(res.warnings.some((w) => w.includes('Blockchain'))).toBe(true);
   });
 
   it('warns above the soft step cap without failing', () => {
