@@ -197,11 +197,14 @@ describe('HoloSphere Reference System', () => {
         await holoSphere.put(testHolon, testLens, data);
         await waitForGun(); // <-- Add delay
         const hologram = holoSphere.createHologram(testHolon, testLens, data); // Use renamed method
-        await holoSphere.put(testHolon, testLens, hologram); // Store the hologram itself at its ID
+        // Store the pointer in a DIFFERENT lens. Writing it at the path its own
+        // soul names is refused since the self-hologram guard (it would replace
+        // the original with an unresolvable self-loop).
+        await holoSphere.put(testHolon, 'otherLens', hologram);
         await waitForGun(); // <-- Add delay
 
         // Get the item by ID without resolving
-        const unresolved = await holoSphere.get(testHolon, testLens, 'get-no-res', null, { resolveHolograms: false }); // Use renamed option
+        const unresolved = await holoSphere.get(testHolon, 'otherLens', 'get-no-res', null, { resolveHolograms: false }); // Use renamed option
 
         expect(unresolved).toBeDefined();
         expect(unresolved.id).toBe('get-no-res');
@@ -230,10 +233,14 @@ describe('HoloSphere Reference System', () => {
         await holoSphere.put(testHolon, 'otherLens', hologram); // Store hologram elsewhere
         await waitForGun(750); // <-- Increased delay
 
-        // Resolve initially
+        // Resolve initially. (This used to expect null: before the
+        // self-hologram guard, the pointer put above could get redirected onto
+        // the ORIGINAL's path — replacing it with a husk — so resolution died.
+        // With the source intact, resolution works from the first read.)
         const resolved1 = await holoSphere.resolveHologram(hologram); // Use renamed method
-        expect(resolved1).toBeNull(); // Expect null, likely due to put redirection complexities
-        
+        expect(resolved1).toBeDefined();
+        expect(resolved1.value).toBe('Version 1');
+
         // Update original data
         const updatedData = { ...originalData, value: 'Version 2' };
         await holoSphere.put(testHolon, testLens, updatedData);
