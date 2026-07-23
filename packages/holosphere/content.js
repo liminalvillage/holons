@@ -279,6 +279,18 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
     }
     // --- End: Target Path Hologram Redirection Logic ---
 
+    // Where the caller originally aimed, kept ONLY when a redirect above moved
+    // the write elsewhere. After the ack we refresh the hologram pointer stored
+    // there (bump `updated`), so the lens the caller is actually looking at
+    // re-emits and re-resolves immediately — without depending on the source's
+    // `_holograms` back-links, which can be lost to relay storage wipes or
+    // predate the tracking logic.
+    const originalPointerPath =
+        !isGlobal &&
+        (targetHolon !== holon || targetLens !== lens || String(targetKey) !== String(data.id))
+            ? { holon, lens, key: String(data.id) }
+            : null;
+
     // The data being stored is 'data'. Its 'id' property is 'data.id'.
     // The final storage path key is 'targetKey'.
 
@@ -500,7 +512,53 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             }
                         }
                         // --- End: Active Hologram Update Logic ---
-                        
+
+                        // --- Start: Original-Pointer Refresh (redirected writes) ---
+                        // The redirect moved this write away from where the
+                        // caller aimed; the lens they are looking at holds only
+                        // the untouched pointer, so its subscribers hear nothing
+                        // unless the cascade above happened to stamp it. Refresh
+                        // the pointer directly (bump `updated`): the caller's
+                        // lens re-emits and re-resolves, and — since the refresh
+                        // is itself a hologram put — the `_holograms` back-link
+                        // is re-registered for future cascades. Only an EXISTING
+                        // pointer is refreshed; a source-envelope write with no
+                        // local mirror must not materialize one.
+                        if (originalPointerPath) {
+                            const pointerSoul = `${holoInstance.appname}/${originalPointerPath.holon}/${originalPointerPath.lens}/${originalPointerPath.key}`;
+                            const alreadyStamped =
+                                updatedHolograms.some(h => h.soul === pointerSoul) ||
+                                cascadeVisited.has(pointerSoul);
+                            if (!alreadyStamped) {
+                                try {
+                                    const pointer = await holoInstance.get(
+                                        originalPointerPath.holon,
+                                        originalPointerPath.lens,
+                                        originalPointerPath.key,
+                                        null,
+                                        { resolveHolograms: false }
+                                    );
+                                    if (pointer && holoInstance.isHologram(pointer)) {
+                                        await holoInstance.put(
+                                            originalPointerPath.holon,
+                                            originalPointerPath.lens,
+                                            { ...pointer, id: originalPointerPath.key, updated: Date.now() },
+                                            null,
+                                            {
+                                                autoPropagate: false,
+                                                disableHologramRedirection: true,
+                                                isHologramUpdate: true,
+                                                _cascadeVisited: cascadeVisited
+                                            }
+                                        );
+                                    }
+                                } catch (pointerRefreshError) {
+                                    console.warn(`Could not refresh local hologram pointer at ${pointerSoul}:`, pointerRefreshError.message);
+                                }
+                            }
+                        }
+                        // --- End: Original-Pointer Refresh ---
+
                         // Only notify subscribers for actual data, not holograms
                         if (!isHologram) {
                             holoInstance.notifySubscribers({

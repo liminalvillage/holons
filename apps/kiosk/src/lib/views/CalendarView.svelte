@@ -41,7 +41,19 @@
   async function saveQuest(q: Quest, updated: Quest, verb: string) {
     const hid = get(holonId);
     if (!hid) return;
-    const ref = sourceRef(q, String(q.id ?? q.title));
+    // A hologram card is written at its LOCAL path with the `_hologram`
+    // envelope intact: HoloSphere both redirects the write to the source holon
+    // AND refreshes the local pointer, so this board re-resolves and updates
+    // live. Pre-routing it to the owner would skip that pointer refresh — the
+    // move would only show up after a reload. A federation-envelope card has
+    // no local record to refresh, so its write IS routed to the owner holon
+    // explicitly; its live update arrives through the partner-lens
+    // subscription instead.
+    const isHologramCard = !!(q as { _hologram?: { isHologram?: boolean } })
+      ._hologram?.isHologram;
+    const ref = isHologramCard
+      ? undefined
+      : sourceRef(q, String(q.id ?? q.title));
     const writer = await getWriter(ref?.holon ?? hid, (m) =>
       showNotice(`Couldn't ${verb} — ${m}`),
     );

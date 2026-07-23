@@ -85,6 +85,48 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
     const includeDeletes = options.includeDeletes !== false;
     const subscriptionId = holoInstance.generateId(); // Use instance's generateId
 
+    // Transient hologram-miss retries: key → { attempts, timer }. A cold
+    // cross-holon read often races the relay — the pointer fires before its
+    // source has replicated, resolution comes back 'unresolved', and with no
+    // retry the card simply never renders until some later write re-fires the
+    // lens. Bounded, timer-driven re-resolves close that gap; a fresh fire for
+    // the key supersedes its pending retry (the timer is cleared, the attempt
+    // budget is NOT reset, so an echoing lens can't re-arm retries forever).
+    const HOLO_RETRY_MS = [1200, 3000, 8000, 15000];
+    const holoRetries = new Map();
+    const scheduleHoloRetry = (key, pointer) => {
+        const e = holoRetries.get(key) ?? { attempts: 0, timer: null, sig: null };
+        // A genuinely NEW pointer value (e.g. the source stamped `updated`)
+        // earns a fresh retry budget; a value-identical echo does not, so a
+        // re-emitting lens can't keep retries armed forever.
+        let sig;
+        try { sig = JSON.stringify(pointer); } catch { sig = String(pointer); }
+        if (e.sig !== null && e.sig !== sig) e.attempts = 0;
+        e.sig = sig;
+        if (e.timer || e.attempts >= HOLO_RETRY_MS.length) { holoRetries.set(key, e); return; }
+        const delay = HOLO_RETRY_MS[e.attempts++];
+        e.timer = setTimeout(async () => {
+            e.timer = null;
+            if (!holoInstance.subscriptions[subscriptionId]) return;
+            try {
+                const res = await holoInstance.resolveHologramDetailed(pointer, { followHolograms: true });
+                if (!holoInstance.subscriptions[subscriptionId]) return;
+                if (res.status === 'resolved') {
+                    holoRetries.delete(key);
+                    callback(res.data, key);
+                } else if (res.status === 'deleted') {
+                    holoRetries.delete(key);
+                    callback(null, key);
+                } else {
+                    scheduleHoloRetry(key, pointer);
+                }
+            } catch {
+                scheduleHoloRetry(key, pointer);
+            }
+        }, delay);
+        holoRetries.set(key, e);
+    };
+
     // Global odometer: catches a runaway that re-subscribes with an
     // ever-changing (holon, lens) too (which keeps every group small, so the
     // per-path warning below would never fire). Warns at exponential
@@ -207,6 +249,13 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                     let parsed = await holoInstance.parse(data);
                     if (parsed && holoInstance.isHologram(parsed)) {
                         const hologramSoul = parsed.soul;
+                        // A fresh fire is a fresh resolution attempt — supersede
+                        // any retry pending for this key.
+                        const pendingRetry = holoRetries.get(key);
+                        if (pendingRetry && pendingRetry.timer) {
+                            clearTimeout(pendingRetry.timer);
+                            pendingRetry.timer = null;
+                        }
                         const res = await holoInstance.resolveHologramDetailed(parsed, { followHolograms: true });
                         if (res.status === 'deleted') {
                             // The source was soft-deleted (_deleted:true) — a
@@ -231,9 +280,16 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                             // does not. Unlike a deletion we do NOT emit a removal:
                             // a transient miss must not flicker the item out of a
                             // live view; it stays until it resolves or is GC'd.
+                            // A transient miss also gets a few timed re-resolves —
+                            // a cold cross-holon read races the relay, and without
+                            // a retry the item never renders until the next write.
                             console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                            if (res.status === 'unresolved' || res.status === 'error') {
+                                scheduleHoloRetry(key, parsed);
+                            }
                             return;
                         }
+                        holoRetries.delete(key);
                         if (res.data !== parsed) {
                             parsed = res.data;
                         }
@@ -288,6 +344,12 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 }
 
                 try {
+                    // Cancel any pending hologram re-resolves for this subscriber.
+                    for (const e of holoRetries.values()) {
+                        if (e.timer) clearTimeout(e.timer);
+                    }
+                    holoRetries.clear();
+
                     // Turn off THIS subscriber's own Gun listener.
                     if (sub.mapChain) {
                         sub.mapChain.off();
