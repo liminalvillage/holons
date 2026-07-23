@@ -30,11 +30,14 @@
 	let currentWeekKey = getWeekKey(new Date());
 	let showAutoFillConfirm = false;
 	let autoFillPreview: any = null;
+	let excludedUserIds: Set<string> = new Set();
 
 	$: weekDays = getWeekDays(currentWeekKey);
 	$: rolesList = Object.entries(roles || {});
 	$: weekRange = formatWeekRange(currentWeekKey);
 	$: isCurrentWeek = currentWeekKey === getWeekKey(new Date());
+	$: userEntries = Object.entries(userStore || {});
+	$: includedUserCount = userEntries.filter(([key, user]) => !excludedUserIds.has(user?.id ?? key)).length;
 
 	function goToPreviousWeek() {
 		currentWeekKey = getPreviousWeekKey(currentWeekKey);
@@ -143,7 +146,8 @@
 		const result = autoFillWeekSchedule({
 			roles: rolesArray,
 			users: usersArray,
-			weekKey: currentWeekKey
+			weekKey: currentWeekKey,
+			excludeUserIds: Array.from(excludedUserIds)
 		});
 
 		// Apply schedules to all roles
@@ -175,6 +179,22 @@
 
 	function openAutoFillConfirm() {
 		showAutoFillConfirm = true;
+	}
+
+	function toggleUserExcluded(userId: string) {
+		if (excludedUserIds.has(userId)) {
+			excludedUserIds.delete(userId);
+		} else {
+			excludedUserIds.add(userId);
+		}
+		excludedUserIds = excludedUserIds;
+	}
+
+	function userDisplayName(user: any, fallbackId: string): string {
+		if (user?.first_name) {
+			return user.first_name + (user.last_name ? ' ' + user.last_name : '');
+		}
+		return user?.username || fallbackId;
 	}
 </script>
 
@@ -283,9 +303,27 @@
 		<div class="modal-content">
 			<h3 class="modal-title">Auto-Fill Week Schedule</h3>
 			<p class="modal-description">
-				This will automatically distribute all available users across roles for the week,
+				This will automatically distribute the selected users across roles for the week,
 				ensuring a balanced workload. Existing assignments will be preserved.
+				Untick anyone who should be left out.
 			</p>
+			{#if userEntries.length > 0}
+				<div class="modal-users">
+					{#each userEntries as [userKey, user]}
+						{@const userId = user?.id ?? userKey}
+						<label class="modal-users__item">
+							<input
+								type="checkbox"
+								checked={!excludedUserIds.has(userId)}
+								on:change={() => toggleUserExcluded(userId)}
+							/>
+							<span class="modal-users__name" class:modal-users__name--excluded={excludedUserIds.has(userId)}>
+								{userDisplayName(user, userKey)}
+							</span>
+						</label>
+					{/each}
+				</div>
+			{/if}
 			<div class="modal-info">
 				<div class="modal-info__item">
 					<span class="modal-info__label">Roles:</span>
@@ -293,7 +331,7 @@
 				</div>
 				<div class="modal-info__item">
 					<span class="modal-info__label">Users:</span>
-					<span class="modal-info__value">{Object.keys(userStore).length}</span>
+					<span class="modal-info__value">{includedUserCount} of {userEntries.length}</span>
 				</div>
 				<div class="modal-info__item">
 					<span class="modal-info__label">Total slots:</span>
@@ -304,7 +342,7 @@
 				<button class="btn btn--secondary" on:click={() => showAutoFillConfirm = false}>
 					Cancel
 				</button>
-				<button class="btn btn--primary" on:click={handleAutoFill}>
+				<button class="btn btn--primary" on:click={handleAutoFill} disabled={includedUserCount === 0}>
 					Apply Auto-Fill
 				</button>
 			</div>
@@ -495,6 +533,33 @@
 		color: rgba(255, 255, 255, 0.7);
 		margin-bottom: 16px;
 		line-height: 1.5;
+	}
+
+	.modal-users {
+		background: rgba(0, 0, 0, 0.2);
+		border-radius: 8px;
+		padding: 8px 12px;
+		margin-bottom: 12px;
+		max-height: 180px;
+		overflow-y: auto;
+	}
+
+	.modal-users__item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+		cursor: pointer;
+	}
+
+	.modal-users__name {
+		font-size: 13px;
+		color: var(--color-text-primary);
+	}
+
+	.modal-users__name--excluded {
+		color: rgba(255, 255, 255, 0.4);
+		text-decoration: line-through;
 	}
 
 	.modal-info {
