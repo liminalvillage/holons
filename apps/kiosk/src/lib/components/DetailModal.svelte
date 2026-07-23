@@ -6,11 +6,13 @@
   // helpers; the meaning of borrowing lives in @holons/core/library.
   import Modal from "./Modal.svelte";
   import Confetti from "./Confetti.svelte";
+  import { onMount } from "svelte";
   import { get } from "svelte/store";
   import {
     selection,
     closeDetail,
     holonId,
+    holonName,
     rawQuests,
     completionRequest,
     editOnOpen,
@@ -30,7 +32,13 @@
     getItemIcon,
     getTypeDisplayName,
   } from "@holons/core/library";
-  import type { Quest } from "@holons/core/tasks";
+  import {
+    applyBreakdownProposal,
+    type ApplyBreakdownResult,
+    type BreakdownStep,
+    type Quest,
+  } from "@holons/core/tasks";
+  import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -86,6 +94,7 @@
       selKey = k;
       editing = false;
       message = "";
+      cancelBreakdown();
     }
   }
 
@@ -122,6 +131,215 @@
   let editing = false;
   let saving = false;
   let message = "";
+
+  // --- AI breakdown: decompose this task into steps wired as dependencies ---
+  // Mirrors the web dashboard's TaskModal flow, but the LLM call runs directly
+  // from the browser with this device's OpenAI key (see $lib/breakdown). The
+  // proposal lands in `breakdownSteps` as an editable draft; the materialized
+  // preview (ids, wiring, warnings) is rebuilt by @holons/core on every edit.
+  let breakingDown = false;
+  let breakdownSteps: BreakdownStep[] | null = null;
+  let breakdownReasoning = "";
+  let breakdownInfo = "";
+  let breakdownPreview: ApplyBreakdownResult | null = null;
+  let newStepTitle = "";
+
+  // Whether ANY breakdown transport is configured — a device key, or the
+  // deploy's serverless function (probed once; see $lib/breakdown).
+  let aiAvailable = false;
+  onMount(() => {
+    breakdownAvailable().then((v) => (aiAvailable = v));
+  });
+
+  // Only the kiosk's own tasks can be broken down: the new steps are written to
+  // this holon's graph, so a federated/hologram quest (owned elsewhere) is out.
+  $: canBreakdown =
+    quest != null &&
+    !isNew &&
+    aiAvailable &&
+    !sourceRef(quest, String(quest.id ?? quest.title));
+
+  /**
+   * Local (non-federated) quests only — every id the proposal may reference
+   * (reuse, dependencies, the cycle gate) must live in this holon's own graph.
+   */
+  function localQuests(): Quest[] {
+    return get(rawQuests).filter((q) => !sourceRef(q, String(q.id ?? q.title)));
+  }
+
+  function breakdownInitiator() {
+    const u = $telegramUser;
+    if (!u) return undefined; // core falls back to the parent's initiator
+    return {
+      id: String(u.id),
+      username: u.username || "Telegram User",
+      firstName: u.first_name || "",
+      lastName: u.last_name || "",
+    };
+  }
+
+  /** Rebuild the materialized preview (wiring, ids, warnings) from the draft. */
+  function rebuildBreakdownPreview() {
+    if (!quest || !breakdownSteps || breakdownSteps.length === 0) {
+      breakdownPreview = null;
+      return;
+    }
+    try {
+      breakdownPreview = applyBreakdownProposal({
+        proposal: {
+          atomic: false,
+          reasoning: breakdownReasoning,
+          steps: breakdownSteps,
+        },
+        parent: { ...quest, id: String(quest.id ?? quest.title) },
+        allQuests: localQuests(),
+        initiator: breakdownInitiator(),
+      });
+      message = "";
+    } catch (e) {
+      breakdownPreview = null;
+      message = (e as Error)?.message || "These steps cannot be wired up.";
+    }
+  }
+
+  async function requestBreakdown() {
+    if (breakingDown || !quest) return;
+    breakingDown = true;
+    message = "";
+    // The current draft stays visible while regenerating and survives a failed
+    // request — only a fresh proposal replaces it.
+    try {
+      const proposal = await requestBreakdownProposal({
+        task: { ...quest, id: String(quest.id ?? quest.title) },
+        allQuests: localQuests(),
+        holonContext: $holonName ? `Holon: ${$holonName}.` : undefined,
+      });
+      breakdownReasoning = proposal.reasoning || "";
+      if (proposal.atomic || proposal.steps.length === 0) {
+        // The model declined — keep the panel open, empty, so the user can
+        // still add their own steps (or regenerate).
+        breakdownInfo =
+          proposal.reasoning ||
+          "This task is already a single actionable step.";
+        breakdownSteps = [];
+        breakdownPreview = null;
+      } else {
+        breakdownInfo = "";
+        breakdownSteps = proposal.steps;
+        rebuildBreakdownPreview();
+      }
+    } catch (e) {
+      message = (e as Error)?.message || "AI breakdown failed.";
+    } finally {
+      breakingDown = false;
+    }
+  }
+
+  /** Click a proposed piece away; step-index references shift down with it. */
+  function removeBreakdownStep(index: number) {
+    if (!breakdownSteps) return;
+    breakdownSteps = breakdownSteps
+      .filter((_, i) => i !== index)
+      .map((s) => ({
+        ...s,
+        dependsOnSteps: s.dependsOnSteps
+          .filter((j) => j !== index)
+          .map((j) => (j > index ? j - 1 : j)),
+      }));
+    rebuildBreakdownPreview();
+  }
+
+  /** Add a user-written step (a parallel prerequisite of the goal). */
+  function addBreakdownStep() {
+    const title = newStepTitle.trim();
+    if (!title) return;
+    breakdownSteps = [
+      ...(breakdownSteps ?? []),
+      {
+        title,
+        description: "",
+        existingTaskId: "",
+        dependsOnSteps: [],
+        dependsOnExisting: [],
+      },
+    ];
+    newStepTitle = "";
+    rebuildBreakdownPreview();
+  }
+
+  function cancelBreakdown() {
+    breakdownSteps = null;
+    breakdownPreview = null;
+    breakdownReasoning = "";
+    breakdownInfo = "";
+    newStepTitle = "";
+  }
+
+  /** A draft step's prerequisites, as human titles (steps + existing tasks). */
+  function stepDepsLabel(step: BreakdownStep): string {
+    const all = localQuests();
+    const names = [
+      ...step.dependsOnSteps.map(
+        (j) => breakdownSteps?.[j]?.title ?? `step ${j + 1}`,
+      ),
+      ...step.dependsOnExisting.map(
+        (id) => all.find((t) => String(t.id) === id)?.title ?? id,
+      ),
+    ];
+    return names.join(", ");
+  }
+
+  /** The existing task a draft step reuses, as a human title ('' if new). */
+  function stepReuseTitle(step: BreakdownStep): string {
+    if (!step.existingTaskId) return "";
+    return (
+      localQuests().find((t) => String(t.id) === step.existingTaskId)?.title ??
+      step.existingTaskId
+    );
+  }
+
+  async function confirmBreakdown() {
+    if (!breakdownPreview || !quest || !$holonId) return;
+    saving = true;
+    message = "";
+    const preview = breakdownPreview;
+    try {
+      const writer = await getWriter($holonId, (m) => (message = m));
+      // Steps first, parent last — a partial failure leaves the goal unwired
+      // rather than depending on tasks that don't exist.
+      let saved = 0;
+      for (const q of preview.newQuests) {
+        if (await writer.put("quests", q)) saved++;
+        else break;
+      }
+      if (saved < preview.newQuests.length) {
+        if (!message) {
+          message = `Only ${saved} of ${preview.newQuests.length} steps could be saved — the goal was left unchanged.`;
+        }
+        return;
+      }
+      // Link on the freshest parent copy so a concurrent edit isn't clobbered;
+      // merge rather than replace its dependency list for the same reason.
+      const parent = await freshQuest(quest);
+      const dependencies = [
+        ...new Set([
+          ...((parent.dependencies as string[] | undefined) ?? []).map(String),
+          ...preview.parentDependencies,
+        ]),
+      ];
+      const ok = await writer.put("quests", { ...parent, dependencies });
+      if (ok) {
+        cancelBreakdown();
+        closeDetail();
+      } else if (!message) {
+        message = "Could not link the steps.";
+      }
+    } catch (e) {
+      message = (e as Error)?.message || "Could not create the steps.";
+    } finally {
+      saving = false;
+    }
+  }
   let celebrate = false;
   let celebrateTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -661,12 +879,99 @@
             <button class="ghost" on:click={startEdit} disabled={saving}
               >Edit</button
             >
+            {#if canBreakdown && breakdownSteps === null}
+              <button
+                class="ghost"
+                on:click={requestBreakdown}
+                disabled={saving || breakingDown}
+                title="Use AI to break this task into steps"
+                >{breakingDown ? "Breaking down…" : "✨ Break down"}</button
+              >
+            {/if}
             <button
               class="ghost danger"
               on:click={deleteQuest}
               disabled={saving}>Delete</button
             >
           </div>
+
+          {#if breakdownSteps !== null}
+            <div class="breakdown">
+              <p class="bd-head">Proposed steps</p>
+              {#if breakdownInfo}
+                <p class="bd-note">Not broken down: {breakdownInfo}</p>
+              {:else if breakdownReasoning}
+                <p class="bd-note">{breakdownReasoning}</p>
+              {/if}
+              {#if breakdownSteps.length > 0}
+                <ul class="bd-steps">
+                  {#each breakdownSteps as step, i (step.title + i)}
+                    <li>
+                      <span class="bd-num">{i + 1}.</span>
+                      <div class="bd-body">
+                        <span class="bd-title">{step.title}</span>
+                        {#if stepReuseTitle(step)}
+                          <span class="bd-tag"
+                            >reuses “{stepReuseTitle(step)}”</span
+                          >
+                        {/if}
+                        {#if stepDepsLabel(step)}
+                          <span class="bd-tag">after {stepDepsLabel(step)}</span
+                          >
+                        {/if}
+                        {#if step.description}
+                          <p class="bd-desc">{step.description}</p>
+                        {/if}
+                      </div>
+                      <button
+                        class="bd-x"
+                        on:click={() => removeBreakdownStep(i)}
+                        aria-label="Remove step {i + 1}: {step.title}"
+                        title="Remove this step">✕</button
+                      >
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+              <div class="bd-add">
+                <input
+                  type="text"
+                  placeholder="Add your own step…"
+                  bind:value={newStepTitle}
+                  on:keydown={(e) => e.key === "Enter" && addBreakdownStep()}
+                />
+                <button
+                  class="ghost bd-add-btn"
+                  on:click={addBreakdownStep}
+                  disabled={!newStepTitle.trim()}>Add</button
+                >
+              </div>
+              {#each breakdownPreview?.warnings ?? [] as warning}
+                <p class="bd-warn">⚠ {warning}</p>
+              {/each}
+              <div class="actions">
+                {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
+                  <button
+                    class="primary"
+                    on:click={confirmBreakdown}
+                    disabled={saving}
+                    >{saving
+                      ? "Creating…"
+                      : `Create ${breakdownPreview.newQuests.length} step${
+                          breakdownPreview.newQuests.length === 1 ? "" : "s"
+                        }`}</button
+                  >
+                {/if}
+                <button
+                  class="ghost"
+                  on:click={requestBreakdown}
+                  disabled={breakingDown}
+                  >{breakingDown ? "Regenerating…" : "↻ Regenerate"}</button
+                >
+                <button class="ghost" on:click={cancelBreakdown}>Cancel</button>
+              </div>
+            </div>
+          {/if}
         {:else}
           <button class="primary" on:click={requestLogin}
             >Log in with Telegram to edit</button
@@ -1028,5 +1333,99 @@
     color: #9a3b2f;
     font-weight: 600;
     text-align: center;
+  }
+
+  /* AI breakdown panel: the proposed-steps draft under the action row. */
+  .breakdown {
+    margin-top: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .bd-head {
+    margin: 0 0 0.4rem;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--teal-deep);
+  }
+  .bd-note {
+    margin: 0 0 0.5rem;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+  .bd-steps {
+    list-style: none;
+    margin: 0 0 0.6rem;
+    padding: 0;
+    display: grid;
+    gap: 0.45rem;
+  }
+  .bd-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .bd-num {
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .bd-body {
+    flex: 1;
+    min-width: 0;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .bd-title {
+    font-weight: 700;
+  }
+  .bd-tag {
+    margin-left: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--teal-deep);
+  }
+  .bd-desc {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+  .bd-x {
+    flex: 0 0 auto;
+    min-width: 2.3rem;
+    min-height: 2.3rem;
+    border-radius: 10px;
+    background: rgba(192, 57, 43, 0.08);
+    color: #c0392b;
+    font-weight: 700;
+  }
+  .bd-x:active {
+    transform: scale(0.95);
+  }
+  .bd-add {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .bd-add input {
+    flex: 1;
+    margin-top: 0;
+  }
+  .bd-add .bd-add-btn {
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    min-height: 48px;
+  }
+  .bd-warn {
+    margin: 0.2rem 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #a07908;
+  }
+  .breakdown .actions {
+    margin-top: 0.8rem;
   }
 </style>
