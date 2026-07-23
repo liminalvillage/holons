@@ -273,10 +273,16 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
   if (typeof obj.reasoning !== 'string') {
     throw new BreakdownValidationError('proposal.reasoning must be a string');
   }
-  if (!Array.isArray(obj.steps)) {
+  // Absent fields are defaulted rather than rejected: OpenAI's non-strict
+  // tool calling treats `required` as advisory, and gpt-4o omits `steps`
+  // (typically alongside atomic: true) or a step's empty lists. An absent
+  // list is unambiguous — nothing in it — so only a present-but-wrong type
+  // is a shape violation.
+  const rawSteps = obj.steps ?? [];
+  if (!Array.isArray(rawSteps)) {
     throw new BreakdownValidationError('proposal.steps must be an array');
   }
-  const steps: BreakdownStep[] = obj.steps.map((raw, i) => {
+  const steps: BreakdownStep[] = rawSteps.map((raw, i) => {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
       throw new BreakdownValidationError(`steps[${i}] is not an object`);
     }
@@ -284,31 +290,35 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
     if (typeof s.title !== 'string' || s.title.trim() === '') {
       throw new BreakdownValidationError(`steps[${i}].title must be a non-empty string`);
     }
-    if (typeof s.description !== 'string') {
+    const description = s.description ?? '';
+    if (typeof description !== 'string') {
       throw new BreakdownValidationError(`steps[${i}].description must be a string`);
     }
-    if (typeof s.existingTaskId !== 'string') {
+    const existingTaskId = s.existingTaskId ?? '';
+    if (typeof existingTaskId !== 'string') {
       throw new BreakdownValidationError(`steps[${i}].existingTaskId must be a string`);
     }
+    const dependsOnSteps = s.dependsOnSteps ?? [];
     if (
-      !Array.isArray(s.dependsOnSteps) ||
-      !s.dependsOnSteps.every((n) => Number.isInteger(n))
+      !Array.isArray(dependsOnSteps) ||
+      !dependsOnSteps.every((n) => Number.isInteger(n))
     ) {
       throw new BreakdownValidationError(
         `steps[${i}].dependsOnSteps must be an array of integers`,
       );
     }
-    if (!isStringArray(s.dependsOnExisting)) {
+    const dependsOnExisting = s.dependsOnExisting ?? [];
+    if (!isStringArray(dependsOnExisting)) {
       throw new BreakdownValidationError(
         `steps[${i}].dependsOnExisting must be an array of strings`,
       );
     }
     return {
       title: s.title.trim(),
-      description: s.description.trim(),
-      existingTaskId: s.existingTaskId.trim(),
-      dependsOnSteps: s.dependsOnSteps as number[],
-      dependsOnExisting: s.dependsOnExisting,
+      description: description.trim(),
+      existingTaskId: existingTaskId.trim(),
+      dependsOnSteps: dependsOnSteps as number[],
+      dependsOnExisting,
     };
   });
   if (obj.atomic && steps.length > 0) {

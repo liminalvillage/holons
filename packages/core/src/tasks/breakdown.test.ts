@@ -113,8 +113,31 @@ describe('parseBreakdownProposal', () => {
     expect(p.steps[0].title).toBe('Dig bed');
   });
 
+  it('defaults absent steps and per-step lists (non-strict OpenAI tool output)', () => {
+    // gpt-4o without strict structured outputs omits `steps` on atomic
+    // proposals despite the schema marking it required.
+    const atomic = parseBreakdownProposal({ atomic: true, reasoning: 'already one unit' });
+    expect(atomic.steps).toEqual([]);
+
+    const p = parseBreakdownProposal({
+      atomic: false,
+      reasoning: '',
+      steps: [{ title: 't' }],
+    });
+    expect(p.steps[0]).toEqual({
+      title: 't',
+      description: '',
+      existingTaskId: '',
+      dependsOnSteps: [],
+      dependsOnExisting: [],
+    });
+  });
+
   it('rejects malformed shapes', () => {
     expect(() => parseBreakdownProposal(null)).toThrow(BreakdownValidationError);
+    expect(() => parseBreakdownProposal({ atomic: true, reasoning: '', steps: 'none' })).toThrow(
+      /array/,
+    );
     expect(() => parseBreakdownProposal({ atomic: 'yes', reasoning: '', steps: [] })).toThrow(
       BreakdownValidationError,
     );

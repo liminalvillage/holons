@@ -139,6 +139,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
               name: PROPOSE_STEPS_TOOL.name,
               description: PROPOSE_STEPS_TOOL.description,
               parameters: PROPOSE_STEPS_TOOL.input_schema,
+              // Structured outputs: without this OpenAI treats `required` as
+              // advisory and gpt-4o omits `steps` on atomic proposals.
+              strict: true,
             },
           },
         ],
