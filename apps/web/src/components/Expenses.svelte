@@ -146,6 +146,20 @@
 		? [thisHolonUser, ...realUsers]
 		: realUsers;
 
+	// Single lookup for rendering participants as name + avatar everywhere an
+	// id would otherwise leak into the UI. Passed explicitly into the helpers
+	// so reactive blocks that call them re-run when the user set changes.
+	$: usersById = new Map(users.map((u) => [String(u.id), u]));
+	const userName = (id: unknown, byId: Map<string, User>): string =>
+		byId.get(String(id))?.first_name || String(id ?? '');
+	const userInitial = (id: unknown, byId: Map<string, User>): string =>
+		(userName(id, byId).trim()[0] || '?').toUpperCase();
+	const onAvatarError = (e: Event) => {
+		const img = e.currentTarget as HTMLImageElement;
+		img.style.display = 'none';
+		(img.nextElementSibling as HTMLElement | null)?.style.setProperty('display', 'inline-flex');
+	};
+
 	// Distinct currencies actually used by loaded expenses.
 	$: expenseCurrencyList = Array.from(
 		new Set(Object.values(expenses).map((e) => expenseCurrency(e as any)).filter(Boolean)),
@@ -378,24 +392,51 @@
 		}
 	}
 
-	// Reactive: recompute the credit matrix whenever the currency, the
-	// participant set, OR the expenses change. (Previously an imperative call
-	// that didn't track `expenses`, so the matrix never refreshed when the
-	// expenses subscription delivered data after the currency/users were set.)
-	$: creditMatrix =
-		selectedCurrency && selectedCurrency !== ADD_CURRENCY_SENTINEL && users.length > 0
-			? calculateCreditMatrix(selectedCurrency, expenses, users)
-			: [];
-
 	$: filteredExpenses = (() => {
 		const want = normalizeCurrency(selectedCurrency || '');
 		const q = filters.searchQuery.trim().toLowerCase();
 		return Object.values(expenses)
 			.filter(e => expenseCurrency(e as any) === want)
 			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated, $showUnverified))
-			.filter((e: any) => !q || `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q))
+			.filter((e: any) => {
+				if (!q) return true;
+				const split = Array.isArray(e.splitWith) ? e.splitWith : [];
+				return [
+					e.description ?? '',
+					e.paidBy ?? '',
+					userName(e.paidBy, usersById),
+					...split.map((id: string) => userName(id, usersById)),
+				].join(' ').toLowerCase().includes(q);
+			})
 			.sort((a, b) => expenseTimestampMs(b) - expenseTimestampMs(a));
 	})();
+
+	// The search box drives the whole view: with a query active, the matrix
+	// (and its participant rows/columns, and the stats bar) shrink to the
+	// people involved in the matching expenses; without one, full membership.
+	$: visibleUsers = (() => {
+		if (!filters.searchQuery.trim()) return users;
+		const ids = new Set<string>();
+		for (const e of filteredExpenses) {
+			if (e?.paidBy) ids.add(String(e.paidBy));
+			for (const id of Array.isArray(e?.splitWith) ? e.splitWith : []) {
+				if (id) ids.add(String(id));
+			}
+		}
+		return users.filter((u) => ids.has(String(u.id)));
+	})();
+
+	// Reactive: recompute the credit matrix whenever the currency, the
+	// participant set, OR the filtered expenses change — the matrix reflects
+	// exactly what the search/lens filters let through, like the list below it.
+	$: creditMatrix =
+		selectedCurrency && selectedCurrency !== ADD_CURRENCY_SENTINEL && visibleUsers.length > 0
+			? calculateCreditMatrix(
+					selectedCurrency,
+					Object.fromEntries(filteredExpenses.map((e: any, i) => [e.key || e.id || String(i), e])),
+					visibleUsers,
+				)
+			: [];
 
 	$: noCurrenciesAvailable = !isLoading && availableCurrencies.length === 0;
 
@@ -608,7 +649,7 @@
 	{#if selectedCurrency && users.length > 0}
 		<div class="stats-bar mb-4">
 			<div class="stats-bar__item">
-				<span class="stats-bar__value">{users.length}</span>
+				<span class="stats-bar__value">{visibleUsers.length}</span>
 				<span class="stats-bar__label">Participants</span>
 			</div>
 			<div class="stats-bar__divider"></div>
@@ -660,6 +701,13 @@
 			<p>Start by adding some expenses to track spending and balances.</p>
 		</div>
 	{:else if selectedCurrency}
+		{#if visibleUsers.length === 0}
+			<div class="empty-state">
+				<i class="fas fa-search"></i>
+				<h3>No Matching Expenses</h3>
+				<p>No expenses match "{filters.searchQuery}" — try a different search.</p>
+			</div>
+		{:else}
 		<!-- Credits Table -->
 		<div class="table-container">
 			<table>
@@ -671,7 +719,7 @@
 								<span>Is Owed →</span>
 							</div>
 						</th>
-						{#each users as user}
+						{#each visibleUsers as user}
 							<th class="user-header">
 								<span>{user.first_name}</span>
 							</th>
@@ -680,10 +728,22 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each users as user, rowIndex}
+					{#each visibleUsers as user, rowIndex}
 						{@const rowBalance = creditMatrix[rowIndex]?.reduce((sum, val) => sum + val, 0) || 0}
 						<tr>
-							<th class="row-header">{user.first_name}</th>
+							<th class="row-header">
+								<span class="user-chip">
+									<img
+										class="user-avatar"
+										src={`/api/avatar?user_id=${user.id}`}
+										alt=""
+										loading="lazy"
+										onerror={onAvatarError}
+									/>
+									<span class="user-avatar user-avatar--fallback" style="display: none">{userInitial(user.id, usersById)}</span>
+									{user.first_name}
+								</span>
+							</th>
 							{#each creditMatrix[rowIndex] || [] as credit}
 								<td class="credit-cell" class:positive={credit > 0} class:negative={credit < 0}>
 									{credit !== 0 ? formatAmount(credit) : '—'}
@@ -719,8 +779,36 @@
 									{expense.description}
 									<SourceBadge item={expense} currentHolonId={holonID} lensRoute="expenses" />
 								</h4>
-								<p class="paid-by">Paid by {users.find(u => String(u.id) === String(expense.paidBy))?.first_name || expense.paidBy}</p>
-								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => String(u.id) === String(id))?.first_name || id).join(', ')}</p>
+								<p class="paid-by">
+									Paid by
+									<span class="user-chip">
+										<img
+											class="user-avatar"
+											src={`/api/avatar?user_id=${expense.paidBy}`}
+											alt=""
+											loading="lazy"
+											onerror={onAvatarError}
+										/>
+										<span class="user-avatar user-avatar--fallback" style="display: none">{userInitial(expense.paidBy, usersById)}</span>
+										{userName(expense.paidBy, usersById)}
+									</span>
+								</p>
+								<p class="split-with">
+									Split:
+									{#each (Array.isArray(expense.splitWith) ? expense.splitWith : []) as id}
+										<span class="user-chip">
+											<img
+												class="user-avatar user-avatar--sm"
+												src={`/api/avatar?user_id=${id}`}
+												alt=""
+												loading="lazy"
+												onerror={onAvatarError}
+											/>
+											<span class="user-avatar user-avatar--sm user-avatar--fallback" style="display: none">{userInitial(id, usersById)}</span>
+											{userName(id, usersById)}
+										</span>
+									{/each}
+								</p>
 							</div>
 							<div class="expense-amount">
 								<span class="amount">{formatAmount(expense.amount)}</span>
@@ -730,6 +818,7 @@
 					{/each}
 				</div>
 			</div>
+		{/if}
 		{/if}
 	{/if}
 	</div>
@@ -829,6 +918,14 @@
 									}}
 									class="sr-only"
 								/>
+								<img
+									class="w-5 h-5 rounded-full object-cover"
+									src={`/api/avatar?user_id=${user.id}`}
+									alt=""
+									loading="lazy"
+									onerror={onAvatarError}
+								/>
+								<span class="w-5 h-5 rounded-full bg-gray-600 text-gray-200 text-xs font-semibold items-center justify-center" style="display: none">{userInitial(user.id, usersById)}</span>
 								{user.first_name}
 							</label>
 						{/each}
@@ -1088,6 +1185,40 @@
 		color: var(--color-text-muted);
 		font-size: 0.75rem;
 		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+	}
+
+	/* Participant name + avatar, used in the matrix row headers and cards */
+	.user-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		white-space: nowrap;
+	}
+
+	.user-avatar {
+		width: 1.375rem;
+		height: 1.375rem;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+		background: var(--color-bg-primary);
+	}
+
+	.user-avatar--sm {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.user-avatar--fallback {
+		align-items: center;
+		justify-content: center;
+		color: var(--color-text-muted);
+		font-size: 0.625rem;
+		font-weight: 600;
 	}
 
 	.expense-amount {
