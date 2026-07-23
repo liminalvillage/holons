@@ -242,8 +242,14 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
     // --- Start: Target Path Hologram Redirection Logic ---
     // (skipped for global tables, and when the source-envelope redirect above
-    // already pinned the destination to the item's true owner.)
-    if (!isGlobal && !redirectedBySourceEnvelope) try {
+    // already pinned the destination to the item's true owner. ALSO skipped
+    // when the payload being written is itself a bare `{ id, soul }` pointer:
+    // a pointer is location-specific — re-publishing one to a destination
+    // that already holds it used to redirect the write onto the pointer's own
+    // soul, replacing the SOURCE with a hologram of itself. That husk then
+    // resolves in a loop, Gun re-emits unboundedly, and the fire-storm guard
+    // quarantines the lens — the 2026-07-23 field incident.)
+    if (!isGlobal && !redirectedBySourceEnvelope && !holoInstance.isHologram(data)) try {
         // Get the item at the original target path, WITHOUT resolving holograms
         const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, password, { resolveHolograms: false });
 
@@ -296,6 +302,17 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
     // Check if the data *being put* is a hologram (this variable is used later for schema and propagation)
     const isHologram = holoInstance.isHologram(data);
+
+    // Never store a hologram that points at its own destination — it would
+    // replace whatever lives there (usually the ORIGINAL the pointer was
+    // minted from, when a publish targets its own source holon) with an
+    // unresolvable self-loop. The path already holds the best possible value
+    // for this soul, so the correct behaviour is a warned no-op, not a write.
+    if (isHologram && !isGlobal &&
+        data.soul === `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`) {
+        console.warn(`[put] refusing to write self-pointing hologram at ${data.soul} — the destination IS the soul's path; skipping write.`);
+        return data;
+    }
 
     // Get and validate schema only in strict mode for non-holograms (data being put)
     if (holoInstance.strict && !isHologram) {
