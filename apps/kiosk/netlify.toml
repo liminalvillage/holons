@@ -26,6 +26,13 @@
   # --no-frozen-lockfile: pnpm-lock.yaml is deliberately untracked, and pnpm
   # defaults frozen-lockfile to ON when CI=true, so it must be disabled here.
   command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F @holons/ai-ui build && pnpm -F kiosk build"
+  # The kiosk bundle compiles in the workspace packages, but Netlify's default
+  # monorepo change detection only watches the base directory — a commit that
+  # only touches packages/holosphere (e.g. the 2026-07-23 self-hologram guard)
+  # was skipped as "no content change" and never reached the screens. Build
+  # whenever the app OR any workspace dependency it bundles has changed
+  # (non-zero exit = build).
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../../packages/core ../../packages/holosphere ../../packages/ai-ui"
 
 [build.environment]
   NODE_VERSION = "20"
