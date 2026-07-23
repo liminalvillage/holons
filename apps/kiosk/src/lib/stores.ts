@@ -121,6 +121,22 @@ export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
 export const rawRoles = writable<Role[]>([]);
 
+/**
+ * Wall-clock time of the last live emission per lens, stamped by the layout's
+ * subscription callbacks. This is the heartbeat the write-echo watchdog reads:
+ * a successful LOCAL write must echo through its lens subscription within a
+ * couple of seconds (same Gun graph, same process), so a write with no
+ * emission after it proves the subscription has gone deaf — the one failure
+ * that otherwise looks exactly like "the app stopped updating" and silently
+ * eats every remote update too. Plain object, not a store: the watchdog polls
+ * it point-in-time; nothing renders from it.
+ */
+export const lensEmitAt: Record<"quests" | "library" | "roles", number> = {
+  quests: 0,
+  library: 0,
+  roles: 0,
+};
+
 export const events = derived(
   [rawQuests, partnerNames, searchQuery],
   ([$q, $n, $query]) => filterBySearch(toEvents($q, $n), $query),

@@ -17,10 +17,13 @@
     resolveTaskView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
+  import { get } from "svelte/store";
   import {
     rawQuests,
     rawLibrary,
     rawRoles,
+    lensEmitAt,
+    showNotice,
     holonName,
     holonId as holonIdStore,
     brandName,
@@ -141,7 +144,10 @@
       questsSub = hs.subscribeFederated(
         id,
         "quests",
-        (items) => rawQuests.set(items as Quest[]),
+        (items) => {
+          lensEmitAt.quests = Date.now();
+          rawQuests.set(items as Quest[]);
+        },
         { includeFederated: fed },
       );
       boundHolon = id;
@@ -160,7 +166,10 @@
       librarySub = hs.subscribeFederated(
         id,
         "library",
-        (items) => rawLibrary.set(items as LibraryItem[]),
+        (items) => {
+          lensEmitAt.library = Date.now();
+          rawLibrary.set(items as LibraryItem[]);
+        },
         { includeFederated: fed },
       );
     } else if (!libraryOn && librarySub) {
@@ -172,7 +181,10 @@
       rolesSub = hs.subscribeFederated(
         id,
         "roles",
-        (items) => rawRoles.set(items as Role[]),
+        (items) => {
+          lensEmitAt.roles = Date.now();
+          rawRoles.set(items as Role[]);
+        },
         { includeFederated: fed },
       );
     } else if (!rolesOn && rolesSub) {
@@ -192,6 +204,59 @@
     }
 
     booting = false;
+
+    // Dev/test hook: let a headless test kill the live subscriptions to prove
+    // the write-echo watchdog below detects and heals it. DEV builds only.
+    if (import.meta.env.DEV && typeof window !== "undefined") {
+      (window as any).__kioskKillSubs = () => {
+        questsSub?.unsubscribe();
+        librarySub?.unsubscribe();
+        rolesSub?.unsubscribe();
+      };
+    }
+  }
+
+  // ── Write-echo watchdog ─────────────────────────────────────────────────--
+  //
+  // A successful LOCAL write must echo back through its lens subscription
+  // within a couple of seconds — same Gun graph, same process. When it
+  // doesn't, the subscription is provably dead (however it died: quarantine,
+  // a torn-down listener, a wedged storage adapter …) and every remote update
+  // is being silently dropped too — the "writes work but the screen never
+  // changes until reload" failure reported from the field. Detect it on the
+  // next write and heal in place: rebind all lens subscriptions, whose seed
+  // read (getAll) pulls the missed state — the same recovery a manual reload
+  // performs, without the reload.
+  const ECHO_GRACE_MS = 3000;
+  let lastRebindAt = 0;
+
+  function onLocalWrite(e: Event) {
+    const d = (e as CustomEvent).detail as
+      | { holon?: string; lens?: string; at?: number }
+      | undefined;
+    if (!d?.holon || !d.at) return;
+    // Writes routed to a partner holon (sourceRef) don't reliably echo when
+    // federation is off — only the displayed holon's writes are probes.
+    if (d.holon !== boundHolon) return;
+    const lens = d.lens as keyof typeof lensEmitAt;
+    if (lens !== "quests" && lens !== "library" && lens !== "roles") return;
+    const at = d.at;
+    setTimeout(() => {
+      if (lensEmitAt[lens] >= at) return; // echoed — subscription is alive
+      if (lastRebindAt >= at) return; // a burst of writes → one rebind
+      lastRebindAt = Date.now();
+      console.error(
+        `[kiosk] live '${lens}' subscription missed a local write — rebinding all lens subscriptions`,
+      );
+      showNotice("Live view stalled — resyncing…");
+      boundHolon = null; // force refresh() to tear down and re-subscribe
+      refresh(
+        get(holonIdStore),
+        get(federated),
+        get(libraryEnabled),
+        get(rolesEnabled),
+      );
+    }, ECHO_GRACE_MS);
   }
 
   onMount(() => {
@@ -207,6 +272,7 @@
     themeMode.set(resolveThemeMode());
     initAuth();
     mounted = true;
+    window.addEventListener("kiosk:write", onLocalWrite);
     const teardown = [
       startClock(),
       startRotation(),
@@ -214,6 +280,7 @@
       startSwAutoReload(),
     ];
     return () => {
+      window.removeEventListener("kiosk:write", onLocalWrite);
       teardown.forEach((fn) => fn());
       if (readyTimer) clearTimeout(readyTimer);
       questsSub?.unsubscribe();

@@ -209,15 +209,39 @@ export function subscribeLens<T extends { id?: string | number }>(
  * Telegram user as `actingAs` and resolves `false` (instead of throwing) when a
  * write is denied — so callers can surface a friendly message.
  */
+/**
+ * Announce a successful local write so the layout's write-echo watchdog can
+ * verify the live subscription actually heard it (see `lensEmitAt` in
+ * stores.ts). Every write path funnels through here. `at` must be captured
+ * BEFORE the put starts: Gun fires the local echo during the put, ahead of
+ * the ack, so a post-ack timestamp would always outrun the echo and read as
+ * "no echo" — a false stall on every healthy write.
+ */
+function announceWrite(holon: string, lens: string, at: number): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("kiosk:write", { detail: { holon, lens, at } }),
+  );
+}
+
 export async function getWriter(
   holonId: string,
   onDenied?: (message: string) => void,
 ): Promise<HolonWriter> {
   const hs = await getHolosphere();
-  return createHolonWriter(hs, holonId, {
+  const writer = createHolonWriter(hs, holonId, {
     actingAs,
     onDenied: onDenied ? (info) => onDenied(info.message) : undefined,
   });
+  return {
+    ...writer,
+    put: async (lens, data, opts) => {
+      const at = Date.now();
+      const ok = await writer.put(lens, data, opts);
+      if (ok) announceWrite(holonId, lens, at);
+      return ok;
+    },
+  };
 }
 
 /**
@@ -230,8 +254,19 @@ export async function getLibraryDb(): Promise<LibraryDB> {
     get: (holon, lens, key) =>
       key != null ? hs.get(holon, lens, key) : hs.get(holon, lens),
     getAll: (holon, lens) => hs.getAll(holon, lens),
-    put: (holon, lens, data) =>
-      hs.put(holon, lens, data as object, { actingAs: actingAs() } as any),
+    put: async (holon, lens, data) => {
+      const at = Date.now();
+      const res = await hs.put(
+        holon,
+        lens,
+        data as object,
+        {
+          actingAs: actingAs(),
+        } as any,
+      );
+      announceWrite(holon, lens, at);
+      return res;
+    },
     delete: (holon, lens, key) => hs.delete(holon, lens, key),
   };
 }
@@ -255,8 +290,19 @@ export interface ReaStore {
 export async function getReaStore(): Promise<ReaStore> {
   const hs = await getHolosphere();
   return {
-    put: (holon, bucket, value) =>
-      hs.put(holon, bucket, value as object, { actingAs: actingAs() } as any),
+    put: async (holon, bucket, value) => {
+      const at = Date.now();
+      const res = await hs.put(
+        holon,
+        bucket,
+        value as object,
+        {
+          actingAs: actingAs(),
+        } as any,
+      );
+      announceWrite(holon, bucket, at);
+      return res;
+    },
     get: (holon, bucket, key) =>
       key != null ? hs.get(holon, bucket, String(key)) : hs.get(holon, bucket),
   };
