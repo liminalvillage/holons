@@ -7,8 +7,8 @@
   import {
     resolveHolonId,
     resolveFederated,
-    resolveLibraryEnabled,
-    resolveRolesEnabled,
+    resolveLibraryPref,
+    resolveRolesPref,
     resolveStatusEnabled,
     resolveBrandName,
     resolveBrandLogo,
@@ -30,8 +30,8 @@
     brandLogo,
     accent,
     federated,
-    libraryEnabled,
-    rolesEnabled,
+    libraryPref,
+    rolesPref,
     statusEnabled,
     taskViewMode,
     boardReady,
@@ -159,9 +159,11 @@
       });
     }
 
-    // The Library and Roles lenses are toggleable — spin each subscription up or
-    // down to match its setting, leaving the always-on quests subscription
-    // untouched. (Library defaults on, Roles off.)
+    // The Library and Roles lenses are toggleable — spin each subscription up
+    // or down, leaving the always-on quests subscription untouched. `libraryOn`
+    // / `rolesOn` is false only for an explicit caretaker "off": the default
+    // `auto` preference keeps the subscription alive so the tab's visibility
+    // can follow the content (see `libraryEnabled` / `rolesEnabled` in stores).
     if (libraryOn && !librarySub) {
       librarySub = hs.subscribeFederated(
         id,
@@ -253,8 +255,8 @@
       refresh(
         get(holonIdStore),
         get(federated),
-        get(libraryEnabled),
-        get(rolesEnabled),
+        get(libraryPref) !== "off",
+        get(rolesPref) !== "off",
       );
     }, ECHO_GRACE_MS);
   }
@@ -262,8 +264,8 @@
   onMount(() => {
     holonIdStore.set(resolveHolonId());
     federated.set(resolveFederated());
-    libraryEnabled.set(resolveLibraryEnabled());
-    rolesEnabled.set(resolveRolesEnabled());
+    libraryPref.set(resolveLibraryPref());
+    rolesPref.set(resolveRolesPref());
     statusEnabled.set(resolveStatusEnabled());
     taskViewMode.set(resolveTaskView());
     brandName.set(resolveBrandName() ?? "");
@@ -292,7 +294,12 @@
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
   $: if (mounted)
-    refresh($holonIdStore, $federated, $libraryEnabled, $rolesEnabled);
+    refresh(
+      $holonIdStore,
+      $federated,
+      $libraryPref !== "off",
+      $rolesPref !== "off",
+    );
 
   // While awaiting the first reveal, (re)arm the settle timer on every data
   // change — including the bind itself, so a holon with no data still reveals.

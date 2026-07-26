@@ -10,6 +10,7 @@ import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import { parseInstant } from "@holons/core/datetime";
+import { sourceHolonId, sourceRef } from "@holons/core/holosphere";
 
 /** Warm post-it palette, indexed deterministically by category. */
 export const NOTE_COLORS = [
@@ -103,49 +104,11 @@ export const parseWhen = parseInstant;
 
 type Names = Record<string, string>;
 
-/**
- * The originating holon id for a record that didn't come from this kiosk's own
- * holon. Two provenance envelopes (both stamped by Holosphere) can surface one:
- *   - `_hologram`   — resolved-hologram envelope, for an item mirrored from
- *                     another holon (`sourceHolon`);
- *   - `_federation` — federation envelope, for an item that arrived via a
- *                     federated partner (`origin`) — what `subscribeFederated`
- *                     tags every partner item with.
- * `undefined` for the kiosk's own items.
- */
-export function sourceHolonId(rec: unknown): string | undefined {
-  const r = rec as {
-    _federation?: { origin?: string };
-    _hologram?: { isHologram?: boolean; sourceHolon?: string | null };
-  };
-  if (r._hologram?.isHologram && r._hologram.sourceHolon)
-    return r._hologram.sourceHolon;
-  if (r._federation?.origin) return r._federation.origin;
-  return undefined;
-}
-
-/**
- * Where a foreign item actually lives, for a write that must land in the owner's
- * graph (borrow/return), not a local copy. Returns the source `{ holon, key }`,
- * or `undefined` for the kiosk's own items (write them in place).
- *
- * The holon comes from {@link sourceHolonId}. The key matters for a resolved
- * hologram: its local pointer can sit under a different key than the source's
- * own (`_hologram.sourceKey` is the authoritative one parsed from the soul);
- * federated (`_federation`) partners share the id, so we fall back to `localId`. This
- * mirrors HoloSphere's own put-redirection, which rewrites a write landing on a
- * hologram to `soul.holon`/`soul.key` — we just target it directly.
- */
-export function sourceRef(
-  rec: unknown,
-  localId: string,
-): { holon: string; key: string } | undefined {
-  const holon = sourceHolonId(rec);
-  if (!holon) return undefined;
-  const sourceKey = (rec as { _hologram?: { sourceKey?: string | null } })
-    ._hologram?.sourceKey;
-  return { holon, key: sourceKey || localId };
-}
+// Provenance of federated/hologram records (which holon a foreign record
+// actually lives in, and where a write on it must land). The rule moved to
+// `@holons/core/holosphere` so every surface shares it; these re-exports keep
+// the kiosk's existing call sites stable.
+export { sourceHolonId, sourceRef };
 
 /**
  * Resolve a foreign item's source holon to a friendly label — the partner's

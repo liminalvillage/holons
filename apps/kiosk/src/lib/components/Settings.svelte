@@ -12,6 +12,8 @@
     accent,
     libraryEnabled,
     rolesEnabled,
+    libraryPref,
+    rolesPref,
     statusEnabled,
     settingsOpen,
   } from "$lib/stores";
@@ -20,8 +22,8 @@
     setBrandName,
     setBrandLogo,
     setAccent,
-    setLibraryEnabled,
-    setRolesEnabled,
+    setLibraryPref,
+    setRolesPref,
     setStatusEnabled,
     setThemeMode,
     resolveVoiceKey,
@@ -37,8 +39,14 @@
   let draftName = $brandName;
   let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
+  // The Library/Roles switches show the tab's *effective* visibility (an
+  // untouched device is in content-driven `auto` mode). Flipping one records an
+  // explicit on/off; leaving it alone preserves auto — so applying an unrelated
+  // setting never freezes a content-driven tab into a manual choice.
   let draftLibrary = $libraryEnabled;
   let draftRoles = $rolesEnabled;
+  const initialLibrary = $libraryEnabled;
+  const initialRoles = $rolesEnabled;
   let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
   let draftVoiceKey = resolveVoiceKey() ?? "";
@@ -94,10 +102,14 @@
     brandLogo.set(draftLogo);
     setAccent(draftAccent);
     accent.set(draftAccent);
-    setLibraryEnabled(draftLibrary);
-    libraryEnabled.set(draftLibrary);
-    setRolesEnabled(draftRoles);
-    rolesEnabled.set(draftRoles);
+    if (draftLibrary !== initialLibrary) {
+      setLibraryPref(draftLibrary ? "on" : "off");
+      libraryPref.set(draftLibrary ? "on" : "off");
+    }
+    if (draftRoles !== initialRoles) {
+      setRolesPref(draftRoles ? "on" : "off");
+      rolesPref.set(draftRoles ? "on" : "off");
+    }
     setStatusEnabled(draftStatus);
     statusEnabled.set(draftStatus);
     setThemeMode(draftTheme);
@@ -203,7 +215,9 @@
   <div class="field toggle-field">
     <span class="toggle-label"
       >Library tab
-      <span class="sub">— a shared library of things to borrow</span></span
+      <span class="sub"
+        >— shows by itself when the library has items; flip to force</span
+      ></span
     >
     <button
       type="button"
@@ -221,7 +235,8 @@
   <div class="field toggle-field">
     <span class="toggle-label"
       >Roles tab
-      <span class="sub">— show standing roles people can take on</span></span
+      <span class="sub">— shows by itself when roles exist; flip to force</span
+      ></span
     >
     <button
       type="button"

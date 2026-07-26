@@ -581,6 +581,10 @@
     position: relative;
     flex: 1;
     min-height: 0;
+    /* min-width: 0 down the flex chain (board → scrollarea): without it the
+       week grid's min-content width inflates the whole board past the surface
+       (which clips), so the far days were cut off with no way to scroll. */
+    min-width: 0;
     display: flex;
     flex-direction: column;
   }
@@ -653,6 +657,7 @@
   .scrollarea {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     padding: 0.9rem 1.4rem 1.6rem;
   }
 
@@ -812,12 +817,17 @@
 
   /* ── Week ──────────────────────────────────────────────────────────────── */
   /* Legend and every role row share one template, so the seven day columns
-     line up exactly: a fixed role label + 7 equal day cells. */
+     line up exactly: a fixed role label + 7 equal day cells. Each day track
+     has a fixed floor (a usable tap target) rather than shrinking to fit, and
+     `min-width: min-content` makes every row actually span its tracks — on a
+     phone the rows overflow the scrollarea together and the whole grid pans
+     horizontally, columns still aligned, row borders painted edge to edge. */
   .legend,
   .wrow {
     display: grid;
-    grid-template-columns: 6.5rem repeat(7, 1fr);
+    grid-template-columns: 6.5rem repeat(7, minmax(2.6rem, 1fr));
     gap: 0.35rem;
+    min-width: min-content;
   }
   .legend {
     align-items: end;

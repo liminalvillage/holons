@@ -148,29 +148,41 @@ export function setFederated(on: boolean): void {
 }
 
 /**
- * Whether the Library tab is shown. On by default — a caretaker can hide it
- * from Settings (e.g. a hub that doesn't run a library of things).
+ * A caretaker's preference for an optional content tab (Library / Roles):
+ * explicitly shown, explicitly hidden, or — the default — `auto`, where the
+ * tab appears exactly when its lens has content. Auto is stored as *absence*
+ * of the key, so a device the caretaker never configured follows the content.
  */
-export function resolveLibraryEnabled(): boolean {
-  return persisted(LIBRARY_KEY) !== "0";
+export type TabPref = "on" | "off" | "auto";
+
+function resolveTabPref(key: string): TabPref {
+  const v = persisted(key);
+  return v === "1" ? "on" : v === "0" ? "off" : "auto";
 }
 
-/** Persist the Library-tab toggle. */
-export function setLibraryEnabled(on: boolean): void {
-  persist(LIBRARY_KEY, on ? "1" : "0");
+function setTabPref(key: string, pref: TabPref): void {
+  if (pref === "auto") forget(key);
+  else persist(key, pref === "on" ? "1" : "0");
 }
 
-/**
- * Whether the optional Roles tab is shown. Off by default — a caretaker opts in
- * from Settings, since not every hub coordinates standing roles on the screen.
- */
-export function resolveRolesEnabled(): boolean {
-  return persisted(ROLES_KEY) === "1";
+/** The Library tab preference; `auto` (content-driven) unless the caretaker chose. */
+export function resolveLibraryPref(): TabPref {
+  return resolveTabPref(LIBRARY_KEY);
 }
 
-/** Persist the Roles-tab toggle. */
-export function setRolesEnabled(on: boolean): void {
-  persist(ROLES_KEY, on ? "1" : "0");
+/** Persist the Library-tab preference (`auto` clears the stored choice). */
+export function setLibraryPref(pref: TabPref): void {
+  setTabPref(LIBRARY_KEY, pref);
+}
+
+/** The Roles tab preference; `auto` (content-driven) unless the caretaker chose. */
+export function resolveRolesPref(): TabPref {
+  return resolveTabPref(ROLES_KEY);
+}
+
+/** Persist the Roles-tab preference (`auto` clears the stored choice). */
+export function setRolesPref(pref: TabPref): void {
+  setTabPref(ROLES_KEY, pref);
 }
 
 /**

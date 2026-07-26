@@ -29,6 +29,8 @@
   import {
     borrowItem,
     returnItem,
+    recordBorrowAccounting,
+    recordReturnAccounting,
     getItemIcon,
     getTypeDisplayName,
   } from "@holons/core/library";
@@ -679,12 +681,19 @@
     const due = new Date(Date.now() + 7 * 86_400_000);
     const res = await borrowItem(db, holon, key, actor, due);
     saving = false;
-    if (res.ok) closeDetail();
-    else
-      message =
-        res.reason === "already_borrowed"
-          ? "Already borrowed."
-          : "Could not borrow.";
+    if (res.ok) {
+      // Credits move on borrow everywhere (skipped by core for owners and
+      // valueless items). No REA deps here — the bot alone emits REA events.
+      if (res.item)
+        await recordBorrowAccounting({ db }, holon, actor, res.item);
+      closeDetail();
+    } else if (res.reason === "already_borrowed") {
+      message = "Already borrowed.";
+    } else if (res.reason === "overlaps" && res.conflict) {
+      message = `Reserved by ${res.conflict.borrower || "someone"} from ${res.conflict.start}.`;
+    } else {
+      message = "Could not borrow.";
+    }
   }
 
   async function returnThing() {
@@ -699,12 +708,16 @@
     const key = ref?.key ?? String(sel.item.id);
     const res = await returnItem(db, holon, key, actor);
     saving = false;
-    if (res.ok) closeDetail();
-    else
+    if (res.ok) {
+      if (res.item)
+        await recordReturnAccounting({ db }, holon, actor, res.item);
+      closeDetail();
+    } else {
       message =
         res.reason === "forbidden"
           ? "Only the borrower can return it."
           : "Could not return.";
+    }
   }
 
   $: borrowedByMe =

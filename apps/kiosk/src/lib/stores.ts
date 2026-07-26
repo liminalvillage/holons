@@ -24,6 +24,7 @@ import {
   setPinnedTab,
   resolvePinnedTab,
   type TaskViewMode,
+  type TabPref,
 } from "./config";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -48,18 +49,19 @@ export const accent = writable<string>("#0e6b66");
 export const federated = writable<boolean>(false);
 
 /**
- * Whether the Library tab is shown (a caretaker toggle, persisted in config; on
- * by default). Toggling it (de)activates the library subscription in
- * `+layout.svelte` and adds/removes the tab in `visibleTabs`.
+ * Caretaker preference for the Library tab (persisted in config). `auto` — the
+ * default — shows the tab exactly when the lens has content; an explicit
+ * on/off wins. Anything but "off" keeps the library subscription alive in
+ * `+layout.svelte` (auto needs the data to decide); `libraryEnabled` below
+ * derives the tab's actual visibility.
  */
-export const libraryEnabled = writable<boolean>(true);
+export const libraryPref = writable<TabPref>("auto");
 
 /**
- * Whether the optional Roles tab is shown (a caretaker opt-in, persisted in
- * config). Toggling it (de)activates the roles subscription in `+layout.svelte`
- * and adds/removes the tab in `visibleTabs`.
+ * Caretaker preference for the optional Roles tab — same tri-state semantics
+ * as `libraryPref`.
  */
-export const rolesEnabled = writable<boolean>(false);
+export const rolesPref = writable<TabPref>("auto");
 
 /**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
@@ -230,11 +232,27 @@ export const TABS = [
 export type TabId = (typeof TABS)[number]["id"];
 
 /**
- * Tabs actually shown: the Library tab follows its caretaker toggle (on by
- * default), and the optional Roles and Status tabs appear only when the
- * caretaker has enabled them. Each is purely toggle-driven — an enabled tab
- * shows even while empty (its view shows an empty state), so the board never
- * silently drops a tab the caretaker turned on.
+ * Whether the Library / Roles tab is actually shown: an explicit caretaker
+ * choice wins; `auto` (the default) follows the content, so a hub that stocks
+ * a library or defines roles gets those tabs without any setup, and an empty
+ * lens doesn't waste a rotation slot. An explicitly-enabled tab shows even
+ * while empty (its view has an empty state), so the board never silently drops
+ * a tab the caretaker turned on.
+ */
+export const libraryEnabled = derived(
+  [libraryPref, rawLibrary],
+  ([$pref, $items]) =>
+    $pref === "on" || ($pref === "auto" && $items.length > 0),
+);
+export const rolesEnabled = derived(
+  [rolesPref, rawRoles],
+  ([$pref, $items]) =>
+    $pref === "on" || ($pref === "auto" && $items.length > 0),
+);
+
+/**
+ * Tabs actually shown: Library and Roles per their (possibly content-driven)
+ * visibility above, Status only when the caretaker enabled it.
  */
 export const visibleTabs = derived(
   [libraryEnabled, rolesEnabled, statusEnabled],
@@ -409,3 +427,22 @@ export const flipProgress: Readable<number> = derived(
     return Math.max(0, Math.min(1, 1 - remaining / FLIP_INTERVAL_MS));
   },
 );
+
+// With `auto` tab preferences the Library/Roles tabs come and go as their
+// content streams in, so the active tab can be invalidated under the screen.
+// Keep it coherent: a pinned tab that (re)appears reclaims an unattended
+// screen (a pinned kiosk must not be stranded on the boot fallback once its
+// view's data arrives), and an active tab that vanished falls back to the pin
+// or the first visible tab. Module-lifetime subscription — these are app
+// singletons, so it is never torn down. (Declared last: the callback runs
+// synchronously on subscribe and reads stores defined above.)
+visibleTabs.subscribe((tabs) => {
+  const has = (id: TabId | null) => tabs.some((t) => t.id === id);
+  const pin = get(pinnedTab);
+  const cur = get(activeTab);
+  if (pin && has(pin) && cur !== pin && get(rotating)) {
+    activeTab.set(pin);
+  } else if (!has(cur)) {
+    activeTab.set(pin && has(pin) ? pin : (tabs[0]?.id ?? "tasks"));
+  }
+});

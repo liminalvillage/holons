@@ -46,6 +46,9 @@
   .view {
     flex: 1;
     min-height: 0;
+    /* Never let a view's min-content width push the surface wider than the
+       screen — wide content must scroll inside the view instead. */
+    min-width: 0;
     display: flex;
     flex-direction: column;
     animation: kiosk-fade 0.4s ease both;

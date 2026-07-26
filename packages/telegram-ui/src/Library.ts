@@ -198,6 +198,7 @@ class Library {
             case LIBRARY_TYPES.TOOL: return '🔧';
             case LIBRARY_TYPES.BOOK: return '📚';
             case LIBRARY_TYPES.EQUIPMENT: return '⚙️';
+            case LIBRARY_TYPES.ACCOMMODATION: return '🛏️';
             case LIBRARY_TYPES.OTHER:
             default: return '📦';
         }
@@ -215,6 +216,7 @@ class Library {
             case LIBRARY_TYPES.TOOL: return 'tool';
             case LIBRARY_TYPES.BOOK: return 'book';
             case LIBRARY_TYPES.EQUIPMENT: return 'equipment';
+            case LIBRARY_TYPES.ACCOMMODATION: return 'accommodation';
             case LIBRARY_TYPES.OTHER:
             default: return 'item';
         }
@@ -226,10 +228,12 @@ class Library {
         const toolKeywords = ['hammer', 'drill', 'saw', 'screwdriver', 'wrench', 'pliers', 'shovel', 'rake', 'axe', 'knife'];
         const bookKeywords = ['book', 'manual', 'guide', 'novel', 'textbook'];
         const equipmentKeywords = ['camera', 'projector', 'speaker', 'tent', 'bicycle', 'ladder'];
+        const accommodationKeywords = ['room', 'cabin', 'apartment', 'dorm', 'bungalow', 'guesthouse'];
 
         if (toolKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.TOOL;
         if (bookKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.BOOK;
         if (equipmentKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.EQUIPMENT;
+        if (accommodationKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.ACCOMMODATION;
         return LIBRARY_TYPES.OTHER;
     }
 
@@ -480,7 +484,12 @@ class Library {
             );
 
             if (!borrowResult.ok || !borrowResult.item) {
-                await ctx.answerCbQuery('Item is no longer available.').catch(() => {});
+                // `overlaps` = a future reservation (made on web/kiosk) blocks
+                // the requested window; anything else = gone or borrowed today.
+                const msg = borrowResult.reason === 'overlaps' && borrowResult.conflict
+                    ? `Reserved by ${borrowResult.conflict.borrower || 'someone'} from ${borrowResult.conflict.start} — pick an earlier return date.`
+                    : 'Item is no longer available.';
+                await ctx.answerCbQuery(msg).catch(() => {});
                 this.pendingBorrows.delete(lockKey);
                 this.borrowLocks.delete(lockKey);
                 await this.showLibrary(ctx);

@@ -40,8 +40,12 @@ export interface REAEventFactoryLike {
 
 export interface AccountingDeps {
   db: LibraryDB;
-  eventStore: REAEventStoreLike;
-  eventFactory: REAEventFactoryLike;
+  /**
+   * REA event plumbing is optional: surfaces without an event store (web,
+   * kiosk) still record the credit expenses; only the bot emits REA events.
+   */
+  eventStore?: REAEventStoreLike;
+  eventFactory?: REAEventFactoryLike;
 }
 
 /**
@@ -76,8 +80,11 @@ export async function recordBorrowAccounting(
     };
     await deps.db.put(holon, EXPENSES_LENS, expense);
 
-    const events = deps.eventFactory.itemBorrowed(holonId, borrower, item, item.value, 0);
-    await Promise.all(events.map((e) => deps.eventStore.put(holonId, e)));
+    if (deps.eventFactory && deps.eventStore) {
+      const store = deps.eventStore;
+      const events = deps.eventFactory.itemBorrowed(holonId, borrower, item, item.value, 0);
+      await Promise.all(events.map((e) => store.put(holonId, e)));
+    }
   } catch (error) {
     console.error('Error creating borrow expense/events:', error);
   }
@@ -117,10 +124,13 @@ export async function recordReturnAccounting(
     }
   }
 
-  try {
-    const events = deps.eventFactory.itemReturned(holonId, returner, item, value);
-    await Promise.all(events.map((e) => deps.eventStore.put(holonId, e)));
-  } catch (error) {
-    console.error('Error creating REA events for return:', error);
+  if (deps.eventFactory && deps.eventStore) {
+    const store = deps.eventStore;
+    try {
+      const events = deps.eventFactory.itemReturned(holonId, returner, item, value);
+      await Promise.all(events.map((e) => store.put(holonId, e)));
+    } catch (error) {
+      console.error('Error creating REA events for return:', error);
+    }
   }
 }

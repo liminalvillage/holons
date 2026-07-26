@@ -5,11 +5,14 @@
  * Originally extracted from packages/telegram-ui/src/Library.js.
  */
 
+import type { Booking } from './bookings.js';
+
 /** Standard item categories supported by the library. */
 export const LIBRARY_TYPES = {
   TOOL: 'tool',
   BOOK: 'book',
   EQUIPMENT: 'equipment',
+  ACCOMMODATION: 'accommodation',
   OTHER: 'other'
 } as const;
 
@@ -25,10 +28,16 @@ export interface LibraryItem {
   createdByUsername?: string;
   borrower: string | null;
   borrowerId?: number | string | null;
-  borrowerInitials?: string;
-  borrowedAt?: Date | string;
-  returnBy?: Date | string;
+  borrowerInitials?: string | null;
+  borrowedAt?: Date | string | null;
+  returnBy?: Date | string | null;
   returnedAt?: Date | string;
+  /**
+   * Date-range reservations, the canonical borrow state. The single-borrow
+   * fields above are a mirror of whichever booking covers today, maintained
+   * by `withBookings` for readers that predate bookings.
+   */
+  bookings?: Booking[];
   category: string;
   description: string;
   value: number;
@@ -68,6 +77,12 @@ export interface BorrowActor {
   username?: string;
   first_name?: string;
   last_name?: string;
+  /**
+   * Preferred display name for surfaces without a Telegram identity (e.g. a
+   * resolved holon name for a Nostr key). Wins over username when stamping
+   * bookings.
+   */
+  display_name?: string;
 }
 
 /** Aggregate stats produced by `getLibraryStats`. */

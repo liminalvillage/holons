@@ -23,16 +23,22 @@
         getItemColor,
         buildBookingSpans
     } from '$lib/util/libraryBookings';
+    import {
+        LIBRARY_TYPES,
+        bookItem,
+        cancelBooking as coreCancelBooking,
+        recordBorrowAccounting,
+        recordReturnAccounting,
+        returnItem as coreReturnItem,
+        updateBookingDates,
+        withBookings,
+        type BorrowActor
+    } from '@holons/core/library';
+    import { sourceRef } from '@holons/core/holosphere';
 
-    // Library item types
-    const LIBRARY_TYPES = {
-        TOOL: 'tool',
-        BOOK: 'book',
-        EQUIPMENT: 'equipment',
-        OTHER: 'other'
-    };
-
-    interface LibraryItem {
+    // A `type` (not `interface`) so it picks up an implicit index signature
+    // and stays assignable to core's `BookableItem`.
+    type LibraryItem = {
         id: string;
         type: string;
         bookings?: Booking[];
@@ -54,7 +60,7 @@
         _deleted?: boolean;
         _hologram?: ResolvedHologramMeta;
         _federation?: FederationMeta;
-    }
+    };
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -193,21 +199,18 @@
     // Default = "booking now" — start date is today and the calendar is hidden.
     let borrowNow: boolean = true;
 
-    // Resolve the active borrower. Prefers Telegram (id + username, falling back
-    // to first/last name); otherwise looks up the user's holon name from their
-    // Nostr public key. Async because the holon-name lookup may hit holosphere.
-    async function resolveBorrowerIdentity(): Promise<{ id: string; displayName: string; initials: string }> {
+    // Resolve the active borrower as a core `BorrowActor`. Prefers Telegram
+    // (id + username, matching what the bot and kiosk write); otherwise looks
+    // up the user's holon name from their Nostr public key. Async because the
+    // holon-name lookup may hit holosphere.
+    async function resolveBorrowerActor(): Promise<BorrowActor> {
         const telegramUser = telegramStore.getState().user;
         if (telegramUser) {
-            const username = telegramUser.username
-                ? `@${telegramUser.username}`
-                : [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ').trim()
-                    || `tg-${telegramUser.id}`;
-            const initialsSource = telegramUser.first_name || telegramUser.username || `${telegramUser.id}`;
             return {
-                id: String(telegramUser.id),
-                displayName: username,
-                initials: (initialsSource.charAt(0) || '?').toUpperCase()
+                id: telegramUser.id,
+                username: telegramUser.username,
+                first_name: telegramUser.first_name,
+                last_name: telegramUser.last_name
             };
         }
 
@@ -219,21 +222,27 @@
             } catch (err) {
                 console.warn('Failed to resolve borrower holon name:', err);
             }
-            const shortKey = `${nostrPub.slice(0, 8)}…`;
             return {
                 id: nostrPub,
-                displayName: holonName ? `${holonName} (${shortKey})` : shortKey,
-                initials: (holonName?.charAt(0) || nostrPub.charAt(0) || '?').toUpperCase()
+                display_name: holonName || `${nostrPub.slice(0, 8)}…`
             };
         }
 
-        const id = currentUserId || '';
-        const displayName = currentUsername || 'Unknown';
-        return {
-            id,
-            displayName,
-            initials: (displayName.charAt(0) || '?').toUpperCase()
-        };
+        return { id: currentUserId || '', display_name: currentUsername || 'Unknown' };
+    }
+
+    // Where a write on this item must land: the source holon/key for a
+    // federated or hologram item, this holon otherwise (see core provenance).
+    function writeTarget(item: LibraryItem): { holon: string; key: string } {
+        const ref = sourceRef(item, item.id);
+        return { holon: ref?.holon ?? holonID, key: ref?.key ?? item.id };
+    }
+
+    // Merge a written source-item back onto the local record (a federated
+    // item's local copy keeps its own id/metadata) for optimistic display
+    // until the subscription echoes the real write.
+    function mergeWrittenItem(local: LibraryItem, written: { bookings?: Booking[] }): LibraryItem {
+        return withBookings(local, written.bookings ?? []);
     }
 
     // getDisplayBookings / isBookingActive / getItemColor / dayKey come from
@@ -248,42 +257,26 @@
     }
 
     // All identities the logged-in user can appear under in a booking: the
-    // legacy localStorage id/username, the Telegram id/@username (what
-    // resolveBorrowerIdentity writes), and the Nostr public key. Kept as
-    // reactive sets so booking action buttons appear/disappear with login state.
+    // legacy localStorage id/username, the Telegram id/username, and the
+    // Nostr public key. Kept as reactive sets so booking action buttons
+    // appear/disappear with login state. Names are '@'- and case-tolerant —
+    // older web clients stored '@username', core now stores plain usernames.
     $: myBorrowerIds = new Set(
         [currentUserId, $telegramUser ? String($telegramUser.id) : '', $nostrPublicKey || '']
             .filter(Boolean)
     );
     $: myBorrowerNames = new Set(
-        [currentUsername, $telegramUser?.username ? `@${$telegramUser.username}` : '']
+        [currentUsername, $telegramUser?.username || '']
             .filter(Boolean)
+            .map(n => n.replace(/^@/, '').toLowerCase())
     );
 
     function isMyBooking(b: Booking | null, ids: Set<string>, names: Set<string>): boolean {
         if (!b) return false;
         return (
             (!!b.borrowerId && ids.has(String(b.borrowerId))) ||
-            (!!b.borrower && names.has(b.borrower))
+            (!!b.borrower && names.has(b.borrower.replace(/^@/, '').toLowerCase()))
         );
-    }
-
-    // Rebuild an item around a new bookings list, recomputing the legacy
-    // single-borrow mirror fields from whichever booking (if any) covers today,
-    // so old readers of `borrowed`/`returnBy` stay consistent after a booking
-    // is added, changed or cancelled.
-    function withBookings(item: LibraryItem, bookings: Booking[]): LibraryItem {
-        const active = bookings.find(b => isBookingActive(b)) ?? null;
-        return {
-            ...item,
-            bookings,
-            borrowed: active !== null,
-            borrower: active?.borrower ?? null,
-            borrowerId: active?.borrowerId ?? null,
-            borrowerInitials: active?.borrowerInitials ?? null,
-            borrowedAt: active ? new Date(`${dayKey(active.start)}T00:00:00`).toISOString() : null,
-            returnBy: active?.end ?? null
-        };
     }
 
     // Item detail modal state
@@ -413,6 +406,7 @@
             case LIBRARY_TYPES.TOOL: return '🔧';
             case LIBRARY_TYPES.BOOK: return '📚';
             case LIBRARY_TYPES.EQUIPMENT: return '⚙️';
+            case LIBRARY_TYPES.ACCOMMODATION: return '🛏️';
             default: return '📦';
         }
     }
@@ -422,6 +416,7 @@
             case LIBRARY_TYPES.TOOL: return 'Tool';
             case LIBRARY_TYPES.BOOK: return 'Book';
             case LIBRARY_TYPES.EQUIPMENT: return 'Equipment';
+            case LIBRARY_TYPES.ACCOMMODATION: return 'Accommodation';
             default: return 'Other';
         }
     }
@@ -431,10 +426,12 @@
         const toolKeywords = ['hammer', 'drill', 'saw', 'screwdriver', 'wrench', 'pliers', 'shovel', 'rake', 'axe', 'knife'];
         const bookKeywords = ['book', 'manual', 'guide', 'novel', 'textbook'];
         const equipmentKeywords = ['camera', 'projector', 'speaker', 'tent', 'bicycle', 'ladder'];
+        const accommodationKeywords = ['room', 'cabin', 'apartment', 'dorm', 'bungalow', 'guesthouse'];
 
         if (toolKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.TOOL;
         if (bookKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.BOOK;
         if (equipmentKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.EQUIPMENT;
+        if (accommodationKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.ACCOMMODATION;
         return LIBRARY_TYPES.OTHER;
     }
 
@@ -528,6 +525,7 @@
     async function handleBorrow() {
         if (!borrowingItem || !selectedReturnDate || !selectedStartDate || !holonID) return;
 
+        // Fast-path UX check; core re-validates against the stored item on write.
         const conflict = findOverlappingBooking(borrowingItem, selectedStartDate, selectedReturnDate);
         if (conflict) {
             alert(
@@ -538,44 +536,46 @@
             return;
         }
 
-        // Base on the display list (which materialises a legacy single-borrow
-        // into a synthetic booking) so editing legacy data migrates it cleanly
-        // into the `bookings` array.
-        const base = getDisplayBookings(borrowingItem);
-        let updatedBookings: Booking[];
-        if (editingBookingId) {
-            updatedBookings = base.map(b =>
-                b.id === editingBookingId
-                    ? { ...b, start: selectedStartDate, end: selectedReturnDate }
-                    : b
-            );
-        } else {
-            const borrower = await resolveBorrowerIdentity();
-            updatedBookings = [...base, {
-                id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                start: selectedStartDate,
-                end: selectedReturnDate,
-                borrowerId: borrower.id,
-                borrower: borrower.displayName,
-                borrowerInitials: borrower.initials,
-                created: new Date().toISOString()
-            }];
-        }
-
-        const updatedItem = withBookings(borrowingItem, updatedBookings);
-        const previousItem = borrowingItem;
-
-        store = { ...store, [updatedItem.id]: updatedItem };
+        const item = borrowingItem;
+        const actor = await resolveBorrowerActor();
+        const { holon, key } = writeTarget(item);
+        const range = { start: selectedStartDate, end: selectedReturnDate };
 
         try {
-            await holosphere.put(holonID, "library", updatedItem);
+            const res = editingBookingId
+                ? await updateBookingDates(holosphere, holon, key, editingBookingId, range, actor)
+                : await bookItem(holosphere, holon, key, actor, range);
+
+            if (!res.ok) {
+                if (res.reason === 'overlaps' && res.conflict) {
+                    alert(
+                        `That period overlaps an existing booking by ${res.conflict.borrower || 'someone'} ` +
+                        `(${formatReturnDate(res.conflict.start)} → ${formatReturnDate(res.conflict.end)}).`
+                    );
+                } else if (res.reason === 'forbidden') {
+                    alert('Only the booking\'s borrower can change its dates.');
+                } else {
+                    alert('Could not save the booking.');
+                }
+                return;
+            }
+
+            // Credits move when a booking is created (not when rescheduled) —
+            // same rule as the bot; skipped by core when the borrower owns the
+            // item or it has no value.
+            if (!editingBookingId && res.item) {
+                await recordBorrowAccounting({ db: holosphere }, holon, actor, res.item);
+            }
+
+            const updatedItem = mergeWrittenItem(item, res.item ?? {});
+            store = { ...store, [item.id]: updatedItem };
+            if (showItemDetail && selectedItem?.id === item.id) {
+                selectedItem = updatedItem;
+            }
         } catch (err) {
             console.error("Failed to save booking", err);
-            store = { ...store, [previousItem.id]: previousItem };
-        }
-
-        if (showItemDetail && selectedItem?.id === updatedItem.id) {
-            selectedItem = updatedItem;
+            alert('Could not save the booking.');
+            return;
         }
         closeBorrowModal();
     }
@@ -583,36 +583,34 @@
     async function handleReturn(item: LibraryItem) {
         if (!holonID) return;
 
-        // Active booking (today is between start and end). Without one there
-        // is nothing to return.
-        const active = getActiveBooking(item);
-        const borrower = await resolveBorrowerIdentity();
-        const activeBorrowerId = active?.borrowerId ?? item.borrowerId;
-        const activeBorrowerName = active?.borrower ?? item.borrower;
-        const isBorrower =
-            activeBorrowerId === borrower.id ||
-            activeBorrowerName === borrower.displayName ||
-            activeBorrowerId === currentUserId ||
-            activeBorrowerName === currentUsername;
-        if (!isBorrower) {
-            alert(`Only ${activeBorrowerName || 'the borrower'} can return this item.`);
-            return;
-        }
-
-        const remainingBookings = getDisplayBookings(item).filter(b => b.id !== active?.id);
-        const updatedItem = withBookings(item, remainingBookings);
-
-        store = { ...store, [updatedItem.id]: updatedItem };
+        const actor = await resolveBorrowerActor();
+        const { holon, key } = writeTarget(item);
 
         try {
-            await holosphere.put(holonID, "library", updatedItem);
+            const res = await coreReturnItem(holosphere, holon, key, actor);
+            if (!res.ok) {
+                if (res.reason === 'forbidden') {
+                    alert(`Only ${getActiveBooking(item)?.borrower || 'the borrower'} can return this item.`);
+                } else if (res.reason === 'not_borrowed') {
+                    alert('This item is not currently borrowed.');
+                } else {
+                    alert('Could not return the item.');
+                }
+                return;
+            }
+
+            // Refund the borrow charge (skipped by core for owners/valueless items).
+            if (res.item) {
+                await recordReturnAccounting({ db: holosphere }, holon, actor, res.item);
+            }
+
+            const updatedItem = mergeWrittenItem(item, res.item ?? {});
+            store = { ...store, [item.id]: updatedItem };
+            if (showItemDetail && selectedItem?.id === item.id) {
+                selectedItem = updatedItem;
+            }
         } catch (err) {
             console.error("Failed to return item", err);
-            store = { ...store, [item.id]: item };
-        }
-
-        if (showItemDetail && selectedItem?.id === item.id) {
-            selectedItem = updatedItem;
         }
     }
 
@@ -630,20 +628,30 @@
             `(${formatReturnDate(booking.start)} → ${formatReturnDate(booking.end)})?`
         )) return;
 
-        const remainingBookings = getDisplayBookings(item).filter(b => b.id !== booking.id);
-        const updatedItem = withBookings(item, remainingBookings);
-
-        store = { ...store, [updatedItem.id]: updatedItem };
+        const actor = await resolveBorrowerActor();
+        const { holon, key } = writeTarget(item);
 
         try {
-            await holosphere.put(holonID, "library", updatedItem);
+            const res = await coreCancelBooking(holosphere, holon, key, booking.id, actor);
+            if (!res.ok) {
+                alert(res.reason === 'forbidden'
+                    ? `Only ${booking.borrower || 'the borrower'} can cancel this booking.`
+                    : 'Could not cancel the booking.');
+                return;
+            }
+
+            // Refund the charge taken when the booking was created.
+            if (res.item) {
+                await recordReturnAccounting({ db: holosphere }, holon, actor, res.item);
+            }
+
+            const updatedItem = mergeWrittenItem(item, res.item ?? {});
+            store = { ...store, [item.id]: updatedItem };
+            if (showItemDetail && selectedItem?.id === item.id) {
+                selectedItem = updatedItem;
+            }
         } catch (err) {
             console.error("Failed to cancel booking", err);
-            store = { ...store, [item.id]: item };
-        }
-
-        if (showItemDetail && selectedItem?.id === item.id) {
-            selectedItem = updatedItem;
         }
     }
 
@@ -1185,6 +1193,7 @@
                                 <option value={LIBRARY_TYPES.TOOL}>Tool</option>
                                 <option value={LIBRARY_TYPES.BOOK}>Book</option>
                                 <option value={LIBRARY_TYPES.EQUIPMENT}>Equipment</option>
+                                <option value={LIBRARY_TYPES.ACCOMMODATION}>Accommodation</option>
                             </select>
                         </div>
 

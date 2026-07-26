@@ -15,6 +15,7 @@ export {
   type HolonWriter,
 } from './write.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
+export { sourceHolonId, sourceRef } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,

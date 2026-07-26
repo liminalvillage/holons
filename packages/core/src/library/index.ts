@@ -21,7 +21,9 @@ export {
 
 export {
   addItem,
+  bookItem,
   borrowItem,
+  cancelBooking,
   computeBorrowerInitials,
   createLibraryItem,
   detectItemType,
@@ -35,11 +37,30 @@ export {
   removeItem,
   returnItem,
   setItemValue,
+  updateBookingDates,
   type AddItemResult,
+  type BookItemResult,
   type BorrowItemResult,
+  type CancelBookingResult,
   type ReturnItemResult,
-  type SetValueResult
+  type SetValueResult,
+  type UpdateBookingResult
 } from './operations.js';
+
+export {
+  actorDisplayName,
+  actorMatchesBooking,
+  dayKey,
+  findOverlappingBooking,
+  getDisplayBookings,
+  isBookingActive,
+  makeBooking,
+  toDayKey,
+  withBookings,
+  ymd,
+  type BookableItem,
+  type Booking
+} from './bookings.js';
 
 export {
   recordBorrowAccounting,

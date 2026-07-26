@@ -16,6 +16,20 @@ import {
   type LibraryItemType,
   type LibraryStats
 } from './types.js';
+import {
+  actorMatchesBooking,
+  computeBorrowerInitials,
+  findOverlappingBooking,
+  getDisplayBookings,
+  isBookingActive,
+  makeBooking,
+  toDayKey,
+  withBookings,
+  ymd,
+  type Booking
+} from './bookings.js';
+
+export { computeBorrowerInitials };
 
 const LENS = 'library';
 
@@ -33,6 +47,7 @@ const TOOL_KEYWORDS = [
 ];
 const BOOK_KEYWORDS = ['book', 'manual', 'guide', 'novel', 'textbook'];
 const EQUIPMENT_KEYWORDS = ['camera', 'projector', 'speaker', 'tent', 'bicycle', 'ladder'];
+const ACCOMMODATION_KEYWORDS = ['room', 'cabin', 'apartment', 'dorm', 'bungalow', 'guesthouse'];
 
 /** Detect a likely item category from its name. */
 export function detectItemType(itemName: string): LibraryItemType {
@@ -40,6 +55,7 @@ export function detectItemType(itemName: string): LibraryItemType {
   if (TOOL_KEYWORDS.some((k) => name.includes(k))) return LIBRARY_TYPES.TOOL;
   if (BOOK_KEYWORDS.some((k) => name.includes(k))) return LIBRARY_TYPES.BOOK;
   if (EQUIPMENT_KEYWORDS.some((k) => name.includes(k))) return LIBRARY_TYPES.EQUIPMENT;
+  if (ACCOMMODATION_KEYWORDS.some((k) => name.includes(k))) return LIBRARY_TYPES.ACCOMMODATION;
   return LIBRARY_TYPES.OTHER;
 }
 
@@ -73,6 +89,8 @@ export function getItemIcon(item: { type?: string } | string): string {
       return '📚';
     case LIBRARY_TYPES.EQUIPMENT:
       return '⚙️';
+    case LIBRARY_TYPES.ACCOMMODATION:
+      return '🛏️';
     case LIBRARY_TYPES.OTHER:
     default:
       return '📦';
@@ -88,6 +106,8 @@ export function getTypeDisplayName(type?: string): string {
       return 'book';
     case LIBRARY_TYPES.EQUIPMENT:
       return 'equipment';
+    case LIBRARY_TYPES.ACCOMMODATION:
+      return 'accommodation';
     case LIBRARY_TYPES.OTHER:
     default:
       return 'item';
@@ -98,16 +118,6 @@ export function getTypeDisplayName(type?: string): string {
 export function getItemDisplayTitle(item: { id?: string } | string): string {
   if (typeof item === 'string') return item;
   return item.id ?? '';
-}
-
-/** Compute borrower initials from first/last name with username fallback. */
-export function computeBorrowerInitials(actor: BorrowActor): string {
-  const firstInitial = actor.first_name ? actor.first_name.charAt(0).toUpperCase() : '';
-  const lastInitial = actor.last_name ? actor.last_name.charAt(0).toUpperCase() : '';
-  const initials = firstInitial + lastInitial;
-  if (initials) return initials;
-  if (actor.username) return actor.username.charAt(0).toUpperCase();
-  return '?';
 }
 
 // ============================================================================
@@ -221,18 +231,72 @@ export async function setItemValue(
   return { ok: true, item };
 }
 
+export interface BookItemResult {
+  ok: boolean;
+  item?: LibraryItem;
+  /** The booking that was created or rescheduled. */
+  booking?: Booking;
+  /** True when the borrower is the item's owner (no credit charge applies). */
+  isOwner?: boolean;
+  /** The existing booking the requested range collides with. */
+  conflict?: Booking;
+  reason?: 'not_found' | 'overlaps' | 'invalid_range';
+}
+
+/**
+ * Book an item for `borrower` over an inclusive [start, end] day range —
+ * starting today when `start` is omitted. This is THE borrow primitive: it
+ * appends to `bookings[]` (migrating a legacy single-borrow into the array on
+ * the way) after checking the range against every existing booking, then
+ * recomputes the legacy mirror fields via `withBookings`.
+ *
+ * Caller is responsible for any concurrency guarding (the bot uses an
+ * in-memory lock around its calendar picker) and any expense/REA bookkeeping
+ * (see `recordBorrowAccounting`).
+ */
+export async function bookItem(
+  db: LibraryDB,
+  holonId: string | number,
+  itemId: string,
+  borrower: BorrowActor,
+  range: { start?: Date | string; end: Date | string }
+): Promise<BookItemResult> {
+  const holon = String(holonId);
+  const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
+  if (!item) return { ok: false, reason: 'not_found' };
+
+  const start = range.start ? toDayKey(range.start) : ymd(new Date());
+  const end = toDayKey(range.end);
+  if (end < start) return { ok: false, item, reason: 'invalid_range' };
+
+  const conflict = findOverlappingBooking(item, start, end);
+  if (conflict) return { ok: false, item, conflict, reason: 'overlaps' };
+
+  const booking = makeBooking(borrower, start, end);
+  const updated = withBookings(item, [...getDisplayBookings(item), booking]);
+  await db.put(holon, LENS, updated);
+
+  return { ok: true, item: updated, booking, isOwner: updated.createdBy === borrower.id };
+}
+
 export interface BorrowItemResult {
   ok: boolean;
   item?: LibraryItem;
   /** True when the borrower is the item's owner (no credit charge applies). */
   isOwner?: boolean;
-  reason?: 'not_found' | 'already_borrowed';
+  /** The booking created for this borrow (on success). */
+  booking?: Booking;
+  /** The existing booking that blocked the borrow (on `already_borrowed`/`overlaps`). */
+  conflict?: Booking;
+  /** `already_borrowed`: conflict covers today. `overlaps`: a future reservation. */
+  reason?: 'not_found' | 'already_borrowed' | 'overlaps';
 }
 
 /**
- * Mark an item as borrowed by `borrower`. Caller is responsible for any
- * concurrency guarding (the bot uses an in-memory lock around the calendar
- * picker) and any expense/REA bookkeeping (see `recordBorrowAccounting`).
+ * Borrow an item starting today until `returnDate` — a `bookItem` wrapper
+ * kept for callers that only collect a return date (bot calendar, kiosk
+ * quick-borrow). Collisions with a booking active today report the familiar
+ * `already_borrowed`; collisions with a future reservation report `overlaps`.
  */
 export async function borrowItem(
   db: LibraryDB,
@@ -241,20 +305,21 @@ export async function borrowItem(
   borrower: BorrowActor,
   returnDate: Date | string
 ): Promise<BorrowItemResult> {
-  const holon = String(holonId);
-  const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
-  if (!item) return { ok: false, reason: 'not_found' };
-  if (item.borrowed) return { ok: false, reason: 'already_borrowed' };
-
-  item.borrowed = true;
-  item.borrower = borrower.username ?? null;
-  item.borrowerId = borrower.id;
-  item.borrowerInitials = computeBorrowerInitials(borrower);
-  item.borrowedAt = new Date();
-  item.returnBy = returnDate instanceof Date ? returnDate : new Date(returnDate);
-  await db.put(holon, LENS, item);
-
-  return { ok: true, item, isOwner: item.createdBy === borrower.id };
+  const res = await bookItem(db, holonId, itemId, borrower, { end: returnDate });
+  if (res.ok) {
+    return { ok: true, item: res.item, isOwner: res.isOwner, booking: res.booking };
+  }
+  if (res.reason === 'not_found') return { ok: false, reason: 'not_found' };
+  if (res.reason === 'overlaps' && res.conflict) {
+    return {
+      ok: false,
+      item: res.item,
+      conflict: res.conflict,
+      reason: isBookingActive(res.conflict) ? 'already_borrowed' : 'overlaps'
+    };
+  }
+  // invalid_range can only mean returnDate is before today.
+  return { ok: false, item: res.item, reason: 'already_borrowed' };
 }
 
 export interface ReturnItemResult {
@@ -265,10 +330,11 @@ export interface ReturnItemResult {
 }
 
 /**
- * Mark an item as returned by `returner`. Only the current borrower (matched
- * by id, falling back to username) may return. The current item snapshot is
- * always returned (on success and on `not_borrowed`/`forbidden`) so callers
- * can render meaningful error messages without re-fetching.
+ * End the booking that covers today. Only its borrower (matched by id,
+ * falling back to '@'-tolerant name comparison) may return. Future
+ * reservations on the same item survive the return. The current item
+ * snapshot is always returned (on success and on `not_borrowed`/`forbidden`)
+ * so callers can render meaningful error messages without re-fetching.
  */
 export async function returnItem(
   db: LibraryDB,
@@ -279,21 +345,107 @@ export async function returnItem(
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
   if (!item) return { ok: false, reason: 'not_found' };
-  if (!item.borrowed) return { ok: false, reason: 'not_borrowed', item };
 
-  const isBorrower =
-    item.borrowerId === returner.id || (returner.username && item.borrower === returner.username);
-  if (!isBorrower) return { ok: false, reason: 'forbidden', item };
+  const bookings = getDisplayBookings(item);
+  const active = bookings.find((b) => isBookingActive(b)) ?? null;
+  if (!active) return { ok: false, reason: 'not_borrowed', item };
+  if (!actorMatchesBooking(active, returner)) return { ok: false, reason: 'forbidden', item };
 
   const isOwner = item.createdBy === returner.id;
 
-  // Snapshot pre-clear values (value, createdBy) survive untouched, so the
-  // caller can hand the returned item straight to accounting helpers.
-  item.borrowed = false;
-  item.borrower = null;
-  item.borrowerId = null;
-  item.returnedAt = new Date();
-  await db.put(holon, LENS, item);
+  // Snapshot values (value, createdBy) survive untouched, so the caller can
+  // hand the returned item straight to accounting helpers.
+  const updated = withBookings(
+    item,
+    bookings.filter((b) => b.id !== active.id)
+  );
+  updated.returnedAt = new Date().toISOString();
+  await db.put(holon, LENS, updated);
 
-  return { ok: true, item, isOwner };
+  return { ok: true, item: updated, isOwner };
+}
+
+export interface CancelBookingResult {
+  ok: boolean;
+  item?: LibraryItem;
+  booking?: Booking;
+  reason?: 'not_found' | 'no_such_booking' | 'forbidden';
+}
+
+/**
+ * Remove a booking (typically a future reservation) by id. Only its borrower
+ * may cancel. Cancelling the booking that covers today is equivalent to a
+ * return — callers wanting refund bookkeeping use `recordReturnAccounting`
+ * either way.
+ */
+export async function cancelBooking(
+  db: LibraryDB,
+  holonId: string | number,
+  itemId: string,
+  bookingId: string,
+  actor: BorrowActor
+): Promise<CancelBookingResult> {
+  const holon = String(holonId);
+  const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
+  if (!item) return { ok: false, reason: 'not_found' };
+
+  const bookings = getDisplayBookings(item);
+  const booking = bookings.find((b) => b.id === bookingId) ?? null;
+  if (!booking) return { ok: false, item, reason: 'no_such_booking' };
+  if (!actorMatchesBooking(booking, actor)) return { ok: false, item, reason: 'forbidden' };
+
+  const updated = withBookings(
+    item,
+    bookings.filter((b) => b.id !== booking.id)
+  );
+  await db.put(holon, LENS, updated);
+
+  return { ok: true, item: updated, booking };
+}
+
+export interface UpdateBookingResult {
+  ok: boolean;
+  item?: LibraryItem;
+  booking?: Booking;
+  conflict?: Booking;
+  reason?: 'not_found' | 'no_such_booking' | 'forbidden' | 'overlaps' | 'invalid_range';
+}
+
+/**
+ * Reschedule an existing booking to a new inclusive [start, end] range. Only
+ * its borrower may edit; the new range is checked against every *other*
+ * booking on the item.
+ */
+export async function updateBookingDates(
+  db: LibraryDB,
+  holonId: string | number,
+  itemId: string,
+  bookingId: string,
+  range: { start: Date | string; end: Date | string },
+  actor: BorrowActor
+): Promise<UpdateBookingResult> {
+  const holon = String(holonId);
+  const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
+  if (!item) return { ok: false, reason: 'not_found' };
+
+  const bookings = getDisplayBookings(item);
+  const existing = bookings.find((b) => b.id === bookingId) ?? null;
+  if (!existing) return { ok: false, item, reason: 'no_such_booking' };
+  if (!actorMatchesBooking(existing, actor)) return { ok: false, item, reason: 'forbidden' };
+
+  const start = toDayKey(range.start);
+  const end = toDayKey(range.end);
+  if (end < start) return { ok: false, item, reason: 'invalid_range' };
+
+  const conflict = findOverlappingBooking(item, start, end, bookingId);
+  if (conflict) return { ok: false, item, conflict, reason: 'overlaps' };
+
+  const booking: Booking = { ...existing, start, end };
+  const updated = withBookings(
+    item,
+    bookings.map((b) => (b.id === bookingId ? booking : b))
+  );
+  await db.put(holon, LENS, updated);
+
+  return { ok: true, item: updated, booking };
 }

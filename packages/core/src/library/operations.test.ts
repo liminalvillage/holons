@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   addItem,
+  bookItem,
   borrowItem,
+  cancelBooking,
   computeBorrowerInitials,
   createLibraryItem,
   detectItemType,
@@ -14,8 +16,10 @@ import {
   listItems,
   removeItem,
   returnItem,
-  setItemValue
+  setItemValue,
+  updateBookingDates
 } from './operations.js';
+import { getDisplayBookings, ymd } from './bookings.js';
 import { LIBRARY_TYPES, type LibraryDB, type LibraryItem } from './types.js';
 
 function mockDb(initial: Record<string, LibraryItem> = {}): {
@@ -41,10 +45,11 @@ function mockDb(initial: Record<string, LibraryItem> = {}): {
 }
 
 describe('detectItemType', () => {
-  it('detects tools, books, equipment, and falls back to other', () => {
+  it('detects tools, books, equipment, accommodation, and falls back to other', () => {
     expect(detectItemType('hammer')).toBe(LIBRARY_TYPES.TOOL);
     expect(detectItemType('A guide to bees')).toBe(LIBRARY_TYPES.BOOK);
     expect(detectItemType('Camera tripod')).toBe(LIBRARY_TYPES.EQUIPMENT);
+    expect(detectItemType('Guest room upstairs')).toBe(LIBRARY_TYPES.ACCOMMODATION);
     expect(detectItemType('thingamajig')).toBe(LIBRARY_TYPES.OTHER);
   });
 });
@@ -82,11 +87,13 @@ describe('getItemIcon / getTypeDisplayName / getItemDisplayTitle', () => {
     expect(getItemIcon({ type: LIBRARY_TYPES.TOOL })).toBe('🔧');
     expect(getItemIcon({ type: LIBRARY_TYPES.BOOK })).toBe('📚');
     expect(getItemIcon({ type: LIBRARY_TYPES.EQUIPMENT })).toBe('⚙️');
+    expect(getItemIcon({ type: LIBRARY_TYPES.ACCOMMODATION })).toBe('🛏️');
     expect(getItemIcon({ type: LIBRARY_TYPES.OTHER })).toBe('📦');
     expect(getItemIcon('legacy-string')).toBe('📦');
   });
   it('maps types to display names', () => {
     expect(getTypeDisplayName(LIBRARY_TYPES.TOOL)).toBe('tool');
+    expect(getTypeDisplayName(LIBRARY_TYPES.ACCOMMODATION)).toBe('accommodation');
     expect(getTypeDisplayName(undefined)).toBe('item');
   });
   it('handles legacy string items', () => {
@@ -220,5 +227,170 @@ describe('borrowItem / returnItem', () => {
     const r = await borrowItem(db, 'h', 'missing', { id: 1 }, new Date());
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('not_found');
+  });
+
+  it('writes a booking, tolerates @-prefixed / renamed returners, and keeps future reservations', async () => {
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10 });
+    const { db } = mockDb({ drill: item });
+
+    const taken = await borrowItem(db, 'h', 'drill', { id: 20, username: 'bob' }, '2099-01-01');
+    expect(taken.item?.bookings).toHaveLength(1);
+    expect(taken.item?.bookings?.[0]).toMatchObject({
+      start: ymd(new Date()),
+      end: '2099-01-01',
+      borrowerId: '20',
+      borrower: 'bob'
+    });
+
+    // A reservation after the borrow window is allowed and doesn't flip the mirror.
+    const reserved = await bookItem(
+      db,
+      'h',
+      'drill',
+      { id: 30, username: 'eve' },
+      { start: '2099-02-01', end: '2099-02-05' }
+    );
+    expect(reserved.ok).toBe(true);
+    expect(reserved.item?.bookings).toHaveLength(2);
+    expect(reserved.item?.borrower).toBe('bob'); // mirror still shows today's borrower
+
+    // Return by the same person under a web-style '@' handle succeeds and
+    // leaves eve's future reservation in place.
+    const returned = await returnItem(db, 'h', 'drill', { id: 999, username: '@Bob' });
+    expect(returned.ok).toBe(true);
+    expect(returned.item?.borrowed).toBe(false);
+    expect(returned.item?.bookings).toHaveLength(1);
+    expect(returned.item?.bookings?.[0].borrower).toBe('eve');
+  });
+
+  it('blocks a borrow that collides with a future reservation (reason overlaps)', async () => {
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10 });
+    const { db } = mockDb({ drill: item });
+
+    const reserved = await bookItem(
+      db,
+      'h',
+      'drill',
+      { id: 30, username: 'eve' },
+      { start: '2099-02-01', end: '2099-02-05' }
+    );
+    expect(reserved.ok).toBe(true);
+
+    const clash = await borrowItem(db, 'h', 'drill', { id: 20, username: 'bob' }, '2099-03-01');
+    expect(clash.ok).toBe(false);
+    expect(clash.reason).toBe('overlaps');
+    expect(clash.conflict?.borrower).toBe('eve');
+  });
+
+  it('migrates a legacy single-borrow into the bookings array on return', async () => {
+    const legacy = {
+      ...createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10 }),
+      borrowed: true,
+      borrower: 'bob',
+      borrowerId: 20,
+      borrowedAt: new Date().toISOString(),
+      returnBy: '2099-01-01'
+    };
+    const { db } = mockDb({ drill: legacy });
+
+    const blocked = await bookItem(db, 'h', 'drill', { id: 30 }, { end: '2099-01-01' });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.reason).toBe('overlaps');
+
+    const returned = await returnItem(db, 'h', 'drill', { id: 20, username: 'bob' });
+    expect(returned.ok).toBe(true);
+    expect(returned.item?.bookings).toEqual([]);
+    expect(returned.item?.borrowed).toBe(false);
+  });
+});
+
+describe('bookItem validation', () => {
+  it('rejects inverted ranges and missing items', async () => {
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, {});
+    const { db } = mockDb({ drill: item });
+    const bad = await bookItem(
+      db,
+      'h',
+      'drill',
+      { id: 1 },
+      { start: '2099-02-05', end: '2099-02-01' }
+    );
+    expect(bad.ok).toBe(false);
+    expect(bad.reason).toBe('invalid_range');
+
+    const missing = await bookItem(db, 'h', 'nope', { id: 1 }, { end: '2099-02-01' });
+    expect(missing.reason).toBe('not_found');
+  });
+});
+
+describe('cancelBooking / updateBookingDates', () => {
+  async function seed() {
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10 });
+    const { db } = mockDb({ drill: item });
+    const r = await bookItem(
+      db,
+      'h',
+      'drill',
+      { id: 30, username: 'eve' },
+      { start: '2099-02-01', end: '2099-02-05' }
+    );
+    return { db, bookingId: r.booking!.id };
+  }
+
+  it('only the booking borrower may cancel; cancel removes the booking', async () => {
+    const { db, bookingId } = await seed();
+
+    const stranger = await cancelBooking(db, 'h', 'drill', bookingId, { id: 99 });
+    expect(stranger.ok).toBe(false);
+    expect(stranger.reason).toBe('forbidden');
+
+    const gone = await cancelBooking(db, 'h', 'drill', bookingId, { id: 30 });
+    expect(gone.ok).toBe(true);
+    expect(getDisplayBookings(gone.item!)).toHaveLength(0);
+
+    const again = await cancelBooking(db, 'h', 'drill', bookingId, { id: 30 });
+    expect(again.reason).toBe('no_such_booking');
+  });
+
+  it('reschedules with overlap checking against other bookings only', async () => {
+    const { db, bookingId } = await seed();
+    await bookItem(db, 'h', 'drill', { id: 20, username: 'bob' }, {
+      start: '2099-03-01',
+      end: '2099-03-05'
+    });
+
+    // Sliding within its own old range is fine (self excluded from the check).
+    const slid = await updateBookingDates(
+      db,
+      'h',
+      'drill',
+      bookingId,
+      { start: '2099-02-03', end: '2099-02-10' },
+      { id: 30 }
+    );
+    expect(slid.ok).toBe(true);
+    expect(slid.booking).toMatchObject({ start: '2099-02-03', end: '2099-02-10' });
+
+    const clash = await updateBookingDates(
+      db,
+      'h',
+      'drill',
+      bookingId,
+      { start: '2099-02-03', end: '2099-03-02' },
+      { id: 30 }
+    );
+    expect(clash.ok).toBe(false);
+    expect(clash.reason).toBe('overlaps');
+    expect(clash.conflict?.borrower).toBe('bob');
+
+    const stranger = await updateBookingDates(
+      db,
+      'h',
+      'drill',
+      bookingId,
+      { start: '2099-02-03', end: '2099-02-04' },
+      { id: 99 }
+    );
+    expect(stranger.reason).toBe('forbidden');
   });
 });
