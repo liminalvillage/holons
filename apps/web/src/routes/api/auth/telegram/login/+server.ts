@@ -27,6 +27,14 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
   cookies.set("tg_oidc_verifier", verifier, opts);
   cookies.set("tg_oidc_state", state, opts);
 
+  // Remember where login started so the callback can send the user back
+  // (e.g. a deep link into a holon). Only same-origin relative paths — a
+  // leading "/" but not "//" (protocol-relative) — to avoid open redirects.
+  const returnTo = url.searchParams.get("returnTo");
+  if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+    cookies.set("tg_oidc_return", returnTo, opts);
+  }
+
   const redirectUri = `${url.origin}/api/auth/telegram/callback`;
   const authUrl = buildAuthorizationUrl({
     clientId: cfg.clientId,

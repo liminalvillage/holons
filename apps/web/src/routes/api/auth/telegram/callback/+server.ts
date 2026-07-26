@@ -24,10 +24,12 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
   const oauthError = url.searchParams.get("error");
   const savedState = cookies.get("tg_oidc_state");
   const verifier = cookies.get("tg_oidc_verifier");
+  const savedReturnTo = cookies.get("tg_oidc_return");
 
   // One-shot: clear the transient cookies regardless of outcome.
   cookies.delete("tg_oidc_state", { path: "/" });
   cookies.delete("tg_oidc_verifier", { path: "/" });
+  cookies.delete("tg_oidc_return", { path: "/" });
 
   if (oauthError) {
     error(401, `Telegram login error: ${oauthError}`);
@@ -83,5 +85,14 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     sessionCookieOptions(url.protocol === "https:"),
   );
 
-  redirect(303, "/");
+  // Back to where login started (deep link into a holon), if we recorded one.
+  // Re-validate: cookies are client-writable, so only same-origin relative
+  // paths ("/..." but not "//...") are honored.
+  const returnTo =
+    savedReturnTo &&
+    savedReturnTo.startsWith("/") &&
+    !savedReturnTo.startsWith("//")
+      ? savedReturnTo
+      : "/";
+  redirect(303, returnTo);
 };

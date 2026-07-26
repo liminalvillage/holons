@@ -157,10 +157,15 @@ function createTelegramStore() {
 
     // Start the Telegram OIDC login: a full-page redirect to our /login
     // endpoint, which bounces to Telegram and back to /callback. The callback
-    // sets the session cookie and redirects home, where init() picks it up.
+    // sets the session cookie and redirects back to where login started (via
+    // returnTo), where init() picks it up.
     login: () => {
       if (!browser) return;
-      window.location.href = "/api/auth/telegram/login";
+      const returnTo =
+        window.location.pathname +
+        window.location.search +
+        window.location.hash;
+      window.location.href = `/api/auth/telegram/login?returnTo=${encodeURIComponent(returnTo)}`;
     },
 
     logout: async () => {
