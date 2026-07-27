@@ -8,6 +8,7 @@
   import { glide } from "$lib/glide";
   import Avatars from "$lib/components/Avatars.svelte";
   import { telegramUser } from "$lib/auth";
+  import { sameId } from "$lib/personal";
   import type { BacklogTask } from "$lib/data";
 
   export let tasks: BacklogTask[];
@@ -26,7 +27,7 @@
 
   $: uid = $telegramUser?.id;
   function amAppreciating(t: BacklogTask): boolean {
-    return uid != null && t.appreciatedBy.includes(uid);
+    return t.appreciatedBy.some((id) => sameId(id, uid));
   }
   function onKey(e: KeyboardEvent, id: string) {
     if (e.key === "Enter" || e.key === " ") {

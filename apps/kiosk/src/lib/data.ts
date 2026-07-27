@@ -242,6 +242,29 @@ function idsOf(arr: unknown): (string | number)[] {
     .filter((id): id is string | number => id != null);
 }
 
+/**
+ * Human label for a due date relative to `now`: "today" / "tomorrow" /
+ * "yesterday", day counts inside a week, else a short date. Compares calendar
+ * days, not 24h spans, so 23:59 → 00:01 still reads "tomorrow".
+ */
+export function dueLabelFor(
+  due: Date | null | undefined,
+  now: Date,
+): string | null {
+  if (!due) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(due);
+  day.setHours(0, 0, 0, 0);
+  const days = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  if (days < 0) return `${-days}d ago`;
+  if (days < 7) return `in ${days}d`;
+  return due.toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
 /** Dated, still-open quests → calendar events, soonest first. */
 export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
   const out: CalendarEvent[] = [];
@@ -348,6 +371,10 @@ export interface LibraryThing {
   type: string;
   available: boolean;
   borrower?: string | null;
+  /** Who has it out (Telegram id), for the "my things" filter. */
+  borrowerId?: number | string | null;
+  /** When the current borrow is due back, when known. */
+  returnBy?: Date | null;
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
@@ -398,6 +425,8 @@ export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
       type: String(it.type ?? "other"),
       available: !it.borrowed,
       borrower: it.borrower ?? null,
+      borrowerId: it.borrowerId ?? null,
+      returnBy: parseWhen(it.returnBy),
       source: sourceLabel(it, names),
       sourceColor: sourceGlow(it),
     }))
@@ -411,6 +440,51 @@ export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
       if (a.available !== b.available) return a.available ? -1 : 1;
       return a.title.localeCompare(b.title);
     });
+}
+
+/**
+ * Tap-to-filter suggestions for the search dropdown: every distinct category
+ * and every person currently visible on the board. People are gathered from
+ * event/task participants, task initiators, role holders, and library
+ * borrowers, deduped case-insensitively (first spelling wins) so "Anna" from a
+ * task and "anna" from a role collapse into one chip.
+ */
+export interface SearchSuggestions {
+  categories: string[];
+  people: string[];
+}
+
+export function toSuggestions(
+  events: CalendarEvent[],
+  backlog: BacklogTask[],
+  roles: RoleCard[],
+  things: LibraryThing[],
+): SearchSuggestions {
+  const categories = [
+    ...new Set(
+      [...events, ...backlog]
+        .map((c) => c.category)
+        .filter((c): c is string => !!c && c.length > 0),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const people = new Map<string, string>();
+  const addPerson = (name: string | null | undefined) => {
+    const n = name?.trim();
+    if (n && !people.has(n.toLowerCase())) people.set(n.toLowerCase(), n);
+  };
+  for (const e of events) e.people.forEach((p) => addPerson(p.name));
+  for (const t of backlog) {
+    t.people.forEach((p) => addPerson(p.name));
+    addPerson(t.initiator?.name);
+  }
+  for (const r of roles) r.people.forEach((p) => addPerson(p.name));
+  for (const t of things) addPerson(t.borrower);
+
+  return {
+    categories,
+    people: [...people.values()].sort((a, b) => a.localeCompare(b)),
+  };
 }
 
 /** Text fields the kiosk search bar matches against, across every view model. */

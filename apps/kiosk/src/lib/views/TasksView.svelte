@@ -28,6 +28,7 @@
     toggleJoin,
   } from "$lib/membership";
   import {
+    dueLabelFor,
     noteColor,
     noteTilt,
     noteRiseDelay,
@@ -35,6 +36,7 @@
     sourceRef,
     type BacklogTask,
   } from "$lib/data";
+  import { personalTasks, sameId } from "$lib/personal";
   import {
     createTask,
     deleteTaskWithCascade,
@@ -52,12 +54,17 @@
   let scrollEl: HTMLElement | undefined;
   onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
 
-  // ── View mode: swipe deck (one card) / compact list / post-it wall ────────
+  // ── View mode: swipe deck / compact list / post-it wall / personal list ───
   const MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
-    { id: "swipe", glyph: "▢", label: "Card" },
+    { id: "swipe", glyph: "❏", label: "Deck" },
     { id: "list", glyph: "☰", label: "List" },
-    { id: "cards", glyph: "▦", label: "Cards" },
+    { id: "cards", glyph: "▦", label: "Wall" },
+    { id: "personal", glyph: "", label: "My tasks" },
   ];
+  // The personal segment needs someone to be personal about; hidden logged out.
+  // A persisted "personal" mode still renders (with a log-in prompt) rather
+  // than clobbering the saved choice before auth has resolved.
+  $: modes = $telegramUser ? MODES : MODES.filter((m) => m.id !== "personal");
   let switchEl: HTMLElement | undefined;
 
   function setMode(m: TaskViewMode) {
@@ -69,9 +76,9 @@
   async function onSwitchKey(e: KeyboardEvent) {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    const step = e.key === "ArrowRight" ? 1 : MODES.length - 1;
-    const i = MODES.findIndex((m) => m.id === get(taskViewMode));
-    setMode(MODES[(i + step) % MODES.length].id);
+    const step = e.key === "ArrowRight" ? 1 : modes.length - 1;
+    const i = modes.findIndex((m) => m.id === get(taskViewMode));
+    setMode(modes[(i + step) % modes.length].id);
     await tick();
     switchEl
       ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
@@ -92,7 +99,7 @@
   // Does the logged-in user currently appreciate this task?
   $: appreciatorId = $telegramUser?.id;
   function amAppreciating(task: BacklogTask): boolean {
-    return appreciatorId != null && task.appreciatedBy.includes(appreciatorId);
+    return task.appreciatedBy.some((id) => sameId(id, appreciatorId));
   }
 
   // Appreciating is exclusive of participating (core's participate-XOR-appreciate
@@ -101,8 +108,7 @@
   function wouldDropParticipation(task: BacklogTask): boolean {
     return (
       !amAppreciating(task) &&
-      appreciatorId != null &&
-      task.people.some((p) => p.id === appreciatorId)
+      task.people.some((p) => sameId(p.id, appreciatorId))
     );
   }
 
@@ -165,18 +171,7 @@
   }
 
   function dueLabel(t: BacklogTask): string | null {
-    if (!t.due) return null;
-    const today = new Date($now);
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(t.due);
-    due.setHours(0, 0, 0, 0);
-    const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-    if (days === 0) return "today";
-    if (days === 1) return "tomorrow";
-    if (days === -1) return "yesterday";
-    if (days < 0) return `${-days}d ago`;
-    if (days < 7) return `in ${days}d`;
-    return t.due.toLocaleDateString([], { day: "numeric", month: "short" });
+    return dueLabelFor(t.due, $now);
   }
 
   // ── Drag-to-reorder ───────────────────────────────────────────────────────-
@@ -197,6 +192,8 @@
   $: orderedTasks = order
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
+  // The personal slice: same order as the wall/list, narrowed to the user.
+  $: mine = personalTasks(orderedTasks, $telegramUser?.id);
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -644,7 +641,7 @@
     aria-label="Task view layout"
     bind:this={switchEl}
   >
-    {#each MODES as m (m.id)}
+    {#each modes as m (m.id)}
       <button
         role="radio"
         aria-checked={$taskViewMode === m.id}
@@ -655,21 +652,31 @@
         aria-label="{m.label} view"
         title="{m.label} view"
       >
-        {m.glyph}
+        {#if m.id === "personal"}
+          <svg class="picon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z"
+            />
+          </svg>
+        {:else}
+          {m.glyph}
+        {/if}
       </button>
     {/each}
   </div>
 
   {#if $taskViewMode === "swipe"}
-    <TaskSwipeView
-      tasks={orderedTasks}
-      colorFor={noteColorFor}
-      {dueLabel}
-      onOpen={openTask}
-      onJoin={onSwipeJoin}
-      onLike={onSwipeLike}
-      onRevert={onSwipeRevert}
-    />
+    <div class="deckwrap">
+      <TaskSwipeView
+        tasks={orderedTasks}
+        colorFor={noteColorFor}
+        {dueLabel}
+        onOpen={openTask}
+        onJoin={onSwipeJoin}
+        onLike={onSwipeLike}
+        onRevert={onSwipeRevert}
+      />
+    </div>
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
       {#if $taskViewMode === "list"}
@@ -685,6 +692,29 @@
           onRowPointerDown={onPointerDown}
           dragId={drag?.id ?? null}
         />
+      {:else if $taskViewMode === "personal"}
+        <!-- The user's own slice, in wall order. No drag-to-reorder: this is a
+             filtered subset, so a reorder here would scramble the full wall. -->
+        {#if !$telegramUser}
+          <p class="empty">Log in to see the tasks you're part of ✶</p>
+        {:else if mine.length}
+          <TaskListView
+            tasks={mine}
+            colorFor={noteColorFor}
+            {dueLabel}
+            {completing}
+            onOpen={openTask}
+            {onComplete}
+            {onDelete}
+            onToggleAppreciate={toggleAppr}
+            onRowPointerDown={() => {}}
+            dragId={null}
+          />
+        {:else}
+          <p class="empty">
+            Nothing with your name on it yet — swipe right on a task to join ✶
+          </p>
+        {/if}
       {:else if orderedTasks.length}
         <div class="wall">
           {#each orderedTasks as task (task.id)}
@@ -962,15 +992,19 @@
   .tasks {
     flex: 1;
     min-height: 0;
-    padding: 1.3rem 1.4rem 1.6rem;
+    /* Room for the floating mode pill overlaying the top of the board. */
+    padding: 4.4rem 1.4rem 1.6rem;
   }
 
-  /* Wall / list / swipe segmented control. */
+  /* Wall / list / swipe segmented control, floating over the content so the
+     board scrolls beneath it (same as the Library and Roles views). */
   .viewswitch {
+    position: absolute;
+    top: 0.9rem;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    align-self: center;
     gap: 0.15rem;
-    margin: 0.7rem 0 0;
     padding: 0.25rem;
     background: var(--card);
     border: 1.5px solid var(--line);
@@ -996,17 +1030,34 @@
     background: var(--teal);
     color: #fff;
   }
+  .picon {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: currentColor;
+  }
   .viewswitch button:active {
     transform: scale(0.92);
+  }
+
+  /* The swipe deck mounts outside .tasks — clear the floating pill for it. */
+  .deckwrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: 3.9rem;
   }
 
   /* Phone widths: tighter gutters so the wall/list/deck get the room. */
   @media (max-width: 560px) {
     .tasks {
-      padding: 0.8rem 0.7rem 1.2rem;
+      padding: 4rem 0.7rem 1.2rem;
+    }
+    .deckwrap {
+      padding-top: 3.6rem;
     }
     .viewswitch {
-      margin-top: 0.5rem;
+      top: 0.5rem;
     }
   }
 

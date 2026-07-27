@@ -15,6 +15,8 @@
     resolveAccent,
     resolveThemeMode,
     resolveTaskView,
+    resolveLibraryView,
+    resolveRolesView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
   import { get } from "svelte/store";
@@ -34,6 +36,8 @@
     rolesPref,
     statusEnabled,
     taskViewMode,
+    libraryViewMode,
+    rolesViewMode,
     boardReady,
     settingsOpen,
     userMenuOpen,
@@ -268,6 +272,8 @@
     rolesPref.set(resolveRolesPref());
     statusEnabled.set(resolveStatusEnabled());
     taskViewMode.set(resolveTaskView());
+    libraryViewMode.set(resolveLibraryView());
+    rolesViewMode.set(resolveRolesView());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());

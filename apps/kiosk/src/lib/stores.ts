@@ -13,9 +13,11 @@ import {
   toBacklog,
   toThings,
   toRoles,
+  toSuggestions,
   filterBySearch,
   categoryColorMap,
 } from "./data";
+import type { SearchSuggestions } from "./data";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
@@ -24,6 +26,8 @@ import {
   setPinnedTab,
   resolvePinnedTab,
   type TaskViewMode,
+  type LibraryViewMode,
+  type RolesViewMode,
   type TabPref,
 } from "./config";
 
@@ -89,6 +93,12 @@ export const settingsOpen = writable<boolean>(false);
  * per device via config; initialized in `+layout.svelte`.
  */
 export const taskViewMode = writable<TaskViewMode>("cards");
+
+/** Library layout: card grid / compact list / the user's borrowed things. */
+export const libraryViewMode = writable<LibraryViewMode>("cards");
+
+/** Roles layout: today cards / week grid / the user's own roles. */
+export const rolesViewMode = writable<RolesViewMode>("cards");
 
 /**
  * Task ids the swipe deck has dealt with this session — skipped, joined, or
@@ -160,6 +170,18 @@ export const things = derived(
 export const roleCards = derived(
   [rawRoles, partnerNames, searchQuery],
   ([$r, $n, $query]) => filterBySearch(toRoles($r, $n), $query),
+);
+// Tap-to-filter chips for the search dropdown, derived from the *unfiltered*
+// view models so the list stays stable while a query narrows the boards.
+export const searchSuggestions: Readable<SearchSuggestions> = derived(
+  [rawQuests, rawLibrary, rawRoles, partnerNames],
+  ([$q, $l, $r, $n]) =>
+    toSuggestions(
+      toEvents($q, $n),
+      toBacklog($q, $n),
+      toRoles($r, $n),
+      toThings($l, $n),
+    ),
 );
 
 /**

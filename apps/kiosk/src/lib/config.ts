@@ -35,6 +35,8 @@ const THEME_KEY = "kiosk_theme";
 const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
 const GEO_KEY = "kiosk_geo";
 const TASK_VIEW_KEY = "kiosk_task_view";
+const LIBRARY_VIEW_KEY = "kiosk_library_view";
+const ROLES_VIEW_KEY = "kiosk_roles_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
 
 /** The kiosk's default accent (teal). */
@@ -301,11 +303,12 @@ export function setThemeMode(mode: ThemeMode): void {
 }
 
 /**
- * How the Tasks view lays out the backlog: the post-it wall, a compact list, or
- * a one-card-at-a-time swipe deck. Anyone can switch it from the view's
- * segmented control; the choice sticks per device.
+ * How the Tasks view lays out the backlog: the post-it wall, a compact list, a
+ * one-card-at-a-time swipe deck, or the logged-in user's personal slice.
+ * Anyone can switch it from the view's segmented control; the choice sticks
+ * per device.
  */
-export type TaskViewMode = "cards" | "list" | "swipe";
+export type TaskViewMode = "cards" | "list" | "swipe" | "personal";
 
 /** Below this width the kiosk is a phone, not a wall display (matches TabBar). */
 const MOBILE_MAX_WIDTH_PX = 560;
@@ -328,7 +331,8 @@ export function isPhoneDisplay(): boolean {
  */
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe") return v;
+  if (v === "cards" || v === "list" || v === "swipe" || v === "personal")
+    return v;
   const mobile =
     typeof window !== "undefined" &&
     window.matchMedia?.(`(max-width: ${MOBILE_MAX_WIDTH_PX}px)`).matches;
@@ -338,6 +342,44 @@ export function resolveTaskView(): TaskViewMode {
 /** Persist the Tasks view mode. */
 export function setTaskView(mode: TaskViewMode): void {
   persist(TASK_VIEW_KEY, mode);
+}
+
+/**
+ * How the Library view lays out the things: the icon card grid, a compact
+ * list, or just what the logged-in user has out. Same segmented control as
+ * the Tasks view; the choice sticks per device.
+ */
+export type LibraryViewMode = "cards" | "list" | "personal";
+
+/** Resolve the Library view mode; the card grid is the default. */
+export function resolveLibraryView(): LibraryViewMode {
+  const v = persisted(LIBRARY_VIEW_KEY);
+  if (v === "cards" || v === "list" || v === "personal") return v;
+  return "cards";
+}
+
+/** Persist the Library view mode. */
+export function setLibraryView(mode: LibraryViewMode): void {
+  persist(LIBRARY_VIEW_KEY, mode);
+}
+
+/**
+ * How the Roles board lays out the roles: today-holder cards, the Mon→Sun
+ * week grid, or the logged-in user's own roles (the week grid, filtered).
+ * Same segmented control as the other views; the choice sticks per device.
+ */
+export type RolesViewMode = "cards" | "week" | "personal";
+
+/** Resolve the Roles view mode; the cards are the default. */
+export function resolveRolesView(): RolesViewMode {
+  const v = persisted(ROLES_VIEW_KEY);
+  if (v === "cards" || v === "week" || v === "personal") return v;
+  return "cards";
+}
+
+/** Persist the Roles view mode. */
+export function setRolesView(mode: RolesViewMode): void {
+  persist(ROLES_VIEW_KEY, mode);
 }
 
 /**

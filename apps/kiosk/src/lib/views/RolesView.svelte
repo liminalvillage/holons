@@ -9,9 +9,19 @@
   // it every day. All scheduling meaning lives in @holons/core/roles (wire-shapes
   // shared with the dashboard); this view only reads and writes.
   import { get } from "svelte/store";
-  import { roleCards, rawRoles, holonId, now, showNotice } from "$lib/stores";
+  import { tick } from "svelte";
+  import {
+    roleCards,
+    rawRoles,
+    holonId,
+    now,
+    showNotice,
+    rolesViewMode,
+  } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
+  import { setRolesView, type RolesViewMode } from "$lib/config";
+  import { sameId } from "$lib/personal";
   import { noteColor, noteTilt, noteRiseDelay, type RoleCard } from "$lib/data";
   import {
     avatarUrl,
@@ -40,8 +50,36 @@
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
-  type ViewMode = "cards" | "week";
-  let viewMode: ViewMode = "cards";
+  // ── View mode: today cards / week grid / my roles (week grid, filtered) ───
+  // Same segmented pill as the Tasks and Library views.
+  const MODES: { id: RolesViewMode; glyph: string; label: string }[] = [
+    { id: "cards", glyph: "▦", label: "Cards" },
+    { id: "week", glyph: "▤", label: "Week" },
+    { id: "personal", glyph: "", label: "My roles" },
+  ];
+  // Roles are personal; the segment hides logged out. A persisted "personal"
+  // mode still renders (with a log-in prompt) rather than clobbering the
+  // saved choice before auth has resolved.
+  $: modes = $telegramUser ? MODES : MODES.filter((m) => m.id !== "personal");
+  let switchEl: HTMLElement | undefined;
+
+  function setMode(m: RolesViewMode) {
+    rolesViewMode.set(m);
+    setRolesView(m);
+  }
+
+  // Roving focus for the radiogroup: ←/→ move selection and keep focus on it.
+  async function onSwitchKey(e: KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = e.key === "ArrowRight" ? 1 : modes.length - 1;
+    const i = modes.findIndex((m) => m.id === get(rolesViewMode));
+    setMode(modes[(i + step) % modes.length].id);
+    await tick();
+    switchEl
+      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+      ?.focus();
+  }
 
   // Source records keyed for writes; the cards list is display-only.
   $: byId = new Map($rawRoles.map((r) => [String(r.id ?? r.title), r]));
@@ -79,6 +117,20 @@
     base.setDate(base.getDate() + delta * 7);
     weekKey = weekKeyOf(base);
   }
+
+  // "My roles": fixed holder, holding a day of the shown week, or listed as a
+  // participant. Depends on `days` so navigating weeks re-filters.
+  $: mineCards = $roleCards.filter((c) => {
+    if (myId == null) return false;
+    const raw = byId.get(c.id);
+    if (!raw) return false;
+    return (
+      isPermanentHolder(raw, myId) ||
+      days.some((d) => isHolderOnDate(raw, d, myId)) ||
+      c.people.some((p) => sameId(p.id, myId))
+    );
+  });
+  $: shownCards = $rolesViewMode === "personal" ? mineCards : $roleCards;
   function goToday() {
     weekKey = weekKeyOf(todayCell);
   }
@@ -290,23 +342,38 @@
 </script>
 
 <div class="board">
-  <div class="topbar">
-    <div class="seg" role="tablist" aria-label="Roles view">
+  <div
+    class="viewswitch"
+    role="radiogroup"
+    aria-label="Roles view layout"
+    bind:this={switchEl}
+  >
+    {#each modes as m (m.id)}
       <button
-        class:on={viewMode === "cards"}
-        role="tab"
-        aria-selected={viewMode === "cards"}
-        on:click={() => (viewMode = "cards")}>Cards</button
+        role="radio"
+        aria-checked={$rolesViewMode === m.id}
+        class:active={$rolesViewMode === m.id}
+        tabindex={$rolesViewMode === m.id ? 0 : -1}
+        on:click={() => setMode(m.id)}
+        on:keydown={onSwitchKey}
+        aria-label="{m.label} view"
+        title="{m.label} view"
       >
-      <button
-        class:on={viewMode === "week"}
-        role="tab"
-        aria-selected={viewMode === "week"}
-        on:click={() => (viewMode = "week")}>Week</button
-      >
-    </div>
+        {#if m.id === "personal"}
+          <svg class="picon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z"
+            />
+          </svg>
+        {:else}
+          {m.glyph}
+        {/if}
+      </button>
+    {/each}
+  </div>
 
-    {#if viewMode === "week"}
+  {#if $rolesViewMode !== "cards"}
+    <div class="weekbar">
       <div class="weeknav">
         <button
           class="navbtn"
@@ -323,13 +390,19 @@
           <button class="todaybtn" on:click={goToday}>Today</button>
         {/if}
       </div>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
-  <div class="scrollarea scroll">
-    {#if !$roleCards.length}
-      <p class="empty">No roles yet. ✪</p>
-    {:else if viewMode === "cards"}
+  <div class="scrollarea scroll" class:clear={$rolesViewMode === "cards"}>
+    {#if $rolesViewMode === "personal" && !$telegramUser}
+      <p class="empty">Log in to see your roles ✶</p>
+    {:else if !shownCards.length}
+      <p class="empty">
+        {$rolesViewMode === "personal"
+          ? "No roles with your name on them yet — take a day ✪"
+          : "No roles yet. ✪"}
+      </p>
+    {:else if $rolesViewMode === "cards"}
       <!-- ── Cards: today's holder per role ─────────────────────────────── -->
       <div class="wall">
         {#each $roleCards as card (card.id)}
@@ -434,7 +507,7 @@
         {/each}
       </div>
 
-      {#each $roleCards as card (card.id)}
+      {#each shownCards as card (card.id)}
         {@const raw = byId.get(card.id)}
         {#if raw}
           {@const fixed = hasPermanent(raw)}
@@ -589,37 +662,55 @@
     flex-direction: column;
   }
 
-  /* View switcher + week nav */
-  .topbar {
-    flex: 0 0 auto;
+  /* Same segmented pill as the other views' mode switch, floating over the
+     content so the board scrolls beneath it. */
+  .viewswitch {
+    position: absolute;
+    top: 0.9rem;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.7rem 1rem;
-    padding: 1rem 1.4rem 0.2rem;
-  }
-  .seg {
-    display: inline-flex;
-    background: var(--paper-deep);
-    border-radius: 999px;
-    padding: 0.2rem;
     gap: 0.15rem;
-  }
-  .seg button {
-    min-height: 2.2rem;
-    padding: 0 1.1rem;
+    padding: 0.25rem;
+    background: var(--card);
+    border: 1.5px solid var(--line);
     border-radius: 999px;
-    font-size: 0.88rem;
-    font-weight: 700;
+    box-shadow: var(--shadow-soft);
+    z-index: 5;
+  }
+  .viewswitch button {
+    width: 3rem;
+    height: 2.6rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
     color: var(--ink-soft);
+    touch-action: manipulation;
     transition:
       background 0.15s ease,
-      color 0.15s ease;
+      color 0.15s ease,
+      transform 0.1s ease;
   }
-  .seg button.on {
-    background: var(--card);
-    color: var(--teal-deep);
-    box-shadow: var(--shadow-soft);
+  .viewswitch button.active {
+    background: var(--teal);
+    color: #fff;
+  }
+  .viewswitch button:active {
+    transform: scale(0.94);
+  }
+  .picon {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: currentColor;
+  }
+
+  /* Week navigation, centred under the floating pill. */
+  .weekbar {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: 4.2rem 1.4rem 0;
   }
   .weeknav {
     display: inline-flex;
@@ -659,6 +750,10 @@
     min-height: 0;
     min-width: 0;
     padding: 0.9rem 1.4rem 1.6rem;
+  }
+  /* Cards mode has no week bar, so the scroll area itself clears the pill. */
+  .scrollarea.clear {
+    padding-top: 4.4rem;
   }
 
   /* ── Cards ─────────────────────────────────────────────────────────────── */

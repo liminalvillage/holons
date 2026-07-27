@@ -7,9 +7,11 @@
   // A swipe never *undoes* anything — already-joined/liked cards no-op through.
   import Avatars from "$lib/components/Avatars.svelte";
   import Confetti from "$lib/components/Confetti.svelte";
+  import { get } from "svelte/store";
   import { telegramUser, loginOpen } from "$lib/auth";
   import { swipeDismissed, showNotice, taskViewMode } from "$lib/stores";
   import { setTaskView } from "$lib/config";
+  import { sameId } from "$lib/personal";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import {
@@ -36,10 +38,10 @@
 
   $: uid = $telegramUser?.id;
   function participating(t: BacklogTask): boolean {
-    return uid != null && t.people.some((p) => p.id === uid);
+    return t.people.some((p) => sameId(p.id, uid));
   }
   function appreciating(t: BacklogTask): boolean {
-    return uid != null && t.appreciatedBy.includes(uid);
+    return t.appreciatedBy.some((id) => sameId(id, uid));
   }
 
   // ── Deck state ─────────────────────────────────────────────────────────────
@@ -199,41 +201,57 @@
 
     if (dir === "left") {
       offerUndo(task, "skip");
-      return;
-    }
-    if (dir === "right") {
+    } else if (dir === "right") {
       if (participating(task)) {
         showNotice("Already in ✓");
-        return;
-      }
-      const res = await onJoin(task);
-      if (res === "joined") {
-        sessionJoins += 1;
-        party();
-        offerUndo(task, "join");
-      } else if (res === "already") {
-        showNotice("Already in ✓");
       } else {
-        unDismiss(task.id);
-        showNotice("Couldn't join — try again.");
+        const res = await onJoin(task);
+        if (res === "joined") {
+          sessionJoins += 1;
+          party();
+          offerUndo(task, "join");
+        } else if (res === "already") {
+          showNotice("Already in ✓");
+        } else {
+          unDismiss(task.id);
+          showNotice("Couldn't join — try again.");
+        }
       }
     } else {
       if (appreciating(task)) {
         showNotice("Already appreciated ♥");
-        return;
-      }
-      const res = await onLike(task);
-      if (res === "liked") {
-        sessionLikes += 1;
-        pop();
-        offerUndo(task, "like");
-      } else if (res === "already") {
-        showNotice("Already appreciated ♥");
       } else {
-        unDismiss(task.id);
-        showNotice("Couldn't save that ♥ — try again.");
+        const res = await onLike(task);
+        if (res === "liked") {
+          sessionLikes += 1;
+          pop();
+          offerUndo(task, "like");
+        } else if (res === "already") {
+          showNotice("Already appreciated ♥");
+        } else {
+          unDismiss(task.id);
+          showNotice("Couldn't save that ♥ — try again.");
+        }
       }
     }
+    maybeHandoff();
+  }
+
+  // A gesture just emptied the deck → flip the Tasks view to "My tasks": the
+  // swiper's own list is the natural landing after triaging everything.
+  // Recomputed from the stores (a failed write above un-dismissed its card, so
+  // the deck reads non-empty and this no-ops). Deliberately NOT reactive on
+  // the empty-deck state: a remount with an exhausted deck must show the
+  // "All caught up" screen, not bounce away and strand "Start over". Logged
+  // out there is no personal slice, so the end screen stays. The final
+  // swipe's Undo chip is forfeited by the mode switch — the unmount would
+  // have discarded it anyway.
+  function maybeHandoff() {
+    if (deckTasks(tasks, get(swipeDismissed)).length > 0) return;
+    if (!get(telegramUser)) return;
+    // Session-only (not persisted like the segmented control): an automatic
+    // hop must not silently become the device's saved default.
+    setTimeout(() => taskViewMode.set("personal"), 450); // let the fly-off finish
   }
 
   function party() {
