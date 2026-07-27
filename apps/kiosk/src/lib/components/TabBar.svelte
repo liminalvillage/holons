@@ -11,6 +11,8 @@
     brandLogo,
     userMenuOpen,
     searchQuery,
+    searchSuggestions,
+    categoryColors,
     now,
     rotating,
     autoRotates,
@@ -53,6 +55,26 @@
     selectTab(id);
   }
 
+  // Search suggestions: focusing the field opens a dropdown of tappable
+  // category and people chips. Chip taps preventDefault on pointerdown so the
+  // input never blurs (blur is what closes the panel — tapping anywhere else
+  // dismisses it). A chip that already IS the query clears it (toggle).
+  let searchFocused = false;
+  let searchInput: HTMLInputElement;
+  $: suggestOpen =
+    searchFocused &&
+    ($searchSuggestions.categories.length > 0 ||
+      $searchSuggestions.people.length > 0);
+  // When the kiosk goes idle the chrome hides — release focus so the panel
+  // doesn't linger and the field re-opens cleanly on the next tap.
+  $: if ($idle && searchInput) searchInput.blur();
+
+  function applySuggestion(term: string) {
+    searchQuery.set(
+      $searchQuery.trim().toLowerCase() === term.toLowerCase() ? "" : term,
+    );
+  }
+
   $: timeLabel = $now.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -79,7 +101,12 @@
 <!-- The whole header retreats when no one's touching the screen, so the board
      stands alone; any interaction (handled at the window level) brings it back.
      `aria-hidden` while idle keeps it out of the accessibility tree too. -->
-<header class="bar" class:idle={$idle} aria-hidden={$idle}>
+<header
+  class="bar"
+  class:idle={$idle}
+  class:suggest-open={suggestOpen}
+  aria-hidden={$idle}
+>
   <div class="top">
     <div class="brand">
       {#if $brandLogo}
@@ -110,6 +137,9 @@
         autocapitalize="off"
         spellcheck="false"
         bind:value={$searchQuery}
+        bind:this={searchInput}
+        on:focus={() => (searchFocused = true)}
+        on:blur={() => (searchFocused = false)}
       />
       {#if $searchQuery}
         <button
@@ -118,6 +148,54 @@
           on:click={() => searchQuery.set("")}
           aria-label="Clear search">&times;</button
         >
+      {/if}
+
+      {#if suggestOpen}
+        <div class="suggest" role="listbox" aria-label="Search suggestions">
+          {#if $searchSuggestions.categories.length}
+            <div class="suggest__group">Categories</div>
+            <div class="suggest__chips">
+              {#each $searchSuggestions.categories as cat (cat)}
+                <button
+                  type="button"
+                  class="chip"
+                  role="option"
+                  aria-selected={$searchQuery.trim().toLowerCase() ===
+                    cat.toLowerCase()}
+                  class:on={$searchQuery.trim().toLowerCase() ===
+                    cat.toLowerCase()}
+                  style="--dot: {$categoryColors.get(cat) ?? 'var(--line)'}"
+                  on:pointerdown|preventDefault
+                  on:click={() => applySuggestion(cat)}
+                >
+                  <span class="chip__dot"></span>{cat}
+                </button>
+              {/each}
+            </div>
+          {/if}
+          {#if $searchSuggestions.people.length}
+            <div class="suggest__group">People</div>
+            <div class="suggest__chips">
+              {#each $searchSuggestions.people as person (person)}
+                <button
+                  type="button"
+                  class="chip"
+                  role="option"
+                  aria-selected={$searchQuery.trim().toLowerCase() ===
+                    person.toLowerCase()}
+                  class:on={$searchQuery.trim().toLowerCase() ===
+                    person.toLowerCase()}
+                  on:pointerdown|preventDefault
+                  on:click={() => applySuggestion(person)}
+                >
+                  <span class="chip__face"
+                    >{person.replace(/^@/, "")[0]?.toUpperCase() ?? "·"}</span
+                  >{person}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
       {/if}
     </div>
 
@@ -235,6 +313,12 @@
     padding-bottom: 0;
     pointer-events: none;
   }
+  /* The bar clips (overflow hidden) so it can collapse when idle; while the
+     suggestion panel is open it must be allowed to hang below the header.
+     Going idle blurs the field first, so the collapse always clips again. */
+  .bar.suggest-open {
+    overflow: visible;
+  }
 
   .top {
     display: flex;
@@ -322,6 +406,84 @@
   }
   .search__clear:active {
     transform: scale(0.9);
+  }
+
+  /* Suggestion dropdown: category + people chips, tappable at kiosk sizes. */
+  .suggest {
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    box-shadow:
+      var(--shadow-soft),
+      0 12px 32px rgba(0, 0, 0, 0.14);
+    padding: 0.55rem 0.7rem 0.7rem;
+    max-height: min(46vh, 20rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .suggest__group {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0.45rem 0.15rem 0.35rem;
+  }
+  .suggest__group:first-child {
+    margin-top: 0.1rem;
+  }
+  .suggest__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    padding: 0.34rem 0.75rem 0.34rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.88rem;
+    font-weight: 600;
+    font-family: inherit;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+  .chip:active {
+    transform: scale(0.95);
+  }
+  .chip.on {
+    border-color: var(--teal);
+    background: color-mix(in srgb, var(--teal) 14%, var(--card));
+    color: var(--teal-deep);
+  }
+  .chip__dot {
+    width: 0.62rem;
+    height: 0.62rem;
+    border-radius: 50%;
+    background: var(--dot, var(--line));
+    flex: 0 0 auto;
+  }
+  .chip__face {
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--teal);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    flex: 0 0 auto;
   }
   .account {
     display: inline-flex;
