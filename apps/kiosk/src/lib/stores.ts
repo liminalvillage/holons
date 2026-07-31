@@ -17,7 +17,7 @@ import {
   filterBySearch,
   categoryColorMap,
 } from "./data";
-import type { SearchSuggestions } from "./data";
+import type { SearchSuggestions, TaskSort } from "./data";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
@@ -25,11 +25,13 @@ import {
   isPhoneDisplay,
   setPinnedTab,
   resolvePinnedTab,
+  type Scope,
   type TaskViewMode,
   type LibraryViewMode,
   type RolesViewMode,
   type TabPref,
 } from "./config";
+import { scopeLocal } from "./scope";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -46,11 +48,21 @@ export const brandLogo = writable<string>("");
 export const accent = writable<string>("#0e6b66");
 
 /**
- * When on, the kiosk aggregates this holon together with its federation
- * partners so every tab shows the combined picture. Re-points the live
- * subscriptions in `+layout.svelte`.
+ * Whose items the views show — the "Show" pill, shared by every view:
+ * `personal` (only the logged-in user's), `all` (this holon), or `networked`
+ * (this holon plus its federation partners). Persisted per device; hydrated
+ * in `+layout.svelte`.
  */
-export const federated = writable<boolean>(false);
+export const scope = writable<Scope>("all");
+
+/**
+ * Whether federation partners are folded into the live subscriptions —
+ * exactly "scope is networked". Derived so `+layout.svelte`'s subscription
+ * re-pointing keeps working untouched; the derived stores below additionally
+ * drop already-received partner records the moment the scope narrows (the
+ * subscription's own purge is async).
+ */
+export const federated = derived(scope, ($s) => $s === "networked");
 
 /**
  * Caretaker preference for the Library tab (persisted in config). `auto` — the
@@ -94,6 +106,12 @@ export const settingsOpen = writable<boolean>(false);
  */
 export const taskViewMode = writable<TaskViewMode>("cards");
 
+/**
+ * How the Tasks backlog is ranked (the Sort pill): loved / new / manual.
+ * Persisted per device via config; initialized in `+layout.svelte`.
+ */
+export const taskSort = writable<TaskSort>("loved");
+
 /** Library layout: card grid / compact list / the user's borrowed things. */
 export const libraryViewMode = writable<LibraryViewMode>("cards");
 
@@ -126,7 +144,7 @@ export function showNotice(text: string, ms = 3500): void {
   }, ms);
 }
 
-/** Whether the user menu (account / federated / dashboard / settings) is open. */
+/** Whether the user menu (account / dashboard / settings) is open. */
 export const userMenuOpen = writable<boolean>(false);
 
 export const rawQuests = writable<Quest[]>([]);
@@ -149,38 +167,45 @@ export const lensEmitAt: Record<"quests" | "library" | "roles", number> = {
   roles: 0,
 };
 
+// Scope narrows the raw records first (dropping partner copies outside the
+// networked scope, keeping holograms), then search filters the view models.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery],
-  ([$q, $n, $query]) => filterBySearch(toEvents($q, $n), $query),
+  [rawQuests, partnerNames, searchQuery, scope],
+  ([$q, $n, $query, $s]) =>
+    filterBySearch(toEvents(scopeLocal($q, $s), $n), $query),
 );
 export const backlog = derived(
-  [rawQuests, partnerNames, searchQuery],
-  ([$q, $n, $query]) => filterBySearch(toBacklog($q, $n), $query),
+  [rawQuests, partnerNames, searchQuery, scope, taskSort],
+  ([$q, $n, $query, $s, $sort]) =>
+    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort), $query),
 );
 // One palette slot per distinct category, derived from *all* quests (not a
-// search-filtered subset) so a category keeps the same colour across the
-// calendar and the task wall, and doesn't shift as the search narrows.
+// search- or scope-filtered subset) so a category keeps the same colour across
+// the calendar and the task wall, and doesn't shift as the filters narrow.
 export const categoryColors = derived(rawQuests, ($q) =>
   categoryColorMap($q.map((x) => x.category)),
 );
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery],
-  ([$l, $n, $query]) => filterBySearch(toThings($l, $n), $query),
+  [rawLibrary, partnerNames, searchQuery, scope],
+  ([$l, $n, $query, $s]) =>
+    filterBySearch(toThings(scopeLocal($l, $s), $n), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery],
-  ([$r, $n, $query]) => filterBySearch(toRoles($r, $n), $query),
+  [rawRoles, partnerNames, searchQuery, scope],
+  ([$r, $n, $query, $s]) =>
+    filterBySearch(toRoles(scopeLocal($r, $s), $n), $query),
 );
-// Tap-to-filter chips for the search dropdown, derived from the *unfiltered*
-// view models so the list stays stable while a query narrows the boards.
+// Tap-to-filter chips for the search dropdown, derived from the *unqueried*
+// view models so the list stays stable while a query narrows the boards —
+// but scope-filtered, so local scopes don't suggest partner people/categories.
 export const searchSuggestions: Readable<SearchSuggestions> = derived(
-  [rawQuests, rawLibrary, rawRoles, partnerNames],
-  ([$q, $l, $r, $n]) =>
+  [rawQuests, rawLibrary, rawRoles, partnerNames, scope],
+  ([$q, $l, $r, $n, $s]) =>
     toSuggestions(
-      toEvents($q, $n),
-      toBacklog($q, $n),
-      toRoles($r, $n),
-      toThings($l, $n),
+      toEvents(scopeLocal($q, $s), $n),
+      toBacklog(scopeLocal($q, $s), $n),
+      toRoles(scopeLocal($r, $s), $n),
+      toThings(scopeLocal($l, $s), $n),
     ),
 );
 

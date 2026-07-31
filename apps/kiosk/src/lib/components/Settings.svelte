@@ -2,8 +2,8 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   // Caretaker settings for the kiosk: choose which holon the screen shows, set a
   // display name, logo, and accent colour. Everything is persisted (see
-  // config.ts) and applied reactively — no reload needed. (Federated toggle and
-  // the dashboard link live in the user menu.)
+  // config.ts) and applied reactively — no reload needed. (The dashboard link
+  // lives in the user menu; federated visibility is each view's Show pill.)
   import {
     holonId,
     holonName,

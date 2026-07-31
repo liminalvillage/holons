@@ -21,15 +21,17 @@ the few knobs that matter.
   re-implements no domain rules of its own (core owns meaning).
 - **Live data:** subscribes to the holon's `quests` lens (calendar events + task
   backlog) and `library` lens.
-- **Federated view:** a header toggle (available from every tab) folds in the
-  holon's federation partners — resolved from `@holons/core/federation`'s
-  `getFederationSnapshot` — so each tab can show the combined picture. Items
-  from a partner carry a small `⇄ <partner>` source chip.
+- **Show & Layout pills:** every content tab carries a **Show** pill choosing
+  whose items appear — **Mine** (only the logged-in user's), **All** (this
+  holon), or **Network** (this holon plus its federation partners, resolved
+  from `@holons/core/federation`'s `getFederationSnapshot`; partner items
+  carry a small `⇄ <partner>` source chip) — and, where a tab has more than
+  one layout, a separate **Layout** pill (e.g. Tasks: cards / list /
+  post-its). Both choices are remembered on the device.
 - **Settings:** the ⚙ button opens a panel to choose which holon the screen
   shows, set a **display name** and **logo** for the header (logo uploaded and
-  stored on the device), flip the federated toggle, and jump to the full
-  dashboard. Choices are remembered on the device; the live subscriptions
-  re-point without a reload.
+  stored on the device), and jump to the full dashboard. Choices are
+  remembered on the device; the live subscriptions re-point without a reload.
 - **Production by default:** the entrance display reads the production `Holons`
   namespace from the production Gun relay — independent of the shared dev
   `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.

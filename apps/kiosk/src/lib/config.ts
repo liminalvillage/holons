@@ -17,6 +17,7 @@
 // URL survives reloads and power-cycles of the entrance display.
 
 import { holonForHost, holonForPath } from "./holons";
+import type { TaskSort } from "./data";
 
 /** Production Gun relay the entrance display reads from by default. */
 export const PRODUCTION_PEER = "https://gun.holons.io/gun";
@@ -35,6 +36,7 @@ const THEME_KEY = "kiosk_theme";
 const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
 const GEO_KEY = "kiosk_geo";
 const TASK_VIEW_KEY = "kiosk_task_view";
+const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
@@ -139,14 +141,56 @@ export function setHolonId(id: string): void {
   persist(HOLON_KEY, id.trim());
 }
 
-/** Whether the kiosk aggregates this holon's federation partners. */
-export function resolveFederated(): boolean {
-  return persisted(FEDERATED_KEY) === "1";
+/**
+ * Whose items every content view shows — the "Show" pill:
+ * `personal` (only items involving the logged-in user), `all` (everything in
+ * this holon), or `networked` (this holon plus its federation partners).
+ * One device-wide choice shared by every view.
+ */
+export type Scope = "personal" | "all" | "networked";
+
+const SCOPE_KEY = "kiosk_scope";
+
+/**
+ * Derive the scope from what's on disk, honouring pre-scope-pill devices.
+ * Priority: an explicit `kiosk_scope` wins; else a legacy per-view "personal"
+ * mode (the deliberate phone-in-hand choice — migrating it to all/networked
+ * would suddenly show everyone's items); else the legacy federated toggle;
+ * else `all`. Pure so the matrix is testable.
+ */
+export function scopeFromLegacy(v: {
+  scope: string | null;
+  federated: string | null;
+  taskView: string | null;
+  libraryView: string | null;
+  rolesView: string | null;
+}): Scope {
+  if (v.scope === "personal" || v.scope === "all" || v.scope === "networked")
+    return v.scope;
+  if (
+    v.taskView === "personal" ||
+    v.libraryView === "personal" ||
+    v.rolesView === "personal"
+  )
+    return "personal";
+  if (v.federated === "1") return "networked";
+  return "all";
 }
 
-/** Persist the federated-view toggle. */
-export function setFederated(on: boolean): void {
-  persist(FEDERATED_KEY, on ? "1" : "0");
+/** Resolve the persisted scope (re-mapping legacy keys on every load). */
+export function resolveScope(): Scope {
+  return scopeFromLegacy({
+    scope: persisted(SCOPE_KEY),
+    federated: persisted(FEDERATED_KEY),
+    taskView: persisted(TASK_VIEW_KEY),
+    libraryView: persisted(LIBRARY_VIEW_KEY),
+    rolesView: persisted(ROLES_VIEW_KEY),
+  });
+}
+
+/** Persist the scope chosen from a view's Show pill. */
+export function setScope(scope: Scope): void {
+  persist(SCOPE_KEY, scope);
 }
 
 /**
@@ -303,12 +347,12 @@ export function setThemeMode(mode: ThemeMode): void {
 }
 
 /**
- * How the Tasks view lays out the backlog: the post-it wall, a compact list, a
- * one-card-at-a-time swipe deck, or the logged-in user's personal slice.
- * Anyone can switch it from the view's segmented control; the choice sticks
- * per device.
+ * How the Tasks view lays out the backlog: the post-it wall, a compact list,
+ * or a one-card-at-a-time swipe deck. Anyone can switch it from the view's
+ * Layout pill; the choice sticks per device. Whose tasks appear is the
+ * orthogonal `Scope` above.
  */
-export type TaskViewMode = "cards" | "list" | "swipe" | "personal";
+export type TaskViewMode = "cards" | "list" | "swipe";
 
 /** Below this width the kiosk is a phone, not a wall display (matches TabBar). */
 const MOBILE_MAX_WIDTH_PX = 560;
@@ -331,8 +375,9 @@ export function isPhoneDisplay(): boolean {
  */
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe" || v === "personal")
-    return v;
+  if (v === "cards" || v === "list" || v === "swipe") return v;
+  // Legacy "personal" mode rendered the list; the me-filter lives in the scope now.
+  if (v === "personal") return "list";
   const mobile =
     typeof window !== "undefined" &&
     window.matchMedia?.(`(max-width: ${MOBILE_MAX_WIDTH_PX}px)`).matches;
@@ -344,17 +389,30 @@ export function setTaskView(mode: TaskViewMode): void {
   persist(TASK_VIEW_KEY, mode);
 }
 
-/**
- * How the Library view lays out the things: the icon card grid, a compact
- * list, or just what the logged-in user has out. Same segmented control as
- * the Tasks view; the choice sticks per device.
- */
-export type LibraryViewMode = "cards" | "list" | "personal";
+/** The Tasks backlog ordering (the Sort pill); `loved` unless chosen. */
+export function resolveTaskSort(): TaskSort {
+  const v = persisted(TASK_SORT_KEY);
+  return v === "new" || v === "manual" ? v : "loved";
+}
 
-/** Resolve the Library view mode; the card grid is the default. */
+/** Persist the Tasks backlog ordering. */
+export function setTaskSort(sort: TaskSort): void {
+  persist(TASK_SORT_KEY, sort);
+}
+
+/**
+ * How the Library view lays out the things: the icon card grid or a compact
+ * list. Same Layout pill as the Tasks view; the choice sticks per device.
+ * `swipe` is the one-at-a-time Card pager (id matches the Tasks deck's).
+ */
+export type LibraryViewMode = "cards" | "list" | "swipe";
+
+/** Resolve the Library view mode; the card grid (wall) is the default. */
 export function resolveLibraryView(): LibraryViewMode {
   const v = persisted(LIBRARY_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "personal") return v;
+  if (v === "cards" || v === "list" || v === "swipe") return v;
+  // Legacy "personal" mode rendered the compact rows — closest is the list.
+  if (v === "personal") return "list";
   return "cards";
 }
 
@@ -364,16 +422,18 @@ export function setLibraryView(mode: LibraryViewMode): void {
 }
 
 /**
- * How the Roles board lays out the roles: today-holder cards, the Mon→Sun
- * week grid, or the logged-in user's own roles (the week grid, filtered).
- * Same segmented control as the other views; the choice sticks per device.
+ * How the Roles board lays out the roles: compact rows, today-holder cards
+ * (wall) or the Mon→Sun week grid. Same Layout pill as the other views; the
+ * choice sticks per device.
  */
-export type RolesViewMode = "cards" | "week" | "personal";
+export type RolesViewMode = "cards" | "list" | "week";
 
 /** Resolve the Roles view mode; the cards are the default. */
 export function resolveRolesView(): RolesViewMode {
   const v = persisted(ROLES_VIEW_KEY);
-  if (v === "cards" || v === "week" || v === "personal") return v;
+  if (v === "cards" || v === "list" || v === "week") return v;
+  // Legacy "personal" mode rendered the filtered week grid.
+  if (v === "personal") return "week";
   return "cards";
 }
 

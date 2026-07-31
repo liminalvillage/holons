@@ -9,7 +9,6 @@
   // it every day. All scheduling meaning lives in @holons/core/roles (wire-shapes
   // shared with the dashboard); this view only reads and writes.
   import { get } from "svelte/store";
-  import { tick } from "svelte";
   import {
     roleCards,
     rawRoles,
@@ -17,6 +16,7 @@
     now,
     showNotice,
     rolesViewMode,
+    scope,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
@@ -48,37 +48,23 @@
     type ScheduledUser,
   } from "@holons/core/roles";
   import Modal from "$lib/components/Modal.svelte";
+  import PillBar from "$lib/components/PillBar.svelte";
+  import { LAYOUT_SEGMENTS } from "$lib/pills";
+  import PillSwitch from "$lib/components/PillSwitch.svelte";
+  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
-  // ── View mode: today cards / week grid / my roles (week grid, filtered) ───
-  // Same segmented pill as the Tasks and Library views.
+  // ── Layout: compact rows / today cards (wall) / week grid. Whose roles
+  // show is the orthogonal Show pill (scope) — see ScopePill.
   const MODES: { id: RolesViewMode; glyph: string; label: string }[] = [
-    { id: "cards", glyph: "▦", label: "Cards" },
-    { id: "week", glyph: "▤", label: "Week" },
-    { id: "personal", glyph: "", label: "My roles" },
+    { id: "list", ...LAYOUT_SEGMENTS.list },
+    { id: "cards", ...LAYOUT_SEGMENTS.wall },
+    { id: "week", ...LAYOUT_SEGMENTS.week },
   ];
-  // Roles are personal; the segment hides logged out. A persisted "personal"
-  // mode still renders (with a log-in prompt) rather than clobbering the
-  // saved choice before auth has resolved.
-  $: modes = $telegramUser ? MODES : MODES.filter((m) => m.id !== "personal");
-  let switchEl: HTMLElement | undefined;
 
-  function setMode(m: RolesViewMode) {
-    rolesViewMode.set(m);
-    setRolesView(m);
-  }
-
-  // Roving focus for the radiogroup: ←/→ move selection and keep focus on it.
-  async function onSwitchKey(e: KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    const step = e.key === "ArrowRight" ? 1 : modes.length - 1;
-    const i = modes.findIndex((m) => m.id === get(rolesViewMode));
-    setMode(modes[(i + step) % modes.length].id);
-    await tick();
-    switchEl
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
-      ?.focus();
+  function setMode(m: string) {
+    rolesViewMode.set(m as RolesViewMode);
+    setRolesView(m as RolesViewMode);
   }
 
   // Source records keyed for writes; the cards list is display-only.
@@ -130,7 +116,8 @@
       c.people.some((p) => sameId(p.id, myId))
     );
   });
-  $: shownCards = $rolesViewMode === "personal" ? mineCards : $roleCards;
+  // Under the Mine scope the week nav still applies: "my roles this week".
+  $: shownCards = $scope === "personal" ? mineCards : $roleCards;
   function goToday() {
     weekKey = weekKeyOf(todayCell);
   }
@@ -342,37 +329,19 @@
 </script>
 
 <div class="board">
-  <div
-    class="viewswitch"
-    role="radiogroup"
-    aria-label="Roles view layout"
-    bind:this={switchEl}
-  >
-    {#each modes as m (m.id)}
-      <button
-        role="radio"
-        aria-checked={$rolesViewMode === m.id}
-        class:active={$rolesViewMode === m.id}
-        tabindex={$rolesViewMode === m.id ? 0 : -1}
-        on:click={() => setMode(m.id)}
-        on:keydown={onSwitchKey}
-        aria-label="{m.label} view"
-        title="{m.label} view"
-      >
-        {#if m.id === "personal"}
-          <svg class="picon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z"
-            />
-          </svg>
-        {:else}
-          {m.glyph}
-        {/if}
-      </button>
-    {/each}
-  </div>
+  <PillBar>
+    <ScopePill />
+    <PillSwitch
+      options={MODES}
+      value={$rolesViewMode}
+      onChange={setMode}
+      icon="eye"
+      title="View"
+      label="Roles layout"
+    />
+  </PillBar>
 
-  {#if $rolesViewMode !== "cards"}
+  {#if $rolesViewMode === "week"}
     <div class="weekbar">
       <div class="weeknav">
         <button
@@ -393,19 +362,101 @@
     </div>
   {/if}
 
-  <div class="scrollarea scroll" class:clear={$rolesViewMode === "cards"}>
-    {#if $rolesViewMode === "personal" && !$telegramUser}
+  <div class="scrollarea scroll" class:clear={$rolesViewMode !== "week"}>
+    {#if $scope === "personal" && !$telegramUser}
       <p class="empty">Log in to see your roles ✶</p>
     {:else if !shownCards.length}
       <p class="empty">
-        {$rolesViewMode === "personal"
+        {$scope === "personal"
           ? "No roles with your name on them yet — take a day ✪"
           : "No roles yet. ✪"}
       </p>
+    {:else if $rolesViewMode === "list"}
+      <!-- ── List: compact rows, today's holder at a glance ─────────────── -->
+      <ul class="rows">
+        {#each shownCards as card (card.id)}
+          {@const raw = byId.get(card.id)}
+          {#if raw}
+            {@const fixed = hasPermanent(raw)}
+            {@const holder = todayHolder(raw, todayCell)}
+            {@const mineToday =
+              myId != null && isHolderOnDate(raw, todayCell, myId)}
+            {@const iFixed = myId != null && isPermanentHolder(raw, myId)}
+            <li>
+              <div
+                class="rrow"
+                class:is-foreign={!!card.sourceColor}
+                style="--glow: {card.sourceColor ?? 'transparent'};"
+              >
+                <span
+                  class="dot"
+                  style="background: {noteColor(card.title)};"
+                  aria-hidden="true"
+                ></span>
+                <div class="rtext">
+                  <h3>{card.title}</h3>
+                  {#if card.description}
+                    <p class="rdesc">{card.description}</p>
+                  {/if}
+                </div>
+                <span class="rholder">
+                  {#if holder}
+                    <span class="hav">
+                      <span class="hini"
+                        >{avatarInitial(holderName(holder))}</span
+                      >
+                      <img
+                        src={avatarUrl(holder.id ?? "")}
+                        alt=""
+                        loading="lazy"
+                        on:error={hideImg}
+                        on:load={showImg}
+                      />
+                    </span>
+                    <span class="hname">{holderName(holder).split(" ")[0]}</span
+                    >
+                    {#if fixed}<span class="lock" title="Fixed role">🔒</span
+                      >{/if}
+                  {:else}
+                    <span class="open">Open</span>
+                  {/if}
+                </span>
+                {#if fixed}
+                  {#if iFixed}
+                    <button
+                      class="take in"
+                      on:click={() => releaseFixed(card, raw)}
+                      disabled={busy === `fix:${card.id}`}
+                      title="Release this fixed role">Release</button
+                    >
+                  {/if}
+                {:else}
+                  <button
+                    class="take"
+                    class:in={mineToday}
+                    on:click={() => takeDay(card, raw, todayCell, card.id)}
+                    disabled={busy === card.id}
+                    aria-pressed={mineToday}
+                    >{mineToday ? "✓ Drop" : "Take today"}</button
+                  >
+                {/if}
+                {#if $isLoggedIn}
+                  <button
+                    class="tool rowtool"
+                    on:click={() => openEdit(card)}
+                    aria-label="Edit role"
+                    title="Edit">✎</button
+                  >
+                {/if}
+              </div>
+            </li>
+          {/if}
+        {/each}
+      </ul>
     {:else if $rolesViewMode === "cards"}
       <!-- ── Cards: today's holder per role ─────────────────────────────── -->
       <div class="wall">
-        {#each $roleCards as card (card.id)}
+        {#each shownCards as card (card.id)}
           {@const raw = byId.get(card.id)}
           {#if raw}
             {@const fixed = hasPermanent(raw)}
@@ -662,55 +713,12 @@
     flex-direction: column;
   }
 
-  /* Same segmented pill as the other views' mode switch, floating over the
-     content so the board scrolls beneath it. */
-  .viewswitch {
-    position: absolute;
-    top: 0.9rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 0.15rem;
-    padding: 0.25rem;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    border-radius: 999px;
-    box-shadow: var(--shadow-soft);
-    z-index: 5;
-  }
-  .viewswitch button {
-    width: 3rem;
-    height: 2.6rem;
-    border-radius: 999px;
-    display: grid;
-    place-items: center;
-    font-size: 1.1rem;
-    color: var(--ink-soft);
-    touch-action: manipulation;
-    transition:
-      background 0.15s ease,
-      color 0.15s ease,
-      transform 0.1s ease;
-  }
-  .viewswitch button.active {
-    background: var(--teal);
-    color: #fff;
-  }
-  .viewswitch button:active {
-    transform: scale(0.94);
-  }
-  .picon {
-    width: 1.15rem;
-    height: 1.15rem;
-    fill: currentColor;
-  }
-
-  /* Week navigation, centred under the floating pill. */
+  /* Week navigation, centred under the pill band. */
   .weekbar {
     flex: 0 0 auto;
     display: flex;
     justify-content: center;
-    padding: 4.2rem 1.4rem 0;
+    padding: 0.3rem 1.4rem 0;
   }
   .weeknav {
     display: inline-flex;
@@ -751,9 +759,9 @@
     min-width: 0;
     padding: 0.9rem 1.4rem 1.6rem;
   }
-  /* Cards mode has no week bar, so the scroll area itself clears the pill. */
+  /* Cards mode has no week bar — a hint of air below the pill band. */
   .scrollarea.clear {
-    padding-top: 4.4rem;
+    padding-top: 0.5rem;
   }
 
   /* ── Cards ─────────────────────────────────────────────────────────────── */
@@ -812,6 +820,71 @@
     transform: scale(0.88);
     background: var(--teal);
     color: #fff;
+  }
+
+  /* ── List rows (compact layout) ─────────────────────────────────────── */
+  .rows {
+    list-style: none;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 52rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    animation: kiosk-rise 0.42s ease both;
+  }
+  .rrow {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.65rem 0.8rem;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow-soft);
+  }
+  .rrow.is-foreign {
+    border-left: 4px solid var(--glow);
+  }
+  .dot {
+    flex: 0 0 auto;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+  }
+  .rtext {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .rtext h3 {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.3;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rdesc {
+    margin: 0.1rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rholder {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 11rem;
+  }
+  /* The edit pencil rides inline in a row, not pinned to a card corner. */
+  .rowtool {
+    position: static;
+    flex: 0 0 auto;
   }
 
   /* Today's holder hero */

@@ -14,6 +14,7 @@
     editOnOpen,
     categoryColors,
     showNotice,
+    scope,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -26,11 +27,23 @@
     sourceRef,
     type CalendarEvent,
   } from "$lib/data";
+  import { personalEvents, personalTasks } from "$lib/personal";
   import Avatars from "$lib/components/Avatars.svelte";
+  import PillBar from "$lib/components/PillBar.svelte";
+  import PillSwitch from "$lib/components/PillSwitch.svelte";
+  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
+  // The Show pill narrows the calendar too: under Mine only events the user
+  // is going to (RSVPs toggle participants, so people IS the RSVP list).
+  $: uid = $telegramUser?.id;
+  $: shownEvents =
+    $scope === "personal" ? personalEvents($events, uid) : $events;
+
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
-  $: unscheduled = $backlog.filter((t) => !t.due);
+  $: baseBacklog =
+    $scope === "personal" ? personalTasks($backlog, uid) : $backlog;
+  $: unscheduled = baseBacklog.filter((t) => !t.due);
 
   // One write path for every calendar gesture (move / unschedule / resize):
   // a federated card's write is routed to its owner holon under its source key
@@ -438,6 +451,17 @@
 
   type Mode = "day" | "week" | "month";
   const MODES: Mode[] = ["day", "week", "month"];
+  // Glyphs keep the small-screen cycling toggle legible once names drop.
+  const MODE_GLYPHS: Record<Mode, string> = {
+    day: "▣",
+    week: "▤",
+    month: "▦",
+  };
+  const MODE_OPTIONS = MODES.map((m) => ({
+    id: m,
+    label: m.charAt(0).toUpperCase() + m.slice(1),
+    glyph: MODE_GLYPHS[m],
+  }));
   let mode: Mode = "day";
 
   // Navigation offset, in units of the current mode (days / weeks / months).
@@ -503,12 +527,15 @@
   })();
 
   // ── Day timeline (hour grid + "now" line + drag-to-arrange) ───────────────-
-  // The day timeline covers waking hours only (08:00–23:00) rather than a full
-  // 24h, so the grid is compact and the day's events fill it. Times outside the
-  // window are clamped onto its edges.
-  const DAY_START_HOUR = 8;
-  const DAY_END_HOUR = 23;
+  // The day timeline covers the full 24h (00:00–24:00) so every hour is
+  // reachable by hand — early mornings and late nights included. The view
+  // still *opens* focused on the waking window (see `focusDay`), so nothing
+  // gets more distant by default; scrolling reaches the rest.
+  const DAY_START_HOUR = 0;
+  const DAY_END_HOUR = 24;
   const DAY_MIN_START = DAY_START_HOUR * 60;
+  // Where a day without a live "now" line opens: the start of waking hours.
+  const MORNING_MIN = 8 * 60;
   // Hour height tracks the (fluid) root font so the timeline scales with the
   // rest of the kiosk — bigger rows on a large display, tighter on a phone.
   let scrollEl: HTMLElement;
@@ -552,7 +579,7 @@
       if (!scrollEl) return;
       const mins = sameDay(anchorDay, get(now))
         ? minutesOf(get(now))
-        : DAY_MIN_START;
+        : MORNING_MIN;
       scrollEl.scrollTop = Math.max(0, yForMin(mins) - HOUR_PX * 1.5);
     });
   }
@@ -646,8 +673,12 @@
     /** The primary (left) column keeps the hour-label gutter; the next day drops it. */
     primary: boolean;
   }
-  function makeColumn(day: Date, primary: boolean): DayColumn {
-    const evs = eventsOn(day, $events);
+  function makeColumn(
+    day: Date,
+    primary: boolean,
+    source: CalendarEvent[],
+  ): DayColumn {
+    const evs = eventsOn(day, source);
     const timed = evs.filter((e) => !e.allDay);
     return {
       iso: isoDay(day),
@@ -663,9 +694,15 @@
       primary,
     };
   }
+  // Events come in as an argument (not read inside makeColumn) so Svelte's
+  // dependency tracking recomputes the columns when the events — or the scope
+  // narrowing them — change.
   $: dayCols = showNextDay
-    ? [makeColumn(anchorDay, true), makeColumn(nextDay, false)]
-    : [makeColumn(anchorDay, true)];
+    ? [
+        makeColumn(anchorDay, true, shownEvents),
+        makeColumn(nextDay, false, shownEvents),
+      ]
+    : [makeColumn(anchorDay, true, shownEvents)];
 
   // Inline geometry for a timed event's note. The next-day column has no hour
   // gutter, so its events span the full column width.
@@ -688,7 +725,7 @@
     );
   }
 
-  // The grid always covers the full 08:00–23:00 window, so every hour line is
+  // The grid always covers the full 00:00–24:00 window, so every hour line is
   // present and the user can scroll the whole day by hand. (We don't trim it to
   // content — that left later hours unreachable on short screens.)
   const HOURS = Array.from(
@@ -793,18 +830,21 @@
   class:has-tray={unscheduled.length}
   style="--tray-h: {trayHeight}px;"
 >
+  <!-- The pill band lives INSIDE the header so it occupies the header's grid
+       area — in the landscape tray layout it can never cross into the drawer. -->
   <header class="head">
-    <div class="seg" role="tablist" aria-label="Calendar view">
-      {#each MODES as m}
-        <button
-          class="seg-btn"
-          class:active={mode === m}
-          role="tab"
-          aria-selected={mode === m}
-          on:click={() => setMode(m)}>{m}</button
-        >
-      {/each}
-    </div>
+    <PillBar>
+      <ScopePill />
+      <PillSwitch
+        options={MODE_OPTIONS}
+        value={mode}
+        onChange={(id) => setMode(id as Mode)}
+        showText
+        icon="eye"
+        title="View"
+        label="Calendar view"
+      />
+    </PillBar>
     <div class="nav">
       <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
         >‹</button
@@ -814,6 +854,10 @@
       >
     </div>
   </header>
+
+  {#if $scope === "personal" && !$telegramUser}
+    <p class="scopehint">Log in to see your events ✶</p>
+  {/if}
 
   <div
     class="scrollarea scroll"
@@ -826,7 +870,7 @@
       </div>
       <div class="grid">
         {#each monthGrid as day}
-          {@const evs = eventsOn(day, $events)}
+          {@const evs = eventsOn(day, shownEvents)}
           {@const inMonth = day.getMonth() === monthAnchor.getMonth()}
           {@const isToday = sameDay(day, $now)}
           {@const iso = isoDay(day)}
@@ -870,7 +914,7 @@
     {:else if mode === "week"}
       <div class="week">
         {#each weekDays as day (day.toISOString())}
-          {@const evs = eventsOn(day, $events)}
+          {@const evs = eventsOn(day, shownEvents)}
           {@const isToday = sameDay(day, $now)}
           {@const iso = isoDay(day)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1365,26 +1409,14 @@
     filter: brightness(0.97);
   }
 
-  /* Stacked + centered by default (the day/week/month selector sits above the
-     date). Where there's width, they share one line: date on the left, selector
-     on the right. */
+  /* Pill band + date navigation, stacked and centred. */
   .head {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.9rem 1.4rem 0.6rem;
-  }
-  @media (min-width: 640px) {
-    .head {
-      flex-direction: row-reverse;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .head .nav {
-      width: auto;
-    }
+    gap: 0.4rem;
+    padding: 0 1.4rem 0.6rem;
   }
   .nav {
     display: flex;
@@ -1392,6 +1424,15 @@
     justify-content: center;
     gap: 0.4rem;
     width: 100%;
+  }
+  /* One-line hint when the Mine scope has no one to be personal about; the
+     (blank) grid still renders beneath it. */
+  .scopehint {
+    margin: 0;
+    padding: 0.2rem 1.4rem 0.4rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.92rem;
   }
   .period {
     margin: 0;
@@ -1419,32 +1460,6 @@
   .arrow:active {
     transform: scale(0.92);
     background: var(--paper-deep);
-  }
-
-  /* Segmented Day / Week / Month control */
-  .seg {
-    display: inline-flex;
-    background: var(--paper);
-    border-radius: 999px;
-    padding: 4px;
-    gap: 2px;
-  }
-  .seg-btn {
-    text-transform: capitalize;
-    font-size: 0.86rem;
-    font-weight: 700;
-    color: var(--muted);
-    padding: 0.4rem 1.05rem;
-    border-radius: 999px;
-    min-height: 40px;
-    transition:
-      background 0.2s ease,
-      color 0.2s ease;
-  }
-  .seg-btn.active {
-    background: var(--teal);
-    color: #fff;
-    box-shadow: var(--shadow-soft);
   }
 
   /* ── Month ─────────────────────────────────────────────────────────────── */

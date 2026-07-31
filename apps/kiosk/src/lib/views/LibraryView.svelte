@@ -1,21 +1,29 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { get } from "svelte/store";
-  import { tick } from "svelte";
   import {
     things,
     openThing,
     holonId,
     showNotice,
     libraryViewMode,
+    scope,
     now,
   } from "$lib/stores";
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
-  import { setLibraryView, type LibraryViewMode } from "$lib/config";
-  import { sameId } from "$lib/personal";
+  import {
+    setLibraryView,
+    type LibraryViewMode,
+    type Scope,
+  } from "$lib/config";
+  import { personalThings } from "$lib/personal";
   import { dueLabelFor, type LibraryThing } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
+  import PillBar from "$lib/components/PillBar.svelte";
+  import { LAYOUT_SEGMENTS } from "$lib/pills";
+  import PillSwitch from "$lib/components/PillSwitch.svelte";
+  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
     addItem,
@@ -32,56 +40,38 @@
     }
   }
 
-  // ── View mode: icon card grid / compact list / my borrowed things ─────────
-  // Same segmented pill as the Tasks view.
+  // ── Layout: one card at a time / compact list / icon card grid (wall) —
+  // the same selector as the Tasks view. Whose things show is the orthogonal
+  // Show pill (scope) — see ScopePill.
   const MODES: { id: LibraryViewMode; glyph: string; label: string }[] = [
-    { id: "cards", glyph: "▦", label: "Cards" },
-    { id: "list", glyph: "☰", label: "List" },
-    { id: "personal", glyph: "웃", label: "My things" },
+    { id: "swipe", ...LAYOUT_SEGMENTS.card },
+    { id: "list", ...LAYOUT_SEGMENTS.list },
+    { id: "cards", ...LAYOUT_SEGMENTS.wall },
   ];
-  // Borrowing is personal; the segment hides logged out. A persisted
-  // "personal" mode still renders (with a log-in prompt) rather than
-  // clobbering the saved choice before auth has resolved.
-  $: modes = $telegramUser ? MODES : MODES.filter((m) => m.id !== "personal");
-  let switchEl: HTMLElement | undefined;
 
-  function setMode(m: LibraryViewMode) {
-    libraryViewMode.set(m);
-    setLibraryView(m);
-  }
-
-  // Roving focus for the radiogroup: ←/→ move selection and keep focus on it.
-  async function onSwitchKey(e: KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    const step = e.key === "ArrowRight" ? 1 : modes.length - 1;
-    const i = modes.findIndex((m) => m.id === get(libraryViewMode));
-    setMode(modes[(i + step) % modes.length].id);
-    await tick();
-    switchEl
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
-      ?.focus();
+  function setMode(m: string) {
+    libraryViewMode.set(m as LibraryViewMode);
+    setLibraryView(m as LibraryViewMode);
   }
 
   // Things the logged-in user currently has out (legacy borrow fields are
   // core-maintained today-mirrors of bookings, so this is "out with me now").
-  $: mine = $things.filter(
-    (t) => !t.available && sameId(t.borrowerId, $telegramUser?.id),
-  );
-  $: shownRows = $libraryViewMode === "personal" ? mine : $things;
+  $: mine = personalThings($things, $telegramUser?.id);
+  $: shownThings = $scope === "personal" ? mine : $things;
+
+  // The Card pager's position; clamped as live updates grow/shrink the set.
+  let cardIndex = 0;
+  $: if (cardIndex > shownThings.length - 1)
+    cardIndex = Math.max(0, shownThings.length - 1);
 
   /**
-   * Status chip text for a row; personal mode leads with the return date.
-   * Mode and clock come in as arguments so the template expression re-runs
+   * Status chip text for a row; the Mine scope leads with the return date.
+   * Scope and clock come in as arguments so the template expression re-runs
    * when either store changes.
    */
-  function statusLabel(
-    t: LibraryThing,
-    mode: LibraryViewMode,
-    at: Date,
-  ): string {
+  function statusLabel(t: LibraryThing, s: Scope, at: Date): string {
     if (t.available) return "available";
-    if (mode === "personal") {
+    if (s === "personal") {
       const back = t.returnBy ? dueLabelFor(t.returnBy, at) : null;
       return back ? `return ${back}` : "with you";
     }
@@ -157,41 +147,76 @@
 </script>
 
 <div class="board">
-  <div
-    class="viewswitch"
-    role="radiogroup"
-    aria-label="Library view layout"
-    bind:this={switchEl}
-  >
-    {#each modes as m (m.id)}
-      <button
-        role="radio"
-        aria-checked={$libraryViewMode === m.id}
-        class:active={$libraryViewMode === m.id}
-        tabindex={$libraryViewMode === m.id ? 0 : -1}
-        on:click={() => setMode(m.id)}
-        on:keydown={onSwitchKey}
-        aria-label="{m.label} view"
-        title="{m.label} view"
-      >
-        {#if m.id === "personal"}
-          <svg class="picon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z"
-            />
-          </svg>
-        {:else}
-          {m.glyph}
-        {/if}
-      </button>
-    {/each}
-  </div>
+  <PillBar>
+    <ScopePill />
+    <PillSwitch
+      options={MODES}
+      value={$libraryViewMode}
+      onChange={setMode}
+      icon="eye"
+      title="View"
+      label="Library layout"
+    />
+  </PillBar>
 
   <div class="lib scroll">
-    {#if $libraryViewMode === "cards"}
-      {#if $things.length}
+    {#if $scope === "personal" && !$telegramUser}
+      <p class="empty">Log in to see what you've borrowed ✶</p>
+    {:else if $scope === "personal" && !shownThings.length}
+      <p class="empty">
+        Nothing borrowed right now — tap a thing to take it out ✶
+      </p>
+    {:else if $libraryViewMode === "swipe"}
+      <!-- One big card at a time — the library's Card layout. -->
+      {#if shownThings.length}
+        {@const thing =
+          shownThings[Math.min(cardIndex, shownThings.length - 1)]}
+        <div class="pager">
+          <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+          <article
+            class="card big"
+            class:out={!thing.available}
+            class:is-foreign={!!thing.sourceColor}
+            style="--glow: {thing.sourceColor ?? 'transparent'};"
+            role="button"
+            tabindex="0"
+            on:click={() => openThing(thing.id)}
+            on:keydown={(e) => onKey(e, thing.id)}
+          >
+            <div class="icon">{getItemIcon({ type: thing.type })}</div>
+            <h3>{thing.title}</h3>
+            <span class="type">{getTypeDisplayName(thing.type)}</span>
+            {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+            <span class="status" class:available={thing.available}>
+              {statusLabel(thing, $scope, $now)}
+            </span>
+          </article>
+          <div class="pagenav">
+            <button
+              class="arrow"
+              on:click={() => (cardIndex = Math.max(0, cardIndex - 1))}
+              disabled={cardIndex <= 0}
+              aria-label="Previous item">‹</button
+            >
+            <span class="count"
+              >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
+            >
+            <button
+              class="arrow"
+              on:click={() =>
+                (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
+              disabled={cardIndex >= shownThings.length - 1}
+              aria-label="Next item">›</button
+            >
+          </div>
+        </div>
+      {:else}
+        <p class="empty">No things shared yet.</p>
+      {/if}
+    {:else if $libraryViewMode === "cards"}
+      {#if shownThings.length}
         <div class="grid">
-          {#each $things as thing (thing.id)}
+          {#each shownThings as thing (thing.id)}
             <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
             <article
               class="card"
@@ -220,15 +245,14 @@
       {:else}
         <p class="empty">No things shared yet.</p>
       {/if}
-    {:else if shownRows.length}
-      <!-- Compact rows, shared by List (everything) and My things (what the
-           logged-in user has out). -->
+    {:else if shownThings.length}
+      <!-- Compact rows: the list layout, whatever the scope. -->
       <ul class="rows">
-        {#each shownRows as thing (thing.id)}
+        {#each shownThings as thing (thing.id)}
           <li>
             <div
               class="row"
-              class:out={!thing.available && $libraryViewMode !== "personal"}
+              class:out={!thing.available && $scope !== "personal"}
               class:is-foreign={!!thing.sourceColor}
               style="--glow: {thing.sourceColor ?? 'transparent'};"
               role="button"
@@ -248,18 +272,12 @@
                 </div>
               </div>
               <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $libraryViewMode, $now)}
+                {statusLabel(thing, $scope, $now)}
               </span>
             </div>
           </li>
         {/each}
       </ul>
-    {:else if $libraryViewMode === "personal"}
-      <p class="empty">
-        {$telegramUser
-          ? "Nothing borrowed right now — tap a thing to take it out ✶"
-          : "Log in to see what you've borrowed ✶"}
-      </p>
     {:else}
       <p class="empty">No things shared yet.</p>
     {/if}
@@ -335,54 +353,10 @@
   .lib {
     flex: 1;
     min-height: 0;
-    /* Room for the floating mode pill overlaying the top of the board. */
-    padding: 4.4rem 1.4rem 1.6rem;
+    padding: 0.5rem 1.4rem 1.6rem;
   }
 
-  /* Same segmented pill as the Tasks view's mode switch, floating over the
-     content so the list scrolls beneath it. */
-  .viewswitch {
-    position: absolute;
-    top: 0.9rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 0.15rem;
-    padding: 0.25rem;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    border-radius: 999px;
-    box-shadow: var(--shadow-soft);
-    z-index: 5;
-  }
-  .viewswitch button {
-    width: 3rem;
-    height: 2.6rem;
-    border-radius: 999px;
-    display: grid;
-    place-items: center;
-    font-size: 1.1rem;
-    color: var(--ink-soft);
-    touch-action: manipulation;
-    transition:
-      background 0.15s ease,
-      color 0.15s ease,
-      transform 0.1s ease;
-  }
-  .viewswitch button.active {
-    background: var(--teal);
-    color: #fff;
-  }
-  .viewswitch button:active {
-    transform: scale(0.94);
-  }
-  .picon {
-    width: 1.15rem;
-    height: 1.15rem;
-    fill: currentColor;
-  }
-
-  /* Compact rows (List / My things modes). */
+  /* Compact rows (the list layout). */
   .rows {
     list-style: none;
     margin: 0 auto;
@@ -526,6 +500,61 @@
     text-align: center;
     padding: 3rem 1rem;
     font-size: 1.1rem;
+  }
+
+  /* The Card layout: one big card centered, ‹ n / m › underneath. */
+  .pager {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+  }
+  .card.big {
+    width: min(26rem, 92%);
+    padding: 2.2rem 1.6rem 1.8rem;
+    gap: 0.55rem;
+  }
+  .card.big .icon {
+    font-size: 3.4rem;
+  }
+  .card.big h3 {
+    font-size: 1.45rem;
+  }
+  .pagenav {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .pagenav .arrow {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    font-size: 1.7rem;
+    line-height: 1;
+    color: var(--teal-deep);
+    background: var(--paper);
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.2s ease,
+      transform 0.1s ease;
+  }
+  .pagenav .arrow:active {
+    transform: scale(0.92);
+    background: var(--paper-deep);
+  }
+  .pagenav .arrow:disabled {
+    opacity: 0.35;
+  }
+  .count {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5rem;
+    text-align: center;
   }
 
   /* Federated / hologram things — a coloured edge keyed by their source holon

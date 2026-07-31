@@ -2,7 +2,7 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
@@ -14,8 +14,12 @@
     showNotice,
     categoryColors,
     taskViewMode,
+    taskSort,
+    scope,
   } from "$lib/stores";
-  import { setTaskView, type TaskViewMode } from "$lib/config";
+  import { setTaskSort, setTaskView, type TaskViewMode } from "$lib/config";
+  import { LAYOUT_SEGMENTS, SORT_SEGMENTS } from "$lib/pills";
+  import type { TaskSort } from "$lib/data";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
   import { resolveImage } from "$lib/image";
@@ -45,6 +49,9 @@
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
+  import PillBar from "$lib/components/PillBar.svelte";
+  import PillSwitch from "$lib/components/PillSwitch.svelte";
+  import ScopePill from "$lib/components/ScopePill.svelte";
   import TaskListView from "./TaskListView.svelte";
   import TaskSwipeView from "./TaskSwipeView.svelte";
 
@@ -54,35 +61,22 @@
   let scrollEl: HTMLElement | undefined;
   onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
 
-  // ── View mode: swipe deck / compact list / post-it wall / personal list ───
+  // ── Layout: swipe deck / compact list / post-it wall. Whose tasks show is
+  // the orthogonal Show pill (scope) — see ScopePill.
   const MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
-    { id: "swipe", glyph: "❏", label: "Deck" },
-    { id: "list", glyph: "☰", label: "List" },
-    { id: "cards", glyph: "▦", label: "Wall" },
-    { id: "personal", glyph: "", label: "My tasks" },
+    { id: "swipe", ...LAYOUT_SEGMENTS.card },
+    { id: "list", ...LAYOUT_SEGMENTS.list },
+    { id: "cards", ...LAYOUT_SEGMENTS.wall },
   ];
-  // The personal segment needs someone to be personal about; hidden logged out.
-  // A persisted "personal" mode still renders (with a log-in prompt) rather
-  // than clobbering the saved choice before auth has resolved.
-  $: modes = $telegramUser ? MODES : MODES.filter((m) => m.id !== "personal");
-  let switchEl: HTMLElement | undefined;
 
-  function setMode(m: TaskViewMode) {
-    taskViewMode.set(m);
-    setTaskView(m);
+  function setSort(s: string) {
+    taskSort.set(s as TaskSort);
+    setTaskSort(s as TaskSort);
   }
 
-  // Roving focus for the radiogroup: ←/→ move selection and keep focus on it.
-  async function onSwitchKey(e: KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    const step = e.key === "ArrowRight" ? 1 : modes.length - 1;
-    const i = modes.findIndex((m) => m.id === get(taskViewMode));
-    setMode(modes[(i + step) % modes.length].id);
-    await tick();
-    switchEl
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
-      ?.focus();
+  function setMode(m: string) {
+    taskViewMode.set(m as TaskViewMode);
+    setTaskView(m as TaskViewMode);
   }
 
   function openTask(id: string) {
@@ -194,6 +188,9 @@
     .filter((t): t is BacklogTask => t != null);
   // The personal slice: same order as the wall/list, narrowed to the user.
   $: mine = personalTasks(orderedTasks, $telegramUser?.id);
+  // What every layout renders, after the Show pill's scope. (all/networked
+  // differ upstream in the derived stores; here they're both "everything".)
+  $: shownTasks = $scope === "personal" ? mine : orderedTasks;
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -273,6 +270,9 @@
 
   function onPointerDown(e: PointerEvent, task: BacklogTask) {
     if (e.button != null && e.button !== 0) return;
+    // No drag-to-reorder under the Mine scope: it's a filtered subset, so a
+    // reorder there would scramble the full wall's persisted orderIndex.
+    if (get(scope) === "personal") return;
     const el = (e.currentTarget as HTMLElement).closest<HTMLElement>(
       "[data-task]",
     );
@@ -368,6 +368,9 @@
       touched = true; // keep the local order; don't let live updates reshuffle
       justDragged = true; // swallow the click that follows pointerup
       setTimeout(() => (justDragged = false), 0);
+      // A hand-arranged wall IS the manual order — flip the Sort pill so the
+      // arrangement is what renders (and survives the reload).
+      setSort("manual");
       void persistOrder();
     }
   }
@@ -635,40 +638,34 @@
 </script>
 
 <div class="board">
-  <div
-    class="viewswitch"
-    role="radiogroup"
-    aria-label="Task view layout"
-    bind:this={switchEl}
-  >
-    {#each modes as m (m.id)}
-      <button
-        role="radio"
-        aria-checked={$taskViewMode === m.id}
-        class:active={$taskViewMode === m.id}
-        tabindex={$taskViewMode === m.id ? 0 : -1}
-        on:click={() => setMode(m.id)}
-        on:keydown={onSwitchKey}
-        aria-label="{m.label} view"
-        title="{m.label} view"
-      >
-        {#if m.id === "personal"}
-          <svg class="picon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z"
-            />
-          </svg>
-        {:else}
-          {m.glyph}
-        {/if}
-      </button>
-    {/each}
-  </div>
+  <PillBar>
+    <ScopePill />
+    <PillSwitch
+      options={MODES}
+      value={$taskViewMode}
+      onChange={setMode}
+      icon="eye"
+      title="View"
+      label="Tasks layout"
+    />
+    <PillSwitch
+      options={[...SORT_SEGMENTS]}
+      value={$taskSort}
+      onChange={setSort}
+      icon="sort"
+      title="Sort"
+      label="Tasks order"
+    />
+  </PillBar>
 
-  {#if $taskViewMode === "swipe"}
+  {#if $scope === "personal" && !$telegramUser}
+    <div class="tasks scroll">
+      <p class="empty">Log in to see the tasks you're part of ✶</p>
+    </div>
+  {:else if $taskViewMode === "swipe"}
     <div class="deckwrap">
       <TaskSwipeView
-        tasks={orderedTasks}
+        tasks={shownTasks}
         colorFor={noteColorFor}
         {dueLabel}
         onOpen={openTask}
@@ -679,9 +676,13 @@
     </div>
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
-      {#if $taskViewMode === "list"}
+      {#if $scope === "personal" && !shownTasks.length}
+        <p class="empty">
+          Nothing with your name on it yet — join a task to see it here ✶
+        </p>
+      {:else if $taskViewMode === "list"}
         <TaskListView
-          tasks={orderedTasks}
+          tasks={shownTasks}
           colorFor={noteColorFor}
           {dueLabel}
           {completing}
@@ -692,32 +693,9 @@
           onRowPointerDown={onPointerDown}
           dragId={drag?.id ?? null}
         />
-      {:else if $taskViewMode === "personal"}
-        <!-- The user's own slice, in wall order. No drag-to-reorder: this is a
-             filtered subset, so a reorder here would scramble the full wall. -->
-        {#if !$telegramUser}
-          <p class="empty">Log in to see the tasks you're part of ✶</p>
-        {:else if mine.length}
-          <TaskListView
-            tasks={mine}
-            colorFor={noteColorFor}
-            {dueLabel}
-            {completing}
-            onOpen={openTask}
-            {onComplete}
-            {onDelete}
-            onToggleAppreciate={toggleAppr}
-            onRowPointerDown={() => {}}
-            dragId={null}
-          />
-        {:else}
-          <p class="empty">
-            Nothing with your name on it yet — swipe right on a task to join ✶
-          </p>
-        {/if}
-      {:else if orderedTasks.length}
+      {:else if shownTasks.length}
         <div class="wall">
-          {#each orderedTasks as task (task.id)}
+          {#each shownTasks as task (task.id)}
             <div
               class="note-wrap"
               class:ghost={drag?.id === task.id}
@@ -992,72 +970,20 @@
   .tasks {
     flex: 1;
     min-height: 0;
-    /* Room for the floating mode pill overlaying the top of the board. */
-    padding: 4.4rem 1.4rem 1.6rem;
+    padding: 0.5rem 1.4rem 1.6rem;
   }
 
-  /* Wall / list / swipe segmented control, floating over the content so the
-     board scrolls beneath it (same as the Library and Roles views). */
-  .viewswitch {
-    position: absolute;
-    top: 0.9rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 0.15rem;
-    padding: 0.25rem;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    border-radius: 999px;
-    box-shadow: var(--shadow-soft);
-    z-index: 5;
-  }
-  .viewswitch button {
-    width: 3rem;
-    height: 2.6rem;
-    border-radius: 999px;
-    display: grid;
-    place-items: center;
-    font-size: 1.1rem;
-    color: var(--ink-soft);
-    touch-action: manipulation;
-    transition:
-      background 0.15s ease,
-      color 0.15s ease,
-      transform 0.1s ease;
-  }
-  .viewswitch button.active {
-    background: var(--teal);
-    color: #fff;
-  }
-  .picon {
-    width: 1.15rem;
-    height: 1.15rem;
-    fill: currentColor;
-  }
-  .viewswitch button:active {
-    transform: scale(0.92);
-  }
-
-  /* The swipe deck mounts outside .tasks — clear the floating pill for it. */
   .deckwrap {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding-top: 3.9rem;
   }
 
   /* Phone widths: tighter gutters so the wall/list/deck get the room. */
   @media (max-width: 560px) {
     .tasks {
-      padding: 4rem 0.7rem 1.2rem;
-    }
-    .deckwrap {
-      padding-top: 3.6rem;
-    }
-    .viewswitch {
-      top: 0.5rem;
+      padding: 0.3rem 0.7rem 1.2rem;
     }
   }
 

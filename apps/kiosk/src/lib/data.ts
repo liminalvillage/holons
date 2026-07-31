@@ -194,6 +194,8 @@ export interface BacklogTask {
   initiator?: TaskPerson | null;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
   orderIndex?: number;
+  /** Creation instant (epoch ms; 0 unknown), for the newest-first default. */
+  created: number;
   /**
    * How many of this task's dependencies are still open. 0 ⇒ a current leaf
    * of the graph (self-standing, or every predecessor completed): actionable
@@ -302,8 +304,19 @@ export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
+/**
+ * How the backlog ranks within each blocked/unblocked group (the Sort pill):
+ * most-appreciated first (`loved`, the default — recency breaks ties),
+ * newest first (`new`), or the hand-dragged `orderIndex` (`manual`).
+ */
+export type TaskSort = "loved" | "new" | "manual";
+
 /** Open quests → the backlog wall. Excludes pure calendar events. */
-export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
+export function toBacklog(
+  quests: Quest[],
+  names?: Names,
+  sort: TaskSort = "loved",
+): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
   // Computed over the FULL quest list (including settled quests) so a
@@ -341,25 +354,35 @@ export function toBacklog(quests: Quest[], names?: Names): BacklogTask[] {
         q.orderIndex != null && Number.isFinite(Number(q.orderIndex))
           ? Number(q.orderIndex)
           : undefined,
+      created: (() => {
+        const t = Date.parse(String(q.created ?? ""));
+        return Number.isFinite(t) ? t : 0;
+      })(),
       unmetDeps: unmet.get(id)?.length ?? 0,
     });
   }
   // Current leaves first — a task blocked by open dependencies can't be acted
-  // on yet, so it never outranks actionable work regardless of manual order.
-  // Within each group: manually-ordered tasks (by orderIndex), then the rest
-  // alphabetically.
+  // on yet, so it never outranks actionable work regardless of the chosen
+  // sort. Within each group the Sort pill's ranking applies, with the title
+  // as a stable final tiebreak.
   return out.sort((a, b) => {
     const ablocked = a.unmetDeps > 0;
     const bblocked = b.unmetDeps > 0;
     if (ablocked !== bblocked) return ablocked ? 1 : -1;
-    const ai = a.orderIndex;
-    const bi = b.orderIndex;
-    if (ai != null && bi != null) {
-      if (ai !== bi) return ai - bi;
-    } else if (ai != null) {
-      return -1;
-    } else if (bi != null) {
-      return 1;
+    if (sort === "manual") {
+      const ai = a.orderIndex;
+      const bi = b.orderIndex;
+      if (ai != null && bi != null) {
+        if (ai !== bi) return ai - bi;
+      } else if (ai != null) {
+        return -1;
+      } else if (bi != null) {
+        return 1;
+      }
+    } else {
+      if (sort === "loved" && a.appreciation !== b.appreciation)
+        return b.appreciation - a.appreciation;
+      if (a.created !== b.created) return b.created - a.created;
     }
     return a.title.localeCompare(b.title);
   });

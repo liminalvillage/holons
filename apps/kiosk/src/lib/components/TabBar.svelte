@@ -596,6 +596,14 @@
       width: 1.15rem;
       height: 1.15rem;
     }
+    /* Icon-only chrome on phones: the tab glyphs carry the row (the pills
+       below collapse to cycling toggles at the same width). */
+    .tab .label {
+      display: none;
+    }
+    .tab .glyph {
+      font-size: 1.25rem;
+    }
   }
 
   .tabs {

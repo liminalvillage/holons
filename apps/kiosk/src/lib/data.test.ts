@@ -46,19 +46,71 @@ describe("toBacklog — dependency-aware ordering", () => {
     expect(out.map((t) => t.id)).toEqual(["leaf", "blocked"]);
   });
 
-  it("orders by orderIndex then title within each group", () => {
-    const out = toBacklog([
-      quest("z-leaf"),
-      quest("a-leaf", { orderIndex: 1 }),
-      quest("b-blocked", { dependencies: ["z-leaf"] }),
-      quest("a-blocked", { dependencies: ["z-leaf"] }),
-    ]);
+  it("manual sort orders by orderIndex then title within each group", () => {
+    const out = toBacklog(
+      [
+        quest("z-leaf"),
+        quest("a-leaf", { orderIndex: 1 }),
+        quest("b-blocked", { dependencies: ["z-leaf"] }),
+        quest("a-blocked", { dependencies: ["z-leaf"] }),
+      ],
+      undefined,
+      "manual",
+    );
     expect(out.map((t) => t.id)).toEqual([
       "a-leaf",
       "z-leaf",
       "a-blocked",
       "b-blocked",
     ]);
+  });
+
+  it("defaults to loved: appreciation, then newest first, then title", () => {
+    const out = toBacklog([
+      quest("old-loved", {
+        created: "2026-01-01T00:00:00Z",
+        appreciation: [{ id: 1 }, { id: 2 }] as any,
+      }),
+      quest("new-plain", { created: "2026-06-01T00:00:00Z" }),
+      quest("old-plain", { created: "2026-01-01T00:00:00Z" }),
+      quest("a-dateless"),
+    ]);
+    expect(out.map((t) => t.id)).toEqual([
+      "old-loved", // appreciation outranks recency
+      "new-plain", // newest of the unappreciated
+      "old-plain",
+      "a-dateless", // no created date sorts last despite the title
+    ]);
+  });
+
+  it("loved ignores orderIndex; manual honours it", () => {
+    const quests = [
+      quest("loved", {
+        created: "2026-06-01T00:00:00Z",
+        appreciation: [{ id: 1 }] as any,
+      }),
+      quest("pinned", { orderIndex: 0, created: "2026-01-01T00:00:00Z" }),
+    ];
+    expect(toBacklog(quests).map((t) => t.id)).toEqual(["loved", "pinned"]);
+    expect(toBacklog(quests, undefined, "manual").map((t) => t.id)).toEqual([
+      "pinned",
+      "loved",
+    ]);
+  });
+
+  it("new sort is strictly newest first regardless of appreciation", () => {
+    const out = toBacklog(
+      [
+        quest("old-loved", {
+          created: "2026-01-01T00:00:00Z",
+          appreciation: [{ id: 1 }, { id: 2 }] as any,
+        }),
+        quest("newest", { created: "2026-06-01T00:00:00Z" }),
+      ],
+      undefined,
+      "new",
+    );
+    expect(out.map((t) => t.id)).toEqual(["newest", "old-loved"]);
   });
 
   it("counts only still-open dependencies", () => {

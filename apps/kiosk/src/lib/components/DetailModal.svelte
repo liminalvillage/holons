@@ -27,10 +27,13 @@
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
-    borrowItem,
+    bookItem,
     returnItem,
     recordBorrowAccounting,
     recordReturnAccounting,
+    findOverlappingBooking,
+    getDisplayBookings,
+    dayKey,
     getItemIcon,
     getTypeDisplayName,
   } from "@holons/core/library";
@@ -41,6 +44,7 @@
     type Quest,
   } from "@holons/core/tasks";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
+  import { copySelection } from "$lib/clipboard";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -95,6 +99,7 @@
     if (k !== selKey) {
       selKey = k;
       editing = false;
+      booking = false;
       message = "";
       cancelBreakdown();
     }
@@ -665,21 +670,86 @@
     else if (!message) message = "Could not save.";
   }
 
-  async function borrow() {
-    if (!sel || sel.kind !== "thing" || !$holonId) return;
+  // ── Booking form (borrow for a chosen date range, like the web library) ────
+  // Tapping Borrow opens a From/Until range with quick length chips instead of
+  // borrowing for a hard-coded week. Core's `bookItem` owns the meaning: it
+  // appends to `bookings[]` (the canonical borrow state) and rejects overlaps.
+  let booking = false;
+  let bStart = "";
+  let bEnd = "";
+  const LENGTH_CHIPS = [
+    { days: 1, label: "1 day" },
+    { days: 3, label: "3 days" },
+    { days: 7, label: "1 week" },
+    { days: 14, label: "2 weeks" },
+  ];
+
+  function addDaysKey(key: string, n: number): string {
+    const d = new Date(`${key}T00:00:00`);
+    d.setDate(d.getDate() + n);
+    return toDateInput(d);
+  }
+
+  /** Short human label for a booking day key ("Jul 27"). */
+  function fmtDay(d: string): string {
+    return new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString([], {
+      day: "numeric",
+      month: "short",
+    });
+  }
+
+  // Upcoming/active bookings, soonest first — shown on the card so a free
+  // range is easy to pick. (Recomputed per selected item; capped for space.)
+  $: upcomingBookings = item
+    ? getDisplayBookings(item)
+        .filter((b) => dayKey(b.end) >= toDateInput(new Date()))
+        .sort((a, b) => dayKey(a.start).localeCompare(dayKey(b.start)))
+        .slice(0, 3)
+    : [];
+
+  function startBooking() {
+    if (!item) return;
+    const actor = borrowActor();
+    if (!actor) return requestLogin();
+    message = "";
+    // Default to the first free day: today, or the day after the booking that
+    // covers today (so "book ahead" on an item that's out starts sensibly).
+    let start = toDateInput(new Date());
+    const busy = findOverlappingBooking(item, start, start);
+    if (busy) start = addDaysKey(dayKey(busy.end), 1);
+    bStart = start;
+    bEnd = addDaysKey(start, 7);
+    booking = true;
+  }
+
+  // Moving the start past the end drags the end along (never an inverted range).
+  $: if (booking && bStart && bEnd && bEnd < bStart) bEnd = bStart;
+
+  async function confirmBooking() {
+    if (!sel || sel.kind !== "thing" || !$holonId || !bStart || !bEnd) return;
     const actor = borrowActor();
     if (!actor) return requestLogin();
     saving = true;
     message = "";
+    // Fast-path UX check on the on-screen copy; core re-validates against the
+    // stored item on write.
+    const conflict = findOverlappingBooking(sel.item, bStart, bEnd);
+    if (conflict) {
+      saving = false;
+      message = `Overlaps ${conflict.borrower || "someone"}'s booking (${fmtDay(conflict.start)} → ${fmtDay(conflict.end)}).`;
+      return;
+    }
     const db = await getLibraryDb();
-    // A federated/hologram item lives in its owner's graph, not ours — borrow
+    // A federated/hologram item lives in its owner's graph, not ours — book
     // against the source holon + key so the write lands on the real item, not a
     // fresh local copy.
     const ref = sourceRef(sel.item, String(sel.item.id));
     const holon = ref?.holon ?? $holonId;
     const key = ref?.key ?? String(sel.item.id);
-    const due = new Date(Date.now() + 7 * 86_400_000);
-    const res = await borrowItem(db, holon, key, actor, due);
+    const res = await bookItem(db, holon, key, actor, {
+      start: bStart,
+      end: bEnd,
+    });
     saving = false;
     if (res.ok) {
       // Credits move on borrow everywhere (skipped by core for owners and
@@ -687,12 +757,12 @@
       if (res.item)
         await recordBorrowAccounting({ db }, holon, actor, res.item);
       closeDetail();
-    } else if (res.reason === "already_borrowed") {
-      message = "Already borrowed.";
     } else if (res.reason === "overlaps" && res.conflict) {
-      message = `Reserved by ${res.conflict.borrower || "someone"} from ${res.conflict.start}.`;
+      message = `Overlaps ${res.conflict.borrower || "someone"}'s booking (${fmtDay(res.conflict.start)} → ${fmtDay(res.conflict.end)}).`;
+    } else if (res.reason === "invalid_range") {
+      message = "The return date can't be before the start.";
     } else {
-      message = "Could not borrow.";
+      message = "Could not book.";
     }
   }
 
@@ -753,31 +823,99 @@
               <dd>{item.value}</dd>
             </div>
           {/if}
+          {#if upcomingBookings.length}
+            <div>
+              <dt>Booked</dt>
+              <dd>
+                {#each upcomingBookings as b (b.id)}
+                  <span class="booking-line"
+                    >{fmtDay(b.start)} → {fmtDay(b.end)}{b.borrower
+                      ? ` · ${b.borrower}`
+                      : ""}</span
+                  >
+                {/each}
+              </dd>
+            </div>
+          {/if}
         </dl>
 
         {#if $isLoggedIn}
+          {#if booking}
+            <!-- Borrow for a chosen period — same booking model as the web
+                 library: an inclusive [from, until] day range on bookings[]. -->
+            <div class="row2">
+              <label
+                >From
+                <input type="date" bind:value={bStart} />
+              </label>
+              <label
+                >Until
+                <input type="date" bind:value={bEnd} min={bStart} />
+              </label>
+            </div>
+            <div class="lengths">
+              {#each LENGTH_CHIPS as c (c.days)}
+                <button
+                  class="chip"
+                  class:on={bStart && bEnd === addDaysKey(bStart, c.days)}
+                  on:click={() => (bEnd = addDaysKey(bStart, c.days))}
+                  >{c.label}</button
+                >
+              {/each}
+            </div>
+            <div class="actions">
+              <button
+                class="primary"
+                on:click={confirmBooking}
+                disabled={saving || !bStart || !bEnd}
+                >{saving ? "Booking…" : "Confirm booking"}</button
+              >
+              <button class="ghost" on:click={() => (booking = false)}
+                >Cancel</button
+              >
+            </div>
+          {:else}
+            <div class="actions">
+              {#if !item.borrowed}
+                <button
+                  class="primary"
+                  on:click={startBooking}
+                  disabled={saving}>Borrow</button
+                >
+              {:else if borrowedByMe}
+                <button class="primary" on:click={returnThing} disabled={saving}
+                  >Return</button
+                >
+              {:else}
+                <span class="note-line"
+                  >On loan to {item.borrower ?? "someone"}</span
+                >
+                <button class="ghost" on:click={startBooking} disabled={saving}
+                  >Book ahead</button
+                >
+              {/if}
+              <button class="ghost" on:click={startEdit} disabled={saving}
+                >Edit</button
+              >
+              <button
+                class="ghost"
+                on:click={() => copySelection(sel)}
+                disabled={saving}
+                title="Copy this card — paste it in any holon">⧉ Copy</button
+              >
+            </div>
+          {/if}
+        {:else}
           <div class="actions">
-            {#if !item.borrowed}
-              <button class="primary" on:click={borrow} disabled={saving}
-                >Borrow</button
-              >
-            {:else if borrowedByMe}
-              <button class="primary" on:click={returnThing} disabled={saving}
-                >Return</button
-              >
-            {:else}
-              <span class="note-line"
-                >On loan to {item.borrower ?? "someone"}</span
-              >
-            {/if}
-            <button class="ghost" on:click={startEdit} disabled={saving}
-              >Edit</button
+            <button class="primary" on:click={requestLogin}
+              >Log in with Telegram to borrow or edit</button
+            >
+            <button
+              class="ghost"
+              on:click={() => copySelection(sel)}
+              title="Copy this card — paste it in any holon">⧉ Copy</button
             >
           </div>
-        {:else}
-          <button class="primary" on:click={requestLogin}
-            >Log in with Telegram to borrow or edit</button
-          >
         {/if}
       {:else}
         <!-- edit thing -->
@@ -893,6 +1031,12 @@
             <button class="ghost" on:click={startEdit} disabled={saving}
               >Edit</button
             >
+            <button
+              class="ghost"
+              on:click={() => copySelection(sel)}
+              disabled={saving}
+              title="Copy this card — paste it in any holon">⧉ Copy</button
+            >
             {#if canBreakdown && breakdownSteps === null}
               <button
                 class="ghost"
@@ -990,9 +1134,16 @@
             </div>
           {/if}
         {:else}
-          <button class="primary" on:click={requestLogin}
-            >Log in with Telegram to edit</button
-          >
+          <div class="actions">
+            <button class="primary" on:click={requestLogin}
+              >Log in with Telegram to edit</button
+            >
+            <button
+              class="ghost"
+              on:click={() => copySelection(sel)}
+              title="Copy this card — paste it in any holon">⧉ Copy</button
+            >
+          </div>
         {/if}
       {:else}
         <!-- edit quest -->
@@ -1218,6 +1369,34 @@
     color: var(--ink-soft);
     font-weight: 600;
     align-self: center;
+  }
+  .booking-line {
+    display: block;
+    font-weight: 600;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  /* Quick loan-length chips under the booking date range. */
+  .lengths {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+  }
+  .chip {
+    min-height: 40px;
+    padding: 0 0.95rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--teal-deep);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+  }
+  .chip.on {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
   }
   .joined {
     background: #e7f3f1;

@@ -13,6 +13,7 @@ function task(id: string, unmetDeps = 0): BacklogTask {
     people: [],
     appreciation: 0,
     appreciatedBy: [],
+    created: 0,
     unmetDeps,
   };
 }

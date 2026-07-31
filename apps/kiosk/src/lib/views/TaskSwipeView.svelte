@@ -7,10 +7,9 @@
   // A swipe never *undoes* anything — already-joined/liked cards no-op through.
   import Avatars from "$lib/components/Avatars.svelte";
   import Confetti from "$lib/components/Confetti.svelte";
-  import { get } from "svelte/store";
   import { telegramUser, loginOpen } from "$lib/auth";
-  import { swipeDismissed, showNotice, taskViewMode } from "$lib/stores";
-  import { setTaskView } from "$lib/config";
+  import { swipeDismissed, showNotice, taskViewMode, scope } from "$lib/stores";
+  import { setScope, setTaskView } from "$lib/config";
   import { sameId } from "$lib/personal";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
@@ -234,24 +233,6 @@
         }
       }
     }
-    maybeHandoff();
-  }
-
-  // A gesture just emptied the deck → flip the Tasks view to "My tasks": the
-  // swiper's own list is the natural landing after triaging everything.
-  // Recomputed from the stores (a failed write above un-dismissed its card, so
-  // the deck reads non-empty and this no-ops). Deliberately NOT reactive on
-  // the empty-deck state: a remount with an exhausted deck must show the
-  // "All caught up" screen, not bounce away and strand "Start over". Logged
-  // out there is no personal slice, so the end screen stays. The final
-  // swipe's Undo chip is forfeited by the mode switch — the unmount would
-  // have discarded it anyway.
-  function maybeHandoff() {
-    if (deckTasks(tasks, get(swipeDismissed)).length > 0) return;
-    if (!get(telegramUser)) return;
-    // Session-only (not persisted like the segmented control): an automatic
-    // hop must not silently become the device's saved default.
-    setTimeout(() => taskViewMode.set("personal"), 450); // let the fly-off finish
   }
 
   function party() {
@@ -273,6 +254,14 @@
   function backToWall() {
     taskViewMode.set("cards");
     setTaskView("cards");
+  }
+  // Post-triage landing: an explicit tap (unlike the old silent hop) that
+  // flips the Show pill to Mine and the layout to the list, both persisted.
+  function seeMine() {
+    scope.set("personal");
+    setScope("personal");
+    taskViewMode.set("list");
+    setTaskView("list");
   }
 </script>
 
@@ -392,7 +381,12 @@
           </p>
           <div class="doneactions">
             <button class="primary" on:click={startOver}>Start over</button>
-            <button class="ghost" on:click={backToWall}>Back to wall</button>
+            {#if $telegramUser}
+              <button class="primary" on:click={seeMine}>See my tasks</button>
+            {/if}
+            <button class="ghost" on:click={backToWall}>
+              Back to post-its
+            </button>
           </div>
         </div>
       {/each}
