@@ -41,6 +41,14 @@ export const GET: RequestHandler = async ({ cookies, url }) => {
     cfg.jwtSecret,
   );
   if (profile) {
+    // Sliding session: re-mint on every restore so active users never hit the
+    // fixed JWT expiry — only SESSION_TTL_S of complete absence logs you out.
+    const token = await mintSession(profile, cfg.jwtSecret);
+    cookies.set(
+      SESSION_COOKIE,
+      token,
+      sessionCookieOptions(url.protocol === "https:"),
+    );
     return json(buildAuthResult(profile, cfg.derivationSecret));
   }
 

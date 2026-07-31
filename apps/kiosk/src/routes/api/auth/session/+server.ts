@@ -37,7 +37,20 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     cookies.get(SESSION_COOKIE),
     cfg.jwtSecret,
   );
-  if (profile) return json({ user: profile });
+  if (profile) {
+    // Sliding session: re-mint on every restore so active users never hit the
+    // fixed JWT expiry — only SESSION_TTL_S of complete absence logs you out.
+    const token = await mintSession(profile, cfg.jwtSecret);
+    cookies.set(
+      SESSION_COOKIE,
+      token,
+      sessionCookieOptions(
+        url.protocol === "https:",
+        cookieDomain(url.hostname),
+      ),
+    );
+    return json({ user: profile });
+  }
 
   // Dev-only auto-login so editing works locally without a real round-trip.
   const dev = devProfile();

@@ -44,7 +44,9 @@ export const OIDC_SCOPE = "openid profile";
 
 // --- Our own session ---
 export const SESSION_COOKIE = "holons_session";
-export const SESSION_TTL_S = 7 * 24 * 60 * 60; // 7 days
+// Sessions slide: /api/auth/session re-mints the cookie on every restore, so
+// this is the maximum *absence* before re-login, not a hard cap on session age.
+export const SESSION_TTL_S = 30 * 24 * 60 * 60; // 30 days
 const SESSION_ISSUER = "holons";
 const SESSION_AUDIENCE = "holons-web";
 const enc = new TextEncoder();
