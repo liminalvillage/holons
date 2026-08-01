@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isParticipant,
+  personalChecklists,
   personalEvents,
   personalTasks,
   personalThings,
@@ -10,6 +11,7 @@ import {
 import type {
   BacklogTask,
   CalendarEvent,
+  ChecklistCard,
   LibraryThing,
   TaskPerson,
 } from "./data";
@@ -145,5 +147,48 @@ describe("personalThings", () => {
   it("returns nothing when logged out", () => {
     expect(personalThings(things, null)).toEqual([]);
     expect(personalThings(things, undefined)).toEqual([]);
+  });
+});
+
+describe("personalChecklists", () => {
+  function list(
+    id: string,
+    creator: string | number | null,
+    special = false,
+  ): ChecklistCard {
+    return {
+      id,
+      title: id.toUpperCase(),
+      icon: "📋",
+      done: 0,
+      total: 0,
+      special,
+      creator,
+    };
+  }
+  const lists = [
+    list("mine", 235),
+    list("mine-string", "235"),
+    list("theirs", 999),
+    list("orphan", null),
+    list("shopping", 999, true),
+  ];
+
+  it("keeps the user's own lists plus the communal special ones", () => {
+    expect(personalChecklists(lists, 235).map((c) => c.id)).toEqual([
+      "mine",
+      "mine-string",
+      "shopping",
+    ]);
+    expect(personalChecklists(lists, "235").map((c) => c.id)).toEqual([
+      "mine",
+      "mine-string",
+      "shopping",
+    ]);
+  });
+
+  it("returns nothing when logged out", () => {
+    expect(personalChecklists(lists, null)).toEqual([]);
+    expect(personalChecklists(lists, undefined)).toEqual([]);
   });
 });

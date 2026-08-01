@@ -16,6 +16,7 @@ import {
 } from "@holons/core/holosphere";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
+import type { ChecklistStore } from "@holons/core/checklists";
 import { Buffer } from "buffer";
 import { resolveAppName, resolvePeers } from "./config";
 import { actingAs } from "./auth";
@@ -268,6 +269,33 @@ export async function getLibraryDb(): Promise<LibraryDB> {
       return res;
     },
     delete: (holon, lens, key) => hs.delete(holon, lens, key),
+  };
+}
+
+/**
+ * A `ChecklistStore` adapter over Holosphere so core's checklist CRUD owns the
+ * meaning of lists. Writes carry the logged-in Telegram user as `actingAs` and
+ * announce themselves to the write-echo watchdog, like every other write path.
+ */
+export async function getChecklistStore(): Promise<ChecklistStore> {
+  const hs = await getHolosphere();
+  return {
+    get: (holon, bucket, key) => hs.get(holon, bucket, key),
+    getAll: (holon, bucket) => hs.getAll(holon, bucket),
+    put: async (holon, bucket, value) => {
+      const at = Date.now();
+      const res = await hs.put(
+        holon,
+        bucket,
+        value as object,
+        {
+          actingAs: actingAs(),
+        } as any,
+      );
+      announceWrite(holon, bucket, at);
+      return res;
+    },
+    delete: (holon, bucket, key) => hs.delete(holon, bucket, key),
   };
 }
 

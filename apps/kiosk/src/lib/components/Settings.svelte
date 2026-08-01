@@ -12,8 +12,10 @@
     accent,
     libraryEnabled,
     rolesEnabled,
+    checklistsEnabled,
     libraryPref,
     rolesPref,
+    checklistsPref,
     statusEnabled,
     settingsOpen,
   } from "$lib/stores";
@@ -24,6 +26,7 @@
     setAccent,
     setLibraryPref,
     setRolesPref,
+    setChecklistsPref,
     setStatusEnabled,
     setThemeMode,
     resolveVoiceKey,
@@ -45,8 +48,10 @@
   // setting never freezes a content-driven tab into a manual choice.
   let draftLibrary = $libraryEnabled;
   let draftRoles = $rolesEnabled;
+  let draftChecklists = $checklistsEnabled;
   const initialLibrary = $libraryEnabled;
   const initialRoles = $rolesEnabled;
+  const initialChecklists = $checklistsEnabled;
   let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
   let draftVoiceKey = resolveVoiceKey() ?? "";
@@ -109,6 +114,10 @@
     if (draftRoles !== initialRoles) {
       setRolesPref(draftRoles ? "on" : "off");
       rolesPref.set(draftRoles ? "on" : "off");
+    }
+    if (draftChecklists !== initialChecklists) {
+      setChecklistsPref(draftChecklists ? "on" : "off");
+      checklistsPref.set(draftChecklists ? "on" : "off");
     }
     setStatusEnabled(draftStatus);
     statusEnabled.set(draftStatus);
@@ -246,6 +255,26 @@
       aria-checked={draftRoles}
       aria-label="Show the Roles tab"
       on:click={() => (draftRoles = !draftRoles)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >Lists tab
+      <span class="sub"
+        >— shows by itself when checklists exist; flip to force</span
+      ></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={draftChecklists}
+      role="switch"
+      aria-checked={draftChecklists}
+      aria-label="Show the Lists tab"
+      on:click={() => (draftChecklists = !draftChecklists)}
     >
       <span class="knob"></span>
     </button>

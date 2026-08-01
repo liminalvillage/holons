@@ -5,7 +5,12 @@
 // writer, so identity is compared stringified — the same rule core's
 // membership helpers use (never `===` on raw ids).
 
-import type { BacklogTask, CalendarEvent, LibraryThing } from "./data";
+import type {
+  BacklogTask,
+  CalendarEvent,
+  ChecklistCard,
+  LibraryThing,
+} from "./data";
 
 /** Loose id equality: `7` and `"7"` are the same person. */
 export function sameId(
@@ -40,6 +45,16 @@ export function personalEvents(
 ): CalendarEvent[] {
   if (uid == null) return [];
   return events.filter((e) => isParticipant(e, uid));
+}
+
+/** The checklists the user created. Special lists (agenda/shopping) are
+ *  communal by nature and stay visible in the personal scope too. */
+export function personalChecklists(
+  lists: ChecklistCard[],
+  uid: string | number | null | undefined,
+): ChecklistCard[] {
+  if (uid == null) return [];
+  return lists.filter((c) => c.special || sameId(c.creator, uid));
 }
 
 /** The things currently out with the user. */

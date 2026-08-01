@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dueLabelFor,
   toBacklog,
+  toChecklists,
   toEvents,
   toRoles,
   toThings,
@@ -11,6 +12,7 @@ import {
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
+import type { Checklist } from "@holons/core/checklists";
 
 function quest(id: string, extra: Partial<Quest> = {}): Quest {
   return { id, title: id, status: "ongoing", participants: [], ...extra };
@@ -242,5 +244,57 @@ describe("toThings — borrow state mapping", () => {
     expect(ladder.available).toBe(true);
     expect(ladder.borrowerId).toBeNull();
     expect(ladder.returnBy).toBeNull();
+  });
+});
+
+describe("toChecklists — list card mapping", () => {
+  it("counts done items, pins special lists first, then alphabetical", () => {
+    const lists = [
+      {
+        id: "weekend build",
+        type: "checklist",
+        items: [
+          { text: "sand", checked: true },
+          { text: "paint", checked: false },
+        ],
+      },
+      { id: "shopping", type: "shopping", items: [] },
+      { id: "cleaning", type: "checklist", items: [] },
+    ] as unknown as Checklist[];
+    const out = toChecklists(lists);
+    expect(out.map((c) => c.id)).toEqual([
+      "shopping",
+      "cleaning",
+      "weekend build",
+    ]);
+    const build = out.find((c) => c.id === "weekend build")!;
+    expect(build.done).toBe(1);
+    expect(build.total).toBe(2);
+    expect(build.special).toBe(false);
+    expect(out[0].special).toBe(true);
+    expect(out[0].icon).toBe("🛒");
+  });
+
+  it("types legacy records so agenda/shopping ids read as special", () => {
+    const out = toChecklists([
+      { id: "agenda", items: [] },
+    ] as unknown as Checklist[]);
+    expect(out[0].special).toBe(true);
+    expect(out[0].icon).toBe("📅");
+  });
+
+  it("drops blank ids and federated duplicates", () => {
+    const out = toChecklists([
+      { id: "chores", items: [] },
+      { id: "chores", items: [], _federation: { origin: "999" } },
+      { items: [] },
+    ] as unknown as Checklist[]);
+    expect(out.map((c) => c.id)).toEqual(["chores"]);
+  });
+
+  it("does not mutate the raw record when typing legacy lists", () => {
+    const raw = { id: "agenda", items: [] } as unknown as Checklist;
+    toChecklists([raw]);
+    expect(raw.type).toBeUndefined();
   });
 });

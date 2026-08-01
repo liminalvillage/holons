@@ -27,6 +27,7 @@ const APP_KEY = "kiosk_app";
 const FEDERATED_KEY = "kiosk_federated";
 const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
+const CHECKLISTS_KEY = "kiosk_checklists";
 const STATUS_KEY = "kiosk_status";
 const PINNED_KEY = "kiosk_pinned";
 const BRAND_NAME_KEY = "kiosk_brand_name";
@@ -229,6 +230,16 @@ export function resolveRolesPref(): TabPref {
 /** Persist the Roles-tab preference (`auto` clears the stored choice). */
 export function setRolesPref(pref: TabPref): void {
   setTabPref(ROLES_KEY, pref);
+}
+
+/** The Lists (checklists) tab preference — same tri-state as Library/Roles. */
+export function resolveChecklistsPref(): TabPref {
+  return resolveTabPref(CHECKLISTS_KEY);
+}
+
+/** Persist the Lists-tab preference (`auto` clears the stored choice). */
+export function setChecklistsPref(pref: TabPref): void {
+  setTabPref(CHECKLISTS_KEY, pref);
 }
 
 /**

@@ -9,6 +9,7 @@
     resolveScope,
     resolveLibraryPref,
     resolveRolesPref,
+    resolveChecklistsPref,
     resolveStatusEnabled,
     resolveBrandName,
     resolveBrandLogo,
@@ -25,6 +26,7 @@
     rawQuests,
     rawLibrary,
     rawRoles,
+    rawChecklists,
     lensEmitAt,
     showNotice,
     holonName,
@@ -36,6 +38,7 @@
     federated,
     libraryPref,
     rolesPref,
+    checklistsPref,
     statusEnabled,
     taskViewMode,
     taskSort,
@@ -56,6 +59,7 @@
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
+  import type { Checklist } from "@holons/core/checklists";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
@@ -81,6 +85,7 @@
   let questsSub: FederatedSub | null = null;
   let librarySub: FederatedSub | null = null;
   let rolesSub: FederatedSub | null = null;
+  let checklistsSub: FederatedSub | null = null;
 
   // Board reveal: hold the views hidden while a holon's initial data burst
   // streams in, then reveal once it settles so the entrance animation plays on
@@ -105,16 +110,19 @@
     fed: boolean,
     libraryOn: boolean,
     rolesOn: boolean,
+    checklistsOn: boolean,
   ) {
     if (!id) {
       questsSub?.unsubscribe();
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
-      questsSub = librarySub = rolesSub = null;
+      checklistsSub?.unsubscribe();
+      questsSub = librarySub = rolesSub = checklistsSub = null;
       boundHolon = null;
       rawQuests.set([]);
       rawLibrary.set([]);
       rawRoles.set([]);
+      rawChecklists.set([]);
       holonName.set("");
       awaitingReady = false;
       if (readyTimer) clearTimeout(readyTimer);
@@ -147,8 +155,10 @@
       questsSub?.unsubscribe();
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
+      checklistsSub?.unsubscribe();
       librarySub = null; // recreated below when the Library tab is enabled
       rolesSub = null; // recreated below when the Roles tab is enabled
+      checklistsSub = null; // recreated below when the Lists tab is enabled
       questsSub = hs.subscribeFederated(
         id,
         "quests",
@@ -202,6 +212,21 @@
       rolesSub = null;
       rawRoles.set([]);
     }
+    if (checklistsOn && !checklistsSub) {
+      checklistsSub = hs.subscribeFederated(
+        id,
+        "checklists",
+        (items) => {
+          lensEmitAt.checklists = Date.now();
+          rawChecklists.set(items as Checklist[]);
+        },
+        { includeFederated: fed },
+      );
+    } else if (!checklistsOn && checklistsSub) {
+      checklistsSub.unsubscribe();
+      checklistsSub = null;
+      rawChecklists.set([]);
+    }
 
     // Federated toggle flipped (holon unchanged) → fold partners in/out live on
     // every active lens, without tearing down the local subscription so the
@@ -211,6 +236,7 @@
       questsSub?.setFederated(fed);
       librarySub?.setFederated(fed);
       rolesSub?.setFederated(fed);
+      checklistsSub?.setFederated(fed);
     }
 
     booting = false;
@@ -222,6 +248,7 @@
         questsSub?.unsubscribe();
         librarySub?.unsubscribe();
         rolesSub?.unsubscribe();
+        checklistsSub?.unsubscribe();
       };
     }
   }
@@ -249,7 +276,13 @@
     // federation is off — only the displayed holon's writes are probes.
     if (d.holon !== boundHolon) return;
     const lens = d.lens as keyof typeof lensEmitAt;
-    if (lens !== "quests" && lens !== "library" && lens !== "roles") return;
+    if (
+      lens !== "quests" &&
+      lens !== "library" &&
+      lens !== "roles" &&
+      lens !== "checklists"
+    )
+      return;
     const at = d.at;
     setTimeout(() => {
       if (lensEmitAt[lens] >= at) return; // echoed — subscription is alive
@@ -265,6 +298,7 @@
         get(federated),
         get(libraryPref) !== "off",
         get(rolesPref) !== "off",
+        get(checklistsPref) !== "off",
       );
     }, ECHO_GRACE_MS);
   }
@@ -274,6 +308,7 @@
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
     rolesPref.set(resolveRolesPref());
+    checklistsPref.set(resolveChecklistsPref());
     statusEnabled.set(resolveStatusEnabled());
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
@@ -299,6 +334,7 @@
       questsSub?.unsubscribe();
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
+      checklistsSub?.unsubscribe();
     };
   });
 
@@ -310,13 +346,14 @@
       $federated,
       $libraryPref !== "off",
       $rolesPref !== "off",
+      $checklistsPref !== "off",
     );
 
   // While awaiting the first reveal, (re)arm the settle timer on every data
   // change — including the bind itself, so a holon with no data still reveals.
   // Referencing the raw stores makes this re-run as the initial burst streams.
   $: if (mounted && awaitingReady) {
-    void [$rawQuests, $rawLibrary, $rawRoles];
+    void [$rawQuests, $rawLibrary, $rawRoles, $rawChecklists];
     armReady();
   }
 

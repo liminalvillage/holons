@@ -9,6 +9,13 @@ import { isQuestSettled, unmetDependencies } from "@holons/core/tasks";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
+import {
+  getChecklistDisplayTitle,
+  getChecklistIcon,
+  isSpecialChecklist,
+  migrateLegacyChecklistType,
+} from "@holons/core/checklists";
+import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
 import { sourceHolonId, sourceRef } from "@holons/core/holosphere";
 
@@ -436,6 +443,62 @@ export function toRoles(roles: Role[], names?: Names): RoleCard[] {
       return true;
     })
     .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export interface ChecklistCard {
+  id: string;
+  title: string;
+  /** Core's emoji for the list kind (📅 agenda, 🛒 shopping, 📋 …). */
+  icon: string;
+  /** Items done / total, for the progress chip. */
+  done: number;
+  total: number;
+  /** Agenda/shopping — undeletable, pinned ahead of the ad-hoc lists. */
+  special: boolean;
+  /** Who created the list (raw id), for the personal scope. */
+  creator?: string | number | null;
+  source?: string;
+  /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
+  sourceColor?: string;
+}
+
+/**
+ * Checklists lens → display cards: the special agenda/shopping lists first,
+ * then alphabetical. Legacy records are run through core's type migration so
+ * the icon/special rules see a typed list.
+ */
+export function toChecklists(
+  lists: Checklist[],
+  names?: Names,
+): ChecklistCard[] {
+  const seen = new Set<string>();
+  return lists
+    .filter((c) => c && c.id != null && String(c.id).length > 0)
+    .map((c) => {
+      const typed = migrateLegacyChecklistType({ ...c });
+      const items = Array.isArray(typed.items) ? typed.items : [];
+      return {
+        id: String(typed.id),
+        title: getChecklistDisplayTitle(typed),
+        icon: getChecklistIcon(typed),
+        done: items.filter((i) => i?.checked).length,
+        total: items.length,
+        special: isSpecialChecklist(typed),
+        creator: typed.creator ?? null,
+        source: sourceLabel(c, names),
+        sourceColor: sourceGlow(c),
+      };
+    })
+    .filter((c) => {
+      // Drop federated duplicates so view keys stay unique.
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.special !== b.special) return a.special ? -1 : 1;
+      return a.title.localeCompare(b.title);
+    });
 }
 
 /** Library lens → display things, available first then alphabetical. */

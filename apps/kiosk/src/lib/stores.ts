@@ -8,11 +8,13 @@ import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
+import type { Checklist } from "@holons/core/checklists";
 import {
   toEvents,
   toBacklog,
   toThings,
   toRoles,
+  toChecklists,
   toSuggestions,
   filterBySearch,
   categoryColorMap,
@@ -78,6 +80,12 @@ export const libraryPref = writable<TabPref>("auto");
  * as `libraryPref`.
  */
 export const rolesPref = writable<TabPref>("auto");
+
+/**
+ * Caretaker preference for the optional Lists (checklists) tab — same
+ * tri-state semantics as `libraryPref`.
+ */
+export const checklistsPref = writable<TabPref>("auto");
 
 /**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
@@ -150,6 +158,7 @@ export const userMenuOpen = writable<boolean>(false);
 export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
 export const rawRoles = writable<Role[]>([]);
+export const rawChecklists = writable<Checklist[]>([]);
 
 /**
  * Wall-clock time of the last live emission per lens, stamped by the layout's
@@ -161,10 +170,14 @@ export const rawRoles = writable<Role[]>([]);
  * eats every remote update too. Plain object, not a store: the watchdog polls
  * it point-in-time; nothing renders from it.
  */
-export const lensEmitAt: Record<"quests" | "library" | "roles", number> = {
+export const lensEmitAt: Record<
+  "quests" | "library" | "roles" | "checklists",
+  number
+> = {
   quests: 0,
   library: 0,
   roles: 0,
+  checklists: 0,
 };
 
 // Scope narrows the raw records first (dropping partner copies outside the
@@ -194,6 +207,11 @@ export const roleCards = derived(
   [rawRoles, partnerNames, searchQuery, scope],
   ([$r, $n, $query, $s]) =>
     filterBySearch(toRoles(scopeLocal($r, $s), $n), $query),
+);
+export const checklistCards = derived(
+  [rawChecklists, partnerNames, searchQuery, scope],
+  ([$c, $n, $query, $s]) =>
+    filterBySearch(toChecklists(scopeLocal($c, $s), $n), $query),
 );
 // Tap-to-filter chips for the search dropdown, derived from the *unqueried*
 // view models so the list stays stable while a query narrows the boards —
@@ -272,6 +290,7 @@ export const TABS = [
   { id: "tasks", label: "Tasks", glyph: "✎" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "library", label: "Library", glyph: "❖" },
+  { id: "checklists", label: "Lists", glyph: "☑" },
   { id: "roles", label: "Roles", glyph: "✪" },
   { id: "status", label: "Status", glyph: "♛" },
 ] as const;
@@ -296,17 +315,23 @@ export const rolesEnabled = derived(
   ([$pref, $items]) =>
     $pref === "on" || ($pref === "auto" && $items.length > 0),
 );
+export const checklistsEnabled = derived(
+  [checklistsPref, rawChecklists],
+  ([$pref, $items]) =>
+    $pref === "on" || ($pref === "auto" && $items.length > 0),
+);
 
 /**
- * Tabs actually shown: Library and Roles per their (possibly content-driven)
- * visibility above, Status only when the caretaker enabled it.
+ * Tabs actually shown: Library, Lists, and Roles per their (possibly
+ * content-driven) visibility above, Status only when the caretaker enabled it.
  */
 export const visibleTabs = derived(
-  [libraryEnabled, rolesEnabled, statusEnabled],
-  ([$library, $roles, $status]) =>
+  [libraryEnabled, checklistsEnabled, rolesEnabled, statusEnabled],
+  ([$library, $checklists, $roles, $status]) =>
     TABS.filter(
       (t) =>
         (t.id !== "library" || $library) &&
+        (t.id !== "checklists" || $checklists) &&
         (t.id !== "roles" || $roles) &&
         (t.id !== "status" || $status),
     ),

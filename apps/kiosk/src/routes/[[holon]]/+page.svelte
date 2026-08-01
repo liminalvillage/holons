@@ -4,6 +4,7 @@
   import CalendarView from "$lib/views/CalendarView.svelte";
   import TasksView from "$lib/views/TasksView.svelte";
   import LibraryView from "$lib/views/LibraryView.svelte";
+  import ChecklistsView from "$lib/views/ChecklistsView.svelte";
   import RolesView from "$lib/views/RolesView.svelte";
   import StatusView from "$lib/views/StatusView.svelte";
 </script>
@@ -22,6 +23,8 @@
           <CalendarView />
         {:else if $activeTab === "library"}
           <LibraryView />
+        {:else if $activeTab === "checklists"}
+          <ChecklistsView />
         {:else if $activeTab === "roles"}
           <RolesView />
         {:else if $activeTab === "status"}
