@@ -15,14 +15,13 @@
     showNotice,
     scope,
     rotationHold,
+    pillsSuppressed,
   } from "$lib/stores";
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getChecklistStore } from "$lib/holosphere";
   import { personalChecklists } from "$lib/personal";
   import { sourceRef } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
-  import PillBar from "$lib/components/PillBar.svelte";
-  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
     CHECKLIST_TYPES,
@@ -56,7 +55,10 @@
 
   // Suspend auto-rotation while a list is open so the screen can't flip away
   // from under whoever is ticking it (same pattern as the Status breakdown).
+  // The shell's pills band hides too — the Show filter is meaningless while
+  // a single list fills the board.
   $: rotationHold.set(openId != null);
+  $: pillsSuppressed.set(openId != null);
 
   function openList(id: string) {
     openId = id;
@@ -223,19 +225,14 @@
 
   onMount(() => {
     return () => {
-      // Release the rotation hold if we unmount with a list still open.
+      // Release the holds if we unmount with a list still open.
       rotationHold.set(false);
+      pillsSuppressed.set(false);
     };
   });
 </script>
 
 <div class="board">
-  {#if !openId}
-    <PillBar>
-      <ScopePill />
-    </PillBar>
-  {/if}
-
   <div class="lists scroll">
     {#if openId}
       <!-- One open list: items with big tap-to-tick rows. -->

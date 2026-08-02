@@ -17,8 +17,7 @@
     taskSort,
     scope,
   } from "$lib/stores";
-  import { setTaskSort, setTaskView, type TaskViewMode } from "$lib/config";
-  import { LAYOUT_SEGMENTS, SORT_SEGMENTS } from "$lib/pills";
+  import { setTaskSort } from "$lib/config";
   import type { TaskSort } from "$lib/data";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
@@ -49,9 +48,6 @@
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
-  import PillBar from "$lib/components/PillBar.svelte";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
-  import ScopePill from "$lib/components/ScopePill.svelte";
   import TaskListView from "./TaskListView.svelte";
   import TaskSwipeView from "./TaskSwipeView.svelte";
 
@@ -61,22 +57,12 @@
   let scrollEl: HTMLElement | undefined;
   onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
 
-  // ── Layout: swipe deck / compact list / post-it wall. Whose tasks show is
-  // the orthogonal Show pill (scope) — see ScopePill.
-  const MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
-    { id: "swipe", ...LAYOUT_SEGMENTS.card },
-    { id: "list", ...LAYOUT_SEGMENTS.list },
-    { id: "cards", ...LAYOUT_SEGMENTS.wall },
-  ];
-
+  // Layout and sort are chosen in the shell's global pills band (see
+  // GlobalPills); this view only reads the stores. setSort stays for the
+  // drag-to-reorder gesture, which flips the ordering to manual.
   function setSort(s: string) {
     taskSort.set(s as TaskSort);
     setTaskSort(s as TaskSort);
-  }
-
-  function setMode(m: string) {
-    taskViewMode.set(m as TaskViewMode);
-    setTaskView(m as TaskViewMode);
   }
 
   function openTask(id: string) {
@@ -638,26 +624,6 @@
 </script>
 
 <div class="board">
-  <PillBar>
-    <ScopePill />
-    <PillSwitch
-      options={MODES}
-      value={$taskViewMode}
-      onChange={setMode}
-      icon="eye"
-      title="View"
-      label="Tasks layout"
-    />
-    <PillSwitch
-      options={[...SORT_SEGMENTS]}
-      value={$taskSort}
-      onChange={setSort}
-      icon="sort"
-      title="Sort"
-      label="Tasks order"
-    />
-  </PillBar>
-
   {#if $scope === "personal" && !$telegramUser}
     <div class="tasks scroll">
       <p class="empty">Log in to see the tasks you're part of ✶</p>

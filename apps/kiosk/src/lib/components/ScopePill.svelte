@@ -10,6 +10,9 @@
   import { setScope, type Scope } from "$lib/config";
   import { telegramUser } from "$lib/auth";
 
+  /** Force the small cycling toggle (see PillSwitch). */
+  export let compact = false;
+
   // "Mine" needs someone to be personal about — hidden logged out, EXCEPT
   // when a persisted personal scope is active, so the pill still shows what's
   // selected (the views render their own log-in prompts).
@@ -32,6 +35,7 @@
   value={$scope}
   {onChange}
   showText
+  {compact}
   icon="filter"
   title="Show"
   label="Whose items to show"

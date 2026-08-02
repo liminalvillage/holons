@@ -5,10 +5,11 @@
   // paper track with only the active segment raised, matching the calendar's
   // Day/Week/Month switcher. Each pill leads with an identity icon saying
   // what it DOES (funnel = filter/scope, eye = layout, ordered list = sort);
-  // on big screens the category title accompanies the icon, and on small
-  // screens the whole control collapses into a single cycling toggle — tap it
-  // to step through the options. Positioning is the parent's job (see
-  // PillBar); this renders in flow.
+  // on big screens the category title accompanies the icon. The whole control
+  // collapses into a single cycling toggle — tap it to step through the
+  // options — on small screens, or whenever the parent forces `compact` (the
+  // global band does, to keep every pill on one row). Positioning is the
+  // parent's job (see GlobalPills); this renders in flow.
   import { tick } from "svelte";
 
   export let options: {
@@ -28,6 +29,8 @@
   export let title = "";
   /** Render glyph + label text in each segment instead of the glyph alone. */
   export let showText = false;
+  /** Force the small cycling toggle regardless of screen width. */
+  export let compact = false;
 
   // Stroke paths (24×24) for the identity icons.
   const ICONS: Record<string, string[]> = {
@@ -87,7 +90,7 @@
   }
 </script>
 
-<div class="pill">
+<div class="pill" class:compact>
   <!-- Full segmented control — big and medium screens. -->
   <div
     class="viewswitch"
@@ -289,5 +292,12 @@
     .cycler {
       display: inline-flex;
     }
+  }
+  /* Parent-forced compact: same swap at any width. */
+  .pill.compact .viewswitch {
+    display: none;
+  }
+  .pill.compact .cycler {
+    display: inline-flex;
   }
 </style>

@@ -20,7 +20,6 @@
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
-  import { setRolesView, type RolesViewMode } from "$lib/config";
   import { sameId } from "$lib/personal";
   import { noteColor, noteTilt, noteRiseDelay, type RoleCard } from "$lib/data";
   import {
@@ -48,24 +47,10 @@
     type ScheduledUser,
   } from "@holons/core/roles";
   import Modal from "$lib/components/Modal.svelte";
-  import PillBar from "$lib/components/PillBar.svelte";
-  import { LAYOUT_SEGMENTS } from "$lib/pills";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
-  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
-  // ── Layout: compact rows / today cards (wall) / week grid. Whose roles
-  // show is the orthogonal Show pill (scope) — see ScopePill.
-  const MODES: { id: RolesViewMode; glyph: string; label: string }[] = [
-    { id: "list", ...LAYOUT_SEGMENTS.list },
-    { id: "cards", ...LAYOUT_SEGMENTS.wall },
-    { id: "week", ...LAYOUT_SEGMENTS.week },
-  ];
-
-  function setMode(m: string) {
-    rolesViewMode.set(m as RolesViewMode);
-    setRolesView(m as RolesViewMode);
-  }
+  // Layout is chosen in the shell's global pills band (see GlobalPills);
+  // this view only reads the store.
 
   // Source records keyed for writes; the cards list is display-only.
   $: byId = new Map($rawRoles.map((r) => [String(r.id ?? r.title), r]));
@@ -329,18 +314,6 @@
 </script>
 
 <div class="board">
-  <PillBar>
-    <ScopePill />
-    <PillSwitch
-      options={MODES}
-      value={$rolesViewMode}
-      onChange={setMode}
-      icon="eye"
-      title="View"
-      label="Roles layout"
-    />
-  </PillBar>
-
   {#if $rolesViewMode === "week"}
     <div class="weekbar">
       <div class="weeknav">
@@ -713,7 +686,7 @@
     flex-direction: column;
   }
 
-  /* Week navigation, centred under the pill band. */
+  /* Week navigation, centred at the top of the board. */
   .weekbar {
     flex: 0 0 auto;
     display: flex;
@@ -759,7 +732,7 @@
     min-width: 0;
     padding: 0.9rem 1.4rem 1.6rem;
   }
-  /* Cards mode has no week bar — a hint of air below the pill band. */
+  /* Cards mode has no week bar — a hint of air at the top of the board. */
   .scrollarea.clear {
     padding-top: 0.5rem;
   }

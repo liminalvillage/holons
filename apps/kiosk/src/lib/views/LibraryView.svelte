@@ -12,18 +12,10 @@
   } from "$lib/stores";
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
-  import {
-    setLibraryView,
-    type LibraryViewMode,
-    type Scope,
-  } from "$lib/config";
+  import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
   import { dueLabelFor, type LibraryThing } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
-  import PillBar from "$lib/components/PillBar.svelte";
-  import { LAYOUT_SEGMENTS } from "$lib/pills";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
-  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
     addItem,
@@ -40,19 +32,8 @@
     }
   }
 
-  // ── Layout: one card at a time / compact list / icon card grid (wall) —
-  // the same selector as the Tasks view. Whose things show is the orthogonal
-  // Show pill (scope) — see ScopePill.
-  const MODES: { id: LibraryViewMode; glyph: string; label: string }[] = [
-    { id: "swipe", ...LAYOUT_SEGMENTS.card },
-    { id: "list", ...LAYOUT_SEGMENTS.list },
-    { id: "cards", ...LAYOUT_SEGMENTS.wall },
-  ];
-
-  function setMode(m: string) {
-    libraryViewMode.set(m as LibraryViewMode);
-    setLibraryView(m as LibraryViewMode);
-  }
+  // Layout is chosen in the shell's global pills band (see GlobalPills);
+  // this view only reads the store.
 
   // Things the logged-in user currently has out (legacy borrow fields are
   // core-maintained today-mirrors of bookings, so this is "out with me now").
@@ -147,18 +128,6 @@
 </script>
 
 <div class="board">
-  <PillBar>
-    <ScopePill />
-    <PillSwitch
-      options={MODES}
-      value={$libraryViewMode}
-      onChange={setMode}
-      icon="eye"
-      title="View"
-      label="Library layout"
-    />
-  </PillBar>
-
   <div class="lib scroll">
     {#if $scope === "personal" && !$telegramUser}
       <p class="empty">Log in to see what you've borrowed ✶</p>

@@ -21,13 +21,18 @@ the few knobs that matter.
   re-implements no domain rules of its own (core owns meaning).
 - **Live data:** subscribes to the holon's `quests` lens (calendar events + task
   backlog) and `library` lens.
-- **Show & Layout pills:** every content tab carries a **Show** pill choosing
-  whose items appear — **Mine** (only the logged-in user's), **All** (this
-  holon), or **Network** (this holon plus its federation partners, resolved
-  from `@holons/core/federation`'s `getFederationSnapshot`; partner items
-  carry a small `⇄ <partner>` source chip) — and, where a tab has more than
-  one layout, a separate **Layout** pill (e.g. Tasks: cards / list /
-  post-its). Both choices are remembered on the device.
+- **Show & Layout pills:** one global pills band under the tabs adapts to the
+  active tab. Its **Show** pill chooses whose items appear — **Personal**
+  (only the logged-in user's), **Local** (this holon), or **Global** (this
+  holon plus its federation partners, resolved from `@holons/core/federation`'s
+  `getFederationSnapshot`; partner items carry a small `⇄ <partner>` source
+  chip) — and, where a tab has more than one layout, it adds the tab's
+  **Layout** (and, on Tasks, **Sort**) pill. Whenever the pills fit on one
+  row they render as small tap-to-cycle toggles, Show pinned left and the
+  tab's pills right; only when even those outgrow the row do the full
+  segmented pills appear, centred and wrapping. The band hides together with
+  the header chrome when the screen goes idle; all choices are remembered on
+  the device.
 - **Settings:** the ⚙ button opens a panel to choose which holon the screen
   shows, set a **display name** and **logo** for the header (logo uploaded and
   stored on the device), and jump to the full dashboard. Choices are

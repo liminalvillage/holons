@@ -40,6 +40,7 @@ const TASK_VIEW_KEY = "kiosk_task_view";
 const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
+const CAL_VIEW_KEY = "kiosk_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
 
 /** The kiosk's default accent (teal). */
@@ -451,6 +452,23 @@ export function resolveRolesView(): RolesViewMode {
 /** Persist the Roles view mode. */
 export function setRolesView(mode: RolesViewMode): void {
   persist(ROLES_VIEW_KEY, mode);
+}
+
+/**
+ * The Calendar's time window (its Layout pill): one day, the week, or the
+ * month grid. Same per-device stickiness as the other views' layout choices.
+ */
+export type CalendarMode = "day" | "week" | "month";
+
+/** Resolve the Calendar mode; the single day is the default. */
+export function resolveCalendarView(): CalendarMode {
+  const v = persisted(CAL_VIEW_KEY);
+  return v === "week" || v === "month" ? v : "day";
+}
+
+/** Persist the Calendar mode. */
+export function setCalendarView(mode: CalendarMode): void {
+  persist(CAL_VIEW_KEY, mode);
 }
 
 /**

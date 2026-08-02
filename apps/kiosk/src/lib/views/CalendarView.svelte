@@ -15,6 +15,7 @@
     categoryColors,
     showNotice,
     scope,
+    calendarMode,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
@@ -29,9 +30,6 @@
   } from "$lib/data";
   import { personalEvents, personalTasks } from "$lib/personal";
   import Avatars from "$lib/components/Avatars.svelte";
-  import PillBar from "$lib/components/PillBar.svelte";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
-  import ScopePill from "$lib/components/ScopePill.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   // The Show pill narrows the calendar too: under Mine only events the user
@@ -367,8 +365,8 @@
   // it falls inside the shown week/month, else the first day of that period.
   function defaultCreateDay(): string {
     const today = startOfDay(get(now));
-    if (mode === "day") return isoDay(anchorDay);
-    if (mode === "week")
+    if ($calendarMode === "day") return isoDay(anchorDay);
+    if ($calendarMode === "week")
       return isoDay(
         weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
       );
@@ -449,32 +447,20 @@
     await saveQuest(q, { ...q, ends }, "resize");
   }
 
-  type Mode = "day" | "week" | "month";
-  const MODES: Mode[] = ["day", "week", "month"];
-  // Glyphs keep the small-screen cycling toggle legible once names drop.
-  const MODE_GLYPHS: Record<Mode, string> = {
-    day: "▣",
-    week: "▤",
-    month: "▦",
-  };
-  const MODE_OPTIONS = MODES.map((m) => ({
-    id: m,
-    label: m.charAt(0).toUpperCase() + m.slice(1),
-    glyph: MODE_GLYPHS[m],
-  }));
-  let mode: Mode = "day";
-
   // Navigation offset, in units of the current mode (days / weeks / months).
-  // Resets to 0 whenever the mode changes, so each view opens on "now".
+  // Resets to 0 whenever the mode changes, so each view opens on "now". The
+  // mode itself lives in the global calendarMode store (the shell's pills
+  // band sets it); this reaction keeps the reset/refocus side effects here.
   let offset = 0;
-  function setMode(m: Mode) {
-    mode = m;
+  let lastMode = get(calendarMode);
+  $: if ($calendarMode !== lastMode) {
+    lastMode = $calendarMode;
     offset = 0;
-    if (m === "day") void focusDay();
+    if ($calendarMode === "day") void focusDay();
   }
   function step(dir: 1 | -1) {
     offset += dir;
-    if (mode === "day") void focusDay();
+    if ($calendarMode === "day") void focusDay();
   }
 
   const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -511,7 +497,10 @@
     noteColor(category);
 
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
-  $: anchorDay = addDays(startOfDay($now), mode === "day" ? offset : 0);
+  $: anchorDay = addDays(
+    startOfDay($now),
+    $calendarMode === "day" ? offset : 0,
+  );
 
   $: weekDays = (() => {
     const start = startOfDay($now);
@@ -633,7 +622,7 @@
   onMount(() => {
     measureRem();
     window.addEventListener("resize", measureRem);
-    if (mode === "day") void focusDay();
+    if (get(calendarMode) === "day") void focusDay();
     // Kiosk displays are unattended — glide the timeline once so booked content
     // below the fold is shown without anyone dragging. Capped at the lowest
     // booked event so it never scrolls down into empty evening hours.
@@ -657,7 +646,8 @@
   // `data-day`), so the next day is fully interactive too.
   let bodyWidth = 0;
   const TWIN_MIN_REM = 40; // show the second column only past this width
-  $: showNextDay = mode === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
+  $: showNextDay =
+    $calendarMode === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
   $: nextDay = addDays(anchorDay, 1);
   // The "now" line only makes sense while the clock is inside the visible window.
   $: nowInWindow =
@@ -753,13 +743,13 @@
   })();
 
   $: periodLabel =
-    mode === "day"
+    $calendarMode === "day"
       ? anchorDay.toLocaleDateString([], {
           weekday: "long",
           day: "numeric",
           month: "long",
         })
-      : mode === "week"
+      : $calendarMode === "week"
         ? `${weekDays[0].toLocaleDateString([], { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString([], { day: "numeric", month: "short" })}`
         : monthAnchor.toLocaleDateString([], {
             month: "long",
@@ -830,21 +820,8 @@
   class:has-tray={unscheduled.length}
   style="--tray-h: {trayHeight}px;"
 >
-  <!-- The pill band lives INSIDE the header so it occupies the header's grid
-       area — in the landscape tray layout it can never cross into the drawer. -->
+  <!-- The Show + Day/Week/Month pills live in the shell's global band. -->
   <header class="head">
-    <PillBar>
-      <ScopePill />
-      <PillSwitch
-        options={MODE_OPTIONS}
-        value={mode}
-        onChange={(id) => setMode(id as Mode)}
-        showText
-        icon="eye"
-        title="View"
-        label="Calendar view"
-      />
-    </PillBar>
     <div class="nav">
       <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
         >‹</button
@@ -864,7 +841,7 @@
     bind:this={scrollEl}
     bind:clientWidth={bodyWidth}
   >
-    {#if mode === "month"}
+    {#if $calendarMode === "month"}
       <div class="weekdays">
         {#each WEEKDAYS as w}<span>{w}</span>{/each}
       </div>
@@ -911,7 +888,7 @@
           </div>
         {/each}
       </div>
-    {:else if mode === "week"}
+    {:else if $calendarMode === "week"}
       <div class="week">
         {#each weekDays as day (day.toISOString())}
           {@const evs = eventsOn(day, shownEvents)}
@@ -1416,7 +1393,9 @@
     flex-direction: column;
     align-items: center;
     gap: 0.4rem;
-    padding: 0 1.4rem 0.6rem;
+    /* Top spacing used to come from the pill band's own padding; the pills
+       now live in the shell's global band above the view. */
+    padding: 0.6rem 1.4rem 0.6rem;
   }
   .nav {
     display: flex;

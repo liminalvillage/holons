@@ -31,6 +31,7 @@ import {
   type TaskViewMode,
   type LibraryViewMode,
   type RolesViewMode,
+  type CalendarMode,
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
@@ -125,6 +126,9 @@ export const libraryViewMode = writable<LibraryViewMode>("cards");
 
 /** Roles layout: today cards / week grid / the user's own roles. */
 export const rolesViewMode = writable<RolesViewMode>("cards");
+
+/** Calendar window: day / week / month. Persisted per device via config. */
+export const calendarMode = writable<CalendarMode>("day");
 
 /**
  * Task ids the swipe deck has dealt with this session — skipped, joined, or
@@ -399,6 +403,13 @@ export const idle = writable<boolean>(true);
  * breakdown) so the screen can't flip out from under someone reading it.
  */
 export const rotationHold = writable<boolean>(false);
+
+/**
+ * When true, the global pills bar hides regardless of idle — a view holds
+ * this while an in-view panel replaces its board (e.g. an open checklist),
+ * where the filter pills would be meaningless chrome.
+ */
+export const pillsSuppressed = writable<boolean>(false);
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;

@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import { activeTab, boardReady } from "$lib/stores";
+  import GlobalPills from "$lib/components/GlobalPills.svelte";
   import CalendarView from "$lib/views/CalendarView.svelte";
   import TasksView from "$lib/views/TasksView.svelte";
   import LibraryView from "$lib/views/LibraryView.svelte";
@@ -15,6 +16,9 @@
        cleanly, the same way switching tabs does. Keyed on the tab so each
        switch remounts and re-animates. -->
   {#if $boardReady}
+    <!-- The pills band sits OUTSIDE the tab key: switching tabs swaps its
+         segments in place instead of remounting/re-animating the bar. -->
+    <GlobalPills />
     {#key $activeTab}
       <div class="view">
         {#if $activeTab === "tasks"}
@@ -45,6 +49,7 @@
     box-shadow: var(--shadow-soft);
     overflow: hidden;
     display: flex;
+    flex-direction: column;
   }
   .view {
     flex: 1;

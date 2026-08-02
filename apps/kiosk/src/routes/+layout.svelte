@@ -19,6 +19,7 @@
     resolveTaskSort,
     resolveLibraryView,
     resolveRolesView,
+    resolveCalendarView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
   import { get } from "svelte/store";
@@ -44,6 +45,7 @@
     taskSort,
     libraryViewMode,
     rolesViewMode,
+    calendarMode,
     boardReady,
     settingsOpen,
     userMenuOpen,
@@ -314,6 +316,7 @@
     taskSort.set(resolveTaskSort());
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
+    calendarMode.set(resolveCalendarView());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
