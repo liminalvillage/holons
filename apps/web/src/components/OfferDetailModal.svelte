@@ -17,7 +17,41 @@
 		close: void;
 		addParticipant: { item: any; user: any };
 		removeParticipant: { item: any; user: any };
+		respond: { item: any; message: string; price: number | null };
 	}>();
+
+	// Needs-network state (see @holons/core/needs): needs carry a lifecycle
+	// status and embedded provider responses.
+	const NEED_STATUS_LABELS: Record<string, string> = {
+		requested: 'Requested',
+		offered: 'Offers received',
+		claimed: 'Claimed',
+		fulfilled: 'Fulfilled',
+		cancelled: 'Cancelled',
+	};
+	let showRespondForm = false;
+	let respondMessage = '';
+	let respondPrice = '';
+	$: isNeed = item?.type === 'need';
+	$: needStatus = isNeed && typeof item?.status === 'string' && NEED_STATUS_LABELS[item.status]
+		? item.status
+		: null;
+	$: needOpen = isNeed && (needStatus === 'requested' || needStatus === 'offered' || !needStatus);
+	$: needResponses = isNeed && Array.isArray(item?.responses) ? item.responses : [];
+
+	function submitResponse() {
+		// bind:value on a number input yields a number (or undefined when empty).
+		const raw = String(respondPrice ?? '').trim();
+		const price = raw === '' ? null : Number(raw);
+		dispatch('respond', {
+			item,
+			message: respondMessage.trim(),
+			price: price != null && !Number.isNaN(price) ? price : null,
+		});
+		showRespondForm = false;
+		respondMessage = '';
+		respondPrice = '';
+	}
 
 	const TRANSACTION_TYPES = [
 		{ value: 'borrow-lend', offerLabel: 'Lend', requestLabel: 'Borrow' },
@@ -64,6 +98,7 @@
 
 	function handleClose() {
 		showAddUserPicker = false;
+		showRespondForm = false;
 		dispatch('close');
 	}
 </script>
@@ -143,6 +178,93 @@
 						<span class="detail__pill detail__pill--expiry">
 							Expires {formatRelativeExpiry(item.expires_at, Date.now())}
 						</span>
+					{/if}
+				</div>
+			{/if}
+
+			{#if needStatus}
+				<div class="detail__meta">
+					<span class="detail__pill detail__pill--status detail__pill--status-{needStatus}">
+						{NEED_STATUS_LABELS[needStatus]}
+					</span>
+					{#if item.hex}
+						<span class="detail__pill detail__pill--neutral" title="Published on the public map at this hex">
+							📍 {String(item.hex).slice(0, 10)}…
+						</span>
+					{/if}
+				</div>
+			{/if}
+
+			{#if isNeed}
+				<div class="detail__section">
+					<div class="detail__section-header">
+						<h3 class="detail__section-title">
+							Responses
+							<span class="detail__section-count">({needResponses.length})</span>
+						</h3>
+						{#if needOpen}
+							<button
+								type="button"
+								class="detail__add-btn"
+								on:click={() => (showRespondForm = !showRespondForm)}
+							>
+								<svelte:component this={UserPlus} size="14" />
+								<span>Respond</span>
+							</button>
+						{/if}
+					</div>
+
+					{#if showRespondForm}
+						<form class="detail__respond-form" on:submit|preventDefault={submitResponse}>
+							<textarea
+								bind:value={respondMessage}
+								placeholder="What can you provide, and when?"
+								rows="2"
+								class="detail__respond-input"
+							></textarea>
+							<div class="detail__respond-row">
+								<input
+									type="number"
+									step="any"
+									min="0"
+									bind:value={respondPrice}
+									placeholder="Price (optional, market price)"
+									class="detail__respond-input detail__respond-price"
+								/>
+								<button type="submit" class="btn btn--primary" disabled={!respondMessage.trim() && String(respondPrice ?? '').trim() === ''}>
+									Send response
+								</button>
+							</div>
+						</form>
+					{/if}
+
+					{#if needResponses.length > 0}
+						<ul class="detail__participants">
+							{#each needResponses as response (response.id)}
+								<li class="detail__participant detail__response">
+									<img
+										class="detail__user-avatar"
+										src={`/api/avatar?user_id=${response.responder?.id}`}
+										alt={response.responder?.name || 'Responder'}
+									/>
+									<div class="detail__response-body">
+										<span class="detail__user-name">
+											{response.responder?.name || resolvedName(response.responder?.id, $nameMap, null, 'Provider')}
+										</span>
+										{#if response.message}
+											<span class="detail__response-message">{response.message}</span>
+										{/if}
+									</div>
+									{#if response.price != null}
+										<span class="detail__pill detail__pill--accent">
+											{response.price}{response.currency ? ` ${response.currency}` : ''}
+										</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="detail__empty">No responses yet — nearby providers will see this need.</p>
 					{/if}
 				</div>
 			{/if}
@@ -547,5 +669,80 @@
 		font-style: italic;
 		font-size: 0.85rem;
 		margin: 0;
+	}
+
+	/* Needs-network additions */
+	.detail__pill--status {
+		background: rgba(75, 85, 99, 0.4);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		font-size: 0.7rem;
+	}
+	.detail__pill--status-requested {
+		background: rgba(99, 102, 241, 0.25);
+		color: #c7d2fe;
+	}
+	.detail__pill--status-offered {
+		background: rgba(245, 158, 11, 0.25);
+		color: #fcd34d;
+	}
+	.detail__pill--status-fulfilled {
+		background: rgba(16, 185, 129, 0.25);
+		color: #6ee7b7;
+	}
+	.detail__pill--status-cancelled {
+		background: rgba(239, 68, 68, 0.2);
+		color: #fca5a5;
+	}
+
+	.detail__respond-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.detail__respond-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.detail__respond-input {
+		width: 100%;
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-bg-tertiary);
+		border-radius: 0.5rem;
+		color: var(--color-text-primary);
+		font-size: 0.875rem;
+		padding: 0.5rem 0.625rem;
+		outline: none;
+		resize: vertical;
+	}
+
+	.detail__respond-input:focus {
+		border-color: var(--color-accent-light);
+	}
+
+	.detail__respond-price {
+		flex: 1;
+	}
+
+	.detail__response {
+		align-items: flex-start;
+	}
+
+	.detail__response-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.detail__response-message {
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+		white-space: pre-wrap;
 	}
 </style>

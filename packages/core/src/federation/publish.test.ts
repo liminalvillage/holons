@@ -51,7 +51,9 @@ function mockHolosphere(opts: MockOpts = {}): {
 		get: vi.fn(async (_h: string, lens: string) =>
 			lens === 'settings' ? { hex: opts.settingsHex ?? null } : null
 		),
-		isValidH3: () => !!opts.isH3
+		// A configured settings hex counts as a valid cell — readSettingsHex now
+		// validates with isValidH3 to filter legacy CSS-color defaults.
+		isValidH3: (id: string) => !!opts.isH3 || (!!opts.settingsHex && id === opts.settingsHex)
 	} as unknown as HoloSphere;
 
 	return { holosphere, put, propagate, createHologram, getNodeRef, cascadeRegistrations };

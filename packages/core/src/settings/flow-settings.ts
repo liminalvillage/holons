@@ -122,7 +122,10 @@ export function getDefaultHolonSettings(holonId: string): HolonSettings {
     timezone: 'UTC',
     language: 'en',
     theme: 'dark',
-    hex: '#3b82f6',
+    // H3 cell address — empty until the holon picks one (Settings → Hex
+    // Address). A CSS color used to be the accidental default here; see
+    // readSettingsHex, which filters legacy persisted values.
+    hex: '',
     maxTasks: 10,
     federation: [],
     lensConfig: {},
@@ -152,7 +155,7 @@ export function parseHolonSettings(data: any): HolonSettings {
     timezone: data.timezone || 'UTC',
     language: data.language || 'en',
     theme: data.theme || 'dark',
-    hex: data.hex || '#3b82f6',
+    hex: data.hex || '',
     maxTasks: data.maxTasks || 10,
     federation: data.federation || [],
     lensConfig: data.lensConfig || {},

@@ -21,6 +21,8 @@
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { mergeSelfIntoUsers, getSelfInitiator } from "$lib/util/usersWithSelf";
 	import { classifyMarketItem, createMarketItem } from "@holons/core/tasks";
+	import { respondToNeed, normalizeNeed } from "@holons/core/needs";
+	import { sourceRef } from "@holons/core/holosphere";
 
 	// Add offer/request modal state
 	let showAddModal = false;
@@ -502,6 +504,47 @@
 
 	function openDetail(item: any) {
 		selectedItem = item;
+	}
+
+	// Respond to a published need (see @holons/core/needs). The response is
+	// appended on the need record itself; for a foreign need (federated copy
+	// or hologram) the write is routed to the owner holon via sourceRef so it
+	// lands on the canonical record instead of forking a local copy.
+	async function respondToNeedItem(item: any, message: string, price: number | null) {
+		if (!holosphere || !holonID || !item) return;
+		const need = normalizeNeed(item);
+		if (!need) return;
+		const self = getSelfInitiator();
+		const result = respondToNeed(need, {
+			responder: {
+				id: self?.id ?? holonID,
+				name: self ? `${self.firstName} ${self.lastName}`.trim() || self.username : undefined,
+				holonId: holonID,
+			},
+			message: message || undefined,
+			price: price ?? undefined,
+		});
+		if (!result.ok) {
+			console.warn('[Offers.svelte] Need is closed, cannot respond:', result.reason);
+			return;
+		}
+		const ref = sourceRef(item, String(item.id ?? item.key));
+		const targetHolon = ref?.holon ?? holonID;
+		// Strip read-side envelopes; the owner holon stores the bare record.
+		const { _hologram, _federation, key, ...record } = result.need as any;
+		if (ref?.key) record.id = ref.key;
+		try {
+			await holosphere.put(targetHolon, 'quests', record);
+			if (selectedItem && String(selectedItem.id) === String(item.id)) {
+				selectedItem = { ...selectedItem, status: record.status, responses: record.responses };
+			}
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied("Unable to respond — this holon doesn't accept responses");
+			} else {
+				console.error('[Offers.svelte] Error responding to need:', error);
+			}
+		}
 	}
 
 	function closeDetail() {
@@ -1041,6 +1084,19 @@
 														{need.title}
 													</h3>
 													<SourceBadge item={need} currentHolonId={holonID} lensRoute="offers" />
+													{#if need.type === 'need' && typeof need.status === 'string' && ['requested', 'offered', 'claimed', 'fulfilled', 'cancelled'].includes(need.status)}
+														<span
+															class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 uppercase tracking-wide
+																{need.status === 'requested' ? 'bg-indigo-500/20 text-indigo-800' : ''}
+																{need.status === 'offered' ? 'bg-amber-500/25 text-amber-800' : ''}
+																{need.status === 'claimed' ? 'bg-sky-500/20 text-sky-800' : ''}
+																{need.status === 'fulfilled' ? 'bg-emerald-500/25 text-emerald-800' : ''}
+																{need.status === 'cancelled' ? 'bg-red-500/20 text-red-800' : ''}"
+															title="Need status"
+														>
+															{need.status}
+														</span>
+													{/if}
 													{#if need._userSpecific}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1333,6 +1389,7 @@
 	on:close={closeDetail}
 	on:addParticipant={(e) => takeOfferOrNeed(e.detail.item, e.detail.user)}
 	on:removeParticipant={(e) => removeParticipation(e.detail.item, e.detail.user)}
+	on:respond={(e) => respondToNeedItem(e.detail.item, e.detail.message, e.detail.price)}
 />
 
 <style>

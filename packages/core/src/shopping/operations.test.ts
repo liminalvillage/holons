@@ -6,7 +6,9 @@ import {
   createEmptyChecklist,
   createShoppingItem,
   isShoppingDoc,
+  needIdOf,
   normalizeChecklist,
+  stampNeedId,
   removeChecked,
   removeItem,
   toggleItem,
@@ -85,6 +87,23 @@ describe('shopping operations', () => {
   it('addItems threads category onto every item in the batch', () => {
     const next = addItems(null, ['a', 'b'], { category: 'Hardware' });
     expect(next.items.map((i) => i.category)).toEqual(['Hardware', 'Hardware']);
+  });
+
+  it('stampNeedId marks the published item and needIdOf reads it back', () => {
+    const list = addItems(null, ['flour', 'eggs']);
+    const [flour, eggs] = list.items;
+    const stamped = stampNeedId(list, flour.id, 'need-1');
+    const stampedFlour = stamped?.items.find((i) => i.id === flour.id);
+    expect(needIdOf(stampedFlour)).toBe('need-1');
+    expect(needIdOf(stamped?.items.find((i) => i.id === eggs.id))).toBeNull();
+    // Input untouched, numeric/string id comparison tolerant.
+    expect(needIdOf(list.items[0])).toBeNull();
+    expect(stampNeedId(list, String(flour.id), 'need-2')?.items[0].needId).toBe('need-2');
+  });
+
+  it('stampNeedId returns null for a missing item or checklist', () => {
+    expect(stampNeedId(null, '1', 'need-1')).toBeNull();
+    expect(stampNeedId(addItems(null, ['a']), 'nope', 'need-1')).toBeNull();
   });
 
   it('isShoppingDoc recognises the container by key, id, or type', () => {

@@ -16,6 +16,7 @@ const DOMAINS = [
   'checklists',
   'dna',
   'library',
+  'needs',
   'shopping',
   'federation',
   'commands',

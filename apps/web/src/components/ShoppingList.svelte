@@ -9,16 +9,30 @@
     import Modal from "./shared/Modal.svelte";
     import ItemCard from "./shared/ItemCard.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
-    import { ShoppingCart, Trash2, RefreshCw } from 'svelte-feathers';
+    import ShareNeedModal from "./shared/ShareNeedModal.svelte";
+    import { ShoppingCart, Trash2, RefreshCw, MapPin } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
     import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
+    import { nostrPublicKey } from "../lib/stores/nostr";
+    import { getSelfInitiator } from "$lib/util/usersWithSelf";
     import {
         toggleItem as coreToggleItem,
         removeItem as coreRemoveItem,
         removeChecked as coreRemoveChecked,
+        stampNeedId,
+        needIdOf,
     } from "@holons/core/shopping";
+    import {
+        needFromShoppingItem,
+        publishNeedNearby,
+        refreshPublishedNeed,
+        closeNeed,
+        normalizeNeed,
+        NEED_RECORD_LENS,
+        type CloseOutcome,
+    } from "@holons/core/needs";
 
     // Storage layout matches HolonsBot: a single container document under the
     // `checklists` collection with id `shopping`, holding all items in `items[]`.
@@ -30,6 +44,8 @@
         text: string;
         checked: boolean;
         createdBy?: number;
+        /** Id of the published need this item was shared as (see @holons/core/needs). */
+        needId?: string;
         _hologram?: ResolvedHologramMeta;
         _federation?: FederationMeta;
         [key: string]: any;
@@ -229,8 +245,78 @@
             if (!updated) return;
             localList = updated;
             await saveLocalList();
+            // Checking off an item that was shared as a need fulfills it.
+            if (!item.checked && needIdOf(item)) {
+                await closePublishedNeed(needIdOf(item)!, 'fulfilled');
+            }
         } catch (error) {
             handleWriteError(error, 'Failed to toggle item:');
+        }
+    }
+
+    // ── Share-as-need (geolocated needs network, @holons/core/needs) ──
+
+    let showShareModal = false;
+    let shareTarget: (ShoppingItem & { _key: string }) | null = null;
+    let shareBusy = false;
+    let shareStatus = '';
+
+    function openShareModal(item: ShoppingItem & { _key: string }): void {
+        shareTarget = item;
+        shareStatus = '';
+        showShareModal = true;
+    }
+
+    async function handleShare(event: CustomEvent<{ toPartners: boolean; toHex: boolean }>): Promise<void> {
+        const item = shareTarget;
+        if (!item || !holonID) return;
+        shareBusy = true;
+        shareStatus = 'Publishing…';
+        try {
+            const need = needFromShoppingItem(item as any, {
+                holonId: holonID,
+                initiator: getSelfInitiator() ?? { id: holonID },
+            });
+            const outcome = await publishNeedNearby(holosphere, holonID, need, {
+                toPartners: event.detail.toPartners,
+                toHex: event.detail.toHex,
+                federationSourceId: $nostrPublicKey || holonID,
+                onWriteDenied: ({ message }) => notifyWriteDenied(message),
+            });
+            const stamped = stampNeedId(ensureLocalList() as any, item.id, String(need.id)) as ShoppingChecklist | null;
+            if (stamped) {
+                localList = stamped;
+                await saveLocalList();
+            }
+            if (outcome.errors.length > 0) {
+                shareStatus = outcome.errors.join(' · ');
+                shareBusy = false;
+                return;
+            }
+            showShareModal = false;
+            shareTarget = null;
+        } catch (error) {
+            handleWriteError(error, 'Failed to publish need:');
+            shareStatus = 'Publish failed — see console';
+        } finally {
+            shareBusy = false;
+        }
+    }
+
+    /** Close the published need behind a shopping item (checked → fulfilled, removed → cancelled). */
+    async function closePublishedNeed(needId: string, outcome: CloseOutcome): Promise<void> {
+        try {
+            const raw = await holosphere.get(holonID, NEED_RECORD_LENS, needId);
+            const need = normalizeNeed(raw);
+            if (!need) return;
+            const closed = closeNeed(need, outcome);
+            if (!closed.ok) return;
+            await refreshPublishedNeed(holosphere, holonID, closed.need, {
+                federationSourceId: $nostrPublicKey || holonID,
+                onWriteDenied: ({ message }) => notifyWriteDenied(message),
+            });
+        } catch (error) {
+            console.error('Failed to close published need:', error);
         }
     }
 
@@ -267,6 +353,10 @@
             if (!updated) return;
             localList = updated;
             await saveLocalList();
+            // Removing a shared item retracts the need.
+            if (needIdOf(item)) {
+                await closePublishedNeed(needIdOf(item)!, 'cancelled');
+            }
         } catch (error) {
             handleWriteError(error, 'Failed to remove item:');
         }
@@ -401,8 +491,27 @@
                                     {item.text}
                                 </h3>
                                 <SourceBadge {item} currentHolonId={holonID} lensRoute="shopping" />
+                                {#if item.needId}
+                                    <span
+                                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 flex-shrink-0"
+                                        title="Shared as a need nearby"
+                                    >
+                                        <MapPin size="10" />
+                                        <span>Need</span>
+                                    </span>
+                                {/if}
                             </div>
                             <div class="flex items-center gap-3 flex-shrink-0">
+                                {#if isLocalItem(item) && !item.checked && !item.needId}
+                                    <button
+                                        on:click|stopPropagation={() => openShareModal(item)}
+                                        class="text-gray-300 hover:text-emerald-300 hover:bg-emerald-500/20 p-2 rounded-lg transition-all duration-200 bg-gray-600/50"
+                                        aria-label="Share as need nearby"
+                                        title="Share as need nearby"
+                                    >
+                                        <MapPin size="18" />
+                                    </button>
+                                {/if}
                                 <input
                                     type="checkbox"
                                     checked={item.checked}
@@ -466,6 +575,16 @@
         </div>
     </form>
 </Modal>
+
+<ShareNeedModal
+    open={showShareModal}
+    holonId={holonID}
+    itemText={shareTarget?.text ?? ''}
+    busy={shareBusy}
+    status={shareStatus}
+    on:share={handleShare}
+    on:close={() => { showShareModal = false; shareTarget = null; }}
+/>
 
 <GenericImportModal
     bind:open={showImportModal}

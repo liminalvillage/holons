@@ -7,6 +7,7 @@
     import { goto } from "$app/navigation";
     import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
+    import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
@@ -1076,6 +1077,16 @@
 
                                 <!-- Right Side - Action Button -->
                                 <div class="flex items-center gap-2 flex-shrink-0">
+                                    {#if !item._federation?.origin && !item._hologram?.isHologram}
+                                        <!-- Publish to partners or the holon's hex so the item
+                                             shows on the map's library layer (needs-network). -->
+                                        <PublishToFederationButton
+                                            holonId={holonID}
+                                            lens="library"
+                                            item={{ ...item, id: String(item.id ?? key) }}
+                                            compact
+                                        />
+                                    {/if}
                                     {#if !booked}
                                         <button
                                             on:click|stopPropagation={() => openBorrowModal(item)}

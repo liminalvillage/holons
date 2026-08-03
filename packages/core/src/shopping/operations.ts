@@ -128,6 +128,32 @@ export function clearChecked(checklist: ShoppingChecklist | null): ShoppingCheck
   };
 }
 
+/**
+ * Stamp the need id a shopping item was published as (see @holons/core/needs).
+ * Returns a new checklist; null when the item isn't present.
+ */
+export function stampNeedId(
+  checklist: ShoppingChecklist | null,
+  itemId: string | number,
+  needId: string
+): ShoppingChecklist | null {
+  if (!checklist) return null;
+  const target = String(itemId);
+  if (!checklist.items.some((i) => String(i.id) === target)) return null;
+  return {
+    ...checklist,
+    items: checklist.items.map((i) =>
+      String(i.id) === target ? { ...i, needId } : i
+    ),
+  };
+}
+
+/** The need id an item was published as, if any. */
+export function needIdOf(item: ShoppingItem | null | undefined): string | null {
+  const needId = item?.needId;
+  return typeof needId === 'string' && needId ? needId : null;
+}
+
 /** Convenience: is the document the shopping container? */
 export function isShoppingDoc(doc: unknown, key?: string): boolean {
   if (!doc) return false;
