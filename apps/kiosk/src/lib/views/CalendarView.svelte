@@ -27,6 +27,7 @@
     parseWhen,
     sourceRef,
     type CalendarEvent,
+    holoSeed,
   } from "$lib/data";
   import { personalEvents, personalTasks } from "$lib/personal";
   import Avatars from "$lib/components/Avatars.svelte";
@@ -869,6 +870,7 @@
                     class="chip tilt draggable"
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
+                    style:--holo-seed={holoSeed(ev.id)}
                     style="{tiltStyle(
                       ev.id,
                       noteColorFor(ev.category),
@@ -918,6 +920,7 @@
                       class="note sm tilt draggable"
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
+                      style:--holo-seed={holoSeed(ev.id)}
                       style="{tiltStyle(
                         ev.id,
                         noteColorFor(ev.category),
@@ -972,6 +975,7 @@
                       class="allday-chip draggable"
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
+                      style:--holo-seed={holoSeed(ev.id)}
                       style="background: {noteColorFor(
                         ev.category,
                       )}; --glow: {ev.sourceColor ?? 'transparent'};"
@@ -1030,6 +1034,7 @@
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
+                  style:--holo-seed={holoSeed(ev.id)}
                   class:compact
                   style="{eventBox(
                     ev,
@@ -1127,6 +1132,7 @@
             class="tray-chip draggable"
             class:is-foreign={!!task.sourceColor}
             class:holo={!!task.hologram}
+            style:--holo-seed={holoSeed(task.id)}
             style="background: {noteColorFor(
               task.category,
             )}; --glow: {task.sourceColor ?? 'transparent'};"

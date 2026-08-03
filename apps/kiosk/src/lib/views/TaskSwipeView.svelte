@@ -21,6 +21,7 @@
     type SwipeDirection,
   } from "$lib/deck";
   import type { BacklogTask } from "$lib/data";
+  import { holoSeed } from "$lib/data";
 
   export let tasks: BacklogTask[];
   export let colorFor: (category: string | undefined) => string;
@@ -285,6 +286,7 @@
             class="card fly-{leaving.dir}"
             class:is-foreign={!!leaving.task.sourceColor}
             class:holo={!!leaving.task.hologram}
+            style:--holo-seed={holoSeed(leaving.task.id)}
             style="--from: {leaving.from}; background: {colorFor(
               leaving.task.category,
             )}; --glow: {leaving.task.sourceColor ?? 'transparent'};"
@@ -315,6 +317,7 @@
             class:dragging={i === 0 && dragging}
             class:is-foreign={!!task.sourceColor}
             class:holo={!!task.hologram}
+            style:--holo-seed={holoSeed(task.id)}
             style="background: {colorFor(
               task.category,
             )}; --glow: {task.sourceColor ?? 'transparent'}; {i === 0

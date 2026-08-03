@@ -14,7 +14,7 @@
   import { getLibraryDb } from "$lib/holosphere";
   import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
-  import { dueLabelFor, type LibraryThing } from "$lib/data";
+  import { dueLabelFor, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
@@ -147,6 +147,7 @@
             class:out={!thing.available}
             class:is-foreign={!!thing.sourceColor}
             class:holo={!!thing.hologram}
+            style:--holo-seed={holoSeed(thing.id)}
             style="--glow: {thing.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"
@@ -193,6 +194,7 @@
               class:out={!thing.available}
               class:is-foreign={!!thing.sourceColor}
               class:holo={!!thing.hologram}
+              style:--holo-seed={holoSeed(thing.id)}
               style="--glow: {thing.sourceColor ?? 'transparent'};"
               role="button"
               tabindex="0"
@@ -226,6 +228,7 @@
               class:out={!thing.available && $scope !== "personal"}
               class:is-foreign={!!thing.sourceColor}
               class:holo={!!thing.hologram}
+              style:--holo-seed={holoSeed(thing.id)}
               style="--glow: {thing.sourceColor ?? 'transparent'};"
               role="button"
               tabindex="0"

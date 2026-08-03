@@ -121,8 +121,9 @@ export { sourceHolonId, sourceRef };
  * Resolve a foreign item's source holon to a friendly label — the partner's
  * name when known (from the federation snapshot, or stamped on the provenance
  * envelope), else its id — or `undefined` for the kiosk's own items.
+ * Exported for surfaces that work on RAW records (e.g. the detail modal).
  */
-function sourceLabel(rec: unknown, names?: Names): string | undefined {
+export function sourceLabel(rec: unknown, names?: Names): string | undefined {
   const id = sourceHolonId(rec);
   if (!id) return undefined;
   const r = rec as {
@@ -160,6 +161,19 @@ export function sourceGlow(rec: unknown): string | undefined {
  * copy. Holograms render as literal projections of the original post-it
  * (see `.holo` in app.css).
  */
+/**
+ * Per-card animation seed in [0, 1), hashed from the card's id — the flicker
+ * and sweep clocks of every hologram derive from it (see `.holo` in app.css),
+ * so no two projections glitch in unison, including elements that carry no
+ * `--tilt` of their own (list rows, the detail modal).
+ */
+export function holoSeed(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++)
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+  return (Math.abs(hash) % 997) / 997;
+}
+
 export function isHologram(rec: unknown): boolean {
   // Same condition core's provenance rule uses (`sourceHolonId`), so the
   // projection look and the source glow always agree on what's a hologram.

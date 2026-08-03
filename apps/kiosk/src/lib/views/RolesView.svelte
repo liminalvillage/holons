@@ -21,7 +21,13 @@
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
   import { sameId } from "$lib/personal";
-  import { noteColor, noteTilt, noteRiseDelay, type RoleCard } from "$lib/data";
+  import {
+    noteColor,
+    noteTilt,
+    noteRiseDelay,
+    type RoleCard,
+    holoSeed,
+  } from "$lib/data";
   import {
     avatarUrl,
     avatarInitial,
@@ -360,6 +366,7 @@
                 class="rrow"
                 class:is-foreign={!!card.sourceColor}
                 class:holo={!!card.hologram}
+                style:--holo-seed={holoSeed(card.id)}
                 style="--glow: {card.sourceColor ?? 'transparent'};"
               >
                 <span
@@ -443,6 +450,7 @@
                 class="note tilt"
                 class:is-foreign={!!card.sourceColor}
                 class:holo={!!card.hologram}
+                style:--holo-seed={holoSeed(card.id)}
                 style="--tilt: {noteTilt(
                   card.id,
                 )}deg; --rise-delay: {noteRiseDelay(

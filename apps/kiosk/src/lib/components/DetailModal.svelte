@@ -16,12 +16,22 @@
     rawQuests,
     completionRequest,
     editOnOpen,
+    partnerNames,
   } from "$lib/stores";
   import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { toggleJoin, toggleAppreciate } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
-  import { noteColor, toPeople, parseWhen, sourceRef } from "$lib/data";
+  import {
+    noteColor,
+    toPeople,
+    parseWhen,
+    sourceRef,
+    isHologram,
+    sourceGlow,
+    sourceLabel,
+    holoSeed,
+  } from "$lib/data";
   import { localFieldsToStored } from "@holons/core/datetime";
   import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
@@ -75,6 +85,15 @@
   $: isNew = !!(sel && sel.kind !== "thing" && sel.isNew);
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
+
+  // A hologram opens as a hologram: the zoomed card keeps the projection
+  // style in the source holon's hue, and any foreign record (hologram or
+  // federated) names where it came from next to its category.
+  $: rec = isThing ? item : quest;
+  $: holo = isHologram(rec);
+  $: srcGlow = sourceGlow(rec);
+  $: srcName = sourceLabel(rec, $partnerNames);
+  $: seed = holo ? holoSeed(String(rec?.id ?? rec?.title ?? "")) : undefined;
 
   // Existing categories across all quests, for the edit-form dropdown. Sorted
   // and de-duped; the field stays a free-text input so a new one can be typed.
@@ -797,12 +816,17 @@
 </script>
 
 {#if sel}
-  <Modal {tint} on:close={closeDetail}>
+  <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
     {#if isThing && item}
       <!-- ── Library thing ─────────────────────────────────────────────── -->
       <div class="icon-big">{getItemIcon({ type: item.type })}</div>
       <h2>{item.id}</h2>
-      <span class="kind">{getTypeDisplayName(item.type)}</span>
+      <div class="chips">
+        <span class="kind">{getTypeDisplayName(item.type)}</span>
+        {#if srcName}
+          <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+        {/if}
+      </div>
 
       {#if !editing}
         {#if item.description}<p class="desc">
@@ -957,7 +981,14 @@
             on:error={hideImg}
           />
         {/if}
-        {#if quest.category}<span class="kind">{quest.category}</span>{/if}
+        {#if quest.category || srcName}
+          <div class="chips">
+            {#if quest.category}<span class="kind">{quest.category}</span>{/if}
+            {#if srcName}
+              <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+            {/if}
+          </div>
+        {/if}
         <h2>{@html linkify(quest.title)}</h2>
         <p class="when">{whenText()}</p>
         {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
@@ -1261,6 +1292,28 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--teal-deep);
+  }
+  .chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  /* Where a foreign card came from — coloured with the source holon's glow
+     hue, matching the wall's source chips and the hologram projection. */
+  .srcchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 0.12rem 0.55rem;
+    border-radius: 999px;
+    color: var(--src, var(--teal-deep));
+    border: 1px solid
+      color-mix(in srgb, var(--src, var(--teal)) 55%, transparent);
+    background: color-mix(in srgb, var(--src, var(--teal)) 12%, transparent);
   }
   .icon-big {
     font-size: 3rem;
