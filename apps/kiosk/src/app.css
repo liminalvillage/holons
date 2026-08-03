@@ -169,6 +169,255 @@ button {
   transform: rotate(var(--tilt, 0deg));
 }
 
+/* ── Holograms ─────────────────────────────────────────────────────────────
+   A hologram is a card mirrored here BY REFERENCE from its source holon, and
+   it renders as an ACTUAL hologram of the original post-it: a translucent
+   cyan light-projection — glassy body, luminous monochrome ink, glowing
+   edges, rolling scanlines, a sweeping shimmer band, film grain, and the
+   projector's flicker with tiny horizontal glitch jumps. Global because
+   every view's cards opt in with `class:holo`; the card stays fully
+   interactive.
+
+   Notes on the mechanics:
+   - The post-it's paper colour arrives as an INLINE style, so the projection
+     body/ink/glow use `!important` to win over it.
+   - The card's own animation is replaced (`!important`): holograms
+     MATERIALISE instead of rising like paper, then flicker forever. The
+     glitch jumps use the standalone `translate` property so they compose
+     with `.tilt` rotations and drag transforms instead of clobbering them.
+   - Overlays live on ::before/::after (no kiosk card uses those).
+   - Reduced motion: the media rule below stills everything; the static
+     projection look remains. */
+.holo {
+  /* Light skin: a projection needs to stay legible on warm cream, so the
+     body is a cool glass tint over a MOSTLY-OPAQUE base — the base keeps the
+     ink on its own ground instead of whatever sits behind the card, while
+     the remaining translucency keeps it reading as light, not paper. */
+  --holo-body: linear-gradient(
+    168deg,
+    rgba(0, 210, 255, 0.2),
+    rgba(0, 160, 230, 0.07) 46%,
+    rgba(0, 230, 245, 0.17)
+  );
+  --holo-base: rgba(233, 250, 252, 0.88);
+  --holo-ink: #06666e;
+  --holo-glow: rgba(0, 205, 225, 0.55);
+  --holo-edge: rgba(0, 200, 225, 0.5);
+  position: relative;
+  isolation: isolate;
+  background: var(--holo-body), var(--holo-base) !important;
+  border: 1px solid var(--holo-edge) !important;
+  box-shadow:
+    0 0 14px var(--holo-glow),
+    inset 0 0 22px rgba(0, 220, 245, 0.16) !important;
+  text-shadow:
+    0 0 7px var(--holo-glow),
+    0.7px 0 rgba(0, 255, 240, 0.4),
+    -0.7px 0 rgba(255, 80, 160, 0.28);
+  animation:
+    holo-materialize 0.5s ease both,
+    holo-flicker 6.3s steps(1, end) 0.9s infinite !important;
+  /* Every hologram runs on its OWN clock: phase and period are derived from
+     the card's hash-random tilt (tan(±0.5°…1.1°) → a signed number), so
+     neighbouring projections never flicker in unison. Negative delays start
+     mid-cycle; on engines without tan() the declarations are dropped and the
+     shorthand's uniform timing above still applies. */
+  animation-delay: 0s, calc(tan(var(--tilt, 0.8deg)) * 150s - 4s) !important;
+  animation-duration:
+    0.5s, calc(6.3s + tan(var(--tilt, 0.8deg)) * 30s) !important;
+}
+/* The whole projection is one wavelength: every bit of ink goes luminous
+   cyan-teal (currentColor also recolours inline SVG icons). */
+.holo,
+.holo * {
+  color: var(--holo-ink) !important;
+}
+/* Photos and avatars are part of the projection too — re-lit in cyan. */
+.holo img {
+  filter: grayscale(1) sepia(1) hue-rotate(140deg) saturate(2.6)
+    brightness(1.08);
+  opacity: 0.85;
+}
+:root[data-theme="dark"] .holo {
+  --holo-body: linear-gradient(
+    168deg,
+    rgba(0, 235, 255, 0.17),
+    rgba(0, 130, 190, 0.05) 46%,
+    rgba(0, 245, 255, 0.13)
+  );
+  --holo-base: rgba(5, 24, 28, 0.88);
+  --holo-ink: #9df5ec;
+  --holo-glow: rgba(80, 250, 235, 0.5);
+  --holo-edge: rgba(110, 250, 240, 0.45);
+}
+/* Rolling scanlines + a shimmer band sweeping down the card, like the
+   emitter refreshing the image. */
+.holo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 240, 255, 0.16) 0 1px,
+      transparent 1px 3px
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 40%,
+      rgba(190, 255, 250, 0.32) 49%,
+      rgba(190, 255, 250, 0.45) 50%,
+      rgba(190, 255, 250, 0.18) 54%,
+      transparent 62%
+    );
+  background-size:
+    100% 3px,
+    100% 320%;
+  mix-blend-mode: screen;
+  animation: holo-sweep 5.6s linear infinite;
+  /* The shimmer sweep de-syncs the same way the flicker does (always a
+     negative delay, so every card starts mid-cycle — never frozen). */
+  animation-delay: calc(-6s - tan(var(--tilt, 0.8deg)) * 120s);
+}
+/* Film grain: tiled feTurbulence noise, re-jittered in coarse steps. */
+.holo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 120px 120px;
+  opacity: 0.14;
+  mix-blend-mode: screen;
+  animation: holo-grain 1.1s steps(5) infinite;
+}
+/* A projection doesn't rise like paper — it materialises: snaps in bright,
+   overshoots, settles. `translate` (not transform) so the tilt survives. */
+@keyframes holo-materialize {
+  0% {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  30% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  45% {
+    opacity: 0.82;
+  }
+  60% {
+    opacity: 0.98;
+  }
+  75% {
+    opacity: 0.88;
+  }
+  100% {
+    opacity: 0.97;
+  }
+}
+/* Mostly steady, with brief shallow dips and micro glitch-jumps each cycle —
+   the projection dims but NEVER blinks out (floor ~0.75). steps(1) holds
+   each level then snaps — no smooth fades. */
+@keyframes holo-flicker {
+  0%,
+  100% {
+    opacity: 0.97;
+    translate: 0 0;
+  }
+  8% {
+    opacity: 0.84;
+  }
+  8.7% {
+    opacity: 0.97;
+  }
+  27% {
+    opacity: 0.9;
+    translate: 1.5px 0;
+  }
+  27.4% {
+    opacity: 0.97;
+    translate: 0 0;
+  }
+  46% {
+    opacity: 0.75;
+  }
+  46.4% {
+    opacity: 1;
+    translate: -2px 0;
+  }
+  47% {
+    opacity: 0.97;
+    translate: 0 0;
+  }
+  63% {
+    opacity: 0.88;
+  }
+  63.5% {
+    opacity: 0.97;
+  }
+  71% {
+    opacity: 0.82;
+  }
+  71.6% {
+    opacity: 0.97;
+  }
+  88% {
+    opacity: 0.78;
+    translate: 1px 0;
+  }
+  88.5% {
+    opacity: 0.97;
+    translate: 0 0;
+  }
+}
+/* Scanlines roll slowly; the shimmer band sweeps top→bottom once a cycle. */
+@keyframes holo-sweep {
+  from {
+    background-position:
+      0 0,
+      0 -160%;
+  }
+  to {
+    background-position:
+      0 3px,
+      0 160%;
+  }
+}
+@keyframes holo-grain {
+  0% {
+    background-position: 0 0;
+  }
+  20% {
+    background-position: -34px 22px;
+  }
+  40% {
+    background-position: 18px -41px;
+  }
+  60% {
+    background-position: -27px -9px;
+  }
+  80% {
+    background-position: 41px 30px;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+/* The global reduced-motion rule can't beat the !important animation above,
+   so still the projection explicitly. */
+@media (prefers-reduced-motion: reduce) {
+  .holo,
+  .holo::before,
+  .holo::after {
+    animation: none !important;
+  }
+}
+
 /* Uses the standalone `translate` property (not `transform`) so it composes
    with a post-it's `transform: rotate(...)` tilt instead of clobbering it. */
 @keyframes kiosk-rise {

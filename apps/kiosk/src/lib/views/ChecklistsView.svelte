@@ -326,6 +326,7 @@
           <article
             class="card"
             class:is-foreign={!!list.sourceColor}
+            class:holo={!!list.hologram}
             style="--glow: {list.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"

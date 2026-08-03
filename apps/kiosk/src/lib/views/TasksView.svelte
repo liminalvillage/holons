@@ -675,6 +675,7 @@
                   class="note tilt"
                   class:risen={!!risen[task.id]}
                   class:is-foreign={!!task.sourceColor}
+                  class:holo={!!task.hologram}
                   style="--tilt: {noteTilt(
                     task.id,
                   )}deg; --rise-delay: {noteRiseDelay(
@@ -870,6 +871,7 @@
       <div
         class="rowclone"
         class:is-foreign={!!drag.task.sourceColor}
+        class:holo={!!drag.task.hologram}
         style="--dot: {noteColorFor(drag.task.category)}; --glow: {drag.task
           .sourceColor ?? 'transparent'};"
       >
@@ -890,6 +892,7 @@
       <article
         class="note"
         class:is-foreign={!!drag.task.sourceColor}
+        class:holo={!!drag.task.hologram}
         style="background: {noteColorFor(drag.task.category)}; --glow: {drag
           .task.sourceColor ?? 'transparent'};"
       >

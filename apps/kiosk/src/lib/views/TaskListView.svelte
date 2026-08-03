@@ -49,6 +49,7 @@
         <div
           class="row"
           class:is-foreign={!!task.sourceColor}
+          class:holo={!!task.hologram}
           style="--dot: {colorFor(task.category)}; --glow: {task.sourceColor ??
             'transparent'};"
           role="button"

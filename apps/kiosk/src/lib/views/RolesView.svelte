@@ -359,6 +359,7 @@
               <div
                 class="rrow"
                 class:is-foreign={!!card.sourceColor}
+                class:holo={!!card.hologram}
                 style="--glow: {card.sourceColor ?? 'transparent'};"
               >
                 <span
@@ -441,6 +442,7 @@
               <article
                 class="note tilt"
                 class:is-foreign={!!card.sourceColor}
+                class:holo={!!card.hologram}
                 style="--tilt: {noteTilt(
                   card.id,
                 )}deg; --rise-delay: {noteRiseDelay(

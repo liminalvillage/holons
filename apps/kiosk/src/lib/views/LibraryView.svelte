@@ -146,6 +146,7 @@
             class="card big"
             class:out={!thing.available}
             class:is-foreign={!!thing.sourceColor}
+            class:holo={!!thing.hologram}
             style="--glow: {thing.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"
@@ -191,6 +192,7 @@
               class="card"
               class:out={!thing.available}
               class:is-foreign={!!thing.sourceColor}
+              class:holo={!!thing.hologram}
               style="--glow: {thing.sourceColor ?? 'transparent'};"
               role="button"
               tabindex="0"
@@ -223,6 +225,7 @@
               class="row"
               class:out={!thing.available && $scope !== "personal"}
               class:is-foreign={!!thing.sourceColor}
+              class:holo={!!thing.hologram}
               style="--glow: {thing.sourceColor ?? 'transparent'};"
               role="button"
               tabindex="0"

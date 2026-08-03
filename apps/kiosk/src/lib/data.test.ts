@@ -298,3 +298,53 @@ describe("toChecklists — list card mapping", () => {
     expect(raw.type).toBeUndefined();
   });
 });
+
+describe("hologram flag — projection cards", () => {
+  const envelope = {
+    _hologram: {
+      isHologram: true,
+      sourceHolon: "-100999",
+      sourceHolonName: "Partner",
+    },
+  };
+
+  it("marks hologram quests on the backlog and calendar, not plain ones", () => {
+    const backlog = toBacklog([
+      quest("mirrored", envelope as Partial<Quest>),
+      quest("own"),
+    ]);
+    expect(backlog.find((t) => t.id === "mirrored")?.hologram).toBe(true);
+    expect(backlog.find((t) => t.id === "own")?.hologram).toBe(false);
+    const events = toEvents([
+      quest("dated", { when: "2026-08-10", ...envelope } as Partial<Quest>),
+    ]);
+    expect(events[0].hologram).toBe(true);
+  });
+
+  it("does not flag federation-aggregated copies as holograms", () => {
+    const out = toBacklog([
+      quest("aggregated", {
+        _federation: { origin: "-100888" },
+      } as Partial<Quest>),
+    ]);
+    expect(out[0].hologram).toBe(false);
+    // …but they still carry the source glow.
+    expect(out[0].sourceColor).toBeDefined();
+  });
+
+  it("flags hologram roles, things and checklists too", () => {
+    expect(
+      toRoles([{ id: "r", title: "r", ...envelope } as unknown as Role])[0]
+        .hologram,
+    ).toBe(true);
+    expect(
+      toThings([{ id: "thing", ...envelope } as unknown as LibraryItem])[0]
+        .hologram,
+    ).toBe(true);
+    expect(
+      toChecklists([
+        { id: "list", items: [], ...envelope } as unknown as Checklist,
+      ])[0].hologram,
+    ).toBe(true);
+  });
+});

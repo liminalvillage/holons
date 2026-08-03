@@ -154,6 +154,19 @@ export function sourceGlow(rec: unknown): string | undefined {
   return `hsl(${Math.abs(hash) % 360} 75% 52%)`;
 }
 
+/**
+ * True for a hologram — a card mirrored here BY REFERENCE from its source
+ * holon (the `_hologram` envelope), as opposed to a federation-aggregated
+ * copy. Holograms render as literal projections of the original post-it
+ * (see `.holo` in app.css).
+ */
+export function isHologram(rec: unknown): boolean {
+  // Same condition core's provenance rule uses (`sourceHolonId`), so the
+  // projection look and the source glow always agree on what's a hologram.
+  const r = rec as { _hologram?: { isHologram?: boolean } } | null | undefined;
+  return !!r?._hologram?.isHologram;
+}
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -171,6 +184,8 @@ export interface CalendarEvent {
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
+  /** True for a hologram — a by-reference mirror of the source holon's card. */
+  hologram?: boolean;
 }
 
 export interface TaskPerson {
@@ -197,6 +212,8 @@ export interface BacklogTask {
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
+  /** True for a hologram — a by-reference mirror of the source holon's card. */
+  hologram?: boolean;
   /** Who proposed the quest (the "idea" behind it), for the lightbulb chip. */
   initiator?: TaskPerson | null;
   /** Manual sort position set by drag-to-reorder; absent ⇒ unordered. */
@@ -306,6 +323,7 @@ export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
       sourceColor: sourceGlow(q),
+      hologram: isHologram(q),
     });
   }
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -354,6 +372,7 @@ export function toBacklog(
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
       sourceColor: sourceGlow(q),
+      hologram: isHologram(q),
       initiator: toInitiator(q),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
       // survives a reload.
@@ -408,6 +427,8 @@ export interface LibraryThing {
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
+  /** True for a hologram — a by-reference mirror of the source holon's card. */
+  hologram?: boolean;
 }
 
 export interface RoleCard {
@@ -421,6 +442,8 @@ export interface RoleCard {
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
+  /** True for a hologram — a by-reference mirror of the source holon's card. */
+  hologram?: boolean;
 }
 
 /** Roles lens → display cards, alphabetical by title. */
@@ -435,6 +458,7 @@ export function toRoles(roles: Role[], names?: Names): RoleCard[] {
       count: countOf(r.participants),
       source: sourceLabel(r, names),
       sourceColor: sourceGlow(r),
+      hologram: isHologram(r),
     }))
     .filter((r) => {
       // Drop blanks and federated duplicates so view keys stay unique.
@@ -460,6 +484,8 @@ export interface ChecklistCard {
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
+  /** True for a hologram — a by-reference mirror of the source holon's card. */
+  hologram?: boolean;
 }
 
 /**
@@ -487,6 +513,7 @@ export function toChecklists(
         creator: typed.creator ?? null,
         source: sourceLabel(c, names),
         sourceColor: sourceGlow(c),
+        hologram: isHologram(c),
       };
     })
     .filter((c) => {
@@ -515,6 +542,7 @@ export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
       returnBy: parseWhen(it.returnBy),
       source: sourceLabel(it, names),
       sourceColor: sourceGlow(it),
+      hologram: isHologram(it),
     }))
     .filter((t) => {
       // Drop blanks and federated duplicates so view keys stay unique.

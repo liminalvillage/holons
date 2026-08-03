@@ -868,6 +868,7 @@
                   <span
                     class="chip tilt draggable"
                     class:is-foreign={!!ev.sourceColor}
+                    class:holo={!!ev.hologram}
                     style="{tiltStyle(
                       ev.id,
                       noteColorFor(ev.category),
@@ -916,6 +917,7 @@
                     <article
                       class="note sm tilt draggable"
                       class:is-foreign={!!ev.sourceColor}
+                      class:holo={!!ev.hologram}
                       style="{tiltStyle(
                         ev.id,
                         noteColorFor(ev.category),
@@ -969,6 +971,7 @@
                     <span
                       class="allday-chip draggable"
                       class:is-foreign={!!ev.sourceColor}
+                      class:holo={!!ev.hologram}
                       style="background: {noteColorFor(
                         ev.category,
                       )}; --glow: {ev.sourceColor ?? 'transparent'};"
@@ -1026,6 +1029,7 @@
                   class="day-event draggable"
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
+                  class:holo={!!ev.hologram}
                   class:compact
                   style="{eventBox(
                     ev,
@@ -1122,6 +1126,7 @@
           <span
             class="tray-chip draggable"
             class:is-foreign={!!task.sourceColor}
+            class:holo={!!task.hologram}
             style="background: {noteColorFor(
               task.category,
             )}; --glow: {task.sourceColor ?? 'transparent'};"

@@ -284,6 +284,7 @@
           <article
             class="card fly-{leaving.dir}"
             class:is-foreign={!!leaving.task.sourceColor}
+            class:holo={!!leaving.task.hologram}
             style="--from: {leaving.from}; background: {colorFor(
               leaving.task.category,
             )}; --glow: {leaving.task.sourceColor ?? 'transparent'};"
@@ -313,6 +314,7 @@
             class:top={i === 0}
             class:dragging={i === 0 && dragging}
             class:is-foreign={!!task.sourceColor}
+            class:holo={!!task.hologram}
             style="background: {colorFor(
               task.category,
             )}; --glow: {task.sourceColor ?? 'transparent'}; {i === 0
