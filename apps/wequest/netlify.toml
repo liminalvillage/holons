@@ -1,0 +1,62 @@
+# Netlify config for WeQuest (apps/wequest) — SvelteKit on adapter-netlify.
+#
+# In the Netlify site settings set the base directory to `apps/wequest` so this
+# file is picked up. Install + build run from the monorepo root (`cd ../..`) so
+# the pnpm workspace is intact and @holons/core is BUILT before the app (the
+# apps consume core's compiled dist, not its TS source).
+#
+# Pages are client-side (SPA); login uses Telegram OIDC, which needs a server,
+# so adapter-netlify serves the CSR shell + the /api/auth/* serverless
+# functions and generates its own routing — do NOT add a manual
+# `/* -> /index.html` redirect (it would shadow the function routes).
+#
+# Required server env vars (set in the Netlify UI, NOT here — they are
+# secrets): TELEGRAM_OIDC_CLIENT_ID, TELEGRAM_OIDC_CLIENT_SECRET,
+# AUTH_JWT_SECRET. Register the callback in BotFather Web Login → Allowed
+# URLs: https://<site>/api/auth/telegram/callback
+
+# NOTE: no `base` key here — CLI deploys run from this directory and a base
+# would make the CLI fall back to the repo-root netlify.toml (the dashboard
+# app's). For git-integration builds, set Base directory = apps/wequest in
+# the Netlify UI instead.
+[build]
+  publish = "build"
+  # --no-frozen-lockfile: pnpm-lock.yaml is deliberately untracked, and pnpm
+  # defaults frozen-lockfile to ON when CI=true, so it must be disabled here.
+  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F wequest build"
+
+# NOTE: no [functions] section — the platform builder honors the adapter's
+# generated ESM function config. Local `netlify deploy` of a prebuilt dir
+# does NOT (its bundler downgrades to CJS and rejects holosphere's ws import
+# and SvelteKit's top-level await) — deploy via git push instead.
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Netlify's install step detects the package manager from lockfiles; with
+  # pnpm-lock.yaml untracked it falls back to npm, which chokes on
+  # workspace:* deps — force pnpm.
+  NETLIFY_USE_PNPM = "true"
+  NPM_FLAGS = "--prefer-online"
+  # These VITE_* values are public-by-design (inlined into the client bundle
+  # by contract — the mapbox token is a publishable client token). Whitelist
+  # them so Netlify's secrets scanner doesn't flag them. NEVER add a private
+  # key here.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_WEQUEST_HOLON,VITE_WEQUEST_APP,VITE_WEQUEST_PEER,VITE_MAPBOX_TOKEN"
+
+# Long-cache the content-hashed build assets; never cache the HTML shell.
+[[headers]]
+  for = "/_app/immutable/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
