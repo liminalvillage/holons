@@ -8,6 +8,7 @@
  */
 
 import type { HoloSphere } from 'holosphere';
+import { isValidCell } from 'h3-js';
 
 export async function readSettingsHex(
 	holosphere: HoloSphere,
@@ -17,7 +18,7 @@ export async function readSettingsHex(
 		const settings: any = await (holosphere as any).get(holonId, 'settings', holonId);
 		const hex = settings && typeof settings.hex === 'string' ? settings.hex : null;
 		if (!hex) return null;
-		return (holosphere as any).isValidH3?.(hex) ? hex : null;
+		return isValidCell(hex) ? hex : null;
 	} catch {
 		return null;
 	}

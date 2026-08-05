@@ -20,6 +20,7 @@
  */
 
 import type { HoloSphere } from 'holosphere';
+import { isValidCell } from 'h3-js';
 import { getFederationSnapshot } from './snapshot.js';
 import { readSettingsHex } from './settings-hex.js';
 
@@ -77,7 +78,12 @@ export interface PublishOutcome {
 
 function isH3(holosphere: HoloSphere, holonId: string): boolean {
 	try {
-		return !!(holosphere as any).isValidH3?.(holonId);
+		// Prefer an instance-provided validator (tests inject one); the real
+		// HoloSphere has none, so fall back to h3-js — otherwise h3-cell holons
+		// silently never parent-propagate.
+		const own = (holosphere as any).isValidH3?.(holonId);
+		if (own !== undefined) return !!own;
+		return isValidCell(holonId);
 	} catch {
 		return false;
 	}

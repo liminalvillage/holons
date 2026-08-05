@@ -5,17 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { readSettingsHex } from './settings-hex.js';
 import type { HoloSphere } from 'holosphere';
 
-function mockHolosphere(hex: unknown, opts: { hasIsValidH3?: boolean; throws?: boolean } = {}) {
-	const holosphere: any = {
+function mockHolosphere(hex: unknown, opts: { throws?: boolean } = {}) {
+	return {
 		get: vi.fn(async () => {
 			if (opts.throws) throw new Error('relay unreachable');
 			return { hex };
 		})
-	};
-	if (opts.hasIsValidH3 !== false) {
-		holosphere.isValidH3 = (id: string) => /^8[0-9a-f]{14}$/.test(id);
-	}
-	return holosphere as HoloSphere;
+	} as unknown as HoloSphere;
 }
 
 describe('readSettingsHex', () => {
@@ -25,6 +21,11 @@ describe('readSettingsHex', () => {
 
 	it('returns null for the legacy CSS-color default', async () => {
 		expect(await readSettingsHex(mockHolosphere('#3b82f6'), 'h1')).toBeNull();
+	});
+
+	it('returns null for non-cell strings', async () => {
+		expect(await readSettingsHex(mockHolosphere('hex-cell'), 'h1')).toBeNull();
+		expect(await readSettingsHex(mockHolosphere('8928308280fffzz'), 'h1')).toBeNull();
 	});
 
 	it('returns null for empty, missing, or non-string hex', async () => {

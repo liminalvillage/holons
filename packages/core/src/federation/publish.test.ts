@@ -51,9 +51,7 @@ function mockHolosphere(opts: MockOpts = {}): {
 		get: vi.fn(async (_h: string, lens: string) =>
 			lens === 'settings' ? { hex: opts.settingsHex ?? null } : null
 		),
-		// A configured settings hex counts as a valid cell — readSettingsHex now
-		// validates with isValidH3 to filter legacy CSS-color defaults.
-		isValidH3: (id: string) => !!opts.isH3 || (!!opts.settingsHex && id === opts.settingsHex)
+		isValidH3: () => !!opts.isH3
 	} as unknown as HoloSphere;
 
 	return { holosphere, put, propagate, createHologram, getNodeRef, cascadeRegistrations };
@@ -132,11 +130,11 @@ describe('publishToFederation', () => {
 	it('all target propagates and writes to settings.hex', async () => {
 		const m = mockHolosphere({
 			federated: ['p1', 'p2'],
-			settingsHex: 'hex-cell',
+			settingsHex: '8928308280fffff',
 			propagateResult: { success: 2, messages: [] }
 		});
 		const out = await publishToFederation(ctx(m.holosphere), { kind: 'all' });
-		expect(m.put).toHaveBeenCalledWith('hex-cell', 'quests', expect.any(Object));
+		expect(m.put).toHaveBeenCalledWith('8928308280fffff', 'quests', expect.any(Object));
 		expect(m.propagate).toHaveBeenCalledOnce();
 		// Default propagates full copies, not holograms.
 		expect(m.propagate).toHaveBeenCalledWith(
@@ -165,7 +163,7 @@ describe('publishToFederation', () => {
 	});
 
 	it('all target skips settings.hex when includeSettingsHex is false', async () => {
-		const m = mockHolosphere({ federated: [], settingsHex: 'hex-cell' });
+		const m = mockHolosphere({ federated: [], settingsHex: '8928308280fffff' });
 		const out = await publishToFederation(
 			ctx(m.holosphere),
 			{ kind: 'all' },
