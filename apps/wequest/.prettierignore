@@ -1,0 +1,6 @@
+.svelte-kit
+.netlify
+build
+package
+node_modules
+pnpm-lock.yaml
