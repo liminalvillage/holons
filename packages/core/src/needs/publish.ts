@@ -28,6 +28,14 @@ export interface PublishNeedOptions {
   toHex?: boolean;
   /** Federation source identity (e.g. nostr pubkey). Defaults to holonId. */
   federationSourceId?: string;
+  /**
+   * Climb the hex parent chain so the need surfaces at coarser map zooms.
+   * Default true. `upcastLevels` bounds the climb (default: full climb) —
+   * this is the "how far should it travel" ring dial: 0 keeps the need at
+   * the exact cell, small values keep it neighbourhood-local.
+   */
+  upcast?: boolean;
+  upcastLevels?: number;
   onWriteDenied?: (info: { target: string; lens: string; message: string }) => void;
   /** Override the timestamp (ms since epoch). Mostly for tests. */
   now?: number;
@@ -109,7 +117,12 @@ export async function publishNeedNearby(
     hexOutcome = await publishToFederation(
       { holosphere, holonId, lens: NEEDS_LENS, item: crossLens },
       { kind: 'hex', cell: hexCell },
-      { useHolograms: true, upcast: true, onWriteDenied: opts.onWriteDenied }
+      {
+        useHolograms: true,
+        upcast: opts.upcast !== false && opts.upcastLevels !== 0,
+        upcastLevels: opts.upcastLevels,
+        onWriteDenied: opts.onWriteDenied,
+      }
     );
     errors.push(...hexOutcome.errors);
   }

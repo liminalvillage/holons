@@ -16,6 +16,7 @@ export {
   NEED_STATUSES,
   OPEN_NEED_STATUSES,
   isPublishedNeed,
+  type HandoffState,
   type NeedResponse,
   type NeedStatus,
   type PublishedNeed,
@@ -29,9 +30,15 @@ export {
 
 export {
   respondToNeed,
+  claimNeed,
   closeNeed,
+  handoffCode,
+  recordHandoffConfirmation,
+  type ClaimResult,
   type CloseOutcome,
   type CloseResult,
+  type HandoffConfirmResult,
+  type HandoffParty,
   type RespondInput,
   type RespondResult,
 } from './responses.js';

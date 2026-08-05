@@ -97,6 +97,38 @@ describe('publishNeedNearby', () => {
     expect(out.hexCell?.usedHolograms).toBe(true);
   });
 
+  it('bounds the upcast climb when upcastLevels is set (the ring dial)', async () => {
+    const m = mockHolosphere({ settingsHex: '8928308280fffff' });
+    await publishNeedNearby(m.holosphere, 'h1', need(), {
+      toPartners: false,
+      toHex: true,
+      upcastLevels: 2,
+    });
+    expect(m.put).toHaveBeenCalledWith(
+      '8928308280fffff',
+      'needs',
+      expect.any(Object),
+      expect.objectContaining({
+        propagationOptions: expect.objectContaining({ maxParentLevels: 2 }),
+      })
+    );
+  });
+
+  it('upcastLevels 0 keeps the need at the exact cell (no parent climb)', async () => {
+    const m = mockHolosphere({ settingsHex: '8928308280fffff' });
+    await publishNeedNearby(m.holosphere, 'h1', need(), {
+      toPartners: false,
+      toHex: true,
+      upcastLevels: 0,
+    });
+    // Plain 3-arg put — no propagation options at all.
+    expect(m.put).toHaveBeenCalledWith(
+      '8928308280fffff',
+      'needs',
+      expect.objectContaining({ id: 'need-1' })
+    );
+  });
+
   it('skips the hex leg with an error (no throw) when settings.hex is missing or invalid', async () => {
     for (const settingsHex of [null, '#3b82f6']) {
       const m = mockHolosphere({ settingsHex });

@@ -55,6 +55,17 @@ export interface NeedResponse {
  * fields ride on Quest's open index signature, so existing quest readers are
  * unaffected.
  */
+/**
+ * Two-sided handoff state. The code is minted at claim time and shown on the
+ * requester's screen; the provider types it in on theirs. Hours move only
+ * once both confirmations are present.
+ */
+export interface HandoffState {
+  code: string;
+  requesterAt?: string;
+  providerAt?: string;
+}
+
 export interface PublishedNeed extends Quest {
   type: 'need';
   status: NeedStatus;
@@ -65,6 +76,7 @@ export interface PublishedNeed extends Quest {
   responses?: NeedResponse[];
   /** Publication stamp — which targets this need has been shared with. */
   published?: { at: number; toHex?: string; toPartners?: boolean };
+  handoff?: HandoffState;
 }
 
 /** Type guard: is this record a need in the needs-network sense? */

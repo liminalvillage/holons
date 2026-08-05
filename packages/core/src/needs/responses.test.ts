@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { closeNeed, respondToNeed } from './responses.js';
+import {
+  claimNeed,
+  closeNeed,
+  handoffCode,
+  recordHandoffConfirmation,
+  respondToNeed,
+} from './responses.js';
 import type { PublishedNeed } from './types.js';
 
 const need = (status: PublishedNeed['status']): PublishedNeed =>
@@ -59,6 +65,81 @@ describe('respondToNeed', () => {
     expect(out.ok).toBe(false);
     expect(out.reason).toBe('invalid_responder');
     expect(original.status).toBe('requested');
+  });
+});
+
+describe('claimNeed', () => {
+  it('accepts a response on an offered need and records the winner', () => {
+    const offered = respondToNeed(need('requested'), { responder: { id: 7 }, id: 'r1' }).need;
+    const out = claimNeed(offered, 'r1', 1700000000000);
+    expect(out.ok).toBe(true);
+    expect(out.need.status).toBe('claimed');
+    expect(out.need.claimedResponseId).toBe('r1');
+    expect(out.need.claimedAt).toBe(new Date(1700000000000).toISOString());
+  });
+
+  it('rejects claiming a need that is not offered', () => {
+    const out = claimNeed(need('requested'), 'r1');
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('not_offered');
+  });
+
+  it('rejects claiming a response that does not exist', () => {
+    const offered = respondToNeed(need('requested'), { responder: { id: 7 }, id: 'r1' }).need;
+    const out = claimNeed(offered, 'nope');
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('no_such_response');
+  });
+});
+
+describe('handoff', () => {
+  const claimed = () => {
+    const offered = respondToNeed(need('requested'), { responder: { id: 7, name: 'Anna' }, id: 'r1' }).need;
+    return claimNeed(offered, 'r1').need;
+  };
+
+  it('claiming mints a deterministic code from the need id', () => {
+    const n = claimed();
+    expect(n.handoff?.code).toBe(handoffCode('need-1'));
+    expect(handoffCode('need-1785745502672-oj4ef5')).toBe('EF5');
+    expect(handoffCode('')).toBe('WQ0');
+  });
+
+  it('requester confirms without a code; provider must type the right one', () => {
+    const n = claimed();
+    const r = recordHandoffConfirmation(n, 'requester', { now: 1700000000000 });
+    expect(r.ok).toBe(true);
+    expect(r.both).toBe(false);
+    expect(r.need.handoff?.requesterAt).toBe(new Date(1700000000000).toISOString());
+
+    const bad = recordHandoffConfirmation(r.need, 'provider', { code: 'XXX' });
+    expect(bad.ok).toBe(false);
+    expect(bad.reason).toBe('bad_code');
+    expect(bad.both).toBe(false);
+
+    const good = recordHandoffConfirmation(r.need, 'provider', {
+      code: n.handoff!.code.toLowerCase(),
+    });
+    expect(good.ok).toBe(true);
+    expect(good.both).toBe(true);
+  });
+
+  it('confirmations are idempotent per side and order-independent', () => {
+    const n = claimed();
+    const p = recordHandoffConfirmation(n, 'provider', { code: n.handoff!.code });
+    expect(p.ok).toBe(true);
+    expect(p.both).toBe(false);
+    const again = recordHandoffConfirmation(p.need, 'provider', { code: n.handoff!.code });
+    expect(again.reason).toBe('already_confirmed');
+    expect(again.both).toBe(false);
+    const r = recordHandoffConfirmation(p.need, 'requester');
+    expect(r.both).toBe(true);
+  });
+
+  it('rejects confirmation before the need is claimed', () => {
+    const out = recordHandoffConfirmation(need('offered'), 'requester');
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('not_claimed');
   });
 });
 

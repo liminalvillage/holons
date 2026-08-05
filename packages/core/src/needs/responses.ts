@@ -15,6 +15,15 @@ import {
   type PublishedNeed,
 } from './types.js';
 
+/**
+ * The handoff code for a need — deterministic from the id so both parties'
+ * devices derive the same three characters without coordination.
+ */
+export function handoffCode(needId: string | number): string {
+  const clean = String(needId).replace(/[^a-z0-9]/gi, '');
+  return (clean.slice(-3) || 'WQ0').toUpperCase();
+}
+
 export interface RespondInput {
   responder: NeedResponse['responder'];
   message?: string;
@@ -65,6 +74,83 @@ export function respondToNeed(need: PublishedNeed, input: RespondInput): Respond
     responses: [...(need.responses ?? []), response],
   };
   return { ok: true, need: updated, response };
+}
+
+export interface ClaimResult {
+  ok: boolean;
+  need: PublishedNeed;
+  reason?: 'not_offered' | 'no_such_response';
+}
+
+/**
+ * The requester accepts one provider's response: the need moves
+ * `offered → claimed` and records which response won. The handoff then
+ * settles out-of-band; `closeNeed('fulfilled')` completes the loop.
+ */
+export function claimNeed(
+  need: PublishedNeed,
+  responseId: string,
+  now: number = Date.now()
+): ClaimResult {
+  if (need.status !== 'offered') {
+    return { ok: false, need, reason: 'not_offered' };
+  }
+  const response = (need.responses ?? []).find((r) => r.id === responseId);
+  if (!response) {
+    return { ok: false, need, reason: 'no_such_response' };
+  }
+  return {
+    ok: true,
+    need: {
+      ...need,
+      status: 'claimed',
+      claimedResponseId: responseId,
+      claimedAt: new Date(now).toISOString(),
+      handoff: { code: handoffCode(need.id ?? '') },
+    },
+  };
+}
+
+export type HandoffParty = 'requester' | 'provider';
+
+export interface HandoffConfirmResult {
+  ok: boolean;
+  need: PublishedNeed;
+  /** True once both sides have confirmed — time to move the hours. */
+  both: boolean;
+  reason?: 'not_claimed' | 'bad_code' | 'already_confirmed';
+}
+
+/**
+ * One side confirms the handoff. The requester confirms from the screen that
+ * shows the code; the provider must type that code in (`code` is required and
+ * checked for the provider side). Idempotent per side; `both` flips true on
+ * the second confirmation.
+ */
+export function recordHandoffConfirmation(
+  need: PublishedNeed,
+  party: HandoffParty,
+  opts: { code?: string; now?: number } = {}
+): HandoffConfirmResult {
+  const both = (n: PublishedNeed) => Boolean(n.handoff?.requesterAt && n.handoff?.providerAt);
+  if (need.status !== 'claimed' || !need.handoff) {
+    return { ok: false, need, both: both(need), reason: 'not_claimed' };
+  }
+  if (party === 'provider') {
+    const typed = String(opts.code ?? '').trim().toUpperCase();
+    if (typed !== need.handoff.code) {
+      return { ok: false, need, both: both(need), reason: 'bad_code' };
+    }
+  }
+  const key = party === 'requester' ? 'requesterAt' : 'providerAt';
+  if (need.handoff[key]) {
+    return { ok: true, need, both: both(need), reason: 'already_confirmed' };
+  }
+  const updated: PublishedNeed = {
+    ...need,
+    handoff: { ...need.handoff, [key]: new Date(opts.now ?? Date.now()).toISOString() },
+  };
+  return { ok: true, need: updated, both: both(updated) };
 }
 
 export type CloseOutcome = 'fulfilled' | 'cancelled';
