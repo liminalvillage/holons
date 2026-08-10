@@ -10,6 +10,7 @@
   import { telegramUser } from "$lib/auth";
   import { sameId } from "$lib/personal";
   import type { BacklogTask } from "$lib/data";
+  import { holoSeed } from "$lib/data";
 
   export let tasks: BacklogTask[];
   export let colorFor: (category: string | undefined) => string;
@@ -50,6 +51,7 @@
           class="row"
           class:is-foreign={!!task.sourceColor}
           class:holo={!!task.hologram}
+          style:--holo-seed={holoSeed(task.id)}
           style="--dot: {colorFor(task.category)}; --glow: {task.sourceColor ??
             'transparent'};"
           role="button"

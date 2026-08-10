@@ -332,6 +332,17 @@ describe("hologram flag — projection cards", () => {
     expect(out[0].sourceColor).toBeDefined();
   });
 
+  it("holoSeed spreads cards across [0,1) deterministically", async () => {
+    const { holoSeed } = await import("./data");
+    const seeds = ["holo-task", "holo-event", "holo-other"].map(holoSeed);
+    for (const s of seeds) {
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThan(1);
+    }
+    expect(new Set(seeds).size).toBe(3);
+    expect(holoSeed("holo-task")).toBe(seeds[0]);
+  });
+
   it("flags hologram roles, things and checklists too", () => {
     expect(
       toRoles([{ id: "r", title: "r", ...envelope } as unknown as Role])[0]

@@ -189,66 +189,73 @@ button {
    - Reduced motion: the media rule below stills everything; the static
      projection look remains. */
 .holo {
+  /* Each projection is tinted by its SOURCE HOLON's glow hue (the same
+     `--glow` the source chip uses, hashed per holon and set inline on every
+     card), so holograms from different holons project in different colours.
+     The cyan fallback only covers a hologram with no resolvable source. */
+  --holo-c: var(--glow, #1fe3d4);
   /* Light skin: a projection needs to stay legible on warm cream, so the
-     body is a cool glass tint over a MOSTLY-OPAQUE base — the base keeps the
-     ink on its own ground instead of whatever sits behind the card, while
-     the remaining translucency keeps it reading as light, not paper. */
+     body is a coloured glass tint over a MOSTLY-OPAQUE base — the base keeps
+     the ink on its own ground instead of whatever sits behind the card,
+     while the remaining translucency keeps it reading as light, not paper. */
   --holo-body: linear-gradient(
     168deg,
-    rgba(0, 210, 255, 0.2),
-    rgba(0, 160, 230, 0.07) 46%,
-    rgba(0, 230, 245, 0.17)
+    color-mix(in srgb, var(--holo-c) 24%, transparent),
+    color-mix(in srgb, var(--holo-c) 8%, transparent) 46%,
+    color-mix(in srgb, var(--holo-c) 20%, transparent)
   );
-  --holo-base: rgba(233, 250, 252, 0.88);
-  --holo-ink: #06666e;
-  --holo-glow: rgba(0, 205, 225, 0.55);
-  --holo-edge: rgba(0, 200, 225, 0.5);
+  --holo-base: color-mix(in srgb, var(--holo-c) 9%, rgba(250, 253, 253, 0.88));
+  --holo-ink: color-mix(in srgb, var(--holo-c) 55%, #082e32);
+  --holo-glow: color-mix(in srgb, var(--holo-c) 55%, transparent);
+  --holo-edge: color-mix(in srgb, var(--holo-c) 50%, transparent);
+  /* The near-white core of the shimmer band, in the projection's hue. */
+  --holo-bright: color-mix(in srgb, #ffffff 55%, var(--holo-c));
   position: relative;
   isolation: isolate;
   background: var(--holo-body), var(--holo-base) !important;
   border: 1px solid var(--holo-edge) !important;
   box-shadow:
     0 0 14px var(--holo-glow),
-    inset 0 0 22px rgba(0, 220, 245, 0.16) !important;
+    inset 0 0 22px color-mix(in srgb, var(--holo-c) 16%, transparent) !important;
   text-shadow:
     0 0 7px var(--holo-glow),
     0.7px 0 rgba(0, 255, 240, 0.4),
     -0.7px 0 rgba(255, 80, 160, 0.28);
   animation:
     holo-materialize 0.5s ease both,
-    holo-flicker 6.3s steps(1, end) 0.9s infinite !important;
-  /* Every hologram runs on its OWN clock: phase and period are derived from
-     the card's hash-random tilt (tan(±0.5°…1.1°) → a signed number), so
-     neighbouring projections never flicker in unison. Negative delays start
-     mid-cycle; on engines without tan() the declarations are dropped and the
-     shorthand's uniform timing above still applies. */
-  animation-delay: 0s, calc(tan(var(--tilt, 0.8deg)) * 150s - 4s) !important;
+    holo-flicker 9.5s steps(1, end) 0.9s infinite !important;
+  /* Every hologram runs on its OWN clock: phase and period derive from
+     --holo-seed, a [0,1) hash of the card's id set inline wherever class:holo
+     is (see holoSeed in data.ts) — so no two projections flicker in unison,
+     list rows and the detail modal included. Negative delays start each
+     cycle midway. */
+  animation-delay: 0s, calc(var(--holo-seed, 0.37) * -9.5s - 0.9s) !important;
   animation-duration:
-    0.5s, calc(6.3s + tan(var(--tilt, 0.8deg)) * 30s) !important;
+    0.5s, calc(8.6s + var(--holo-seed, 0.37) * 1.8s) !important;
 }
-/* The whole projection is one wavelength: every bit of ink goes luminous
-   cyan-teal (currentColor also recolours inline SVG icons). */
+/* The whole projection is one wavelength: every bit of ink goes luminous in
+   the source holon's hue (currentColor also recolours inline SVG icons). */
 .holo,
 .holo * {
   color: var(--holo-ink) !important;
 }
-/* Photos and avatars are part of the projection too — re-lit in cyan. */
+/* Photos and avatars are part of the projection too — drained to greyscale
+   light; the coloured wash above re-lights them in the projection's hue. */
 .holo img {
-  filter: grayscale(1) sepia(1) hue-rotate(140deg) saturate(2.6)
-    brightness(1.08);
-  opacity: 0.85;
+  filter: grayscale(1) contrast(1.05) brightness(1.12);
+  opacity: 0.82;
 }
 :root[data-theme="dark"] .holo {
   --holo-body: linear-gradient(
     168deg,
-    rgba(0, 235, 255, 0.17),
-    rgba(0, 130, 190, 0.05) 46%,
-    rgba(0, 245, 255, 0.13)
+    color-mix(in srgb, var(--holo-c) 20%, transparent),
+    color-mix(in srgb, var(--holo-c) 6%, transparent) 46%,
+    color-mix(in srgb, var(--holo-c) 16%, transparent)
   );
-  --holo-base: rgba(5, 24, 28, 0.88);
-  --holo-ink: #9df5ec;
-  --holo-glow: rgba(80, 250, 235, 0.5);
-  --holo-edge: rgba(110, 250, 240, 0.45);
+  --holo-base: color-mix(in srgb, var(--holo-c) 10%, rgba(4, 16, 19, 0.88));
+  --holo-ink: color-mix(in srgb, var(--holo-c) 45%, #f2fffc);
+  --holo-glow: color-mix(in srgb, var(--holo-c) 50%, transparent);
+  --holo-edge: color-mix(in srgb, var(--holo-c) 45%, transparent);
 }
 /* Rolling scanlines + a shimmer band sweeping down the card, like the
    emitter refreshing the image. */
@@ -262,15 +269,15 @@ button {
   background:
     repeating-linear-gradient(
       0deg,
-      rgba(0, 240, 255, 0.16) 0 1px,
+      color-mix(in srgb, var(--holo-c, #1fe3d4) 16%, transparent) 0 1px,
       transparent 1px 3px
     ),
     linear-gradient(
       to bottom,
       transparent 40%,
-      rgba(190, 255, 250, 0.32) 49%,
-      rgba(190, 255, 250, 0.45) 50%,
-      rgba(190, 255, 250, 0.18) 54%,
+      color-mix(in srgb, var(--holo-bright, #bffff9) 32%, transparent) 49%,
+      color-mix(in srgb, var(--holo-bright, #bffff9) 45%, transparent) 50%,
+      color-mix(in srgb, var(--holo-bright, #bffff9) 18%, transparent) 54%,
       transparent 62%
     );
   background-size:
@@ -278,9 +285,9 @@ button {
     100% 320%;
   mix-blend-mode: screen;
   animation: holo-sweep 5.6s linear infinite;
-  /* The shimmer sweep de-syncs the same way the flicker does (always a
-     negative delay, so every card starts mid-cycle — never frozen). */
-  animation-delay: calc(-6s - tan(var(--tilt, 0.8deg)) * 120s);
+  /* The shimmer sweep de-syncs on the same per-card seed (always a negative
+     delay, so every card starts mid-cycle — never frozen). */
+  animation-delay: calc(var(--holo-seed, 0.37) * -5.6s - 0.4s);
 }
 /* Film grain: tiled feTurbulence noise, re-jittered in coarse steps. */
 .holo::after {
@@ -294,7 +301,8 @@ button {
   background-size: 120px 120px;
   opacity: 0.14;
   mix-blend-mode: screen;
-  animation: holo-grain 1.1s steps(5) infinite;
+  /* Slow re-jitter — texture, not noise. */
+  animation: holo-grain 2.4s steps(5) infinite;
 }
 /* A projection doesn't rise like paper — it materialises: snaps in bright,
    overshoots, settles. `translate` (not transform) so the tilt survives. */
@@ -320,59 +328,35 @@ button {
     opacity: 0.97;
   }
 }
-/* Mostly steady, with brief shallow dips and micro glitch-jumps each cycle —
-   the projection dims but NEVER blinks out (floor ~0.75). steps(1) holds
-   each level then snaps — no smooth fades. */
+/* Calm flicker: a long, mostly-steady cycle with three brief shallow dips
+   and ONE tiny glitch-jump — the projection breathes rather than sputters,
+   and NEVER blinks out (floor 0.84). steps(1) holds each level then snaps —
+   no smooth fades. */
 @keyframes holo-flicker {
   0%,
   100% {
     opacity: 0.97;
     translate: 0 0;
   }
-  8% {
+  14% {
+    opacity: 0.89;
+  }
+  14.4% {
+    opacity: 0.97;
+  }
+  43% {
     opacity: 0.84;
-  }
-  8.7% {
-    opacity: 0.97;
-  }
-  27% {
-    opacity: 0.9;
-    translate: 1.5px 0;
-  }
-  27.4% {
-    opacity: 0.97;
-    translate: 0 0;
-  }
-  46% {
-    opacity: 0.75;
-  }
-  46.4% {
-    opacity: 1;
-    translate: -2px 0;
-  }
-  47% {
-    opacity: 0.97;
-    translate: 0 0;
-  }
-  63% {
-    opacity: 0.88;
-  }
-  63.5% {
-    opacity: 0.97;
-  }
-  71% {
-    opacity: 0.82;
-  }
-  71.6% {
-    opacity: 0.97;
-  }
-  88% {
-    opacity: 0.78;
     translate: 1px 0;
   }
-  88.5% {
+  43.4% {
     opacity: 0.97;
     translate: 0 0;
+  }
+  76% {
+    opacity: 0.88;
+  }
+  76.5% {
+    opacity: 0.97;
   }
 }
 /* Scanlines roll slowly; the shimmer band sweeps top→bottom once a cycle. */

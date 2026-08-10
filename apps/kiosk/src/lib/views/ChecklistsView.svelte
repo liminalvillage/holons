@@ -20,7 +20,7 @@
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getChecklistStore } from "$lib/holosphere";
   import { personalChecklists } from "$lib/personal";
-  import { sourceRef } from "$lib/data";
+  import { sourceRef, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
@@ -327,6 +327,7 @@
             class="card"
             class:is-foreign={!!list.sourceColor}
             class:holo={!!list.hologram}
+            style:--holo-seed={holoSeed(list.id)}
             style="--glow: {list.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"

@@ -38,6 +38,7 @@
     noteRiseRot,
     sourceRef,
     type BacklogTask,
+    holoSeed,
   } from "$lib/data";
   import { personalTasks, sameId } from "$lib/personal";
   import {
@@ -676,6 +677,7 @@
                   class:risen={!!risen[task.id]}
                   class:is-foreign={!!task.sourceColor}
                   class:holo={!!task.hologram}
+                  style:--holo-seed={holoSeed(task.id)}
                   style="--tilt: {noteTilt(
                     task.id,
                   )}deg; --rise-delay: {noteRiseDelay(
@@ -872,6 +874,7 @@
         class="rowclone"
         class:is-foreign={!!drag.task.sourceColor}
         class:holo={!!drag.task.hologram}
+        style:--holo-seed={holoSeed(drag.task.id)}
         style="--dot: {noteColorFor(drag.task.category)}; --glow: {drag.task
           .sourceColor ?? 'transparent'};"
       >
@@ -893,6 +896,7 @@
         class="note"
         class:is-foreign={!!drag.task.sourceColor}
         class:holo={!!drag.task.hologram}
+        style:--holo-seed={holoSeed(drag.task.id)}
         style="background: {noteColorFor(drag.task.category)}; --glow: {drag
           .task.sourceColor ?? 'transparent'};"
       >

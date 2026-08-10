@@ -5,6 +5,12 @@
   import { createEventDispatcher } from "svelte";
   const dispatch = createEventDispatcher();
   export let tint: string = "var(--card)";
+  /** Render the card as a hologram projection (see `.holo` in app.css). */
+  export let holo = false;
+  /** Source holon glow hue driving the projection's colour. */
+  export let glow: string | undefined = undefined;
+  /** Per-record clock seed [0,1) so the modal flickers on its own time. */
+  export let seed: number | undefined = undefined;
   function close() {
     dispatch("close");
   }
@@ -17,7 +23,14 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" on:pointerdown|self={close}>
-  <div class="card" style="background: {tint};" role="dialog" aria-modal="true">
+  <div
+    class="card"
+    class:holo
+    style="background: {tint};{glow ? ` --glow: ${glow};` : ''}"
+    style:--holo-seed={seed}
+    role="dialog"
+    aria-modal="true"
+  >
     <button class="x" on:click={close} aria-label="Close">✕</button>
     <div class="body scroll">
       <slot />
