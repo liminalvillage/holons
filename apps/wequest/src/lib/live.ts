@@ -35,8 +35,9 @@ import {
   respondToNeed,
   claimNeed,
   closeNeed,
-  handoffCode,
-  recordHandoffConfirmation,
+  foldHandoffConfirmations,
+  confirmNeedHandoff,
+  settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
   NEEDS_LENS,
@@ -45,13 +46,8 @@ import {
   type HandoffParty,
   type PublishedNeed,
 } from "@holons/core/needs";
-import {
-  classifyMarketItem,
-  planTaskCompletion,
-  executeCompletionPlan,
-} from "@holons/core/tasks";
+import { classifyMarketItem } from "@holons/core/tasks";
 import { REAEventStore } from "@holons/core/rea";
-import { DEFAULT_EQUATION } from "@holons/core/scoring";
 import { sourceRef } from "@holons/core/holosphere";
 import {
   readSettingsHex,
@@ -59,7 +55,6 @@ import {
 } from "@holons/core/federation";
 import {
   computeUserCurrencyBalance,
-  createExpense,
   type Expense,
 } from "@holons/core/expenses";
 import { REAAggregator, computeHolonUserScores } from "@holons/core/scoring";
@@ -119,28 +114,20 @@ rawQuests.subscribe(($q) => {
   if (!me) return;
   // Confirm records straight from this emit — self-contained on purpose (the
   // derived store isn't initialized when this subscription first fires).
-  const confirms: Record<string, { requester?: boolean; provider?: boolean }> =
-    {};
-  for (const rec of $q) {
-    if (rec?.type === "handoff-confirm" && rec.needId && rec.party) {
-      (confirms[String(rec.needId)] ??= {})[
-        rec.party === "requester" ? "requester" : "provider"
-      ] = true;
-    }
-  }
+  const confirms = foldHandoffConfirmations($q);
   for (const r of $q) {
     if (!r || r.type !== "need" || r.status !== "claimed") continue;
     if (isForeign(r)) continue;
     if (String(r.initiator?.id ?? "") !== me) continue;
     const key = String(r.id);
     const c = confirms[key];
-    if (!c?.requester || !c?.provider) continue;
+    if (!c?.requesterAt || !c?.providerAt) continue;
     if (finalized.has(key)) continue;
     finalized.add(key);
     void (async () => {
       const hs = await getHolosphere();
       const need = normalizeNeed(r);
-      if (need) await finalizeHandoff(hs, get(holonId), need);
+      if (need) await settleAndReport(hs, get(holonId), need);
     })();
   }
 });
@@ -225,19 +212,13 @@ export const proposals = derived(rawQuests, ($q) =>
 
 /**
  * Handoff confirmations, one RECORD per side (`<needId>~handoff~<party>` on
- * the quests lens). Separate records because nested-field updates on a shared
- * record don't replicate reliably across devices — new records do.
+ * the quests lens — see @holons/core/needs handoff). Separate records because
+ * nested-field updates on a shared record don't replicate reliably across
+ * devices — new records do.
  */
-export const handoffConfirms = derived(rawQuests, ($q) => {
-  const map: Record<string, { requesterAt?: string; providerAt?: string }> = {};
-  for (const r of $q) {
-    if (!r || r.type !== "handoff-confirm" || !r.needId || !r.party) continue;
-    const entry = (map[String(r.needId)] ??= {});
-    if (r.party === "requester") entry.requesterAt = String(r.at ?? "");
-    else if (r.party === "provider") entry.providerAt = String(r.at ?? "");
-  }
-  return map;
-});
+export const handoffConfirms = derived(rawQuests, ($q) =>
+  foldHandoffConfirmations($q),
+);
 
 export const members = derived(rawUsers, ($u) =>
   $u.filter((u) => u && u.id != null && !u._federation),
@@ -327,11 +308,20 @@ export const profileUser = derived(rawUsers, ($u) => {
   return $u.find((u) => u && String(u.id) === me) ?? null;
 });
 
-/** Completed quests the acting user participated in — "the record". */
+/**
+ * Completed/fulfilled quests the acting user took part in — "the record".
+ * Foreign records count too: a provider who answered another holon's need
+ * gets the fulfilled quest mirrored back as a hologram at settlement.
+ */
 export const record = derived(rawQuests, ($q) => {
   const me = resolveUserId();
   return $q
-    .filter((r) => !isForeign(r) && r?.status === "completed" && !r._deleted)
+    .filter(
+      (r) =>
+        r &&
+        !r._deleted &&
+        (r.status === "completed" || r.status === "fulfilled"),
+    )
     .filter(
       (r) =>
         String(r.initiator?.id ?? "") === me ||
@@ -788,17 +778,10 @@ function acceptedResponse(need: PublishedNeed) {
   return (need.responses ?? []).find((r) => r.id === need.claimedResponseId);
 }
 
-function handoffHours(need: PublishedNeed): number {
-  const accepted = acceptedResponse(need);
-  return accepted && typeof accepted.price === "number" && accepted.price > 0
-    ? accepted.price
-    : 1;
-}
-
 /**
  * One side confirms the handoff. The requester confirms from the code screen;
  * the provider types the code in. Hours + karma move only when BOTH sides
- * have confirmed — the second confirmation runs the finalize pipeline.
+ * have confirmed — the second confirmation runs the settlement.
  */
 export async function confirmHandoffAs(
   party: HandoffParty,
@@ -814,18 +797,20 @@ export async function confirmHandoffAs(
   const owner = ref?.holon ?? get(holonId);
   const key = ref?.key ?? String(item.id);
 
-  // Fold the replicated confirm RECORDS into the handoff view, then let core
-  // validate (claimed status, code match, per-side idempotency).
-  const confirms = get(handoffConfirms)[String(item.id)] ?? {};
-  const merged: PublishedNeed = {
-    ...local,
-    handoff: {
-      code: local.handoff?.code ?? handoffCode(key),
-      ...(confirms.requesterAt ? { requesterAt: confirms.requesterAt } : {}),
-      ...(confirms.providerAt ? { providerAt: confirms.providerAt } : {}),
-    },
-  };
-  const result = recordHandoffConfirmation(merged, party, { code });
+  // Core folds the replicated confirm records into the handoff view,
+  // validates (claimed status, code match, per-side idempotency), and
+  // persists this side's confirmation record on the owner holon.
+  let result: Awaited<ReturnType<typeof confirmNeedHandoff>>;
+  try {
+    result = await confirmNeedHandoff(hsDb(hs), owner, local, party, {
+      code,
+      key,
+      confirmations: get(handoffConfirms),
+    });
+  } catch {
+    flash("Could not record the confirmation.");
+    return { ok: false, both: false };
+  }
   if (!result.ok) {
     flash(
       result.reason === "bad_code"
@@ -835,25 +820,10 @@ export async function confirmHandoffAs(
     return { ok: false, both: false };
   }
 
-  // My confirmation as its own record — new records replicate reliably
-  // across devices, nested-field updates on a shared record don't.
-  try {
-    await putAs(hs, owner, NEED_RECORD_LENS, {
-      id: `${key}~handoff~${party}`,
-      type: "handoff-confirm",
-      needId: key,
-      party,
-      at: new Date().toISOString(),
-    });
-  } catch {
-    flash("Could not record the confirmation.");
-    return { ok: false, both: false };
-  }
-
   if (result.both) {
     const { _hologram, _federation, ...record } = result.need as any;
     record.id = key;
-    await finalizeHandoff(hs, owner, record as PublishedNeed);
+    await settleAndReport(hs, owner, record as PublishedNeed);
   } else {
     flash(
       party === "requester"
@@ -870,107 +840,28 @@ export async function confirmHandoffAs(
 }
 
 /**
- * Both sides confirmed: close the need fulfilled, record the REA completion
- * events (initiated / completed / hours — this is what makes karma real),
- * move the hours as an expense from the requester to the provider, and check
- * the originating shopping-list item off. All on the need's owner holon.
+ * Both sides confirmed — settle through core: close fulfilled, REA events,
+ * requester → provider hour expense, shopping-item checkoff, and the mirror
+ * of the provider's side into their own holon (wallet/karma/record there).
  */
-async function finalizeHandoff(
+async function settleAndReport(
   hs: HoloSphere,
   owner: string,
   need: PublishedNeed,
 ): Promise<void> {
-  const closed = closeNeed(need, "fulfilled");
-  const final = closed.ok ? closed.need : need;
-  const accepted = acceptedResponse(final);
-  const hours = handoffHours(final);
-  const providerId = accepted?.responder?.id;
-
-  // The fulfilled need, treated as a completed quest: the provider joins the
-  // participants and logs the hours, so the shared completion planner emits
-  // the same REA events the bot and web record.
-  const participants = [...(final.participants ?? [])];
-  if (
-    providerId != null &&
-    !participants.some((p: any) => String(p?.id) === String(providerId))
-  ) {
-    participants.push({
-      id: providerId,
-      username: accepted?.responder?.name,
-    } as any);
-  }
-  const asTask: any = {
-    ...final,
-    participants,
-    timeTracking: providerId != null ? { [String(providerId)]: hours } : {},
-  };
-
-  const db = hsDb(hs);
-  const eventStore = new REAEventStore(db as any);
-  const plan = planTaskCompletion(asTask, DEFAULT_EQUATION, {
-    now: Date.now(),
-    holonId: owner,
-  });
-  // The plan's own expense models "the holon reimburses hours" — WeQuest
-  // moves them requester → provider instead, so we write that one ourselves.
-  const outcome = await executeCompletionPlan(
-    db as any,
-    eventStore,
+  const out = await settleNeedHandoff(
+    { holosphere: hs, db: hsDb(hs) },
     owner,
-    plan,
-    {
-      recordExpenses: false,
-    },
+    need,
   );
-  if (outcome.errors.length) {
-    console.warn("[wequest] completion partial:", outcome.errors);
+  if (out.errors.length) {
+    console.warn("[wequest] settlement partial:", out.errors);
   }
-  await refreshPublishedNeed(hs, owner, asTask as PublishedNeed);
-
-  const requesterId = String(final.initiator?.id ?? initiator().id);
-  const expense = createExpense({
-    // Stable id keyed on the need, so a double finalize upserts not stacks.
-    id: `wq-${final.id}-handoff`,
-    holonId: owner,
-    amount: hours,
-    currency: "hour",
-    description: String(final.title ?? "handoff"),
-    paidBy: providerId ?? "provider",
-    splitWith: [requesterId],
-  });
-  if (expense) {
-    try {
-      await putAs(hs, owner, "expenses", expense);
-    } catch {
-      flash("Handoff recorded, but the hour transfer was denied.");
-    }
-  }
-
-  // Close the loop: the originating shopping-list item gets checked off.
-  if (final.source?.itemId) {
-    try {
-      const raw = await (hs as any).get(
-        owner,
-        CHECKLISTS_COLLECTION,
-        SHOPPING_KEY,
-      );
-      const list = normalizeChecklist(raw);
-      const entry = list?.items.find(
-        (i) => String(i.id) === String(final.source!.itemId),
-      );
-      if (list && entry && !entry.checked) {
-        const updated = shoppingToggleItem(list, entry.id);
-        if (updated) await putAs(hs, owner, CHECKLISTS_COLLECTION, updated);
-      }
-    } catch {
-      /* list write is best-effort */
-    }
-  }
-
   void recomputeKarma(hs, get(holonId));
   void refreshMap();
+  const accepted = acceptedResponse(out.need);
   flash(
-    `Done. ${hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
+    `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
 }
 
