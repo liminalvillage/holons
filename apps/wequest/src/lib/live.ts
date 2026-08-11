@@ -605,6 +605,26 @@ function initiator() {
   return { id, username: resolveUsername() || id };
 }
 
+// The Telegram bot's notify API: the writer says WHAT happened, the bot
+// re-reads the need and DMs the party that must act next. Fire-and-forget —
+// the graph write is the source of truth, the DM is a courtesy.
+const BOT_API_URL = String(
+  (import.meta as any).env?.VITE_BOT_API_URL ?? "",
+).replace(/\/$/, "");
+
+function notifyNeedBot(
+  event: "responded" | "claimed" | "settled",
+  ownerHolon: string,
+  needId: string,
+): void {
+  if (!BOT_API_URL) return;
+  void fetch(`${BOT_API_URL}/notify/need`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ holon: ownerHolon, needId, event }),
+  }).catch(() => {});
+}
+
 async function saveChecklist(
   hs: HoloSphere,
   holon: string,
@@ -736,6 +756,7 @@ export async function respondToSelected(
   if (ref?.key) record.id = ref.key;
   try {
     await putAs(hs, target, NEED_RECORD_LENS, record);
+    notifyNeedBot("responded", target, String(record.id));
     selectedNeed.set({
       ...item,
       status: record.status,
@@ -772,6 +793,7 @@ export async function claimResponse(responseId: string): Promise<boolean> {
     return false;
   }
   await refreshPublishedNeed(hs, holon, result.need);
+  notifyNeedBot("claimed", holon, String(result.need.id));
   selectedNeed.set(result.need);
   return true;
 }
@@ -864,6 +886,7 @@ async function settleAndReport(
   if (out.errors.length) {
     console.warn("[wequest] settlement partial:", out.errors);
   }
+  notifyNeedBot("settled", owner, String(need.id));
   void recomputeKarma(hs, get(holonId));
   void refreshMap();
   const accepted = acceptedResponse(out.need);

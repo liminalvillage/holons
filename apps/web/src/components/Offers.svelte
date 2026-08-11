@@ -97,6 +97,18 @@
 	$: selfUserId = getSelfInitiator()?.id ?? null;
 	let handoffNotice = '';
 
+	// Courtesy DM via the bot's notify API — the graph write stays the source
+	// of truth; the bot re-reads the need and DMs whoever must act next.
+	const BOT_API_URL = (import.meta.env.VITE_BOT_API_URL || '').replace(/\/$/, '');
+	function notifyNeedBot(event: 'responded' | 'claimed' | 'settled', holon: string, needId: string) {
+		if (!BOT_API_URL) return;
+		fetch(`${BOT_API_URL}/notify/need`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ holon, needId, event }),
+		}).catch(() => {});
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let userStore = {};
@@ -548,6 +560,7 @@
 		if (ref?.key) record.id = ref.key;
 		try {
 			await holosphere.put(targetHolon, 'quests', record);
+			notifyNeedBot('responded', targetHolon, String(record.id));
 			if (selectedItem && String(selectedItem.id) === String(item.id)) {
 				selectedItem = { ...selectedItem, status: record.status, responses: record.responses };
 			}
@@ -580,6 +593,7 @@
 			} else {
 				await refreshPublishedNeed(holosphere, holonID, result.need);
 			}
+			notifyNeedBot('claimed', ref?.holon ?? holonID, String(ref?.key ?? item.id));
 			handoffNotice = '';
 			if (selectedItem && String(selectedItem.id) === String(item.id)) {
 				selectedItem = {
@@ -632,6 +646,7 @@
 				if (settled.errors.length) {
 					console.warn('[Offers.svelte] settlement partial:', settled.errors);
 				}
+				notifyNeedBot('settled', owner, needKey);
 			}
 			if (selectedItem && String(selectedItem.id) === String(item.id)) {
 				selectedItem = {

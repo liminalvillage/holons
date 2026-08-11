@@ -11,6 +11,7 @@ import axios from 'axios';
 import https from 'https';
 import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
+import { i18next } from './utilities.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -648,6 +649,93 @@ class Server {
       this.scheduleRefresh('event', String(chatId), String(eventId));
       res.status(202).json({ scheduled: true });
     });
+
+    // Need-lifecycle notifications (harvest → DMs). The writer (WeQuest, the
+    // dashboard) tells the bot WHAT happened; the bot re-reads the need from
+    // the graph and DMs the party that must act next. Best-effort: a user who
+    // never started the bot simply gets no DM.
+    app.post('/notify/need', (req, res) => {
+      const { holon, needId, event } = req.body || {};
+      if (
+        !holon ||
+        needId === undefined ||
+        needId === null ||
+        !['responded', 'claimed', 'settled'].includes(event)
+      ) {
+        return res.status(400).json({
+          error: 'holon, needId and event (responded|claimed|settled) required',
+        });
+      }
+      res.status(202).json({ scheduled: true });
+      this.notifyNeedEvent(String(holon), String(needId), event).catch(err =>
+        log.warn(
+          `notify need ${holon}/${needId} (${event}) failed: ${err?.message || err}`
+        )
+      );
+    });
+  }
+
+  /**
+   * DM the party a need-lifecycle event concerns. Recipients come straight
+   * from the need record — the initiator and the accepted responder are
+   * Telegram user ids when the need originated in a Telegram holon.
+   */
+  async notifyNeedEvent(holon, needId, event) {
+    const { quests, settings, database } = this.services;
+    const db = quests ? await quests.getHolonDB(holon) : database;
+    if (!db) throw new Error('no database service');
+    const need = await db.get(holon, 'quests', needId);
+    if (!need || need.type !== 'need') return;
+
+    const language =
+      (await settings?.getLanguage(holon).catch(() => null)) || 'en';
+    const t = (key, vars = {}) => i18next.t(key, { ...vars, lng: language });
+    const responses = Array.isArray(need.responses) ? need.responses : [];
+    const accepted = responses.find(r => r && r.id === need.claimedResponseId);
+    const latest = responses[responses.length - 1];
+
+    const dm = async (userId, text) => {
+      // Only numeric ids are Telegram users we can DM.
+      if (userId == null || !/^\d+$/.test(String(userId))) return;
+      try {
+        await this.bot.telegram.sendMessage(String(userId), text);
+      } catch (err) {
+        log.info(`notify: DM to ${userId} failed (${err?.message || err})`);
+      }
+    };
+
+    if (event === 'responded') {
+      const price =
+        latest && latest.price != null
+          ? ` — ${latest.price} ${latest.currency || 'h'}`
+          : '';
+      await dm(
+        need.initiator?.id,
+        t('needresponded', {
+          name: latest?.responder?.name || t('needsomeone'),
+          title: need.title,
+          price,
+        })
+      );
+    } else if (event === 'claimed') {
+      await dm(
+        accepted?.responder?.id,
+        t('needclaimed', { title: need.title })
+      );
+    } else if (event === 'settled') {
+      const hours =
+        accepted && typeof accepted.price === 'number' && accepted.price > 0
+          ? accepted.price
+          : 1;
+      const text = t('needsettled', { title: need.title, hours });
+      await dm(need.initiator?.id, text);
+      if (
+        String(accepted?.responder?.id ?? '') !==
+        String(need.initiator?.id ?? '')
+      ) {
+        await dm(accepted?.responder?.id, text);
+      }
+    }
   }
 
   scheduleRefresh(kind, holon, id) {
