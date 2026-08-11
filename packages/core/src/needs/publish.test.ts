@@ -142,6 +142,47 @@ describe('publishNeedNearby', () => {
     }
   });
 
+  it('urgent: stamps urgency and cross-posts the announcement everywhere (§8)', async () => {
+    const m = mockHolosphere({ settingsHex: '8928308280fffff', federated: ['p1'] });
+    const out = await publishNeedNearby(m.holosphere, 'h1', need(), {
+      toHex: true,
+      urgent: true,
+      now: 1,
+    });
+    expect(out.need.urgency).toBe('urgent');
+    const announcePuts = m.put.mock.calls.filter((c: any[]) => c[1] === 'announcements');
+    expect(announcePuts.map((c: any[]) => c[0]).sort()).toEqual([
+      '8928308280fffff',
+      'h1',
+      'p1',
+    ]);
+    for (const call of announcePuts) {
+      expect(call[2]).toMatchObject({
+        id: 'urgent-need-1',
+        urgency: 'urgent',
+        content: expect.stringContaining('flour 5kg'),
+        source: { kind: 'need', needId: 'need-1', holonId: 'h1' },
+      });
+    }
+  });
+
+  it('urgent without hex or partners still lands on the home announcements lens', async () => {
+    const m = mockHolosphere();
+    await publishNeedNearby(m.holosphere, 'h1', need(), {
+      toPartners: false,
+      urgent: true,
+    });
+    const announcePuts = m.put.mock.calls.filter((c: any[]) => c[1] === 'announcements');
+    expect(announcePuts.map((c: any[]) => c[0])).toEqual(['h1']);
+  });
+
+  it('no urgency → no announcements', async () => {
+    const m = mockHolosphere({ settingsHex: '8928308280fffff', federated: ['p1'] });
+    const out = await publishNeedNearby(m.holosphere, 'h1', need(), { toHex: true });
+    expect(out.need.urgency).toBeUndefined();
+    expect(m.put.mock.calls.some((c: any[]) => c[1] === 'announcements')).toBe(false);
+  });
+
   it('throws when the need has no id', async () => {
     const m = mockHolosphere();
     await expect(

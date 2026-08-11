@@ -77,6 +77,11 @@ export interface PublishedNeed extends Quest {
   /** Publication stamp — which targets this need has been shared with. */
   published?: { at: number; toHex?: string; toPartners?: boolean };
   handoff?: HandoffState;
+  /**
+   * Emergency mode (docs §8): an urgent need is a need with this field,
+   * cross-posted to the announcements lens and rendered with priority.
+   */
+  urgency?: 'urgent';
   /** Which response won, stamped by `claimNeed`. */
   claimedResponseId?: string;
   /** ISO timestamp of the claim. */

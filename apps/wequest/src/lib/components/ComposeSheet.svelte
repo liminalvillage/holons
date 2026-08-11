@@ -8,6 +8,8 @@
   let sending = false;
   /** Offer scope: coop only, or coop + federation partners. */
   let offerToPartners = true;
+  /** Emergency mode (§8): urgent needs also go out as announcements. */
+  let urgent = false;
 
   // Suggest what the rings are actually asking for; the static examples
   // only fill in while there is no live demand at all.
@@ -21,9 +23,10 @@
     if ($composeIntent === "offer") {
       await publishOffer($draft, kindIdx, offerToPartners);
     } else {
-      await addToList($draft, kindIdx, $ring);
+      await addToList($draft, kindIdx, $ring, urgent);
     }
     sending = false;
+    urgent = false;
     composeOpen.set(false);
     draft.set("");
   }
@@ -104,6 +107,30 @@
         {/each}
       </div>
       {#if $composeIntent === "need"}
+        <button
+          class="tapp"
+          on:click={() => (urgent = !urgent)}
+          style="display:flex;align-items:center;gap:10px;margin-top:14px;width:100%;padding:11px 14px;border-radius:var(--radius-md);border:1.5px solid {urgent
+            ? '#e0492f'
+            : 'var(--color-divider)'};background:{urgent ? 'rgba(224,73,47,.08)' : 'var(--color-surface)'}"
+        >
+          <span style="font-size:16px">🚨</span>
+          <span style="flex:1;text-align:left;font-size:13px;font-weight:700;color:{urgent
+            ? '#b23a24'
+            : 'var(--color-neutral-700)'}"
+          >
+            Urgent — announce it across the rings
+          </span>
+          <span
+            style="width:38px;height:22px;border-radius:999px;background:{urgent
+              ? '#e0492f'
+              : 'var(--color-neutral-400)'};position:relative;flex:none"
+          >
+            <span
+              style="position:absolute;top:2px;left:{urgent ? '18px' : '2px'};width:18px;height:18px;border-radius:999px;background:#fff;transition:left .15s"
+            ></span>
+          </span>
+        </button>
         <div style="display:flex;align-items:center;gap:10px;margin-top:18px">
           <div style="font-size:13px;font-weight:700;flex:1">How far should it travel?</div>
           <div style="font-size:12.5px;color:var(--color-accent-700);font-weight:700">{RINGS[$ring]}</div>

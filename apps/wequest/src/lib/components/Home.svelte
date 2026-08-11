@@ -97,7 +97,7 @@
       dist: distLabel(distKm),
       summary:
         count > 0
-          ? `${count} open need${count === 1 ? "" : "s"} published to this cell.`
+          ? `${info?.urgent ? "🚨 Urgent need here. " : ""}${count} open need${count === 1 ? "" : "s"} published to this cell.`
           : "Quiet — nothing published here right now.",
       tags: info?.tags?.length ? info.tags : count === 0 ? ["Quiet"] : [],
     };
@@ -156,20 +156,21 @@
   $: feedTitle = $mode === "need" ? "Your list, answered" : "Needs you could answer";
 
   function needMeta(n: any): string {
+    const urgent = n.urgency === "urgent" ? "🚨 urgent · " : "";
     const responses = n.responses?.length ?? 0;
     if ($mode === "need") {
-      if (n.status === "requested") return "Open · waiting for the ring";
+      if (n.status === "requested") return urgent + "Open · waiting for the ring";
       if (n.status === "offered")
-        return `${responses} answer${responses === 1 ? "" : "s"} — tap to choose`;
-      if (n.status === "claimed") return "Claimed · ready for handoff";
-      return n.status;
+        return `${urgent}${responses} answer${responses === 1 ? "" : "s"} — tap to choose`;
+      if (n.status === "claimed") return urgent + "Claimed · ready for handoff";
+      return urgent + n.status;
     }
     const from =
       n._federation?.originName ||
       n._federation?.origin ||
       n._hologram?.sourceHolonName ||
       (n._hologram?.sourceHolon ? "the map" : null);
-    return (from ? `From ${from} · ` : "") + n.status;
+    return urgent + (from ? `From ${from} · ` : "") + n.status;
   }
 </script>
 
@@ -241,8 +242,12 @@
               on:keydown={(e) => e.key === "Enter" && tapCell(c.cell, c.distKm)}
               points={c.pts}
               fill={HEAT[Math.min(4, $cellHeat[c.cell]?.count ?? 0)]}
-              stroke={openCell?.cell === c.cell ? "#f5ead8" : "rgba(205,219,178,0.35)"}
-              stroke-width="1"
+              stroke={openCell?.cell === c.cell
+                ? "#f5ead8"
+                : $cellHeat[c.cell]?.urgent
+                  ? "#e0492f"
+                  : "rgba(205,219,178,0.35)"}
+              stroke-width={$cellHeat[c.cell]?.urgent ? 2.5 : 1}
             />
           {/each}
           {#each $mapCells.filter((c) => ($cellHeat[c.cell]?.count ?? 0) > 0) as c (c.cell + "-label")}

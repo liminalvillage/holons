@@ -14,6 +14,8 @@ export const MAPBOX_TOKEN: string = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 export interface HeatInfo {
   count: number;
   tags: string[];
+  /** Emergency mode: some need in the cell is marked urgent. */
+  urgent?: boolean;
 }
 
 export interface HexHeatMap {
@@ -35,7 +37,11 @@ function heatFC(cells: string[], heat: Record<string, HeatInfo>): any {
     type: "FeatureCollection",
     features: cells.map((cell) => ({
       type: "Feature",
-      properties: { cell, count: heat[cell]?.count ?? 0 },
+      properties: {
+        cell,
+        count: heat[cell]?.count ?? 0,
+        urgent: heat[cell]?.urgent === true,
+      },
       geometry: { type: "Polygon", coordinates: [ring(cell)] },
     })),
   };
@@ -121,6 +127,14 @@ export async function createHexHeatMap(
       type: "line",
       source: "wq-heat",
       paint: { "line-color": "rgba(245,234,216,0.5)", "line-width": 1 },
+    });
+    // Emergency mode: urgent cells get a loud outline over the normal grid.
+    map.addLayer({
+      id: "wq-heat-urgent",
+      type: "line",
+      source: "wq-heat",
+      filter: ["==", ["get", "urgent"], true],
+      paint: { "line-color": "#e0492f", "line-width": 2.5 },
     });
     map.addLayer({
       id: "wq-heat-count",

@@ -7,7 +7,8 @@
     confirmHandoffAs,
     cancelSelectedNeed,
     handoffConfirms,
-    needRatings,
+    selectedRatings,
+    needPartyOf,
     peerReputation,
     rateSelected,
     partners,
@@ -31,10 +32,10 @@
   $: confirms = $handoffConfirms[String(need?.id ?? "")] ?? {};
   $: iConfirmedProvider = Boolean(confirms.providerAt || need?.handoff?.providerAt);
 
-  // Reputation on settlement: each side rates the other once, after fulfilment.
-  $: myParty = isMine ? "requester" : iAmProvider ? "provider" : null;
-  $: ratingEntry = $needRatings[String(need?.id ?? "")] ?? {};
-  $: myRating = myParty ? ratingEntry[myParty as "requester" | "provider"] : null;
+  // Reputation on settlement: each side rates the other once, after
+  // fulfilment. Who may rate (and as which side) is core's rule, not ours.
+  $: myParty = need ? needPartyOf(need, me) : null;
+  $: myRating = myParty ? $selectedRatings[myParty] : null;
   $: ratee =
     myParty === "requester"
       ? (accepted?.responder?.name ?? "the provider")
@@ -45,9 +46,9 @@
   let rating = false;
 
   async function submitRating() {
-    if (rating || !myParty || stars < 1) return;
+    if (rating || stars < 1) return;
     rating = true;
-    await rateSelected(myParty as "requester" | "provider", stars, ratingComment);
+    await rateSelected(stars, ratingComment);
     rating = false;
   }
 
@@ -122,8 +123,13 @@
       </button>
     </div>
     <div class="body" style="padding:14px 20px 20px">
-      <div class="chip" style="background:var(--color-accent-200);color:var(--color-accent-800)">
-        {kindLabel()}
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="chip" style="background:var(--color-accent-200);color:var(--color-accent-800)">
+          {kindLabel()}
+        </div>
+        {#if need.urgency === "urgent"}
+          <div class="chip" style="background:#e0492f;color:#fff">🚨 urgent</div>
+        {/if}
       </div>
       <div style="font-family:var(--font-heading);font-size:31px;line-height:1.08;margin-top:10px;text-wrap:pretty">
         {need.title}
@@ -351,19 +357,20 @@
             </div>
             <div style="display:flex;gap:6px;margin-top:12px">
               {#each [1, 2, 3, 4, 5] as s (s)}
+                {@const on = s <= stars}
                 <button
                   class="tapp"
                   on:click={() => (stars = s)}
                   aria-label="{s} star{s === 1 ? '' : 's'}"
-                  style="width:44px;height:44px;border-radius:var(--radius-md);background:{s <= stars
+                  style="width:44px;height:44px;border-radius:var(--radius-md);background:{on
                     ? 'var(--color-accent-200)'
-                    : 'var(--color-bg)'};border:1.5px solid {s <= stars
+                    : 'var(--color-bg)'};border:1.5px solid {on
                     ? 'var(--color-accent-500)'
-                    : 'var(--color-divider)'};font-size:20px;color:{s <= stars
+                    : 'var(--color-divider)'};font-size:20px;color:{on
                     ? 'var(--color-accent-700)'
                     : 'var(--color-neutral-500)'}"
                 >
-                  {s <= stars ? "★" : "☆"}
+                  {on ? "★" : "☆"}
                 </button>
               {/each}
             </div>

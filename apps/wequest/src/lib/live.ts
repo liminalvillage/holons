@@ -43,7 +43,8 @@ import {
   foldNeedRatings,
   rateNeedHandoff,
   reputationByUser,
-  reputationOf,
+  acceptedResponse,
+  needPartyOf,
   NEEDS_LENS,
   NEED_RECORD_LENS,
   OPEN_NEED_STATUSES,
@@ -91,7 +92,10 @@ export const partners = writable<Array<{ id: string; name: string }>>([]);
 /** Open needs per hex cell of the neighbourhood — count, titles, and the
  *  resolved records themselves (tappable → answerable). */
 export const cellHeat = writable<
-  Record<string, { count: number; tags: string[]; needs: PublishedNeed[] }>
+  Record<
+    string,
+    { count: number; tags: string[]; needs: PublishedNeed[]; urgent: boolean }
+  >
 >({});
 export const mapCells = writable<ProjectedCell[]>([]);
 /** The need currently open in the quest screen. */
@@ -174,15 +178,18 @@ function isOpen(need: PublishedNeed): boolean {
   return OPEN_NEED_STATUSES.includes(need.status);
 }
 
-/** This holon's own needs (the list's demand signal), newest first. */
+/** Urgent needs outrank everything; then newest first. */
+const urgentFirst = (a: any, b: any) =>
+  Number(b?.urgency === "urgent") - Number(a?.urgency === "urgent") ||
+  String(b?.created ?? "").localeCompare(String(a?.created ?? ""));
+
+/** This holon's own needs (the list's demand signal). */
 export const myNeeds = derived(rawQuests, ($q) =>
   $q
     .filter((r) => !isForeign(r) && r?.type === "need")
     .map((r) => normalizeNeed(r))
     .filter((n): n is PublishedNeed => n != null)
-    .sort((a, b) =>
-      String(b.created ?? "").localeCompare(String(a.created ?? "")),
-    ),
+    .sort(urgentFirst),
 );
 
 /** Open needs/requests from federation partners — "needs you could answer". */
@@ -226,7 +233,7 @@ export const provideFeed = derived(
         fromCells.push(n);
       }
     }
-    return [...$foreign, ...fromCells];
+    return [...$foreign, ...fromCells].sort(urgentFirst);
   },
 );
 
@@ -320,16 +327,33 @@ export const handoffConfirms = derived(rawQuests, ($q) =>
 export const needRatings = derived(rawQuests, ($q) => foldNeedRatings($q));
 
 /**
+ * Ratings for the need open in the quest screen, looked up under the same
+ * owner-holon key the write side uses — a record reached through a hologram
+ * or federated copy can carry a different local id.
+ */
+export const selectedRatings = derived(
+  [needRatings, selectedNeed],
+  ([$r, $sel]) =>
+    $sel
+      ? ($r[sourceRef($sel, String($sel.id))?.key ?? String($sel.id)] ?? {})
+      : {},
+);
+
+/**
  * Reputation per user, folded from every rating record visible in this graph
  * (own + federated + mirrored). Best-effort by design: a stranger's rating
  * history only travels as far as federation and the ratee-holon mirror do.
  */
 export const peerReputation = derived(rawQuests, ($q) => reputationByUser($q));
 
-/** The acting user's own reputation — mirrors land on their holon. */
-export const myReputation = derived(rawQuests, ($q) =>
-  reputationOf($q, resolveUserId()),
+/** The acting user's own reputation — a lookup off the shared fold. */
+export const myReputation = derived(
+  peerReputation,
+  ($r) => $r[resolveUserId()] ?? { count: 0, average: 0 },
 );
+
+// Components decide who may rate from the same rule core enforces.
+export { needPartyOf };
 
 export const members = derived(rawUsers, ($u) =>
   $u.filter((u) => u && u.id != null && !u._federation),
@@ -521,6 +545,7 @@ function republishHeat(cell: string): void {
       // Unique titles — duplicates would collide as keyed-each keys.
       tags: [...new Set(open.map((n) => String(n.title)))].slice(0, 3),
       needs: open,
+      urgent: open.some((n) => n.urgency === "urgent"),
     },
   }));
 }
@@ -767,6 +792,7 @@ export async function addToList(
   text: string,
   kindIdx: number,
   ringIdx: number,
+  urgent = false,
 ): Promise<void> {
   const holon = get(holonId);
   const trimmed = text.trim();
@@ -792,6 +818,7 @@ export async function addToList(
     toPartners: ring.toPartners,
     toHex: true,
     upcastLevels: ring.upcastLevels,
+    urgent,
   });
 
   const stamped = stampNeedId(withItem, item.id, String(need.id));
@@ -799,6 +826,7 @@ export async function addToList(
 
   console.debug("[wequest] publish outcome", JSON.stringify(outcome));
   if (outcome.errors.length > 0) flash(outcome.errors[0]);
+  else if (urgent) flash("🚨 Announced as urgent — the rings see it first.");
   else flash("On the ledger. Your rings can see it.");
   if (outcome.hexCell) void refreshMap();
 }
@@ -850,10 +878,9 @@ export async function respondToSelected(
     );
     return;
   }
-  const ref = sourceRef(item, String(item.id));
-  const target = ref?.holon ?? holon;
+  const { owner: target, key } = selectedRef(item);
   const { _hologram, _federation, ...record } = result.need as any;
-  if (ref?.key) record.id = ref.key;
+  record.id = key;
   try {
     await putAs(hs, target, NEED_RECORD_LENS, record);
     notifyNeedBot("responded", target, String(record.id));
@@ -898,13 +925,18 @@ export async function claimResponse(responseId: string): Promise<boolean> {
   return true;
 }
 
-/** The holon that owns the selected need's canonical record. */
-function ownerHolonOf(item: any): string {
-  return sourceRef(item, String(item.id))?.holon ?? get(holonId);
-}
-
-function acceptedResponse(need: PublishedNeed) {
-  return (need.responses ?? []).find((r) => r.id === need.claimedResponseId);
+/**
+ * A record's canonical address: the owner holon and the record's key there.
+ * Foreign records (federated copies, map holograms) resolve through their
+ * sourceRef; our own resolve to this holon and the local id. Every write
+ * path that can act on a foreign record routes through this.
+ */
+function selectedRef(item: any): { owner: string; key: string } {
+  const ref = sourceRef(item, String(item.id));
+  return {
+    owner: ref?.holon ?? get(holonId),
+    key: ref?.key ?? String(item.id),
+  };
 }
 
 /**
@@ -922,9 +954,7 @@ export async function confirmHandoffAs(
   const local = normalizeNeed(item);
   if (!local) return { ok: false, both: false };
 
-  const ref = sourceRef(item, String(item.id));
-  const owner = ref?.holon ?? get(holonId);
-  const key = ref?.key ?? String(item.id);
+  const { owner, key } = selectedRef(item);
 
   // Core folds the replicated confirm records into the handoff view,
   // validates (claimed status, code match, per-side idempotency), and
@@ -1002,25 +1032,22 @@ async function settleAndReport(
  * core mirrors it to the ratee's holon so their reputation follows them.
  */
 export async function rateSelected(
-  party: HandoffParty,
   stars: number,
   comment?: string,
 ): Promise<boolean> {
-  const holon = get(holonId);
   const item = get(selectedNeed);
-  if (!holon || !item) return false;
+  if (!item) return false;
   const hs = await getHolosphere();
   const { _hologram, _federation, ...bare } = item as any;
   const need = normalizeNeed(bare);
   if (!need) return false;
 
-  const ref = sourceRef(item, String(item.id));
-  const owner = ref?.holon ?? holon;
-  const key = ref?.key ?? String(item.id);
+  const { owner, key } = selectedRef(item);
 
+  // Core derives which side we are (and so who we rate) from the need itself.
   let result: Awaited<ReturnType<typeof rateNeedHandoff>>;
   try {
-    result = await rateNeedHandoff(hsDb(hs), owner, need, party, stars, {
+    result = await rateNeedHandoff(hsDb(hs), owner, need, initiator(), stars, {
       comment: comment?.trim() || undefined,
       key,
     });
@@ -1033,11 +1060,7 @@ export async function rateSelected(
     return false;
   }
   if (!result.ok) {
-    flash(
-      result.reason === "not_fulfilled"
-        ? "Rate after the handoff settles."
-        : "Nothing to rate on this exchange.",
-    );
+    flash("Nothing to rate on this exchange.");
     return false;
   }
   if (result.errors.length) {

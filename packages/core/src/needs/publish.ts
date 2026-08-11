@@ -19,6 +19,8 @@
 import type { HoloSphere } from 'holosphere';
 import { publishToFederation, type PublishOutcome } from '../federation/publish.js';
 import { readSettingsHex } from '../federation/settings-hex.js';
+import { getFederationSnapshot } from '../federation/snapshot.js';
+import { createAnnouncement, ANNOUNCEMENTS_LENS } from '../announcements/index.js';
 import { NEED_RECORD_LENS, NEEDS_LENS, type PublishedNeed } from './types.js';
 
 export interface PublishNeedOptions {
@@ -36,6 +38,13 @@ export interface PublishNeedOptions {
    */
   upcast?: boolean;
   upcastLevels?: number;
+  /**
+   * Emergency mode (docs §8): stamp `urgency:'urgent'` on the need and
+   * cross-post an announcement to this holon, its hex cell, and its
+   * federation partners — the same channel, rendered with priority.
+   * Default false.
+   */
+  urgent?: boolean;
   onWriteDenied?: (info: { target: string; lens: string; message: string }) => void;
   /** Override the timestamp (ms since epoch). Mostly for tests. */
   now?: number;
@@ -88,6 +97,7 @@ export async function publishNeedNearby(
   const stamped = {
     ...need,
     ...(hexCell ? { hex: hexCell } : {}),
+    ...(opts.urgent ? { urgency: 'urgent' as const } : {}),
     published: { at: now, toPartners, ...(hexCell ? { toHex: hexCell } : {}) },
   } as PublishedNeed & { id: string };
 
@@ -125,6 +135,41 @@ export async function publishNeedNearby(
       }
     );
     errors.push(...hexOutcome.errors);
+  }
+
+  // Emergency cross-post (docs §8): the urgent need also lands as an
+  // announcement — on this holon, its hex cell, and its partners — so the
+  // channel people already read for news carries the alarm. Best-effort:
+  // the need itself is already published either way.
+  if (opts.urgent) {
+    const announcement = {
+      ...createAnnouncement({
+        id: `urgent-${need.id}`,
+        content: `🚨 URGENT need: ${String(stamped.title ?? '')}`,
+        chat: holonId,
+        user: stamped.initiator,
+      }),
+      urgency: 'urgent' as const,
+      source: { kind: 'need' as const, needId: String(need.id), holonId },
+    };
+    const targets = new Set<string>([holonId]);
+    if (hexCell) targets.add(hexCell);
+    if (toPartners) {
+      try {
+        for (const p of (await getFederationSnapshot(holosphere, holonId)).federated) {
+          targets.add(p);
+        }
+      } catch (err) {
+        errors.push(`urgent announce targets: ${(err as Error).message ?? String(err)}`);
+      }
+    }
+    for (const target of targets) {
+      try {
+        await (holosphere as any).put(target, ANNOUNCEMENTS_LENS, announcement);
+      } catch (err) {
+        errors.push(`urgent announce ${target}: ${(err as Error).message ?? String(err)}`);
+      }
+    }
   }
 
   return { need: stamped, partners, hexCell: hexOutcome, errors };
