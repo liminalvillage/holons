@@ -381,14 +381,96 @@ async function recomputeKarma(hs: HoloSphere, holon: string): Promise<void> {
   }
 }
 
+// ── neighbourhood heat: one live index, fed by sweep + subscriptions ──────
+//
+// `cellItems` is the single source of truth for what each hex cell holds:
+// the initial getAll sweep seeds it, and a live subscription per cell keeps
+// it current — so a neighbour's need lights up without a reload. Claimed
+// needs stay listed (the provider reaches the handoff through the cell card
+// until both sides have confirmed); anything closed drops out.
+const cellItems = new Map<string, Map<string, PublishedNeed>>();
+let heatSubs: Array<{ unsubscribe: () => void }> = [];
+let heatTimers: Array<ReturnType<typeof setTimeout>> = [];
+let heatHex = "";
+
+function teardownHeat(): void {
+  for (const t of heatTimers.splice(0)) clearTimeout(t);
+  for (const s of heatSubs.splice(0)) s.unsubscribe();
+  cellItems.clear();
+  heatHex = "";
+}
+
+function listedNeed(raw: any): PublishedNeed | null {
+  const n = normalizeNeed(raw);
+  if (!n || !(isOpen(n) || n.status === "claimed")) return null;
+  // Preserve the read-side envelopes — they route foreign writes.
+  return {
+    ...n,
+    _federation: raw._federation,
+    _hologram: raw._hologram,
+  } as PublishedNeed;
+}
+
+function republishHeat(cell: string): void {
+  const items = cellItems.get(cell);
+  const open = items ? [...items.values()] : [];
+  cellHeat.update(($h) => ({
+    ...$h,
+    [cell]: {
+      count: open.length,
+      // Unique titles — duplicates would collide as keyed-each keys.
+      tags: [...new Set(open.map((n) => String(n.title)))].slice(0, 3),
+      needs: open,
+    },
+  }));
+}
+
+function ingestCellItem(cell: string, key: string, raw: any): void {
+  const items = cellItems.get(cell);
+  if (!items) return; // hex changed underneath a late callback
+  const need = raw == null ? null : listedNeed(raw);
+  if (need) items.set(key, need);
+  else items.delete(key);
+  republishHeat(cell);
+  // Keep an open quest screen fresh when its record lives on a cell card.
+  const cur = get(selectedNeed);
+  if (cur?.id != null && String(cur.id) === key && need) {
+    selectedNeed.set({
+      ...need,
+      _federation: (need as any)._federation ?? cur._federation,
+      _hologram: (need as any)._hologram ?? cur._hologram,
+    });
+  }
+}
+
 async function refreshHeat(hs: HoloSphere, hex: string): Promise<void> {
   const cells = neighborhood(hex, 4);
   mapCells.set(projectCells(hex, cells, 358, 330));
-  // Read each cell's needs lens with modest concurrency; count open needs.
-  const heat: Record<
-    string,
-    { count: number; tags: string[]; needs: PublishedNeed[] }
-  > = {};
+
+  if (heatHex !== hex) {
+    teardownHeat();
+    heatHex = hex;
+    for (const cell of cells) cellItems.set(cell, new Map());
+    // Live per-cell subscriptions, attached in staggered batches so 61
+    // simultaneous map().on() attaches don't stampede the relay.
+    cells.forEach((cell, i) => {
+      const timer = setTimeout(
+        () => {
+          heatSubs.push(
+            (hs as any).subscribe(cell, NEEDS_LENS, (rec: any, key: string) => {
+              if (key == null) return;
+              ingestCellItem(cell, String(key), rec);
+            }),
+          );
+        },
+        Math.floor(i / 8) * 250,
+      );
+      heatTimers.push(timer);
+    });
+  }
+
+  // Sweep: read each cell's needs lens with modest concurrency to seed (or
+  // re-sync) the index — subscriptions keep it live afterwards.
   const queue = [...cells];
   const workers = Array.from({ length: 6 }, async () => {
     for (let cell = queue.shift(); cell; cell = queue.shift()) {
@@ -396,24 +478,19 @@ async function refreshHeat(hs: HoloSphere, hex: string): Promise<void> {
         const raw: any[] = (
           (await (hs as any).getAll(cell, NEEDS_LENS)) ?? []
         ).filter(Boolean);
-        // Claimed needs stay listed — the provider reaches the handoff
-        // through the cell card until both sides have confirmed.
-        const open = raw
-          .map((r) => normalizeNeed(r))
-          .filter(
-            (n): n is PublishedNeed =>
-              n != null && (isOpen(n) || n.status === "claimed"),
-          );
-        heat[cell] = {
-          count: open.length,
-          // Unique titles — duplicates would collide as keyed-each keys.
-          tags: [...new Set(open.map((n) => String(n.title)))].slice(0, 3),
-          needs: open,
-        };
+        const items = cellItems.get(cell);
+        if (!items) continue; // hex changed mid-sweep
+        for (const r of raw) {
+          const key = String(r?.id ?? "");
+          if (!key) continue;
+          const need = listedNeed(r);
+          if (need) items.set(key, need);
+          else items.delete(key);
+        }
+        republishHeat(cell);
       } catch {
-        heat[cell] = { count: 0, tags: [], needs: [] };
+        /* cell unreadable — leave whatever the subscription delivers */
       }
-      cellHeat.set({ ...heat });
     }
   });
   await Promise.all(workers);
@@ -429,6 +506,8 @@ export async function ensureInit(): Promise<void> {
   const hs = await getHolosphere();
 
   for (const s of subs.splice(0)) s.unsubscribe();
+  teardownHeat();
+  cellHeat.set({});
 
   track(
     (hs as any).subscribeFederated(
