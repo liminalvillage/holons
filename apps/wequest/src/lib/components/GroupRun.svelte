@@ -1,12 +1,20 @@
 <script lang="ts">
   import { go, flash } from "$lib/stores";
-  import { myNeeds, foreignNeeds, holonId } from "$lib/live";
+  import {
+    myNeeds,
+    foreignNeeds,
+    holonId,
+    solidarityRuns,
+    toggleRunParticipation,
+    endRun,
+  } from "$lib/live";
   import { getHolosphere, putAs } from "$lib/holosphere";
   import { resolveUserId, resolveUsername, initials } from "$lib/config";
   import { createMarketItem } from "@holons/core/tasks";
   import { get } from "svelte/store";
 
   const username = resolveUsername() || "you";
+  const me = resolveUserId();
 
   // The run manifest is the real open demand across the rings.
   $: runItems = [
@@ -14,7 +22,27 @@
     ...$foreignNeeds,
   ].slice(0, 8);
 
+  $: runs = $solidarityRuns;
+  $: myRun = runs.find((r: any) => String(r.initiator?.id ?? "") === me);
+
+  function isIn(run: any): boolean {
+    return (run.participants ?? []).some((p: any) => String(p?.id) === me);
+  }
+
   let joining = false;
+  let busyRunId: string | null = null;
+
+  async function toggleRun(run: any) {
+    busyRunId = String(run.id);
+    await toggleRunParticipation(run);
+    busyRunId = null;
+  }
+
+  async function finishRun(run: any) {
+    busyRunId = String(run.id);
+    await endRun(run);
+    busyRunId = null;
+  }
 
   /** Volunteering to carry = a real marketplace offer on the quests lens. */
   async function joinRun() {
@@ -24,7 +52,7 @@
     const hs = await getHolosphere();
     const offer = createMarketItem({
       holonId: holon,
-      initiator: { id: resolveUserId() || "guest", username },
+      initiator: { id: me || "guest", username },
       kind: "offer",
       title: "Carry the solidarity run",
       description: `Collecting ${runItems.length} open need${runItems.length === 1 ? "" : "s"} in one trip.`,
@@ -32,11 +60,11 @@
       transactionTypes: ["receive-donate"],
       tags: ["solidarity-run"],
     });
-    offer.id = `run-${Date.now().toString(36)}`;
+    // One active run per carrier: same id → upsert, not a new offer per tap.
+    offer.id = `run-${me || "guest"}`;
     try {
       await putAs(hs, holon, "quests", offer);
       flash("You're carrying — the offer is live on the board.");
-      go("home");
     } catch {
       flash("Could not publish the run offer.");
     } finally {
@@ -98,6 +126,54 @@
       </div>
     {/if}
 
+    {#if runs.length}
+      <div style="font-family:var(--font-heading);font-size:19px;margin-top:22px">Active runs</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        {#each runs as run (run.id)}
+          <div style="background:var(--color-surface);border-radius:var(--radius-md);padding:14px;display:flex;gap:12px;align-items:center">
+            <div
+              style="width:42px;height:42px;border-radius:999px;background:var(--color-accent-300);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-size:15px;color:var(--color-accent-800);flex:none"
+            >
+              {initials(String(run.initiator?.username ?? run.initiator?.id ?? "?"))}
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14.5px">
+                {String(run.initiator?.id ?? "") === me
+                  ? "You're carrying"
+                  : `${run.initiator?.username ?? "Someone"} is carrying`}
+              </div>
+              <div style="font-size:12px;color:var(--color-neutral-700);margin-top:2px">
+                {(run.participants ?? []).length} along for the ride
+              </div>
+            </div>
+            {#if String(run.initiator?.id ?? "") === me}
+              <button
+                class="tapp"
+                disabled={busyRunId === String(run.id)}
+                on:click={() => finishRun(run)}
+                style="height:40px;padding:0 16px;border-radius:999px;background:var(--color-accent-2-700);color:var(--color-neutral-100);font-family:var(--font-heading);font-size:13.5px"
+              >
+                End run
+              </button>
+            {:else}
+              <button
+                class="tapp"
+                disabled={busyRunId === String(run.id)}
+                on:click={() => toggleRun(run)}
+                style="height:40px;padding:0 16px;border-radius:999px;background:{isIn(run)
+                  ? 'var(--color-surface-2, var(--color-accent-200))'
+                  : 'var(--color-accent)'};color:{isIn(run)
+                  ? 'var(--color-text)'
+                  : 'var(--color-neutral-100)'};font-family:var(--font-heading);font-size:13.5px"
+              >
+                {isIn(run) ? "Leave" : "Join"}
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     <div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:18px;margin-top:14px">
       <div style="font-family:var(--font-heading);font-size:18px">Producer keeps their price</div>
       <div style="font-size:13px;color:var(--color-neutral-700);margin-top:6px;text-wrap:pretty">
@@ -106,15 +182,17 @@
       </div>
     </div>
 
-    <button
-      class="tapp"
-      on:click={joinRun}
-      disabled={joining || runItems.length === 0}
-      style="width:100%;margin-top:18px;height:56px;border-radius:999px;background:var(--color-accent);color:var(--color-neutral-100);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-size:17px;opacity:{runItems.length
-        ? 1
-        : 0.5}"
-    >
-      {joining ? "Publishing…" : "I'll carry the run"}
-    </button>
+    {#if !myRun}
+      <button
+        class="tapp"
+        on:click={joinRun}
+        disabled={joining || runItems.length === 0}
+        style="width:100%;margin-top:18px;height:56px;border-radius:999px;background:var(--color-accent);color:var(--color-neutral-100);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-size:17px;opacity:{runItems.length
+          ? 1
+          : 0.5}"
+      >
+        {joining ? "Publishing…" : "I'll carry the run"}
+      </button>
+    {/if}
   </div>
 </div>

@@ -210,6 +210,24 @@ export const proposals = derived(rawQuests, ($q) =>
   $q.filter((r) => !isForeign(r) && r?.type === "proposal" && !r._deleted),
 );
 
+/** Active solidarity runs — offers tagged 'solidarity-run', newest first. */
+export const solidarityRuns = derived(rawQuests, ($q) =>
+  $q
+    .filter(
+      (r) =>
+        r &&
+        !r._deleted &&
+        r.type === "offer" &&
+        Array.isArray(r.tags) &&
+        r.tags.includes("solidarity-run") &&
+        r.status !== "completed" &&
+        r.status !== "stopped",
+    )
+    .sort((a, b) =>
+      String(b.created ?? "").localeCompare(String(a.created ?? "")),
+    ),
+);
+
 /**
  * Handoff confirmations, one RECORD per side (`<needId>~handoff~<party>` on
  * the quests lens — see @holons/core/needs handoff). Separate records because
@@ -893,6 +911,43 @@ async function settleAndReport(
   flash(
     `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
+}
+
+/** Join or leave a solidarity run — participant toggle on the run offer. */
+export async function toggleRunParticipation(run: any): Promise<void> {
+  const holon = get(holonId);
+  if (!holon || !run) return;
+  const hs = await getHolosphere();
+  const me = initiator();
+  const already = (run.participants ?? []).some(
+    (p: any) => String(p?.id) === me.id,
+  );
+  const participants = already
+    ? (run.participants ?? []).filter((p: any) => String(p?.id) !== me.id)
+    : [...(run.participants ?? []), { id: me.id, username: me.username }];
+  try {
+    await putAs(hs, holon, "quests", { ...run, participants });
+    flash(already ? "You left the run." : "You're in — the carrier sees you.");
+  } catch {
+    flash("Could not update the run.");
+  }
+}
+
+/** The carrier ends their run — the offer completes and leaves the board. */
+export async function endRun(run: any): Promise<void> {
+  const holon = get(holonId);
+  if (!holon || !run) return;
+  const hs = await getHolosphere();
+  try {
+    await putAs(hs, holon, "quests", {
+      ...run,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    });
+    flash("Run completed — thanks for carrying.");
+  } catch {
+    flash("Could not complete the run.");
+  }
 }
 
 /** Cast a vote on a coop proposal — participant toggle on the proposal quest. */
