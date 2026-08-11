@@ -45,8 +45,13 @@
             : last === "dark"
               ? "dark"
               : "light";
+        var lp = localStorage.getItem("kiosk_lang");
+        var lr = localStorage.getItem("kiosk_lang_resolved");
+        var lang = lp === "en" || lp === "it" || lp === "es" ? lp : lr;
+        if (lang === "en" || lang === "it" || lang === "es")
+          document.documentElement.lang = lang;
       } catch (e) {
-        /* private mode / no storage — default light skin */
+        /* private mode / no storage — default light skin, English */
       }
     </script>
     %sveltekit.head%

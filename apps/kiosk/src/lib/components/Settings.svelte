@@ -29,13 +29,16 @@
     setChecklistsPref,
     setStatusEnabled,
     setThemeMode,
+    setLangMode,
     resolveVoiceKey,
     setVoiceKey,
     DEFAULT_ACCENT,
     type ThemeMode,
+    type LangMode,
   } from "$lib/config";
   import { refreshVoice } from "$lib/voice/controller";
   import { themeMode } from "$lib/theme";
+  import { langMode, t } from "$lib/i18n";
   import { readSettingsHex } from "@holons/core/federation";
   import { getHolosphere } from "$lib/holosphere";
   import FederationSettings from "./FederationSettings.svelte";
@@ -58,6 +61,7 @@
   const initialChecklists = $checklistsEnabled;
   let draftStatus = $statusEnabled;
   let draftTheme: ThemeMode = $themeMode;
+  let draftLang: LangMode = $langMode;
   let draftVoiceKey = resolveVoiceKey() ?? "";
   let logoError = "";
 
@@ -86,6 +90,14 @@
     { id: "auto", label: "Auto", glyph: "◑" },
     { id: "light", label: "Light", glyph: "☀" },
     { id: "dark", label: "Dark", glyph: "☾" },
+  ];
+
+  // Language names are endonyms — deliberately not translated.
+  const LANG_OPTS: { id: LangMode; label: string | null }[] = [
+    { id: "auto", label: null }, // rendered as the localized "Auto"
+    { id: "en", label: "English" },
+    { id: "it", label: "Italiano" },
+    { id: "es", label: "Español" },
   ];
 
   const SWATCHES = [
@@ -148,6 +160,8 @@
     statusEnabled.set(draftStatus);
     setThemeMode(draftTheme);
     themeMode.set(draftTheme);
+    setLangMode(draftLang);
+    langMode.set(draftLang);
     setVoiceKey(draftVoiceKey);
     refreshVoice();
     settingsOpen.set(false);
@@ -241,6 +255,24 @@
         >
           <span class="theme-glyph" aria-hidden="true">{t.glyph}</span>
           {t.label}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
+    {$t("settings.language")}
+    <span class="sub">{$t("settings.languageSub")}</span>
+    <div class="theme-row">
+      {#each LANG_OPTS as l (l.id)}
+        <button
+          type="button"
+          class="theme-opt"
+          class:sel={draftLang === l.id}
+          aria-pressed={draftLang === l.id}
+          on:click={() => (draftLang = l.id)}
+        >
+          {l.label ?? $t("common.auto")}
         </button>
       {/each}
     </div>

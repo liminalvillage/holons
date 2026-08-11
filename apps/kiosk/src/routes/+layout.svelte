@@ -17,6 +17,7 @@
     resolveBrandLogo,
     resolveAccent,
     resolveThemeMode,
+    resolveLangMode,
     resolveTaskView,
     resolveTaskSort,
     resolveLibraryView,
@@ -24,6 +25,8 @@
     resolveCalendarView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
+  import { langMode, holonLang, startI18n, type Lang } from "$lib/i18n";
+  import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
   import {
     rawQuests,
@@ -129,6 +132,7 @@
       rawRoles.set([]);
       rawChecklists.set([]);
       holonName.set("");
+      holonLang.set(null);
       partnerNames.set({});
       awaitingReady = false;
       if (readyTimer) clearTimeout(readyTimer);
@@ -181,6 +185,23 @@
       getHolonName(hs, id).then((name) => {
         if (boundHolon === id && name) holonName.set(name);
       });
+      // Holon language (best-effort) for auto-mode i18n. Read the RAW settings
+      // field: `parseHolonSettings` defaults a missing language to "en", which
+      // would wrongly pin auto-mode kiosks to English on holons that never
+      // chose one — absence must fall through to the device locale.
+      holonLang.set(null);
+      loadSettings(hs, id)
+        .then((raw) => {
+          if (boundHolon !== id) return;
+          const l =
+            typeof raw?.language === "string"
+              ? raw.language.slice(0, 2).toLowerCase()
+              : "";
+          holonLang.set(
+            l === "en" || l === "it" || l === "es" ? (l as Lang) : null,
+          );
+        })
+        .catch(() => {});
       // Partner display names (best-effort) for the per-item source chips.
       partnerNames.set({});
       hydratePartnerNames(hs, id);
@@ -379,6 +400,7 @@
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
     themeMode.set(resolveThemeMode());
+    langMode.set(resolveLangMode());
     initAuth();
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
@@ -387,6 +409,7 @@
       startClock(),
       startRotation(),
       startTheme(),
+      startI18n(),
       startSwAutoReload(),
     ];
     return () => {

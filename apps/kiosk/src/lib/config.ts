@@ -42,6 +42,8 @@ const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
+const LANG_KEY = "kiosk_lang";
+const LANG_RESOLVED_KEY = "kiosk_lang_resolved";
 
 /** The kiosk's default accent (teal). */
 export const DEFAULT_ACCENT = "#0e6b66";
@@ -356,6 +358,32 @@ export function resolveThemeMode(): ThemeMode {
 export function setThemeMode(mode: ThemeMode): void {
   if (mode === "auto") forget(THEME_KEY);
   else persist(THEME_KEY, mode);
+}
+
+/**
+ * How the UI language is chosen. `auto` (the default, stored as absence of
+ * the key) follows the holon's `settings.language`, then the device locale.
+ */
+export type LangMode = "auto" | "en" | "it" | "es";
+
+/** Resolve the caretaker's language preference; `auto` by default. */
+export function resolveLangMode(): LangMode {
+  const v = persisted(LANG_KEY);
+  return v === "en" || v === "it" || v === "es" ? v : "auto";
+}
+
+/** Persist (or reset to `auto`, when auto) the language preference. */
+export function setLangMode(mode: LangMode): void {
+  if (mode === "auto") forget(LANG_KEY);
+  else persist(LANG_KEY, mode);
+}
+
+/**
+ * Mirror of the last *resolved* language, read by the pre-hydration script in
+ * app.html so a reload paints the right `<html lang>` even in `auto` mode.
+ */
+export function setResolvedLang(l: "en" | "it" | "es"): void {
+  persist(LANG_RESOLVED_KEY, l);
 }
 
 /**
