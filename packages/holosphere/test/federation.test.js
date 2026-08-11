@@ -175,6 +175,30 @@ describe('Federation Tests', () => {
       const result = await holosphere.unfederate(space1, space2, null, null);
       expect(result).toBe(true);
     });
+
+    test('mirrors the removal onto the partner record (symmetry with federate)', async () => {
+      const space1 = `${testPrefix}unfed_mirror1`;
+      const space2 = `${testPrefix}unfed_mirror2`;
+
+      await holosphere.federate(space1, space2, null, null, true, {
+        inbound: ['quests'], outbound: ['offers']
+      });
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // federate() recorded the link on BOTH sides…
+      const before = await holosphere.getFederation(space2);
+      expect(before.federated).toContain(space1);
+
+      await holosphere.unfederate(space1, space2, null, null);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // …so unfederate() must clean both sides too.
+      const fedInfo2 = await holosphere.getFederation(space2);
+      expect(fedInfo2.federated).not.toContain(space1);
+      expect(fedInfo2.inbound).not.toContain(space1);
+      expect(fedInfo2.outbound).not.toContain(space1);
+      expect(fedInfo2.lensConfig[space1]).toBeUndefined();
+    });
   });
 
   describe('data propagation and cross-space access', () => {

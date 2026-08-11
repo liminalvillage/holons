@@ -358,8 +358,12 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             }
         }
 
-        // Mirror the removal on space2 if password provided.
-        if (password2) {
+        // Mirror the removal on space2 — federate() records the link on BOTH
+        // sides (even with null passwords), so removal must mirror too or the
+        // partner's record keeps pointing back forever. Best-effort: if
+        // space2's record is password-protected and we don't hold the
+        // password, the local removal above still stands.
+        {
             let fedInfo2 = null;
             try {
                 fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
@@ -386,8 +390,9 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
                 try {
                     await holosphere.putGlobal('federation', fedInfo2, password2);
                 } catch (error) {
+                    // Best-effort: the local removal succeeded; don't fail the
+                    // whole unfederate over the partner-side mirror.
                     console.error(`Failed to update fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
-                    throw error;
                 }
             }
         }
