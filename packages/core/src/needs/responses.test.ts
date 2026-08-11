@@ -98,9 +98,10 @@ describe('handoff', () => {
     return claimNeed(offered, 'r1').need;
   };
 
-  it('claiming mints a deterministic code from the need id', () => {
+  it('claiming mints a random code; the legacy derivation survives for old records', () => {
     const n = claimed();
-    expect(n.handoff?.code).toBe(handoffCode('need-1'));
+    expect(n.handoff?.code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/);
+    // Legacy fallback, still used to complete pre-entropy in-flight handoffs.
     expect(handoffCode('need-1785745502672-oj4ef5')).toBe('EF5');
     expect(handoffCode('')).toBe('WQ0');
   });

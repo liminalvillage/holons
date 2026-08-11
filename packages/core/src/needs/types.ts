@@ -77,6 +77,12 @@ export interface PublishedNeed extends Quest {
   /** Publication stamp — which targets this need has been shared with. */
   published?: { at: number; toHex?: string; toPartners?: boolean };
   handoff?: HandoffState;
+  /** Which response won, stamped by `claimNeed`. */
+  claimedResponseId?: string;
+  /** ISO timestamp of the claim. */
+  claimedAt?: string;
+  /** ISO timestamp of the close (`fulfilled` or `cancelled`). */
+  closedAt?: string;
 }
 
 /** Type guard: is this record a need in the needs-network sense? */

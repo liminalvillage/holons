@@ -33,15 +33,42 @@ export {
   claimNeed,
   closeNeed,
   handoffCode,
+  generateHandoffCode,
   recordHandoffConfirmation,
+  type ClaimOptions,
   type ClaimResult,
   type CloseOutcome,
   type CloseResult,
+  type HandoffCodeOptions,
   type HandoffConfirmResult,
   type HandoffParty,
   type RespondInput,
   type RespondResult,
 } from './responses.js';
+
+export {
+  HANDOFF_CONFIRM_TYPE,
+  handoffConfirmationId,
+  buildHandoffConfirmation,
+  isHandoffConfirmation,
+  foldHandoffConfirmations,
+  withHandoffConfirmations,
+  confirmNeedHandoff,
+  type ConfirmNeedHandoffOptions,
+  type ConfirmNeedHandoffResult,
+  type HandoffConfirmationRecord,
+  type HandoffConfirmations,
+  type HandoffStoreLike,
+} from './handoff.js';
+
+export {
+  settleNeedHandoff,
+  handoffExpenseId,
+  type SettleDeps,
+  type SettleNeedOptions,
+  type SettleNeedOutcome,
+  type SettleStoreLike,
+} from './settle.js';
 
 export {
   publishNeedNearby,
