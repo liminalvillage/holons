@@ -46,12 +46,17 @@ import {
   type HandoffParty,
   type PublishedNeed,
 } from "@holons/core/needs";
-import { classifyMarketItem } from "@holons/core/tasks";
+import {
+  classifyMarketItem,
+  createMarketItem,
+  deleteTaskWithCascade,
+} from "@holons/core/tasks";
 import { REAEventStore } from "@holons/core/rea";
 import { sourceRef } from "@holons/core/holosphere";
 import {
   readSettingsHex,
   getFederationSnapshot,
+  publishToFederation,
 } from "@holons/core/federation";
 import {
   computeUserCurrencyBalance,
@@ -253,6 +258,41 @@ export const solidarityRuns = derived(rawQuests, ($q) =>
       String(b.created ?? "").localeCompare(String(a.created ?? "")),
     ),
 );
+
+// Standing offers — the supply side. Solidarity runs are offers too but live
+// on their own screen; everything here excludes them.
+function isStandingOffer(r: any): boolean {
+  return (
+    r &&
+    !r._deleted &&
+    classifyMarketItem(r) === "offer" &&
+    !(Array.isArray(r.tags) && r.tags.includes("solidarity-run")) &&
+    r.status !== "completed" &&
+    r.status !== "stopped" &&
+    r.status !== "cancelled"
+  );
+}
+
+const newestFirst = (a: any, b: any) =>
+  String(b.created ?? "").localeCompare(String(a.created ?? ""));
+
+/** The acting user's own standing offers (withdrawable). */
+export const myOffers = derived(rawQuests, ($q) => {
+  const me = resolveUserId();
+  return $q
+    .filter((r) => isStandingOffer(r) && !isForeign(r))
+    .filter((r) => String(r.initiator?.id ?? "") === me)
+    .sort(newestFirst);
+});
+
+/** Offers around the acting user: coop-mates' plus federated partners'. */
+export const offersAround = derived(rawQuests, ($q) => {
+  const me = resolveUserId();
+  return $q
+    .filter((r) => isStandingOffer(r))
+    .filter((r) => String(r.initiator?.id ?? "") !== me)
+    .sort(newestFirst);
+});
 
 /**
  * Handoff confirmations, one RECORD per side (`<needId>~handoff~<party>` on
@@ -937,6 +977,93 @@ async function settleAndReport(
   flash(
     `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
+}
+
+/**
+ * Publish a standing offer — the supply side of the network. The offer is a
+ * `type:'offer'` marketplace record on the coop's quests lens (the same
+ * record the web Offers board renders); `toPartners` additionally pushes
+ * standalone copies to the federation.
+ */
+export async function publishOffer(
+  text: string,
+  kindIdx: number,
+  toPartners: boolean,
+): Promise<boolean> {
+  const holon = get(holonId);
+  const trimmed = text.trim();
+  if (!holon || !trimmed) return false;
+  const hs = await getHolosphere();
+  const kind = KIND_ITEM_TYPE[kindIdx] ?? KIND_ITEM_TYPE[0];
+  const offer = createMarketItem({
+    holonId: holon,
+    initiator: initiator(),
+    kind: "offer",
+    title: trimmed,
+    itemType: kind.itemType,
+    transactionTypes: kind.transactionTypes,
+  });
+  const record = {
+    ...offer,
+    id: `offer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+  };
+  try {
+    await putAs(hs, holon, "quests", record);
+  } catch {
+    flash("Could not publish the offer.");
+    return false;
+  }
+  if (toPartners) {
+    try {
+      const out = await publishToFederation(
+        { holosphere: hs, holonId: holon, lens: "quests", item: record },
+        { kind: "all" },
+        { includeSettingsHex: false },
+      );
+      flash(
+        out.publishedTo > 0
+          ? `Offer live — shared with ${out.publishedTo} partner holon${out.publishedTo === 1 ? "" : "s"}.`
+          : "Offer live on your coop's board.",
+      );
+    } catch {
+      flash("Offer live here — sharing with partners failed.");
+    }
+  } else {
+    flash("Offer live on your coop's board.");
+  }
+  return true;
+}
+
+/**
+ * Withdraw one of my standing offers. Tombstones the record (and any
+ * hologram forwards) via core's cascade delete; standalone partner copies
+ * are overwritten as deleted best-effort.
+ */
+export async function withdrawOffer(offer: any): Promise<void> {
+  const holon = get(holonId);
+  if (!holon || !offer?.id) return;
+  const hs = await getHolosphere();
+  try {
+    await deleteTaskWithCascade(hs, holon, String(offer.id));
+  } catch {
+    flash("Could not withdraw the offer.");
+    return;
+  }
+  try {
+    await publishToFederation(
+      {
+        holosphere: hs,
+        holonId: holon,
+        lens: "quests",
+        item: { ...offer, _deleted: true, status: "cancelled" },
+      },
+      { kind: "all" },
+      { includeSettingsHex: false },
+    );
+  } catch {
+    /* partner copies go stale — best-effort */
+  }
+  flash("Offer withdrawn.");
 }
 
 /** Withdraw the selected need: cancel it everywhere and drop the list item. */

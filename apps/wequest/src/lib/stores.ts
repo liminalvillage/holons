@@ -43,6 +43,8 @@ export const onbStep = writable(0);
 export const mode = writable<"need" | "give">("need");
 export const ring = writable(2);
 export const composeOpen = writable(false);
+/** What the compose sheet publishes: a need (default) or a standing offer. */
+export const composeIntent = writable<"need" | "offer">("need");
 /** The claim-your-cell overlay (HexPicker). */
 export const hexPickerOpen = writable(false);
 export const draft = writable("");

@@ -7,7 +7,16 @@
   import { distLabel } from "$lib/geomap";
   import { MAPBOX_TOKEN, createHexHeatMap, type HexHeatMap } from "$lib/mapboxHeat";
   import { RINGS } from "$lib/data";
-  import { mode, ring, go, flash, hexPickerOpen } from "$lib/stores";
+  import {
+    mode,
+    ring,
+    go,
+    flash,
+    hexPickerOpen,
+    composeOpen,
+    composeIntent,
+    draft,
+  } from "$lib/stores";
   import {
     holonId,
     holonName,
@@ -16,6 +25,9 @@
     cellHeat,
     myNeeds,
     provideFeed,
+    myOffers,
+    offersAround,
+    withdrawOffer,
     selectedNeed,
   } from "$lib/live";
   import { resolveUsername, initials } from "$lib/config";
@@ -90,6 +102,28 @@
   function openNeed(n: any) {
     selectedNeed.set(n);
     go("quest");
+  }
+
+  function composeOffer() {
+    draft.set("");
+    composeIntent.set("offer");
+    composeOpen.set(true);
+  }
+
+  /** Answer an offer by publishing the matching need — demand is the signal. */
+  function askFor(offer: any) {
+    draft.set(String(offer.title ?? ""));
+    composeIntent.set("need");
+    composeOpen.set(true);
+  }
+
+  function offerFrom(o: any): string {
+    return (
+      o._federation?.originName ||
+      o._federation?.origin ||
+      o.initiator?.username ||
+      "a neighbour"
+    );
   }
 
   $: feed = $mode === "need" ? $myNeeds : $provideFeed;
@@ -333,5 +367,74 @@
         </div>
       {/each}
     </div>
+
+    {#if $mode === "need" && $offersAround.length}
+      <div style="display:flex;align-items:baseline;gap:10px;padding:6px 22px 10px">
+        <div style="font-family:var(--font-heading);font-size:21px">Offered around you</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:0 16px 20px">
+        {#each $offersAround as o (o.id)}
+          <button
+            class="tapp"
+            on:click={() => askFor(o)}
+            style="background:var(--color-accent-2-200);border-radius:var(--radius-md);padding:13px 16px;display:flex;gap:12px;align-items:center;width:100%"
+          >
+            <Icon name={iconForText(String(o.title))} size={20} />
+            <div style="flex:1;min-width:0;text-align:left">
+              <div style="font-weight:700;font-size:14px;color:var(--color-accent-2-900)">{o.title}</div>
+              <div style="font-size:11.5px;color:var(--color-accent-2-800);margin-top:2px">
+                from {offerFrom(o)}
+              </div>
+            </div>
+            <span style="font-size:11.5px;font-weight:700;color:var(--color-accent-2-800);flex:none">
+              ask for it →
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    {#if $mode === "give"}
+      <div style="display:flex;align-items:baseline;gap:10px;padding:6px 22px 10px">
+        <div style="font-family:var(--font-heading);font-size:21px">Your standing offers</div>
+        <div style="flex:1"></div>
+        <button
+          class="tapp"
+          on:click={composeOffer}
+          style="font-size:12.5px;font-weight:700;color:var(--color-accent-2-700)"
+        >
+          + Offer something
+        </button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:0 16px 20px">
+        {#each $myOffers as o (o.id)}
+          <div
+            style="background:var(--color-accent-2-200);border-radius:var(--radius-md);padding:13px 16px;display:flex;gap:12px;align-items:center"
+          >
+            <Icon name={iconForText(String(o.title))} size={20} />
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--color-accent-2-900)">{o.title}</div>
+              <div style="font-size:11.5px;color:var(--color-accent-2-800);margin-top:2px">
+                on the board{o.created ? ` since ${new Date(o.created).toLocaleDateString()}` : ""}
+              </div>
+            </div>
+            <button
+              class="tapp"
+              on:click={() => withdrawOffer(o)}
+              aria-label="Withdraw this offer"
+              style="width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--color-accent-2-800);font-size:15px;flex:none"
+            >
+              ×
+            </button>
+          </div>
+        {:else}
+          <div
+            style="background:var(--color-surface);border-radius:var(--radius-md);padding:16px;font-size:13px;color:var(--color-neutral-700)"
+          >
+            Nothing on the board yet — what could you provide to the ring?
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>

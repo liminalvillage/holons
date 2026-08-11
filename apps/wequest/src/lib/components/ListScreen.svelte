@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { composeOpen, draft, go } from "$lib/stores";
+  import { composeOpen, composeIntent, draft, go } from "$lib/stores";
   import {
     shoppingList,
     selectedNeed,
@@ -18,6 +18,7 @@
 
   function openCompose() {
     draft.set("");
+    composeIntent.set("need");
     composeOpen.set(true);
   }
 
