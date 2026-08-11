@@ -426,7 +426,7 @@
             <div style="flex:1;min-width:0;text-align:left">
               <div style="font-weight:700;font-size:14px;color:var(--color-accent-2-900)">{o.title}</div>
               <div style="font-size:11.5px;color:var(--color-accent-2-800);margin-top:2px">
-                from {offerFrom(o)}
+                from {offerFrom(o)}{o.mintedFrom ? " · ★ delivered before" : ""}
               </div>
             </div>
             <span style="font-size:11.5px;font-weight:700;color:var(--color-accent-2-800);flex:none">
@@ -458,7 +458,9 @@
             <div style="flex:1;min-width:0">
               <div style="font-weight:700;font-size:14px;color:var(--color-accent-2-900)">{o.title}</div>
               <div style="font-size:11.5px;color:var(--color-accent-2-800);margin-top:2px">
-                on the board{o.created ? ` since ${new Date(o.created).toLocaleDateString()}` : ""}
+                {o.mintedFrom
+                  ? "★ earned by delivering"
+                  : `on the board${o.created ? ` since ${new Date(o.created).toLocaleDateString()}` : ""}`}
               </div>
             </div>
             <button

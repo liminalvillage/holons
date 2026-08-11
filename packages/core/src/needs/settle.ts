@@ -11,17 +11,24 @@
  *   - move the hours requester → provider as an `hour` expense (stable id, so
  *     a double finalize upserts instead of stacking),
  *   - check the originating shopping-list item off,
- *   - and MIRROR the provider's side of the settlement into the provider's
+ *   - MIRROR the provider's side of the settlement into the provider's
  *     own holon: their hour expense, their REA events, and a hologram of the
  *     fulfilled quest. Without the mirror a provider who answered a
  *     federated need earns hours and karma only on someone else's holon —
- *     invisible in their own wallet, score, and record.
+ *     invisible in their own wallet, score, and record,
+ *   - and MINT the flywheel offer (docs/needs-offers-network.md §6): a
+ *     fulfilled need is proof of capability, so a standing `type:'offer'`
+ *     attributed to the provider lands on THEIR holon's board. Providers
+ *     accrue a discoverable catalog by fulfilling, not by listing. Consent
+ *     stays theirs: the minted offer never leaves their holon unless they
+ *     later share it.
  */
 
 import type { HoloSphere } from 'holosphere';
 import {
   planTaskCompletion,
   executeCompletionPlan,
+  createMarketItem,
   type ExecuteOutcome,
 } from '../tasks/index.js';
 import { DEFAULT_EQUATION, type ScoreEquation } from '../scoring/index.js';
@@ -41,6 +48,11 @@ import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
 /** Stable id of the requester → provider hour transfer for a need. */
 export function handoffExpenseId(needId: string | number): string {
   return `wq-${needId}-handoff`;
+}
+
+/** Stable id of the flywheel offer minted from a fulfilled need. */
+export function mintedOfferId(needId: string | number): string {
+  return `offer-from-${needId}`;
 }
 
 /** Identity-attributed store surface (holosphere, or a putAs wrapper). */
@@ -67,6 +79,11 @@ export interface SettleNeedOptions {
   mirrorToProvider?: boolean;
   /** Check the originating shopping-list item off. Default true. */
   checkOffShoppingItem?: boolean;
+  /**
+   * Mint the flywheel offer — a standing `type:'offer'` attributed to the
+   * provider on their own holon (see module doc). Default true.
+   */
+  mintProviderOffer?: boolean;
 }
 
 export interface SettleNeedOutcome {
@@ -76,6 +93,8 @@ export interface SettleNeedOutcome {
   providerId: string | null;
   providerHolonId: string | null;
   requesterId: string | null;
+  /** Id of the flywheel offer minted for the provider, when one was. */
+  mintedOfferId: string | null;
   completion: ExecuteOutcome;
   errors: string[];
 }
@@ -225,12 +244,50 @@ export async function settleNeedHandoff(
     }
   }
 
+  // The flywheel (§6): mint a standing offer attributed to the provider on
+  // THEIR holon's board — proof of capability, earned by delivering. Stable
+  // id per need, so a double settle upserts. Never pushed to hex or
+  // partners here: sharing further stays the provider's explicit act.
+  let minted: string | null = null;
+  if (opts.mintProviderOffer !== false && providerId != null) {
+    const offerHolon = providerHolonId ?? ownerHolonId;
+    const base = createMarketItem({
+      holonId: offerHolon,
+      initiator: { id: providerId, username: accepted?.responder?.name } as never,
+      kind: 'offer',
+      title: String(final.title ?? ''),
+      ...(final.category ? { category: String(final.category) } : {}),
+      itemType: (final as { item_type?: string }).item_type === 'service' ? 'service' : 'good',
+      ...(Array.isArray((final as { transaction_type?: string[] }).transaction_type)
+        ? { transactionTypes: (final as { transaction_type?: string[] }).transaction_type }
+        : {}),
+      now,
+    });
+    const offer = {
+      ...base,
+      id: mintedOfferId(String(final.id)),
+      // Provenance: which fulfilled need earned this offer, and where.
+      mintedFrom: {
+        needId: String(final.id),
+        holonId: ownerHolonId,
+        at: new Date(now).toISOString(),
+      },
+    };
+    try {
+      await db.put(offerHolon, NEED_RECORD_LENS, offer);
+      minted = offer.id;
+    } catch (err) {
+      errors.push(`mint offer: ${(err as Error).message ?? String(err)}`);
+    }
+  }
+
   return {
     need: asTask,
     hours,
     providerId,
     providerHolonId,
     requesterId,
+    mintedOfferId: minted,
     completion,
     errors,
   };

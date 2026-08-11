@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from 'vitest';
-import { handoffExpenseId, settleNeedHandoff } from './settle.js';
+import { handoffExpenseId, mintedOfferId, settleNeedHandoff } from './settle.js';
 import type { PublishedNeed } from './types.js';
 import type { HoloSphere } from 'holosphere';
 
@@ -163,6 +163,51 @@ describe('settleNeedHandoff', () => {
     const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {});
     expect(writes.some((w) => w.lens === 'expenses' && w.holon === 'owner-h')).toBe(true);
     expect(out.errors.join(' ')).toMatch(/mirror/);
+  });
+
+  it('mints the flywheel offer on the provider holon, attributed and provenance-stamped', async () => {
+    const { db, holosphere, writes } = fakeStores();
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {
+      now: 1700000000000,
+    });
+    expect(out.mintedOfferId).toBe(mintedOfferId('need-1'));
+    const offer = writes.find(
+      (w) => w.lens === 'quests' && w.holon === 'prov-holon' && w.value.type === 'offer'
+    );
+    expect(offer?.value).toMatchObject({
+      id: 'offer-from-need-1',
+      type: 'offer',
+      title: 'flour 5kg',
+      initiator: { id: 'prov-user' },
+      mintedFrom: {
+        needId: 'need-1',
+        holonId: 'owner-h',
+        at: new Date(1700000000000).toISOString(),
+      },
+    });
+  });
+
+  it('mints on the owner holon when the responder declared no holon of their own', async () => {
+    const { db, holosphere, writes } = fakeStores();
+    const need = claimedNeed();
+    delete (need.responses![0].responder as any).holonId;
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', need, {});
+    expect(out.mintedOfferId).toBe('offer-from-need-1');
+    const offer = writes.find((w) => w.lens === 'quests' && w.value.type === 'offer');
+    expect(offer?.holon).toBe('owner-h');
+  });
+
+  it('skips the mint when mintProviderOffer is false or there is no provider', async () => {
+    const { db, holosphere, writes } = fakeStores();
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {
+      mintProviderOffer: false,
+    });
+    expect(out.mintedOfferId).toBeNull();
+    expect(writes.some((w) => w.value?.type === 'offer')).toBe(false);
+
+    const orphan = claimedNeed({ claimedResponseId: 'nope' });
+    const out2 = await settleNeedHandoff({ holosphere, db }, 'owner-h', orphan, {});
+    expect(out2.mintedOfferId).toBeNull();
   });
 
   it('is idempotent on ids: a double settle writes the same expense id', async () => {
