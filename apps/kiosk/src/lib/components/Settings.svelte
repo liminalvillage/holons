@@ -36,6 +36,7 @@
   } from "$lib/config";
   import { refreshVoice } from "$lib/voice/controller";
   import { themeMode } from "$lib/theme";
+  import FederationSettings from "./FederationSettings.svelte";
 
   // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
   let draftHolon = $holonId ?? "";
@@ -297,6 +298,16 @@
       <span class="knob"></span>
     </button>
   </div>
+
+  {#if $holonId}
+    <div class="field">
+      Federation
+      <span class="sub"
+        >— partner holons this screen shares with · changes apply immediately</span
+      >
+      <FederationSettings />
+    </div>
+  {/if}
 
   <label class="field"
     >Voice

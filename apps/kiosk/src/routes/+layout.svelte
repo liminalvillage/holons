@@ -3,6 +3,7 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { getHolosphere, getHolonName } from "$lib/holosphere";
+  import { getFederationSnapshot } from "@holons/core/federation";
   import type { HoloSphere } from "holosphere";
   import {
     resolveHolonId,
@@ -32,6 +33,7 @@
     showNotice,
     holonName,
     holonId as holonIdStore,
+    partnerNames,
     brandName,
     brandLogo,
     accent,
@@ -126,6 +128,7 @@
       rawRoles.set([]);
       rawChecklists.set([]);
       holonName.set("");
+      partnerNames.set({});
       awaitingReady = false;
       if (readyTimer) clearTimeout(readyTimer);
       readyTimer = null;
@@ -177,6 +180,9 @@
       getHolonName(hs, id).then((name) => {
         if (boundHolon === id && name) holonName.set(name);
       });
+      // Partner display names (best-effort) for the per-item source chips.
+      partnerNames.set({});
+      hydratePartnerNames(hs, id);
     }
 
     // The Library and Roles lenses are toggleable — spin each subscription up
@@ -255,6 +261,42 @@
     }
   }
 
+  // Fill the `partnerNames` store (partner id → display name) from the
+  // federation record, then resolve any still-unnamed partners via HNS/settings.
+  // Best-effort: source chips fall back to raw ids until names arrive.
+  async function hydratePartnerNames(hs: HoloSphere, id: string) {
+    try {
+      const snap = await getFederationSnapshot(hs, id);
+      if (boundHolon !== id) return;
+      partnerNames.set({ ...snap.partnerNames });
+      for (const partner of snap.federated) {
+        if (snap.partnerNames[partner]) continue;
+        getHolonName(hs, partner).then((name) => {
+          if (boundHolon !== id || !name) return;
+          partnerNames.update((cur) => ({ ...cur, [partner]: name }));
+        });
+      }
+    } catch {
+      /* names stay ids */
+    }
+  }
+
+  // The Settings federation editor changed the federation record. The active
+  // `subscribeFederated` subs snapshot partner config once on attach — and
+  // `setFederated(true)` alone never detaches a partner whose lenses were just
+  // disabled — so bounce each sub off/on to re-read the config. The local
+  // subscription is untouched; partner items purge and re-seed.
+  function onFederationChanged() {
+    if (get(federated)) {
+      for (const sub of [questsSub, librarySub, rolesSub, checklistsSub]) {
+        sub?.setFederated(false);
+        sub?.setFederated(true);
+      }
+    }
+    const id = boundHolon;
+    if (id) getHolosphere().then((hs) => hydratePartnerNames(hs, id));
+  }
+
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //
   // A successful LOCAL write must echo back through its lens subscription
@@ -324,6 +366,7 @@
     initAuth();
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
+    window.addEventListener("kiosk:federation-changed", onFederationChanged);
     const teardown = [
       startClock(),
       startRotation(),
@@ -332,6 +375,10 @@
     ];
     return () => {
       window.removeEventListener("kiosk:write", onLocalWrite);
+      window.removeEventListener(
+        "kiosk:federation-changed",
+        onFederationChanged,
+      );
       teardown.forEach((fn) => fn());
       if (readyTimer) clearTimeout(readyTimer);
       questsSub?.unsubscribe();
