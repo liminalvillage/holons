@@ -3,6 +3,7 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { getHolosphere, getHolonName } from "$lib/holosphere";
+  import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
   import { getFederationSnapshot } from "@holons/core/federation";
   import type { HoloSphere } from "holosphere";
   import {
@@ -347,7 +348,22 @@
     }, ECHO_GRACE_MS);
   }
 
+  // Pre-name tab-title fallback: the registered label that selected this holon
+  // (URL path first — it wins in holon resolution — then the subdomain),
+  // capitalised for the tab. Empty on unlabelled hosts (localhost, previews).
+  let holonLabel = "";
+  function labelFromUrl(): string {
+    const seg = decodeURIComponent(
+      location.pathname.replace(/^\/+/, "").split("/")[0] ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const label = SUBDOMAIN_HOLONS[seg] ? seg : subdomainOf(location.host);
+    return label ? label.charAt(0).toUpperCase() + label.slice(1) : "";
+  }
+
   onMount(() => {
+    holonLabel = labelFromUrl();
     holonIdStore.set(resolveHolonId());
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
@@ -447,9 +463,11 @@
 </script>
 
 <svelte:head>
-  <!-- Browser-tab / PWA title: the holon's name (caretaker override first),
-       falling back to the generic app name until one is known. -->
-  <title>{$brandName || $holonName || "kiosk"}</title>
+  <!-- Browser-tab / PWA title: the holon's name (caretaker override first).
+       Until one is known, the subdomain/path label that selected the holon
+       stands in (e.g. armoniaduale.hubs.network → "Armoniaduale") — never
+       the app's own name. -->
+  <title>{$brandName || $holonName || holonLabel || "Holons"}</title>
 </svelte:head>
 
 <svelte:window

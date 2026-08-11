@@ -1,6 +1,6 @@
 {
-  "name": "Kiosk",
-  "short_name": "Kiosk",
+  "name": "Holons",
+  "short_name": "Holons",
   "description": "Calendar, tasks, and the library of things for the hub.",
   "id": "/",
   "start_url": "/",
