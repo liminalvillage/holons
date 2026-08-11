@@ -1889,11 +1889,9 @@ export default class Settings {
                 const sourceHolonIdOrPubkey = direction === 'outbound' ? holonIdStr : targetholonIdStr;
                 const targetHolonIdOrPubkey = direction === 'outbound' ? targetholonIdStr : holonIdStr;
 
-                // Propagate existing data using KeyManager's federate method with public keys
-                await this.db.keyManager.federateHolons(sourceHolonIdOrPubkey, targetHolonIdOrPubkey, lensName, {
-                    direction: 'outbound',
-                    mode: 'reference'
-                });
+                // Backfill the lens's existing items to the partner as hologram
+                // references (KeyManager delegates to core publishToFederation).
+                await this.db.keyManager.federateHolons(sourceHolonIdOrPubkey, targetHolonIdOrPubkey, lensName);
 
                 // Also send Telegram messages to the target chat for quests
                 if (lensName === 'quests' && this.quests) {

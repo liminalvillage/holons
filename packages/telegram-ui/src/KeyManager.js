@@ -9,6 +9,11 @@
 
 import { HoloSphere } from 'holosphere';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
+import {
+  publishToFederation,
+  removeFederationPartner,
+  setFederationPartner,
+} from '@holons/core/federation';
 import { getOrCreateHolonKey, listHolonKeys } from '../utils/key-storage.js';
 
 /**
@@ -303,25 +308,26 @@ class KeyManager {
   }
 
   /**
-   * Federate two holons using their unique keys
-   * Uses the unified federation API from holosphere2
+   * Propagate a lens's EXISTING items from one holon to another as hologram
+   * references — the "copy existing data" step after a lens direction is
+   * enabled. (New items flow live via the federation record; this backfills
+   * what was already there.)
    *
-   * @param {string} sourceHolonId - Source holon ID
-   * @param {string} targetHolonId - Target holon ID
-   * @param {string} lensName - Lens to federate
-   * @param {Object} options - Federation options
-   * @param {string[]} [options.permissions=['read']] - Permissions to grant
-   * @param {string} [options.direction='outbound'] - 'inbound', 'outbound', or 'bidirectional'
-   * @returns {Promise<Object>} Federation result with capability info
+   * Holograms here are an explicit opt-in: the caller confirmed the copy.
+   *
+   * NOTE: this used to call holosphere.federate() with object arguments that
+   * didn't match its positional signature, silently writing a corrupt
+   * federation node and propagating nothing. It now delegates to
+   * `publishToFederation` from @holons/core/federation per item.
+   *
+   * @param {string} sourceHolonId - Holon (id or pubkey) whose items to copy
+   * @param {string} targetHolonId - Holon (id or pubkey) receiving them
+   * @param {string} lensName - Lens to propagate
+   * @returns {Promise<{success: boolean, published: number, errors: string[]}>}
    */
-  async federateHolons(sourceHolonId, targetHolonId, lensName, options = {}) {
-    const { permissions = ['read'], direction = 'outbound' } = options;
-
-    // Get public keys for both holons (for capability-based access and self-federation check)
+  async federateHolons(sourceHolonId, targetHolonId, lensName) {
     const sourcePublicKey = await this.getPublicKey(sourceHolonId);
     const targetPublicKey = await this.getPublicKey(targetHolonId);
-
-    // Check for self-federation by comparing public keys (handles case where target is source's pubkey)
     if (
       String(sourceHolonId) === String(targetHolonId) ||
       sourcePublicKey === targetPublicKey
@@ -329,54 +335,32 @@ class KeyManager {
       throw new Error('Cannot federate a holon with itself');
     }
 
-    // Get the source holon's HoloSphere instance
-    const sourceHolosphere = await this.getHolosphere(sourceHolonId);
+    const source = String(sourceHolonId);
+    const target = String(targetHolonId);
+    const items = (await this.masterHolosphere.getAll(source, lensName)) || [];
 
-    // Use federation API with explicit author pubkeys
-    // This enables cross-author federation using capability tokens
-    const result = await sourceHolosphere.federate(
-      { holonId: sourceHolonId, authorPubKey: sourcePublicKey },
-      { holonId: targetHolonId, authorPubKey: targetPublicKey },
-      lensName,
-      {
-        permissions,
-        direction,
+    let published = 0;
+    const errors = [];
+    for (const item of items) {
+      if (!item || item.id == null) continue;
+      try {
+        const outcome = await publishToFederation(
+          {
+            holosphere: this.masterHolosphere,
+            holonId: source,
+            lens: lensName,
+            item,
+          },
+          { kind: 'partner', holonId: target },
+          { useHolograms: true, includeSettingsHex: false }
+        );
+        published += outcome.publishedTo;
+        errors.push(...outcome.errors);
+      } catch (err) {
+        errors.push(String(err?.message ?? err));
       }
-    );
-
-    return result;
-  }
-
-  /**
-   * Remove federation between two holons
-   *
-   * @param {string} sourceHolonId - Source holon ID
-   * @param {string} targetHolonId - Target holon ID
-   * @param {string} lensName - Lens to unfederate
-   * @returns {Promise<boolean>} Success indicator
-   */
-  async unfederateHolons(sourceHolonId, targetHolonId, lensName) {
-    // Get public keys for both holons
-    const sourcePublicKey = await this.getPublicKey(sourceHolonId);
-    const targetPublicKey = await this.getPublicKey(targetHolonId);
-
-    // Check for self-unfederation (shouldn't happen, but be consistent)
-    if (
-      String(sourceHolonId) === String(targetHolonId) ||
-      sourcePublicKey === targetPublicKey
-    ) {
-      return true; // Nothing to unfederate from self
     }
-
-    const sourceHolosphere = await this.getHolosphere(sourceHolonId);
-
-    await sourceHolosphere.unfederate(
-      { holonId: sourceHolonId, authorPubKey: sourcePublicKey },
-      { holonId: targetHolonId, authorPubKey: targetPublicKey },
-      lensName
-    );
-
-    return true;
+    return { success: errors.length === 0, published, errors };
   }
 
   /**
@@ -410,36 +394,18 @@ class KeyManager {
     // PUBKEY-ONLY: store target pubkey, not telegram ID.
     const target = targetPubKey;
 
-    const success = await this.masterHolosphere.federate(
+    // Delegate to the unified core write path (validation + federateHolon,
+    // which records the link bidirectionally and stores the partner name).
+    const success = await setFederationPartner(
+      this.masterHolosphere,
       source,
       target,
-      null,
-      null,
-      true, // bidirectional: mirror with inverted directions onto target
       {
         inbound: Array.isArray(lensConfig.inbound) ? lensConfig.inbound : [],
         outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : [],
+        ...(partnerName ? { partnerName } : {}),
       }
     );
-
-    if (success && partnerName) {
-      try {
-        const fedInfo = await this.masterHolosphere.getGlobal(
-          'federation',
-          source
-        );
-        if (fedInfo) {
-          if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
-          fedInfo.partnerNames[target] = partnerName;
-          await this.masterHolosphere.putGlobal('federation', fedInfo);
-        }
-      } catch (e) {
-        console.warn(
-          '[setupFederation] Failed to store partner name:',
-          e.message
-        );
-      }
-    }
 
     this.masterHolosphere.clearCache?.('federation');
 
@@ -469,13 +435,12 @@ class KeyManager {
     const source = String(sourceHolonId);
     const target = targetPubKey;
 
-    // Delegate to holosphere — handles federated/inbound/outbound + lensConfig
-    // cleanup, and mirrors the removal onto the partner.
-    const success = await this.masterHolosphere.unfederate(
+    // Delegate to the unified core write path — handles federated/inbound/
+    // outbound + lensConfig cleanup, and mirrors the removal onto the partner.
+    const success = await removeFederationPartner(
+      this.masterHolosphere,
       source,
-      target,
-      null,
-      null
+      target
     );
     this.masterHolosphere.clearCache?.('federation');
 
