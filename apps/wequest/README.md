@@ -39,8 +39,12 @@ http://localhost:5373/?holon=<holonId>&user=<userId>&username=<name>
 # optional: &app=<namespace>   (default "Holons" — use HolonsDebug for testing)
 ```
 
-Env fallbacks in the root `.env`: `VITE_WEQUEST_HOLON`, `VITE_WEQUEST_APP`,
-`VITE_WEQUEST_PEER` (defaults to the production relay `gun.holons.io`).
+Env fallbacks in the root `.env` (see `.env.example` at the repo root):
+`VITE_WEQUEST_HOLON`, `VITE_WEQUEST_APP`, `VITE_WEQUEST_PEER` (defaults to
+the production relay `gun.holons.io`), `VITE_MAPBOX_TOKEN` (real basemap),
+`VITE_BOT_API_URL` (need-lifecycle DMs through the Telegram bot). An
+unconfigured **dev** run lands in the `HolonsDebug` namespace; only
+production builds default to the live `Holons` graph.
 
 The demand-heat map needs the holon to have a Hex Address in its settings
 (dashboard → Settings → "Pick a hex on the map"); without one the app still
@@ -52,9 +56,13 @@ works and says so.
 pnpm -F wequest typecheck && pnpm -F wequest test && pnpm -F wequest build
 ```
 
-A live two-user flow (post need → answer → accept → handoff → hours move) is
-scripted with playwright against a scratch holon in the `HolonsDebug`
-namespace — never point test writes at the production `Holons` namespace.
+The full two-user flow (post need → answer → accept → two-sided handoff →
+hours move) is verified by hand: open two browsers on a scratch holon in the
+`HolonsDebug` namespace (`?holon=<scratch>&app=HolonsDebug&user=<id>`, one
+user per browser) and walk the loop — never point test writes at the
+production `Holons` namespace. The pure logic (hex geometry, map
+projection) is covered by the vitest specs; the handoff/settlement domain
+logic is tested in `@holons/core/needs`.
 
 ## License
 

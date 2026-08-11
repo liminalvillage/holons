@@ -14,6 +14,13 @@
 # secrets): TELEGRAM_OIDC_CLIENT_ID, TELEGRAM_OIDC_CLIENT_SECRET,
 # AUTH_JWT_SECRET. Register the callback in BotFather Web Login → Allowed
 # URLs: https://<site>/api/auth/telegram/callback
+#
+# Client env vars (public by design, still needed in the Netlify UI):
+#   VITE_WEQUEST_HOLON / VITE_WEQUEST_APP / VITE_WEQUEST_PEER — sync target
+#   VITE_MAPBOX_TOKEN — without it the app SILENTLY degrades to the SVG hex
+#     disk and a manual-entry-only hex picker (no error is shown)
+#   VITE_BOT_API_URL — need-lifecycle DMs via the bot; omitting it just
+#     disables notifications. The bot's CORS_ORIGIN must include this site.
 
 # NOTE: no `base` key here — CLI deploys run from this directory and a base
 # would make the CLI fall back to the repo-root netlify.toml (the dashboard

@@ -41,7 +41,12 @@ export const KINDS: Array<{ label: string; icon: IconName }> = [
 export const RINGS = ["This cell", "2 rings", "5 rings", "The world"];
 
 /** Bottom tabs. `icon` renders from icons.ts; Hex keeps the hexagon glyph. */
-export const NAV: Array<{ label: string; k: string; to: string; icon?: IconName }> = [
+export const NAV: Array<{
+  label: string;
+  k: string;
+  to: string;
+  icon?: IconName;
+}> = [
   { label: "Hex", k: "home", to: "home" },
   { label: "List", k: "list", to: "list", icon: "bag" },
   { label: "Coops", k: "coop", to: "coop", icon: "users" },

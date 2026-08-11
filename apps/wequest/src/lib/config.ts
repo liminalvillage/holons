@@ -5,7 +5,8 @@
 // acting. Resolution order (mirrors the kiosk):
 //
 //   holon : ?holon=<id>  →  localStorage  →  VITE_WEQUEST_HOLON  →  "" (setup)
-//   app   : ?app=<name>  →  localStorage  →  VITE_WEQUEST_APP    →  "Holons"
+//   app   : ?app=<name>  →  localStorage  →  VITE_WEQUEST_APP    →  "HolonsDebug"
+//           in dev / "Holons" in production builds
 //   user  : ?user=<id>   →  localStorage  →  "" (guest, read-only feel)
 //
 // Query-param overrides persist to localStorage so a one-time setup URL
@@ -37,7 +38,10 @@ export function resolveAppName(): string {
   return (
     fromQueryOrStorage("app", APP_KEY) ||
     import.meta.env.VITE_WEQUEST_APP ||
-    "Holons"
+    // Unconfigured DEV runs must not write to the production graph — mirror
+    // the bot's MODE=development convention and land in the Debug namespace.
+    // Production builds keep the live namespace.
+    (import.meta.env.DEV ? "HolonsDebug" : "Holons")
   );
 }
 
