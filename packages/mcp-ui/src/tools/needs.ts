@@ -12,7 +12,11 @@ import {
   needFromShoppingItem,
   normalizeNeed,
   respondToNeed,
+  claimNeed,
   closeNeed,
+  confirmNeedHandoff,
+  foldHandoffConfirmations,
+  settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
   NEED_RECORD_LENS,
@@ -158,6 +162,104 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
         }
         await hs.put(args.holon, NEED_RECORD_LENS, result.need);
         return ok({ success: true, need: result.need, response: result.response });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'need_claim',
+    {
+      description:
+        "Accept one provider response on a published need (requester side): the need moves 'offered' → 'claimed', records which response won, and mints the random handoff code the provider must later type in. Re-publishes to federation partners the need was shared with.",
+      inputSchema: {
+        holon: z.string().describe('Holon id that owns the need record.'),
+        needId: z.string().describe("Need id under (holon, 'quests')."),
+        responseId: z.string().describe('Id of the response to accept (see need.responses[].id).'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const need = await loadNeed(hs, args.holon, args.needId);
+        if (!need) return fail(`Need ${args.needId} not found on holon ${args.holon}.`);
+
+        const result = claimNeed(need, args.responseId);
+        if (!result.ok) {
+          return fail(`Cannot claim: ${result.reason}`, {
+            status: need.status,
+            responseIds: (need.responses ?? []).map((r) => r.id),
+          });
+        }
+        const refreshed = await refreshPublishedNeed(hs, args.holon, result.need);
+        return ok({
+          success: true,
+          need: refreshed.need,
+          handoffCode: result.need.handoff?.code,
+          errors: refreshed.errors,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'need_handoff_confirm',
+    {
+      description:
+        "Confirm one side of the two-sided handoff on a claimed need. party 'requester' confirms from the code screen; party 'provider' must supply the code the requester shows. Each confirmation is persisted as its own record on the owner holon; when the second side confirms, the settlement runs: the need closes 'fulfilled', REA completion events are recorded, the hours move requester → provider as an 'hour' expense, and the provider's side is mirrored into their own holon.",
+      inputSchema: {
+        holon: z.string().describe('Holon id that owns the need record.'),
+        needId: z.string().describe("Need id under (holon, 'quests')."),
+        party: z.enum(['requester', 'provider']),
+        code: z
+          .string()
+          .optional()
+          .describe("The handoff code (required for party 'provider')."),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const need = await loadNeed(hs, args.holon, args.needId);
+        if (!need) return fail(`Need ${args.needId} not found on holon ${args.holon}.`);
+
+        const lens: unknown[] =
+          typeof hs.getAll === 'function'
+            ? ((await hs.getAll(args.holon, NEED_RECORD_LENS)) ?? [])
+            : [];
+        const result = await confirmNeedHandoff(hs, args.holon, need, args.party, {
+          code: args.code,
+          key: args.needId,
+          confirmations: foldHandoffConfirmations(lens),
+        });
+        if (!result.ok) {
+          return fail(`Cannot confirm: ${result.reason}`, { status: need.status });
+        }
+        if (!result.both) {
+          return ok({
+            success: true,
+            both: false,
+            need: result.need,
+            waitingFor: args.party === 'requester' ? 'provider' : 'requester',
+          });
+        }
+        const settled = await settleNeedHandoff({ holosphere: hs }, args.holon, {
+          ...result.need,
+          id: args.needId,
+        });
+        return ok({
+          success: true,
+          both: true,
+          settled: true,
+          hours: settled.hours,
+          providerId: settled.providerId,
+          providerHolonId: settled.providerHolonId,
+          need: settled.need,
+          errors: settled.errors,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
