@@ -14,6 +14,7 @@
     holonId,
     holonName,
     rawQuests,
+    rawLibrary,
     completionRequest,
     editOnOpen,
     partnerNames,
@@ -46,6 +47,7 @@
     dayKey,
     getItemIcon,
     getTypeDisplayName,
+    LIBRARY_TYPES,
   } from "@holons/core/library";
   import {
     applyBreakdownProposal,
@@ -403,6 +405,40 @@
     }
   }
 
+  // Library-thing categories work the same way: the default types first, then
+  // any custom categories already used across the library (federated included),
+  // then the new-category sentinel. Types are canonically lowercase.
+  const DEFAULT_THING_TYPES: string[] = [
+    LIBRARY_TYPES.TOOL,
+    LIBRARY_TYPES.BOOK,
+    LIBRARY_TYPES.EQUIPMENT,
+    LIBRARY_TYPES.ACCOMMODATION,
+    LIBRARY_TYPES.OTHER,
+  ];
+  $: thingTypeOptions = [
+    ...DEFAULT_THING_TYPES,
+    ...[
+      ...new Set(
+        [
+          ...$rawLibrary.map((i) => String(i.type ?? "")),
+          fType, // the item's own type always stays selectable
+        ]
+          .map((t) => t.trim().toLowerCase())
+          .filter((t) => t.length > 0 && !DEFAULT_THING_TYPES.includes(t)),
+      ),
+    ].sort((a, b) => a.localeCompare(b)),
+  ];
+  let addingThingType = false;
+  function onThingTypeSelect(e: Event) {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    if (v === NEW_CATEGORY) {
+      fType = "";
+      addingThingType = true;
+    } else {
+      fType = v;
+    }
+  }
+
   function pad(n: number): string {
     return String(n).padStart(2, "0");
   }
@@ -472,7 +508,11 @@
     if (!sel) return;
     message = "";
     if (sel.kind === "thing") {
-      fType = String(sel.item.type ?? "other");
+      fType =
+        String(sel.item.type ?? "")
+          .trim()
+          .toLowerCase() || "other";
+      addingThingType = false;
       fDescription = String(sel.item.description ?? "");
       fValue = Number(sel.item.value ?? 0);
     } else {
@@ -678,7 +718,9 @@
     const updated = {
       ...clean,
       id: ref?.key ?? sel.item.id,
-      type: fType,
+      // Categories are canonically lowercase ('tool', 'book', …); a freshly
+      // typed one is normalised the same way so it dedupes across items.
+      type: fType.trim().toLowerCase() || "other",
       description: fDescription.trim(),
       value: Number(fValue) || 0,
     };
@@ -944,13 +986,32 @@
       {:else}
         <!-- edit thing -->
         <label
-          >Type
-          <select bind:value={fType}>
-            <option value="tool">Tool</option>
-            <option value="book">Book</option>
-            <option value="equipment">Equipment</option>
-            <option value="other">Other</option>
-          </select>
+          >Category
+          {#if addingThingType}
+            <input
+              type="text"
+              bind:value={fType}
+              placeholder="New category name"
+            />
+            <button
+              type="button"
+              class="link-btn"
+              on:click={() => {
+                addingThingType = false;
+                fType = "other";
+              }}>Pick from list</button
+            >
+          {:else}
+            <select value={fType} on:change={onThingTypeSelect}>
+              {#each thingTypeOptions as opt (opt)}
+                <option value={opt}
+                  >{getItemIcon({ type: opt })}
+                  {getTypeDisplayName(opt)}</option
+                >
+              {/each}
+              <option value={NEW_CATEGORY}>＋ New category…</option>
+            </select>
+          {/if}
         </label>
         <label
           >Description
