@@ -20,3 +20,18 @@ export {
 } from './snapshot.js';
 
 export { readSettingsHex } from './settings-hex.js';
+
+export {
+	applyLensMode,
+	lensMode,
+	removeFederationPartner,
+	sanitizeLenses,
+	setFederationPartner,
+	type FederationLensMode,
+	type SetFederationPartnerOptions
+} from './partners.js';
+
+export {
+	migrateLegacyFederationLinks,
+	type LegacyFederationMigration
+} from './legacy.js';
