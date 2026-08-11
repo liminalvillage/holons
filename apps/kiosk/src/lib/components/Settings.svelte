@@ -36,7 +36,10 @@
   } from "$lib/config";
   import { refreshVoice } from "$lib/voice/controller";
   import { themeMode } from "$lib/theme";
+  import { readSettingsHex } from "@holons/core/federation";
+  import { getHolosphere } from "$lib/holosphere";
   import FederationSettings from "./FederationSettings.svelte";
+  import HexPicker from "./HexPicker.svelte";
 
   // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
   let draftHolon = $holonId ?? "";
@@ -57,6 +60,27 @@
   let draftTheme: ThemeMode = $themeMode;
   let draftVoiceKey = resolveVoiceKey() ?? "";
   let logoError = "";
+
+  // The holon's claimed H3 cell (`settings.hex`, shared with wequest and the
+  // dashboard). `undefined` = still loading; the picker is only offered while
+  // no cell is claimed yet.
+  let homeHex: string | null | undefined = undefined;
+  let hexPickerOpen = false;
+  $: void loadHomeHex($holonId);
+  async function loadHomeHex(id: string | null) {
+    homeHex = undefined;
+    if (!id) {
+      homeHex = null;
+      return;
+    }
+    try {
+      const hs = await getHolosphere();
+      const hex = await readSettingsHex(hs, id);
+      if (id === $holonId) homeHex = hex;
+    } catch {
+      if (id === $holonId) homeHex = null;
+    }
+  }
 
   const THEMES: { id: ThemeMode; label: string; glyph: string }[] = [
     { id: "auto", label: "Auto", glyph: "◑" },
@@ -301,6 +325,35 @@
 
   {#if $holonId}
     <div class="field">
+      Location
+      <span class="sub">— the H3 cell this holon claims on the shared map</span>
+      {#if homeHex === undefined}
+        <p class="hex-note">Checking…</p>
+      {:else if homeHex}
+        <div class="hex-row">
+          <p class="hex-cell">{homeHex}</p>
+          <button
+            type="button"
+            class="hex-pick"
+            on:click={() => (hexPickerOpen = true)}
+          >
+            Change…
+          </button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="hex-pick"
+          on:click={() => (hexPickerOpen = true)}
+        >
+          ⬡ Set location…
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if $holonId}
+    <div class="field">
       Federation
       <span class="sub"
         >— partner holons this screen shares with · changes apply immediately</span
@@ -331,6 +384,15 @@
     >
   </div>
 </div>
+
+{#if hexPickerOpen && $holonId}
+  <HexPicker
+    holonId={$holonId}
+    current={homeHex ?? null}
+    on:close={() => (hexPickerOpen = false)}
+    on:saved={(e) => (homeHex = e.detail)}
+  />
+{/if}
 
 <style>
   .settings {
@@ -450,6 +512,59 @@
     color: #9a3b2f;
     text-transform: none;
     letter-spacing: 0;
+  }
+
+  /* Location (home hex) */
+  .hex-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .hex-row .hex-cell {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hex-row .hex-pick {
+    flex: 0 0 auto;
+  }
+  .hex-note {
+    margin: 0.4rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .hex-cell {
+    margin: 0.4rem 0 0;
+    padding: 0.55rem 0.8rem;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .hex-pick {
+    display: block;
+    margin-top: 0.4rem;
+    padding: 0.6rem 1rem;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--teal-deep);
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+    transition: transform 0.1s ease;
+  }
+  .hex-pick:active {
+    transform: scale(0.97);
   }
 
   .accent-row {

@@ -40,7 +40,9 @@
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
     "buffer": "^6.0.3",
+    "h3-js": "^4.1.0",
     "holosphere": "workspace:*",
-    "jose": "^6.2.3"
+    "jose": "^6.2.3",
+    "mapbox-gl": "^3.7.0"
   }
 }
