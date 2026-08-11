@@ -122,12 +122,22 @@ Under the hood it runs on **GunDB**, not raw Nostr:
 
 ## Federation
 
-`@holons/core/federation` is the UI-agnostic publish layer:
+`@holons/core/federation` is the UI-agnostic federation layer. The native
+HoloSphere federation record is the **single store** for links — one read,
+one write, shared by every surface (there is no settings-lens mirror; the
+legacy `federation[]`/`lensConfig` settings fields were removed):
 
+- `setFederationPartner()` / `removeFederationPartner()` — THE write path:
+  link/unlink a partner and set its full directional lens config (which
+  lenses flow `inbound`/`outbound`). HoloSphere mirrors the link — and its
+  removal — onto the partner's record.
+- `getFederationSnapshot()` / `readSettingsHex()` — read federation state.
 - `publishToFederation()` — routes an item to `all` federated partners, one
   `partner`, or one `hex` (H3 cell). By default it writes a standalone copy;
   hologram (soul-pointer) publication is opt-in via `useHolograms`.
-- `getFederationSnapshot()` / `readSettingsHex()` — read federation state.
+- `migrateLegacyFederationLinks()` — one-shot, merge-only fold of
+  pre-unification settings-lens links into the native record; federation UIs
+  call it best-effort before reading the snapshot.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
 stay in the UI: callers pass `federationSourceId` and an optional

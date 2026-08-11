@@ -24,8 +24,8 @@ the few knobs that matter.
 - **Show & Layout pills:** one global pills band under the tabs adapts to the
   active tab. Its **Show** pill chooses whose items appear — **Personal**
   (only the logged-in user's), **Local** (this holon), or **Global** (this
-  holon plus its federation partners, resolved from `@holons/core/federation`'s
-  `getFederationSnapshot`; partner items carry a small `⇄ <partner>` source
+  holon plus its federation partners, folded in live by HoloSphere's
+  `subscribeFederated`; partner items carry a small `⇄ <partner>` source
   chip) — and, where a tab has more than one layout, it adds the tab's
   **Layout** (and, on Tasks, **Sort**) pill. Whenever the pills fit on one
   row they render as small tap-to-cycle toggles, Show pinned left and the
@@ -37,6 +37,11 @@ the few knobs that matter.
   shows, set a **display name** and **logo** for the header (logo uploaded and
   stored on the device), and jump to the full dashboard. Choices are
   remembered on the device; the live subscriptions re-point without a reload.
+  A **Federation** section manages the holon's partners in place: link/unlink
+  a partner holon and set, per lens, whether this screen **receives** their
+  items, **sends** its own, or both (via `@holons/core/federation`'s
+  `setFederationPartner` / `removeFederationPartner`). These edits write the
+  shared federation record and apply immediately.
 - **Production by default:** the entrance display reads the production `Holons`
   namespace from the production Gun relay — independent of the shared dev
   `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
