@@ -1,7 +1,20 @@
 <script lang="ts">
   import { composeOpen, draft, go } from "$lib/stores";
-  import { shoppingList, selectedNeed, toggleListItem, partners } from "$lib/live";
+  import {
+    shoppingList,
+    selectedNeed,
+    toggleListItem,
+    removeListItem,
+    partners,
+  } from "$lib/live";
   import { initials } from "$lib/config";
+
+  let removingId: string | null = null;
+  async function remove(entry: { item: any; need: any }) {
+    removingId = String(entry.item.id);
+    await removeListItem(entry);
+    removingId = null;
+  }
 
   function openCompose() {
     draft.set("");
@@ -89,6 +102,19 @@
               </div>
             {/each}
           </div>
+          <span
+            role="button"
+            tabindex="0"
+            aria-label="Remove from the list"
+            on:click|stopPropagation={() => remove(entry)}
+            on:keydown={(e) => e.key === "Enter" && remove(entry)}
+            style="width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--color-neutral-600);font-size:15px;flex:none;opacity:{removingId ===
+            String(entry.item.id)
+              ? 0.4
+              : 1}"
+          >
+            ×
+          </span>
         </button>
       {:else}
         <div

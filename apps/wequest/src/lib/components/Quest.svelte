@@ -5,6 +5,7 @@
     respondToSelected,
     claimResponse,
     confirmHandoffAs,
+    cancelSelectedNeed,
     handoffConfirms,
   } from "$lib/live";
   import { resolveUserId, initials } from "$lib/config";
@@ -52,6 +53,15 @@
     if (!isMine) return;
     const ok = await claimResponse(responseId);
     if (ok) go("handoff");
+  }
+
+  let withdrawing = false;
+  async function withdraw() {
+    if (withdrawing) return;
+    withdrawing = true;
+    const ok = await cancelSelectedNeed();
+    withdrawing = false;
+    if (ok) go("list");
   }
 
   function kindLabel(): string {
@@ -188,6 +198,17 @@
             </button>
           </div>
         </form>
+      {/if}
+
+      {#if isMine && open}
+        <button
+          class="tapp"
+          on:click={withdraw}
+          disabled={withdrawing}
+          style="width:100%;margin-top:20px;height:48px;border-radius:999px;border:1.5px solid var(--color-neutral-400);color:var(--color-neutral-700);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-size:15px;background:transparent"
+        >
+          {withdrawing ? "Withdrawing…" : "Withdraw this need"}
+        </button>
       {/if}
 
       {#if isMine && need.status === "claimed"}

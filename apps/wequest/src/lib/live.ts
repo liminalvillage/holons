@@ -58,6 +58,7 @@ import {
   type Expense,
 } from "@holons/core/expenses";
 import { REAAggregator, computeHolonUserScores } from "@holons/core/scoring";
+import { ensureUserProfile } from "@holons/core/users";
 import { getHolosphere, actingAs, putAs } from "./holosphere";
 import { resolveHolon, resolveUserId, resolveUsername } from "./config";
 import { neighborhood, projectCells, type ProjectedCell } from "./geomap";
@@ -185,6 +186,31 @@ export const foreignNeeds = derived(rawQuests, ($q): PublishedNeed[] =>
       } as PublishedNeed;
     })
     .filter((n): n is PublishedNeed => n != null && isOpen(n)),
+);
+
+/**
+ * "I can provide", complete: partner-federated needs plus the ones sitting on
+ * neighbouring hex cells — previously the map cells were the only way to
+ * reach the latter. Own needs and duplicates are dropped.
+ */
+export const provideFeed = derived(
+  [foreignNeeds, cellHeat],
+  ([$foreign, $heat]): PublishedNeed[] => {
+    const me = resolveUserId();
+    const seen = new Set($foreign.map((n) => String(n.id)));
+    const fromCells: PublishedNeed[] = [];
+    for (const entry of Object.values($heat)) {
+      for (const n of entry.needs) {
+        const key = String(n.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (String(n.initiator?.id ?? "") === me) continue;
+        if (!isOpen(n)) continue;
+        fromCells.push(n);
+      }
+    }
+    return [...$foreign, ...fromCells];
+  },
 );
 
 /** The shopping checklist joined with its published needs. */
@@ -583,6 +609,7 @@ export async function ensureInit(): Promise<void> {
 
   if (hex) void refreshHeat(hs, hex);
   void recomputeKarma(hs, holon);
+  void ensureActingProfile();
 }
 
 // ── actions ───────────────────────────────────────────────────────────────
@@ -911,6 +938,110 @@ async function settleAndReport(
   flash(
     `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
+}
+
+/** Withdraw the selected need: cancel it everywhere and drop the list item. */
+export async function cancelSelectedNeed(): Promise<boolean> {
+  const holon = get(holonId);
+  const item = get(selectedNeed);
+  if (!holon || !item) return false;
+  const hs = await getHolosphere();
+  const { _hologram, _federation, ...bare } = item as any;
+  const need = normalizeNeed(bare);
+  if (!need) return false;
+  const result = closeNeed(need, "cancelled");
+  if (!result.ok) {
+    flash("Already settled — nothing to withdraw.");
+    return false;
+  }
+  await refreshPublishedNeed(hs, holon, result.need);
+  // Retraction, as documented: the originating list item goes too, and the
+  // hex hologram resolves to the cancelled record, unlighting the map.
+  if (need.source?.itemId) {
+    const list = currentChecklist();
+    const remaining = list.items.filter(
+      (i) => String(i.id) !== String(need.source!.itemId),
+    );
+    if (remaining.length !== list.items.length) {
+      await saveChecklist(hs, holon, { ...list, items: remaining });
+    }
+  }
+  selectedNeed.set(null);
+  flash("Withdrawn — the ring no longer sees it.");
+  void refreshMap();
+  return true;
+}
+
+/** Remove a list item; an open published need for it is cancelled first. */
+export async function removeListItem(entry: {
+  item: ShoppingItem;
+  need: PublishedNeed | null;
+}): Promise<void> {
+  const holon = get(holonId);
+  if (!holon) return;
+  const hs = await getHolosphere();
+  if (entry.need && isOpen(entry.need)) {
+    const result = closeNeed(entry.need, "cancelled");
+    if (result.ok) await refreshPublishedNeed(hs, holon, result.need);
+  }
+  const list = currentChecklist();
+  const remaining = list.items.filter(
+    (i) => String(i.id) !== String(entry.item.id),
+  );
+  if (remaining.length === list.items.length) return;
+  await saveChecklist(hs, holon, { ...list, items: remaining });
+  flash("Removed from the list.");
+  void refreshMap();
+}
+
+/** Put a proposal on the coop's table — a `type:'proposal'` quest. */
+export async function createProposal(
+  title: string,
+  description: string,
+): Promise<boolean> {
+  const holon = get(holonId);
+  const t = title.trim();
+  if (!holon || !t) return false;
+  const hs = await getHolosphere();
+  const proposal = {
+    id: `prop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    type: "proposal",
+    title: t,
+    ...(description.trim() ? { description: description.trim() } : {}),
+    initiator: initiator(),
+    participants: [],
+    created: new Date().toISOString(),
+  };
+  try {
+    await putAs(hs, holon, "quests", proposal);
+    flash("On the table — the coop votes now.");
+    return true;
+  } catch {
+    flash("Could not create the proposal.");
+    return false;
+  }
+}
+
+/**
+ * Make sure the acting user exists on the holon's `users` lens — Profile
+ * (values/needs) and member counts read from there, and a WeQuest-only user
+ * otherwise never appears in them.
+ */
+export async function ensureActingProfile(user?: {
+  id: string | number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+}): Promise<void> {
+  const holon = get(holonId) || resolveHolon();
+  const u = user ?? { id: resolveUserId(), username: resolveUsername() };
+  if (!holon || u.id == null || u.id === "") return;
+  try {
+    const hs = await getHolosphere();
+    await ensureUserProfile(hsDb(hs) as never, u as never, holon);
+  } catch {
+    /* best-effort — the profile appears on the next successful write */
+  }
 }
 
 /** Join or leave a solidarity run — participant toggle on the run offer. */

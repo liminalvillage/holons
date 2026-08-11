@@ -15,6 +15,7 @@
 
 import { writable, derived } from "svelte/store";
 import { setUser } from "./config";
+import { ensureActingProfile } from "./live";
 
 export interface TelegramUser {
   id: number;
@@ -58,7 +59,17 @@ export async function initAuth(): Promise<TelegramUser | null> {
       // Session identity becomes the acting identity — unless the URL pins an
       // explicit dev override.
       const override = new URLSearchParams(window.location.search).get("user");
-      if (u && !override) setUser(String(u.id), displayName(u));
+      if (u && !override) {
+        setUser(String(u.id), displayName(u));
+        // A WeQuest-only user still gets a users-lens profile, so Profile
+        // and the coop member count know them.
+        void ensureActingProfile({
+          id: String(u.id),
+          username: u.username,
+          first_name: u.first_name,
+          last_name: u.last_name,
+        });
+      }
       return u;
     }
   } catch {

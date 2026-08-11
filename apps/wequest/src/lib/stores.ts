@@ -18,7 +18,28 @@ export type Screen =
   | "wallet"
   | "profile";
 
-export const screen = writable<Screen>("onb");
+const ONBOARDED_KEY = "wequest_onboarded";
+const seenOnboarding = (() => {
+  try {
+    return (
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem(ONBOARDED_KEY) === "1"
+    );
+  } catch {
+    return false;
+  }
+})();
+
+export const screen = writable<Screen>(seenOnboarding ? "home" : "onb");
+
+/** The manifesto plays once — remember it was seen across launches. */
+export function markOnboarded(): void {
+  try {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+  } catch {
+    /* private mode — it replays, harmlessly */
+  }
+}
 export const onbStep = writable(0);
 export const mode = writable<"need" | "give">("need");
 export const ring = writable(2);

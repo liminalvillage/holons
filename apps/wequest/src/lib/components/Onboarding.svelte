@@ -1,8 +1,13 @@
 <script lang="ts">
   import { buildGrid } from "$lib/hex";
   import { ONB } from "$lib/data";
-  import { onbStep, go, hexPickerOpen } from "$lib/stores";
+  import { onbStep, go, hexPickerOpen, markOnboarded } from "$lib/stores";
   import { settingsHex } from "$lib/live";
+
+  function done() {
+    markOnboarded();
+    go("home");
+  }
 
   const hexes = buildGrid(390, 500, 44, 3).map((h) => ({
     pts: h.pts,
@@ -16,7 +21,7 @@
     // "Claim your cell" opens the hex picker unless a home is already set.
     if ($onbStep === 1 && !$settingsHex) hexPickerOpen.set(true);
     if ($onbStep < ONB.length - 1) onbStep.update((s) => s + 1);
-    else go("home");
+    else done();
   }
 </script>
 
@@ -66,7 +71,7 @@
     </button>
     <button
       class="tapp"
-      on:click={() => go("home")}
+      on:click={done}
       style="width:100%;height:44px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--color-accent-2-300)"
     >
       Skip the manifesto

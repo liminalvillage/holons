@@ -9,10 +9,28 @@
     treasuryHours,
     partners,
     voteOnProposal,
+    createProposal,
   } from "$lib/live";
   import { resolveUserId } from "$lib/config";
 
   const me = resolveUserId();
+
+  let composing = false;
+  let proposalTitle = "";
+  let proposalBody = "";
+  let submitting = false;
+
+  async function submitProposal() {
+    if (submitting || !proposalTitle.trim()) return;
+    submitting = true;
+    const ok = await createProposal(proposalTitle, proposalBody);
+    submitting = false;
+    if (ok) {
+      composing = false;
+      proposalTitle = "";
+      proposalBody = "";
+    }
+  }
 
   $: maxDemand = Math.max(1, ...$demandBars.map(([, n]) => n));
 
@@ -123,9 +141,54 @@
         </div>
       {:else}
         <div style="background:var(--color-surface);border-radius:var(--radius-md);padding:16px;font-size:13px;color:var(--color-neutral-700)">
-          Nothing on the table. A quest with type "proposal" appears here for the coop to vote on.
+          Nothing on the table — put the first proposal up for a vote below.
         </div>
       {/each}
+
+      {#if composing}
+        <form
+          on:submit|preventDefault={submitProposal}
+          style="background:var(--color-surface);border-radius:var(--radius-md);padding:15px 16px;display:flex;flex-direction:column;gap:10px"
+        >
+          <input
+            bind:value={proposalTitle}
+            placeholder="What should the coop decide?"
+            style="width:100%;height:44px;border-radius:var(--radius-md);border:1.5px solid var(--color-divider);background:var(--color-bg);padding:0 14px;font:inherit;font-size:14px"
+          />
+          <textarea
+            bind:value={proposalBody}
+            rows="2"
+            placeholder="Why, in a sentence or two (optional)"
+            style="width:100%;border-radius:var(--radius-md);border:1.5px solid var(--color-divider);background:var(--color-bg);padding:10px 14px;font:inherit;font-size:13.5px;resize:vertical"
+          ></textarea>
+          <div style="display:flex;gap:8px">
+            <button
+              type="button"
+              class="tapp"
+              on:click={() => (composing = false)}
+              style="flex:1;height:42px;border-radius:999px;border:1.5px solid var(--color-neutral-400);color:var(--color-neutral-700);background:transparent;font-weight:700;font-size:13px"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="tapp"
+              disabled={submitting || !proposalTitle.trim()}
+              style="flex:2;height:42px;border-radius:999px;background:var(--color-accent-2-700);color:var(--color-neutral-100);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px"
+            >
+              {submitting ? "Publishing…" : "Put it on the table"}
+            </button>
+          </div>
+        </form>
+      {:else}
+        <button
+          class="tapp"
+          on:click={() => (composing = true)}
+          style="height:48px;border-radius:var(--radius-md);border:1.5px dashed var(--color-neutral-400);display:flex;align-items:center;justify-content:center;gap:8px;color:var(--color-neutral-700);font-weight:700;font-size:13.5px"
+        >
+          + Propose something
+        </button>
+      {/if}
     </div>
 
     <div style="margin-top:22px;background:var(--color-accent-200);border-radius:var(--radius-lg);padding:18px">

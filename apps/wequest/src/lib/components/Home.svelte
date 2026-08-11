@@ -15,7 +15,7 @@
     mapCells,
     cellHeat,
     myNeeds,
-    foreignNeeds,
+    provideFeed,
     selectedNeed,
   } from "$lib/live";
   import { resolveUsername, initials } from "$lib/config";
@@ -89,7 +89,7 @@
     go("quest");
   }
 
-  $: feed = $mode === "need" ? $myNeeds : $foreignNeeds;
+  $: feed = $mode === "need" ? $myNeeds : $provideFeed;
   $: feedTitle = $mode === "need" ? "Your list, answered" : "Needs you could answer";
 
   function needMeta(n: any): string {
@@ -101,7 +101,11 @@
       if (n.status === "claimed") return "Claimed · ready for handoff";
       return n.status;
     }
-    const from = n._federation?.originName || n._federation?.origin || n._hologram?.sourceHolonName;
+    const from =
+      n._federation?.originName ||
+      n._federation?.origin ||
+      n._hologram?.sourceHolonName ||
+      (n._hologram?.sourceHolon ? "the map" : null);
     return (from ? `From ${from} · ` : "") + n.status;
   }
 </script>
