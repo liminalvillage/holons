@@ -29,6 +29,10 @@
     offersAround,
     withdrawOffer,
     selectedNeed,
+    partners,
+    addPartner,
+    publisherHolonOf,
+    publisherNameOf,
   } from "$lib/live";
   import { resolveUsername, initials } from "$lib/config";
 
@@ -124,6 +128,28 @@
       o.initiator?.username ||
       "a neighbour"
     );
+  }
+
+  // Holons publishing into the open cell that we are NOT yet federated with —
+  // discovery lives on the map: see a need, link its holon in one tap.
+  $: openPublishers = (() => {
+    if (!openCell) return [] as Array<{ id: string; name: string }>;
+    const seen = new Map<string, string>();
+    for (const n of $cellHeat[openCell.cell]?.needs ?? []) {
+      const id = publisherHolonOf(n);
+      if (!id || seen.has(id)) continue;
+      if ($partners.some((p) => String(p.id) === id)) continue;
+      seen.set(id, publisherNameOf(n));
+    }
+    return [...seen].map(([id, name]) => ({ id, name }));
+  })();
+
+  let federatingId: string | null = null;
+  async function federateWith(h: { id: string; name: string }) {
+    if (federatingId) return;
+    federatingId = h.id;
+    await addPartner(h.id);
+    federatingId = null;
   }
 
   $: feed = $mode === "need" ? $myNeeds : $provideFeed;
@@ -299,6 +325,23 @@
                 </button>
               {/each}
             </div>
+            {#if openPublishers.length}
+              <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+                {#each openPublishers as h (h.id)}
+                  <button
+                    class="tapp chip"
+                    on:click={() => federateWith(h)}
+                    disabled={federatingId === h.id}
+                    style="background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-weight:700;font-size:12px;opacity:{federatingId ===
+                    h.id
+                      ? 0.5
+                      : 1}"
+                  >
+                    {federatingId === h.id ? "Linking…" : `⇄ Federate ${h.name}`}
+                  </button>
+                {/each}
+              </div>
+            {/if}
           {:else}
             <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
               {#each openCell.tags as t (t)}

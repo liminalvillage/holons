@@ -7,6 +7,10 @@
     confirmHandoffAs,
     cancelSelectedNeed,
     handoffConfirms,
+    partners,
+    addPartner,
+    publisherHolonOf,
+    publisherNameOf,
   } from "$lib/live";
   import { resolveUserId, initials } from "$lib/config";
 
@@ -62,6 +66,19 @@
     const ok = await cancelSelectedNeed();
     withdrawing = false;
     if (ok) go("list");
+  }
+
+  // One-tap federation with the holon that published a discovered need.
+  $: publisher = need ? publisherHolonOf(need) : null;
+  $: publisherName = need ? publisherNameOf(need) : "";
+  $: alreadyPartner =
+    publisher != null && $partners.some((p) => String(p.id) === publisher);
+  let federating = false;
+  async function federate() {
+    if (!publisher || federating) return;
+    federating = true;
+    await addPartner(publisher);
+    federating = false;
   }
 
   function kindLabel(): string {
@@ -169,6 +186,29 @@
           </div>
         {/each}
       </div>
+
+      {#if publisher && !alreadyPartner && !isMine}
+        <div
+          style="margin-top:20px;background:var(--color-accent-200);border-radius:var(--radius-md);padding:14px 16px;display:flex;align-items:center;gap:12px"
+        >
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13.5px;color:var(--color-accent-800)">
+              {publisherName} published this
+            </div>
+            <div style="font-size:12px;color:var(--color-accent-800);margin-top:2px;text-wrap:pretty">
+              Federate and all their needs and offers flow to your board.
+            </div>
+          </div>
+          <button
+            class="tapp"
+            on:click={federate}
+            disabled={federating}
+            style="height:38px;padding:0 16px;border-radius:999px;background:var(--color-accent);color:var(--color-neutral-100);font-family:var(--font-heading);font-size:13.5px;flex:none"
+          >
+            {federating ? "Linking…" : "⇄ Federate"}
+          </button>
+        </div>
+      {/if}
 
       {#if !isMine && open}
         <div style="font-family:var(--font-heading);font-size:19px;margin-top:24px">Answer this need</div>

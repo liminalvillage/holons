@@ -975,6 +975,26 @@ async function settleAndReport(
   );
 }
 
+/**
+ * The holon that published a record we can see — a map hologram's source or
+ * a federated copy's origin. Null for our own records (nothing to link).
+ */
+export function publisherHolonOf(rec: any): string | null {
+  const id = rec?._hologram?.sourceHolon || rec?._federation?.origin;
+  if (id == null) return null;
+  const s = String(id);
+  return s && s !== get(holonId) ? s : null;
+}
+
+/** A display name for a publisher, from the read-side envelopes. */
+export function publisherNameOf(rec: any): string {
+  return (
+    rec?._hologram?.sourceHolonName ||
+    rec?._federation?.originName ||
+    String(publisherHolonOf(rec) ?? "").slice(0, 8) + "…"
+  );
+}
+
 /** Re-read the federation snapshot into the partners store. */
 async function refreshPartners(hs: HoloSphere, holon: string): Promise<void> {
   try {
