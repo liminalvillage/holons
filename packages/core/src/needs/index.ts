@@ -85,11 +85,26 @@ export {
 export {
   settleNeedHandoff,
   handoffExpenseId,
+  mintedOfferId,
   type SettleDeps,
   type SettleNeedOptions,
   type SettleNeedOutcome,
   type SettleStoreLike,
 } from './settle.js';
+
+export {
+  GROUP_BUY_TAG,
+  groupBuyId,
+  isGroupBuy,
+  clusterKeyOf,
+  clusterNeedsByCategory,
+  buildGroupBuyQuest,
+  upsertGroupBuys,
+  type GroupBuyCluster,
+  type GroupBuyMember,
+  type GroupBuyStoreLike,
+  type UpsertGroupBuysOutcome,
+} from './groupbuy.js';
 
 export {
   publishNeedNearby,

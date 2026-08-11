@@ -6,6 +6,7 @@
     claimResponse,
     confirmHandoffAs,
     cancelSelectedNeed,
+    toggleGroupBuyParticipation,
     handoffConfirms,
     selectedRatings,
     needPartyOf,
@@ -31,6 +32,20 @@
   $: iAmProvider = Boolean(accepted && String(accepted.responder?.id ?? "") === me);
   $: confirms = $handoffConfirms[String(need?.id ?? "")] ?? {};
   $: iConfirmedProvider = Boolean(confirms.providerAt || need?.handoff?.providerAt);
+
+  // Group buys (§7): the cell holon asks, members join, any member accepts.
+  $: isGB = Boolean(
+    need && Array.isArray(need.tags) && need.tags.includes("group-buy"),
+  );
+  $: iAmIn = (need?.participants ?? []).some((p: any) => String(p?.id) === me);
+  $: canAccept = isMine || (isGB && iAmIn);
+  let joining = false;
+  async function toggleJoin() {
+    if (joining) return;
+    joining = true;
+    await toggleGroupBuyParticipation(need);
+    joining = false;
+  }
 
   // Reputation on settlement: each side rates the other once, after
   // fulfilment. Who may rate (and as which side) is core's rule, not ours.
@@ -78,7 +93,7 @@
   }
 
   async function accept(responseId: string) {
-    if (!isMine) return;
+    if (!canAccept) return;
     const ok = await claimResponse(responseId);
     if (ok) go("handoff");
   }
@@ -130,6 +145,11 @@
         {#if need.urgency === "urgent"}
           <div class="chip" style="background:#e0492f;color:#fff">🚨 urgent</div>
         {/if}
+        {#if isGB}
+          <div class="chip" style="background:var(--color-accent-2-700);color:var(--color-neutral-100)">
+            🧺 group buy
+          </div>
+        {/if}
       </div>
       <div style="font-family:var(--font-heading);font-size:31px;line-height:1.08;margin-top:10px;text-wrap:pretty">
         {need.title}
@@ -179,7 +199,7 @@
           <button
             class="tapp"
             on:click={() =>
-              isMine && open
+              canAccept && open
                 ? accept(o.id)
                 : flash(o.responder?.name ? `${o.responder.name} answered.` : "A provider answered.")}
             style="background:{need.claimedResponseId === o.id
@@ -211,7 +231,7 @@
                 <div style="font-size:13px;font-weight:700">{o.price} {o.currency ?? "h"}</div>
               {/if}
               <div style="font-size:11px;color:var(--color-neutral-600)">
-                {isMine && open ? "tap to accept" : ""}
+                {canAccept && open ? "tap to accept" : ""}
               </div>
             </div>
           </button>
@@ -224,7 +244,34 @@
         {/each}
       </div>
 
-      {#if publisher && !alreadyPartner && !isMine}
+      {#if isGB && open}
+        <div
+          style="margin-top:20px;background:var(--color-accent-2-200);border-radius:var(--radius-md);padding:14px 16px;display:flex;align-items:center;gap:12px"
+        >
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13.5px;color:var(--color-accent-2-900)">
+              {(need.participants ?? []).length} neighbour{(need.participants ?? []).length === 1 ? "" : "s"} in
+            </div>
+            <div style="font-size:12px;color:var(--color-accent-2-800);margin-top:2px;text-wrap:pretty">
+              One order, split at cost — any member can accept a provider.
+            </div>
+          </div>
+          <button
+            class="tapp"
+            on:click={toggleJoin}
+            disabled={joining}
+            style="height:38px;padding:0 16px;border-radius:999px;background:{iAmIn
+              ? 'transparent'
+              : 'var(--color-accent-2-700)'};border:1.5px solid var(--color-accent-2-700);color:{iAmIn
+              ? 'var(--color-accent-2-800)'
+              : 'var(--color-neutral-100)'};font-family:var(--font-heading);font-size:13.5px;flex:none"
+          >
+            {joining ? "…" : iAmIn ? "Leave" : "Join the group buy"}
+          </button>
+        </div>
+      {/if}
+
+      {#if publisher && !alreadyPartner && !isMine && !isGB}
         <div
           style="margin-top:20px;background:var(--color-accent-200);border-radius:var(--radius-md);padding:14px 16px;display:flex;align-items:center;gap:12px"
         >

@@ -40,6 +40,8 @@ import {
   settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
+  upsertGroupBuys,
+  isGroupBuy,
   foldNeedRatings,
   rateNeedHandoff,
   reputationByUser,
@@ -828,7 +830,29 @@ export async function addToList(
   if (outcome.errors.length > 0) flash(outcome.errors[0]);
   else if (urgent) flash("🚨 Announced as urgent — the rings see it first.");
   else flash("On the ledger. Your rings can see it.");
-  if (outcome.hexCell) void refreshMap();
+  if (outcome.hexCell) {
+    void refreshMap();
+    void reaggregateCell(hs, outcome.need.hex);
+  }
+}
+
+/**
+ * Re-cluster a cell's open needs into group buys (docs §7) — event-driven:
+ * whoever changes a cell's demand re-aggregates it. Best-effort.
+ */
+async function reaggregateCell(
+  hs: HoloSphere,
+  cell: string | null | undefined,
+): Promise<void> {
+  if (!cell) return;
+  try {
+    const out = await upsertGroupBuys(hs, cell, { db: hsDb(hs) });
+    if (out.errors.length) {
+      console.warn("[wequest] group-buy aggregation partial:", out.errors);
+    }
+  } catch (err) {
+    console.warn("[wequest] group-buy aggregation failed:", err);
+  }
 }
 
 /** Check off / restore a list item; checking off fulfils its need. */
@@ -846,9 +870,42 @@ export async function toggleListItem(item: ShoppingItem): Promise<void> {
     if (need) {
       const closed = closeNeed(need, "fulfilled");
       if (closed.ok) await refreshPublishedNeed(hs, holon, closed.need);
+      void reaggregateCell(hs, need.hex ?? get(settingsHex));
     }
     flash("Fulfilled — the ring sees it instantly.");
     void refreshMap();
+  }
+}
+
+/** Join or leave a group buy — participant toggle routed to the cell holon. */
+export async function toggleGroupBuyParticipation(item: any): Promise<void> {
+  if (!item || !isGroupBuy(item)) return;
+  const hs = await getHolosphere();
+  const ref = sourceRef(item, String(item.id));
+  const owner = ref?.holon ?? get(holonId);
+  const key = ref?.key ?? String(item.id);
+  const me = initiator();
+  const already = (item.participants ?? []).some(
+    (p: any) => String(p?.id) === me.id,
+  );
+  const participants = already
+    ? (item.participants ?? []).filter((p: any) => String(p?.id) !== me.id)
+    : [...(item.participants ?? []), { id: me.id, username: me.username }];
+  const { _hologram, _federation, ...record } = item;
+  try {
+    await putAs(hs, owner, NEED_RECORD_LENS, {
+      ...record,
+      id: key,
+      participants,
+    });
+    selectedNeed.set({ ...item, participants });
+    flash(
+      already
+        ? "You left the group buy."
+        : "You're in — one order, split at cost.",
+    );
+  } catch {
+    flash("Could not update the group buy.");
   }
 }
 
@@ -919,9 +976,27 @@ export async function claimResponse(responseId: string): Promise<boolean> {
     );
     return false;
   }
-  await refreshPublishedNeed(hs, holon, result.need);
-  notifyNeedBot("claimed", holon, String(result.need.id));
-  selectedNeed.set(result.need);
+  // A group buy lives on the cell holon — route the claim there; our own
+  // needs re-publish (partner copies included) as before.
+  const ref = sourceRef(item, String(item.id));
+  if (ref?.holon && ref.holon !== holon) {
+    await putAs(hs, ref.holon, NEED_RECORD_LENS, {
+      ...result.need,
+      id: ref.key ?? String(item.id),
+    });
+    notifyNeedBot("claimed", ref.holon, String(ref.key ?? item.id));
+    selectedNeed.set({
+      ...item,
+      status: result.need.status,
+      claimedResponseId: result.need.claimedResponseId,
+      claimedAt: result.need.claimedAt,
+      handoff: result.need.handoff,
+    });
+  } else {
+    await refreshPublishedNeed(hs, holon, result.need);
+    notifyNeedBot("claimed", holon, String(result.need.id));
+    selectedNeed.set(result.need);
+  }
   return true;
 }
 
@@ -1288,6 +1363,7 @@ export async function cancelSelectedNeed(): Promise<boolean> {
   selectedNeed.set(null);
   flash("Withdrawn — the ring no longer sees it.");
   void refreshMap();
+  void reaggregateCell(hs, need.hex ?? get(settingsHex));
   return true;
 }
 
@@ -1311,6 +1387,7 @@ export async function removeListItem(entry: {
   await saveChecklist(hs, holon, { ...list, items: remaining });
   flash("Removed from the list.");
   void refreshMap();
+  void reaggregateCell(hs, entry.need?.hex ?? get(settingsHex));
 }
 
 /** Put a proposal on the coop's table — a `type:'proposal'` quest. */
