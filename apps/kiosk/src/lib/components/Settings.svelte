@@ -313,7 +313,7 @@
     >Voice
     <span class="sub"
       >— OpenAI API key for spoken interaction, kept on this device only; empty
-      = voice off</span
+      = the deploy's shared key (the one AI breakdown uses), if configured</span
     >
     <input
       type="password"

@@ -2,20 +2,25 @@
 //
 // Direct-from-browser OpenAI audio calls for the kiosk's serverless voice
 // mode: Whisper for speech-to-text and tts-1 for text-to-speech, both plain
-// fetch against api.openai.com (which allows CORS). The key comes from
-// VITE_OPENAI_API_KEY — it is inlined into the client bundle, so it is only
-// as private as the kiosk device itself; scope/rotate it accordingly.
-
-const API_BASE = "https://api.openai.com/v1";
+// fetch. `baseUrl` decides where they land — api.openai.com (which allows
+// CORS) with a client-held key, or this deploy's /api/ai/voice relay, which
+// injects its own server-side key (see $lib/voice/transport).
 
 /** PCM sample rate `response_format: "pcm"` streams at (16-bit mono). */
 export const TTS_PCM_SAMPLE_RATE = 24000;
 
 export interface OpenAIVoiceOptions {
-  apiKey: string;
+  /** Base URL incl. version segment (OPENAI_API_BASE or VOICE_PROXY_BASE). */
+  baseUrl: string;
+  /** Bearer key; omit when the server relay authenticates upstream. */
+  apiKey?: string;
   sttModel: string;
   ttsModel: string;
   ttsVoice: string;
+}
+
+function authHeaders(opts: OpenAIVoiceOptions): Record<string, string> {
+  return opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {};
 }
 
 /** Transcribe one WAV utterance via the audio/transcriptions endpoint. */
@@ -31,9 +36,9 @@ export async function transcribe(
     "utterance.wav",
   );
   form.append("model", opts.sttModel);
-  const resp = await fetch(`${API_BASE}/audio/transcriptions`, {
+  const resp = await fetch(`${opts.baseUrl}/audio/transcriptions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${opts.apiKey}` },
+    headers: authHeaders(opts),
     body: form,
     signal,
   });
@@ -56,10 +61,10 @@ export async function* synthesizeSpeech(
   opts: OpenAIVoiceOptions,
   signal: AbortSignal,
 ): AsyncGenerator<Uint8Array> {
-  const resp = await fetch(`${API_BASE}/audio/speech`, {
+  const resp = await fetch(`${opts.baseUrl}/audio/speech`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
+      ...authHeaders(opts),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

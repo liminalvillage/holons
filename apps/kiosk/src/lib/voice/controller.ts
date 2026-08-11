@@ -9,10 +9,11 @@
 //   direct — straight from the browser to the OpenAI API (Whisper/GPT/tts-1),
 //            for kiosks deployed with no companion server
 //
-// Selection: VITE_VOICE_MODE=ws|direct wins; otherwise an explicit
-// VITE_VOICE_WS_URL keeps ws, else a baked-in VITE_OPENAI_API_KEY enables
-// direct, else ws probes localhost. When neither is reachable/configured the
-// buttons render nothing.
+// Selection (the pure matrix lives in transport.ts): VITE_VOICE_MODE=ws|direct
+// wins; otherwise a Settings-pasted device key, an explicit VITE_VOICE_WS_URL,
+// a baked-in VITE_OPENAI_API_KEY, then the deploy's /api/ai/voice relay (the
+// same server-side key AI breakdown uses), else ws probes localhost. When
+// nothing is reachable/configured the buttons render nothing.
 
 import { get, writable } from "svelte/store";
 import {
@@ -31,7 +32,12 @@ import type {
   VoiceContext,
 } from "$lib/voice/backend";
 import { WsVoiceBackend } from "$lib/voice/ws";
-import { DirectVoiceBackend, hasDirectVoiceKey } from "$lib/voice/direct";
+import {
+  DirectVoiceBackend,
+  hasDirectVoiceKey,
+  serverVoiceConfigured,
+} from "$lib/voice/direct";
+import { pickVoiceMode } from "$lib/voice/transport";
 import { deviceVoiceKey } from "$lib/config";
 
 const WS_URL_ENV = import.meta.env.VITE_VOICE_WS_URL as string | undefined;
@@ -40,21 +46,25 @@ const MODE_ENV = (import.meta.env.VITE_VOICE_MODE as string | undefined)
   .toLowerCase();
 
 /**
- * Which pipeline to talk to. Resolved on every (re)init, not once at module
- * load, because direct availability depends on the caretaker's device-local
- * key (Settings) which can appear or vanish while the app runs.
- *
- * A key pasted in Settings outranks a VITE_VOICE_WS_URL baked into the
- * build: deploys built on a dev machine inherit that machine's localhost WS
- * URL from the shared .env, which is unreachable from a kiosk device — it
- * must never mute the caretaker's explicit "speak via the API" choice.
- * Explicit VITE_VOICE_MODE still wins over everything.
+ * Which pipeline to talk to (the priority matrix is pickVoiceMode). Resolved
+ * on every (re)init, not once at module load, because direct availability
+ * depends on the caretaker's device-local key (Settings) which can appear or
+ * vanish while the app runs. Async because the last resort before the ws
+ * localhost fallback is probing whether this deploy's serverless relay holds
+ * a key — the same key AI breakdown speaks with.
  */
-function resolveVoiceMode(): "ws" | "direct" {
-  if (MODE_ENV === "ws" || MODE_ENV === "direct") return MODE_ENV;
-  if (deviceVoiceKey()) return "direct";
-  if (WS_URL_ENV) return "ws";
-  return hasDirectVoiceKey() ? "direct" : "ws";
+async function resolveVoiceMode(): Promise<"ws" | "direct"> {
+  return pickVoiceMode({
+    modeEnv: MODE_ENV,
+    deviceKey: !!deviceVoiceKey(),
+    wsUrl: !!WS_URL_ENV,
+    clientKey: hasDirectVoiceKey(),
+    // Skip the network probe when an earlier rule already decides the mode.
+    serverConfigured:
+      !MODE_ENV && !deviceVoiceKey() && !WS_URL_ENV && !hasDirectVoiceKey()
+        ? await serverVoiceConfigured()
+        : false,
+  });
 }
 
 /** How long the reply bubble lingers after the agent finishes speaking. */
@@ -333,10 +343,24 @@ export function sendTyped(text: string): boolean {
   return true;
 }
 
-function makeBackend(): VoiceBackend {
-  return resolveVoiceMode() === "direct"
+function makeBackend(mode: "ws" | "direct"): VoiceBackend {
+  return mode === "direct"
     ? new DirectVoiceBackend()
     : new WsVoiceBackend(WS_URL_ENV ?? "ws://localhost:8787");
+}
+
+// Mode resolution can await the server-relay probe; the generation counter
+// makes sure only the latest (re)init's resolution installs a backend — a
+// teardown or refresh that lands mid-probe voids the older one.
+let generation = 0;
+
+function startBackend(): void {
+  const gen = ++generation;
+  void resolveVoiceMode().then((mode) => {
+    if (!inited || gen !== generation) return;
+    backend = makeBackend(mode);
+    backend.start(onBackendEvent);
+  });
 }
 
 /**
@@ -344,22 +368,21 @@ function makeBackend(): VoiceBackend {
  * added or cleared the device's voice API key) — no reload needed.
  */
 export function refreshVoice(): void {
-  if (!inited || !backend) return;
+  if (!inited) return;
   stopRecording(true);
   player?.stop();
-  backend.stop();
+  backend?.stop();
+  backend = null;
   available.set(false);
   status.set("ready");
-  backend = makeBackend();
-  backend.start(onBackendEvent);
+  startBackend();
 }
 
 /** Start the backend; returns a teardown. Safe to call once from the layout. */
 export function initVoice(): () => void {
   if (inited) return () => {};
   inited = true;
-  backend = makeBackend();
-  backend.start(onBackendEvent);
+  startBackend();
   return () => {
     inited = false;
     if (bubbleTimer) clearTimeout(bubbleTimer);

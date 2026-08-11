@@ -1,20 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Direct voice backend — no voice server. The browser itself runs the whole
-// pipeline against the OpenAI API with the key inlined at build time:
+// pipeline against the OpenAI API:
 //
 //   mic WAV ─→ Whisper (audio/transcriptions)
 //            ─→ agent loop (@holons/ai-ui runAgentLoop over chat/completions)
 //                 tools: tools.ts, executed right here over Holosphere
 //            ─→ tts-1 (audio/speech, streamed 24 kHz PCM)
 //
+// Auth is resolved per turn (transport.ts): a client-held key (Settings /
+// dev env) calls api.openai.com directly; otherwise the calls go through
+// this deploy's /api/ai/voice relay, which holds the same server-side
+// OPENAI_API_KEY the AI-breakdown feature uses.
+//
 // Each utterance is one agent turn; a sliding window of past exchanges gives
 // "it" / "that one" something to resolve against. A new utterance or an
 // explicit barge-in aborts the in-flight turn's output.
 
 import { get } from "svelte/store";
-import { runAgentLoop, OpenAICompatProvider } from "@holons/ai-ui";
-import type { HistoryMessage } from "@holons/ai-ui";
+import {
+  runAgentLoop,
+  OpenAICompatProvider,
+  claimsCompletedAction,
+  correctionHistory,
+  correctionPrompt,
+  hasSuccessfulWrite,
+  hasWriteAttempt,
+  looksLikeActionRequest,
+} from "@holons/ai-ui";
+import type { HistoryMessage, ToolAudit, ToolCall } from "@holons/ai-ui";
 import { holonId, holonName, rawQuests } from "$lib/stores";
 import { telegramUser } from "$lib/auth";
 import { resolveVoiceKey } from "$lib/config";
@@ -24,6 +38,11 @@ import {
   TTS_PCM_SAMPLE_RATE,
   type OpenAIVoiceOptions,
 } from "$lib/voice/openai";
+import {
+  VOICE_PROXY_BASE,
+  pickVoiceTransport,
+  type VoiceTransport,
+} from "$lib/voice/transport";
 import {
   KIOSK_VOICE_TOOLS,
   dispatchKioskTool,
@@ -39,26 +58,54 @@ const env = import.meta.env as Record<string, string | undefined>;
 const LLM_MODEL = env.VITE_VOICE_LLM_MODEL || "gpt-4o-mini";
 
 /**
- * The key is resolved per turn (Settings-entered on this device, falling back
- * to a dev env var — see resolveVoiceKey), so a caretaker adding or clearing
- * it in Settings takes effect without a rebuild.
+ * The transport is resolved per turn (a Settings-entered key on this device,
+ * a dev env var, or the deploy's relay — see transport.ts), so a caretaker
+ * adding or clearing the key in Settings takes effect without a rebuild.
  */
-function openaiOpts(apiKey: string): OpenAIVoiceOptions {
+function openaiOpts(transport: VoiceTransport): OpenAIVoiceOptions {
   return {
-    apiKey,
+    baseUrl: transport.baseUrl,
+    apiKey: transport.apiKey,
     sttModel: env.VITE_VOICE_STT_MODEL || "whisper-1",
     ttsModel: env.VITE_VOICE_TTS_MODEL || "tts-1",
     ttsVoice: env.VITE_VOICE_TTS_VOICE || "alloy",
   };
 }
 
-/** Whether the direct backend can run at all (a key is available right now). */
+/** Whether a client-held key is available right now (device or dev env). */
 export function hasDirectVoiceKey(): boolean {
   return !!resolveVoiceKey();
 }
 
+// Whether the deploy's /api/ai/voice relay holds a key, probed once per page
+// load — the same pattern as $lib/breakdown's probe of its own route. A
+// static/self-hosted build without serverless functions 404s → false. The
+// resolved value is mirrored into `serverConfigured` so per-turn transport
+// resolution stays synchronous.
+let serverProbe: Promise<boolean> | null = null;
+let serverConfigured = false;
+export function serverVoiceConfigured(): Promise<boolean> {
+  if (!serverProbe) {
+    serverProbe = fetch(VOICE_PROXY_BASE)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => !!(d as { configured?: boolean } | null)?.configured)
+      .catch(() => false)
+      .then((ok) => (serverConfigured = ok));
+  }
+  return serverProbe;
+}
+
+/** This turn's transport, or null when neither a key nor the relay exists. */
+function currentTransport(): VoiceTransport | null {
+  return pickVoiceTransport(resolveVoiceKey(), serverConfigured);
+}
+
 /** Exchanges kept as short-term memory (each = one user + one assistant msg). */
 const HISTORY_EXCHANGES = 6;
+
+/** Spoken when a turn arrives but no key/relay can carry it — never silent. */
+const NOT_CONFIGURED =
+  "Voice is not configured — paste an API key in Settings, or set OPENAI_API_KEY on the deploy.";
 
 const SYSTEM_PROMPT =
   "You are the Holons voice agent on a shared community kiosk. You operate " +
@@ -147,9 +194,16 @@ export class DirectVoiceBackend implements VoiceBackend {
 
   start(onEvent: (ev: BackendEvent) => void): void {
     this.onEvent = onEvent;
-    // No probing needed — availability is having a key on this device.
-    if (resolveVoiceKey())
+    // A client-held key means availability with no probing.
+    if (resolveVoiceKey()) {
       onEvent({ type: "ready", sampleRate: TTS_PCM_SAMPLE_RATE });
+      return;
+    }
+    // Otherwise availability is the deploy's relay. `this.onEvent` is read at
+    // fire time, so a stop() before the probe lands makes this a no-op.
+    void serverVoiceConfigured().then((ok) => {
+      if (ok) this.onEvent({ type: "ready", sampleRate: TTS_PCM_SAMPLE_RATE });
+    });
   }
 
   stop(): void {
@@ -170,11 +224,14 @@ export class DirectVoiceBackend implements VoiceBackend {
   }
 
   utterance(wav: Uint8Array, context: VoiceContext): void {
-    const key = resolveVoiceKey();
-    if (!key) return;
+    const transport = currentTransport();
+    if (!transport) {
+      this.onEvent({ type: "error", message: NOT_CONFIGURED });
+      return;
+    }
     const signal = this.beginTurn();
     void (async () => {
-      const text = await transcribe(wav, openaiOpts(key), signal);
+      const text = await transcribe(wav, openaiOpts(transport), signal);
       if (signal.aborted) return;
       if (!text) return; // no speech recognized — stay quiet like the server
       await this.respond(text, context, signal);
@@ -209,8 +266,9 @@ export class DirectVoiceBackend implements VoiceBackend {
     // 401 carries no CORS headers, so the browser hides the status). Say
     // something a caretaker can act on instead of "Failed to fetch".
     if (/failed to fetch|load failed/i.test(message)) {
-      message =
-        "Could not reach OpenAI — check the API key in Settings and the network connection.";
+      message = resolveVoiceKey()
+        ? "Could not reach OpenAI — check the API key in Settings and the network connection."
+        : "Could not reach the voice service — check the network connection.";
     }
     this.onEvent({ type: "error", message });
   }
@@ -220,8 +278,12 @@ export class DirectVoiceBackend implements VoiceBackend {
     context: VoiceContext,
     signal: AbortSignal,
   ): Promise<void> {
-    const key = resolveVoiceKey();
-    if (!key) return;
+    const transport = currentTransport();
+    if (!transport) {
+      // Never claim (or silently drop) a turn the pipeline can't perform.
+      this.onEvent({ type: "error", message: NOT_CONFIGURED });
+      return;
+    }
     this.onEvent({ type: "transcript", text });
 
     const hid = get(holonId);
@@ -231,41 +293,73 @@ export class DirectVoiceBackend implements VoiceBackend {
     }
 
     const provider = new OpenAICompatProvider({
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: key,
+      baseUrl: transport.baseUrl,
+      apiKey: transport.apiKey,
       model: LLM_MODEL,
     });
 
+    // Every dispatched tool call is recorded as a fact (name + outcome) so
+    // the reply's claims can be checked against what actually ran — the same
+    // turn harness the voice server enforces (@holons/ai-ui).
+    const audit: ToolAudit[] = [];
+    const dispatch = async (call: ToolCall) => {
+      if (signal.aborted) {
+        return {
+          id: call.id,
+          content: "Cancelled by the user.",
+          isError: true,
+        };
+      }
+      this.onEvent({ type: "tool", name: call.name });
+      const result = await dispatchKioskTool(call, (view) =>
+        this.onEvent({ type: "navigate", view }),
+      );
+      audit.push({ name: call.name, ok: !result.isError });
+      return result;
+    };
+
     // Speak only the LAST text the model produced: chunks emitted between
     // tool calls are running commentary, often stale once the loop settles.
-    const texts: string[] = [];
-    const result = await runAgentLoop({
-      provider,
-      tools: KIOSK_VOICE_TOOLS,
-      dispatch: async (call) => {
-        if (signal.aborted) {
-          return {
-            id: call.id,
-            content: "Cancelled by the user.",
-            isError: true,
-          };
-        }
-        this.onEvent({ type: "tool", name: call.name });
-        return dispatchKioskTool(call, (view) =>
-          this.onEvent({ type: "navigate", view }),
-        );
-      },
-      system: SYSTEM_PROMPT,
-      prompt:
-        `${clockLine()}\n${contextLines(context)}${snapshotLine()}` +
-        `\n\nUser request: ${text}`,
-      history: this.history,
-      onText: (t) => {
-        if (t.trim()) texts.push(t.trim());
-      },
-    });
-    const speech =
-      (texts.length ? texts[texts.length - 1] : "") || result.text.trim();
+    const run = async (prompt: string, history: HistoryMessage[]) => {
+      const texts: string[] = [];
+      const result = await runAgentLoop({
+        provider,
+        tools: KIOSK_VOICE_TOOLS,
+        dispatch,
+        system: SYSTEM_PROMPT,
+        prompt,
+        history,
+        onText: (t) => {
+          if (t.trim()) texts.push(t.trim());
+        },
+      });
+      return (
+        (texts.length ? texts[texts.length - 1] : "") || result.text.trim()
+      );
+    };
+
+    const preamble = `${clockLine()}\n${contextLines(context)}${snapshotLine()}`;
+    let speech = await run(
+      `${preamble}\n\nUser request: ${text}`,
+      this.history,
+    );
+
+    // Claim check: a reply asserting a completed action with no successful
+    // write behind it is a hallucination. Write check: an action-shaped
+    // request must END in at least one attempted write (a clarifying
+    // question is the one legitimate way out). Either way, one corrective
+    // pass that actually does the work or owns up.
+    const claimed = claimsCompletedAction(speech) && !hasSuccessfulWrite(audit);
+    const dodged =
+      looksLikeActionRequest(text) &&
+      !hasWriteAttempt(audit) &&
+      !speech.trimEnd().endsWith("?");
+    if ((claimed || dodged) && !signal.aborted) {
+      speech = await run(
+        `${preamble}\n\n${correctionPrompt(audit, claimed ? "claimed" : "no_write")}`,
+        correctionHistory(this.history, text, speech),
+      );
+    }
 
     // Record the exchange even if the user barged in — the tools already ran,
     // so the next turn's "it"/"that one" must still resolve against it.
@@ -279,7 +373,11 @@ export class DirectVoiceBackend implements VoiceBackend {
     if (!speech || this.muted) return;
 
     this.onEvent({ type: "tts_start" });
-    for await (const pcm of synthesizeSpeech(speech, openaiOpts(key), signal)) {
+    for await (const pcm of synthesizeSpeech(
+      speech,
+      openaiOpts(transport),
+      signal,
+    )) {
       if (signal.aborted) return;
       this.onEvent({ type: "tts_pcm", pcm });
     }
