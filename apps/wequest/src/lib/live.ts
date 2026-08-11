@@ -57,6 +57,8 @@ import {
   readSettingsHex,
   getFederationSnapshot,
   publishToFederation,
+  setFederationPartner,
+  removeFederationPartner,
 } from "@holons/core/federation";
 import {
   computeUserCurrencyBalance,
@@ -92,6 +94,11 @@ export const selectedNeed = writable<any | null>(null);
 
 const subs: Array<{ unsubscribe: () => void }> = [];
 let initedFor = "";
+/** The quests stream, kept addressable so federation changes can re-attach it. */
+let questsSub: {
+  unsubscribe: () => void;
+  setFederated?: (on: boolean) => void;
+} | null = null;
 
 // Keep the open quest screen fresh: when the live graph updates the record
 // being looked at (a response arrives, the other side confirms the handoff),
@@ -582,16 +589,15 @@ export async function ensureInit(): Promise<void> {
   teardownHeat();
   cellHeat.set({});
 
-  track(
-    (hs as any).subscribeFederated(
-      holon,
-      "quests",
-      (items: any[]) => rawQuests.set(items ?? []),
-      {
-        includeFederated: true,
-      },
-    ),
+  questsSub = (hs as any).subscribeFederated(
+    holon,
+    "quests",
+    (items: any[]) => rawQuests.set(items ?? []),
+    {
+      includeFederated: true,
+    },
   );
+  track(questsSub!);
   track(
     (hs as any).subscribeFederated(
       holon,
@@ -632,17 +638,7 @@ export async function ensureInit(): Promise<void> {
   settingsHex.set(hex);
 
   // Federation partners (the barter board + publish targets).
-  try {
-    const snap = await getFederationSnapshot(hs, holon);
-    partners.set(
-      snap.federated.map((id) => ({
-        id,
-        name: snap.partnerNames?.[id] || id.slice(0, 8) + "…",
-      })),
-    );
-  } catch {
-    partners.set([]);
-  }
+  await refreshPartners(hs, holon);
 
   ready.set(true);
 
@@ -977,6 +973,97 @@ async function settleAndReport(
   flash(
     `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
+}
+
+/** Re-read the federation snapshot into the partners store. */
+async function refreshPartners(hs: HoloSphere, holon: string): Promise<void> {
+  try {
+    const snap = await getFederationSnapshot(hs, holon);
+    partners.set(
+      snap.federated.map((id) => ({
+        id,
+        name: snap.partnerNames?.[id] || id.slice(0, 8) + "…",
+      })),
+    );
+  } catch {
+    partners.set([]);
+  }
+}
+
+/**
+ * Re-attach the federated quests stream. `setFederated(true)` alone never
+ * detaches a partner that was just removed — bounce it off/on (the same
+ * lesson the kiosk learned) so both added and removed partners take effect
+ * without a reload.
+ */
+function bounceFederation(): void {
+  questsSub?.setFederated?.(false);
+  questsSub?.setFederated?.(true);
+}
+
+/**
+ * Link a partner holon from inside the app. The needs network flows over
+ * the `quests` lens, so the default is quests in both directions — their
+ * needs and offers appear here, ours appear there.
+ */
+export async function addPartner(partnerId: string): Promise<boolean> {
+  const holon = get(holonId);
+  const target = partnerId.trim();
+  if (!holon || !target) return false;
+  if (target === holon) {
+    flash("That's this holon — pick a partner.");
+    return false;
+  }
+  const hs = await getHolosphere();
+  // Best-effort display name from the partner's own settings.
+  let partnerName: string | undefined;
+  try {
+    const s: any = await (hs as any).get(target, "settings", target);
+    if (s?.name) partnerName = String(s.name);
+  } catch {
+    /* unnamed is fine */
+  }
+  try {
+    await setFederationPartner(hs, holon, target, {
+      inbound: ["quests"],
+      outbound: ["quests"],
+      partnerName,
+    });
+  } catch (err: any) {
+    flash(
+      err?.name === "AuthorizationError"
+        ? "This holon doesn't let you edit federation."
+        : "Could not link the partner.",
+    );
+    return false;
+  }
+  await refreshPartners(hs, holon);
+  bounceFederation();
+  flash(
+    `Federated with ${partnerName || target.slice(0, 8) + "…"} — needs flow both ways.`,
+  );
+  return true;
+}
+
+/** Unlink a federation partner. */
+export async function removePartner(partnerId: string): Promise<void> {
+  const holon = get(holonId);
+  const target = String(partnerId ?? "").trim();
+  if (!holon || !target) return;
+  const hs = await getHolosphere();
+  try {
+    await removeFederationPartner(hs, holon, target);
+  } catch (err: any) {
+    flash(
+      err?.name === "AuthorizationError"
+        ? "This holon doesn't let you edit federation."
+        : "Could not unlink the partner.",
+    );
+    return;
+  }
+  await refreshPartners(hs, holon);
+  bounceFederation();
+  flash("Unlinked — their needs no longer flow here.");
 }
 
 /**
