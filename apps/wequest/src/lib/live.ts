@@ -290,6 +290,7 @@ export interface WalletView {
   hoursGiven: number;
   hoursReceived: number;
   karma: number;
+  /** The user's share of the holon's total karma, 0–100. */
   standing: number;
   exchanges: number;
   ledger: Expense[];
@@ -338,13 +339,12 @@ export const wallet = derived(
 export const karma = { subscribe: karmaStore.subscribe };
 export const standing = { subscribe: standingStore.subscribe };
 
-/** Hours held by the holon itself — the coop treasury. */
-export const treasuryHours = derived([rawExpenses, holonId], ([$exp, $holon]) =>
-  computeUserCurrencyBalance(
-    $exp.filter((e) => e && !e._deleted && !e._federation) as Expense[],
-    $holon,
-    "hour",
-  ),
+/** Hours that have moved through this holon's ledger — the current, summed. */
+export const hoursCirculated = derived(rawExpenses, ($exp) =>
+  ($exp as Expense[])
+    .filter((e) => e && !(e as any)._deleted && !(e as any)._federation)
+    .filter((e) => e.currency === "hour")
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
 );
 
 export const profileUser = derived(rawUsers, ($u) => {
@@ -406,9 +406,8 @@ async function recomputeKarma(hs: HoloSphere, holon: string): Promise<void> {
     const meScored = scored.find((s) => s.userId === me);
     if (meScored) {
       karmaStore.set(Math.round(meScored.score));
-      standingStore.set(
-        Math.round((3.5 + Math.min(1.5, meScored.percentage / 66)) * 10) / 10,
-      );
+      // The real number, not a mood: percentage of the holon's total karma.
+      standingStore.set(Math.round(meScored.percentage));
     }
   } catch (err) {
     console.warn("[wequest] scoring unavailable:", err);
@@ -1095,9 +1094,7 @@ export async function voteOnProposal(proposal: any): Promise<void> {
     : [...(proposal.participants ?? []), { id: me.id, username: me.username }];
   try {
     await putAs(hs, holon, "quests", { ...proposal, participants });
-    flash(
-      already ? "Vote withdrawn." : "Vote cast — weighted by your standing.",
-    );
+    flash(already ? "Vote withdrawn." : "Vote cast.");
   } catch {
     flash("Voting is closed to you on this holon.");
   }

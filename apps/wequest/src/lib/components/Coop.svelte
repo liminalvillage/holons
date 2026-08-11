@@ -6,7 +6,7 @@
     members,
     demandBars,
     proposals,
-    treasuryHours,
+    hoursCirculated,
     partners,
     voteOnProposal,
     createProposal,
@@ -104,8 +104,8 @@
 
     <div style="display:flex;gap:10px;margin-top:22px">
       <div style="flex:1;background:var(--color-surface);border-radius:var(--radius-md);padding:14px">
-        <div style="font-family:var(--font-heading);font-size:23px">{$treasuryHours.toFixed(1)} h</div>
-        <div style="font-size:11px;color:var(--color-neutral-600);font-weight:600">in the treasury</div>
+        <div style="font-family:var(--font-heading);font-size:23px">{$hoursCirculated.toFixed(1)} h</div>
+        <div style="font-size:11px;color:var(--color-neutral-600);font-weight:600">in circulation</div>
       </div>
       <div style="flex:1;background:var(--color-surface);border-radius:var(--radius-md);padding:14px">
         <div style="font-family:var(--font-heading);font-size:23px">{$members.length}</div>

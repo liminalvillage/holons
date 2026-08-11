@@ -50,7 +50,7 @@
       <div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:18px">
         <div style="display:flex;align-items:baseline">
           <div style="font-family:var(--font-heading);font-size:19px">
-            {w.exchanges > 0 ? `Standing ${w.standing.toFixed(1)}` : "No standing yet"}
+            {w.exchanges > 0 ? `${w.standing}% of the holon's karma` : "No standing yet"}
           </div>
           <div style="flex:1"></div>
           <div style="font-size:12px;color:var(--color-neutral-600);font-weight:700">

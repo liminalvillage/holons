@@ -24,14 +24,7 @@ export const ONB = [
   },
 ] as const;
 
-export interface HexCellInfo {
-  key: string;
-  name: string;
-  dist: string;
-  summary: string;
-  tags: string[];
-}
-
+/** Compose examples — shown only until the rings produce real demand. */
 export const SUGGESTIONS = [
   "Sourdough ×2",
   "Passata ×6",
@@ -47,10 +40,11 @@ export const KINDS: Array<{ label: string; icon: IconName }> = [
 
 export const RINGS = ["This cell", "2 rings", "5 rings", "The world"];
 
-export const NAV: Array<{ label: string; k: string; to: string }> = [
+/** Bottom tabs. `icon` renders from icons.ts; Hex keeps the hexagon glyph. */
+export const NAV: Array<{ label: string; k: string; to: string; icon?: IconName }> = [
   { label: "Hex", k: "home", to: "home" },
-  { label: "List", k: "list", to: "list" },
-  { label: "Coops", k: "coop", to: "coop" },
-  { label: "Wallet", k: "wallet", to: "wallet" },
-  { label: "You", k: "profile", to: "profile" },
+  { label: "List", k: "list", to: "list", icon: "bag" },
+  { label: "Coops", k: "coop", to: "coop", icon: "users" },
+  { label: "Wallet", k: "wallet", to: "wallet", icon: "clock" },
+  { label: "You", k: "profile", to: "profile", icon: "heart" },
 ];

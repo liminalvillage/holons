@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
   import { NAV } from "$lib/data";
   import { go, screen, type Screen } from "$lib/stores";
 
@@ -19,14 +20,18 @@
         ? 'var(--color-accent-700)'
         : 'var(--color-neutral-500)'}"
     >
-      <svg viewBox="0 0 22 25" style="width:22px;height:25px">
-        <polygon
-          points="11,1 21,6.5 21,18.5 11,24 1,18.5 1,6.5"
-          fill={on ? "var(--color-accent-300)" : "transparent"}
-          stroke={on ? "var(--color-accent-700)" : "var(--color-neutral-500)"}
-          stroke-width="1.8"
-        />
-      </svg>
+      {#if n.icon}
+        <Icon name={n.icon} size={22} />
+      {:else}
+        <svg viewBox="0 0 22 25" style="width:22px;height:25px">
+          <polygon
+            points="11,1 21,6.5 21,18.5 11,24 1,18.5 1,6.5"
+            fill={on ? "var(--color-accent-300)" : "transparent"}
+            stroke={on ? "var(--color-accent-700)" : "var(--color-neutral-500)"}
+            stroke-width="1.8"
+          />
+        </svg>
+      {/if}
       <div style="font-size:10px;font-weight:700">{n.label}</div>
     </button>
   {/each}

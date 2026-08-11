@@ -2,10 +2,16 @@
   import Icon from "./Icon.svelte";
   import { KINDS, RINGS, SUGGESTIONS } from "$lib/data";
   import { composeOpen, draft, ring } from "$lib/stores";
-  import { addToList } from "$lib/live";
+  import { addToList, demandBars } from "$lib/live";
 
   let kindIdx = 0;
   let sending = false;
+
+  // Suggest what the rings are actually asking for; the static examples
+  // only fill in while there is no live demand at all.
+  $: suggestions = $demandBars.length
+    ? $demandBars.slice(0, 4).map(([label]) => label)
+    : SUGGESTIONS;
 
   async function submit() {
     if (!$draft.trim() || sending) return;
@@ -35,7 +41,7 @@
         style="width:100%;background:var(--color-surface);border:none;border-radius:var(--radius-md);padding:14px 16px;margin-top:16px;font:inherit;font-size:16px;font-weight:700;min-height:52px"
       />
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        {#each SUGGESTIONS as s (s)}
+        {#each suggestions as s (s)}
           <button
             class="tapp chip"
             on:click={() => draft.set(s)}

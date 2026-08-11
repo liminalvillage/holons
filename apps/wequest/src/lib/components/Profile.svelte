@@ -9,9 +9,6 @@
   const me = resolveUserId();
   const username = resolveUsername() || me || "guest";
 
-  $: level = Math.max(1, Math.floor($wallet.karma / 200) + 1);
-  $: nextAt = level * 200;
-  $: pct = Math.min(100, Math.round((($wallet.karma - (level - 1) * 200) / 200) * 100));
   $: values = ($profileUser?.values ?? []) as string[];
   $: needs = ($profileUser?.needs ?? []) as string[];
 </script>
@@ -34,10 +31,11 @@
       </div>
       <div style="margin-top:20px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-accent-2-200);font-weight:700">
-          <span>Level {level} · Keeper of the ring</span><span>{$wallet.karma.toLocaleString()} / {nextAt.toLocaleString()}</span>
+          <span>{$wallet.karma.toLocaleString()} karma</span>
+          <span>{$wallet.standing}% of the holon's</span>
         </div>
         <div style="height:10px;border-radius:999px;background:rgba(245,234,216,.18);margin-top:8px;overflow:hidden">
-          <div style="height:10px;width:{pct}%;background:var(--color-accent)"></div>
+          <div style="height:10px;width:{Math.min(100, $wallet.standing)}%;background:var(--color-accent)"></div>
         </div>
       </div>
     </div>

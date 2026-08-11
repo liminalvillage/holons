@@ -22,6 +22,9 @@
 
   const username = resolveUsername() || "neighbour";
   const monogram = initials(username);
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 5 ? "Still up" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   // Decorative fallback grid when no hex address is configured.
   const fallbackGrid = buildGrid(358, 330, HEX_R, 1).map((h) => ({
@@ -119,7 +122,7 @@
         {$holonName || $holonId}{$settingsHex ? ` · cell ${$settingsHex.slice(0, 7)}` : ""}
       </div>
       <div style="font-family:var(--font-heading);font-size:26px;line-height:1.1;margin-top:3px">
-        Good morning, {username}
+        {greeting}, {username}
       </div>
     </div>
     <button
