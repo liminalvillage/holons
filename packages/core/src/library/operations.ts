@@ -109,8 +109,10 @@ export function getTypeDisplayName(type?: string): string {
     case LIBRARY_TYPES.ACCOMMODATION:
       return 'accommodation';
     case LIBRARY_TYPES.OTHER:
-    default:
       return 'item';
+    default:
+      // A custom (user-created) category displays as itself.
+      return type && type.trim() ? type.trim() : 'item';
   }
 }
 

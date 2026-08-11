@@ -96,6 +96,12 @@ describe('getItemIcon / getTypeDisplayName / getItemDisplayTitle', () => {
     expect(getTypeDisplayName(LIBRARY_TYPES.ACCOMMODATION)).toBe('accommodation');
     expect(getTypeDisplayName(undefined)).toBe('item');
   });
+  it('shows custom categories as themselves instead of "item"', () => {
+    expect(getTypeDisplayName('kitchen')).toBe('kitchen');
+    expect(getTypeDisplayName('  kitchen  ')).toBe('kitchen');
+    expect(getTypeDisplayName('')).toBe('item');
+    expect(getTypeDisplayName('   ')).toBe('item');
+  });
   it('handles legacy string items', () => {
     expect(getItemDisplayTitle('plain')).toBe('plain');
     expect(getItemDisplayTitle({ id: 'drill' })).toBe('drill');
