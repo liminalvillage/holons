@@ -19,6 +19,20 @@ export {
   type CommandRegistry,
 } from './commands.js';
 
+// Turn-harness guards — deterministic checks (tool audit, claim check,
+// corrective pass) shared by every agent-loop embedder, so no UI re-implements
+// the "never claim an action without a successful write" contract.
+export {
+  claimsCompletedAction,
+  correctionHistory,
+  correctionPrompt,
+  hasSuccessfulWrite,
+  hasWriteAttempt,
+  isWriteTool,
+  looksLikeActionRequest,
+  type ToolAudit,
+} from './harness.js';
+
 // Provider-neutral agent primitives — for embedders that supply their own
 // tool source (e.g. an MCP client) and/or LLM backend (e.g. local mlx_lm).
 export {

@@ -10,60 +10,23 @@
 // 3. Claim check — if the spoken reply claims a completed action but no write
 //    tool succeeded this turn, the server runs one corrective pass instead of
 //    letting the hallucinated success reach the user.
+//
+// The provider-neutral guards (audit, claim/write checks, corrective prompt)
+// live in @holons/ai-ui and are re-exported here — the kiosk's in-browser
+// direct pipeline enforces the same contract with the same code. This module
+// keeps only the server-side extras: id resolution against live lenses,
+// snapshot digests, and the local-clock helper.
 
-import type { HistoryMessage } from '@holons/ai-ui';
-
-export interface ToolAudit {
-  name: string;
-  ok: boolean;
-}
-
-/**
- * Tool names that mutate state (vs. read/compute). `navigate` is a UI action,
- * not a data write, but it counts here so a fulfilled "go to the calendar"
- * passes the write checks — the server excludes it from lens-cache flushes.
- */
-const WRITE_NAME =
-  /(create|add|remove|delete|toggle|save|complete|update|set|join|leave|borrow|return|publish|seed|rsvp|clear|apply|put|migrate|normalize|navigate)/;
-
-export function isWriteTool(name: string): boolean {
-  if (name.startsWith('lens_get')) return false;
-  return WRITE_NAME.test(name);
-}
-
-export function hasSuccessfulWrite(audit: ToolAudit[]): boolean {
-  return audit.some((a) => a.ok && isWriteTool(a.name));
-}
-
-/**
- * Whether a spoken reply asserts that an action was carried out ("I've added
- * …", "the task has been deleted"). Deliberately requires a claim-of-agency
- * construction, not just a past-tense verb, so answers that merely describe
- * state ("the task marked done is …") don't trigger a correction pass.
- */
-const CLAIM =
-  /\b(i(?:'ve| have| already)?|has been|have been|is now|are now|successfully|it's been)\b[^.!?]{0,80}\b(deleted|removed|created|added|completed|marked|saved|updated|renamed|assigned|joined|borrowed|returned|cleared|cancell?ed|done|switched|opened)\b/i;
-
-export function claimsCompletedAction(reply: string): boolean {
-  return CLAIM.test(reply);
-}
-
-/**
- * Whether the user's utterance asks for something to be DONE (vs. asked).
- * Used to enforce that such turns end in at least one attempted write: a
- * "sure, done!" with zero write calls is exactly the failure mode small
- * models fall into.
- */
-const ACTION_REQUEST =
-  /\b(add|create|make|new|delete|remove|complete|finish|mark|schedule|move|reschedule|rename|change|update|set|assign|join|leave|borrow|return|cancel|clear|put|switch|go to|navigate)\b/i;
-
-export function looksLikeActionRequest(text: string): boolean {
-  return ACTION_REQUEST.test(text);
-}
-
-export function hasWriteAttempt(audit: ToolAudit[]): boolean {
-  return audit.some((a) => isWriteTool(a.name));
-}
+export {
+  claimsCompletedAction,
+  correctionHistory,
+  correctionPrompt,
+  hasSuccessfulWrite,
+  hasWriteAttempt,
+  isWriteTool,
+  looksLikeActionRequest,
+  type ToolAudit,
+} from '@holons/ai-ui';
 
 // ── Id resolution ──────────────────────────────────────────────────────────
 //
@@ -267,41 +230,3 @@ export function buildSnapshot(
   );
 }
 
-/**
- * The corrective user-role message injected when the reply claimed an action
- * no successful write tool backs. Sent with the failed exchange in history so
- * the model sees exactly what it said.
- */
-export function correctionPrompt(
-  audit: ToolAudit[],
-  reason: 'claimed' | 'no_write' = 'claimed',
-): string {
-  const called =
-    audit.length === 0
-      ? 'no tools at all'
-      : audit.map((a) => `${a.name} (${a.ok ? 'ok' : 'FAILED'})`).join(', ');
-  const opening =
-    reason === 'claimed'
-      ? 'Your last reply claimed an action was completed,'
-      : 'The user asked for an action to be performed,'
-  return (
-    `SYSTEM CHECK — not the user speaking. ${opening} but this turn you ` +
-    `called ${called}: no write succeeded, so NOTHING was actually changed. ` +
-    'Fulfill the original request now with the proper tool calls, or reply ' +
-    'honestly that it was not done and why. Never claim success without a ' +
-    'successful tool call.'
-  );
-}
-
-/** History entries representing the rejected exchange, for the retry pass. */
-export function correctionHistory(
-  history: HistoryMessage[],
-  userText: string,
-  badReply: string,
-): HistoryMessage[] {
-  return [
-    ...history,
-    { role: 'user', content: userText },
-    { role: 'assistant', content: badReply },
-  ];
-}
