@@ -7,15 +7,16 @@
   // without replaying the entrance animation — and collapsed together with
   // the header chrome when the screen goes idle (same recipe as TabBar).
   //
-  // Layout adapts to the width available, widest first: when the fully
-  // unpacked pills — every segment carrying its option name — fit on ONE
-  // row, they're used, Show pinned left and the tab's pills pinned right.
-  // When they don't, the small cycling toggles take the row in the same
-  // spread arrangement, so nothing jumps sideways as tabs switch. Only when
-  // even the toggles can't share a row does the band fall back to the full
-  // segmented pills, centred and wrapping. Two hidden copies of the row —
-  // one unpacked, one always-compact — are measured against the band to
-  // decide.
+  // Layout adapts to the width available, one pill at a time: every pill
+  // starts unpacked — full segments, each carrying its option name — and as
+  // the row runs out of room they collapse into the small cycling toggle
+  // RIGHT to LEFT (Sort first, the Show pill last), so the leftmost pills
+  // keep their names as long as they fit. The row stays in the same spread
+  // arrangement throughout — Show pinned left, the tab's pills pinned
+  // right — so nothing jumps sideways as tabs switch. Only when even the
+  // all-compact row can't fit does the band fall back to the full segmented
+  // pills, centred and wrapping. One hidden copy of the row per packing
+  // level is measured against the band to decide.
   import {
     activeTab,
     idle,
@@ -190,16 +191,29 @@
     $calendarMode,
   );
 
-  // Width tiers, each a one-row test against a hidden copy: unpacked pills
-  // (names on every segment) win when they fit; the compact toggles are the
-  // middle tier. Before the widths are known, assume compact fits and
-  // unpacked doesn't (compact is the common case — no flash of a row that's
-  // about to collapse).
+  // How many pills, counting from the RIGHT, collapse into the cycling
+  // toggle. Level 0 is everything unpacked, level `total` everything
+  // compact; the first level whose hidden copy fits the band wins, so pills
+  // give up their names right-to-left and the Show pill packs last. -1
+  // means even all-compact overflows → the wrapped fallback. Before the
+  // widths are known, assume all-compact (the common case — no flash of a
+  // row that's about to collapse).
   let bandWidth = 0;
-  let compactWidth = 0;
-  let unpackedWidth = 0;
-  $: unpacked = !!bandWidth && !!unpackedWidth && unpackedWidth <= bandWidth;
-  $: oneRow = !bandWidth || !compactWidth || compactWidth <= bandWidth;
+  let levelWidths: number[] = [];
+  $: total = ownPills.length + 1; // the tab's own pills + the Show pill
+  $: levels = Array.from({ length: total + 1 }, (_, k) => k);
+  $: packCount = pickLevel(bandWidth, levelWidths, total);
+  function pickLevel(band: number, widths: number[], all: number): number {
+    if (!band || !widths[all]) return all;
+    for (let k = 0; k <= all; k++)
+      if ((widths[k] || Infinity) <= band) return k;
+    return -1;
+  }
+  $: oneRow = packCount >= 0;
+  // Which pill packs at the current level: the combined row is
+  // [Show, ...ownPills], so own pill i packs once i >= ownPills.length - k,
+  // and Show (leftmost) only at k === total.
+  const ownPacked = (i: number, k: number, count: number) => i >= count - k;
 
   $: hidden = $idle || $pillsSuppressed;
 </script>
@@ -212,38 +226,22 @@
     aria-hidden={hidden}
     bind:clientWidth={bandWidth}
   >
-    {#if unpacked}
+    {#if oneRow}
       <div class="row spread">
-        <ScopePill expanded />
+        <ScopePill compact={packCount >= total} expanded={packCount < total} />
         <div class="own">
-          {#each ownPills as p (p.key)}
+          {#each ownPills as p, i (p.key)}
+            {@const packed = ownPacked(i, packCount, ownPills.length)}
             <PillSwitch
-              expanded
-              showText
+              compact={packed}
+              expanded={!packed}
               options={p.options}
               value={p.value}
               onChange={p.onChange}
               icon={p.icon}
               title={p.title}
               label={p.label}
-            />
-          {/each}
-        </div>
-      </div>
-    {:else if oneRow}
-      <div class="row spread">
-        <ScopePill compact />
-        <div class="own">
-          {#each ownPills as p (p.key)}
-            <PillSwitch
-              compact
-              options={p.options}
-              value={p.value}
-              onChange={p.onChange}
-              icon={p.icon}
-              title={p.title}
-              label={p.label}
-              showText={p.showText ?? false}
+              showText={packed ? (p.showText ?? false) : true}
             />
           {/each}
         </div>
@@ -265,48 +263,32 @@
       </div>
     {/if}
 
-    <!-- Invisible copies, measured to pick the layout above: one fully
-         unpacked (names on every segment), one always-compact. -->
-    <div
-      class="measure"
-      aria-hidden="true"
-      inert
-      bind:clientWidth={unpackedWidth}
-    >
-      <ScopePill expanded />
-      {#each ownPills as p (p.key)}
-        <PillSwitch
-          expanded
-          showText
-          options={p.options}
-          value={p.value}
-          onChange={p.onChange}
-          icon={p.icon}
-          title={p.title}
-          label={p.label}
-        />
-      {/each}
-    </div>
-    <div
-      class="measure"
-      aria-hidden="true"
-      inert
-      bind:clientWidth={compactWidth}
-    >
-      <ScopePill compact />
-      {#each ownPills as p (p.key)}
-        <PillSwitch
-          compact
-          options={p.options}
-          value={p.value}
-          onChange={p.onChange}
-          icon={p.icon}
-          title={p.title}
-          label={p.label}
-          showText={p.showText ?? false}
-        />
-      {/each}
-    </div>
+    <!-- Invisible copies, one per packing level (level k = the k rightmost
+         pills compact), measured to pick the level above. -->
+    {#each levels as k (k)}
+      <div
+        class="measure"
+        aria-hidden="true"
+        inert
+        bind:clientWidth={levelWidths[k]}
+      >
+        <ScopePill compact={k >= total} expanded={k < total} />
+        {#each ownPills as p, i (p.key)}
+          {@const packed = ownPacked(i, k, ownPills.length)}
+          <PillSwitch
+            compact={packed}
+            expanded={!packed}
+            options={p.options}
+            value={p.value}
+            onChange={p.onChange}
+            icon={p.icon}
+            title={p.title}
+            label={p.label}
+            showText={packed ? (p.showText ?? false) : true}
+          />
+        {/each}
+      </div>
+    {/each}
   </div>
 {/if}
 
