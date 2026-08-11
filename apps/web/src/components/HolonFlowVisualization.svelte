@@ -138,7 +138,6 @@
       internalFlow: 60,
       externalFlow: 40,
       federationCount: 3,
-      notificationCount: 5,
       activeMembers: 15,
       totalBalance: 1000
     };

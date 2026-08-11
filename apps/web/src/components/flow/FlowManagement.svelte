@@ -4,7 +4,6 @@
   import { walletAddress } from '../../dashboard/store';
   import { HolonsManager } from '../../lib/holons/HolonsManager';
   import type { HolonBundle, FlowConfig } from '../../lib/holons/HolonsContract';
-  import type { FederationLink } from '../../lib/holons/FlowSettings';
   import type { HoloSphere } from 'holosphere';
   import { awaitName } from '$lib/stores/nameResolver';
   import {
@@ -258,7 +257,7 @@
     try {
       let federationData: any[] = [];
 
-      // Try getFederation method first
+      // The native federation record is the single store.
       try {
         const fedInfo = await holosphere.getFederation(holonId);
         if (fedInfo?.federated && Array.isArray(fedInfo.federated)) {
@@ -266,14 +265,6 @@
         }
       } catch (fedErr) {
         console.log('[FlowMgmt] getFederation not available');
-      }
-
-      // Fallback to settings
-      if (federationData.length === 0) {
-        const settings = await holosphere.getAll(holonId, 'settings');
-        if (settings && settings[0]?.federation) {
-          federationData = settings[0].federation;
-        }
       }
 
       if (federationData.length > 0) {

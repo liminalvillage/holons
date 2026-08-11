@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { ID } from '../store';
 	import { federationNotifications } from '$lib/stores/federationRequests';
+	import { getFederationSnapshot } from '@holons/core/federation';
 	import type { HoloSphere } from 'holosphere';
 
 	const dispatch = createEventDispatcher();
@@ -46,12 +47,11 @@
 
 		isLoading = true;
 		try {
-			// Try to get federation info from holosphere
-			const settings = await holosphere.get(currentHolonId, 'settings', currentHolonId);
-			if (settings) {
-				federationInfo = settings;
-				federatedCount = settings.federated?.length || 0;
-			}
+			// Canonical partner list from the native federation record (the
+			// settings-lens mirror can lag links made from other surfaces).
+			const snapshot = await getFederationSnapshot(holosphere, currentHolonId);
+			federationInfo = snapshot;
+			federatedCount = snapshot.federated.length;
 		} catch (error) {
 			console.error('Failed to load federation data:', error);
 			federatedCount = 0;

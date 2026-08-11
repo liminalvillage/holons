@@ -16,7 +16,7 @@ export {
 } from './flow-settings.js';
 
 export type {
-  FederationLink,
+  FederationPartnerView,
   FlowEdge,
   FlowMetrics,
   FlowNode,
@@ -26,12 +26,10 @@ export type {
   LensType,
 } from './flow-settings.js';
 
-export {
-  addFederationLink,
-  applyAddFederationLink,
-  applyRemoveFederationLink,
-  removeFederationLink,
-} from './federation-links.js';
+// Federation links moved OFF the settings lens: the native federation record
+// is the single store — see `@holons/core/federation` (`setFederationPartner`,
+// `removeFederationPartner`, `getFederationSnapshot`,
+// `migrateLegacyFederationLinks`).
 
 // Re-export the equation barrel so callers can `import { ... } from
 // '@holons/core/settings'` once Unit 1 (core/scoring) populates it.

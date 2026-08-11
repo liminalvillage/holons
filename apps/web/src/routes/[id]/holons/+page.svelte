@@ -6,6 +6,7 @@
   import { getContext } from 'svelte';
   import { ID } from '../../../dashboard/store';
   import HolonFlowVisualization from '../../../components/HolonFlowVisualization.svelte';
+  import { getFederationSnapshot, migrateLegacyFederationLinks } from '@holons/core/federation';
   import type { HoloSphere } from 'holosphere';
 
   const holosphere = getContext('holosphere') as HoloSphere;
@@ -56,10 +57,11 @@
   let internalPercent = 50;
   let externalPercent = 50;
   
-  // Federation
+  // Federation — partners come from the native federation record (single
+  // store), read via getFederationSnapshot.
   let federationTargetId = '';
   let federationTargetName = '';
-  let federationRelationship = 'federated';
+  let federationPartners: { id: string; name: string; inbound: string[]; outbound: string[] }[] = [];
   
   // Members
   let newMemberIds = '';
@@ -156,7 +158,7 @@
   
   async function loadHolonData() {
     if (!holonsManager) return;
-    
+
     try {
       const status = await holonsManager.getHolonStatus(holonId);
       holonBundle = status.bundle;
@@ -165,13 +167,33 @@
       holonBalances = status.balances;
       flowConfig = status.flowConfig;
       flowVisualization = status.visualization;
-      
+
       if (flowConfig?.settings) {
         internalPercent = flowConfig.settings.internalPercent || 50;
         externalPercent = flowConfig.settings.externalPercent || 50;
       }
     } catch (err) {
       console.error('Error loading holon data:', err);
+    }
+
+    await loadFederationPartners();
+  }
+
+  async function loadFederationPartners() {
+    if (!holosphere) return;
+    try {
+      // Fold any pre-unification settings-lens links into the native record
+      // before reading it (one-shot; cheap no-op afterwards).
+      await migrateLegacyFederationLinks(holosphere, holonId).catch(() => {});
+      const snapshot = await getFederationSnapshot(holosphere, holonId);
+      federationPartners = snapshot.federated.map((id) => ({
+        id,
+        name: snapshot.partnerNames[id] ?? id,
+        inbound: snapshot.lensConfig[id]?.inbound ?? [],
+        outbound: snapshot.lensConfig[id]?.outbound ?? []
+      }));
+    } catch (err) {
+      console.error('Error loading federation partners:', err);
     }
   }
   
@@ -222,8 +244,7 @@
       await holonsManager.addFederationLink(
         holonId,
         federationTargetId,
-        federationTargetName,
-        federationRelationship as any
+        federationTargetName
       );
       
       success = 'Federation link added successfully.';
@@ -574,21 +595,20 @@
             <div class="federation-section">
               <div class="current-federations">
                 <h4>Current Federations</h4>
-                {#if holonSettings?.federation && holonSettings.federation.length > 0}
+                {#if federationPartners.length > 0}
                   <div class="federation-list">
-                    {#each holonSettings.federation as fed}
+                    {#each federationPartners as partner (partner.id)}
                       <div class="federation-item">
                         <div class="fed-info">
-                          <span class="fed-name">{fed.targetName}</span>
-                          <span class="fed-id">({fed.targetId})</span>
-                          <span class="fed-type">{fed.relationship}</span>
+                          <span class="fed-name">{partner.name}</span>
+                          <span class="fed-id">({partner.id})</span>
                         </div>
                         <div class="fed-lenses">
-                          {#if fed.lenses.inbound.length > 0}
-                            <span class="lenses">Inbound: {fed.lenses.inbound.join(', ')}</span>
+                          {#if partner.inbound.length > 0}
+                            <span class="lenses">Inbound: {partner.inbound.join(', ')}</span>
                           {/if}
-                          {#if fed.lenses.outbound.length > 0}
-                            <span class="lenses">Outbound: {fed.lenses.outbound.join(', ')}</span>
+                          {#if partner.outbound.length > 0}
+                            <span class="lenses">Outbound: {partner.outbound.join(', ')}</span>
                           {/if}
                         </div>
                       </div>
@@ -598,7 +618,7 @@
                   <p class="text-gray-600">No federation links configured.</p>
                 {/if}
               </div>
-              
+
               <div class="add-federation">
                 <h4>Add Federation Link</h4>
                 <div class="form-group">
@@ -608,13 +628,6 @@
                 <div class="form-group">
                   <label for="federation-target-name">Target Name:</label>
                   <input id="federation-target-name" type="text" bind:value={federationTargetName} placeholder="Target Holon Name">
-                </div>
-                <div class="form-group">
-                  <label for="federation-relationship">Relationship:</label>
-                  <select id="federation-relationship" bind:value={federationRelationship}>
-                    <option value="federated">Federated (Bidirectional)</option>
-                    <option value="notifies">Notifies (One-way)</option>
-                  </select>
                 </div>
                 <button class="btn-primary" on:click={addFederationLink} disabled={loading || !federationTargetId || !federationTargetName}>
                   {loading ? 'Adding...' : 'Add Federation'}
@@ -806,8 +819,7 @@
   }
 
   .form-group input,
-  .form-group textarea,
-  .form-group select {
+  .form-group textarea {
     width: 100%;
     padding: 8px 12px;
     border: 1px solid #d1d5db;
@@ -1066,14 +1078,6 @@
   .fed-id {
     font-family: monospace;
     color: var(--color-text-muted);
-  }
-
-  .fed-type {
-    background: #10b981;
-    color: var(--color-text-primary);
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.75rem;
   }
 
   .fed-lenses {

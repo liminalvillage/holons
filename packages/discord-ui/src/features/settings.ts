@@ -19,6 +19,7 @@ import {
   saveSettings,
   type HolonSettings,
 } from '@holons/core/settings';
+import { getFederationSnapshot } from '@holons/core/federation';
 import type { Feature, InvocationContext } from '../types.js';
 import { ACCENT } from '../ui/DiscordUI.js';
 
@@ -89,6 +90,15 @@ export const settingsFeature: Feature = {
     const settings = await current(ctx);
 
     if (interaction.options.getSubcommand() === 'show') {
+      // Partner count comes from the native federation record (single store).
+      const federatedCount = await getFederationSnapshot(
+        ctx.holosphere as unknown as Parameters<
+          typeof getFederationSnapshot
+        >[0],
+        ctx.holonId
+      )
+        .then(snap => snap.federated.length)
+        .catch(() => 0);
       await interaction.reply({
         embeds: [
           new EmbedBuilder()
@@ -114,8 +124,8 @@ export const settingsFeature: Feature = {
               },
               { name: 'Admin', value: settings.admin || '—', inline: true },
               {
-                name: 'Federation links',
-                value: String(settings.federation?.length ?? 0),
+                name: 'Federated partners',
+                value: String(federatedCount),
                 inline: true,
               }
             ),

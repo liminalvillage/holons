@@ -6,6 +6,23 @@
 // and stay in sync across surfaces.
 
 import type { HoloSphere } from 'holosphere';
+import {
+  getDefaultHolonSettings,
+  loadSettings,
+  parseHolonSettings,
+  saveSettings,
+} from './persistence.js';
+
+// Persistence primitives moved to ./persistence.ts; re-exported here so the
+// long-standing `@holons/core/settings` surface (and direct imports of this
+// module) keep working.
+export { getDefaultHolonSettings, parseHolonSettings, loadSettings, saveSettings };
+
+// NOTE: federation links no longer live on the settings lens. The native
+// federation record is the single store — manage it via
+// `@holons/core/federation` (`setFederationPartner` / `removeFederationPartner`,
+// read via `getFederationSnapshot`; `migrateLegacyFederationLinks` folds in
+// records written before the unification).
 
 export interface LensConfig {
   name: string;
@@ -13,16 +30,12 @@ export interface LensConfig {
   description?: string;
 }
 
-export interface FederationLink {
-  targetId: string;
-  targetName: string;
-  relationship: 'federated' | 'notifies';
-  lenses: {
-    inbound: string[];
-    outbound: string[];
-  };
-  /** Canonical creation/last-touch timestamp (ISO string). */
-  created: string;
+/** A federation partner as rendered by flow visualizations (snapshot-derived). */
+export interface FederationPartnerView {
+  id: string;
+  name: string;
+  inbound: string[];
+  outbound: string[];
 }
 
 export interface HolonSettings {
@@ -35,15 +48,6 @@ export interface HolonSettings {
   theme: string;
   hex: string;
   maxTasks: number;
-  federation: FederationLink[];
-  lensConfig: {
-    [targetId: string]: {
-      inbound: string[];
-      outbound: string[];
-      /** Canonical creation/last-touch timestamp (ISO string). */
-      created: string;
-    };
-  };
   flowManagement: {
     internalPercent: number;
     externalPercent: number;
@@ -92,7 +96,6 @@ export interface FlowMetrics {
   internalFlow: number;
   externalFlow: number;
   federationCount: number;
-  notificationCount: number;
   activeMembers: number;
   totalBalance: number;
 }
@@ -105,107 +108,6 @@ export const AVAILABLE_LENSES = [
 ] as const;
 
 export type LensType = typeof AVAILABLE_LENSES[number];
-
-/**
- * Default `HolonSettings` skeleton used when nothing is persisted yet.
- *
- * Kept as a standalone helper (rather than baked into the class) so that
- * non-class callers — including the Telegram bot — can use it without
- * instantiating `FlowSettings`.
- */
-export function getDefaultHolonSettings(holonId: string): HolonSettings {
-  return {
-    id: holonId,
-    name: `Holon ${holonId}`,
-    version: 1,
-    admin: '',
-    timezone: 'UTC',
-    language: 'en',
-    theme: 'dark',
-    // H3 cell address — empty until the holon picks one (Settings → Hex
-    // Address). A CSS color used to be the accidental default here; see
-    // readSettingsHex, which filters legacy persisted values.
-    hex: '',
-    maxTasks: 10,
-    federation: [],
-    lensConfig: {},
-    flowManagement: {
-      internalPercent: 50,
-      externalPercent: 50,
-      autoBalance: false,
-      thresholds: {
-        minInternal: 10,
-        maxInternal: 90
-      }
-    },
-    created: new Date().toISOString()
-  };
-}
-
-/**
- * Parses raw holosphere settings data into a populated `HolonSettings`
- * with sane defaults for any missing fields.
- */
-export function parseHolonSettings(data: any): HolonSettings {
-  return {
-    id: data.id || '',
-    name: data.name || '',
-    version: data.version || 1,
-    admin: data.admin || '',
-    timezone: data.timezone || 'UTC',
-    language: data.language || 'en',
-    theme: data.theme || 'dark',
-    hex: data.hex || '',
-    maxTasks: data.maxTasks || 10,
-    federation: data.federation || [],
-    lensConfig: data.lensConfig || {},
-    flowManagement: data.flowManagement || {
-      internalPercent: 50,
-      externalPercent: 50,
-      autoBalance: false,
-      thresholds: { minInternal: 10, maxInternal: 90 }
-    },
-    // Canonical `created` (ISO). Promote legacy `timestamp` (ms epoch) for
-    // records written before the unify.
-    created: typeof data.created === 'string'
-      ? data.created
-      : (typeof data.timestamp === 'number' ? new Date(data.timestamp).toISOString() : new Date().toISOString())
-  };
-}
-
-/**
- * Loads raw settings for a holon from holosphere.
- *
- * Returns the persisted object as-is (or `null` if nothing is stored).
- * Callers that want a normalised `HolonSettings` should pipe the result
- * through `parseHolonSettings`.
- */
-export async function loadSettings(
-  holosphere: HoloSphere,
-  holonId: string
-): Promise<any | null> {
-  try {
-    const data = await holosphere.get(String(holonId), 'settings', String(holonId));
-    return data ?? null;
-  } catch (error) {
-    console.error('Error loading holon settings:', error);
-    return null;
-  }
-}
-
-/**
- * Saves raw settings for a holon to holosphere.
- *
- * Accepts any settings shape (web `HolonSettings`, telegram bot settings,
- * partials, etc.) so the same primitive serves all surfaces.
- */
-export async function saveSettings(
-  holosphere: HoloSphere,
-  holonId: string,
-  settings: any
-): Promise<void> {
-  await holosphere.put(String(holonId), 'settings', settings);
-}
 
 /**
  * Manages holon flow settings including federation links, lens configurations,
@@ -273,98 +175,16 @@ export class FlowSettings {
     });
   }
 
-  async addFederationLink(
-    holosphere: HoloSphere,
-    holonId: string,
-    targetId: string,
-    targetName: string,
-    relationship: 'federated' | 'notifies'
-  ): Promise<void> {
-    // Mirrors `applyAddFederationLink` from ./federation-links — kept here
-    // (not delegated) to avoid a circular import while reusing this class's
-    // cache + change-notification path.
-    const settings = this.settings.get(holonId) || getDefaultHolonSettings(holonId);
-
-    const existingLink = settings.federation.find(f => f.targetId === targetId);
-
-    if (existingLink) {
-      existingLink.relationship = relationship;
-      existingLink.created = new Date().toISOString();
-    } else {
-      settings.federation.push({
-        targetId,
-        targetName,
-        relationship,
-        lenses: { inbound: [], outbound: [] },
-        created: new Date().toISOString()
-      });
-    }
-
-    await this.saveSettings(holosphere, holonId, settings);
-  }
-
-  async removeFederationLink(holosphere: HoloSphere, holonId: string, targetId: string): Promise<void> {
-    const settings = this.settings.get(holonId) || getDefaultHolonSettings(holonId);
-
-    settings.federation = settings.federation.filter(f => f.targetId !== targetId);
-    delete settings.lensConfig[targetId];
-
-    await this.saveSettings(holosphere, holonId, settings);
-  }
-
-  async toggleLens(
-    holosphere: HoloSphere,
-    holonId: string,
-    targetId: string,
-    lensType: LensType,
-    relationship: 'federate' | 'notify'
-  ): Promise<void> {
-    const settings = this.settings.get(holonId) || getDefaultHolonSettings(holonId);
-
-    if (!settings.lensConfig[targetId]) {
-      settings.lensConfig[targetId] = {
-        inbound: [],
-        outbound: [],
-        created: new Date().toISOString()
-      };
-    }
-
-    const arrayName = relationship === 'federate' ? 'inbound' : 'outbound';
-    const lensArray = settings.lensConfig[targetId][arrayName];
-    const lensIndex = lensArray.indexOf(lensType);
-
-    if (lensIndex > -1) {
-      lensArray.splice(lensIndex, 1);
-    } else {
-      lensArray.push(lensType);
-    }
-
-    settings.lensConfig[targetId].created = new Date().toISOString();
-
-    await this.saveSettings(holosphere, holonId, settings);
-  }
-
-  getLensesConfig(holonId: string, targetId: string, relationship: 'federate' | 'notify'): LensConfig[] {
-    const settings = this.settings.get(holonId);
-    if (!settings || !settings.lensConfig[targetId]) {
-      return AVAILABLE_LENSES.map(name => ({ name, enabled: false }));
-    }
-
-    const arrayName = relationship === 'federate' ? 'inbound' : 'outbound';
-    const activeLenses = settings.lensConfig[targetId][arrayName];
-
-    return AVAILABLE_LENSES.map(name => ({
-      name,
-      enabled: activeLenses.includes(name),
-      description: getLensDescription(name)
-    }));
-  }
+  // Federation links are NOT managed here — the native federation record is
+  // the single store; use `setFederationPartner` / `removeFederationPartner`
+  // from `@holons/core/federation`.
 
   async generateFlowVisualization(
     holonId: string,
     holonBundle: any,
     members: any[],
-    tokenBalances: any[]
+    tokenBalances: any[],
+    partners: FederationPartnerView[] = []
   ): Promise<FlowVisualizationData> {
     const settings = this.settings.get(holonId) || getDefaultHolonSettings(holonId);
 
@@ -426,24 +246,24 @@ export class FlowSettings {
       });
     }
 
-    settings.federation.forEach((fed, index) => {
+    partners.forEach((partner, index) => {
       nodes.push({
-        id: fed.targetId,
-        name: fed.targetName,
+        id: partner.id,
+        name: partner.name,
         type: 'holon',
         position: { x: 100 + index * 150, y: 350 },
         status: 'active'
       });
 
       const activeLenses = [
-        ...fed.lenses.inbound.map(l => `inbound:${l}`),
-        ...fed.lenses.outbound.map(l => `outbound:${l}`)
+        ...partner.inbound.map(l => `inbound:${l}`),
+        ...partner.outbound.map(l => `outbound:${l}`)
       ];
 
       edges.push({
-        id: `federation-${fed.targetId}`,
+        id: `federation-${partner.id}`,
         source: 'external',
-        target: fed.targetId,
+        target: partner.id,
         type: 'federation',
         weight: activeLenses.length,
         lenses: activeLenses,
@@ -456,8 +276,7 @@ export class FlowSettings {
       totalEdges: edges.length,
       internalFlow: settings.flowManagement.internalPercent,
       externalFlow: settings.flowManagement.externalPercent,
-      federationCount: settings.federation.length,
-      notificationCount: settings.federation.filter(f => f.relationship === 'notifies').length,
+      federationCount: partners.length,
       activeMembers: members.length,
       totalBalance: tokenBalances.reduce((sum, t) => sum + parseFloat(t.formatted), 0)
     };

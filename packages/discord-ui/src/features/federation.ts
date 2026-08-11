@@ -2,11 +2,11 @@
  * Federation feature. `/federation` manages this holon's links to other holons
  * and publishes items across the federation.
  *
- * Link management and publishing logic live in `@holons/core/federation` and
- * `@holons/core/settings`; this module only collects the Discord inputs and
- * renders the outcome. Federation calls expect the concrete HoloSphere
- * instance (they reach for `.getFederation`), which `ctx.holosphere` is at
- * runtime.
+ * Link management and publishing logic live in `@holons/core/federation` (the
+ * native federation record is the single store); this module only collects
+ * the Discord inputs and renders the outcome. Federation calls expect the
+ * concrete HoloSphere instance (they reach for `.getFederation`), which
+ * `ctx.holosphere` is at runtime.
  */
 import {
   EmbedBuilder,
@@ -16,15 +16,12 @@ import {
 } from 'discord.js';
 import {
   getFederationSnapshot,
+  migrateLegacyFederationLinks,
   publishToFederation,
   readSettingsHex,
+  removeFederationPartner,
+  setFederationPartner,
 } from '@holons/core/federation';
-import {
-  addFederationLink,
-  loadSettings,
-  parseHolonSettings,
-  removeFederationLink,
-} from '@holons/core/settings';
 import type { Feature, InvocationContext } from '../types.js';
 import { ACCENT } from '../ui/DiscordUI.js';
 
@@ -66,16 +63,6 @@ export const federationFeature: Feature = {
               .setName('name')
               .setDescription('Display name for the partner')
               .setRequired(true)
-          )
-          .addStringOption(opt =>
-            opt
-              .setName('relationship')
-              .setDescription('How items flow')
-              .setRequired(false)
-              .addChoices(
-                { name: 'federated (two-way)', value: 'federated' },
-                { name: 'notifies (one-way)', value: 'notifies' }
-              )
           )
       )
       .addSubcommand(sub =>
@@ -124,20 +111,16 @@ export const federationFeature: Feature = {
     if (sub === 'add') {
       const targetId = interaction.options.getString('holon-id', true).trim();
       const targetName = interaction.options.getString('name', true).trim();
-      const relationship =
-        (interaction.options.getString('relationship') as
-          | 'federated'
-          | 'notifies'
-          | null) ?? 'federated';
-      await addFederationLink(
-        hs(ctx),
-        ctx.holonId,
-        targetId,
-        targetName,
-        relationship
-      );
+      // Upsert-safe: preserve any lenses the partner already has configured.
+      const snapshot = await getFederationSnapshot(hs(ctx), ctx.holonId);
+      const existing = snapshot.lensConfig[targetId];
+      await setFederationPartner(hs(ctx), ctx.holonId, targetId, {
+        inbound: existing?.inbound ?? [],
+        outbound: existing?.outbound ?? [],
+        partnerName: targetName,
+      });
       await interaction.reply({
-        content: `🔗 Linked to **${targetName}** (\`${targetId}\`) as *${relationship}*.`,
+        content: `🔗 Linked to **${targetName}** (\`${targetId}\`).`,
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -145,7 +128,7 @@ export const federationFeature: Feature = {
 
     if (sub === 'remove') {
       const targetId = interaction.options.getString('holon-id', true).trim();
-      await removeFederationLink(hs(ctx), ctx.holonId, targetId);
+      await removeFederationPartner(hs(ctx), ctx.holonId, targetId);
       await interaction.reply({
         content: `🔗 Removed link to \`${targetId}\`.`,
         flags: MessageFlags.Ephemeral,
@@ -154,25 +137,25 @@ export const federationFeature: Feature = {
     }
 
     if (sub === 'list') {
+      // Fold any pre-unification settings-lens links into the native record
+      // before reading it (one-shot; cheap no-op afterwards).
+      await migrateLegacyFederationLinks(hs(ctx), ctx.holonId).catch(() => {});
       const snapshot = await getFederationSnapshot(hs(ctx), ctx.holonId);
-      const settings = parseHolonSettings(
-        (await loadSettings(hs(ctx), ctx.holonId)) ?? {}
-      );
       const hex = await readSettingsHex(hs(ctx), ctx.holonId);
-      const links = settings.federation ?? [];
-      const linkLines =
-        links.length > 0
-          ? links
-              .map(
-                l =>
-                  `• **${l.targetName}** (\`${l.targetId}\`) — ${l.relationship}`
-              )
-              .join('\n')
-          : '_No configured links._';
       const fedLine =
         snapshot.federated.length > 0
           ? snapshot.federated
-              .map(id => `• ${snapshot.partnerNames[id] ?? id}`)
+              .map(id => {
+                const name = snapshot.partnerNames[id] ?? id;
+                const dirs = snapshot.lensConfig[id];
+                const flows = [
+                  dirs?.inbound?.length ? `⬇ ${dirs.inbound.join(', ')}` : '',
+                  dirs?.outbound?.length ? `⬆ ${dirs.outbound.join(', ')}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return `• **${name}** (\`${id}\`)${flows ? ` — ${flows}` : ''}`;
+              })
               .join('\n')
           : '_None._';
       await interaction.reply({
@@ -181,7 +164,6 @@ export const federationFeature: Feature = {
             .setColor(ACCENT)
             .setTitle('🌐 Federation')
             .addFields(
-              { name: 'Links', value: linkLines },
               { name: 'Federated partners', value: fedLine },
               { name: 'Geo cell', value: hex ? `\`${hex}\`` : '_none_' }
             ),

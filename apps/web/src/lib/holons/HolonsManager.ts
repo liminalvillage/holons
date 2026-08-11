@@ -13,8 +13,12 @@ import {
   FlowSettings,
   type HolonSettings,
   type FlowVisualizationData,
-  type LensType,
 } from "./FlowSettings.js";
+import {
+  getFederationSnapshot,
+  removeFederationPartner,
+  setFederationPartner,
+} from "@holons/core/federation";
 
 export interface HolonsManagerEvents {
   "wallet:connected": (address: string) => void;
@@ -732,13 +736,14 @@ export class HolonsManager extends EventEmitter {
   }
 
   /**
-   * Adds a federation link between holons.
+   * Adds (or updates) a federation partner on the native federation record —
+   * the single federation store, honored by federated reads and publishing.
+   * Preserves any lens config the partner already has.
    *
    * @async
    * @param {string} holonId - The source holon ID
    * @param {string} targetId - The target holon ID
    * @param {string} targetName - The name of the target holon
-   * @param {'federated' | 'notifies'} relationship - The type of federation relationship
    * @returns {Promise<void>}
    * @fires HolonsManager#federation:added
    */
@@ -746,20 +751,19 @@ export class HolonsManager extends EventEmitter {
     holonId: string,
     targetId: string,
     targetName: string,
-    relationship: "federated" | "notifies",
   ): Promise<void> {
-    await this.flowSettings.addFederationLink(
-      this.holosphere,
-      holonId,
-      targetId,
-      targetName,
-      relationship,
-    );
+    const snapshot = await getFederationSnapshot(this.holosphere, holonId);
+    const existing = snapshot.lensConfig[targetId];
+    await setFederationPartner(this.holosphere, holonId, targetId, {
+      inbound: existing?.inbound ?? [],
+      outbound: existing?.outbound ?? [],
+      partnerName: targetName,
+    });
     this.emit("federation:added", holonId, targetId);
   }
 
   /**
-   * Removes a federation link between holons.
+   * Removes a federation partner from the native federation record.
    *
    * @async
    * @param {string} holonId - The source holon ID
@@ -768,44 +772,8 @@ export class HolonsManager extends EventEmitter {
    * @fires HolonsManager#federation:removed
    */
   async removeFederationLink(holonId: string, targetId: string): Promise<void> {
-    await this.flowSettings.removeFederationLink(
-      this.holosphere,
-      holonId,
-      targetId,
-    );
+    await removeFederationPartner(this.holosphere, holonId, targetId);
     this.emit("federation:removed", holonId, targetId);
-  }
-
-  /**
-   * Toggles a lens for a federation link.
-   *
-   * @async
-   * @param {string} holonId - The source holon ID
-   * @param {string} targetId - The target holon ID
-   * @param {LensType} lensType - The type of lens to toggle
-   * @param {'federate' | 'notify'} relationship - The relationship type
-   * @returns {Promise<void>}
-   * @fires HolonsManager#settings:updated
-   */
-  async toggleFederationLens(
-    holonId: string,
-    targetId: string,
-    lensType: LensType,
-    relationship: "federate" | "notify",
-  ): Promise<void> {
-    await this.flowSettings.toggleLens(
-      this.holosphere,
-      holonId,
-      targetId,
-      lensType,
-      relationship,
-    );
-
-    const settings = await this.flowSettings.loadSettings(
-      this.holosphere,
-      holonId,
-    );
-    this.emit("settings:updated", holonId, settings);
   }
 
   /**
@@ -894,10 +862,18 @@ export class HolonsManager extends EventEmitter {
   async generateFlowVisualization(
     holonId: string,
   ): Promise<FlowVisualizationData> {
-    const [bundle, members, settings] = await Promise.all([
+    const [bundle, members, , snapshot] = await Promise.all([
       this.getHolonBundle(holonId),
       this.getHolonMembers(holonId),
       this.flowSettings.loadSettings(this.holosphere, holonId),
+      getFederationSnapshot(this.holosphere, holonId).catch(() => ({
+        federated: [] as string[],
+        lensConfig: {} as Record<
+          string,
+          { inbound: string[]; outbound: string[] }
+        >,
+        partnerNames: {} as Record<string, string>,
+      })),
     ]);
 
     if (!bundle) {
@@ -911,11 +887,20 @@ export class HolonsManager extends EventEmitter {
 
     const tokenBalances = await this.getHolonBalances(holonId, commonTokens);
 
+    // Federation nodes/edges come from the native federation record.
+    const partners = snapshot.federated.map((id) => ({
+      id,
+      name: snapshot.partnerNames[id] ?? id,
+      inbound: snapshot.lensConfig[id]?.inbound ?? [],
+      outbound: snapshot.lensConfig[id]?.outbound ?? [],
+    }));
+
     return this.flowSettings.generateFlowVisualization(
       holonId,
       bundle,
       members,
       tokenBalances,
+      partners,
     );
   }
 
