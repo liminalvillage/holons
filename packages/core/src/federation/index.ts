@@ -35,3 +35,9 @@ export {
 	migrateLegacyFederationLinks,
 	type LegacyFederationMigration
 } from './legacy.js';
+
+export {
+	retractFromFederation,
+	type RetractOptions,
+	type RetractOutcome
+} from './retract.js';
