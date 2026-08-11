@@ -18,7 +18,7 @@
  */
 
 import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
-import type { HandoffParty } from './responses.js';
+import { acceptedResponse, needPartyOf, type HandoffParty } from './responses.js';
 import type { HandoffStoreLike } from './handoff.js';
 
 export const NEED_RATING_TYPE = 'need-rating';
@@ -29,7 +29,7 @@ export interface NeedRatingRecord {
   needId: string;
   /** Which side rated — `requester` rates the provider and vice versa. */
   party: HandoffParty;
-  rater: { id: string | number; name?: string };
+  rater: { id: string | number; name?: string; holonId?: string };
   ratee: { id: string | number; name?: string; holonId?: string };
   /** 1–5, integer. */
   stars: number;
@@ -77,18 +77,24 @@ export interface BuildNeedRatingOptions {
   key?: string;
 }
 
+export interface NeedRatingRejection {
+  ok: false;
+  reason: 'bad_stars' | 'not_fulfilled' | 'no_claimed_response' | 'not_a_party';
+}
+
 export type BuildNeedRatingResult =
   | { ok: true; record: NeedRatingRecord }
-  | { ok: false; reason: 'bad_stars' | 'not_fulfilled' | 'no_claimed_response' };
+  | NeedRatingRejection;
 
 /**
- * Validate and build one side's rating of the other for a fulfilled need.
- * The rater/ratee pair falls out of the need itself: the requester is the
- * initiator, the provider is the claimed response's responder.
+ * Validate and build the acting user's rating of the other side of a
+ * fulfilled need. Which side they are — and therefore who they rate — is
+ * derived from the need itself (`needPartyOf`), never taken on faith from
+ * the caller: a user who is neither requester nor provider cannot rate.
  */
 export function buildNeedRating(
   need: PublishedNeed,
-  party: HandoffParty,
+  by: { id: string | number },
   stars: number,
   opts: BuildNeedRatingOptions = {}
 ): BuildNeedRatingResult {
@@ -98,11 +104,17 @@ export function buildNeedRating(
   if (need.status !== 'fulfilled') {
     return { ok: false, reason: 'not_fulfilled' };
   }
-  const accepted = (need.responses ?? []).find((r) => r.id === need.claimedResponseId);
+  const accepted = acceptedResponse(need);
   if (!accepted?.responder || accepted.responder.id == null || need.initiator?.id == null) {
     return { ok: false, reason: 'no_claimed_response' };
   }
+  const party = needPartyOf(need, by?.id);
+  if (!party) {
+    return { ok: false, reason: 'not_a_party' };
+  }
 
+  // The requester's reputation lives on the owner holon (their need's home);
+  // the provider's follows their own holon via the mirror.
   const requester = {
     id: need.initiator.id,
     ...(need.initiator.username ? { name: String(need.initiator.username) } : {}),
@@ -110,13 +122,10 @@ export function buildNeedRating(
   const provider = {
     id: accepted.responder.id,
     ...(accepted.responder.name ? { name: String(accepted.responder.name) } : {}),
-  };
-  // The provider's reputation lives on THEIR holon; the requester's on the
-  // owner holon (their need's home) — no foreign holon to mirror to.
-  const providerAsRatee = {
-    ...provider,
     ...(accepted.responder.holonId ? { holonId: String(accepted.responder.holonId) } : {}),
   };
+  const [rater, ratee] =
+    party === 'requester' ? [requester, provider] : [provider, requester];
 
   const key = String(opts.key ?? need.id ?? '');
   return {
@@ -126,8 +135,8 @@ export function buildNeedRating(
       type: NEED_RATING_TYPE,
       needId: key,
       party,
-      rater: party === 'requester' ? requester : provider,
-      ratee: party === 'requester' ? providerAsRatee : requester,
+      rater,
+      ratee,
       stars,
       ...(opts.comment ? { comment: opts.comment } : {}),
       at: new Date(opts.now ?? Date.now()).toISOString(),
@@ -174,8 +183,21 @@ export function reputationByUser(records: unknown[]): Record<string, ReputationS
   return out;
 }
 
+/** One user's reputation, in a single pass — no per-user map materialized. */
 export function reputationOf(records: unknown[], userId: string | number): ReputationSummary {
-  return reputationByUser(records)[String(userId)] ?? { count: 0, average: 0 };
+  const wanted = String(userId);
+  const seen = new Set<string>();
+  let count = 0;
+  let total = 0;
+  for (const rec of records ?? []) {
+    if (!isNeedRating(rec) || String(rec.ratee.id) !== wanted) continue;
+    const id = String(rec.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    count += 1;
+    total += rec.stars;
+  }
+  return { count, average: count ? total / count : 0 };
 }
 
 export interface RateNeedOptions extends BuildNeedRatingOptions {
@@ -185,23 +207,23 @@ export interface RateNeedOptions extends BuildNeedRatingOptions {
 
 export type RateNeedResult =
   | { ok: true; record: NeedRatingRecord; errors: string[] }
-  | { ok: false; reason: 'bad_stars' | 'not_fulfilled' | 'no_claimed_response' };
+  | NeedRatingRejection;
 
 /**
- * One side rates the other after settlement: validate, persist the rating
- * record on the owner holon, and mirror it to the ratee's own holon so a
- * federated provider's reputation is visible in their own graph. The mirror
- * is best-effort — its failure is reported, not fatal.
+ * The acting user rates the other side after settlement: validate, persist
+ * the rating record on the owner holon, and mirror it to the ratee's own
+ * holon so a federated provider's reputation is visible in their own graph.
+ * The mirror is best-effort — its failure is reported, not fatal.
  */
 export async function rateNeedHandoff(
   db: HandoffStoreLike,
   ownerHolonId: string,
   need: PublishedNeed,
-  party: HandoffParty,
+  by: { id: string | number },
   stars: number,
   opts: RateNeedOptions = {}
 ): Promise<RateNeedResult> {
-  const built = buildNeedRating(need, party, stars, opts);
+  const built = buildNeedRating(need, by, stars, opts);
   if (!built.ok) return built;
 
   const errors: string[] = [];

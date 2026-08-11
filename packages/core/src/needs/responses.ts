@@ -161,6 +161,28 @@ export function claimNeed(
 
 export type HandoffParty = 'requester' | 'provider';
 
+/** The response the requester accepted, if any (the claim's winner). */
+export function acceptedResponse(need: PublishedNeed): NeedResponse | undefined {
+  return (need.responses ?? []).find((r) => r.id === need.claimedResponseId);
+}
+
+/**
+ * Which side of a need's exchange a user is: the initiator is the requester,
+ * the claimed response's responder is the provider, anyone else is no party
+ * at all. The single source of "who may act as whom" for handoff and rating.
+ */
+export function needPartyOf(
+  need: PublishedNeed,
+  userId: string | number | null | undefined
+): HandoffParty | null {
+  if (userId == null || userId === '') return null;
+  const id = String(userId);
+  if (need.initiator?.id != null && String(need.initiator.id) === id) return 'requester';
+  const responder = acceptedResponse(need)?.responder;
+  if (responder?.id != null && String(responder.id) === id) return 'provider';
+  return null;
+}
+
 export interface HandoffConfirmResult {
   ok: boolean;
   need: PublishedNeed;

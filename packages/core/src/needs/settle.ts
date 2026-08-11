@@ -41,7 +41,7 @@ import {
   CHECKLISTS_COLLECTION,
   SHOPPING_KEY,
 } from '../shopping/index.js';
-import { closeNeed } from './responses.js';
+import { acceptedResponse, closeNeed } from './responses.js';
 import { refreshPublishedNeed } from './publish.js';
 import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
 
@@ -118,7 +118,7 @@ export async function settleNeedHandoff(
   const closed = closeNeed(need, 'fulfilled', now);
   const final = closed.ok ? closed.need : need;
 
-  const accepted = (final.responses ?? []).find((r) => r.id === final.claimedResponseId);
+  const accepted = acceptedResponse(final);
   const providerId = accepted?.responder?.id != null ? String(accepted.responder.id) : null;
   const providerHolonId =
     accepted?.responder?.holonId != null ? String(accepted.responder.holonId) : null;
