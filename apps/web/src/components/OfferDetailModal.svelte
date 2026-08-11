@@ -12,12 +12,20 @@
 	export let item: any = null;
 	export let holonID: string | null = null;
 	export let userStore: Record<string, any> = {};
+	/** The logged-in user's id — drives claim/handoff affordances. */
+	export let selfId: string | null = null;
+	/** Folded handoff-confirm records for the quests lens (core needs). */
+	export let handoffConfirmations: Record<string, { requesterAt?: string; providerAt?: string }> = {};
+	/** Feedback from the parent's last claim/handoff attempt (e.g. bad code). */
+	export let handoffNotice: string = '';
 
 	const dispatch = createEventDispatcher<{
 		close: void;
 		addParticipant: { item: any; user: any };
 		removeParticipant: { item: any; user: any };
 		respond: { item: any; message: string; price: number | null };
+		claim: { item: any; responseId: string };
+		handoffConfirm: { item: any; party: 'requester' | 'provider'; code?: string };
 	}>();
 
 	// Needs-network state (see @holons/core/needs): needs carry a lifecycle
@@ -38,6 +46,22 @@
 		: null;
 	$: needOpen = isNeed && (needStatus === 'requested' || needStatus === 'offered' || !needStatus);
 	$: needResponses = isNeed && Array.isArray(item?.responses) ? item.responses : [];
+	// Claim + two-sided handoff (see @holons/core/needs). "Mine" is decided by
+	// the initiator, not by where the record was found — a need reached through
+	// federation still belongs to its initiator.
+	$: isMineNeed = isNeed && selfId != null && String(item?.initiator?.id ?? '') === String(selfId);
+	$: acceptedNeedResponse = isNeed
+		? needResponses.find((r: any) => r.id === item?.claimedResponseId)
+		: null;
+	$: iAmNeedProvider = Boolean(
+		acceptedNeedResponse && selfId != null &&
+		String(acceptedNeedResponse.responder?.id ?? '') === String(selfId)
+	);
+	$: needConfirms = handoffConfirmations[String(item?.id ?? '')] ?? {};
+	$: requesterConfirmed = Boolean(needConfirms.requesterAt || item?.handoff?.requesterAt);
+	$: providerConfirmed = Boolean(needConfirms.providerAt || item?.handoff?.providerAt);
+	let handoffCodeInput = '';
+	$: if (handoffCodeInput) handoffNotice = '';
 
 	function submitResponse() {
 		// bind:value on a number input yields a number (or undefined when empty).
@@ -260,6 +284,17 @@
 											{response.price}{response.currency ? ` ${response.currency}` : ''}
 										</span>
 									{/if}
+									{#if item.claimedResponseId === response.id}
+										<span class="detail__pill detail__pill--status-fulfilled">accepted</span>
+									{:else if isMineNeed && needStatus === 'offered'}
+										<button
+											type="button"
+											class="btn btn--primary detail__accept-btn"
+											on:click={() => dispatch('claim', { item, responseId: response.id })}
+										>
+											Accept
+										</button>
+									{/if}
 								</li>
 							{/each}
 						</ul>
@@ -267,6 +302,66 @@
 						<p class="detail__empty">No responses yet — nearby providers will see this need.</p>
 					{/if}
 				</div>
+
+				{#if needStatus === 'claimed' && (isMineNeed || iAmNeedProvider)}
+					<div class="detail__section">
+						<h3 class="detail__section-title">Handoff</h3>
+						{#if isMineNeed}
+							<p class="detail__handoff-hint">
+								Show this code at the handoff — the provider types it in on their side.
+								Hours move once both of you have confirmed.
+							</p>
+							<div class="detail__handoff-code">{item.handoff?.code ?? '····'}</div>
+							{#if requesterConfirmed}
+								<p class="detail__empty">
+									Your confirmation is recorded{providerConfirmed ? '.' : ' — waiting for the provider.'}
+								</p>
+							{:else}
+								<button
+									type="button"
+									class="btn btn--primary"
+									on:click={() => dispatch('handoffConfirm', { item, party: 'requester' })}
+								>
+									Confirm the handoff
+								</button>
+							{/if}
+						{:else}
+							{#if providerConfirmed}
+								<p class="detail__empty">Code accepted — the hours move when the requester confirms.</p>
+							{:else}
+								<p class="detail__handoff-hint">
+									Type in the short code on the requester's screen — that's your side of the confirmation.
+								</p>
+								<form
+									class="detail__respond-row"
+									on:submit|preventDefault={() =>
+										dispatch('handoffConfirm', { item, party: 'provider', code: handoffCodeInput })}
+								>
+									<input
+										bind:value={handoffCodeInput}
+										maxlength="4"
+										placeholder="Code"
+										autocapitalize="characters"
+										class="detail__respond-input detail__handoff-input"
+									/>
+									<button
+										type="submit"
+										class="btn btn--primary"
+										disabled={handoffCodeInput.trim().length < 3}
+									>
+										Confirm handoff
+									</button>
+								</form>
+							{/if}
+						{/if}
+						{#if handoffNotice}
+							<p class="detail__handoff-notice">{handoffNotice}</p>
+						{/if}
+						<p class="detail__empty">
+							Requester {requesterConfirmed ? '✓' : 'pending'} · Provider {providerConfirmed ? '✓' : 'pending'}
+						</p>
+					</div>
+				{/if}
 			{/if}
 
 			<div class="detail__section">
@@ -744,5 +839,42 @@
 		font-size: 0.8rem;
 		color: var(--color-text-muted);
 		white-space: pre-wrap;
+	}
+
+	.detail__accept-btn {
+		flex-shrink: 0;
+		font-size: 0.8rem;
+		padding: 0.35rem 0.75rem;
+	}
+
+	.detail__handoff-hint {
+		font-size: 0.85rem;
+		color: var(--color-text-secondary);
+		margin: 0;
+	}
+
+	.detail__handoff-code {
+		font-size: 1.6rem;
+		font-weight: 700;
+		letter-spacing: 0.35em;
+		text-align: center;
+		padding: 0.5rem 0;
+		color: #fcd34d;
+		background: rgba(245, 158, 11, 0.12);
+		border-radius: 0.5rem;
+	}
+
+	.detail__handoff-input {
+		max-width: 8rem;
+		text-align: center;
+		text-transform: uppercase;
+		letter-spacing: 0.25em;
+		font-weight: 700;
+	}
+
+	.detail__handoff-notice {
+		font-size: 0.8rem;
+		color: #fca5a5;
+		margin: 0;
 	}
 </style>

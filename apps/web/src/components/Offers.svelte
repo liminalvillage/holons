@@ -21,7 +21,15 @@
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { mergeSelfIntoUsers, getSelfInitiator } from "$lib/util/usersWithSelf";
 	import { classifyMarketItem, createMarketItem } from "@holons/core/tasks";
-	import { respondToNeed, normalizeNeed } from "@holons/core/needs";
+	import {
+		respondToNeed,
+		normalizeNeed,
+		claimNeed,
+		confirmNeedHandoff,
+		foldHandoffConfirmations,
+		settleNeedHandoff,
+		refreshPublishedNeed,
+	} from "@holons/core/needs";
 	import { sourceRef } from "@holons/core/holosphere";
 
 	// Add offer/request modal state
@@ -83,6 +91,11 @@
 		if (!matchesVisibility(item)) return false;
 		return matchesSearch(item, filters.searchQueryRequests);
 	});
+	// Two-sided handoff state, folded from the per-side confirm records that
+	// live on the same quests lens (see @holons/core/needs handoff).
+	$: handoffConfirmations = foldHandoffConfirmations(Object.values(store));
+	$: selfUserId = getSelfInitiator()?.id ?? null;
+	let handoffNotice = '';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -547,8 +560,98 @@
 		}
 	}
 
+	// The requester accepts one response: offered → claimed, minting the
+	// handoff code. Routed to the owner holon when the need was reached
+	// through federation (the initiator can open their own need anywhere).
+	async function claimNeedItem(item: any, responseId: string) {
+		if (!holosphere || !holonID || !item) return;
+		const { _hologram, _federation, key: _key, ...bare } = item as any;
+		const need = normalizeNeed(bare);
+		if (!need) return;
+		const result = claimNeed(need, responseId);
+		if (!result.ok) {
+			handoffNotice = result.reason === 'not_offered' ? 'Nothing to accept yet.' : 'That response is gone.';
+			return;
+		}
+		const ref = sourceRef(item, String(item.id ?? item.key));
+		try {
+			if (ref?.holon) {
+				await holosphere.put(ref.holon, 'quests', { ...result.need, id: ref.key ?? String(item.id) });
+			} else {
+				await refreshPublishedNeed(holosphere, holonID, result.need);
+			}
+			handoffNotice = '';
+			if (selectedItem && String(selectedItem.id) === String(item.id)) {
+				selectedItem = {
+					...selectedItem,
+					status: result.need.status,
+					claimedResponseId: result.need.claimedResponseId,
+					claimedAt: result.need.claimedAt,
+					handoff: result.need.handoff,
+				};
+			}
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to accept — no write permission for this holon');
+			} else {
+				console.error('[Offers.svelte] Error claiming need:', error);
+			}
+		}
+	}
+
+	// One side of the two-sided handoff. When the second side confirms, the
+	// settlement runs through core: REA events, the requester → provider hour
+	// expense, and the provider-holon mirror.
+	async function confirmNeedHandoffItem(item: any, party: 'requester' | 'provider', code?: string) {
+		if (!holosphere || !holonID || !item) return;
+		const { _hologram, _federation, key: _key, ...bare } = item as any;
+		const need = normalizeNeed(bare);
+		if (!need) return;
+		const ref = sourceRef(item, String(item.id ?? item.key));
+		const owner = ref?.holon ?? holonID;
+		const needKey = ref?.key ?? String(item.id);
+		try {
+			const result = await confirmNeedHandoff(holosphere, owner, need, party, {
+				code,
+				key: needKey,
+				confirmations: handoffConfirmations,
+			});
+			if (!result.ok) {
+				handoffNotice =
+					result.reason === 'bad_code'
+						? "That code doesn't match — check the requester's screen."
+						: 'The handoff is not ready yet.';
+				return;
+			}
+			handoffNotice = '';
+			if (result.both) {
+				const settled = await settleNeedHandoff({ holosphere }, owner, {
+					...result.need,
+					id: needKey,
+				});
+				if (settled.errors.length) {
+					console.warn('[Offers.svelte] settlement partial:', settled.errors);
+				}
+			}
+			if (selectedItem && String(selectedItem.id) === String(item.id)) {
+				selectedItem = {
+					...selectedItem,
+					status: result.both ? 'fulfilled' : result.need.status,
+					handoff: result.need.handoff,
+				};
+			}
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied("Unable to confirm — this holon doesn't accept the write");
+			} else {
+				console.error('[Offers.svelte] Error confirming handoff:', error);
+			}
+		}
+	}
+
 	function closeDetail() {
 		selectedItem = null;
+		handoffNotice = '';
 	}
 
 
@@ -1386,10 +1489,15 @@
 	item={selectedItem}
 	{holonID}
 	{userStore}
+	selfId={selfUserId}
+	{handoffConfirmations}
+	{handoffNotice}
 	on:close={closeDetail}
 	on:addParticipant={(e) => takeOfferOrNeed(e.detail.item, e.detail.user)}
 	on:removeParticipant={(e) => removeParticipation(e.detail.item, e.detail.user)}
 	on:respond={(e) => respondToNeedItem(e.detail.item, e.detail.message, e.detail.price)}
+	on:claim={(e) => claimNeedItem(e.detail.item, e.detail.responseId)}
+	on:handoffConfirm={(e) => confirmNeedHandoffItem(e.detail.item, e.detail.party, e.detail.code)}
 />
 
 <style>
