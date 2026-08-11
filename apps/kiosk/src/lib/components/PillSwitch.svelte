@@ -31,6 +31,9 @@
   export let showText = false;
   /** Force the small cycling toggle regardless of screen width. */
   export let compact = false;
+  /** Force the full segmented control regardless of screen width (the
+   *  parent measured that it fits — see GlobalPills' unpacked tier). */
+  export let expanded = false;
 
   // Stroke paths (24×24) for the identity icons.
   const ICONS: Record<string, string[]> = {
@@ -90,7 +93,7 @@
   }
 </script>
 
-<div class="pill" class:compact>
+<div class="pill" class:compact class:expanded>
   <!-- Full segmented control — big and medium screens. -->
   <div
     class="viewswitch"
@@ -299,5 +302,12 @@
   }
   .pill.compact .cycler {
     display: inline-flex;
+  }
+  /* Parent-forced expanded: the full segments at any width. */
+  .pill.expanded .viewswitch {
+    display: inline-flex;
+  }
+  .pill.expanded .cycler {
+    display: none;
   }
 </style>

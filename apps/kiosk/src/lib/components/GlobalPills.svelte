@@ -7,12 +7,15 @@
   // without replaying the entrance animation — and collapsed together with
   // the header chrome when the screen goes idle (same recipe as TabBar).
   //
-  // Layout adapts to the width available: whenever the small cycling toggles
-  // squeeze onto ONE row they're used — Show pinned left, the tab's pills
-  // pinned right, so nothing jumps sideways as tabs switch. Only when even
-  // the toggles can't share a row does the band fall back to the full
-  // segmented pills, centred and wrapping. A hidden always-compact copy of
-  // the row is measured against the band to decide.
+  // Layout adapts to the width available, widest first: when the fully
+  // unpacked pills — every segment carrying its option name — fit on ONE
+  // row, they're used, Show pinned left and the tab's pills pinned right.
+  // When they don't, the small cycling toggles take the row in the same
+  // spread arrangement, so nothing jumps sideways as tabs switch. Only when
+  // even the toggles can't share a row does the band fall back to the full
+  // segmented pills, centred and wrapping. Two hidden copies of the row —
+  // one unpacked, one always-compact — are measured against the band to
+  // decide.
   import {
     activeTab,
     idle,
@@ -187,10 +190,15 @@
     $calendarMode,
   );
 
-  // One-row test: does the always-compact hidden copy fit the band's width?
-  // Before either width is known, assume it does (compact is the common case).
+  // Width tiers, each a one-row test against a hidden copy: unpacked pills
+  // (names on every segment) win when they fit; the compact toggles are the
+  // middle tier. Before the widths are known, assume compact fits and
+  // unpacked doesn't (compact is the common case — no flash of a row that's
+  // about to collapse).
   let bandWidth = 0;
   let compactWidth = 0;
+  let unpackedWidth = 0;
+  $: unpacked = !!bandWidth && !!unpackedWidth && unpackedWidth <= bandWidth;
   $: oneRow = !bandWidth || !compactWidth || compactWidth <= bandWidth;
 
   $: hidden = $idle || $pillsSuppressed;
@@ -204,7 +212,25 @@
     aria-hidden={hidden}
     bind:clientWidth={bandWidth}
   >
-    {#if oneRow}
+    {#if unpacked}
+      <div class="row spread">
+        <ScopePill expanded />
+        <div class="own">
+          {#each ownPills as p (p.key)}
+            <PillSwitch
+              expanded
+              showText
+              options={p.options}
+              value={p.value}
+              onChange={p.onChange}
+              icon={p.icon}
+              title={p.title}
+              label={p.label}
+            />
+          {/each}
+        </div>
+      </div>
+    {:else if oneRow}
       <div class="row spread">
         <ScopePill compact />
         <div class="own">
@@ -239,7 +265,28 @@
       </div>
     {/if}
 
-    <!-- Invisible always-compact copy, measured to pick the layout above. -->
+    <!-- Invisible copies, measured to pick the layout above: one fully
+         unpacked (names on every segment), one always-compact. -->
+    <div
+      class="measure"
+      aria-hidden="true"
+      inert
+      bind:clientWidth={unpackedWidth}
+    >
+      <ScopePill expanded />
+      {#each ownPills as p (p.key)}
+        <PillSwitch
+          expanded
+          showText
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+        />
+      {/each}
+    </div>
     <div
       class="measure"
       aria-hidden="true"

@@ -12,6 +12,8 @@
 
   /** Force the small cycling toggle (see PillSwitch). */
   export let compact = false;
+  /** Force the full segmented control (see PillSwitch). */
+  export let expanded = false;
 
   // "Mine" needs someone to be personal about — hidden logged out, EXCEPT
   // when a persisted personal scope is active, so the pill still shows what's
@@ -36,6 +38,7 @@
   {onChange}
   showText
   {compact}
+  {expanded}
   icon="filter"
   title="Show"
   label="Whose items to show"
