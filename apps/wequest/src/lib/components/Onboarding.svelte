@@ -6,7 +6,8 @@
 
   function done() {
     markOnboarded();
-    go("home");
+    // `replace`: back from home must not resurrect the manifesto.
+    go("home", { replace: true });
   }
 
   const hexes = buildGrid(390, 500, 44, 3).map((h) => ({

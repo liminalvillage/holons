@@ -13,8 +13,10 @@
   $: theyConfirmed = Boolean(confirms.providerAt || need?.handoff?.providerAt);
 
   // The other side finalized while we were watching — the hours have moved.
+  // `replace`: the back button must not land here again (this reactive
+  // statement would bounce straight back to the wallet, looping the stack).
   $: if (need?.status === "fulfilled") {
-    go("wallet");
+    go("wallet", { replace: true });
   }
 
   let confirming = false;
@@ -23,7 +25,7 @@
     confirming = true;
     const res = await confirmHandoffAs("requester");
     confirming = false;
-    if (res.both) go("wallet");
+    if (res.both) go("wallet", { replace: true });
   }
 </script>
 

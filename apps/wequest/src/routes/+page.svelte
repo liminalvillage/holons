@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { screen, NAV_SCREENS } from "$lib/stores";
   import { ensureInit } from "$lib/live";
+  import { initHistory } from "$lib/history";
   import { initAuth } from "$lib/auth";
   import { resolveHolon, resolveUserId } from "$lib/config";
   import Setup from "$lib/components/Setup.svelte";
@@ -23,6 +24,8 @@
   let configured = false;
 
   onMount(async () => {
+    // Back button walks screens and closes overlays instead of leaving.
+    initHistory();
     // Server-verified Telegram session first (mirrors into the sync config);
     // ?user= stays the dev override, the Setup screen the manual fallback.
     await initAuth();

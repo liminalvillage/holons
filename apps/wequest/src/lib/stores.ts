@@ -57,7 +57,15 @@ export function flash(msg: string): void {
   toastTimer = setTimeout(() => toast.set(null), 2600);
 }
 
-export function go(s: Screen): void {
+/**
+ * One-shot navigation intent read by history.ts: `replace` swaps the current
+ * history entry instead of pushing, for redirects the back button must not
+ * revisit (Handoff → Wallet after settlement, Onboarding → Home).
+ */
+export const navIntent = { replace: false };
+
+export function go(s: Screen, opts: { replace?: boolean } = {}): void {
+  navIntent.replace = opts.replace === true;
   screen.set(s);
 }
 
