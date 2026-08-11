@@ -61,6 +61,7 @@ import {
   readSettingsHex,
   getFederationSnapshot,
   publishToFederation,
+  retractFromFederation,
   setFederationPartner,
   removeFederationPartner,
 } from "@holons/core/federation";
@@ -1214,8 +1215,9 @@ export async function publishOffer(
 
 /**
  * Withdraw one of my standing offers. Tombstones the record (and any
- * hologram forwards) via core's cascade delete; standalone partner copies
- * are overwritten as deleted best-effort.
+ * hologram forwards) via core's cascade delete, then tombstones the
+ * standalone copies on every federation partner — a real deletion their
+ * live boards emit, not a stale card.
  */
 export async function withdrawOffer(offer: any): Promise<void> {
   const holon = get(holonId);
@@ -1227,19 +1229,9 @@ export async function withdrawOffer(offer: any): Promise<void> {
     flash("Could not withdraw the offer.");
     return;
   }
-  try {
-    await publishToFederation(
-      {
-        holosphere: hs,
-        holonId: holon,
-        lens: "quests",
-        item: { ...offer, _deleted: true, status: "cancelled" },
-      },
-      { kind: "all" },
-      { includeSettingsHex: false },
-    );
-  } catch {
-    /* partner copies go stale — best-effort */
+  const out = await retractFromFederation(hs, holon, "quests", offer.id);
+  if (out.errors.length) {
+    console.warn("[wequest] retraction partial:", out.errors);
   }
   flash("Offer withdrawn.");
 }
