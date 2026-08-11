@@ -13,10 +13,11 @@
   $: theyConfirmed = Boolean(confirms.providerAt || need?.handoff?.providerAt);
 
   // The other side finalized while we were watching — the hours have moved.
+  // Land on the quest screen, where the rate-the-provider prompt is waiting.
   // `replace`: the back button must not land here again (this reactive
-  // statement would bounce straight back to the wallet, looping the stack).
+  // statement would bounce straight off again, looping the stack).
   $: if (need?.status === "fulfilled") {
-    go("wallet", { replace: true });
+    go("quest", { replace: true });
   }
 
   let confirming = false;
@@ -25,7 +26,7 @@
     confirming = true;
     const res = await confirmHandoffAs("requester");
     confirming = false;
-    if (res.both) go("wallet", { replace: true });
+    if (res.both) go("quest", { replace: true });
   }
 </script>
 

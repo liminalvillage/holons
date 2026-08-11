@@ -62,6 +62,24 @@ export {
 } from './handoff.js';
 
 export {
+  NEED_RATING_TYPE,
+  needRatingId,
+  buildNeedRating,
+  isNeedRating,
+  foldNeedRatings,
+  reputationByUser,
+  reputationOf,
+  rateNeedHandoff,
+  type BuildNeedRatingOptions,
+  type BuildNeedRatingResult,
+  type NeedRatingRecord,
+  type NeedRatings,
+  type RateNeedOptions,
+  type RateNeedResult,
+  type ReputationSummary,
+} from './reputation.js';
+
+export {
   settleNeedHandoff,
   handoffExpenseId,
   type SettleDeps,

@@ -7,6 +7,9 @@
     confirmHandoffAs,
     cancelSelectedNeed,
     handoffConfirms,
+    needRatings,
+    peerReputation,
+    rateSelected,
     partners,
     addPartner,
     publisherHolonOf,
@@ -27,6 +30,26 @@
   $: iAmProvider = Boolean(accepted && String(accepted.responder?.id ?? "") === me);
   $: confirms = $handoffConfirms[String(need?.id ?? "")] ?? {};
   $: iConfirmedProvider = Boolean(confirms.providerAt || need?.handoff?.providerAt);
+
+  // Reputation on settlement: each side rates the other once, after fulfilment.
+  $: myParty = isMine ? "requester" : iAmProvider ? "provider" : null;
+  $: ratingEntry = $needRatings[String(need?.id ?? "")] ?? {};
+  $: myRating = myParty ? ratingEntry[myParty as "requester" | "provider"] : null;
+  $: ratee =
+    myParty === "requester"
+      ? (accepted?.responder?.name ?? "the provider")
+      : (need?.initiator?.username ?? "the requester");
+
+  let stars = 0;
+  let ratingComment = "";
+  let rating = false;
+
+  async function submitRating() {
+    if (rating || !myParty || stars < 1) return;
+    rating = true;
+    await rateSelected(myParty as "requester" | "provider", stars, ratingComment);
+    rating = false;
+  }
 
   let codeInput = "";
   let confirming = false;
@@ -146,6 +169,7 @@
       <div style="font-family:var(--font-heading);font-size:19px;margin-top:24px">Who answered</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
         {#each responses as o (o.id)}
+          {@const rep = $peerReputation[String(o.responder?.id ?? "")]}
           <button
             class="tapp"
             on:click={() =>
@@ -164,7 +188,14 @@
               {initials(String(o.responder?.name ?? o.responder?.id ?? "?"))}
             </div>
             <div style="flex:1;min-width:0;text-align:left">
-              <div style="font-weight:700;font-size:14.5px">{o.responder?.name ?? o.responder?.id}</div>
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <div style="font-weight:700;font-size:14.5px">{o.responder?.name ?? o.responder?.id}</div>
+                {#if rep?.count}
+                  <div style="font-size:11.5px;font-weight:700;color:var(--color-accent-700)">
+                    ★ {rep.average.toFixed(1)} · {rep.count}
+                  </div>
+                {/if}
+              </div>
               <div style="font-size:12px;color:var(--color-neutral-700);margin-top:2px">
                 {o.message || "Can provide."}
               </div>
@@ -298,6 +329,63 @@
           {/if}
         </div>
       {/if}
+      {#if need.status === "fulfilled" && myParty}
+        <div style="margin-top:22px;background:var(--color-surface);border-radius:var(--radius-lg);padding:18px">
+          {#if myRating}
+            <div style="font-family:var(--font-heading);font-size:18px">You rated {ratee}</div>
+            <div style="font-size:24px;letter-spacing:.12em;color:var(--color-accent);margin-top:8px">
+              {"★".repeat(myRating.stars)}{"☆".repeat(5 - myRating.stars)}
+            </div>
+            {#if myRating.comment}
+              <div style="font-size:13px;color:var(--color-neutral-700);margin-top:6px">
+                “{myRating.comment}”
+              </div>
+            {/if}
+            <div style="font-size:11.5px;color:var(--color-neutral-600);margin-top:8px">
+              It's on their record — permanently, like yours.
+            </div>
+          {:else}
+            <div style="font-family:var(--font-heading);font-size:18px">How was {ratee}?</div>
+            <div style="font-size:12.5px;color:var(--color-neutral-700);margin-top:4px;text-wrap:pretty">
+              Your rating becomes part of their reputation — the record future requesters see.
+            </div>
+            <div style="display:flex;gap:6px;margin-top:12px">
+              {#each [1, 2, 3, 4, 5] as s (s)}
+                <button
+                  class="tapp"
+                  on:click={() => (stars = s)}
+                  aria-label="{s} star{s === 1 ? '' : 's'}"
+                  style="width:44px;height:44px;border-radius:var(--radius-md);background:{s <= stars
+                    ? 'var(--color-accent-200)'
+                    : 'var(--color-bg)'};border:1.5px solid {s <= stars
+                    ? 'var(--color-accent-500)'
+                    : 'var(--color-divider)'};font-size:20px;color:{s <= stars
+                    ? 'var(--color-accent-700)'
+                    : 'var(--color-neutral-500)'}"
+                >
+                  {s <= stars ? "★" : "☆"}
+                </button>
+              {/each}
+            </div>
+            <input
+              bind:value={ratingComment}
+              placeholder="A sentence for their record (optional)"
+              style="width:100%;height:44px;border-radius:var(--radius-md);border:1.5px solid var(--color-divider);background:var(--color-bg);padding:0 14px;font:inherit;font-size:13.5px;margin-top:12px"
+            />
+            <button
+              class="tapp"
+              on:click={submitRating}
+              disabled={rating || stars < 1}
+              style="width:100%;margin-top:12px;height:48px;border-radius:999px;background:{stars < 1
+                ? 'var(--color-neutral-400)'
+                : 'var(--color-accent)'};color:var(--color-neutral-100);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-size:15px"
+            >
+              {rating ? "Recording…" : "Put it on the record"}
+            </button>
+          {/if}
+        </div>
+      {/if}
+
       <div style="text-align:center;font-size:11.5px;color:var(--color-neutral-600);margin-top:10px">
         Hours move only when both of you confirm the handoff.
       </div>

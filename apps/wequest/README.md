@@ -11,18 +11,18 @@ terracotta and sage on warm paper).
 
 Every screen reads and writes real lenses through `@holons/core`:
 
-| Screen    | Backend                                                                                                                                              |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| List      | `(holon, 'checklists', 'shopping')` via `@holons/core/shopping`; items are stamped with their published `needId`                                     |
-| Compose   | `addItem` + `publishNeedNearby` — the "how far should it travel" ring maps to hex-hologram upcast levels (cell-only → 2 → 5 → partners + full climb) |
-| Home feed | own `type:'need'` quests with embedded responses; "I can provide" shows open federated needs via `subscribeFederated`                                |
-| Home map  | H3 neighbourhood around `settings.hex`, heat = open needs read live from each cell's `needs` lens                                                    |
-| Quest     | respond (`respondToNeed`, `sourceRef`-routed to the owner holon) and accept (`claimNeed`)                                                            |
-| Handoff   | `closeNeed('fulfilled')` + a real `hour` expense on the `expenses` lens — both wallets change                                                        |
-| Coop      | members from `users`, live demand bars, `type:'proposal'` quests with participant-toggle voting, treasury from hour balances                         |
-| Barter    | the holon's real federation links                                                                                                                    |
-| Wallet    | `computeUserCurrencyBalance` over `expenses` + karma from `@holons/core/scoring` over `rea_events`                                                   |
-| Profile   | `users`-lens profile (values/needs) + completed quests as the record                                                                                 |
+| Screen    | Backend                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List      | `(holon, 'checklists', 'shopping')` via `@holons/core/shopping`; items are stamped with their published `needId`                                                                                        |
+| Compose   | `addItem` + `publishNeedNearby` — the "how far should it travel" ring maps to hex-hologram upcast levels (cell-only → 2 → 5 → partners + full climb)                                                    |
+| Home feed | own `type:'need'` quests with embedded responses; "I can provide" shows open federated needs via `subscribeFederated`                                                                                   |
+| Home map  | H3 neighbourhood around `settings.hex`, heat = open needs read live from each cell's `needs` lens                                                                                                       |
+| Quest     | respond (`respondToNeed`, `sourceRef`-routed to the owner holon), accept (`claimNeed`); after settlement each side rates the other (`rateNeedHandoff` — reputation records mirror to the ratee's holon) |
+| Handoff   | `closeNeed('fulfilled')` + a real `hour` expense on the `expenses` lens — both wallets change                                                                                                           |
+| Coop      | members from `users`, live demand bars, `type:'proposal'` quests with participant-toggle voting, treasury from hour balances                                                                            |
+| Barter    | the holon's real federation links                                                                                                                                                                       |
+| Wallet    | `computeUserCurrencyBalance` over `expenses` + karma from `@holons/core/scoring` over `rea_events` + reputation folded from `need-rating` records                                                       |
+| Profile   | `users`-lens profile (values/needs) + completed quests as the record                                                                                                                                    |
 
 ## Run
 

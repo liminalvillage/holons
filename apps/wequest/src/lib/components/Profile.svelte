@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import { iconForText } from "$lib/icons";
-  import { profileUser, record, wallet, holonName, holonId, settingsHex } from "$lib/live";
+  import { profileUser, record, wallet, myReputation, holonName, holonId, settingsHex } from "$lib/live";
   import { hexPickerOpen } from "$lib/stores";
   import { resolveUserId, resolveUsername, initials } from "$lib/config";
   import { telegramUser, login, logout } from "$lib/auth";
@@ -30,8 +30,13 @@
         </div>
       </div>
       <div style="margin-top:20px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-accent-2-200);font-weight:700">
+        <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--color-accent-2-200);font-weight:700">
           <span>{$wallet.karma.toLocaleString()} karma</span>
+          {#if $myReputation.count}
+            <span style="color:var(--color-accent-300)">
+              ★ {$myReputation.average.toFixed(1)} · {$myReputation.count} rating{$myReputation.count === 1 ? "" : "s"}
+            </span>
+          {/if}
           <span>{$wallet.standing}% of the holon's</span>
         </div>
         <div style="height:10px;border-radius:999px;background:rgba(245,234,216,.18);margin-top:8px;overflow:hidden">

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import { iconForText } from "$lib/icons";
-  import { wallet } from "$lib/live";
+  import { wallet, myReputation } from "$lib/live";
   import { resolveUserId } from "$lib/config";
 
   const me = resolveUserId();
@@ -42,7 +42,9 @@
           karma
         </div>
         <div style="font-size:11.5px;color:var(--color-accent-200);margin-top:8px">
-          from the shared value equation
+          {$myReputation.count
+            ? `★ ${$myReputation.average.toFixed(1)} reputation · ${$myReputation.count} rating${$myReputation.count === 1 ? "" : "s"}`
+            : "from the shared value equation"}
         </div>
       </div>
     </div>

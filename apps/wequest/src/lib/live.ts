@@ -40,6 +40,10 @@ import {
   settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
+  foldNeedRatings,
+  rateNeedHandoff,
+  reputationByUser,
+  reputationOf,
   NEEDS_LENS,
   NEED_RECORD_LENS,
   OPEN_NEED_STATUSES,
@@ -309,6 +313,21 @@ export const offersAround = derived(rawQuests, ($q) => {
  */
 export const handoffConfirms = derived(rawQuests, ($q) =>
   foldHandoffConfirmations($q),
+);
+
+/** Per-need ratings each side has left (`<needId>~rating~<party>` records). */
+export const needRatings = derived(rawQuests, ($q) => foldNeedRatings($q));
+
+/**
+ * Reputation per user, folded from every rating record visible in this graph
+ * (own + federated + mirrored). Best-effort by design: a stranger's rating
+ * history only travels as far as federation and the ratee-holon mirror do.
+ */
+export const peerReputation = derived(rawQuests, ($q) => reputationByUser($q));
+
+/** The acting user's own reputation — mirrors land on their holon. */
+export const myReputation = derived(rawQuests, ($q) =>
+  reputationOf($q, resolveUserId()),
 );
 
 export const members = derived(rawUsers, ($u) =>
@@ -973,6 +992,58 @@ async function settleAndReport(
   flash(
     `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
   );
+}
+
+/**
+ * Rate the other side of a settled exchange — the whitepaper's reputation
+ * pillar, attached to the settlement the handoff already owns. The record
+ * lands on the owner holon (sourceRef-routed like every foreign write) and
+ * core mirrors it to the ratee's holon so their reputation follows them.
+ */
+export async function rateSelected(
+  party: HandoffParty,
+  stars: number,
+  comment?: string,
+): Promise<boolean> {
+  const holon = get(holonId);
+  const item = get(selectedNeed);
+  if (!holon || !item) return false;
+  const hs = await getHolosphere();
+  const { _hologram, _federation, ...bare } = item as any;
+  const need = normalizeNeed(bare);
+  if (!need) return false;
+
+  const ref = sourceRef(item, String(item.id));
+  const owner = ref?.holon ?? holon;
+  const key = ref?.key ?? String(item.id);
+
+  let result: Awaited<ReturnType<typeof rateNeedHandoff>>;
+  try {
+    result = await rateNeedHandoff(hsDb(hs), owner, need, party, stars, {
+      comment: comment?.trim() || undefined,
+      key,
+    });
+  } catch (err: any) {
+    flash(
+      err?.name === "AuthorizationError"
+        ? "This holon doesn't accept ratings."
+        : "Could not record the rating.",
+    );
+    return false;
+  }
+  if (!result.ok) {
+    flash(
+      result.reason === "not_fulfilled"
+        ? "Rate after the handoff settles."
+        : "Nothing to rate on this exchange.",
+    );
+    return false;
+  }
+  if (result.errors.length) {
+    console.warn("[wequest] rating mirror partial:", result.errors);
+  }
+  flash("Rated — it's part of their record now.");
+  return true;
 }
 
 /**
