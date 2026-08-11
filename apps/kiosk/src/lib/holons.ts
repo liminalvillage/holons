@@ -33,6 +33,7 @@ export const SUBDOMAIN_HOLONS: Record<string, string> = {
   refactory: "-1003943146280",
   civic: "-5349529224",
   lunation80: "-1003711659317",
+  armoniaduale: "-1004310409791",
 };
 
 /**
