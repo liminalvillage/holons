@@ -74,17 +74,22 @@ export interface RespondResult {
   /** Updated need on success; the untouched input need on failure. */
   need: PublishedNeed;
   response?: NeedResponse;
-  reason?: 'closed' | 'invalid_responder';
+  reason?: 'closed' | 'invalid_responder' | 'own_need';
 }
 
 /**
  * Append a provider response and mark the need `offered`. Allowed while the
  * need is open (`requested` or `offered` — several providers may respond);
- * rejected once claimed, fulfilled, or cancelled.
+ * rejected once claimed, fulfilled, or cancelled — and rejected for the
+ * initiator, who would otherwise answer their own need when they reach it
+ * through the public map (where it looks foreign).
  */
 export function respondToNeed(need: PublishedNeed, input: RespondInput): RespondResult {
   if (!input?.responder || input.responder.id == null) {
     return { ok: false, need, reason: 'invalid_responder' };
+  }
+  if (need.initiator?.id != null && String(need.initiator.id) === String(input.responder.id)) {
+    return { ok: false, need, reason: 'own_need' };
   }
   if (!OPEN_NEED_STATUSES.includes(need.status)) {
     return { ok: false, need, reason: 'closed' };

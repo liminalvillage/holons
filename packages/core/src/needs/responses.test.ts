@@ -50,6 +50,14 @@ describe('respondToNeed', () => {
     expect(second.need.responses?.map((r) => r.id)).toEqual(['r1', 'r2']);
   });
 
+  it('rejects the initiator answering their own need (map-reached records look foreign)', () => {
+    const mine = { ...need('requested'), initiator: { id: 7 } } as PublishedNeed;
+    const out = respondToNeed(mine, { responder: { id: '7' } });
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('own_need');
+    expect(out.need.responses).toHaveLength(0);
+  });
+
   it('rejects responses on claimed, fulfilled, or cancelled needs', () => {
     for (const status of ['claimed', 'fulfilled', 'cancelled'] as const) {
       const out = respondToNeed(need(status), { responder: { id: 7 } });

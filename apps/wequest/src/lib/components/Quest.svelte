@@ -13,7 +13,9 @@
 
   $: need = $selectedNeed;
   $: isForeign = Boolean(need?._federation?.origin || need?._hologram?.isHologram);
-  $: isMine = !isForeign && String(need?.initiator?.id ?? "") === me;
+  // By initiator, NOT by where the record was found — my own need reached
+  // through the public map resolves as a hologram and would look foreign.
+  $: isMine = String(need?.initiator?.id ?? "") === me;
   $: responses = need?.responses ?? [];
   $: open = need?.status === "requested" || need?.status === "offered";
   $: accepted = responses.find((r: any) => r.id === need?.claimedResponseId);
@@ -209,7 +211,7 @@
             </div>
           {:else}
             <div style="font-size:13px;color:var(--color-accent-2-800);margin-top:6px;text-wrap:pretty">
-              At the handoff, type in the three-letter code on their screen. That's your side of
+              At the handoff, type in the short code on their screen. That's your side of
               the confirmation.
             </div>
             <form
@@ -218,8 +220,8 @@
             >
               <input
                 bind:value={codeInput}
-                maxlength="3"
-                placeholder="K7Q"
+                maxlength="4"
+                placeholder="K7QM"
                 autocapitalize="characters"
                 style="width:96px;height:48px;border-radius:var(--radius-md);border:none;text-align:center;font-family:var(--font-heading);font-size:20px;letter-spacing:.2em;background:#f5ead8;color:var(--color-text);text-transform:uppercase"
               />

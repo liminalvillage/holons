@@ -723,7 +723,11 @@ export async function respondToSelected(
     currency: price != null ? "hour" : undefined,
   });
   if (!result.ok) {
-    flash("This need is already closed.");
+    flash(
+      result.reason === "own_need"
+        ? "This is your own need — your ring answers it."
+        : "This need is already closed.",
+    );
     return;
   }
   const ref = sourceRef(item, String(item.id));
@@ -753,7 +757,10 @@ export async function claimResponse(responseId: string): Promise<boolean> {
   const item = get(selectedNeed);
   if (!holon || !item) return false;
   const hs = await getHolosphere();
-  const need = normalizeNeed(item);
+  // My own need can arrive through the map with a read-side hologram
+  // envelope — strip it so the claim persists a clean canonical record.
+  const { _hologram, _federation, ...bare } = item as any;
+  const need = normalizeNeed(bare);
   if (!need) return false;
   const result = claimNeed(need, responseId);
   if (!result.ok) {
