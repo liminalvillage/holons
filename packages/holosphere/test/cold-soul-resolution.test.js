@@ -14,7 +14,7 @@
 // The default same-holon read path keeps the fast `.once()` behaviour, so this
 // also pins that there is NO latency regression for ordinary missing reads.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-cold-soul';
 
@@ -51,8 +51,10 @@ function makeColdThenSyncGun(payloads, { syncDelay = 25 } = {}) {
 describe('cold cross-holon soul resolution', () => {
     let hs;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         await new Promise(r => setTimeout(r, 100));
     }, 30000);
 

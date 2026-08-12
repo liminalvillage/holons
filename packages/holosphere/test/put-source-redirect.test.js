@@ -6,7 +6,7 @@
 // case: read a mirrored item, mutate it, put it back. See the Source-Envelope
 // Hologram Redirection block in content.js.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('put: source-envelope hologram redirection', () => {
     let holoSphere;
@@ -17,8 +17,10 @@ describe('put: source-envelope hologram redirection', () => {
 
     const waitForGun = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         try {
             await holoSphere.deleteAll(sourceHolon, lens);
             await holoSphere.deleteAll(localHolon, lens);

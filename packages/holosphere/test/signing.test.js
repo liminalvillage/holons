@@ -38,7 +38,7 @@ describe('signing (Phase 1) integration', () => {
     await relayA?.close();
     await relayB?.close();
     for (const d of gunDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
-  });
+  }, 30000);
 
   test('put with signing enabled publishes a verifiable event to the relay', async () => {
     const g = tmpGun(); gunDirs.push(g.dir);
@@ -51,7 +51,7 @@ describe('signing (Phase 1) integration', () => {
     const got = await waitFor(() => relayA.count() >= 1);
     expect(got).toBe(true);
 
-    const evt = relayA.events().find((e) => tag(e, 'd') === 'task-1');
+    const evt = relayA.events().find((e) => tag(e, 'd') === `${HOLON}/${LENS}/task-1`);
     expect(evt).toBeTruthy();
     expect(verifyEvent(evt)).toBe(true);
     expect(tag(evt, 'h')).toBe(HOLON);
@@ -63,10 +63,14 @@ describe('signing (Phase 1) integration', () => {
   test('default (no signing) does NOT publish — opt-in only', async () => {
     const g = tmpGun(); gunDirs.push(g.dir);
     const plain = new HoloSphere({ appName: 'sign-test', privateKey: generateSecretKey(), gunOptions: g.opts });
-    const before = relayA.count();
     await plain.put(HOLON, LENS, { id: 'task-unsigned', title: 'no relay' });
     await wait(400);
-    expect(relayA.count()).toBe(before); // nothing new on the relay
+    // The unsigned item must never reach the relay. (A raw count delta is
+    // racy here: the SIGNED sphere's fire-and-forget parent-propagation from
+    // the previous test keeps publishing legitimate parent-cell events in
+    // the background.)
+    const unsigned = relayA.events().find((e) => tag(e, 'd')?.endsWith('/task-unsigned'));
+    expect(unsigned).toBeUndefined();
     await plain.close?.();
   });
 
@@ -98,8 +102,8 @@ describe('signing (Phase 1) integration', () => {
     expect(moved).toBe(true);
 
     // same signed event id on the destination — republished verbatim, still valid
-    const onA = relayA.events().find((e) => tag(e, 'd') === 'task-1');
-    const onB = relayB.events().find((e) => tag(e, 'd') === 'task-1');
+    const onA = relayA.events().find((e) => tag(e, 'd') === `${HOLON}/${LENS}/task-1`);
+    const onB = relayB.events().find((e) => tag(e, 'd') === `${HOLON}/${LENS}/task-1`);
     expect(onB?.id).toBe(onA.id);
     expect(verifyEvent(onB)).toBe(true);
   });

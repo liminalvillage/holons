@@ -12,6 +12,7 @@
 
 import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
+import { isolatedGunOptions, startLocalRelay, cleanupTestEnv } from './helpers/testenv.js';
 
 jest.setTimeout(30000);
 
@@ -22,9 +23,24 @@ const AFTER_DEBOUNCE_MS = 2600;
 
 describe('connection resilience', () => {
     let hs;
+    let relay;
+
+    // The peer-bookkeeping tests need a REAL configured peer in opt.peers
+    // (they read hs._resilientPeers) — a throwaway local relay provides one
+    // without ever dialing production.
+    beforeAll(async () => {
+        relay = await startLocalRelay();
+    });
+
+    afterAll(cleanupTestEnv, 30000);
 
     beforeEach(() => {
-        hs = new HoloSphere('test-reconnect-resilience', false);
+        hs = new HoloSphere(
+            'test-reconnect-resilience',
+            false,
+            null,
+            isolatedGunOptions({ peers: [relay.url] }),
+        );
     });
 
     afterEach(async () => {
@@ -38,7 +54,7 @@ describe('connection resilience', () => {
     });
 
     test('caller-supplied gun options still override retry', async () => {
-        const custom = new HoloSphere('test-reconnect-custom', false, null, { retry: 5 });
+        const custom = new HoloSphere('test-reconnect-custom', false, null, isolatedGunOptions({ retry: 5 }));
         try {
             expect(custom.gun._.opt.retry).toBe(5);
         } finally {

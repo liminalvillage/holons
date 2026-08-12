@@ -4,7 +4,7 @@
  * The original data should remain intact
  */
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const appName = 'test-hologram-deletion-app';
 const testHolon = 'hologramDeletionTestHolon';
@@ -16,8 +16,10 @@ const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, d
 describe('Hologram Deletion Tests', () => {
     let holoSphere;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         await waitForGun();
     });
 

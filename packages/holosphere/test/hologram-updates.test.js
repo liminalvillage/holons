@@ -1,6 +1,6 @@
 // hologram-updates.test.js
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('Hologram Update Tests', () => {
     let holoSphere;
@@ -11,8 +11,10 @@ describe('Hologram Update Tests', () => {
 
     const waitForGun = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         // Clean up before each test
         try {
             await holoSphere.deleteAll(testHolon, testLens);

@@ -5,7 +5,7 @@
 // drop the historical `ensureArray(...) / Array.isArray(...) ? ... :
 // Object.values(...)` defensive code.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-getall-contract';
 
@@ -14,8 +14,10 @@ describe('getAll return-shape contract', () => {
     const holon = 'getall-contract-holon';
     const lens = 'items';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         // Clean slate per test so empty/populated cases don't bleed.
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));

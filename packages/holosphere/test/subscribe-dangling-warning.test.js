@@ -12,7 +12,7 @@
 // The warning shape `subscribe` must emit, matching get/getAll:
 //   Hologram at <holon>/<lens>/<key> did not resolve (soul=<soul>); skipping.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-subscribe-dangling';
 
@@ -25,8 +25,10 @@ describe('subscribe emits a janitor-parseable warning for unresolved holograms',
     const holon = 'sub-dangle-holon';
     const lens = 'quests';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);

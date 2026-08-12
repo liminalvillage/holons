@@ -1,5 +1,5 @@
-import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 // Increase the default test timeout
 jest.setTimeout(30000);
@@ -10,12 +10,14 @@ describe('Subscription Tests', () => {
   const testHolonBase = 'test_subscription_holon';
   const testLens = 'items';
   let testHolon; // Make holon dynamic
-  
+
+  afterAll(cleanupTestEnv, 30000);
+
   beforeEach(async () => {
     // Create a fresh HoloSphere instance with unique names for each test
     testAppName = `testApp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     testHolon = `${testHolonBase}_${Date.now()}`;
-    holosphere = new HoloSphere(testAppName, false);
+    holosphere = testSphere(testAppName);
     // Add a small delay after initialization
     await new Promise(resolve => setTimeout(resolve, 100));
   });

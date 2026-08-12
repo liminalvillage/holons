@@ -1,4 +1,4 @@
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 import { jest } from '@jest/globals';
 
 // Configure Jest
@@ -15,8 +15,10 @@ describe('HoloSphere Deletion Tests', () => {
     const testPassword = 'testPassword1234';
     let holoSphere;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeAll(async () => {
-        holoSphere = new HoloSphere(testAppName, false, null);
+        holoSphere = testSphere(testAppName);
     });
 
     afterAll(async () => {

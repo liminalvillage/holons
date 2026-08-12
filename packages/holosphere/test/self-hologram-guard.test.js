@@ -10,7 +10,7 @@
 // loops, Gun re-emits unboundedly, and the fire-storm guard quarantines the
 // lens (the "board frozen until reload" failure).
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('Self-hologram guards', () => {
     let holoSphere;
@@ -21,8 +21,10 @@ describe('Self-hologram guards', () => {
 
     const waitForGun = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         try {
             await holoSphere.deleteAll(sourceHolon, lens);
             await holoSphere.deleteAll(mirrorHolon, lens);

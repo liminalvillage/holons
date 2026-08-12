@@ -5,7 +5,7 @@
 // re-`JSON.parse` defensively. The library now drops non-object payloads
 // at the boundary.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-subscribe-object-only';
 
@@ -14,8 +14,10 @@ describe('subscribe callback contract: object | null only', () => {
     const holon = 'sub-object-holon';
     const lens = 'items';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);

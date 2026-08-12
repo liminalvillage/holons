@@ -3,15 +3,17 @@
 // key, partitioned mesh). Consumers used to wrap every read in their own
 // `Promise.race(setTimeout(reject, 8000))` — now the library owns it.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-read-timeout';
 
 describe('read-path timeout', () => {
     let hs;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         await new Promise(r => setTimeout(r, 100));
     }, 30000);
 

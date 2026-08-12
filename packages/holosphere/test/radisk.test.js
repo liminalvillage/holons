@@ -2,13 +2,26 @@
  * @fileoverview Tests for HoloSphere radisk functionality
  */
 
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('HoloSphere Radisk Tests', () => {
     let holosphere;
+    // This suite exercises radisk persistence: every 'radisk-test' instance
+    // must point at the SAME radisk dir so data survives instance restarts.
+    const sharedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-radisk-test-'));
+    const sharedFile = path.join(sharedDir, 'radata');
+
+    afterAll(async () => {
+        await cleanupTestEnv();
+        fs.rmSync(sharedDir, { recursive: true, force: true });
+    }, 30000);
 
     beforeEach(() => {
-        holosphere = new HoloSphere('radisk-test');
+        holosphere = testSphere('radisk-test', { gunOptions: { file: sharedFile } });
     });
 
     afterEach(async () => {
@@ -17,15 +30,26 @@ describe('HoloSphere Radisk Tests', () => {
         }
     });
 
-    test('should initialize with radisk enabled by default', () => {
-        const stats = holosphere.getRadiskStats();
-        expect(stats.enabled).toBe(true);
-        // The constructor's default Gun store path (see defaultGunOptions).
-        expect(stats.filePath).toBe('./holosphere');
-        // Websocket reconnect budget — unlimited by default so long-lived
-        // pages never stop reconnecting (see holosphere.js constructor).
-        expect(stats.retry).toBe(Infinity);
-        expect(stats.timeout).toBe(5000);
+    test('should initialize with radisk enabled by default', async () => {
+        // This test pins the constructor's PRODUCTION defaults, so it
+        // deliberately constructs without a file override — but stays
+        // offline (no peers, no multicast) like every other test.
+        const def = new HoloSphere('radisk-default-test', false, null, {
+            peers: [],
+            multicast: false,
+        });
+        try {
+            const stats = def.getRadiskStats();
+            expect(stats.enabled).toBe(true);
+            // The constructor's default Gun store path (see defaultGunOptions).
+            expect(stats.filePath).toBe('./holosphere');
+            // Websocket reconnect budget — unlimited by default so long-lived
+            // pages never stop reconnecting (see holosphere.js constructor).
+            expect(stats.retry).toBe(Infinity);
+            expect(stats.timeout).toBe(5000);
+        } finally {
+            await def.close();
+        }
     });
 
     test('should configure radisk options', () => {
@@ -111,9 +135,11 @@ describe('HoloSphere Radisk Tests', () => {
         global.window = {};
 
         try {
-            const browserHolosphere = new HoloSphere('browser-test', false, null, {
-                radisk: true,
-                file: './browser-radata'
+            const browserHolosphere = testSphere('browser-test', {
+                gunOptions: {
+                    radisk: true,
+                    file: './browser-radata'
+                }
             });
 
             const stats = browserHolosphere.getRadiskStats();

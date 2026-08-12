@@ -1,5 +1,5 @@
-import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 // Increase timeout for all tests
 jest.setTimeout(30000);
@@ -14,8 +14,8 @@ describe('HoloSphere Authentication and Authorization', () => {
     const PRIVATE_GLOBAL_TABLE = 'veryPrivateGlobalTable'; // For all private global data tests
 
     beforeAll(async () => {
-        holoSphere = new HoloSphere('test-app', false, null);
-        strictHoloSphere = new HoloSphere('test-app-strict', true, null);
+        holoSphere = testSphere('test-app');
+        strictHoloSphere = testSphere('test-app-strict', { strict: true });
         // Wait for initialization
         await new Promise(resolve => setTimeout(resolve, 1000));
     });
@@ -109,8 +109,10 @@ describe('HoloSphere Authentication and Authorization', () => {
 
         // Add a slightly longer, more explicit wait after close calls
         console.log('Waiting extra time for cleanup...');
-        await new Promise(resolve => setTimeout(resolve, 2000)); 
+        await new Promise(resolve => setTimeout(resolve, 2000));
         console.log('Finished afterAll.');
+
+        await cleanupTestEnv();
     });
 
     describe('Authentication System', () => {

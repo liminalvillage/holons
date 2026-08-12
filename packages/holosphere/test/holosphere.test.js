@@ -1,6 +1,7 @@
 import HoloSphere from '../holosphere.js';
 import * as h3 from 'h3-js';
 import { jest } from '@jest/globals';
+import { testSphere, isolatedGunOptions, cleanupTestEnv } from './helpers/testenv.js';
 
 // Configure Jest
 jest.setTimeout(30000); // 30 second timeout
@@ -12,9 +13,11 @@ describe('HoloSphere', () => {
     const testPassword = 'testPassword1234';
     let holoSphere;
     let strictHoloSphere;
+    afterAll(cleanupTestEnv, 30000);
+
     beforeAll(async () => {
-        holoSphere = new HoloSphere('test-app', false, null);
-        strictHoloSphere = new HoloSphere('test-app-strict', true, null);
+        holoSphere = testSphere('test-app');
+        strictHoloSphere = testSphere('test-app-strict', { strict: true });
     });
 
     afterEach(async () => {
@@ -54,13 +57,17 @@ describe('HoloSphere', () => {
             expect(holoSphere).toBeInstanceOf(HoloSphere);
             expect(holoSphere.gun).toBeDefined();
             expect(holoSphere.validator).toBeDefined();
-            expect(holoSphere.openai).toBeUndefined();
+            // The constructor sets `this.openai = null` unconditionally —
+            // callers wire a client in themselves when they need one.
+            expect(holoSphere.openai).toBeNull();
             expect(holoSphere.subscriptions).toBeDefined();
             expect(holoSphere.subscriptions).toEqual({});
         });
 
-        test('should initialize with OpenAI', () => {
-            expect(new HoloSphere(testAppName, false, 'fake-key').openai).toBeDefined();
+        test('should initialize with OpenAI', async () => {
+            const withOpenAI = new HoloSphere(testAppName, false, 'fake-key', isolatedGunOptions());
+            expect(withOpenAI.openai).toBeDefined();
+            await withOpenAI.close();
         });
     });
 

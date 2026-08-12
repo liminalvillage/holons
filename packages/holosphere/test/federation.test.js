@@ -1,5 +1,5 @@
-import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 // Increase the default test timeout for all tests
 jest.setTimeout(30000);
@@ -8,8 +8,10 @@ describe('Federation Tests', () => {
   let holosphere;
   const testPrefix = `test_${Date.now()}_`;
 
+  afterAll(cleanupTestEnv, 30000);
+
   beforeEach(() => {
-    holosphere = new HoloSphere('testApp', false);
+    holosphere = testSphere('testApp');
   });
 
   afterEach(async () => {

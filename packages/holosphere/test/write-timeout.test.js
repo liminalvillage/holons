@@ -4,7 +4,7 @@
 // `Promise.race(setTimeout(reject, N))` — now the library owns it, the
 // same way the read paths do (see read-timeout.test.js).
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-write-timeout';
 
@@ -31,8 +31,10 @@ function makeNeverAckGunStub() {
 describe('write-path timeout', () => {
     let hs;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         await new Promise(r => setTimeout(r, 100));
     }, 30000);
 

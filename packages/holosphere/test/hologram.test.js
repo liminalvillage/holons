@@ -1,4 +1,4 @@
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 import { jest } from '@jest/globals';
 
 // Configure timeout
@@ -14,9 +14,11 @@ describe('HoloSphere Reference System', () => {
     const testHolon = 'hologramTestHolon'; // Update holon name
     const testLens = 'testLens';
     
+    afterAll(cleanupTestEnv, 30000);
+
     beforeAll(async () => {
         // Create a single HoloSphere instance for all tests
-        holoSphere = new HoloSphere(appName);
+        holoSphere = testSphere(appName);
     });
     
     afterAll(async () => {

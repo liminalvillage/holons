@@ -1,6 +1,6 @@
 // meta-strip.test.js
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('Meta Field Stripping Tests', () => {
     let holoSphere;
@@ -8,8 +8,10 @@ describe('Meta Field Stripping Tests', () => {
     const testLens = 'testLens';
     const testGlobalTable = 'testGlobalTable';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere('test_app', false);
+        holoSphere = testSphere('test_app');
         // Clean up before each test
         try {
             await holoSphere.deleteAll(testHolon, testLens);
@@ -158,7 +160,12 @@ describe('Meta Field Stripping Tests', () => {
     });
 
     describe('put() should strip _hologram envelope', () => {
-        test('should not store _hologram envelope when putting data', async () => {
+        test('an envelope-carrying put is redirected to its source and stored clean', async () => {
+            // A `_hologram` envelope marks an item as RESOLVED from a
+            // hologram. Writing such an item back must land on the ORIGINAL
+            // in its owner's graph (source-envelope redirection) — never
+            // fork a copy at the aimed path — and the envelope itself is
+            // read-side-only, so the source is stored WITHOUT it.
             const testData = {
                 id: 'test-hologram-strip',
                 name: 'Resolved item',
@@ -176,11 +183,16 @@ describe('Meta Field Stripping Tests', () => {
             await holoSphere.put(testHolon, testLens, testData);
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const retrieved = await holoSphere.get(testHolon, testLens, testData.id);
-            expect(retrieved).not.toBeNull();
-            expect(retrieved.id).toBe(testData.id);
-            expect(retrieved.name).toBe(testData.name);
-            expect(retrieved._hologram).toBeUndefined();
+            // The write landed at the envelope's source path, envelope stripped.
+            const source = await holoSphere.get('holon', 'lens', 'key');
+            expect(source).not.toBeNull();
+            expect(source.name).toBe(testData.name);
+            expect(source.value).toBe(testData.value);
+            expect(source._hologram).toBeUndefined();
+
+            // Nothing forked at the aimed path (no pointer existed there).
+            const atAimedPath = await holoSphere.get(testHolon, testLens, testData.id);
+            expect(atAimedPath).toBeNull();
         });
 
         test('putGlobal should strip _hologram envelope', async () => {

@@ -12,7 +12,7 @@
 // `_hologram.isHologram === false`. Easier than asking every caller to
 // know the right field is to filter at the library boundary.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-fed-stubs';
 
@@ -21,8 +21,10 @@ describe('getFederated drops unresolved-reference stubs by default', () => {
     const holon = 'fedstub-holon';
     const lens = 'items';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);

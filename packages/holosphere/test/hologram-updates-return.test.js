@@ -1,6 +1,6 @@
 // hologram-updates-return.test.js
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('Hologram Updates Return Value Tests', () => {
     let holoSphere;
@@ -11,8 +11,10 @@ describe('Hologram Updates Return Value Tests', () => {
 
     const waitForGun = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         // Clean up before each test
         try {
             await holoSphere.deleteAll(testHolon, testLens);
@@ -125,26 +127,35 @@ describe('Hologram Updates Return Value Tests', () => {
         expect(updatedHologram.timestamp).toBeLessThanOrEqual(now);
     });
 
-    test('put with isHologramUpdate option should not return updated holograms', async () => {
+    test('a hologram-update put cascades once — visited-set stops recursion, not suppression', async () => {
+        // `isHologramUpdate` no longer suppresses the `_holograms` walk: the
+        // cascade deliberately runs on update hops too, so a change reaches
+        // multi-hop forwards. Runaway recursion is prevented by
+        // `_cascadeVisited`, so the registered forward is stamped exactly
+        // once and reported.
         const originalData = { id: 'no-recursive-test', value: 'Original Value' };
-        
+
         // Put original data
         await holoSphere.put(testHolon, testLens, originalData);
         await waitForGun();
-        
+
         // Create hologram
         const hologram = holoSphere.createHologram(testHolon, testLens, originalData);
         await holoSphere.put(testHolon, otherLens, { id: 'recursive-test', soul: hologram.soul });
         await waitForGun(500);
-        
-        // Update with isHologramUpdate flag (should not trigger hologram updates)
+
         const updatedData = { ...originalData, value: 'Updated Value' };
         const result = await holoSphere.put(testHolon, testLens, updatedData, null, { isHologramUpdate: true });
-        
+
         expect(result).toBeDefined();
         expect(result.success).toBe(true);
         expect(result.updatedHolograms).toBeDefined();
-        expect(result.updatedHolograms).toHaveLength(0);
+        expect(result.updatedHolograms).toHaveLength(1);
+        expect(result.updatedHolograms[0]).toMatchObject({
+            holon: testHolon,
+            lens: otherLens,
+            key: 'recursive-test',
+        });
     });
 
     test('put hologram should not return updated holograms', async () => {

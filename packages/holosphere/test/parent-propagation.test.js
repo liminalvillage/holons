@@ -1,11 +1,13 @@
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('Parent Propagation Tests', () => {
   let holosphere;
   const testPrefix = 'parent_prop_test_';
 
+  afterAll(cleanupTestEnv, 30000);
+
   beforeEach(() => {
-    holosphere = new HoloSphere('parent-propagation-test');
+    holosphere = testSphere('parent-propagation-test');
   });
 
   afterEach(async () => {

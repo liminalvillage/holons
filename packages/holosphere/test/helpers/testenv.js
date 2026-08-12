@@ -1,0 +1,100 @@
+// Shared test environment: fully isolated HoloSphere instances.
+//
+// The old pattern `new HoloSphere(APP, false)` inherited the constructor's
+// production defaults — peers: ['https://gun.holons.io/gun'] and a radisk at
+// './holosphere' SHARED by every suite and every historical run. Consequences:
+// every test run leaked data through the LIVE relay, jest's parallel workers
+// raced each other through the shared radisk and multicast, and the set of
+// failing suites changed randomly from run to run.
+//
+// Every suite must build instances through this helper instead: no peers, no
+// multicast, and a fresh mkdtemp radisk per instance, so suites are hermetic
+// and parallel-safe. Cross-holon behaviour (holograms, federation) lives
+// inside ONE Gun graph — a single isolated instance exercises it fully. For
+// the rare test that genuinely needs two instances syncing over a wire,
+// `startLocalRelay()` boots a throwaway relay on an ephemeral port.
+
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import http from 'node:http';
+import HoloSphere from '../../holosphere.js';
+import Gun from 'gun';
+
+const spheres = [];
+const dirs = [];
+const relays = [];
+
+/** Gun options for one isolated instance (fresh tmp radisk, no network). */
+export function isolatedGunOptions(overrides = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-test-'));
+    dirs.push(dir);
+    return {
+        peers: [],
+        axe: false,
+        multicast: false,
+        radisk: true,
+        file: path.join(dir, 'radata'),
+        localStorage: false,
+        ...overrides,
+    };
+}
+
+/**
+ * An isolated HoloSphere (v1-style construction, hermetic Gun options).
+ * Registered for `cleanupTestEnv()`; pass `gunOptions` to override pieces
+ * (e.g. `peers: [relay.url]` from `startLocalRelay`, or a shared `file` for
+ * persistence-across-restart tests).
+ */
+export function testSphere(appName, { strict = false, gunOptions = {} } = {}) {
+    const sphere = new HoloSphere(appName, strict, null, isolatedGunOptions(gunOptions));
+    spheres.push(sphere);
+    return sphere;
+}
+
+/**
+ * A throwaway Gun relay on an ephemeral localhost port, with its own tmp
+ * radisk. Returns `{ url, close }`; `url` goes straight into an instance's
+ * `gunOptions.peers`. Only for tests that MUST sync two instances over a
+ * wire — everything else should stay peerless.
+ */
+export async function startLocalRelay() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-relay-'));
+    dirs.push(dir);
+    const server = http.createServer();
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const gun = Gun({
+        web: server,
+        axe: false,
+        multicast: false,
+        radisk: true,
+        file: path.join(dir, 'radata'),
+        localStorage: false,
+    });
+    const relay = {
+        url: `http://127.0.0.1:${port}/gun`,
+        close: () =>
+            new Promise((resolve) => {
+                try { gun.off?.(); } catch { /* best-effort */ }
+                server.close(() => resolve());
+                // A lingering websocket keeps close() pending; don't let it.
+                setTimeout(resolve, 500).unref?.();
+            }),
+    };
+    relays.push(relay);
+    return relay;
+}
+
+/** Close every tracked sphere/relay and delete their tmp dirs. Call in afterAll. */
+export async function cleanupTestEnv() {
+    for (const s of spheres.splice(0)) {
+        try { await s.close?.(); } catch { /* already closed */ }
+    }
+    for (const r of relays.splice(0)) {
+        try { await r.close(); } catch { /* already closed */ }
+    }
+    for (const d of dirs.splice(0)) {
+        try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* tmp reaper's problem */ }
+    }
+}

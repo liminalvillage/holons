@@ -9,7 +9,7 @@
 // resolving; a genuinely NEW pointer value (e.g. an `updated` bump from the
 // redirected-put refresh) still resolves afresh.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 describe('subscribe hologram echo dedup', () => {
     let holoSphere;
@@ -20,8 +20,10 @@ describe('subscribe hologram echo dedup', () => {
 
     const waitForGun = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        holoSphere = new HoloSphere(appName, false);
+        holoSphere = testSphere(appName);
         try {
             await holoSphere.deleteAll(holon, srcLens);
             await holoSphere.deleteAll(holon, ptrLens);

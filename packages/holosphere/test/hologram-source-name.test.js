@@ -4,15 +4,17 @@
 // `settings/<holon>` themselves. The bot used to do this lookup in
 // `preResolveHologramNames` — now the library owns it.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-source-holon-name';
 
 describe('resolveHologram stamps sourceHolonName', () => {
     let hs;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         await new Promise(r => setTimeout(r, 200));
     }, 30000);
 

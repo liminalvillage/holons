@@ -5,7 +5,7 @@
 // default; consumers wanting tombstones (admin/debug, history
 // reconstruction) pass `{ includeDeleted: true }`.
 
-import HoloSphere from '../holosphere.js';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-deleted-tombstones';
 
@@ -14,8 +14,10 @@ describe('_deleted: true soft-tombstone filtering', () => {
     const holon = 'tombstone-holon';
     const lens = 'items';
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(async () => {
-        hs = new HoloSphere(APP, false);
+        hs = testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);

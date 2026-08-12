@@ -46,7 +46,9 @@ describe('nostr-events: signing & verification', () => {
     expect(ev.kind).toBe(HOLOSPHERE_KIND);
     expect(tag(ev, 'h')).toBe('89283082803ffff');
     expect(tag(ev, 'l')).toBe('tasks');
-    expect(tag(ev, 'd')).toBe('task-001'); // d-tag == item.id (NIP-33 replaceable key)
+    // d-tag is the location-scoped NIP-33 replaceable key — a bare item.id
+    // would let propagated parent-holon copies replace the original event.
+    expect(tag(ev, 'd')).toBe('89283082803ffff/tasks/task-001');
     expect(verifyEvent(ev)).toBe(true);
     expect(eventToItem(ev)).toEqual(item);
   });

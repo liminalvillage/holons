@@ -9,8 +9,8 @@
 // generous settle waits — the partner subscription attaches only after the
 // async federation-config read resolves.
 
-import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
+import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 jest.setTimeout(90000);
 
@@ -35,8 +35,10 @@ const federateRetry = async (hs, a, b, cfg, tries = 4) => {
 describe('subscribeFederated', () => {
     let hs;
 
+    afterAll(cleanupTestEnv, 30000);
+
     beforeEach(() => {
-        hs = new HoloSphere('test-subscribe-federated', false);
+        hs = testSphere('test-subscribe-federated');
     });
 
     afterEach(async () => {
