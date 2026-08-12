@@ -7,6 +7,7 @@ import {
   BREAKDOWN_MAX_DESCRIPTION_CHARS,
   BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
   BreakdownValidationError,
+  PROPOSE_STEPS_TOOL,
   applyBreakdownProposal,
   buildBreakdownPrompt,
   parseBreakdownProposal,
@@ -93,14 +94,25 @@ describe('buildBreakdownPrompt', () => {
       holonContext: 'Community garden',
     });
     expect(system).toContain('NEVER recreate');
-    expect(system).toContain('INDEPENDENT, PARALLEL');
+    expect(system).toContain('INDEPENDENT and PARALLEL');
     expect(system).toContain('never at each other');
     expect(system).toContain('SAME\n   LANGUAGE');
-    expect(system).toContain('achieved state');
     expect(system).toContain('atomic');
     expect(user).toContain('Community garden');
     expect(user).toContain('"id":"a"');
     expect(user).toContain('"id":"b"');
+    // The two rules weak models drift on are restated in the user turn.
+    expect(user).toContain('same language');
+    expect(user).toContain('independent steps');
+  });
+
+  it('offers the model no way to order steps among themselves', () => {
+    const stepProps = (
+      (PROPOSE_STEPS_TOOL.input_schema as Record<string, any>).properties.steps
+        .items as Record<string, any>
+    ).properties;
+    expect(stepProps).not.toHaveProperty('dependsOnSteps');
+    expect(stepProps).toHaveProperty('dependsOnExisting');
   });
 
   it('lists the categories already in use and the category rule', () => {

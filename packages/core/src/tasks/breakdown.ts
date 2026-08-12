@@ -13,6 +13,12 @@
 // lists its predecessors. The broken-down task becomes the goal node — it
 // gains the terminal (sink) steps as dependencies — so on the canvas the
 // steps fan out to its left and arrows flow steps → goal.
+//
+// The LLM only ever proposes PARALLEL steps: `propose_steps` exposes no
+// step→step ordering field, so every proposed step is a sink and points
+// straight at the goal. Identical output from every provider/model, instead of
+// a "keep this empty" rule the weaker ones ignore. The materializer below
+// still supports step→step edges, for steps a human chains up by hand.
 
 import type { Quest } from './types.js';
 import { createTask } from './creation.js';
@@ -44,7 +50,12 @@ export interface BreakdownStep {
    * the materializer — the model must pick, never mint.
    */
   category: string;
-  /** 0-based indices of other steps in the batch that must come first. */
+  /**
+   * 0-based indices of other steps in the batch that must come first. The LLM
+   * never sets these — `propose_steps` has no such field, so every proposed
+   * step is a direct, parallel prerequisite of the goal. The materializer
+   * still honours them so a human can chain steps by hand afterwards.
+   */
   dependsOnSteps: number[];
   /** Ids of existing tasks that must come first. */
   dependsOnExisting: string[];
@@ -77,8 +88,9 @@ export const PROPOSE_STEPS_TOOL: {
 } = {
   name: PROPOSE_STEPS_TOOL_NAME,
   description:
-    'Propose the constituent steps of a task. Steps become new tasks linked ' +
-    'as dependencies, so each must be a concrete, completable unit of work.',
+    'Propose the constituent steps of a task. Every step becomes a new task ' +
+    'wired directly into the task being broken down, so the steps run in ' +
+    'parallel and each must be a concrete piece of work on its own.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -105,22 +117,21 @@ export const PROPOSE_STEPS_TOOL: {
             'description',
             'existingTaskId',
             'category',
-            'dependsOnSteps',
             'dependsOnExisting',
           ],
           properties: {
             title: {
               type: 'string',
               description:
-                'Short achieved-state title the group can verify, e.g. ' +
-                "'We have agreed on a design' or 'Materials are collected'. " +
-                'Written in the language of the task being broken down.',
+                'Short title naming the work of this step, written plainly ' +
+                'as it is — no particular phrasing is required. MUST be in ' +
+                'the same language as the task being broken down.',
             },
             description: {
               type: 'string',
               description:
-                '1-3 sentences: a concrete definition of done, in the ' +
-                'language of the task being broken down.',
+                '1-3 sentences saying what this step involves. MUST be in ' +
+                'the same language as the task being broken down.',
             },
             existingTaskId: {
               type: 'string',
@@ -136,16 +147,6 @@ export const PROPOSE_STEPS_TOOL: {
                 'own, so use an EMPTY string to inherit it, or pick a ' +
                 'category already in use on the canvas when it fits this ' +
                 'step better. NEVER invent a new category.',
-            },
-            dependsOnSteps: {
-              type: 'array',
-              items: { type: 'integer' },
-              description:
-                '0-based indices of other steps in this array that must be ' +
-                'completed first. Almost always EMPTY — steps run in ' +
-                'parallel as direct prerequisites of the goal, pointing at ' +
-                'it rather than at each other. Only set when this step ' +
-                "literally consumes another step's output.",
             },
             dependsOnExisting: {
               type: 'array',
@@ -233,31 +234,29 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     'You decompose a task into its constituent steps for a shared task canvas',
     'where tasks are linked by dependencies (a task lists its predecessors).',
     'Rules:',
-    '1. Choose the number of steps by the real complexity of the task —',
-    `   typically 2-${BREAKDOWN_SOFT_MAX_STEPS}. If the task is already a single actionable unit, set`,
-    '   atomic: true and return no steps.',
-    '2. NEVER recreate work that already exists on the canvas. The full task',
-    '   list is provided; if an existing task covers a step, reference it via',
-    '   existingTaskId (to reuse it as the step) or dependsOnExisting (as a',
-    '   prerequisite) instead of duplicating it.',
-    '3. Steps are INDEPENDENT, PARALLEL prerequisites of the goal: the',
-    '   broken-down task is the goal, and every step feeds DIRECTLY into it —',
-    '   steps point at the goal, never at each other. dependsOnSteps stays',
-    '   EMPTY unless a step literally cannot start before another finishes',
-    "   (its output is the other's input). Never chain steps just because you",
-    '   listed them in order — a sequential chain is almost always wrong.',
-    '4. Every step must be a concrete, achievable outcome with a clear',
-    '   definition of done. No vague steps like "plan" or "finalize".',
-    '5. Phrase each title as an achieved state the group can verify — e.g.',
-    '   "We have agreed on a design", "Materials are collected" — never as a',
-    '   command. Do not repeat the parent task itself as a step.',
-    "6. Give each step a category: '' inherits the broken-down task's own,",
-    '   or pick one from the "Categories in use" list when it fits the step',
-    '   better. Never invent a new category.',
-    '7. Write the reasoning and every step title and description in the SAME',
+    '1. Write the reasoning and every step title and description in the SAME',
     "   LANGUAGE as the task being broken down (its title/description) — an",
     '   Italian task gets Italian steps, a Spanish task Spanish steps, and so',
     '   on. Never default to English for a non-English task.',
+    '2. Steps are INDEPENDENT and PARALLEL: the broken-down task is the goal,',
+    '   and every step feeds DIRECTLY into it — all steps point at the goal,',
+    '   never at each other. There is no way to order steps among themselves,',
+    '   so never write a step that assumes another step ran first; split the',
+    '   work into pieces that can be picked up in any order.',
+    '3. Choose the number of steps by the real complexity of the task —',
+    `   typically 2-${BREAKDOWN_SOFT_MAX_STEPS}. If the task is already a single actionable unit, set`,
+    '   atomic: true and return no steps.',
+    '4. NEVER recreate work that already exists on the canvas. The full task',
+    '   list is provided; if an existing task covers a step, reference it via',
+    '   existingTaskId (to reuse it as the step) or dependsOnExisting (as a',
+    '   prerequisite) instead of duplicating it.',
+    '5. Every step must be a concrete piece of work — no vague steps like',
+    '   "plan" or "finalize". Write each step as it is, the way someone would',
+    '   naturally name that work; it does NOT have to read as a completed or',
+    '   closable state. Do not repeat the parent task itself as a step.',
+    "6. Give each step a category: '' inherits the broken-down task's own,",
+    '   or pick one from the "Categories in use" list when it fits the step',
+    '   better. Never invent a new category.',
     'Call propose_steps exactly once.',
   ].join('\n');
 
@@ -289,7 +288,13 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
   );
   for (const t of input.allTasks) lines.push(JSON.stringify(t));
   lines.push('');
-  lines.push('Break down the task above. Call propose_steps exactly once.');
+  // The language and parallelism rules are the two the weaker models drift on,
+  // so they are restated here, closest to the actual request.
+  lines.push(
+    'Break down the task above into independent steps that each feed directly ' +
+      'into it, and write every title and description in the same language as ' +
+      'that task. Call propose_steps exactly once.',
+  );
 
   return { system, user: lines.join('\n') };
 }
