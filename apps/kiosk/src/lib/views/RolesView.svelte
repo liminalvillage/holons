@@ -20,6 +20,7 @@
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
+  import { t, locale } from "$lib/i18n";
   import { sameId } from "$lib/personal";
   import {
     noteColor,
@@ -84,7 +85,7 @@
   function weekRangeLabel(ds: Date[]): string {
     const a = ds[0];
     const b = ds[6];
-    const mo = (d: Date) => d.toLocaleDateString([], { month: "short" });
+    const mo = (d: Date) => d.toLocaleDateString($locale, { month: "short" });
     return a.getMonth() === b.getMonth()
       ? `${mo(a)} ${a.getDate()}–${b.getDate()}`
       : `${mo(a)} ${a.getDate()} – ${mo(b)} ${b.getDate()}`;
@@ -165,7 +166,7 @@
       return;
     }
     if (hasPermanent(raw)) {
-      showNotice("Fixed role — release it from the card first.");
+      showNotice($t("rolesv.fixedReleaseFirst"));
       return;
     }
     busy = token;
@@ -326,16 +327,18 @@
         <button
           class="navbtn"
           on:click={() => shiftWeek(-1)}
-          aria-label="Previous week">‹</button
+          aria-label={$t("rolesv.prevWeek")}>‹</button
         >
         <span class="range">{rangeLabel}</span>
         <button
           class="navbtn"
           on:click={() => shiftWeek(1)}
-          aria-label="Next week">›</button
+          aria-label={$t("rolesv.nextWeek")}>›</button
         >
         {#if !isCurrentWeek}
-          <button class="todaybtn" on:click={goToday}>Today</button>
+          <button class="todaybtn" on:click={goToday}
+            >{$t("rolesv.today")}</button
+          >
         {/if}
       </div>
     </div>
@@ -343,12 +346,12 @@
 
   <div class="scrollarea scroll" class:clear={$rolesViewMode !== "week"}>
     {#if $scope === "personal" && !$telegramUser}
-      <p class="empty">Log in to see your roles ✶</p>
+      <p class="empty">{$t("rolesv.loginPersonal")}</p>
     {:else if !shownCards.length}
       <p class="empty">
         {$scope === "personal"
-          ? "No roles with your name on them yet — take a day ✪"
-          : "No roles yet. ✪"}
+          ? $t("rolesv.emptyPersonal")
+          : $t("rolesv.empty")}
       </p>
     {:else if $rolesViewMode === "list"}
       <!-- ── List: compact rows, today's holder at a glance ─────────────── -->
@@ -396,10 +399,11 @@
                     </span>
                     <span class="hname">{holderName(holder).split(" ")[0]}</span
                     >
-                    {#if fixed}<span class="lock" title="Fixed role">🔒</span
+                    {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
+                        >🔒</span
                       >{/if}
                   {:else}
-                    <span class="open">Open</span>
+                    <span class="open">{$t("rolesv.open")}</span>
                   {/if}
                 </span>
                 {#if fixed}
@@ -408,7 +412,8 @@
                       class="take in"
                       on:click={() => releaseFixed(card, raw)}
                       disabled={busy === `fix:${card.id}`}
-                      title="Release this fixed role">Release</button
+                      title={$t("rolesv.releaseFixed")}
+                      >{$t("rolesv.release")}</button
                     >
                   {/if}
                 {:else}
@@ -418,15 +423,17 @@
                     on:click={() => takeDay(card, raw, todayCell, card.id)}
                     disabled={busy === card.id}
                     aria-pressed={mineToday}
-                    >{mineToday ? "✓ Drop" : "Take today"}</button
+                    >{mineToday
+                      ? `✓ ${$t("rolesv.drop")}`
+                      : $t("rolesv.takeToday")}</button
                   >
                 {/if}
                 {#if $isLoggedIn}
                   <button
                     class="tool rowtool"
                     on:click={() => openEdit(card)}
-                    aria-label="Edit role"
-                    title="Edit">✎</button
+                    aria-label={$t("rolesv.editAria")}
+                    title={$t("rolesv.edit")}>✎</button
                   >
                 {/if}
               </div>
@@ -463,8 +470,8 @@
                   <button
                     class="tool"
                     on:click={() => openEdit(card)}
-                    aria-label="Edit role"
-                    title="Edit">✎</button
+                    aria-label={$t("rolesv.editAria")}
+                    title={$t("rolesv.edit")}>✎</button
                   >
                 {/if}
                 <h3>{card.title}</h3>
@@ -473,7 +480,9 @@
                 {/if}
 
                 <div class="today">
-                  <span class="tlabel">{fixed ? "Fixed" : "Today"}</span>
+                  <span class="tlabel"
+                    >{fixed ? $t("rolesv.fixed") : $t("rolesv.today")}</span
+                  >
                   {#if holder}
                     <span class="holder">
                       <span class="hav">
@@ -491,11 +500,13 @@
                       <span class="hname"
                         >{holderName(holder).split(" ")[0]}</span
                       >
-                      {#if fixed}<span class="lock" title="Fixed role">🔒</span
+                      {#if fixed}<span
+                          class="lock"
+                          title={$t("rolesv.fixedRole")}>🔒</span
                         >{/if}
                     </span>
                   {:else}
-                    <span class="open">Open</span>
+                    <span class="open">{$t("rolesv.open")}</span>
                   {/if}
                 </div>
 
@@ -506,10 +517,11 @@
                         class="take in"
                         on:click={() => releaseFixed(card, raw)}
                         disabled={busy === `fix:${card.id}`}
-                        title="Release this fixed role">🔒 Release</button
+                        title={$t("rolesv.releaseFixed")}
+                        >🔒 {$t("rolesv.release")}</button
                       >
                     {:else}
-                      <span class="fixednote">Fixed role</span>
+                      <span class="fixednote">{$t("rolesv.fixedRole")}</span>
                     {/if}
                   {:else}
                     <button
@@ -518,7 +530,9 @@
                       on:click={() => takeDay(card, raw, todayCell, card.id)}
                       disabled={busy === card.id}
                       aria-pressed={mineToday}
-                      >{mineToday ? "✓ Today · drop" : "Take today"}</button
+                      >{mineToday
+                        ? `✓ ${$t("rolesv.todayDrop")}`
+                        : $t("rolesv.takeToday")}</button
                     >
                   {/if}
                 </div>
@@ -534,7 +548,7 @@
         {#each days as d (isoDateOf(d))}
           <span class="leg-cell" class:today={isCellToday(d)}>
             <span class="dow"
-              >{d.toLocaleDateString([], { weekday: "narrow" })}</span
+              >{d.toLocaleDateString($locale, { weekday: "narrow" })}</span
             >
             <span class="dnum">{d.getDate()}</span>
           </span>
@@ -548,7 +562,9 @@
           <div class="wrow">
             <div class="wtitle" title={card.title}>
               <span class="wtitle-text">{card.title}</span>
-              {#if fixed}<span class="lock" title="Fixed role">🔒</span>{/if}
+              {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
+                  >🔒</span
+                >{/if}
             </div>
             {#each days as d (isoDateOf(d))}
               {@const holder = holdersForDate(raw, d)[0] ?? null}
@@ -562,7 +578,7 @@
                 class:fixed
                 on:click={() => takeDay(card, raw, d, token)}
                 disabled={busy === token}
-                title={holder ? holderName(holder) : "Take this day"}
+                title={holder ? holderName(holder) : $t("rolesv.takeThisDay")}
               >
                 {#if holder}
                   <span class="wav">
@@ -592,8 +608,8 @@
     <button
       class="fab"
       on:click={openAdd}
-      aria-label="Add role"
-      title="Add role"
+      aria-label={$t("rolesv.addRole")}
+      title={$t("rolesv.addRole")}
     >
       ＋
     </button>
@@ -604,28 +620,30 @@
   <Modal on:close={() => (addOpen = false)}>
     <div class="form">
       <div class="glyph" aria-hidden="true">＋</div>
-      <h3>Add a role</h3>
-      <p class="lead">A standing responsibility people can take on.</p>
+      <h3>{$t("rolesv.addRoleTitle")}</h3>
+      <p class="lead">{$t("rolesv.addLead")}</p>
       <input
         class="line"
         bind:value={addTitle}
-        placeholder="Role title"
+        placeholder={$t("rolesv.titlePlaceholder")}
         maxlength="60"
         on:keydown={(e) => e.key === "Enter" && addRole()}
       />
       <textarea
         bind:value={addDesc}
         rows="3"
-        placeholder="What does it involve? (optional)"
+        placeholder={$t("rolesv.descPlaceholder")}
       ></textarea>
       <div class="actions">
         <button
           class="primary"
           on:click={addRole}
           disabled={adding || !addTitle.trim()}
-          >{adding ? "Adding…" : "Add role"}</button
+          >{adding ? $t("tasks.adding") : $t("rolesv.addRole")}</button
         >
-        <button class="ghost" on:click={() => (addOpen = false)}>Cancel</button>
+        <button class="ghost" on:click={() => (addOpen = false)}
+          >{$t("common.cancel")}</button
+        >
       </div>
     </div>
   </Modal>
@@ -635,34 +653,34 @@
   <Modal on:close={() => (editCard = null)}>
     <div class="form">
       <div class="glyph" aria-hidden="true">✎</div>
-      <h3>Edit role</h3>
+      <h3>{$t("rolesv.editAria")}</h3>
       <input
         class="line"
         bind:value={editTitle}
-        placeholder="Role title"
+        placeholder={$t("rolesv.titlePlaceholder")}
         maxlength="60"
         on:keydown={(e) => e.key === "Enter" && saveEdit()}
       />
       <textarea
         bind:value={editDesc}
         rows="3"
-        placeholder="What does it involve? (optional)"
+        placeholder={$t("rolesv.descPlaceholder")}
       ></textarea>
 
       <div class="fixed-section">
-        <span class="seclabel">Fixed holder · holds it every day</span>
+        <span class="seclabel">{$t("rolesv.fixedHolderLabel")}</span>
         {#if editRaw && hasPermanent(editRaw)}
           <div class="fixrow">
             <span class="fxname"
               >🔒 {holderName(permanentHolders(editRaw)[0])}</span
             >
             <button class="linkbtn" on:click={clearFixed} disabled={fixedBusy}
-              >Clear</button
+              >{$t("rolesv.clearFixed")}</button
             >
           </div>
         {:else}
           <button class="ghost wide" on:click={makeFixed} disabled={fixedBusy}
-            >Make me the fixed holder</button
+            >{$t("rolesv.makeMeFixed")}</button
           >
         {/if}
       </div>
@@ -672,12 +690,14 @@
           class="primary"
           on:click={saveEdit}
           disabled={savingEdit || !editTitle.trim()}
-          >{savingEdit ? "Saving…" : "Save"}</button
+          >{savingEdit ? $t("rolesv.saving") : $t("rolesv.save")}</button
         >
-        <button class="ghost" on:click={() => (editCard = null)}>Cancel</button>
+        <button class="ghost" on:click={() => (editCard = null)}
+          >{$t("common.cancel")}</button
+        >
       </div>
       <button class="danger" on:click={deleteRole} disabled={deleting}
-        >{deleting ? "Deleting…" : "Delete role"}</button
+        >{deleting ? $t("tasks.deleting") : $t("rolesv.deleteRole")}</button
       >
     </div>
   </Modal>

@@ -16,6 +16,7 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { holonId, rawQuests, rotationHold } from "$lib/stores";
+  import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
     getHolosphere,
     subscribeLens,
@@ -100,41 +101,46 @@
    * skipping anything with a zero weight or zero count. Mirrors the dashboard's
    * Status breakdown so the explanation matches what people see on the web.
    */
-  function breakdownLines(row: Row): BreakdownLine[] {
+  function breakdownLines(tr: Translator, row: Row): BreakdownLine[] {
     const a = row.aggregates;
     const b = row.breakdown;
     const eq = equation;
     const lines: BreakdownLine[] = [];
-    const flat: Array<[string, number, number, number]> = [
-      ["Tasks initiated", a.initiated, eq.initiated ?? 0, b.initiated],
-      ["Tasks completed", a.completed, eq.completed ?? 0, b.completed],
-      ["Appreciations sent", a.sent, eq.sent ?? 0, b.sent],
-      ["Appreciations received", a.received, eq.received ?? 0, b.received],
+    const flat: Array<[MessageKey, number, number, number]> = [
+      ["status.metric.initiated", a.initiated, eq.initiated ?? 0, b.initiated],
+      ["status.metric.completed", a.completed, eq.completed ?? 0, b.completed],
+      ["status.metric.sent", a.sent, eq.sent ?? 0, b.sent],
+      ["status.metric.received", a.received, eq.received ?? 0, b.received],
       [
-        "Collaboration events",
+        "status.metric.collaboration",
         a.collaboration,
         eq.collaboration ?? 0,
         b.collaboration,
       ],
       [
-        "Participation (quests)",
+        "status.metric.participation",
         a.participation ?? 0,
         eq.participation ?? 0,
         b.participation,
       ],
       [
-        "Co-participants",
+        "status.metric.coParticipants",
         a.coParticipants ?? 0,
         eq.coParticipants ?? 0,
         b.coParticipants,
       ],
-      ["Activity (events)", a.activity ?? 0, eq.activity ?? 0, b.activity],
-      ["Group size (avg)", a.groupSize ?? 0, eq.groupSize ?? 0, b.groupSize],
-      ["Group-size variance", a.variance ?? 0, eq.variance ?? 0, b.variance],
+      ["status.metric.activity", a.activity ?? 0, eq.activity ?? 0, b.activity],
+      [
+        "status.metric.groupSize",
+        a.groupSize ?? 0,
+        eq.groupSize ?? 0,
+        b.groupSize,
+      ],
+      ["status.metric.variance", a.variance ?? 0, eq.variance ?? 0, b.variance],
     ];
-    for (const [label, count, weight, points] of flat) {
+    for (const [key, count, weight, points] of flat) {
       if (!weight || !count) continue;
-      lines.push({ label, count, weight, points });
+      lines.push({ label: tr(key), count, weight, points });
     }
     for (const [currency, points] of Object.entries(b.currencies)) {
       const weight = eq.currencies?.[currency] || 0;
@@ -143,8 +149,10 @@
       lines.push({
         label:
           currency === "hour"
-            ? "Declared hours"
-            : `${currency.toUpperCase()} balance`,
+            ? tr("status.metric.declaredHours")
+            : tr("status.metric.currencyBalance", {
+                currency: currency.toUpperCase(),
+              }),
         count: balance,
         weight,
         points,
@@ -165,18 +173,22 @@
     ts: number;
   };
 
-  const EVENT_LABELS: Record<string, string> = {
-    "quest:initiated": "Proposed a quest",
-    "quest:completed": "Completed a quest",
-    "quest:time_logged": "Logged time",
-    "expense:share": "Expense share",
-    "expense:paid": "Paid an expense",
-    appreciation: "Appreciation",
+  const EVENT_LABEL_KEYS: Record<string, MessageKey> = {
+    "quest:initiated": "status.event.questInitiated",
+    "quest:completed": "status.event.questCompleted",
+    "quest:time_logged": "status.event.timeLogged",
+    "expense:share": "status.event.expenseShare",
+    "expense:paid": "status.event.expensePaid",
+    appreciation: "status.event.appreciation",
   };
 
-  function eventLabel(e: any): string {
-    const t = String(e?.eventType ?? e?.resource?.type ?? "");
-    return EVENT_LABELS[t] || t.replace(/[:_]/g, " ") || "Event";
+  function eventLabel(tr: Translator, e: any): string {
+    const ty = String(e?.eventType ?? e?.resource?.type ?? "");
+    const key = EVENT_LABEL_KEYS[ty];
+    // Unknown event types are data, not UI — the prettified raw key survives.
+    return key
+      ? tr(key)
+      : ty.replace(/[:_]/g, " ") || tr("status.event.generic");
   }
 
   /** Resolve a quest's title from the live `quests` lens, or a `#id` fallback. */
@@ -185,11 +197,11 @@
     const q = (get(rawQuests) as any[]).find(
       (x) => String(x?.id) === String(id),
     );
-    return q?.title || `Quest #${id}`;
+    return q?.title || $t("status.questRef", { id: String(id) });
   }
 
   /** The user's own REA events (provider or receiver), most recent first. */
-  function ledgerFor(userId: string): LedgerEntry[] {
+  function ledgerFor(tr: Translator, userId: string): LedgerEntry[] {
     const out: LedgerEntry[] = [];
     for (const e of events) {
       const prov = String(e?.provider?.id ?? "");
@@ -197,7 +209,7 @@
       if (prov !== userId && recv !== userId) continue;
       out.push({
         id: String(e?.id ?? `${e?.eventType}-${e?.timestamp}`),
-        label: eventLabel(e),
+        label: eventLabel(tr, e),
         quest: e?.context?.questId != null ? questTitle(e.context.questId) : "",
         qty: Number(e?.resource?.quantity ?? 0),
         unit: String(e?.resource?.unit ?? ""),
@@ -209,9 +221,9 @@
     return out.sort((a, b) => b.ts - a.ts);
   }
 
-  function fmtDate(ts: number): string {
+  function fmtDate(loc: string, ts: number): string {
     if (!ts) return "";
-    return new Date(ts).toLocaleDateString([], {
+    return new Date(ts).toLocaleDateString(loc, {
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -427,9 +439,9 @@
 <div class="board">
   <div class="scrollarea scroll">
     {#if loading}
-      <p class="empty">Tallying contributions… ♛</p>
+      <p class="empty">{$t("status.tallying")}</p>
     {:else if !rows.length}
-      <p class="empty">No ranked activity yet. ♛</p>
+      <p class="empty">{$t("status.noActivity")}</p>
     {:else}
       <ol class="ranks">
         {#each rows as row, i (row.id)}
@@ -438,7 +450,7 @@
               class="rank"
               class:top={i === 0}
               on:click={() => (selected = row)}
-              title="See how {row.name}'s score was reached"
+              title={$t("status.seeScore", { name: row.name })}
             >
               <span class="place">
                 {#if i === 0}🏆{:else if i === 1}🥈{:else if i === 2}🥉{:else}{i +
@@ -469,8 +481,8 @@
 </div>
 
 {#if selected}
-  {@const lines = breakdownLines(selected)}
-  {@const ledger = ledgerFor(selected.id)}
+  {@const lines = breakdownLines($t, selected)}
+  {@const ledger = ledgerFor($t, selected.id)}
   <Modal on:close={() => (selected = null)}>
     <div class="detail">
       <div class="dhead">
@@ -486,20 +498,22 @@
         <div class="dwho">
           <h3>{selected.name}</h3>
           <p class="dsub">
-            Score <strong>{selected.score.toFixed(1)}</strong> ·
-            {selected.percentage.toFixed(1)}% share
+            {$t("status.score")} <strong>{selected.score.toFixed(1)}</strong> ·
+            {$t("status.share", { pct: selected.percentage.toFixed(1) })}
           </p>
         </div>
       </div>
 
       <section class="dsec">
-        <h4>Value equation</h4>
+        <h4>{$t("status.valueEquation")}</h4>
         {#if lines.length}
           <table class="eq">
             <thead>
               <tr
-                ><th>Metric</th><th>Count</th><th>×</th><th>Weight</th><th
-                  >Points</th
+                ><th>{$t("status.metricCol")}</th><th
+                  >{$t("status.countCol")}</th
+                ><th>×</th><th>{$t("status.weightCol")}</th><th
+                  >{$t("status.pointsCol")}</th
                 ></tr
               >
             </thead>
@@ -516,21 +530,20 @@
             </tbody>
             <tfoot>
               <tr
-                ><td colspan="4">Total</td><td class="p"
+                ><td colspan="4">{$t("status.total")}</td><td class="p"
                   >{selected.score.toFixed(1)}</td
                 ></tr
               >
             </tfoot>
           </table>
         {:else}
-          <p class="dnote">No weighted contributions yet.</p>
+          <p class="dnote">{$t("status.noWeighted")}</p>
         {/if}
       </section>
 
       <section class="dsec">
         <h4>
-          Ledger · {ledger.length}
-          {ledger.length === 1 ? "entry" : "entries"}
+          {$t("status.ledger")} · {$t("status.entries", { n: ledger.length })}
         </h4>
         {#if ledger.length}
           <ul class="ledger">
@@ -546,12 +559,12 @@
                 {#if e.qty}
                   <span class="lqty">{e.qty}{e.unit ? ` ${e.unit}` : ""}</span>
                 {/if}
-                <span class="ldate">{fmtDate(e.ts)}</span>
+                <span class="ldate">{fmtDate($locale, e.ts)}</span>
               </li>
             {/each}
           </ul>
         {:else}
-          <p class="dnote">No ledger entries.</p>
+          <p class="dnote">{$t("status.noEntries")}</p>
         {/if}
       </section>
     </div>

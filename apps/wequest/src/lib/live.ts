@@ -54,6 +54,17 @@ import {
   type PublishedNeed,
 } from "@holons/core/needs";
 import {
+  DELEGATIONS_LENS,
+  foldDelegations,
+  setDelegate,
+  clearDelegate,
+  tallyProposal,
+  treasuryBalance,
+  readTreasuryRate,
+  executeProposal,
+  type ProposalTally,
+} from "@holons/core/governance";
+import {
   classifyMarketItem,
   createMarketItem,
   deleteTaskWithCascade,
@@ -90,6 +101,9 @@ export const rawQuests = writable<any[]>([]);
 export const rawChecklists = writable<any[]>([]);
 export const rawUsers = writable<any[]>([]);
 export const rawExpenses = writable<any[]>([]);
+export const rawDelegations = writable<any[]>([]);
+/** The coop's voted per-settlement fee rate (settings.treasuryRate). */
+export const treasuryRate = writable(0);
 export const partners = writable<Array<{ id: string; name: string }>>([]);
 /** Open needs per hex cell of the neighbourhood — count, titles, and the
  *  resolved records themselves (tappable → answerable). */
@@ -440,6 +454,46 @@ export const hoursCirculated = derived(rawExpenses, ($exp) =>
     .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
 );
 
+/** Hours the coop itself holds — settlement fees in, funded proposals out. */
+export const treasury = derived(rawExpenses, ($exp) =>
+  treasuryBalance(
+    ($exp as Expense[]).filter(
+      (e) => e && !(e as any)._deleted && !(e as any)._federation,
+    ),
+  ),
+);
+
+/** Live from→to delegation map for this holon. */
+export const delegations = derived(rawDelegations, ($d) =>
+  foldDelegations($d.filter((r) => r && !r._federation)),
+);
+
+/** Who the acting user has delegated their vote to, if anyone. */
+export const myDelegate = derived(
+  delegations,
+  ($d) => $d[resolveUserId()] ?? null,
+);
+
+/**
+ * Weighted, delegation-aware counts per proposal — the whitepaper's liquid
+ * democracy. Weights come from reputation (see governance/tally), so votes
+ * are earned on settled exchanges, not just by showing up.
+ */
+export const proposalTallies = derived(
+  [proposals, members, peerReputation, delegations],
+  ([$props, $members, $rep, $del]): Record<string, ProposalTally> => {
+    const memberIds = $members.map((m: any) => String(m.id));
+    const out: Record<string, ProposalTally> = {};
+    for (const p of $props) {
+      out[String(p.id)] = tallyProposal(p, memberIds, {
+        reputation: $rep,
+        delegations: $del,
+      });
+    }
+    return out;
+  },
+);
+
 export const profileUser = derived(rawUsers, ($u) => {
   const me = resolveUserId();
   return $u.find((u) => u && String(u.id) === me) ?? null;
@@ -673,11 +727,20 @@ export async function ensureInit(): Promise<void> {
       },
     ),
   );
+  track(
+    (hs as any).subscribeFederated(
+      holon,
+      DELEGATIONS_LENS,
+      (items: any[]) => rawDelegations.set(items ?? []),
+      { includeFederated: false },
+    ),
+  );
 
-  // Settings: display name + hex address.
+  // Settings: display name, hex address, voted treasury rate.
   try {
     const s: any = await (hs as any).get(holon, "settings", holon);
     if (s?.name) holonName.set(String(s.name));
+    treasuryRate.set(readTreasuryRate(s));
   } catch {
     /* name stays empty */
   }
@@ -1087,6 +1150,10 @@ async function settleAndReport(
     { holosphere: hs, db: hsDb(hs) },
     owner,
     need,
+    {
+      // The coop's voted share of every settlement (0 until voted in).
+      treasuryRate: get(treasuryRate),
+    },
   );
   if (out.errors.length) {
     console.warn("[wequest] settlement partial:", out.errors);
@@ -1095,8 +1162,10 @@ async function settleAndReport(
   void recomputeKarma(hs, get(holonId));
   void refreshMap();
   const accepted = acceptedResponse(out.need);
+  const fee =
+    out.treasuryFee > 0 ? `, ${out.treasuryFee.toFixed(2)} h to the coop` : "";
   flash(
-    `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""} — karma follows.`,
+    `Done. ${out.hours.toFixed(1)} h moved${accepted?.responder?.name ? " to " + accepted.responder.name : ""}${fee} — karma follows.`,
   );
 }
 
@@ -1390,10 +1459,16 @@ export async function removeListItem(entry: {
   void reaggregateCell(hs, entry.need?.hex ?? get(settingsHex));
 }
 
-/** Put a proposal on the coop's table — a `type:'proposal'` quest. */
+/**
+ * Put a proposal on the coop's table — a `type:'proposal'` quest. Optional
+ * self-financing effects: hours requested from the treasury and/or a new
+ * per-settlement coop share, both applied only when the proposal passes and
+ * someone executes it.
+ */
 export async function createProposal(
   title: string,
   description: string,
+  effects?: { requestedHours?: number; newTreasuryRate?: number },
 ): Promise<boolean> {
   const holon = get(holonId);
   const t = title.trim();
@@ -1404,6 +1479,12 @@ export async function createProposal(
     type: "proposal",
     title: t,
     ...(description.trim() ? { description: description.trim() } : {}),
+    ...(effects?.requestedHours && effects.requestedHours > 0
+      ? { requestedHours: effects.requestedHours }
+      : {}),
+    ...(effects?.newTreasuryRate != null
+      ? { newTreasuryRate: effects.newTreasuryRate }
+      : {}),
     initiator: initiator(),
     participants: [],
     created: new Date().toISOString(),
@@ -1416,6 +1497,82 @@ export async function createProposal(
     flash("Could not create the proposal.");
     return false;
   }
+}
+
+/** Hand my voting weight to another member — revocable, re-delegable. */
+export async function delegateVoteTo(userId: string | number): Promise<void> {
+  const holon = get(holonId);
+  if (!holon || userId == null) return;
+  const hs = await getHolosphere();
+  try {
+    const res = await setDelegate(hsDb(hs), holon, initiator().id, userId);
+    flash(
+      res.ok
+        ? "Delegated — your weight follows their vote until you take it back."
+        : "Pick someone other than yourself.",
+    );
+  } catch {
+    flash("Could not record the delegation.");
+  }
+}
+
+/** Take my vote back — direct democracy again. */
+export async function revokeDelegation(): Promise<void> {
+  const holon = get(holonId);
+  if (!holon) return;
+  const hs = await getHolosphere();
+  try {
+    await clearDelegate(hsDb(hs), holon, initiator().id);
+    flash("Delegation revoked — you vote directly again.");
+  } catch {
+    flash("Could not revoke the delegation.");
+  }
+}
+
+/**
+ * Execute a passed proposal: hours move treasury → beneficiary and/or the
+ * voted fee rate lands on settings. Anyone may trigger it — the tally, not
+ * the trigger-puller, is the authority.
+ */
+export async function executeSelectedProposal(proposal: any): Promise<boolean> {
+  const holon = get(holonId);
+  if (!holon || !proposal) return false;
+  const hs = await getHolosphere();
+  const tally = get(proposalTallies)[String(proposal.id)];
+  if (!tally) return false;
+  let result: Awaited<ReturnType<typeof executeProposal>>;
+  try {
+    result = await executeProposal(hsDb(hs), holon, proposal, {
+      tally,
+      balance: get(treasury),
+    });
+  } catch (err: any) {
+    flash(
+      err?.name === "AuthorizationError"
+        ? "This holon doesn't let you execute proposals."
+        : "Could not execute the proposal.",
+    );
+    return false;
+  }
+  if (!result.ok) {
+    flash(
+      {
+        not_passed: "It hasn't passed — the coop is still deciding.",
+        insufficient_treasury: "The treasury can't cover it yet.",
+        already_executed: "Already executed.",
+        no_effect: "This proposal asks for nothing to execute.",
+        not_a_proposal: "This isn't a proposal.",
+      }[result.reason],
+    );
+    return false;
+  }
+  if (result.rate != null) treasuryRate.set(result.rate);
+  flash(
+    result.expense
+      ? `Executed — ${result.expense.amount.toFixed(1)} h moved from the treasury.`
+      : `Executed — the coop share is now ${Math.round((result.rate ?? 0) * 100)}%.`,
+  );
+  return true;
 }
 
 /**

@@ -41,6 +41,7 @@ import {
   CHECKLISTS_COLLECTION,
   SHOPPING_KEY,
 } from '../shopping/index.js';
+import { TREASURY_ID, splitHours } from '../governance/treasury.js';
 import { acceptedResponse, closeNeed } from './responses.js';
 import { refreshPublishedNeed } from './publish.js';
 import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
@@ -48,6 +49,11 @@ import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
 /** Stable id of the requester → provider hour transfer for a need. */
 export function handoffExpenseId(needId: string | number): string {
   return `wq-${needId}-handoff`;
+}
+
+/** Stable id of the treasury's withheld share of a settlement. */
+export function handoffFeeExpenseId(needId: string | number): string {
+  return `wq-${needId}-handoff-fee`;
 }
 
 /** Stable id of the flywheel offer minted from a fulfilled need. */
@@ -84,6 +90,14 @@ export interface SettleNeedOptions {
    * provider on their own holon (see module doc). Default true.
    */
   mintProviderOffer?: boolean;
+  /**
+   * Fraction of the moved hours withheld into the coop's treasury (the
+   * `treasury` account on the OWNER holon's expenses lens) — the
+   * democratically voted rate from `@holons/core/governance`. Default 0:
+   * no fee until the coop votes one in. Karma is unaffected; the provider's
+   * time logged stays the full hours.
+   */
+  treasuryRate?: number;
 }
 
 export interface SettleNeedOutcome {
@@ -93,6 +107,8 @@ export interface SettleNeedOutcome {
   providerId: string | null;
   providerHolonId: string | null;
   requesterId: string | null;
+  /** Hours withheld into the owner coop's treasury (0 without a voted rate). */
+  treasuryFee: number;
   /** Id of the flywheel offer minted for the provider, when one was. */
   mintedOfferId: string | null;
   completion: ExecuteOutcome;
@@ -158,11 +174,15 @@ export async function settleNeedHandoff(
     errors.push(`republish: ${(err as Error).message ?? String(err)}`);
   }
 
+  // The requester pays the full hours; the coop withholds its voted share
+  // (governance/treasury) and the provider is credited the rest.
+  const { toProvider, toTreasury } = splitHours(hours, opts.treasuryRate ?? 0);
+
   const expenseFor = (holonId: string) =>
     createExpense({
       id: handoffExpenseId(String(final.id)),
       holonId,
-      amount: hours,
+      amount: toProvider,
       currency: 'hour',
       description: String(final.title ?? 'handoff'),
       paidBy: providerId ?? 'provider',
@@ -176,6 +196,27 @@ export async function settleNeedHandoff(
       await db.put(ownerHolonId, 'expenses', ownerExpense);
     } catch (err) {
       errors.push(`expense: ${(err as Error).message ?? String(err)}`);
+    }
+  }
+
+  // The fee is the owner coop's — it never mirrors to the provider holon.
+  if (toTreasury > 0) {
+    const feeExpense = createExpense({
+      id: handoffFeeExpenseId(String(final.id)),
+      holonId: ownerHolonId,
+      amount: toTreasury,
+      currency: 'hour',
+      description: `coop share — ${String(final.title ?? 'handoff')}`,
+      paidBy: TREASURY_ID,
+      splitWith: requesterId != null ? [requesterId] : [],
+      now,
+    });
+    if (feeExpense) {
+      try {
+        await db.put(ownerHolonId, 'expenses', feeExpense);
+      } catch (err) {
+        errors.push(`fee expense: ${(err as Error).message ?? String(err)}`);
+      }
     }
   }
 
@@ -287,6 +328,7 @@ export async function settleNeedHandoff(
     providerId,
     providerHolonId,
     requesterId,
+    treasuryFee: toTreasury,
     mintedOfferId: minted,
     completion,
     errors,

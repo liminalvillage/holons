@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from 'vitest';
-import { handoffExpenseId, mintedOfferId, settleNeedHandoff } from './settle.js';
+import {
+  handoffExpenseId,
+  handoffFeeExpenseId,
+  mintedOfferId,
+  settleNeedHandoff,
+} from './settle.js';
 import type { PublishedNeed } from './types.js';
 import type { HoloSphere } from 'holosphere';
 
@@ -220,5 +225,47 @@ describe('settleNeedHandoff', () => {
     });
     const ids = writes.filter((w) => w.lens === 'expenses').map((w) => w.value.id);
     expect(new Set(ids).size).toBe(1);
+  });
+});
+
+describe('settleNeedHandoff treasury fee', () => {
+  async function settleWithRate(rate?: number) {
+    const { db, holosphere, writes } = fakeStores();
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {
+      now: 1700000000000,
+      treasuryRate: rate,
+    });
+    return { out, writes };
+  }
+
+  it('withholds the voted rate into the treasury and credits the provider the rest', async () => {
+    const { out, writes } = await settleWithRate(0.05);
+    expect(out.treasuryFee).toBeCloseTo(0.1, 10); // 5% of 2h
+    const transfer = writes.find((w) => w.value?.id === handoffExpenseId('need-1'));
+    expect(transfer?.value).toMatchObject({ amount: 1.9, paidBy: 'prov-user' });
+    const fee = writes.find((w) => w.value?.id === handoffFeeExpenseId('need-1'));
+    expect(fee?.holon).toBe('owner-h');
+    expect(fee?.value).toMatchObject({
+      amount: 0.1,
+      currency: 'hour',
+      paidBy: 'treasury',
+      splitWith: ['req-user'],
+    });
+    // The provider-holon mirror carries their net share, never the fee.
+    const mirrored = writes.filter(
+      (w) => w.holon === 'prov-holon' && w.lens === 'expenses'
+    );
+    expect(mirrored).toHaveLength(1);
+    expect(mirrored[0].value).toMatchObject({ amount: 1.9 });
+    // Karma input is untouched: the full hours stay logged.
+    expect((out.need as any).timeTracking).toEqual({ 'prov-user': 2 });
+  });
+
+  it('writes no fee expense without a voted rate', async () => {
+    const { out, writes } = await settleWithRate(undefined);
+    expect(out.treasuryFee).toBe(0);
+    expect(writes.some((w) => w.value?.id === handoffFeeExpenseId('need-1'))).toBe(false);
+    const transfer = writes.find((w) => w.value?.id === handoffExpenseId('need-1'));
+    expect(transfer?.value).toMatchObject({ amount: 2 });
   });
 });

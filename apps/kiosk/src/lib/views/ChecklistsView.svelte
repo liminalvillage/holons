@@ -19,6 +19,7 @@
   } from "$lib/stores";
   import { telegramUser, loginOpen } from "$lib/auth";
   import { getChecklistStore } from "$lib/holosphere";
+  import { t } from "$lib/i18n";
   import { personalChecklists } from "$lib/personal";
   import { sourceRef, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
@@ -114,7 +115,7 @@
     void mutate(async () => {
       const store = await getChecklistStore();
       await toggleItem(store, ref.holon, ref.key, index);
-    }, "Could not update the list.");
+    }, $t("lists.updateFailed"));
   }
 
   function removeItem(index: number) {
@@ -124,7 +125,7 @@
     void mutate(async () => {
       const store = await getChecklistStore();
       await removeItemAt(store, ref.holon, ref.key, index);
-    }, "Could not remove the item.");
+    }, $t("lists.removeItemFailed"));
   }
 
   let addItemText = "";
@@ -137,7 +138,7 @@
       const store = await getChecklistStore();
       await appendItems(store, ref.holon, ref.key, [{ text, checked: false }]);
       addItemText = "";
-    }, "Could not add the item.");
+    }, $t("lists.addItemFailed"));
   }
 
   function clearDone() {
@@ -148,9 +149,9 @@
       const store = await getChecklistStore();
       const res = await clearChecklist(store, ref.holon, ref.key);
       if (!res.ok && res.reason === "nothing_to_remove") {
-        showNotice("Nothing ticked yet.");
+        showNotice($t("lists.nothingTicked"));
       }
-    }, "Could not clear the list.");
+    }, $t("lists.clearFailed"));
   }
 
   // Deleting is a two-tap confirm — the first tap arms the button.
@@ -167,11 +168,11 @@
       const store = await getChecklistStore();
       const res = await deleteChecklist(store, ref.holon, ref.key);
       if (!res.ok) {
-        showNotice("The agenda and shopping lists can't be deleted.");
+        showNotice($t("lists.specialUndeletable"));
         return;
       }
       openId = null;
-    }, "Could not delete the list.");
+    }, $t("lists.deleteFailed"));
   }
 
   // ── Create a list ─────────────────────────────────────────────────────────
@@ -206,8 +207,8 @@
       if (!res.ok) {
         showNotice(
           res.reason === "exists"
-            ? "A list with that name already exists."
-            : "List names can't contain underscores.",
+            ? $t("lists.nameExists")
+            : $t("lists.nameUnderscore"),
         );
         return;
       }
@@ -217,7 +218,7 @@
       openList(name);
     } catch (err) {
       console.error("[kiosk] create checklist failed", err);
-      showNotice("Could not create the list.");
+      showNotice($t("lists.createFailed"));
     } finally {
       adding = false;
     }
@@ -238,14 +239,21 @@
       <!-- One open list: items with big tap-to-tick rows. -->
       <div class="panel">
         <header class="panelhead">
-          <button class="back" on:click={closeList} aria-label="Back to lists">
+          <button
+            class="back"
+            on:click={closeList}
+            aria-label={$t("lists.backAria")}
+          >
             ‹
           </button>
           <span class="picon" aria-hidden="true">{openCard?.icon ?? "📋"}</span>
           <div class="ptext">
             <h2>{openCard?.title ?? openId}</h2>
             <span class="count">
-              {openDone}/{openItems.length} done
+              {$t("lists.doneCount", {
+                done: openDone,
+                total: openItems.length,
+              })}
               {#if openCard?.source}· ⇄ {openCard.source}{/if}
             </span>
           </div>
@@ -253,9 +261,9 @@
             class="tool"
             on:click={clearDone}
             disabled={!openItems.length}
-            title="Clear ticked items"
+            title={$t("lists.clearTicked")}
           >
-            ↺ Clear
+            ↺ {$t("lists.clear")}
           </button>
           {#if openCard && !openCard.special}
             <button
@@ -263,17 +271,17 @@
               class:armed={confirmDelete}
               on:click={removeList}
               on:blur={() => (confirmDelete = false)}
-              title="Delete this list"
+              title={$t("lists.deleteList")}
             >
-              {confirmDelete ? "Tap to confirm" : "🗑"}
+              {confirmDelete ? $t("lists.tapConfirm") : "🗑"}
             </button>
           {/if}
         </header>
 
         {#if openRaw == null}
-          <p class="empty">This list is gone.</p>
+          <p class="empty">{$t("lists.gone")}</p>
         {:else if !openItems.length}
-          <p class="empty">Nothing on this list yet — add the first item ↓</p>
+          <p class="empty">{$t("lists.emptyOpen")}</p>
         {:else}
           <ul class="items">
             {#each openItems as item, index (index)}
@@ -296,7 +304,7 @@
                   <button
                     class="x"
                     on:click|stopPropagation={() => removeItem(index)}
-                    aria-label="Remove {item.text}"
+                    aria-label={$t("lists.removeItemAria", { item: item.text })}
                   >
                     ✕
                   </button>
@@ -309,15 +317,15 @@
         <form class="addrow" on:submit|preventDefault={addItem}>
           <input
             bind:value={addItemText}
-            placeholder="Add an item…"
+            placeholder={$t("lists.addItemPlaceholder")}
             maxlength="120"
-            aria-label="New item"
+            aria-label={$t("lists.newItemAria")}
           />
           <button type="submit" disabled={!addItemText.trim()}>＋</button>
         </form>
       </div>
     {:else if $scope === "personal" && !$telegramUser}
-      <p class="empty">Log in to see your lists ✶</p>
+      <p class="empty">{$t("lists.loginPersonal")}</p>
     {:else if shownLists.length}
       <!-- The grid of list cards. -->
       <div class="grid">
@@ -341,13 +349,15 @@
               class="status"
               class:cleared={list.total > 0 && list.done === list.total}
             >
-              {list.total ? `${list.done}/${list.total} done` : "empty"}
+              {list.total
+                ? $t("lists.doneCount", { done: list.done, total: list.total })
+                : $t("lists.emptyStatus")}
             </span>
           </article>
         {/each}
       </div>
     {:else}
-      <p class="empty">No lists yet — start one with ＋</p>
+      <p class="empty">{$t("lists.empty")}</p>
     {/if}
   </div>
 
@@ -357,8 +367,8 @@
       <button
         class="fab"
         on:click={openAdd}
-        aria-label="Start a list"
-        title="Start a list"
+        aria-label={$t("lists.startList")}
+        title={$t("lists.startList")}
       >
         ＋
       </button>
@@ -370,28 +380,30 @@
   <Modal on:close={() => (addOpen = false)}>
     <div class="form">
       <div class="glyph" aria-hidden="true">☑</div>
-      <h3>Start a list</h3>
-      <p class="lead">A shared checklist anyone here can tick off.</p>
+      <h3>{$t("lists.startList")}</h3>
+      <p class="lead">{$t("lists.startLead")}</p>
       <input
         class="line"
         bind:value={addName}
-        placeholder="Name (e.g. cleaning day)"
+        placeholder={$t("lists.namePlaceholder")}
         maxlength="60"
         on:keydown={(e) => e.key === "Enter" && addList()}
       />
       <textarea
         bind:value={addItems}
         rows="3"
-        placeholder="First items, comma-separated (optional)"
+        placeholder={$t("lists.firstItemsPlaceholder")}
       ></textarea>
       <div class="actions">
         <button
           class="primary"
           on:click={addList}
           disabled={adding || !addName.trim()}
-          >{adding ? "Starting…" : "Start list"}</button
+          >{adding ? $t("lists.starting") : $t("lists.startBtn")}</button
         >
-        <button class="ghost" on:click={() => (addOpen = false)}>Cancel</button>
+        <button class="ghost" on:click={() => (addOpen = false)}
+          >{$t("common.cancel")}</button
+        >
       </div>
     </div>
   </Modal>

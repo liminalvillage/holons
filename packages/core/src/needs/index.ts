@@ -85,6 +85,7 @@ export {
 export {
   settleNeedHandoff,
   handoffExpenseId,
+  handoffFeeExpenseId,
   mintedOfferId,
   type SettleDeps,
   type SettleNeedOptions,
