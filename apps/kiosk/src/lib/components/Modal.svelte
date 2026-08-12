@@ -3,6 +3,7 @@
   // Generic "bring it forward" overlay: a dimmed backdrop and a card that zooms
   // up from the tapped element. Closes on backdrop tap, the ✕, or Escape.
   import { createEventDispatcher } from "svelte";
+  import { t } from "$lib/i18n";
   const dispatch = createEventDispatcher();
   export let tint: string = "var(--card)";
   /** Render the card as a hologram projection (see `.holo` in app.css). */
@@ -31,7 +32,8 @@
     role="dialog"
     aria-modal="true"
   >
-    <button class="x" on:click={close} aria-label="Close">✕</button>
+    <button class="x" on:click={close} aria-label={$t("common.close")}>✕</button
+    >
     <div class="body scroll">
       <slot />
     </div>

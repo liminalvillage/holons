@@ -35,6 +35,7 @@ import {
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
+import type { MessageKey } from "./i18n";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -290,14 +291,21 @@ export function closeDetail(): void {
 
 // ── Tabs ─────────────────────────────────────────────────────────────────--
 
+// Labels are catalog keys resolved with `$t` where they render, so a language
+// switch re-labels the tabs live (a module const must never freeze a
+// translated string).
 export const TABS = [
-  { id: "tasks", label: "Tasks", glyph: "✎" },
-  { id: "calendar", label: "Calendar", glyph: "▦" },
-  { id: "library", label: "Library", glyph: "❖" },
-  { id: "checklists", label: "Lists", glyph: "☑" },
-  { id: "roles", label: "Roles", glyph: "✪" },
-  { id: "status", label: "Status", glyph: "♛" },
-] as const;
+  { id: "tasks", labelKey: "tabs.tasks", glyph: "✎" },
+  { id: "calendar", labelKey: "tabs.calendar", glyph: "▦" },
+  { id: "library", labelKey: "tabs.library", glyph: "❖" },
+  { id: "checklists", labelKey: "tabs.checklists", glyph: "☑" },
+  { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
+  { id: "status", labelKey: "tabs.status", glyph: "♛" },
+] as const satisfies readonly {
+  id: string;
+  labelKey: MessageKey;
+  glyph: string;
+}[];
 
 export type TabId = (typeof TABS)[number]["id"];
 

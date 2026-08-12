@@ -20,6 +20,7 @@ import type { LibraryItem } from "@holons/core/library";
 import { holonId, showNotice, type Selection } from "./stores";
 import { telegramUser, loginOpen } from "./auth";
 import { getWriter, getLibraryDb } from "./holosphere";
+import { tr } from "./i18n";
 
 export { parseCardText };
 
@@ -64,11 +65,7 @@ export async function copySelection(sel: Selection): Promise<void> {
       ? cardFromLibraryItem(sel.item as LibraryItem)
       : cardFromQuest(sel.quest as Quest);
   const ok = await writeClipboard(encodeCardText(payload));
-  showNotice(
-    ok
-      ? "Card copied — paste it in any holon (or any chat)."
-      : "Couldn't reach the clipboard.",
-  );
+  showNotice(ok ? tr("clipboard.copied") : tr("clipboard.copyFailed"));
 }
 
 /**
@@ -81,12 +78,12 @@ export async function pasteCardText(text: string): Promise<boolean> {
   if (!card) return false;
   const hid = get(holonId);
   if (!hid) {
-    showNotice("Point the kiosk at a holon first.");
+    showNotice(tr("clipboard.noHolon"));
     return true;
   }
   const user = get(telegramUser);
   if (!user) {
-    showNotice("Log in to paste the copied card.");
+    showNotice(tr("clipboard.loginToPaste"));
     loginOpen.set(true);
     return true;
   }
@@ -103,10 +100,10 @@ export async function pasteCardText(text: string): Promise<boolean> {
       });
       quest.id = newId();
       const writer = await getWriter(hid, (m) =>
-        showNotice(`Couldn't paste — ${m}`),
+        showNotice(tr("clipboard.pasteFailed", { reason: m })),
       );
       if (await writer.put("quests", quest)) {
-        showNotice(`Pasted "${quest.title}".`);
+        showNotice(tr("clipboard.pasted", { title: quest.title }));
       }
     } else {
       const { itemId, options } = libraryAddFromCard(card, {
@@ -115,15 +112,18 @@ export async function pasteCardText(text: string): Promise<boolean> {
       });
       const db = await getLibraryDb();
       const res = await addItem(db, hid, itemId, options);
-      if (res.ok) showNotice(`Pasted "${itemId}" into the library.`);
+      if (res.ok) showNotice(tr("clipboard.pastedLibrary", { title: itemId }));
       else if (res.reason === "already_exists")
-        showNotice(`"${itemId}" is already in this library.`);
-      else showNotice("Couldn't paste the card.");
+        showNotice(tr("clipboard.alreadyInLibrary", { title: itemId }));
+      else showNotice(tr("clipboard.pasteCardFailed"));
     }
   } catch (err) {
     console.error("[kiosk] paste card failed", err);
     showNotice(
-      `Couldn't paste — ${err instanceof Error ? err.message : "write failed"}`,
+      tr("clipboard.pasteFailed", {
+        reason:
+          err instanceof Error ? err.message : tr("clipboard.writeFailed"),
+      }),
     );
   }
   return true;
@@ -139,10 +139,10 @@ export async function pasteFromSystemClipboard(): Promise<void> {
   try {
     text = await navigator.clipboard.readText();
   } catch {
-    showNotice("Clipboard blocked — press Ctrl/Cmd+V instead.");
+    showNotice(tr("clipboard.blocked"));
     return;
   }
   if (!text || !(await pasteCardText(text))) {
-    showNotice("No copied card in the clipboard.");
+    showNotice(tr("clipboard.noCard"));
   }
 }

@@ -246,7 +246,7 @@ export async function dispatchKioskTool(
           );
         }
         onNavigate(tab.id);
-        return ok(call.id, `Now showing the ${tab.label} view.`);
+        return ok(call.id, `Now showing the ${tab.id} view.`);
       }
 
       case "list_items": {

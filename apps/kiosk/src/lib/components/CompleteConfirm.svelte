@@ -9,6 +9,7 @@
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
   import { getHolosphere } from "$lib/holosphere";
+  import { t } from "$lib/i18n";
   import type { Quest } from "@holons/core/tasks";
 
   type Member = {
@@ -116,10 +117,8 @@
   <Modal on:close={cancel}>
     <div class="confirm">
       <div class="glyph" aria-hidden="true">🎉</div>
-      <h3>Complete this task?</h3>
-      <p class="lead">
-        Confirm who took part — they'll be credited in the holon's accounting.
-      </p>
+      <h3>{$t("complete.title")}</h3>
+      <p class="lead">{$t("complete.lead")}</p>
 
       <ul class="people">
         {#each rows as r, i (r.key)}
@@ -154,8 +153,11 @@
       {#if available.length}
         <label class="add">
           <span class="add-ico">＋</span>
-          <select on:change={addMember} aria-label="Add a member">
-            <option value="">Add a member…</option>
+          <select
+            on:change={addMember}
+            aria-label={$t("complete.addMemberAria")}
+          >
+            <option value="">{$t("complete.addMember")}</option>
             {#each available as m (m.id)}
               <option value={String(m.id)}>{partName(m)}</option>
             {/each}
@@ -164,8 +166,10 @@
       {/if}
 
       <div class="actions">
-        <button class="primary" on:click={confirm}>Complete</button>
-        <button class="ghost" on:click={cancel}>Cancel</button>
+        <button class="primary" on:click={confirm}
+          >{$t("complete.confirm")}</button
+        >
+        <button class="ghost" on:click={cancel}>{$t("common.cancel")}</button>
       </div>
     </div>
   </Modal>

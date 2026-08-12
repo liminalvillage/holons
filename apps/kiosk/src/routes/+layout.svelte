@@ -25,7 +25,7 @@
     resolveCalendarView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
-  import { langMode, holonLang, startI18n, type Lang } from "$lib/i18n";
+  import { langMode, holonLang, startI18n, t, tr, type Lang } from "$lib/i18n";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
   import {
@@ -357,7 +357,7 @@
       console.error(
         `[kiosk] live '${lens}' subscription missed a local write — rebinding all lens subscriptions`,
       );
-      showNotice("Live view stalled — resyncing…");
+      showNotice(tr("layout.resync"));
       boundHolon = null; // force refresh() to tear down and re-subscribe
       refresh(
         get(holonIdStore),
@@ -510,16 +510,10 @@
       {:else}
         <div class="wordmark">{$brandName || "kiosk"}</div>
       {/if}
-      <h1>No holon configured</h1>
-      <p>
-        Point this screen at a holon: open <strong>Settings</strong> and enter a
-        holon id, open the kiosk at <code>/&lt;holon id&gt;</code>, open it once
-        with a <code>?holon=&lt;id&gt;</code> parameter, or set
-        <code>VITE_KIOSK_HOLON</code> in the root <code>.env</code>. Settings
-        and <code>?holon=</code> are remembered on this device.
-      </p>
+      <h1>{$t("setup.title")}</h1>
+      <p>{$t("setup.body")}</p>
       <button class="setup-btn" on:click={() => settingsOpen.set(true)}>
-        Open settings
+        {$t("setup.openSettings")}
       </button>
     </div>
   {:else}
@@ -623,12 +617,6 @@
     color: var(--ink-soft);
     line-height: 1.6;
     font-size: 1.02rem;
-  }
-  .setup code {
-    background: var(--paper-deep);
-    border-radius: 6px;
-    padding: 0.1em 0.4em;
-    font-size: 0.9em;
   }
   .setup-btn {
     margin-top: 1.5rem;

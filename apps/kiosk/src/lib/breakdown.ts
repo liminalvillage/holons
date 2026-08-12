@@ -28,6 +28,7 @@ import {
   type Quest,
 } from "@holons/core/tasks";
 import { resolveVoiceKey } from "./config";
+import { tr } from "./i18n";
 
 /** Same CORS-friendly host the direct voice mode talks to (voice/openai.ts). */
 const API_BASE = "https://api.openai.com/v1";
@@ -114,7 +115,9 @@ async function viaServer(input: BreakdownRequest): Promise<BreakdownProposal> {
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data?.error || `AI breakdown failed (${res.status}).`);
+    throw new Error(
+      data?.error || tr("breakdown.failed", { status: res.status }),
+    );
   }
   // The route already validated, but never trust parsed network input.
   return parseBreakdownProposal(data.proposal);
@@ -165,12 +168,12 @@ async function viaOpenAI(
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      throw new Error("OpenAI rejected this device's API key.");
+      throw new Error(tr("breakdown.badKey"));
     }
     if (resp.status === 429) {
-      throw new Error("OpenAI rate limit hit — try again shortly.");
+      throw new Error(tr("breakdown.rateLimit"));
     }
-    throw new Error(`AI breakdown failed (HTTP ${resp.status}).`);
+    throw new Error(tr("breakdown.failed", { status: resp.status }));
   }
 
   const data = (await resp.json()) as {

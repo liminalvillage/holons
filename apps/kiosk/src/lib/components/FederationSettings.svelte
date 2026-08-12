@@ -20,6 +20,7 @@
   import type { HoloSphere } from "holosphere";
   import { getHolosphere, getHolonName } from "$lib/holosphere";
   import { holonId, partnerNames } from "$lib/stores";
+  import { t, type MessageKey, type Translator } from "$lib/i18n";
 
   type PartnerRow = {
     id: string;
@@ -31,17 +32,21 @@
   // Lenses the kiosk renders; a partner's already-configured other lenses
   // (e.g. set up from Telegram) are shown too so a save never drops them.
   const KIOSK_LENSES = ["quests", "library", "roles", "checklists"];
-  const LENS_LABELS: Record<string, string> = {
-    quests: "Tasks",
-    library: "Library",
-    roles: "Roles",
-    checklists: "Lists",
+  const LENS_LABEL_KEYS: Record<string, MessageKey> = {
+    quests: "tabs.tasks",
+    library: "tabs.library",
+    roles: "tabs.roles",
+    checklists: "tabs.checklists",
   };
-  const MODES: { id: FederationLensMode; label: string; glyph: string }[] = [
-    { id: "off", label: "Off", glyph: "·" },
-    { id: "receive", label: "Receive", glyph: "↓" },
-    { id: "send", label: "Send", glyph: "↑" },
-    { id: "both", label: "Both", glyph: "⇅" },
+  const MODES: {
+    id: FederationLensMode;
+    labelKey: MessageKey;
+    glyph: string;
+  }[] = [
+    { id: "off", labelKey: "fed.off", glyph: "·" },
+    { id: "receive", labelKey: "fed.receive", glyph: "↓" },
+    { id: "send", labelKey: "fed.send", glyph: "↑" },
+    { id: "both", labelKey: "fed.both", glyph: "⇅" },
   ];
 
   let hs: HoloSphere | null = null;
@@ -65,8 +70,9 @@
     return [...KIOSK_LENSES, ...new Set(extra)];
   }
 
-  function lensLabel(lens: string): string {
-    return LENS_LABELS[lens] ?? lens.charAt(0).toUpperCase() + lens.slice(1);
+  function lensLabel(tr: Translator, lens: string): string {
+    const key = LENS_LABEL_KEYS[lens];
+    return key ? tr(key) : lens.charAt(0).toUpperCase() + lens.slice(1);
   }
 
   function mergePartnerNames(named: PartnerRow[]) {
@@ -110,7 +116,7 @@
       }
     } catch (err) {
       console.error("[kiosk] federation load failed", err);
-      if (alive) loadError = "Could not load federation — try again.";
+      if (alive) loadError = $t("fed.loadError");
     } finally {
       if (alive) loading = false;
     }
@@ -143,7 +149,7 @@
     } catch (err) {
       console.error("[kiosk] federation lens update failed", err);
       rows = rows.map((r) => (r.id === row.id ? { ...r, ...prev } : r));
-      rowError = { ...rowError, [row.id]: "Change didn't save — try again." };
+      rowError = { ...rowError, [row.id]: $t("fed.changeError") };
     } finally {
       busy = { ...busy, [row.id]: false };
     }
@@ -177,7 +183,7 @@
       announceChanged();
     } catch (err) {
       console.error("[kiosk] unfederate failed", err);
-      rowError = { ...rowError, [row.id]: "Unlink didn't save — try again." };
+      rowError = { ...rowError, [row.id]: $t("fed.unlinkError") };
     } finally {
       busy = { ...busy, [row.id]: false };
     }
@@ -190,7 +196,7 @@
     if (!hs || !holon || addBusy) return;
     if (!target) return;
     if (target === holon) {
-      addError = "That's this holon.";
+      addError = $t("fed.selfLink");
       return;
     }
     const existing = rows.find((r) => r.id === target);
@@ -226,7 +232,7 @@
       });
     } catch (err) {
       console.error("[kiosk] federate failed", err);
-      addError = "Could not link that holon — try again.";
+      addError = $t("fed.linkError");
     } finally {
       addBusy = false;
     }
@@ -241,11 +247,11 @@
 
 <div class="federation">
   {#if loading}
-    <p class="hint">Loading partners…</p>
+    <p class="hint">{$t("fed.loading")}</p>
   {:else if loadError}
     <p class="err">{loadError}</p>
   {:else if rows.length === 0}
-    <p class="hint">No partners yet — link a holon below to share boards.</p>
+    <p class="hint">{$t("fed.none")}</p>
   {/if}
 
   {#each rows as row (row.id)}
@@ -269,16 +275,14 @@
 
       {#if expanded === row.id}
         <div class="lenses">
-          <p class="hint">
-            Receive = show their items here · Send = share ours with them
-          </p>
+          <p class="hint">{$t("fed.hint")}</p>
           {#each lensesFor(row) as lens (lens)}
             <div class="lens-row">
-              <span class="lens-name">{lensLabel(lens)}</span>
+              <span class="lens-name">{lensLabel($t, lens)}</span>
               <div
                 class="mode-row"
                 role="radiogroup"
-                aria-label="{lensLabel(lens)} federation"
+                aria-label={$t("fed.lensAria", { lens: lensLabel($t, lens) })}
               >
                 {#each MODES as m (m.id)}
                   <button
@@ -291,7 +295,7 @@
                     on:click={() => setLens(row, lens, m.id)}
                   >
                     <span aria-hidden="true">{m.glyph}</span>
-                    {m.label}
+                    {$t(m.labelKey)}
                   </button>
                 {/each}
               </div>
@@ -305,7 +309,7 @@
               disabled={busy[row.id]}
               on:click={() => unlink(row)}
             >
-              Tap again to unlink
+              {$t("fed.tapAgainUnlink")}
             </button>
           {:else}
             <button
@@ -314,7 +318,7 @@
               disabled={busy[row.id]}
               on:click={() => armRemove(row.id)}
             >
-              Unlink {row.name || row.id}
+              {$t("fed.unlink", { name: row.name || row.id })}
             </button>
           {/if}
         </div>
@@ -326,7 +330,7 @@
     <input
       type="text"
       bind:value={addId}
-      placeholder="holon id"
+      placeholder={$t("settings.holonPlaceholder")}
       inputmode="numeric"
       disabled={addBusy}
       on:keydown={(e) => e.key === "Enter" && addPartner()}
@@ -337,7 +341,7 @@
       disabled={addBusy || !addId.trim()}
       on:click={addPartner}
     >
-      {addBusy ? "Linking…" : "Link"}
+      {addBusy ? $t("fed.linking") : $t("fed.link")}
     </button>
   </div>
   {#if addError}<p class="err">{addError}</p>{/if}

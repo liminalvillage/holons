@@ -16,6 +16,7 @@
   } from "h3-js";
   import { showNotice } from "$lib/stores";
   import { getHolosphere, getWriter } from "$lib/holosphere";
+  import { t, tr } from "$lib/i18n";
 
   /** The holon whose `settings.hex` is being claimed. */
   export let holonId: string;
@@ -312,9 +313,7 @@
 
   function locate() {
     if (!navigator.geolocation) {
-      showNotice(
-        "No geolocation on this device — tap the map or paste a cell id.",
-      );
+      showNotice(tr("hex.noGeo"));
       return;
     }
     locating = true;
@@ -334,7 +333,7 @@
       },
       () => {
         locating = false;
-        showNotice("Location denied — tap the map or paste a cell id.");
+        showNotice(tr("hex.denied"));
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
@@ -343,7 +342,7 @@
   function useManual() {
     const cell = manual.trim().toLowerCase();
     if (!isValidCell(cell)) {
-      showNotice("That's not a valid H3 cell id.");
+      showNotice(tr("hex.invalidCell"));
       return;
     }
     selected = cell;
@@ -384,13 +383,13 @@
         hex: selected,
       });
       if (ok) {
-        showNotice("Location claimed — this holon is on the map.");
+        showNotice(tr("hex.claimed"));
         dispatch("saved", selected);
         dispatch("close");
       }
     } catch (err) {
       console.error("[HexPicker] failed to save hex", err);
-      showNotice("Could not save the location — try again.");
+      showNotice(tr("hex.saveError"));
     } finally {
       saving = false;
     }
@@ -417,24 +416,21 @@
 
 <svelte:window on:keydown={onKey} />
 
-<div
-  class="picker"
-  role="dialog"
-  aria-modal="true"
-  aria-label="Pick a location"
->
+<div class="picker" role="dialog" aria-modal="true" aria-label={$t("hex.aria")}>
   <header>
     <div class="titles">
-      <div class="kicker">Claim your cell</div>
-      <h3>Where does this holon stand?</h3>
+      <div class="kicker">{$t("hex.kicker")}</div>
+      <h3>{$t("hex.title")}</h3>
     </div>
-    <button class="x" on:click={() => dispatch("close")} aria-label="Close">
+    <button
+      class="x"
+      on:click={() => dispatch("close")}
+      aria-label={$t("common.close")}
+    >
       ✕
     </button>
   </header>
-  <p class="hint">
-    Tap the hex your holon lives in — zoom out for a wider, more private cell.
-  </p>
+  <p class="hint">{$t("hex.hint")}</p>
 
   {#if MAPBOX_TOKEN}
     <div class="search">
@@ -442,10 +438,10 @@
         type="text"
         bind:value={searchQuery}
         on:input={onSearchInput}
-        placeholder="Search an address or place…"
+        placeholder={$t("hex.searchPlaceholder")}
       />
       {#if searching}
-        <span class="searching">searching…</span>
+        <span class="searching">{$t("hex.searching")}</span>
       {/if}
       {#if searchHits.length}
         <div class="hits">
@@ -467,10 +463,10 @@
 
   <div class="row">
     <button type="button" class="chip" on:click={locate} disabled={locating}>
-      {locating ? "Locating…" : "◎ My location"}
+      {locating ? $t("hex.locating") : `◎ ${$t("hex.myLocation")}`}
     </button>
     <div class="readout">
-      {selected ? `${selected} · res ${resolution}` : "nothing selected yet"}
+      {selected ? `${selected} · res ${resolution}` : $t("hex.nothingSelected")}
     </div>
   </div>
 
@@ -479,10 +475,12 @@
       type="text"
       class="manual"
       bind:value={manual}
-      placeholder="…or paste an H3 cell id"
+      placeholder={$t("hex.manualPlaceholder")}
       on:keydown={(e) => e.key === "Enter" && useManual()}
     />
-    <button type="button" class="chip" on:click={useManual}>Check</button>
+    <button type="button" class="chip" on:click={useManual}
+      >{$t("hex.check")}</button
+    >
   </div>
 
   <button
@@ -491,7 +489,7 @@
     on:click={confirm}
     disabled={!selected || saving}
   >
-    {saving ? "Claiming…" : "This is home"}
+    {saving ? $t("hex.claiming") : $t("hex.thisIsHome")}
   </button>
 </div>
 

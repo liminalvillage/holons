@@ -40,27 +40,42 @@
   } from "$lib/config";
   import type { TaskSort } from "$lib/data";
   import { LAYOUT_SEGMENTS, SORT_SEGMENTS } from "$lib/pills";
+  import { t, type MessageKey, type Translator } from "$lib/i18n";
   import PillSwitch from "./PillSwitch.svelte";
   import ScopePill from "./ScopePill.svelte";
 
+  // Module consts carry catalog keys only; `ownPillsFor` resolves them with
+  // the reactive translator so a language switch re-labels every pill live.
+
   // ── Tasks: swipe deck / compact list / post-it wall. Whose tasks show is
   // the orthogonal Show pill (scope) — see ScopePill.
-  const TASK_MODES: { id: TaskViewMode; glyph: string; label: string }[] = [
+  const TASK_MODES: {
+    id: TaskViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
   ];
 
   // ── Library: one card at a time / compact list / icon card grid (wall).
-  const LIBRARY_MODES: { id: LibraryViewMode; glyph: string; label: string }[] =
-    [
-      { id: "swipe", ...LAYOUT_SEGMENTS.card },
-      { id: "list", ...LAYOUT_SEGMENTS.list },
-      { id: "cards", ...LAYOUT_SEGMENTS.wall },
-    ];
+  const LIBRARY_MODES: {
+    id: LibraryViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
+    { id: "swipe", ...LAYOUT_SEGMENTS.card },
+    { id: "list", ...LAYOUT_SEGMENTS.list },
+    { id: "cards", ...LAYOUT_SEGMENTS.wall },
+  ];
 
   // ── Roles: compact rows / today cards (wall) / week grid.
-  const ROLES_MODES: { id: RolesViewMode; glyph: string; label: string }[] = [
+  const ROLES_MODES: {
+    id: RolesViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "week", ...LAYOUT_SEGMENTS.week },
@@ -68,16 +83,24 @@
 
   // ── Calendar: day / week / month window. Glyphs keep the compact cycling
   // toggle legible once names drop.
-  const CAL_GLYPHS: Record<CalendarMode, string> = {
-    day: "▣",
-    week: "▤",
-    month: "▦",
-  };
-  const CAL_MODES = (["day", "week", "month"] as CalendarMode[]).map((m) => ({
-    id: m,
-    label: m.charAt(0).toUpperCase() + m.slice(1),
-    glyph: CAL_GLYPHS[m],
-  }));
+  const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =
+    [
+      { id: "day", glyph: "▣", labelKey: "pills.day" },
+      { id: "week", glyph: "▤", labelKey: "pills.week" },
+      { id: "month", glyph: "▦", labelKey: "pills.month" },
+    ];
+
+  /** Resolve a keyed segment list into PillSwitch options. */
+  function resolve(
+    tr: Translator,
+    segs: readonly { id: string; glyph: string; labelKey: MessageKey }[],
+  ) {
+    return segs.map(({ id, glyph, labelKey }) => ({
+      id,
+      glyph,
+      label: tr(labelKey),
+    }));
+  }
 
   function pickTaskMode(m: string) {
     taskViewMode.set(m as TaskViewMode);
@@ -115,6 +138,7 @@
     showText?: boolean;
   }
   function ownPillsFor(
+    tr: Translator,
     tab: string,
     taskMode: string,
     sort: string,
@@ -126,63 +150,64 @@
       return [
         {
           key: "layout",
-          options: TASK_MODES,
+          options: resolve(tr, TASK_MODES),
           value: taskMode,
           onChange: pickTaskMode,
           icon: "eye",
-          title: "View",
-          label: "Tasks layout",
+          title: tr("pills.view"),
+          label: tr("pills.tasksLayout"),
         },
         {
           key: "sort",
-          options: [...SORT_SEGMENTS],
+          options: resolve(tr, SORT_SEGMENTS),
           value: sort,
           onChange: pickTaskSort,
           icon: "sort",
-          title: "Sort",
-          label: "Tasks order",
+          title: tr("pills.sort"),
+          label: tr("pills.tasksOrder"),
         },
       ];
     if (tab === "library")
       return [
         {
           key: "layout",
-          options: LIBRARY_MODES,
+          options: resolve(tr, LIBRARY_MODES),
           value: libMode,
           onChange: pickLibraryMode,
           icon: "eye",
-          title: "View",
-          label: "Library layout",
+          title: tr("pills.view"),
+          label: tr("pills.libraryLayout"),
         },
       ];
     if (tab === "roles")
       return [
         {
           key: "layout",
-          options: ROLES_MODES,
+          options: resolve(tr, ROLES_MODES),
           value: rolesMode,
           onChange: pickRolesMode,
           icon: "eye",
-          title: "View",
-          label: "Roles layout",
+          title: tr("pills.view"),
+          label: tr("pills.rolesLayout"),
         },
       ];
     if (tab === "calendar")
       return [
         {
           key: "layout",
-          options: CAL_MODES,
+          options: resolve(tr, CAL_MODES),
           value: calMode,
           onChange: pickCalendarMode,
           icon: "eye",
-          title: "View",
-          label: "Calendar view",
+          title: tr("pills.view"),
+          label: tr("pills.calendarView"),
           showText: true,
         },
       ];
     return []; // checklists: the Show pill alone
   }
   $: ownPills = ownPillsFor(
+    $t,
     $activeTab,
     $taskViewMode,
     $taskSort,

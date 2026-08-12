@@ -21,6 +21,7 @@
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { telegramUser, displayName } from "$lib/auth";
+  import { t } from "$lib/i18n";
 
   // Long-press a tab to (un)pin the kiosk to it. A press that crosses ~half a
   // second fires the pin and swallows the click that follows, so the same
@@ -130,8 +131,8 @@
       <input
         type="search"
         class="search__input"
-        placeholder="Search…"
-        aria-label="Search visible content"
+        placeholder={$t("tabbar.search")}
+        aria-label={$t("tabbar.searchAria")}
         autocomplete="off"
         autocorrect="off"
         autocapitalize="off"
@@ -146,14 +147,18 @@
           type="button"
           class="search__clear"
           on:click={() => searchQuery.set("")}
-          aria-label="Clear search">&times;</button
+          aria-label={$t("tabbar.clearSearch")}>&times;</button
         >
       {/if}
 
       {#if suggestOpen}
-        <div class="suggest" role="listbox" aria-label="Search suggestions">
+        <div
+          class="suggest"
+          role="listbox"
+          aria-label={$t("tabbar.suggestions")}
+        >
           {#if $searchSuggestions.categories.length}
-            <div class="suggest__group">Categories</div>
+            <div class="suggest__group">{$t("tabbar.categories")}</div>
             <div class="suggest__chips">
               {#each $searchSuggestions.categories as cat (cat)}
                 <button
@@ -174,7 +179,7 @@
             </div>
           {/if}
           {#if $searchSuggestions.people.length}
-            <div class="suggest__group">People</div>
+            <div class="suggest__group">{$t("tabbar.people")}</div>
             <div class="suggest__chips">
               {#each $searchSuggestions.people as person (person)}
                 <button
@@ -204,7 +209,7 @@
         class="account"
         class:in={$telegramUser != null}
         on:click={() => userMenuOpen.set(true)}
-        aria-label="Menu"
+        aria-label={$t("tabbar.menu")}
       >
         {#if $telegramUser}
           {#if $telegramUser.photo_url}
@@ -216,7 +221,7 @@
           {/if}
           <span class="who">{displayName($telegramUser)}</span>
         {:else}
-          <span class="tg">✦</span><span class="who">Log in</span>
+          <span class="tg">✦</span><span class="who">{$t("tabbar.login")}</span>
         {/if}
       </button>
       <div class="clock">
@@ -228,7 +233,7 @@
 
   <nav
     class="tabs"
-    aria-label="Views"
+    aria-label={$t("tabbar.views")}
     style="grid-template-columns: repeat({$visibleTabs.length}, 1fr);"
   >
     {#each $visibleTabs as tab (tab.id)}
@@ -239,8 +244,8 @@
         aria-current={$activeTab === tab.id}
         aria-pressed={$pinnedTab === tab.id}
         title={$pinnedTab === tab.id
-          ? "Pinned — long-press to unpin"
-          : "Long-press to pin"}
+          ? $t("tabbar.pinnedTitle")
+          : $t("tabbar.pinTitle")}
         on:click={() => onTabClick(tab.id)}
         on:pointerdown={(e) => onTabDown(e, tab.id)}
         on:pointerup={cancelPress}
@@ -248,7 +253,7 @@
         on:pointercancel={cancelPress}
       >
         <span class="glyph">{tab.glyph}</span>
-        <span class="label">{tab.label}</span>
+        <span class="label">{$t(tab.labelKey)}</span>
         <!-- Pin affordance: the active tab always shows a pin — muted while
              unpinned (tap to park the kiosk here), accent once pinned. A
              stopped pointerdown keeps it from arming the long-press timer. -->
@@ -259,9 +264,11 @@
             role="button"
             tabindex="0"
             aria-label={$pinnedTab === tab.id
-              ? `Unpin ${tab.label}`
-              : `Pin to ${tab.label}`}
-            title={$pinnedTab === tab.id ? "Unpin this view" : "Pin this view"}
+              ? $t("tabbar.unpinTab", { tab: $t(tab.labelKey) })
+              : $t("tabbar.pinTab", { tab: $t(tab.labelKey) })}
+            title={$pinnedTab === tab.id
+              ? $t("tabbar.unpinView")
+              : $t("tabbar.pinView")}
             on:pointerdown|stopPropagation
             on:click|stopPropagation={() => togglePin(tab.id)}
             on:keydown={(e) => {

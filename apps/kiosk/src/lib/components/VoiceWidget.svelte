@@ -7,6 +7,7 @@
   // in the same row as the ＋ fab.
   import { onDestroy, onMount } from "svelte";
   import { holonId, idle } from "$lib/stores";
+  import { t } from "$lib/i18n";
   import {
     initVoice,
     available,
@@ -49,11 +50,9 @@
           <button
             class="ctl"
             class:silenced={$muted}
-            aria-label={$muted
-              ? "Unmute spoken replies"
-              : "Mute spoken replies"}
+            aria-label={$muted ? $t("voice.unmute") : $t("voice.mute")}
             aria-pressed={$muted}
-            title={$muted ? "Unmute spoken replies" : "Mute spoken replies"}
+            title={$muted ? $t("voice.unmute") : $t("voice.mute")}
             on:click={toggleMute}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -72,8 +71,8 @@
           </button>
           <button
             class="ctl"
-            aria-label="Close"
-            title="Close"
+            aria-label={$t("common.close")}
+            title={$t("common.close")}
             on:click={closeBubble}
           >
             ✕
@@ -81,18 +80,18 @@
         </div>
         {#if $youSaid}<p class="you">“{$youSaid}”</p>{/if}
         {#if $recording}
-          <p class="tool">listening…</p>
+          <p class="tool">{$t("voice.listening")}</p>
         {:else if $status === "thinking"}
           <p class="tool">
             {$activeTool
               ? `⚙ ${$activeTool}`
               : $youSaid
-                ? "thinking"
-                : "transcribing"}
+                ? $t("voice.thinking")
+                : $t("voice.transcribing")}
             <span class="dots"><i></i><i></i><i></i></span>
           </p>
         {:else if $status === "speaking" && !$holonsSaid}
-          <p class="tool">speaking…</p>
+          <p class="tool">{$t("voice.speaking")}</p>
         {/if}
         {#if $holonsSaid}<p class="holons">{$holonsSaid}</p>{/if}
       </div>
@@ -102,14 +101,14 @@
         <textarea
           bind:value={typed}
           rows="4"
-          placeholder="Paste or type a transcript…"
+          placeholder={$t("voice.typePlaceholder")}
         ></textarea>
         <div class="typeactions">
           <button class="send" on:click={submitTyped} disabled={!typed.trim()}
-            >Send</button
+            >{$t("common.send")}</button
           >
           <button class="cancel" on:click={() => typeOpen.set(false)}
-            >Cancel</button
+            >{$t("common.cancel")}</button
           >
         </div>
       </div>

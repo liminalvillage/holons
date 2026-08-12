@@ -86,11 +86,11 @@
     }
   }
 
-  const THEMES: { id: ThemeMode; label: string; glyph: string }[] = [
-    { id: "auto", label: "Auto", glyph: "◑" },
-    { id: "light", label: "Light", glyph: "☀" },
-    { id: "dark", label: "Dark", glyph: "☾" },
-  ];
+  const THEMES = [
+    { id: "auto", labelKey: "common.auto", glyph: "◑" },
+    { id: "light", labelKey: "settings.light", glyph: "☀" },
+    { id: "dark", labelKey: "settings.dark", glyph: "☾" },
+  ] as const;
 
   // Language names are endonyms — deliberately not translated.
   const LANG_OPTS: { id: LangMode; label: string | null }[] = [
@@ -114,16 +114,16 @@
     if (!file) return;
     logoError = "";
     if (!file.type.startsWith("image/")) {
-      logoError = "Please choose an image file.";
+      logoError = $t("settings.notImage");
       return;
     }
     if (file.size > 512 * 1024) {
-      logoError = "Image is too large — keep it under 512 KB.";
+      logoError = $t("settings.imageTooLarge");
       return;
     }
     const reader = new FileReader();
     reader.onload = () => (draftLogo = String(reader.result ?? ""));
-    reader.onerror = () => (logoError = "Could not read that image.");
+    reader.onerror = () => (logoError = $t("settings.imageReadError"));
     reader.readAsDataURL(file);
   }
 
@@ -170,47 +170,51 @@
 
 <div class="settings">
   <div class="glyph" aria-hidden="true">⚙</div>
-  <h3>Kiosk settings</h3>
+  <h3>{$t("settings.title")}</h3>
 
   <label class="field"
-    >Holon
+    >{$t("settings.holon")}
     <input
       type="text"
       bind:value={draftHolon}
-      placeholder="holon id"
+      placeholder={$t("settings.holonPlaceholder")}
       inputmode="numeric"
       on:keydown={(e) => e.key === "Enter" && apply()}
     />
   </label>
 
   <label class="field"
-    >Display name
+    >{$t("settings.displayName")}
     <input
       type="text"
       bind:value={draftName}
-      placeholder={$holonName || "shown in the header"}
+      placeholder={$holonName || $t("settings.displayNamePlaceholder")}
       on:keydown={(e) => e.key === "Enter" && apply()}
     />
   </label>
 
   <div class="field">
-    Logo <span class="sub">— optional; the name shows as text otherwise</span>
+    {$t("settings.logo")} <span class="sub">{$t("settings.logoSub")}</span>
     <div class="logo-row">
       <div class="logo-preview" class:empty={!draftLogo}>
         {#if draftLogo}
-          <img src={draftLogo} alt="Logo preview" />
+          <img src={draftLogo} alt={$t("settings.logoPreview")} />
         {:else}
-          <span class="wm">{draftName.trim() || $holonName || "name"}</span>
+          <span class="wm"
+            >{draftName.trim() ||
+              $holonName ||
+              $t("settings.namePlaceholder")}</span
+          >
         {/if}
       </div>
       <div class="logo-actions">
         <label class="upload">
-          Upload…
+          {$t("settings.upload")}
           <input type="file" accept="image/*" on:change={onLogoFile} />
         </label>
         {#if draftLogo}
           <button type="button" class="link" on:click={clearLogo}
-            >Use default</button
+            >{$t("settings.useDefault")}</button
           >
         {/if}
       </div>
@@ -219,7 +223,7 @@
   </div>
 
   <div class="field">
-    Accent colour
+    {$t("settings.accent")}
     <div class="accent-row">
       {#each SWATCHES as sw (sw)}
         <button
@@ -227,7 +231,7 @@
           class="swatch"
           class:sel={draftAccent.toLowerCase() === sw.toLowerCase()}
           style="background: {sw};"
-          aria-label="Accent {sw}"
+          aria-label={$t("settings.accentAria", { color: sw })}
           on:click={() => (draftAccent = sw)}
         ></button>
       {/each}
@@ -235,26 +239,26 @@
         <input
           type="color"
           bind:value={draftAccent}
-          aria-label="Custom accent"
+          aria-label={$t("settings.customAccent")}
         />
       </label>
     </div>
   </div>
 
   <div class="field">
-    Appearance
-    <span class="sub">— Auto follows local sunset</span>
+    {$t("settings.appearance")}
+    <span class="sub">{$t("settings.appearanceSub")}</span>
     <div class="theme-row">
-      {#each THEMES as t (t.id)}
+      {#each THEMES as th (th.id)}
         <button
           type="button"
           class="theme-opt"
-          class:sel={draftTheme === t.id}
-          aria-pressed={draftTheme === t.id}
-          on:click={() => (draftTheme = t.id)}
+          class:sel={draftTheme === th.id}
+          aria-pressed={draftTheme === th.id}
+          on:click={() => (draftTheme = th.id)}
         >
-          <span class="theme-glyph" aria-hidden="true">{t.glyph}</span>
-          {t.label}
+          <span class="theme-glyph" aria-hidden="true">{th.glyph}</span>
+          {$t(th.labelKey)}
         </button>
       {/each}
     </div>
@@ -280,10 +284,8 @@
 
   <div class="field toggle-field">
     <span class="toggle-label"
-      >Library tab
-      <span class="sub"
-        >— shows by itself when the library has items; flip to force</span
-      ></span
+      >{$t("settings.libraryTab")}
+      <span class="sub">{$t("settings.libraryTabSub")}</span></span
     >
     <button
       type="button"
@@ -291,7 +293,7 @@
       class:on={draftLibrary}
       role="switch"
       aria-checked={draftLibrary}
-      aria-label="Show the Library tab"
+      aria-label={$t("settings.libraryTabAria")}
       on:click={() => (draftLibrary = !draftLibrary)}
     >
       <span class="knob"></span>
@@ -300,9 +302,8 @@
 
   <div class="field toggle-field">
     <span class="toggle-label"
-      >Roles tab
-      <span class="sub">— shows by itself when roles exist; flip to force</span
-      ></span
+      >{$t("settings.rolesTab")}
+      <span class="sub">{$t("settings.rolesTabSub")}</span></span
     >
     <button
       type="button"
@@ -310,7 +311,7 @@
       class:on={draftRoles}
       role="switch"
       aria-checked={draftRoles}
-      aria-label="Show the Roles tab"
+      aria-label={$t("settings.rolesTabAria")}
       on:click={() => (draftRoles = !draftRoles)}
     >
       <span class="knob"></span>
@@ -319,10 +320,8 @@
 
   <div class="field toggle-field">
     <span class="toggle-label"
-      >Lists tab
-      <span class="sub"
-        >— shows by itself when checklists exist; flip to force</span
-      ></span
+      >{$t("settings.listsTab")}
+      <span class="sub">{$t("settings.listsTabSub")}</span></span
     >
     <button
       type="button"
@@ -330,7 +329,7 @@
       class:on={draftChecklists}
       role="switch"
       aria-checked={draftChecklists}
-      aria-label="Show the Lists tab"
+      aria-label={$t("settings.listsTabAria")}
       on:click={() => (draftChecklists = !draftChecklists)}
     >
       <span class="knob"></span>
@@ -339,8 +338,8 @@
 
   <div class="field toggle-field">
     <span class="toggle-label"
-      >Status tab
-      <span class="sub">— a ranked contribution leaderboard</span></span
+      >{$t("settings.statusTab")}
+      <span class="sub">{$t("settings.statusTabSub")}</span></span
     >
     <button
       type="button"
@@ -348,7 +347,7 @@
       class:on={draftStatus}
       role="switch"
       aria-checked={draftStatus}
-      aria-label="Show the Status tab"
+      aria-label={$t("settings.statusTabAria")}
       on:click={() => (draftStatus = !draftStatus)}
     >
       <span class="knob"></span>
@@ -357,10 +356,10 @@
 
   {#if $holonId}
     <div class="field">
-      Location
-      <span class="sub">— the H3 cell this holon claims on the shared map</span>
+      {$t("settings.location")}
+      <span class="sub">{$t("settings.locationSub")}</span>
       {#if homeHex === undefined}
-        <p class="hex-note">Checking…</p>
+        <p class="hex-note">{$t("settings.checking")}</p>
       {:else if homeHex}
         <div class="hex-row">
           <p class="hex-cell">{homeHex}</p>
@@ -369,7 +368,7 @@
             class="hex-pick"
             on:click={() => (hexPickerOpen = true)}
           >
-            Change…
+            {$t("settings.change")}
           </button>
         </div>
       {:else}
@@ -378,7 +377,7 @@
           class="hex-pick"
           on:click={() => (hexPickerOpen = true)}
         >
-          ⬡ Set location…
+          ⬡ {$t("settings.setLocation")}
         </button>
       {/if}
     </div>
@@ -386,20 +385,15 @@
 
   {#if $holonId}
     <div class="field">
-      Federation
-      <span class="sub"
-        >— partner holons this screen shares with · changes apply immediately</span
-      >
+      {$t("settings.federation")}
+      <span class="sub">{$t("settings.federationSub")}</span>
       <FederationSettings />
     </div>
   {/if}
 
   <label class="field"
-    >Voice
-    <span class="sub"
-      >— OpenAI API key for spoken interaction, kept on this device only; empty
-      = the deploy's shared key (the one AI breakdown uses), if configured</span
-    >
+    >{$t("settings.voice")}
+    <span class="sub">{$t("settings.voiceSub")}</span>
     <input
       type="password"
       bind:value={draftVoiceKey}
@@ -410,9 +404,9 @@
   </label>
 
   <div class="actions">
-    <button class="primary" on:click={apply}>Apply</button>
+    <button class="primary" on:click={apply}>{$t("common.apply")}</button>
     <button class="ghost" on:click={() => settingsOpen.set(false)}
-      >Cancel</button
+      >{$t("common.cancel")}</button
     >
   </div>
 </div>

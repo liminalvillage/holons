@@ -9,6 +9,7 @@
   import { scope } from "$lib/stores";
   import { setScope, type Scope } from "$lib/config";
   import { telegramUser } from "$lib/auth";
+  import { t } from "$lib/i18n";
 
   /** Force the small cycling toggle (see PillSwitch). */
   export let compact = false;
@@ -20,10 +21,16 @@
   // selected (the views render their own log-in prompts).
   $: options = [
     ...($telegramUser || $scope === "personal"
-      ? [{ id: "personal", label: "Personal", svgIcon: "person" as const }]
+      ? [
+          {
+            id: "personal",
+            label: $t("scope.personal"),
+            svgIcon: "person" as const,
+          },
+        ]
       : []),
-    { id: "all", label: "Local", glyph: "⌂" },
-    { id: "networked", label: "Global", svgIcon: "globe" as const },
+    { id: "all", label: $t("scope.local"), glyph: "⌂" },
+    { id: "networked", label: $t("scope.global"), svgIcon: "globe" as const },
   ];
 
   function onChange(id: string) {
@@ -40,6 +47,6 @@
   {compact}
   {expanded}
   icon="filter"
-  title="Show"
-  label="Whose items to show"
+  title={$t("scope.show")}
+  label={$t("scope.aria")}
 />

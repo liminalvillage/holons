@@ -14,6 +14,7 @@
   } from "$lib/stores";
   import { dashboardUrl } from "$lib/config";
   import { pasteFromSystemClipboard } from "$lib/clipboard";
+  import { t } from "$lib/i18n";
 
   $: who = $brandName || $holonName;
 
@@ -56,7 +57,7 @@
     {:else}
       <span class="avatar initial">✦</span>
       <div class="idtext">
-        <span class="name">Not signed in</span>
+        <span class="name">{$t("menu.notSignedIn")}</span>
         {#if who}<span class="sub">{who}</span>{/if}
       </div>
     {/if}
@@ -64,30 +65,30 @@
 
   <button class="row" on:click={openDashboard} disabled={!$holonId}>
     <span class="ico">⬡</span>
-    <span class="label">Open full dashboard</span>
+    <span class="label">{$t("menu.dashboard")}</span>
     <span class="chev">↗</span>
   </button>
 
   <button class="row" on:click={pasteCard} disabled={!$holonId}>
     <span class="ico">⧉</span>
-    <span class="label">Paste copied card</span>
+    <span class="label">{$t("menu.pasteCard")}</span>
   </button>
 
   <button class="row" on:click={openSettings}>
     <span class="ico">⚙</span>
-    <span class="label">Settings</span>
+    <span class="label">{$t("menu.settings")}</span>
     <span class="chev">›</span>
   </button>
 
   {#if $telegramUser}
     <button class="row danger" on:click={logout}>
       <span class="ico">⏻</span>
-      <span class="label">Log out</span>
+      <span class="label">{$t("menu.logout")}</span>
     </button>
   {:else}
     <button class="row primary" on:click={login}>
       <span class="ico">✦</span>
-      <span class="label">Log in with Telegram</span>
+      <span class="label">{$t("menu.loginTelegram")}</span>
     </button>
   {/if}
 </div>
