@@ -241,6 +241,14 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Soltar esta vista",
   "tabbar.pinView": "Fijar esta vista",
 
+  // Telegram login sheet
+  "login.loggedIn": "Sesión iniciada",
+  "login.signedInAs":
+    "Has iniciado sesión como {name} y puedes editar lo que hay en pantalla.",
+  "login.title": "Entrar con Telegram",
+  "login.lead":
+    "Inicia sesión para añadir y editar lo que hay en pantalla. Ver sigue abierto a todos.",
+
   // User menu
   "menu.notSignedIn": "Sesión no iniciada",
   "menu.dashboard": "Abrir el panel completo",
@@ -481,6 +489,8 @@ export const es: Record<MessageKey, Msg> = {
   "voice.transcribing": "transcribiendo",
   "voice.speaking": "hablando…",
   "voice.typePlaceholder": "Pega o escribe una transcripción…",
+  "voice.typeAria": "Escribe o pega una transcripción",
+  "voice.holdToTalk": "Mantén pulsado para hablar",
   "voice.notConfigured":
     "La voz no está configurada — pega una clave API en Ajustes, o define OPENAI_API_KEY en el despliegue.",
   "voice.keyUnreachable":

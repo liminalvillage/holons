@@ -238,6 +238,14 @@ export const en = {
   "tabbar.unpinView": "Unpin this view",
   "tabbar.pinView": "Pin this view",
 
+  // Telegram login sheet
+  "login.loggedIn": "Logged in",
+  "login.signedInAs":
+    "You're signed in as {name} and can edit what's on the screen.",
+  "login.title": "Log in with Telegram",
+  "login.lead":
+    "Sign in to add and edit what's on the screen. Viewing stays open to all.",
+
   // User menu
   "menu.notSignedIn": "Not signed in",
   "menu.dashboard": "Open full dashboard",
@@ -469,6 +477,8 @@ export const en = {
   "voice.transcribing": "transcribing",
   "voice.speaking": "speaking…",
   "voice.typePlaceholder": "Paste or type a transcript…",
+  "voice.typeAria": "Type or paste a transcript",
+  "voice.holdToTalk": "Hold to talk",
   "voice.notConfigured":
     "Voice is not configured — paste an API key in Settings, or set OPENAI_API_KEY on the deploy.",
   "voice.keyUnreachable":

@@ -240,6 +240,14 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Sblocca questa vista",
   "tabbar.pinView": "Fissa questa vista",
 
+  // Telegram login sheet
+  "login.loggedIn": "Accesso effettuato",
+  "login.signedInAs":
+    "Hai effettuato l'accesso come {name} e puoi modificare ciò che è sullo schermo.",
+  "login.title": "Accedi con Telegram",
+  "login.lead":
+    "Accedi per aggiungere e modificare ciò che è sullo schermo. La visualizzazione resta aperta a tutti.",
+
   // User menu
   "menu.notSignedIn": "Accesso non effettuato",
   "menu.dashboard": "Apri la dashboard completa",
@@ -483,6 +491,8 @@ export const it: Record<MessageKey, Msg> = {
   "voice.transcribing": "trascrizione",
   "voice.speaking": "sto parlando…",
   "voice.typePlaceholder": "Incolla o scrivi una trascrizione…",
+  "voice.typeAria": "Scrivi o incolla una trascrizione",
+  "voice.holdToTalk": "Tieni premuto per parlare",
   "voice.notConfigured":
     "La voce non è configurata — incolla una chiave API nelle Impostazioni, o imposta OPENAI_API_KEY sul deploy.",
   "voice.keyUnreachable":

@@ -7,6 +7,7 @@
   // mirrors the views' .fab exactly (size, color, shadow). Mute lives in the
   // chat popup (VoiceWidget), next to its close button.
   import { holonId } from "$lib/stores";
+  import { t } from "$lib/i18n";
   import {
     available,
     recording,
@@ -20,8 +21,8 @@
   <button
     class="fab-btn"
     class:open={$typeOpen}
-    aria-label="Type or paste a transcript"
-    title="Type or paste a transcript"
+    aria-label={$t("voice.typeAria")}
+    title={$t("voice.typeAria")}
     on:click={() => typeOpen.update((v) => !v)}
   >
     ⌨
@@ -29,8 +30,8 @@
   <button
     class="fab-btn mic"
     class:live={$recording}
-    aria-label="Hold to talk"
-    title="Hold to talk"
+    aria-label={$t("voice.holdToTalk")}
+    title={$t("voice.holdToTalk")}
     on:pointerdown|preventDefault={() => startRecording()}
     on:pointerup={() => stopRecording()}
     on:pointercancel={() => stopRecording()}
