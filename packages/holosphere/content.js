@@ -3,6 +3,19 @@
 import { warnHologramUnresolvedOnce, clearHologramUnresolvedWarning } from './hologram.js';
 
 /**
+ * Canonical soul for a stored record. Holon-scoped records live at
+ * `app/holon/lens/key`; GLOBAL records (holon == null) live at
+ * `app/table/key` — the 3-segment convention global.js established. Without
+ * this, template interpolation stringified the null holon into a bogus
+ * `app/null/table/key` segment in `_holograms` tracking.
+ */
+function soulOf(holoInstance, holon, lens, key) {
+    return holon == null
+        ? `${holoInstance.appname}/${lens}/${key}`
+        : `${holoInstance.appname}/${holon}/${lens}/${key}`;
+}
+
+/**
  * Default deadline (ms) for the read paths' `.once()` calls. Gun's `.once()`
  * never fires when the requested node isn't in the local graph and no peer
  * answers (cold-start, offline, partitioned mesh) — past consumers worked
@@ -316,8 +329,11 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         return data;
     }
 
-    // Get and validate schema only in strict mode for non-holograms (data being put)
-    if (holoInstance.strict && !isHologram) {
+    // Get and validate schema only in strict mode for non-holograms (data being put).
+    // The global `schemas` table is exempt: it's the infrastructure the schemas
+    // themselves live in, so enforcing "schema required" on it recurses
+    // put → getSchema → getGlobal → get → getSchema → … to a stack overflow.
+    if (holoInstance.strict && !isHologram && !(targetHolon == null && targetLens === 'schemas')) {
         const schema = await holoInstance.getSchema(targetLens); // Use targetLens for schema
         if (!schema) {
             throw new Error('Schema required in strict mode');
@@ -336,7 +352,13 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(targetHolon); // Use targetHolon for put
+                // Use targetHolon for put; a GLOBAL put has no holon, so the
+                // SEA username falls back to the table (lens) name — the same
+                // per-table convention global.js uses. Without the fallback
+                // userName(null) returns null and gun's `user.auth(null, …)`
+                // crashes on `null.pub` (typeof null === 'object' makes SEA
+                // treat it as a key pair).
+                const userNameString = holoInstance.userName(targetHolon ?? targetLens);
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during put, attempting to create...`);
@@ -422,7 +444,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                                 if (storedDataSoulInfo) {
                                     const targetNodeRef = holoInstance.getNodeRef(data.soul); // Target of the data *being put*
                                     // Soul of the hologram that was *actually stored* at targetHolon/targetLens/targetKey
-                                    const storedHologramInstanceSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
+                                    const storedHologramInstanceSoul = soulOf(holoInstance, targetHolon, targetLens, targetKey);
                                     
                                     targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
                                 } else {
@@ -450,7 +472,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         // every put — cycle-protected via
                         // `options._cascadeVisited`.
                         let updatedHolograms = [];
-                        const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
+                        const currentDataSoul = soulOf(holoInstance, targetHolon, targetLens, targetKey);
                         const cascadeVisited = new Set(options._cascadeVisited || []);
                         if (!cascadeVisited.has(currentDataSoul)) {
                             cascadeVisited.add(currentDataSoul);
@@ -713,9 +735,11 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
         includeDeleted = false,
     } = options;
 
-    // Get schema for validation if in strict mode
+    // Get schema for validation if in strict mode. Reads of the global
+    // `schemas` table itself are exempt — see the matching guard in `put`;
+    // without it strict mode recurses get → getSchema → getGlobal → get → …
     let schema = null;
-    if (holoInstance.strict) {
+    if (holoInstance.strict && !(holon == null && lens === 'schemas')) {
         schema = await holoInstance.getSchema(lens);
         if (!schema) {
             throw new Error('Schema required in strict mode');
@@ -727,7 +751,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for get
+                const userNameString = holoInstance.userName(holon ?? lens); // holon for get; table name for globals (see put)
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         // If auth fails, reject immediately. Do not attempt to create user.
@@ -869,8 +893,11 @@ export async function getAll(holoInstance, holon, lens, password = null, options
         includeDeleted = false,
     } = options;
 
-    const schema = await holoInstance.getSchema(lens);
-    if (!schema && holoInstance.strict) {
+    // The global `schemas` table is exempt from schema lookup/enforcement —
+    // see the matching guards in `put`/`get`; it's where schemas live.
+    const schema =
+        holon == null && lens === 'schemas' ? null : await holoInstance.getSchema(lens);
+    if (!schema && holoInstance.strict && !(holon == null && lens === 'schemas')) {
         throw new Error('getAll: Schema required in strict mode');
     }
 
@@ -879,7 +906,7 @@ export async function getAll(holoInstance, holon, lens, password = null, options
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for getAll
+                const userNameString = holoInstance.userName(holon ?? lens); // holon for getAll; table name for globals (see put)
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during getAll, attempting to create...`);
@@ -1135,7 +1162,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for deleteFunc
+                const userNameString = holoInstance.userName(holon ?? lens); // holon for deleteFunc; table name for globals (see put)
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during deleteFunc, attempting to create...`);
@@ -1208,7 +1235,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
                 
                 if (targetSoulInfo) {
                     const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
+                    const deletedHologramSoul = soulOf(holoInstance, holon, lens, key);
 
                     // Create a promise that resolves when the hologram is removed from the list
                     trackingRemovalPromise = new Promise((resolveTrack) => { // No reject needed, just warn on error
@@ -1271,7 +1298,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                const userNameString = holoInstance.userName(holon); // Use holon for deleteAll
+                const userNameString = holoInstance.userName(holon ?? lens); // holon for deleteAll; table name for globals (see put)
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
                         console.log(`Initial auth failed for ${userNameString} during deleteAll, attempting to create...`);
@@ -1360,7 +1387,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                                 
                                 if (targetSoulInfo) {
                                     const targetNodeRef = holoInstance.getNodeRef(targetSoul);
-                                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
+                                    const deletedHologramSoul = soulOf(holoInstance, holon, lens, key);
 
                                     // Remove the hologram from target's _holograms list
                                     await new Promise((resolveTrack) => {

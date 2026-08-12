@@ -479,9 +479,10 @@ class HoloSphere {
         return this.put(null, tableName, data, password, options);
     }
 
-    /** v2-compatible alias for putGlobal (no password param) */
+    /** v2-compatible alias for putGlobal (no password param). Contract is
+     *  Promise<void> (see holosphere.d.ts) — don't leak put's result object. */
     async writeGlobal(tableName, data, options = {}) {
-        return this.put(null, tableName, data, null, options);
+        await this.put(null, tableName, data, null, options);
     }
 
     async getGlobal(tableName, key, password = null) {

@@ -13,8 +13,7 @@
  * protocol, durable storage, backups. This file is ONLY for the spike.
  */
 
-import WS from 'ws';
-const WebSocketServer = WS.Server || WS.WebSocketServer;
+import { WebSocketServer } from 'ws';
 
 const isReplaceable = (k) => k >= 30000 && k < 40000;
 const dTag = (evt) => (evt.tags.find((t) => t[0] === 'd') || [])[1] || '';
@@ -110,7 +109,16 @@ export function startRelay({ port = 0 } = {}) {
         port: actualPort,
         count: () => events.size,
         events: () => Array.from(events.values()),
-        close: () => new Promise((r) => wss.close(r)),
+        close: () =>
+          new Promise((r) => {
+            // `wss.close` waits for every client to hang up — a lingering
+            // pool socket (e.g. a SimplePool that published here but tracks
+            // a different relayList) would stall teardown forever. Terminate
+            // clients first, and keep a deadline as a belt-and-braces.
+            for (const ws of wss.clients) { try { ws.terminate(); } catch { /* ignore */ } }
+            wss.close(() => r());
+            setTimeout(r, 2000).unref?.();
+          }),
       });
     });
   });

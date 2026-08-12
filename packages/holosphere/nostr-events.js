@@ -61,7 +61,13 @@ export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, crea
       tags: [
         ['h', String(holon)],
         ['l', String(lens)],
-        ['d', String(item.id)],
+        // NIP-33 replaceable identity is (pubkey, kind, d) — the d-tag must
+        // therefore be unique per LOCATION, not per item id. With a bare id,
+        // parent-scalespace/federation propagation (which re-puts the same
+        // item into parent holons, re-signing each copy) REPLACED the
+        // original event on the relay: the last parent cell won and the
+        // item's true holon disappeared from every #h query.
+        ['d', `${holon}/${lens}/${item.id}`],
         ...extraTags,
       ],
       content: JSON.stringify(item),
