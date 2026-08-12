@@ -21,7 +21,7 @@
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { telegramUser, displayName } from "$lib/auth";
-  import { t } from "$lib/i18n";
+  import { t, locale } from "$lib/i18n";
 
   // Long-press a tab to (un)pin the kiosk to it. A press that crosses ~half a
   // second fires the pin and swallows the click that follows, so the same
@@ -76,11 +76,11 @@
     );
   }
 
-  $: timeLabel = $now.toLocaleTimeString([], {
+  $: timeLabel = $now.toLocaleTimeString($locale, {
     hour: "2-digit",
     minute: "2-digit",
   });
-  $: dateLabel = $now.toLocaleDateString([], {
+  $: dateLabel = $now.toLocaleDateString($locale, {
     weekday: "long",
     day: "numeric",
     month: "long",

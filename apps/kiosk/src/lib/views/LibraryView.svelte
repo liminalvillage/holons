@@ -14,6 +14,7 @@
   import { getLibraryDb } from "$lib/holosphere";
   import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
+  import { t, locale, type Translator } from "$lib/i18n";
   import { dueLabelFor, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -50,13 +51,25 @@
    * Scope and clock come in as arguments so the template expression re-runs
    * when either store changes.
    */
-  function statusLabel(t: LibraryThing, s: Scope, at: Date): string {
-    if (t.available) return "available";
+  function statusLabel(
+    thing: LibraryThing,
+    s: Scope,
+    at: Date,
+    tr: Translator,
+    loc: string,
+  ): string {
+    if (thing.available) return tr("library.available");
     if (s === "personal") {
-      const back = t.returnBy ? dueLabelFor(t.returnBy, at) : null;
-      return back ? `return ${back}` : "with you";
+      const back = thing.returnBy
+        ? dueLabelFor(thing.returnBy, at, tr, loc)
+        : null;
+      return back
+        ? tr("library.returnBy", { when: back })
+        : tr("library.withYou");
     }
-    return t.borrower ? `out · ${t.borrower}` : "out";
+    return thing.borrower
+      ? tr("library.outWith", { who: thing.borrower })
+      : tr("library.out");
   }
 
   // ── Add an item ─────────────────────────────────────────────────────────────
@@ -159,7 +172,7 @@
             <span class="type">{getTypeDisplayName(thing.type)}</span>
             {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
             <span class="status" class:available={thing.available}>
-              {statusLabel(thing, $scope, $now)}
+              {statusLabel(thing, $scope, $now, $t, $locale)}
             </span>
           </article>
           <div class="pagenav">
@@ -247,7 +260,7 @@
                 </div>
               </div>
               <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $scope, $now)}
+                {statusLabel(thing, $scope, $now, $t, $locale)}
               </span>
             </div>
           </li>

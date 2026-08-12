@@ -14,6 +14,24 @@ export const en = {
   "common.cancel": "Cancel",
   "common.apply": "Apply",
   "common.send": "Send",
+  "common.untitled": "Untitled",
+
+  // Relative dates (calendar-day distances)
+  "dates.today": "today",
+  "dates.tomorrow": "tomorrow",
+  "dates.yesterday": "yesterday",
+  "dates.daysAgo": "{n}d ago",
+  "dates.inDays": "in {n}d",
+
+  // Roles
+  "roles.untitledRole": "Untitled role",
+
+  // Library status chips
+  "library.available": "available",
+  "library.returnBy": "return {when}",
+  "library.withYou": "with you",
+  "library.outWith": "out · {who}",
+  "library.out": "out",
 
   // Tabs
   "tabs.tasks": "Tasks",

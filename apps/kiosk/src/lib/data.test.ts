@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
+import { makeTranslator } from "./i18n";
 import {
   dueLabelFor,
   toBacklog,
@@ -190,33 +191,40 @@ describe("dueLabelFor", () => {
   const noon = new Date("2026-07-26T12:00:00");
   const day = (offset: number, hour = 9) =>
     new Date(2026, 6, 26 + offset, hour);
+  const tEn = makeTranslator("en");
+  const tIt = makeTranslator("it");
 
   it("returns null without a due date", () => {
-    expect(dueLabelFor(null, noon)).toBeNull();
-    expect(dueLabelFor(undefined, noon)).toBeNull();
+    expect(dueLabelFor(null, noon, tEn, "en")).toBeNull();
+    expect(dueLabelFor(undefined, noon, tEn, "en")).toBeNull();
   });
 
   it("labels the near days by name", () => {
-    expect(dueLabelFor(day(0), noon)).toBe("today");
-    expect(dueLabelFor(day(1), noon)).toBe("tomorrow");
-    expect(dueLabelFor(day(-1), noon)).toBe("yesterday");
+    expect(dueLabelFor(day(0), noon, tEn, "en")).toBe("today");
+    expect(dueLabelFor(day(1), noon, tEn, "en")).toBe("tomorrow");
+    expect(dueLabelFor(day(-1), noon, tEn, "en")).toBe("yesterday");
+  });
+
+  it("labels in the selected language", () => {
+    expect(dueLabelFor(day(0), noon, tIt, "it")).toBe("oggi");
+    expect(dueLabelFor(day(3), noon, tIt, "it")).toBe("tra 3g");
   });
 
   it("compares calendar days, not 24h spans", () => {
     // 23:30 tonight → 00:30 tomorrow is < 24h apart but a day boundary.
-    expect(dueLabelFor(day(1, 0), new Date(2026, 6, 26, 23, 30))).toBe(
-      "tomorrow",
-    );
+    expect(
+      dueLabelFor(day(1, 0), new Date(2026, 6, 26, 23, 30), tEn, "en"),
+    ).toBe("tomorrow");
   });
 
   it("counts days inside a week, both directions", () => {
-    expect(dueLabelFor(day(3), noon)).toBe("in 3d");
-    expect(dueLabelFor(day(6), noon)).toBe("in 6d");
-    expect(dueLabelFor(day(-4), noon)).toBe("4d ago");
+    expect(dueLabelFor(day(3), noon, tEn, "en")).toBe("in 3d");
+    expect(dueLabelFor(day(6), noon, tEn, "en")).toBe("in 6d");
+    expect(dueLabelFor(day(-4), noon, tEn, "en")).toBe("4d ago");
   });
 
   it("falls back to a short date from a week out", () => {
-    const label = dueLabelFor(day(7), noon);
+    const label = dueLabelFor(day(7), noon, tEn, "en");
     expect(label).not.toMatch(/in \d+d/);
     expect(label).toContain("2"); // "2 Aug" / "Aug 2" per locale
   });

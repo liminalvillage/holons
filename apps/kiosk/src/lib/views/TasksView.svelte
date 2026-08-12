@@ -18,6 +18,7 @@
     scope,
   } from "$lib/stores";
   import { setTaskSort } from "$lib/config";
+  import { t, locale } from "$lib/i18n";
   import type { TaskSort } from "$lib/data";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
@@ -151,8 +152,8 @@
     if (task) void doAppreciate(task);
   }
 
-  function dueLabel(t: BacklogTask): string | null {
-    return dueLabelFor(t.due, $now);
+  function dueLabel(task: BacklogTask): string | null {
+    return dueLabelFor(task.due, $now, $t, $locale);
   }
 
   // ── Drag-to-reorder ───────────────────────────────────────────────────────-

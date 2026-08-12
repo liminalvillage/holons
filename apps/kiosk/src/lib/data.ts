@@ -18,6 +18,7 @@ import {
 import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
 import { sourceHolonId, sourceRef } from "@holons/core/holosphere";
+import type { Translator } from "./i18n";
 
 /** Warm post-it palette, indexed deterministically by category. */
 export const NOTE_COLORS = [
@@ -285,11 +286,14 @@ function idsOf(arr: unknown): (string | number)[] {
 /**
  * Human label for a due date relative to `now`: "today" / "tomorrow" /
  * "yesterday", day counts inside a week, else a short date. Compares calendar
- * days, not 24h spans, so 23:59 → 00:01 still reads "tomorrow".
+ * days, not 24h spans, so 23:59 → 00:01 still reads "tomorrow". Callers pass
+ * the reactive `$t`/`$locale` so the label re-renders on a language switch.
  */
 export function dueLabelFor(
   due: Date | null | undefined,
   now: Date,
+  t: Translator,
+  locale: string,
 ): string | null {
   if (!due) return null;
   const today = new Date(now);
@@ -297,16 +301,20 @@ export function dueLabelFor(
   const day = new Date(due);
   day.setHours(0, 0, 0, 0);
   const days = Math.round((day.getTime() - today.getTime()) / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "tomorrow";
-  if (days === -1) return "yesterday";
-  if (days < 0) return `${-days}d ago`;
-  if (days < 7) return `in ${days}d`;
-  return due.toLocaleDateString([], { day: "numeric", month: "short" });
+  if (days === 0) return t("dates.today");
+  if (days === 1) return t("dates.tomorrow");
+  if (days === -1) return t("dates.yesterday");
+  if (days < 0) return t("dates.daysAgo", { n: -days });
+  if (days < 7) return t("dates.inDays", { n: days });
+  return due.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
 /** Dated, still-open quests → calendar events, soonest first. */
-export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
+export function toEvents(
+  quests: Quest[],
+  names?: Names,
+  t?: Translator,
+): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
   for (const q of quests) {
@@ -327,7 +335,7 @@ export function toEvents(quests: Quest[], names?: Names): CalendarEvent[] {
       : (parseWhen(q.ends ?? q.until) ?? undefined);
     out.push({
       id,
-      title: q.title || "Untitled",
+      title: q.title || (t ? t("common.untitled") : "Untitled"),
       date,
       end,
       category: q.category,
@@ -355,6 +363,7 @@ export function toBacklog(
   quests: Quest[],
   names?: Names,
   sort: TaskSort = "loved",
+  t?: Translator,
 ): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
@@ -375,7 +384,7 @@ export function toBacklog(
     seen.add(id);
     out.push({
       id,
-      title: q.title || "Untitled",
+      title: q.title || (t ? t("common.untitled") : "Untitled"),
       category: q.category,
       description: q.description || undefined,
       picture: q.picture ?? null,
@@ -461,12 +470,16 @@ export interface RoleCard {
 }
 
 /** Roles lens → display cards, alphabetical by title. */
-export function toRoles(roles: Role[], names?: Names): RoleCard[] {
+export function toRoles(
+  roles: Role[],
+  names?: Names,
+  t?: Translator,
+): RoleCard[] {
   const seen = new Set<string>();
   return roles
     .map((r) => ({
       id: String(r.id ?? r.title ?? ""),
-      title: r.title || "Untitled role",
+      title: r.title || (t ? t("roles.untitledRole") : "Untitled role"),
       description: r.description || undefined,
       people: toPeople(r.participants),
       count: countOf(r.participants),
@@ -543,12 +556,16 @@ export function toChecklists(
 }
 
 /** Library lens → display things, available first then alphabetical. */
-export function toThings(items: LibraryItem[], names?: Names): LibraryThing[] {
+export function toThings(
+  items: LibraryItem[],
+  names?: Names,
+  t?: Translator,
+): LibraryThing[] {
   const seen = new Set<string>();
   return items
     .map((it) => ({
       id: String(it.id ?? ""),
-      title: String(it.id ?? "Untitled"),
+      title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
       type: String(it.type ?? "other"),
       available: !it.borrowed,
       borrower: it.borrower ?? null,

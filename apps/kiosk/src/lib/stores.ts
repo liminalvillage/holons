@@ -35,7 +35,7 @@ import {
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
-import type { MessageKey } from "./i18n";
+import { t, type MessageKey } from "./i18n";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -187,15 +187,17 @@ export const lensEmitAt: Record<
 
 // Scope narrows the raw records first (dropping partner copies outside the
 // networked scope, keeping holograms), then search filters the view models.
+// The translator is a derived input everywhere a view model bakes display
+// text ("Untitled" fallbacks), so a language switch recomputes the boards.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scope],
-  ([$q, $n, $query, $s]) =>
-    filterBySearch(toEvents(scopeLocal($q, $s), $n), $query),
+  [rawQuests, partnerNames, searchQuery, scope, t],
+  ([$q, $n, $query, $s, $t]) =>
+    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t), $query),
 );
 export const backlog = derived(
-  [rawQuests, partnerNames, searchQuery, scope, taskSort],
-  ([$q, $n, $query, $s, $sort]) =>
-    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort), $query),
+  [rawQuests, partnerNames, searchQuery, scope, taskSort, t],
+  ([$q, $n, $query, $s, $sort, $t]) =>
+    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t), $query),
 );
 // One palette slot per distinct category, derived from *all* quests (not a
 // search- or scope-filtered subset) so a category keeps the same colour across
@@ -204,14 +206,14 @@ export const categoryColors = derived(rawQuests, ($q) =>
   categoryColorMap($q.map((x) => x.category)),
 );
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope],
-  ([$l, $n, $query, $s]) =>
-    filterBySearch(toThings(scopeLocal($l, $s), $n), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, t],
+  ([$l, $n, $query, $s, $t]) =>
+    filterBySearch(toThings(scopeLocal($l, $s), $n, $t), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scope],
-  ([$r, $n, $query, $s]) =>
-    filterBySearch(toRoles(scopeLocal($r, $s), $n), $query),
+  [rawRoles, partnerNames, searchQuery, scope, t],
+  ([$r, $n, $query, $s, $t]) =>
+    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t), $query),
 );
 export const checklistCards = derived(
   [rawChecklists, partnerNames, searchQuery, scope],
@@ -222,13 +224,13 @@ export const checklistCards = derived(
 // view models so the list stays stable while a query narrows the boards —
 // but scope-filtered, so local scopes don't suggest partner people/categories.
 export const searchSuggestions: Readable<SearchSuggestions> = derived(
-  [rawQuests, rawLibrary, rawRoles, partnerNames, scope],
-  ([$q, $l, $r, $n, $s]) =>
+  [rawQuests, rawLibrary, rawRoles, partnerNames, scope, t],
+  ([$q, $l, $r, $n, $s, $t]) =>
     toSuggestions(
-      toEvents(scopeLocal($q, $s), $n),
-      toBacklog(scopeLocal($q, $s), $n),
-      toRoles(scopeLocal($r, $s), $n),
-      toThings(scopeLocal($l, $s), $n),
+      toEvents(scopeLocal($q, $s), $n, $t),
+      toBacklog(scopeLocal($q, $s), $n, undefined, $t),
+      toRoles(scopeLocal($r, $s), $n, $t),
+      toThings(scopeLocal($l, $s), $n, $t),
     ),
 );
 

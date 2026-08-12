@@ -11,6 +11,24 @@ export const es: Record<MessageKey, Msg> = {
   "common.cancel": "Cancelar",
   "common.apply": "Aplicar",
   "common.send": "Enviar",
+  "common.untitled": "Sin título",
+
+  // Relative dates
+  "dates.today": "hoy",
+  "dates.tomorrow": "mañana",
+  "dates.yesterday": "ayer",
+  "dates.daysAgo": "hace {n}d",
+  "dates.inDays": "en {n}d",
+
+  // Roles
+  "roles.untitledRole": "Rol sin título",
+
+  // Library status chips
+  "library.available": "disponible",
+  "library.returnBy": "devolver {when}",
+  "library.withYou": "contigo",
+  "library.outWith": "prestado · {who}",
+  "library.out": "prestado",
 
   // Tabs
   "tabs.tasks": "Tareas",

@@ -11,6 +11,24 @@ export const it: Record<MessageKey, Msg> = {
   "common.cancel": "Annulla",
   "common.apply": "Applica",
   "common.send": "Invia",
+  "common.untitled": "Senza titolo",
+
+  // Relative dates
+  "dates.today": "oggi",
+  "dates.tomorrow": "domani",
+  "dates.yesterday": "ieri",
+  "dates.daysAgo": "{n}g fa",
+  "dates.inDays": "tra {n}g",
+
+  // Roles
+  "roles.untitledRole": "Ruolo senza titolo",
+
+  // Library status chips
+  "library.available": "disponibile",
+  "library.returnBy": "riconsegna {when}",
+  "library.withYou": "con te",
+  "library.outWith": "in prestito · {who}",
+  "library.out": "in prestito",
 
   // Tabs
   "tabs.tasks": "Attività",
