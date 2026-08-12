@@ -19,6 +19,7 @@
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
+  import { t, locale, type MessageKey } from "$lib/i18n";
   import { createTask, type Quest } from "@holons/core/tasks";
   import { toStoredInstant } from "@holons/core/datetime";
   import {
@@ -50,7 +51,7 @@
   // original), the UI-only provenance tags are stripped, and any denial or
   // error surfaces as an on-screen notice — a wall display has no console, so
   // a silent failure is indistinguishable from a dead app.
-  async function saveQuest(q: Quest, updated: Quest, verb: string) {
+  async function saveQuest(q: Quest, updated: Quest, verbKey: MessageKey) {
     const hid = get(holonId);
     if (!hid) return;
     // A hologram card is written at its LOCAL path with the `_hologram`
@@ -67,7 +68,7 @@
       ? undefined
       : sourceRef(q, String(q.id ?? q.title));
     const writer = await getWriter(ref?.holon ?? hid, (m) =>
-      showNotice(`Couldn't ${verb} — ${m}`),
+      showNotice($t("cal.actionFailed", { verb: $t(verbKey), reason: m })),
     );
     const clean: Record<string, unknown> = { ...updated };
     if (ref) clean.id = ref.key;
@@ -76,9 +77,13 @@
     try {
       await writer.put("quests", clean);
     } catch (err) {
-      console.error(`[kiosk] calendar ${verb} failed`, err);
+      console.error(`[kiosk] calendar ${verbKey} failed`, err);
       showNotice(
-        `Couldn't ${verb} — ${err instanceof Error ? err.message : "write failed"}`,
+        $t("cal.actionFailed", {
+          verb: $t(verbKey),
+          reason:
+            err instanceof Error ? err.message : $t("clipboard.writeFailed"),
+        }),
       );
     }
   }
@@ -238,7 +243,7 @@
       const delta = newStart.getTime() - oldStart.getTime();
       updated.ends = toStoredInstant(new Date(oldEnds.getTime() + delta));
     }
-    await saveQuest(q, updated, "move");
+    await saveQuest(q, updated, "cal.verbMove");
   }
 
   // Dropping a card back into the drawer clears its date, returning it to the
@@ -259,7 +264,7 @@
     }
     const updated: Quest = { ...q, when: "", ends: "", until: "" };
     if (String(q.type ?? "").toLowerCase() === "event") updated.type = "task";
-    await saveQuest(q, updated, "unschedule");
+    await saveQuest(q, updated, "cal.verbUnschedule");
   }
 
   // ── Long-press / + to create ──────────────────────────────────────────────-
@@ -445,7 +450,7 @@
     const start = parseWhen(q.when);
     if (!start || Number.isNaN(start.getTime())) return;
     const ends = toStoredInstant(new Date(start.getTime() + durMin * 60000));
-    await saveQuest(q, { ...q, ends }, "resize");
+    await saveQuest(q, { ...q, ends }, "cal.verbResize");
   }
 
   // Navigation offset, in units of the current mode (days / weeks / months).
@@ -673,7 +678,7 @@
     const timed = evs.filter((e) => !e.allDay);
     return {
       iso: isoDay(day),
-      label: day.toLocaleDateString([], {
+      label: day.toLocaleDateString($locale, {
         weekday: "short",
         day: "numeric",
         month: "short",
@@ -745,22 +750,25 @@
 
   $: periodLabel =
     $calendarMode === "day"
-      ? anchorDay.toLocaleDateString([], {
+      ? anchorDay.toLocaleDateString($locale, {
           weekday: "long",
           day: "numeric",
           month: "long",
         })
       : $calendarMode === "week"
-        ? `${weekDays[0].toLocaleDateString([], { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString([], { day: "numeric", month: "short" })}`
-        : monthAnchor.toLocaleDateString([], {
+        ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
+        : monthAnchor.toLocaleDateString($locale, {
             month: "long",
             year: "numeric",
           });
 
   function timeLabel(e: CalendarEvent): string {
     return e.allDay
-      ? "all day"
-      : e.date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      ? $t("cal.allDay")
+      : e.date.toLocaleTimeString($locale, {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
   }
 
   // ── Thin events: inline title + shrink-to-fit ─────────────────────────────--
@@ -824,17 +832,20 @@
   <!-- The Show + Day/Week/Month pills live in the shell's global band. -->
   <header class="head">
     <div class="nav">
-      <button class="arrow" on:click={() => step(-1)} aria-label="Previous"
-        >‹</button
+      <button
+        class="arrow"
+        on:click={() => step(-1)}
+        aria-label={$t("cal.previous")}>‹</button
       >
       <h2 class="period">{periodLabel}</h2>
-      <button class="arrow" on:click={() => step(1)} aria-label="Next">›</button
+      <button class="arrow" on:click={() => step(1)} aria-label={$t("cal.next")}
+        >›</button
       >
     </div>
   </header>
 
   {#if $scope === "personal" && !$telegramUser}
-    <p class="scopehint">Log in to see your events ✶</p>
+    <p class="scopehint">{$t("cal.loginEvents")}</p>
   {/if}
 
   <div
@@ -907,7 +918,7 @@
           >
             <div class="daychip">
               <span class="dow"
-                >{day.toLocaleDateString([], { weekday: "short" })}</span
+                >{day.toLocaleDateString($locale, { weekday: "short" })}</span
               >
               <span class="dom">{day.getDate()}</span>
             </div>
@@ -1104,7 +1115,7 @@
                 >
                   <span class="now-dot"></span>
                   <span class="now-time"
-                    >{$now.toLocaleTimeString([], {
+                    >{$now.toLocaleTimeString($locale, {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}</span
@@ -1121,9 +1132,7 @@
   {#if unscheduled.length}
     <div class="tray" class:drop={dropOnTray} bind:clientHeight={trayHeight}>
       <span class="tray-label"
-        >{drag
-          ? "Drop here to unschedule"
-          : "Unscheduled — drag onto a day"}</span
+        >{drag ? $t("cal.dropUnschedule") : $t("cal.unscheduledTray")}</span
       >
       <div class="tray-items scroll">
         {#each unscheduled as task (task.id)}
@@ -1161,8 +1170,8 @@
     <button
       class="fab"
       on:click={openCreate}
-      aria-label="New task"
-      title="New task">＋</button
+      aria-label={$t("cal.newTask")}
+      title={$t("cal.newTask")}>＋</button
     >
   </div>
 </div>

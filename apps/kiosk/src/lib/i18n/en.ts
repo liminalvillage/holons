@@ -82,6 +82,19 @@ export const en = {
   "swipe.joinAria": "Join this task",
   "swipe.joinTitle": "Join",
 
+  // Calendar
+  "cal.actionFailed": "Couldn't {verb} — {reason}",
+  "cal.verbMove": "move",
+  "cal.verbUnschedule": "unschedule",
+  "cal.verbResize": "resize",
+  "cal.allDay": "all day",
+  "cal.previous": "Previous",
+  "cal.next": "Next",
+  "cal.loginEvents": "Log in to see your events ✶",
+  "cal.dropUnschedule": "Drop here to unschedule",
+  "cal.unscheduledTray": "Unscheduled — drag onto a day",
+  "cal.newTask": "New task",
+
   // Roles
   "roles.untitledRole": "Untitled role",
 
@@ -91,6 +104,28 @@ export const en = {
   "library.withYou": "with you",
   "library.outWith": "out · {who}",
   "library.out": "out",
+
+  // Library view
+  "library.loginPersonal": "Log in to see what you've borrowed ✶",
+  "library.emptyPersonal":
+    "Nothing borrowed right now — tap a thing to take it out ✶",
+  "library.emptyShared": "No things shared yet.",
+  "library.prevItem": "Previous item",
+  "library.nextItem": "Next item",
+  "library.shareItem": "Share an item",
+  "library.shareLead": "Something the community can borrow.",
+  "library.namePlaceholder": "What is it? (e.g. Cordless drill)",
+  "library.itemTypeAria": "Item type",
+  "library.notesPlaceholder": "Notes about it (optional)",
+  "library.sharing": "Sharing…",
+  "library.shareBtn": "Share item",
+  "library.nameTaken": "Something with that name is already shared.",
+  "library.addFailed": "Could not add item.",
+  "library.type.tool": "Tool",
+  "library.type.book": "Book",
+  "library.type.equipment": "Equipment",
+  "library.type.accommodation": "Accommodation",
+  "library.type.other": "Other",
 
   // Tabs
   "tabs.tasks": "Tasks",

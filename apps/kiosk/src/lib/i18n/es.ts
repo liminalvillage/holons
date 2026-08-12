@@ -81,6 +81,19 @@ export const es: Record<MessageKey, Msg> = {
   "swipe.joinAria": "Únete a esta tarea",
   "swipe.joinTitle": "Únete",
 
+  // Calendar
+  "cal.actionFailed": "No se pudo {verb} — {reason}",
+  "cal.verbMove": "mover",
+  "cal.verbUnschedule": "desprogramar",
+  "cal.verbResize": "redimensionar",
+  "cal.allDay": "todo el día",
+  "cal.previous": "Anterior",
+  "cal.next": "Siguiente",
+  "cal.loginEvents": "Inicia sesión para ver tus eventos ✶",
+  "cal.dropUnschedule": "Suelta aquí para quitar la fecha",
+  "cal.unscheduledTray": "Sin fecha — arrastra a un día",
+  "cal.newTask": "Nueva tarea",
+
   // Roles
   "roles.untitledRole": "Rol sin título",
 
@@ -90,6 +103,28 @@ export const es: Record<MessageKey, Msg> = {
   "library.withYou": "contigo",
   "library.outWith": "prestado · {who}",
   "library.out": "prestado",
+
+  // Library view
+  "library.loginPersonal": "Inicia sesión para ver lo que tienes prestado ✶",
+  "library.emptyPersonal":
+    "Nada prestado ahora — toca un objeto para llevártelo ✶",
+  "library.emptyShared": "Aún no hay objetos compartidos.",
+  "library.prevItem": "Objeto anterior",
+  "library.nextItem": "Objeto siguiente",
+  "library.shareItem": "Compartir un objeto",
+  "library.shareLead": "Algo que la comunidad puede tomar prestado.",
+  "library.namePlaceholder": "¿Qué es? (p. ej., Taladro inalámbrico)",
+  "library.itemTypeAria": "Tipo de objeto",
+  "library.notesPlaceholder": "Notas sobre el objeto (opcionales)",
+  "library.sharing": "Compartiendo…",
+  "library.shareBtn": "Compartir",
+  "library.nameTaken": "Ya hay algo compartido con ese nombre.",
+  "library.addFailed": "No se pudo añadir el objeto.",
+  "library.type.tool": "Herramienta",
+  "library.type.book": "Libro",
+  "library.type.equipment": "Equipo",
+  "library.type.accommodation": "Alojamiento",
+  "library.type.other": "Otro",
 
   // Tabs
   "tabs.tasks": "Tareas",

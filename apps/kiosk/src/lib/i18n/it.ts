@@ -80,6 +80,19 @@ export const it: Record<MessageKey, Msg> = {
   "swipe.joinAria": "Unisciti a questa attività",
   "swipe.joinTitle": "Unisciti",
 
+  // Calendar
+  "cal.actionFailed": "Impossibile {verb} — {reason}",
+  "cal.verbMove": "spostare",
+  "cal.verbUnschedule": "rimuovere dal calendario",
+  "cal.verbResize": "ridimensionare",
+  "cal.allDay": "tutto il giorno",
+  "cal.previous": "Precedente",
+  "cal.next": "Successivo",
+  "cal.loginEvents": "Accedi per vedere i tuoi eventi ✶",
+  "cal.dropUnschedule": "Rilascia qui per togliere la data",
+  "cal.unscheduledTray": "Senza data — trascina su un giorno",
+  "cal.newTask": "Nuova attività",
+
   // Roles
   "roles.untitledRole": "Ruolo senza titolo",
 
@@ -89,6 +102,28 @@ export const it: Record<MessageKey, Msg> = {
   "library.withYou": "con te",
   "library.outWith": "in prestito · {who}",
   "library.out": "in prestito",
+
+  // Library view
+  "library.loginPersonal": "Accedi per vedere cosa hai in prestito ✶",
+  "library.emptyPersonal":
+    "Niente in prestito al momento — tocca un oggetto per prenderlo ✶",
+  "library.emptyShared": "Ancora nessun oggetto condiviso.",
+  "library.prevItem": "Oggetto precedente",
+  "library.nextItem": "Oggetto successivo",
+  "library.shareItem": "Condividi un oggetto",
+  "library.shareLead": "Qualcosa che la comunità può prendere in prestito.",
+  "library.namePlaceholder": "Cos'è? (es. Trapano a batteria)",
+  "library.itemTypeAria": "Tipo di oggetto",
+  "library.notesPlaceholder": "Note sull'oggetto (facoltative)",
+  "library.sharing": "Condivisione…",
+  "library.shareBtn": "Condividi",
+  "library.nameTaken": "C'è già qualcosa condiviso con questo nome.",
+  "library.addFailed": "Impossibile aggiungere l'oggetto.",
+  "library.type.tool": "Attrezzo",
+  "library.type.book": "Libro",
+  "library.type.equipment": "Attrezzatura",
+  "library.type.accommodation": "Alloggio",
+  "library.type.other": "Altro",
 
   // Tabs
   "tabs.tasks": "Attività",

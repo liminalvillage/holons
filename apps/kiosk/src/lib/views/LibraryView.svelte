@@ -14,7 +14,7 @@
   import { getLibraryDb } from "$lib/holosphere";
   import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
-  import { t, locale, type Translator } from "$lib/i18n";
+  import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import { dueLabelFor, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -83,6 +83,19 @@
     LIBRARY_TYPES.OTHER,
   ];
 
+  // Localized names for core's item types; unknown types keep core's English.
+  const TYPE_KEYS: Record<string, MessageKey> = {
+    [LIBRARY_TYPES.TOOL]: "library.type.tool",
+    [LIBRARY_TYPES.BOOK]: "library.type.book",
+    [LIBRARY_TYPES.EQUIPMENT]: "library.type.equipment",
+    [LIBRARY_TYPES.ACCOMMODATION]: "library.type.accommodation",
+    [LIBRARY_TYPES.OTHER]: "library.type.other",
+  };
+  function typeName(tr: Translator, type: string): string {
+    const key = TYPE_KEYS[type];
+    return key ? tr(key) : getTypeDisplayName(type);
+  }
+
   let addOpen = false;
   let addName = "";
   let addType: LibraryItemType = LIBRARY_TYPES.OTHER;
@@ -127,13 +140,13 @@
         addName = "";
         addDesc = "";
       } else if (res.reason === "already_exists") {
-        showNotice("Something with that name is already shared.");
+        showNotice($t("library.nameTaken"));
       } else {
-        showNotice("Could not add item.");
+        showNotice($t("library.addFailed"));
       }
     } catch (err) {
       console.error("[kiosk] add library item failed", err);
-      showNotice("Could not add item.");
+      showNotice($t("library.addFailed"));
     } finally {
       adding = false;
     }
@@ -143,11 +156,9 @@
 <div class="board">
   <div class="lib scroll">
     {#if $scope === "personal" && !$telegramUser}
-      <p class="empty">Log in to see what you've borrowed ✶</p>
+      <p class="empty">{$t("library.loginPersonal")}</p>
     {:else if $scope === "personal" && !shownThings.length}
-      <p class="empty">
-        Nothing borrowed right now — tap a thing to take it out ✶
-      </p>
+      <p class="empty">{$t("library.emptyPersonal")}</p>
     {:else if $libraryViewMode === "swipe"}
       <!-- One big card at a time — the library's Card layout. -->
       {#if shownThings.length}
@@ -169,7 +180,7 @@
           >
             <div class="icon">{getItemIcon({ type: thing.type })}</div>
             <h3>{thing.title}</h3>
-            <span class="type">{getTypeDisplayName(thing.type)}</span>
+            <span class="type">{typeName($t, thing.type)}</span>
             {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
             <span class="status" class:available={thing.available}>
               {statusLabel(thing, $scope, $now, $t, $locale)}
@@ -180,7 +191,7 @@
               class="arrow"
               on:click={() => (cardIndex = Math.max(0, cardIndex - 1))}
               disabled={cardIndex <= 0}
-              aria-label="Previous item">‹</button
+              aria-label={$t("library.prevItem")}>‹</button
             >
             <span class="count"
               >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
@@ -190,12 +201,12 @@
               on:click={() =>
                 (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
               disabled={cardIndex >= shownThings.length - 1}
-              aria-label="Next item">›</button
+              aria-label={$t("library.nextItem")}>›</button
             >
           </div>
         </div>
       {:else}
-        <p class="empty">No things shared yet.</p>
+        <p class="empty">{$t("library.emptyShared")}</p>
       {/if}
     {:else if $libraryViewMode === "cards"}
       {#if shownThings.length}
@@ -216,20 +227,20 @@
             >
               <div class="icon">{getItemIcon({ type: thing.type })}</div>
               <h3>{thing.title}</h3>
-              <span class="type">{getTypeDisplayName(thing.type)}</span>
+              <span class="type">{typeName($t, thing.type)}</span>
               {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
               <span class="status" class:available={thing.available}>
                 {thing.available
-                  ? "available"
+                  ? $t("library.available")
                   : thing.borrower
-                    ? `out · ${thing.borrower}`
-                    : "out"}
+                    ? $t("library.outWith", { who: thing.borrower })
+                    : $t("library.out")}
               </span>
             </article>
           {/each}
         </div>
       {:else}
-        <p class="empty">No things shared yet.</p>
+        <p class="empty">{$t("library.emptyShared")}</p>
       {/if}
     {:else if shownThings.length}
       <!-- Compact rows: the list layout, whatever the scope. -->
@@ -254,7 +265,7 @@
               <div class="text">
                 <h3>{thing.title}</h3>
                 <div class="meta">
-                  <span class="rtype">{getTypeDisplayName(thing.type)}</span>
+                  <span class="rtype">{typeName($t, thing.type)}</span>
                   {#if thing.source}<span class="src">⇄ {thing.source}</span
                     >{/if}
                 </div>
@@ -267,7 +278,7 @@
         {/each}
       </ul>
     {:else}
-      <p class="empty">No things shared yet.</p>
+      <p class="empty">{$t("library.emptyShared")}</p>
     {/if}
   </div>
 
@@ -276,8 +287,8 @@
     <button
       class="fab"
       on:click={openAdd}
-      aria-label="Share an item"
-      title="Share an item"
+      aria-label={$t("library.shareItem")}
+      title={$t("library.shareItem")}
     >
       ＋
     </button>
@@ -288,43 +299,49 @@
   <Modal on:close={() => (addOpen = false)}>
     <div class="form">
       <div class="glyph" aria-hidden="true">＋</div>
-      <h3>Share an item</h3>
-      <p class="lead">Something the community can borrow.</p>
+      <h3>{$t("library.shareItem")}</h3>
+      <p class="lead">{$t("library.shareLead")}</p>
       <input
         class="line"
         bind:value={addName}
-        placeholder="What is it? (e.g. Cordless drill)"
+        placeholder={$t("library.namePlaceholder")}
         maxlength="60"
         on:keydown={(e) => e.key === "Enter" && addThing()}
       />
-      <div class="types" role="radiogroup" aria-label="Item type">
-        {#each TYPE_OPTIONS as t (t)}
+      <div
+        class="types"
+        role="radiogroup"
+        aria-label={$t("library.itemTypeAria")}
+      >
+        {#each TYPE_OPTIONS as ty (ty)}
           <button
             type="button"
             class="typechip"
-            class:on={addType === t}
+            class:on={addType === ty}
             role="radio"
-            aria-checked={addType === t}
-            on:click={() => (addType = t)}
+            aria-checked={addType === ty}
+            on:click={() => (addType = ty)}
           >
-            <span class="ti">{getItemIcon({ type: t })}</span>
-            <span class="tl">{getTypeDisplayName(t)}</span>
+            <span class="ti">{getItemIcon({ type: ty })}</span>
+            <span class="tl">{typeName($t, ty)}</span>
           </button>
         {/each}
       </div>
       <textarea
         bind:value={addDesc}
         rows="3"
-        placeholder="Notes about it (optional)"
+        placeholder={$t("library.notesPlaceholder")}
       ></textarea>
       <div class="actions">
         <button
           class="primary"
           on:click={addThing}
           disabled={adding || !addName.trim()}
-          >{adding ? "Sharing…" : "Share item"}</button
+          >{adding ? $t("library.sharing") : $t("library.shareBtn")}</button
         >
-        <button class="ghost" on:click={() => (addOpen = false)}>Cancel</button>
+        <button class="ghost" on:click={() => (addOpen = false)}
+          >{$t("common.cancel")}</button
+        >
       </div>
     </div>
   </Modal>
