@@ -20,6 +20,66 @@ export const it: Record<MessageKey, Msg> = {
   "dates.daysAgo": "{n}g fa",
   "dates.inDays": "tra {n}g",
 
+  // Tasks board
+  "tasks.orderSaveFailed": "Impossibile salvare il nuovo ordine — {reason}",
+  "tasks.alreadyCompleted": "Già completata.",
+  "tasks.stopped": "Questa attività è stata fermata.",
+  "tasks.joinFirst":
+    "Prima unisciti all'attività — solo chi partecipa può completarla.",
+  "tasks.deleteDenied": "Impossibile eliminare — forse non hai i permessi.",
+  "tasks.deleteFailed": "Impossibile eliminare questa attività.",
+  "tasks.addFailed": "Impossibile aggiungere — {reason}",
+  "tasks.deleteTask": "Elimina l'attività",
+  "tasks.markComplete": "Segna come completata",
+  "tasks.proposedBy": "Proposta da {name}",
+  "tasks.waitsTitle": {
+    one: "Prima c'è {n} dipendenza aperta",
+    other: "Prima ci sono {n} dipendenze aperte",
+  },
+  "tasks.waitsOn": "aspetta {n}",
+  "tasks.appreciate": "Apprezza",
+  "tasks.addTask": "Aggiungi un'attività",
+  "tasks.appreciateInstead": "Preferisci apprezzare?",
+  "tasks.appreciateLead":
+    "Partecipi a “{title}”. Apprezzandola verrai rimosso dai partecipanti.",
+  "tasks.deleteTitle": "Eliminare l'attività?",
+  "tasks.deleteLead": "“{title}” verrà rimossa per tutti.",
+  "tasks.deleting": "Eliminazione…",
+  "tasks.delete": "Elimina",
+  "tasks.addTasks": "Aggiungi attività",
+  "tasks.addLead": "Un'attività per riga.",
+  "tasks.addPlaceholder":
+    "Innaffia le piante\nRipara il cancello\nOrganizza la cena",
+  "tasks.adding": "Aggiunta…",
+  "tasks.add": "Aggiungi",
+  "tasks.loginPersonal": "Accedi per vedere le attività di cui fai parte ✶",
+  "tasks.emptyPersonal":
+    "Ancora niente a tuo nome — unisciti a un'attività per vederla qui ✶",
+  "tasks.emptyBacklog": "Il backlog è vuoto. ✶",
+
+  // Swipe deck
+  "swipe.participating": "Partecipi già — vale più di un mi piace ♥",
+  "swipe.alreadyIn": "Già dentro ✓",
+  "swipe.joinFailed": "Impossibile unirsi — riprova.",
+  "swipe.alreadyAppreciated": "Già apprezzata ♥",
+  "swipe.appreciateFailed": "Impossibile salvare il ♥ — riprova.",
+  "swipe.deckAria":
+    "Schede attività — scorri a destra per unirti, in alto per apprezzare, a sinistra per saltare",
+  "swipe.join": "UNISCITI",
+  "swipe.skip": "SALTA",
+  "swipe.joined": "UNITO",
+  "swipe.joinedRibbonAria": "Partecipi a questa attività",
+  "swipe.allCaughtUp": "Tutto fatto",
+  "swipe.roundSummary": "{joins} adesioni · {likes} mi piace in questo giro",
+  "swipe.startOver": "Ricomincia",
+  "swipe.seeMine": "Vedi le mie attività",
+  "swipe.backToWall": "Torna ai post-it",
+  "swipe.skipAria": "Salta questa attività",
+  "swipe.skipTitle": "Salta",
+  "swipe.appreciateAria": "Apprezza questa attività",
+  "swipe.joinAria": "Unisciti a questa attività",
+  "swipe.joinTitle": "Unisciti",
+
   // Roles
   "roles.untitledRole": "Ruolo senza titolo",
 

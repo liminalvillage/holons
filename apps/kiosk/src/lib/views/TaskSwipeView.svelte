@@ -22,6 +22,7 @@
   } from "$lib/deck";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
+  import { t } from "$lib/i18n";
 
   export let tasks: BacklogTask[];
   export let colorFor: (category: string | undefined) => string;
@@ -192,7 +193,7 @@
     // Liking while participating would silently drop you from the doers (core's
     // participate-XOR-appreciate rule) — a swipe never un-does, so refuse it.
     if (dir === "up" && participating(task)) {
-      springBack("You're participating — that outranks a like ♥");
+      springBack($t("swipe.participating"));
       return;
     }
 
@@ -203,7 +204,7 @@
       offerUndo(task, "skip");
     } else if (dir === "right") {
       if (participating(task)) {
-        showNotice("Already in ✓");
+        showNotice($t("swipe.alreadyIn"));
       } else {
         const res = await onJoin(task);
         if (res === "joined") {
@@ -211,15 +212,15 @@
           party();
           offerUndo(task, "join");
         } else if (res === "already") {
-          showNotice("Already in ✓");
+          showNotice($t("swipe.alreadyIn"));
         } else {
           unDismiss(task.id);
-          showNotice("Couldn't join — try again.");
+          showNotice($t("swipe.joinFailed"));
         }
       }
     } else {
       if (appreciating(task)) {
-        showNotice("Already appreciated ♥");
+        showNotice($t("swipe.alreadyAppreciated"));
       } else {
         const res = await onLike(task);
         if (res === "liked") {
@@ -227,10 +228,10 @@
           pop();
           offerUndo(task, "like");
         } else if (res === "already") {
-          showNotice("Already appreciated ♥");
+          showNotice($t("swipe.alreadyAppreciated"));
         } else {
           unDismiss(task.id);
-          showNotice("Couldn't save that ♥ — try again.");
+          showNotice($t("swipe.appreciateFailed"));
         }
       }
     }
@@ -276,7 +277,7 @@
       class="deck"
       bind:clientWidth={deckW}
       role="group"
-      aria-label="Task cards — swipe right to join, up to like, left to skip"
+      aria-label={$t("swipe.deckAria")}
       tabindex="0"
       on:keydown={onDeckKey}
     >
@@ -293,9 +294,13 @@
             on:animationend={clearLeaving}
           >
             {#if leaving.dir === "right"}
-              <div class="stamp join" style="opacity: 1;">JOIN</div>
+              <div class="stamp join" style="opacity: 1;">
+                {$t("swipe.join")}
+              </div>
             {:else if leaving.dir === "left"}
-              <div class="stamp skip" style="opacity: 1;">SKIP</div>
+              <div class="stamp skip" style="opacity: 1;">
+                {$t("swipe.skip")}
+              </div>
             {:else}
               <div class="stamp like" style="opacity: 1;">♥ LIKE</div>
             {/if}
@@ -329,20 +334,27 @@
             on:pointercancel={onPointerCancel}
           >
             {#if i === 0}
-              <div class="stamp join" style="opacity: {badges.join};">JOIN</div>
-              <div class="stamp skip" style="opacity: {badges.skip};">SKIP</div>
+              <div class="stamp join" style="opacity: {badges.join};">
+                {$t("swipe.join")}
+              </div>
+              <div class="stamp skip" style="opacity: {badges.skip};">
+                {$t("swipe.skip")}
+              </div>
               <div class="stamp like" style="opacity: {badges.like};">
                 ♥ LIKE
               </div>
             {/if}
             {#if participating(task)}
-              <div class="ribbon" aria-label="You participate in this task">
-                JOINED ✓
+              <div class="ribbon" aria-label={$t("swipe.joinedRibbonAria")}>
+                {$t("swipe.joined")} ✓
               </div>
             {/if}
             <h3>{task.title}</h3>
             {#if task.initiator}
-              <div class="initiator" title="Proposed by {task.initiator.name}">
+              <div
+                class="initiator"
+                title={$t("tasks.proposedBy", { name: task.initiator.name })}
+              >
                 <span aria-hidden="true">💡</span>
                 <span class="iname">{task.initiator.name}</span>
               </div>
@@ -380,17 +392,24 @@
       {:else}
         <div class="alldone">
           <div class="star" aria-hidden="true">✶</div>
-          <h3>All caught up</h3>
+          <h3>{$t("swipe.allCaughtUp")}</h3>
           <p>
-            {sessionJoins} joined · {sessionLikes} liked this round
+            {$t("swipe.roundSummary", {
+              joins: sessionJoins,
+              likes: sessionLikes,
+            })}
           </p>
           <div class="doneactions">
-            <button class="primary" on:click={startOver}>Start over</button>
+            <button class="primary" on:click={startOver}
+              >{$t("swipe.startOver")}</button
+            >
             {#if $telegramUser}
-              <button class="primary" on:click={seeMine}>See my tasks</button>
+              <button class="primary" on:click={seeMine}
+                >{$t("swipe.seeMine")}</button
+              >
             {/if}
             <button class="ghost" on:click={backToWall}>
-              Back to post-its
+              {$t("swipe.backToWall")}
             </button>
           </div>
         </div>
@@ -406,24 +425,24 @@
         <button
           class="act skip"
           on:click={() => commit("left")}
-          aria-label="Skip this task"
-          title="Skip"
+          aria-label={$t("swipe.skipAria")}
+          title={$t("swipe.skipTitle")}
         >
           ✕
         </button>
         <button
           class="act like"
           on:click={() => commit("up")}
-          aria-label="Appreciate this task"
-          title="Appreciate"
+          aria-label={$t("swipe.appreciateAria")}
+          title={$t("tasks.appreciate")}
         >
           ♥
         </button>
         <button
           class="act join"
           on:click={() => commit("right")}
-          aria-label="Join this task"
-          title="Join"
+          aria-label={$t("swipe.joinAria")}
+          title={$t("swipe.joinTitle")}
         >
           🤝
         </button>
@@ -446,7 +465,7 @@
     <Confetti originY={40} />
   {/if}
 {:else}
-  <p class="empty">The backlog is clear. ✶</p>
+  <p class="empty">{$t("tasks.emptyBacklog")}</p>
 {/if}
 
 <style>

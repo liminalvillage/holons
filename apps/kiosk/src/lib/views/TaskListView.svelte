@@ -11,6 +11,7 @@
   import { sameId } from "$lib/personal";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
+  import { t } from "$lib/i18n";
 
   export let tasks: BacklogTask[];
   export let colorFor: (category: string | undefined) => string;
@@ -69,9 +70,8 @@
               {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
               {#if task.unmetDeps > 0}<span
                   class="waits"
-                  title="{task.unmetDeps} open {task.unmetDeps === 1
-                    ? 'dependency'
-                    : 'dependencies'} first">⛓ waits on {task.unmetDeps}</span
+                  title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
+                  >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                 >{/if}
             </div>
           </div>
@@ -80,9 +80,9 @@
             class:on={amAppreciating(task)}
             on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onToggleAppreciate(task)}
-            aria-label="Appreciate"
+            aria-label={$t("tasks.appreciate")}
             aria-pressed={amAppreciating(task)}
-            title="Appreciate"
+            title={$t("tasks.appreciate")}
           >
             <span class="glyph" aria-hidden="true">♥</span>
             {#if task.appreciation}
@@ -98,8 +98,8 @@
             class="tool check"
             on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onComplete(task)}
-            aria-label="Mark complete"
-            title="Mark complete"
+            aria-label={$t("tasks.markComplete")}
+            title={$t("tasks.markComplete")}
           >
             ✓
           </button>
@@ -107,8 +107,8 @@
             class="tool del"
             on:pointerdown|stopPropagation
             on:click|stopPropagation={() => onDelete(task)}
-            aria-label="Delete task"
-            title="Delete task"
+            aria-label={$t("tasks.deleteTask")}
+            title={$t("tasks.deleteTask")}
           >
             ✕
           </button>
@@ -117,7 +117,7 @@
     {/each}
   </ul>
 {:else}
-  <p class="empty">The backlog is clear. ✶</p>
+  <p class="empty">{$t("tasks.emptyBacklog")}</p>
 {/if}
 
 <style>

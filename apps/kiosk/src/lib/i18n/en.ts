@@ -23,6 +23,65 @@ export const en = {
   "dates.daysAgo": "{n}d ago",
   "dates.inDays": "in {n}d",
 
+  // Tasks board (wall / list / swipe share these)
+  "tasks.orderSaveFailed": "Couldn't save the new order — {reason}",
+  "tasks.alreadyCompleted": "Already completed.",
+  "tasks.stopped": "This quest was stopped.",
+  "tasks.joinFirst":
+    "Join the task first — only a participant can complete it.",
+  "tasks.deleteDenied": "Couldn't delete — you may not have permission.",
+  "tasks.deleteFailed": "Couldn't delete this task.",
+  "tasks.addFailed": "Couldn't add — {reason}",
+  "tasks.deleteTask": "Delete task",
+  "tasks.markComplete": "Mark complete",
+  "tasks.proposedBy": "Proposed by {name}",
+  "tasks.waitsTitle": {
+    one: "{n} open dependency first",
+    other: "{n} open dependencies first",
+  },
+  "tasks.waitsOn": "waits on {n}",
+  "tasks.appreciate": "Appreciate",
+  "tasks.addTask": "Add task",
+  "tasks.appreciateInstead": "Appreciate instead?",
+  "tasks.appreciateLead":
+    "You're a participant on “{title}”. Appreciating it removes you from the participants.",
+  "tasks.deleteTitle": "Delete task?",
+  "tasks.deleteLead": "“{title}” will be removed for everyone.",
+  "tasks.deleting": "Deleting…",
+  "tasks.delete": "Delete",
+  "tasks.addTasks": "Add tasks",
+  "tasks.addLead": "One task per line.",
+  "tasks.addPlaceholder": "Water the plants\nFix the gate\nPlan the potluck",
+  "tasks.adding": "Adding…",
+  "tasks.add": "Add",
+  "tasks.loginPersonal": "Log in to see the tasks you're part of ✶",
+  "tasks.emptyPersonal":
+    "Nothing with your name on it yet — join a task to see it here ✶",
+  "tasks.emptyBacklog": "The backlog is clear. ✶",
+
+  // Swipe deck
+  "swipe.participating": "You're participating — that outranks a like ♥",
+  "swipe.alreadyIn": "Already in ✓",
+  "swipe.joinFailed": "Couldn't join — try again.",
+  "swipe.alreadyAppreciated": "Already appreciated ♥",
+  "swipe.appreciateFailed": "Couldn't save that ♥ — try again.",
+  "swipe.deckAria":
+    "Task cards — swipe right to join, up to like, left to skip",
+  "swipe.join": "JOIN",
+  "swipe.skip": "SKIP",
+  "swipe.joined": "JOINED",
+  "swipe.joinedRibbonAria": "You participate in this task",
+  "swipe.allCaughtUp": "All caught up",
+  "swipe.roundSummary": "{joins} joined · {likes} liked this round",
+  "swipe.startOver": "Start over",
+  "swipe.seeMine": "See my tasks",
+  "swipe.backToWall": "Back to post-its",
+  "swipe.skipAria": "Skip this task",
+  "swipe.skipTitle": "Skip",
+  "swipe.appreciateAria": "Appreciate this task",
+  "swipe.joinAria": "Join this task",
+  "swipe.joinTitle": "Join",
+
   // Roles
   "roles.untitledRole": "Untitled role",
 

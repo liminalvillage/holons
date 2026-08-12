@@ -20,6 +20,67 @@ export const es: Record<MessageKey, Msg> = {
   "dates.daysAgo": "hace {n}d",
   "dates.inDays": "en {n}d",
 
+  // Tasks board
+  "tasks.orderSaveFailed": "No se pudo guardar el nuevo orden — {reason}",
+  "tasks.alreadyCompleted": "Ya completada.",
+  "tasks.stopped": "Esta tarea se detuvo.",
+  "tasks.joinFirst":
+    "Únete primero a la tarea — solo un participante puede completarla.",
+  "tasks.deleteDenied": "No se pudo eliminar — quizá no tienes permiso.",
+  "tasks.deleteFailed": "No se pudo eliminar esta tarea.",
+  "tasks.addFailed": "No se pudo añadir — {reason}",
+  "tasks.deleteTask": "Eliminar la tarea",
+  "tasks.markComplete": "Marcar como completada",
+  "tasks.proposedBy": "Propuesta por {name}",
+  "tasks.waitsTitle": {
+    one: "Primero hay {n} dependencia abierta",
+    other: "Primero hay {n} dependencias abiertas",
+  },
+  "tasks.waitsOn": "espera {n}",
+  "tasks.appreciate": "Apreciar",
+  "tasks.addTask": "Añadir una tarea",
+  "tasks.appreciateInstead": "¿Apreciar en su lugar?",
+  "tasks.appreciateLead":
+    "Participas en “{title}”. Al apreciarla dejarás de ser participante.",
+  "tasks.deleteTitle": "¿Eliminar la tarea?",
+  "tasks.deleteLead": "“{title}” se eliminará para todos.",
+  "tasks.deleting": "Eliminando…",
+  "tasks.delete": "Eliminar",
+  "tasks.addTasks": "Añadir tareas",
+  "tasks.addLead": "Una tarea por línea.",
+  "tasks.addPlaceholder":
+    "Riega las plantas\nArregla la puerta\nOrganiza la cena",
+  "tasks.adding": "Añadiendo…",
+  "tasks.add": "Añadir",
+  "tasks.loginPersonal":
+    "Inicia sesión para ver las tareas en las que participas ✶",
+  "tasks.emptyPersonal":
+    "Aún no hay nada a tu nombre — únete a una tarea para verla aquí ✶",
+  "tasks.emptyBacklog": "No hay tareas pendientes. ✶",
+
+  // Swipe deck
+  "swipe.participating": "Ya participas — eso vale más que un me gusta ♥",
+  "swipe.alreadyIn": "Ya estás dentro ✓",
+  "swipe.joinFailed": "No se pudo unir — inténtalo de nuevo.",
+  "swipe.alreadyAppreciated": "Ya apreciada ♥",
+  "swipe.appreciateFailed": "No se pudo guardar el ♥ — inténtalo de nuevo.",
+  "swipe.deckAria":
+    "Fichas de tareas — desliza a la derecha para unirte, arriba para apreciar, a la izquierda para saltar",
+  "swipe.join": "ÚNETE",
+  "swipe.skip": "SALTAR",
+  "swipe.joined": "UNIDO",
+  "swipe.joinedRibbonAria": "Participas en esta tarea",
+  "swipe.allCaughtUp": "Todo al día",
+  "swipe.roundSummary": "{joins} uniones · {likes} me gusta en esta ronda",
+  "swipe.startOver": "Empezar de nuevo",
+  "swipe.seeMine": "Ver mis tareas",
+  "swipe.backToWall": "Volver a los pósits",
+  "swipe.skipAria": "Saltar esta tarea",
+  "swipe.skipTitle": "Saltar",
+  "swipe.appreciateAria": "Apreciar esta tarea",
+  "swipe.joinAria": "Únete a esta tarea",
+  "swipe.joinTitle": "Únete",
+
   // Roles
   "roles.untitledRole": "Rol sin título",
 

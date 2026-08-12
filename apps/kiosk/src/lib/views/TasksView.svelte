@@ -374,7 +374,7 @@
     // Surface denied writes on screen — a wall display has no console, so a
     // silent failure reads as "the app is broken" with no way to tell why.
     const writer = await getWriter(hid, (msg) =>
-      showNotice(`Couldn't save the new order — ${msg}`),
+      showNotice($t("tasks.orderSaveFailed", { reason: msg })),
     );
     try {
       for (let i = 0; i < order.length; i++) {
@@ -391,7 +391,10 @@
     } catch (err) {
       console.error("[kiosk] reorder failed", err);
       showNotice(
-        `Couldn't save the new order — ${err instanceof Error ? err.message : "write failed"}`,
+        $t("tasks.orderSaveFailed", {
+          reason:
+            err instanceof Error ? err.message : $t("clipboard.writeFailed"),
+        }),
       );
     }
   }
@@ -438,10 +441,10 @@
     if (!result.ok) {
       showNotice(
         result.reason === "already-completed"
-          ? "Already completed."
+          ? $t("tasks.alreadyCompleted")
           : result.reason === "stopped"
-            ? "This quest was stopped."
-            : "Join the task first — only a participant can complete it.",
+            ? $t("tasks.stopped")
+            : $t("tasks.joinFirst"),
       );
       return;
     }
@@ -501,11 +504,11 @@
         ref?.key ?? task.id,
       );
       if (!result.sourceDeleted) {
-        showNotice("Couldn't delete — you may not have permission.");
+        showNotice($t("tasks.deleteDenied"));
       }
     } catch (err) {
       console.error("[kiosk] delete failed", err);
-      showNotice("Couldn't delete this task.");
+      showNotice($t("tasks.deleteFailed"));
     } finally {
       deleting = false;
       confirmDelete = null;
@@ -602,7 +605,7 @@
       // Route denials to the on-screen notice — a silent false return here
       // looked like "add does nothing" on unattended displays.
       const writer = await getWriter(hid, (msg) =>
-        showNotice(`Couldn't add — ${msg}`),
+        showNotice($t("tasks.addFailed", { reason: msg })),
       );
       let allSaved = true;
       for (const title of titles) {
@@ -617,7 +620,10 @@
     } catch (err) {
       console.error("[kiosk] add task failed", err);
       showNotice(
-        `Couldn't add — ${err instanceof Error ? err.message : "write failed"}`,
+        $t("tasks.addFailed", {
+          reason:
+            err instanceof Error ? err.message : $t("clipboard.writeFailed"),
+        }),
       );
     } finally {
       adding = false;
@@ -628,7 +634,7 @@
 <div class="board">
   {#if $scope === "personal" && !$telegramUser}
     <div class="tasks scroll">
-      <p class="empty">Log in to see the tasks you're part of ✶</p>
+      <p class="empty">{$t("tasks.loginPersonal")}</p>
     </div>
   {:else if $taskViewMode === "swipe"}
     <div class="deckwrap">
@@ -645,9 +651,7 @@
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
       {#if $scope === "personal" && !shownTasks.length}
-        <p class="empty">
-          Nothing with your name on it yet — join a task to see it here ✶
-        </p>
+        <p class="empty">{$t("tasks.emptyPersonal")}</p>
       {:else if $taskViewMode === "list"}
         <TaskListView
           tasks={shownTasks}
@@ -700,8 +704,8 @@
                       class="tool del"
                       on:pointerdown|stopPropagation
                       on:click|stopPropagation={() => onDelete(task)}
-                      aria-label="Delete task"
-                      title="Delete task"
+                      aria-label={$t("tasks.deleteTask")}
+                      title={$t("tasks.deleteTask")}
                     >
                       ✕
                     </button>
@@ -711,8 +715,8 @@
                       class="tool check"
                       on:pointerdown|stopPropagation
                       on:click|stopPropagation={() => onComplete(task)}
-                      aria-label="Mark complete"
-                      title="Mark complete"
+                      aria-label={$t("tasks.markComplete")}
+                      title={$t("tasks.markComplete")}
                     >
                       ✓
                     </button>
@@ -721,7 +725,9 @@
                   {#if task.initiator}
                     <div
                       class="initiator"
-                      title="Proposed by {task.initiator.name}"
+                      title={$t("tasks.proposedBy", {
+                        name: task.initiator.name,
+                      })}
                     >
                       <span class="bulb" aria-hidden="true">💡</span>
                       <Avatars people={[task.initiator]} size="1.3rem" />
@@ -746,10 +752,8 @@
                       >{/if}
                     {#if task.unmetDeps > 0}<span
                         class="waits"
-                        title="{task.unmetDeps} open {task.unmetDeps === 1
-                          ? 'dependency'
-                          : 'dependencies'} first"
-                        >⛓ waits on {task.unmetDeps}</span
+                        title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
+                        >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                       >{/if}
                   </div>
                   <div class="cardfoot">
@@ -758,9 +762,9 @@
                       class:on={amAppreciating(task)}
                       on:pointerdown|stopPropagation
                       on:click|stopPropagation={() => toggleAppr(task)}
-                      aria-label="Appreciate"
+                      aria-label={$t("tasks.appreciate")}
                       aria-pressed={amAppreciating(task)}
-                      title="Appreciate"
+                      title={$t("tasks.appreciate")}
                     >
                       <span class="glyph" aria-hidden="true">♥</span>
                       {#if task.appreciation}
@@ -786,7 +790,7 @@
           {/each}
         </div>
       {:else}
-        <p class="empty">The backlog is clear. ✶</p>
+        <p class="empty">{$t("tasks.emptyBacklog")}</p>
       {/if}
     </div>
   {/if}
@@ -796,8 +800,8 @@
     <button
       class="fab"
       on:click={openAdd}
-      aria-label="Add task"
-      title="Add task"
+      aria-label={$t("tasks.addTask")}
+      title={$t("tasks.addTask")}
     >
       ＋
     </button>
@@ -808,15 +812,16 @@
   <Modal on:close={() => (confirmDrop = null)}>
     <div class="add">
       <div class="glyph heart-glyph" aria-hidden="true">♥</div>
-      <h3>Appreciate instead?</h3>
+      <h3>{$t("tasks.appreciateInstead")}</h3>
       <p class="lead">
-        You're a participant on “{confirmDrop.title}”. Appreciating it removes
-        you from the participants.
+        {$t("tasks.appreciateLead", { title: confirmDrop.title })}
       </p>
       <div class="actions">
-        <button class="primary" on:click={confirmAppreciate}>Appreciate</button>
+        <button class="primary" on:click={confirmAppreciate}
+          >{$t("tasks.appreciate")}</button
+        >
         <button class="ghost" on:click={() => (confirmDrop = null)}
-          >Cancel</button
+          >{$t("common.cancel")}</button
         >
       </div>
     </div>
@@ -827,16 +832,16 @@
   <Modal on:close={() => (confirmDelete = null)}>
     <div class="add">
       <div class="glyph del-glyph" aria-hidden="true">✕</div>
-      <h3>Delete task?</h3>
+      <h3>{$t("tasks.deleteTitle")}</h3>
       <p class="lead">
-        “{confirmDelete.title}” will be removed for everyone.
+        {$t("tasks.deleteLead", { title: confirmDelete.title })}
       </p>
       <div class="actions">
         <button class="primary danger" on:click={doDelete} disabled={deleting}
-          >{deleting ? "Deleting…" : "Delete"}</button
+          >{deleting ? $t("tasks.deleting") : $t("tasks.delete")}</button
         >
         <button class="ghost" on:click={() => (confirmDelete = null)}
-          >Cancel</button
+          >{$t("common.cancel")}</button
         >
       </div>
     </div>
@@ -847,18 +852,20 @@
   <Modal on:close={() => (addOpen = false)}>
     <div class="add">
       <div class="glyph" aria-hidden="true">＋</div>
-      <h3>Add tasks</h3>
-      <p class="lead">One task per line.</p>
+      <h3>{$t("tasks.addTasks")}</h3>
+      <p class="lead">{$t("tasks.addLead")}</p>
       <textarea
         bind:value={addDraft}
         rows="6"
-        placeholder={"Water the plants\nFix the gate\nPlan the potluck"}
+        placeholder={$t("tasks.addPlaceholder")}
       ></textarea>
       <div class="actions">
         <button class="primary" on:click={addTasks} disabled={adding}
-          >{adding ? "Adding…" : "Add"}</button
+          >{adding ? $t("tasks.adding") : $t("tasks.add")}</button
         >
-        <button class="ghost" on:click={() => (addOpen = false)}>Cancel</button>
+        <button class="ghost" on:click={() => (addOpen = false)}
+          >{$t("common.cancel")}</button
+        >
       </div>
     </div>
   </Modal>
