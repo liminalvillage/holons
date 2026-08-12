@@ -36,6 +36,20 @@ export const langMode = writable<LangMode>("auto");
 /** The displayed holon's `settings.language`, when loaded and supported. */
 export const holonLang = writable<Lang | null>(null);
 
+/**
+ * The language when it is affirmatively known — a caretaker pin or the
+ * holon's own setting — else null. Used as the Whisper transcription hint:
+ * a mere device-locale fallback must NOT pin transcription, so a visitor
+ * speaking another language still gets transcribed.
+ */
+export function affirmativeLang(
+  mode: LangMode,
+  holon: Lang | null,
+): Lang | null {
+  if (mode !== "auto") return mode;
+  return holon;
+}
+
 /** Pure resolution: pin → holon setting → device locale → English. */
 export function resolveLang(
   mode: LangMode,

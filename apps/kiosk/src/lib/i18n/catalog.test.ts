@@ -10,7 +10,12 @@ import type { Msg } from "./types";
 import { en } from "./en";
 import { it } from "./it";
 import { es } from "./es";
-import { formatMsg, makeTranslator, resolveLang } from "./index";
+import {
+  affirmativeLang,
+  formatMsg,
+  makeTranslator,
+  resolveLang,
+} from "./index";
 
 const CATALOGS: Record<string, Record<string, Msg>> = { it, es };
 
@@ -98,5 +103,17 @@ describe("resolveLang", () => {
   spec("unsupported locales land on English", () => {
     expect(resolveLang("auto", null, "fr-FR")).toBe("en");
     expect(resolveLang("auto", null, "")).toBe("en");
+  });
+});
+
+describe("affirmativeLang (Whisper hint)", () => {
+  spec("a caretaker pin is affirmative", () => {
+    expect(affirmativeLang("it", null)).toBe("it");
+  });
+  spec("the holon's setting is affirmative in auto mode", () => {
+    expect(affirmativeLang("auto", "es")).toBe("es");
+  });
+  spec("a device-locale fallback is NOT — Whisper must auto-detect", () => {
+    expect(affirmativeLang("auto", null)).toBeNull();
   });
 });

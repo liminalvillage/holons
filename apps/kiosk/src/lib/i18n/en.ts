@@ -469,6 +469,12 @@ export const en = {
   "voice.transcribing": "transcribing",
   "voice.speaking": "speaking…",
   "voice.typePlaceholder": "Paste or type a transcript…",
+  "voice.notConfigured":
+    "Voice is not configured — paste an API key in Settings, or set OPENAI_API_KEY on the deploy.",
+  "voice.keyUnreachable":
+    "Could not reach OpenAI — check the API key in Settings and the network connection.",
+  "voice.serviceUnreachable":
+    "Could not reach the voice service — check the network connection.",
 
   // Setup screen (no holon configured)
   "setup.title": "No holon configured",

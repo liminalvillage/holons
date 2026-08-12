@@ -17,6 +17,12 @@ export interface OpenAIVoiceOptions {
   sttModel: string;
   ttsModel: string;
   ttsVoice: string;
+  /**
+   * ISO-639-1 hint for Whisper — set only when the kiosk language is
+   * affirmatively known (caretaker pin or holon setting); omitted, Whisper
+   * auto-detects so a visitor speaking another language still transcribes.
+   */
+  language?: string;
 }
 
 function authHeaders(opts: OpenAIVoiceOptions): Record<string, string> {
@@ -36,6 +42,7 @@ export async function transcribe(
     "utterance.wav",
   );
   form.append("model", opts.sttModel);
+  if (opts.language) form.append("language", opts.language);
   const resp = await fetch(`${opts.baseUrl}/audio/transcriptions`, {
     method: "POST",
     headers: authHeaders(opts),

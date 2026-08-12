@@ -481,6 +481,12 @@ export const es: Record<MessageKey, Msg> = {
   "voice.transcribing": "transcribiendo",
   "voice.speaking": "hablando…",
   "voice.typePlaceholder": "Pega o escribe una transcripción…",
+  "voice.notConfigured":
+    "La voz no está configurada — pega una clave API en Ajustes, o define OPENAI_API_KEY en el despliegue.",
+  "voice.keyUnreachable":
+    "No se pudo conectar con OpenAI — comprueba la clave API en Ajustes y la conexión de red.",
+  "voice.serviceUnreachable":
+    "No se pudo conectar con el servicio de voz — comprueba la conexión de red.",
 
   // Setup screen
   "setup.title": "Ningún holón configurado",

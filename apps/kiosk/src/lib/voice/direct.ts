@@ -33,6 +33,14 @@ import { holonId, holonName, rawQuests } from "$lib/stores";
 import { telegramUser } from "$lib/auth";
 import { resolveVoiceKey } from "$lib/config";
 import {
+  affirmativeLang,
+  holonLang,
+  lang,
+  langMode,
+  tr,
+  type Lang,
+} from "$lib/i18n";
+import {
   transcribe,
   synthesizeSpeech,
   TTS_PCM_SAMPLE_RATE,
@@ -69,6 +77,9 @@ function openaiOpts(transport: VoiceTransport): OpenAIVoiceOptions {
     sttModel: env.VITE_VOICE_STT_MODEL || "whisper-1",
     ttsModel: env.VITE_VOICE_TTS_MODEL || "tts-1",
     ttsVoice: env.VITE_VOICE_TTS_VOICE || "alloy",
+    // Whisper hint only when the language is affirmatively known (pin or
+    // holon setting) — a device-locale fallback must not pin transcription.
+    language: affirmativeLang(get(langMode), get(holonLang)) ?? undefined,
   };
 }
 
@@ -103,10 +114,6 @@ function currentTransport(): VoiceTransport | null {
 /** Exchanges kept as short-term memory (each = one user + one assistant msg). */
 const HISTORY_EXCHANGES = 6;
 
-/** Spoken when a turn arrives but no key/relay can carry it — never silent. */
-const NOT_CONFIGURED =
-  "Voice is not configured — paste an API key in Settings, or set OPENAI_API_KEY on the deploy.";
-
 const SYSTEM_PROMPT =
   "You are the Holons voice agent on a shared community kiosk. You operate " +
   "the kiosk through tools. Prefer acting via tools over describing. Keep " +
@@ -129,6 +136,27 @@ const SYSTEM_PROMPT =
   "on screen, never data. " +
   "Honesty: only claim an action happened if a tool call SUCCEEDED this " +
   "turn. If a tool failed or you called none, say so plainly — never pretend.";
+
+/**
+ * Per-turn language directive appended to the system prompt. The
+ * meta-instruction itself stays English (models follow English instructions
+ * most reliably); tool results and context lines are English by design — the
+ * directive makes the model translate on the way out.
+ */
+const LANG_NAMES: Record<Lang, string> = {
+  en: "English",
+  it: "Italian",
+  es: "Spanish",
+};
+
+function languageLine(): string {
+  const name = LANG_NAMES[get(lang)];
+  return (
+    `Language: reply and speak in ${name}, regardless of the language of ` +
+    "tool results or context lines (translate them). If the user clearly " +
+    "speaks a different language, mirror the user instead."
+  );
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -226,7 +254,7 @@ export class DirectVoiceBackend implements VoiceBackend {
   utterance(wav: Uint8Array, context: VoiceContext): void {
     const transport = currentTransport();
     if (!transport) {
-      this.onEvent({ type: "error", message: NOT_CONFIGURED });
+      this.onEvent({ type: "error", message: tr("voice.notConfigured") });
       return;
     }
     const signal = this.beginTurn();
@@ -267,8 +295,8 @@ export class DirectVoiceBackend implements VoiceBackend {
     // something a caretaker can act on instead of "Failed to fetch".
     if (/failed to fetch|load failed/i.test(message)) {
       message = resolveVoiceKey()
-        ? "Could not reach OpenAI — check the API key in Settings and the network connection."
-        : "Could not reach the voice service — check the network connection.";
+        ? tr("voice.keyUnreachable")
+        : tr("voice.serviceUnreachable");
     }
     this.onEvent({ type: "error", message });
   }
@@ -281,7 +309,7 @@ export class DirectVoiceBackend implements VoiceBackend {
     const transport = currentTransport();
     if (!transport) {
       // Never claim (or silently drop) a turn the pipeline can't perform.
-      this.onEvent({ type: "error", message: NOT_CONFIGURED });
+      this.onEvent({ type: "error", message: tr("voice.notConfigured") });
       return;
     }
     this.onEvent({ type: "transcript", text });
@@ -326,7 +354,7 @@ export class DirectVoiceBackend implements VoiceBackend {
         provider,
         tools: KIOSK_VOICE_TOOLS,
         dispatch,
-        system: SYSTEM_PROMPT,
+        system: `${SYSTEM_PROMPT} ${languageLine()}`,
         prompt,
         history,
         onText: (t) => {

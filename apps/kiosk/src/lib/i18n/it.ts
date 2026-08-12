@@ -483,6 +483,12 @@ export const it: Record<MessageKey, Msg> = {
   "voice.transcribing": "trascrizione",
   "voice.speaking": "sto parlando…",
   "voice.typePlaceholder": "Incolla o scrivi una trascrizione…",
+  "voice.notConfigured":
+    "La voce non è configurata — incolla una chiave API nelle Impostazioni, o imposta OPENAI_API_KEY sul deploy.",
+  "voice.keyUnreachable":
+    "Impossibile raggiungere OpenAI — controlla la chiave API nelle Impostazioni e la connessione di rete.",
+  "voice.serviceUnreachable":
+    "Impossibile raggiungere il servizio vocale — controlla la connessione di rete.",
 
   // Setup screen
   "setup.title": "Nessun holon configurato",
