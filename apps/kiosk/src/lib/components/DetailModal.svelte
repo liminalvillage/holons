@@ -57,6 +57,7 @@
   } from "@holons/core/tasks";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { copySelection } from "$lib/clipboard";
+  import { t, locale } from "$lib/i18n";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -226,7 +227,7 @@
       message = "";
     } catch (e) {
       breakdownPreview = null;
-      message = (e as Error)?.message || "These steps cannot be wired up.";
+      message = (e as Error)?.message || $t("detail.stepsUnwirable");
     }
   }
 
@@ -246,9 +247,7 @@
       if (proposal.atomic || proposal.steps.length === 0) {
         // The model declined — keep the panel open, empty, so the user can
         // still add their own steps (or regenerate).
-        breakdownInfo =
-          proposal.reasoning ||
-          "This task is already a single actionable step.";
+        breakdownInfo = proposal.reasoning || $t("detail.atomicStep");
         breakdownSteps = [];
         breakdownPreview = null;
       } else {
@@ -257,7 +256,7 @@
         rebuildBreakdownPreview();
       }
     } catch (e) {
-      message = (e as Error)?.message || "AI breakdown failed.";
+      message = (e as Error)?.message || $t("detail.breakdownFailed");
     } finally {
       breakingDown = false;
     }
@@ -309,7 +308,7 @@
     const all = localQuests();
     const names = [
       ...step.dependsOnSteps.map(
-        (j) => breakdownSteps?.[j]?.title ?? `step ${j + 1}`,
+        (j) => breakdownSteps?.[j]?.title ?? $t("detail.stepN", { n: j + 1 }),
       ),
       ...step.dependsOnExisting.map(
         (id) => all.find((t) => String(t.id) === id)?.title ?? id,
@@ -343,7 +342,10 @@
       }
       if (saved < preview.newQuests.length) {
         if (!message) {
-          message = `Only ${saved} of ${preview.newQuests.length} steps could be saved — the goal was left unchanged.`;
+          message = $t("detail.partialSteps", {
+            saved,
+            total: preview.newQuests.length,
+          });
         }
         return;
       }
@@ -361,10 +363,10 @@
         cancelBreakdown();
         closeDetail();
       } else if (!message) {
-        message = "Could not link the steps.";
+        message = $t("detail.linkStepsFailed");
       }
     } catch (e) {
-      message = (e as Error)?.message || "Could not create the steps.";
+      message = (e as Error)?.message || $t("detail.createStepsFailed");
     } finally {
       saving = false;
     }
@@ -490,12 +492,12 @@
     return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
   }
 
-  function whenText(): string {
-    if (!quest?.when) return "No date";
+  function whenText(loc: string): string {
+    if (!quest?.when) return $t("detail.noDate");
     const d = parseWhen(quest.when);
-    if (!d || Number.isNaN(d.getTime())) return "No date";
+    if (!d || Number.isNaN(d.getTime())) return $t("detail.noDate");
     const hasTime = /T\d\d:/.test(String(quest.when));
-    return d.toLocaleDateString([], {
+    return d.toLocaleDateString(loc, {
       weekday: "short",
       day: "numeric",
       month: "long",
@@ -573,7 +575,7 @@
     const ok = await writer.put("quests", updated);
     saving = false;
     if (ok) closeDetail();
-    else if (!message) message = "Could not save — try again.";
+    else if (!message) message = $t("detail.saveFailed");
   }
 
   async function completeQuest() {
@@ -591,10 +593,10 @@
       saving = false;
       message =
         result.reason === "already-completed"
-          ? "Already completed."
+          ? $t("tasks.alreadyCompleted")
           : result.reason === "stopped"
-            ? "This quest was stopped."
-            : "Join the task first — only a participant can complete it.";
+            ? $t("tasks.stopped")
+            : $t("tasks.joinFirst");
       return;
     }
     saving = false;
@@ -608,9 +610,9 @@
           if (ok) {
             closeDetail(); // close the detail card first, then celebrate
             setTimeout(party, 180);
-          } else message = "Could not save.";
+          } else message = $t("detail.couldNotSave");
         } catch (err) {
-          message = (err as Error)?.message || "Could not complete.";
+          message = (err as Error)?.message || $t("detail.completeFailed");
         }
       },
     });
@@ -626,7 +628,9 @@
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        `Delete "${quest?.title ?? "this task"}"? This can't be undone.`,
+        $t("detail.deleteConfirm", {
+          title: quest?.title ?? $t("detail.thisTask"),
+        }),
       )
     )
       return;
@@ -645,7 +649,7 @@
     const ok = await writer.put("quests", tombstone);
     saving = false;
     if (ok) closeDetail();
-    else if (!message) message = "Could not delete — try again.";
+    else if (!message) message = $t("detail.deleteFailed");
   }
 
   async function joinQuest() {
@@ -664,9 +668,9 @@
       const id = String(sel.quest.id ?? sel.quest.title);
       const ok = await toggleJoin($holonId, id, user, sourceRef(sel.quest, id));
       if (ok) closeDetail();
-      else message = "Could not join.";
+      else message = $t("detail.joinFailed");
     } catch (err) {
-      message = (err as Error)?.message || "Could not join.";
+      message = (err as Error)?.message || $t("detail.joinFailed");
     } finally {
       saving = false;
     }
@@ -692,9 +696,9 @@
         sourceRef(sel.quest, id),
       );
       if (ok) closeDetail();
-      else message = "Could not save.";
+      else message = $t("detail.couldNotSave");
     } catch (err) {
-      message = (err as Error)?.message || "Could not save.";
+      message = (err as Error)?.message || $t("detail.couldNotSave");
     } finally {
       saving = false;
     }
@@ -728,7 +732,7 @@
     const ok = await writer.put("library", updated);
     saving = false;
     if (ok) closeDetail();
-    else if (!message) message = "Could not save.";
+    else if (!message) message = $t("detail.couldNotSave");
   }
 
   // ── Booking form (borrow for a chosen date range, like the web library) ────
@@ -739,11 +743,11 @@
   let bStart = "";
   let bEnd = "";
   const LENGTH_CHIPS = [
-    { days: 1, label: "1 day" },
-    { days: 3, label: "3 days" },
-    { days: 7, label: "1 week" },
-    { days: 14, label: "2 weeks" },
-  ];
+    { days: 1, labelKey: "detail.len1day" },
+    { days: 3, labelKey: "detail.len3days" },
+    { days: 7, labelKey: "detail.len1week" },
+    { days: 14, labelKey: "detail.len2weeks" },
+  ] as const;
 
   function addDaysKey(key: string, n: number): string {
     const d = new Date(`${key}T00:00:00`);
@@ -752,8 +756,8 @@
   }
 
   /** Short human label for a booking day key ("Jul 27"). */
-  function fmtDay(d: string): string {
-    return new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString([], {
+  function fmtDay(loc: string, d: string): string {
+    return new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString(loc, {
       day: "numeric",
       month: "short",
     });
@@ -797,7 +801,11 @@
     const conflict = findOverlappingBooking(sel.item, bStart, bEnd);
     if (conflict) {
       saving = false;
-      message = `Overlaps ${conflict.borrower || "someone"}'s booking (${fmtDay(conflict.start)} → ${fmtDay(conflict.end)}).`;
+      message = $t("detail.overlaps", {
+        who: conflict.borrower || $t("detail.someone"),
+        start: fmtDay($locale, conflict.start),
+        end: fmtDay($locale, conflict.end),
+      });
       return;
     }
     const db = await getLibraryDb();
@@ -819,11 +827,15 @@
         await recordBorrowAccounting({ db }, holon, actor, res.item);
       closeDetail();
     } else if (res.reason === "overlaps" && res.conflict) {
-      message = `Overlaps ${res.conflict.borrower || "someone"}'s booking (${fmtDay(res.conflict.start)} → ${fmtDay(res.conflict.end)}).`;
+      message = $t("detail.overlaps", {
+        who: res.conflict.borrower || $t("detail.someone"),
+        start: fmtDay($locale, res.conflict.start),
+        end: fmtDay($locale, res.conflict.end),
+      });
     } else if (res.reason === "invalid_range") {
-      message = "The return date can't be before the start.";
+      message = $t("detail.invalidRange");
     } else {
-      message = "Could not book.";
+      message = $t("detail.bookFailed");
     }
   }
 
@@ -846,8 +858,8 @@
     } else {
       message =
         res.reason === "forbidden"
-          ? "Only the borrower can return it."
-          : "Could not return.";
+          ? $t("detail.onlyBorrowerReturn")
+          : $t("detail.returnFailed");
     }
   }
 
@@ -876,28 +888,31 @@
           </p>{/if}
         <dl class="facts">
           <div>
-            <dt>Status</dt>
+            <dt>{$t("detail.status")}</dt>
             <dd>
               {#if item.borrowed}
-                Out{item.borrower ? ` · ${item.borrower}` : ""}
-              {:else}Available{/if}
+                {item.borrower
+                  ? $t("detail.outWith", { who: item.borrower })
+                  : $t("detail.out")}
+              {:else}{$t("detail.availableCap")}{/if}
             </dd>
           </div>
           {#if item.value}
             <div>
-              <dt>Value</dt>
+              <dt>{$t("detail.value")}</dt>
               <dd>{item.value}</dd>
             </div>
           {/if}
           {#if upcomingBookings.length}
             <div>
-              <dt>Booked</dt>
+              <dt>{$t("detail.booked")}</dt>
               <dd>
                 {#each upcomingBookings as b (b.id)}
                   <span class="booking-line"
-                    >{fmtDay(b.start)} → {fmtDay(b.end)}{b.borrower
-                      ? ` · ${b.borrower}`
-                      : ""}</span
+                    >{fmtDay($locale, b.start)} → {fmtDay(
+                      $locale,
+                      b.end,
+                    )}{b.borrower ? ` · ${b.borrower}` : ""}</span
                   >
                 {/each}
               </dd>
@@ -911,11 +926,11 @@
                  library: an inclusive [from, until] day range on bookings[]. -->
             <div class="row2">
               <label
-                >From
+                >{$t("detail.from")}
                 <input type="date" bind:value={bStart} />
               </label>
               <label
-                >Until
+                >{$t("detail.until")}
                 <input type="date" bind:value={bEnd} min={bStart} />
               </label>
             </div>
@@ -925,7 +940,7 @@
                   class="chip"
                   class:on={bStart && bEnd === addDaysKey(bStart, c.days)}
                   on:click={() => (bEnd = addDaysKey(bStart, c.days))}
-                  >{c.label}</button
+                  >{$t(c.labelKey)}</button
                 >
               {/each}
             </div>
@@ -934,10 +949,12 @@
                 class="primary"
                 on:click={confirmBooking}
                 disabled={saving || !bStart || !bEnd}
-                >{saving ? "Booking…" : "Confirm booking"}</button
+                >{saving
+                  ? $t("detail.booking")
+                  : $t("detail.confirmBooking")}</button
               >
               <button class="ghost" on:click={() => (booking = false)}
-                >Cancel</button
+                >{$t("common.cancel")}</button
               >
             </div>
           {:else}
@@ -946,52 +963,54 @@
                 <button
                   class="primary"
                   on:click={startBooking}
-                  disabled={saving}>Borrow</button
+                  disabled={saving}>{$t("detail.borrow")}</button
                 >
               {:else if borrowedByMe}
                 <button class="primary" on:click={returnThing} disabled={saving}
-                  >Return</button
+                  >{$t("detail.return")}</button
                 >
               {:else}
                 <span class="note-line"
-                  >On loan to {item.borrower ?? "someone"}</span
+                  >{$t("detail.onLoanTo", {
+                    who: item.borrower ?? $t("detail.someone"),
+                  })}</span
                 >
                 <button class="ghost" on:click={startBooking} disabled={saving}
-                  >Book ahead</button
+                  >{$t("detail.bookAhead")}</button
                 >
               {/if}
               <button class="ghost" on:click={startEdit} disabled={saving}
-                >Edit</button
+                >{$t("detail.edit")}</button
               >
               <button
                 class="ghost"
                 on:click={() => copySelection(sel)}
                 disabled={saving}
-                title="Copy this card — paste it in any holon">⧉ Copy</button
+                title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
               >
             </div>
           {/if}
         {:else}
           <div class="actions">
             <button class="primary" on:click={requestLogin}
-              >Log in with Telegram to borrow or edit</button
+              >{$t("detail.loginBorrowEdit")}</button
             >
             <button
               class="ghost"
               on:click={() => copySelection(sel)}
-              title="Copy this card — paste it in any holon">⧉ Copy</button
+              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
             >
           </div>
         {/if}
       {:else}
         <!-- edit thing -->
         <label
-          >Category
+          >{$t("detail.category")}
           {#if addingThingType}
             <input
               type="text"
               bind:value={fType}
-              placeholder="New category name"
+              placeholder={$t("detail.newCategoryPlaceholder")}
             />
             <button
               type="button"
@@ -999,7 +1018,7 @@
               on:click={() => {
                 addingThingType = false;
                 fType = "other";
-              }}>Pick from list</button
+              }}>{$t("detail.pickFromList")}</button
             >
           {:else}
             <select value={fType} on:change={onThingTypeSelect}>
@@ -1009,24 +1028,25 @@
                   {getTypeDisplayName(opt)}</option
                 >
               {/each}
-              <option value={NEW_CATEGORY}>＋ New category…</option>
+              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
+              >
             </select>
           {/if}
         </label>
         <label
-          >Description
+          >{$t("detail.description")}
           <textarea bind:value={fDescription} rows="3"></textarea>
         </label>
         <label
-          >Value
+          >{$t("detail.value")}
           <input type="number" bind:value={fValue} min="0" />
         </label>
         <div class="actions">
           <button class="primary" on:click={saveThing} disabled={saving}
-            >{saving ? "Saving…" : "Save"}</button
+            >{saving ? $t("rolesv.saving") : $t("rolesv.save")}</button
           >
           <button class="ghost" on:click={() => (editing = false)}
-            >Cancel</button
+            >{$t("common.cancel")}</button
           >
         </div>
       {/if}
@@ -1051,7 +1071,7 @@
           </div>
         {/if}
         <h2>{@html linkify(quest.title)}</h2>
-        <p class="when">{whenText()}</p>
+        <p class="when">{whenText($locale)}</p>
         {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
         {#if quest.description}<p class="desc">
             {@html linkify(quest.description)}
@@ -1060,9 +1080,7 @@
           <div class="facts-line">
             {#if people.length}
               <span class="people-label"
-                >{people.length} participant{people.length === 1
-                  ? ""
-                  : "s"}</span
+                >{$t("detail.participants", { n: people.length })}</span
               >
             {/if}
             {#if appreciationCount}
@@ -1097,11 +1115,12 @@
                 class="ghost joined"
                 on:click={joinQuest}
                 disabled={saving}
-                title="Leave this task">✓ Joined · leave</button
+                title={$t("detail.leaveTitle")}
+                >✓ {$t("detail.joinedLeave")}</button
               >
             {:else}
               <button class="primary" on:click={joinQuest} disabled={saving}
-                >Join</button
+                >{$t("swipe.joinTitle")}</button
               >
             {/if}
             <button
@@ -1110,46 +1129,50 @@
               on:click={appreciate}
               disabled={saving}
               >{amAppreciating
-                ? "♥ Appreciated"
-                : "♡ Appreciate"}{appreciationCount
+                ? `♥ ${$t("detail.appreciatedLabel")}`
+                : `♡ ${$t("tasks.appreciate")}`}{appreciationCount
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
             <button
               class={amParticipant ? "primary" : "ghost"}
               on:click={completeQuest}
-              disabled={saving}>Mark complete</button
+              disabled={saving}>{$t("tasks.markComplete")}</button
             >
             <button class="ghost" on:click={startEdit} disabled={saving}
-              >Edit</button
+              >{$t("detail.edit")}</button
             >
             <button
               class="ghost"
               on:click={() => copySelection(sel)}
               disabled={saving}
-              title="Copy this card — paste it in any holon">⧉ Copy</button
+              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
             >
             {#if canBreakdown && breakdownSteps === null}
               <button
                 class="ghost"
                 on:click={requestBreakdown}
                 disabled={saving || breakingDown}
-                title="Use AI to break this task into steps"
-                >{breakingDown ? "Breaking down…" : "✨ Break down"}</button
+                title={$t("detail.breakdownTitle")}
+                >{breakingDown
+                  ? $t("detail.breakingDown")
+                  : `✨ ${$t("detail.breakDown")}`}</button
               >
             {/if}
             <button
               class="ghost danger"
               on:click={deleteQuest}
-              disabled={saving}>Delete</button
+              disabled={saving}>{$t("tasks.delete")}</button
             >
           </div>
 
           {#if breakdownSteps !== null}
             <div class="breakdown">
-              <p class="bd-head">Proposed steps</p>
+              <p class="bd-head">{$t("detail.proposedSteps")}</p>
               {#if breakdownInfo}
-                <p class="bd-note">Not broken down: {breakdownInfo}</p>
+                <p class="bd-note">
+                  {$t("detail.notBrokenDown", { reason: breakdownInfo })}
+                </p>
               {:else if breakdownReasoning}
                 <p class="bd-note">{breakdownReasoning}</p>
               {/if}
@@ -1165,11 +1188,16 @@
                         {/if}
                         {#if stepReuseTitle(step)}
                           <span class="bd-tag"
-                            >reuses “{stepReuseTitle(step)}”</span
+                            >{$t("detail.reuses", {
+                              title: stepReuseTitle(step),
+                            })}</span
                           >
                         {/if}
                         {#if stepDepsLabel(step)}
-                          <span class="bd-tag">after {stepDepsLabel(step)}</span
+                          <span class="bd-tag"
+                            >{$t("detail.after", {
+                              deps: stepDepsLabel(step),
+                            })}</span
                           >
                         {/if}
                         {#if step.description}
@@ -1179,8 +1207,11 @@
                       <button
                         class="bd-x"
                         on:click={() => removeBreakdownStep(i)}
-                        aria-label="Remove step {i + 1}: {step.title}"
-                        title="Remove this step">✕</button
+                        aria-label={$t("detail.removeStepAria", {
+                          n: i + 1,
+                          title: step.title,
+                        })}
+                        title={$t("detail.removeStep")}>✕</button
                       >
                     </li>
                   {/each}
@@ -1189,14 +1220,14 @@
               <div class="bd-add">
                 <input
                   type="text"
-                  placeholder="Add your own step…"
+                  placeholder={$t("detail.addStepPlaceholder")}
                   bind:value={newStepTitle}
                   on:keydown={(e) => e.key === "Enter" && addBreakdownStep()}
                 />
                 <button
                   class="ghost bd-add-btn"
                   on:click={addBreakdownStep}
-                  disabled={!newStepTitle.trim()}>Add</button
+                  disabled={!newStepTitle.trim()}>{$t("tasks.add")}</button
                 >
               </div>
               {#each breakdownPreview?.warnings ?? [] as warning}
@@ -1209,55 +1240,59 @@
                     on:click={confirmBreakdown}
                     disabled={saving}
                     >{saving
-                      ? "Creating…"
-                      : `Create ${breakdownPreview.newQuests.length} step${
-                          breakdownPreview.newQuests.length === 1 ? "" : "s"
-                        }`}</button
+                      ? $t("detail.creating")
+                      : $t("detail.createSteps", {
+                          n: breakdownPreview.newQuests.length,
+                        })}</button
                   >
                 {/if}
                 <button
                   class="ghost"
                   on:click={requestBreakdown}
                   disabled={breakingDown}
-                  >{breakingDown ? "Regenerating…" : "↻ Regenerate"}</button
+                  >{breakingDown
+                    ? $t("detail.regenerating")
+                    : `↻ ${$t("detail.regenerate")}`}</button
                 >
-                <button class="ghost" on:click={cancelBreakdown}>Cancel</button>
+                <button class="ghost" on:click={cancelBreakdown}
+                  >{$t("common.cancel")}</button
+                >
               </div>
             </div>
           {/if}
         {:else}
           <div class="actions">
             <button class="primary" on:click={requestLogin}
-              >Log in with Telegram to edit</button
+              >{$t("detail.loginEdit")}</button
             >
             <button
               class="ghost"
               on:click={() => copySelection(sel)}
-              title="Copy this card — paste it in any holon">⧉ Copy</button
+              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
             >
           </div>
         {/if}
       {:else}
         <!-- edit quest -->
         <label
-          >Title
+          >{$t("detail.title")}
           <input type="text" bind:value={fTitle} />
         </label>
         <div class="row2">
           <label class="fdate"
-            >Date
+            >{$t("detail.date")}
             <input type="date" bind:value={fDate} />
           </label>
           <label
-            >Starts
+            >{$t("detail.starts")}
             <input type="time" bind:value={fTime} />
           </label>
           <label
-            >Ends
+            >{$t("detail.ends")}
             <select
               bind:value={fEndTime}
               disabled={!fTime}
-              title={fTime ? "End time" : "Pick a start time first"}
+              title={fTime ? $t("detail.endTime") : $t("detail.pickStartFirst")}
             >
               <option value="">—</option>
               {#each endOptions as opt (opt.value)}
@@ -1267,12 +1302,12 @@
           </label>
         </div>
         <label
-          >Category
+          >{$t("detail.category")}
           {#if addingCategory}
             <input
               type="text"
               bind:value={fCategory}
-              placeholder="New category name"
+              placeholder={$t("detail.newCategoryPlaceholder")}
             />
             <button
               type="button"
@@ -1280,24 +1315,25 @@
               on:click={() => {
                 addingCategory = false;
                 fCategory = "";
-              }}>Pick from list</button
+              }}>{$t("detail.pickFromList")}</button
             >
           {:else}
             <select value={fCategory} on:change={onCategorySelect}>
-              <option value="">No category</option>
+              <option value="">{$t("detail.noCategory")}</option>
               {#each categoryOptions as opt}
                 <option value={opt}>{opt}</option>
               {/each}
-              <option value={NEW_CATEGORY}>＋ New category…</option>
+              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
+              >
             </select>
           {/if}
         </label>
         <label
-          >Location
+          >{$t("detail.location")}
           <input type="text" bind:value={fLocation} />
         </label>
         <label
-          >Description
+          >{$t("detail.description")}
           <textarea bind:value={fDescription} rows="3"></textarea>
         </label>
         <div class="actions">
@@ -1305,12 +1341,16 @@
             class="primary"
             on:click={saveQuest}
             disabled={saving || (isNew && !fTitle.trim())}
-            >{saving ? "Saving…" : isNew ? "Create" : "Save"}</button
+            >{saving
+              ? $t("rolesv.saving")
+              : isNew
+                ? $t("detail.create")
+                : $t("rolesv.save")}</button
           >
           <button
             class="ghost"
             on:click={() => (isNew ? closeDetail() : (editing = false))}
-            >Cancel</button
+            >{$t("common.cancel")}</button
           >
         </div>
       {/if}
