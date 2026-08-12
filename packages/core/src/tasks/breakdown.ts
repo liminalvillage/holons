@@ -113,11 +113,14 @@ export const PROPOSE_STEPS_TOOL: {
               type: 'string',
               description:
                 'Short achieved-state title the group can verify, e.g. ' +
-                "'We have agreed on a design' or 'Materials are collected'.",
+                "'We have agreed on a design' or 'Materials are collected'. " +
+                'Written in the language of the task being broken down.',
             },
             description: {
               type: 'string',
-              description: '1-3 sentences: a concrete definition of done.',
+              description:
+                '1-3 sentences: a concrete definition of done, in the ' +
+                'language of the task being broken down.',
             },
             existingTaskId: {
               type: 'string',
@@ -139,9 +142,10 @@ export const PROPOSE_STEPS_TOOL: {
               items: { type: 'integer' },
               description:
                 '0-based indices of other steps in this array that must be ' +
-                'completed first. Usually EMPTY — steps default to running ' +
-                'in parallel as direct prerequisites of the goal. Only set ' +
-                "when this step literally consumes another step's output.",
+                'completed first. Almost always EMPTY — steps run in ' +
+                'parallel as direct prerequisites of the goal, pointing at ' +
+                'it rather than at each other. Only set when this step ' +
+                "literally consumes another step's output.",
             },
             dependsOnExisting: {
               type: 'array',
@@ -236,11 +240,12 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     '   list is provided; if an existing task covers a step, reference it via',
     '   existingTaskId (to reuse it as the step) or dependsOnExisting (as a',
     '   prerequisite) instead of duplicating it.',
-    '3. Default to INDEPENDENT, PARALLEL steps: the broken-down task is the',
-    '   goal, and each step should be a prerequisite feeding directly into it.',
-    '   Use dependsOnSteps ONLY when a step literally cannot start before',
-    "   another finishes (its output is the other's input). Never chain steps",
-    '   just because you listed them in order — a pure chain is rarely correct.',
+    '3. Steps are INDEPENDENT, PARALLEL prerequisites of the goal: the',
+    '   broken-down task is the goal, and every step feeds DIRECTLY into it —',
+    '   steps point at the goal, never at each other. dependsOnSteps stays',
+    '   EMPTY unless a step literally cannot start before another finishes',
+    "   (its output is the other's input). Never chain steps just because you",
+    '   listed them in order — a sequential chain is almost always wrong.',
     '4. Every step must be a concrete, achievable outcome with a clear',
     '   definition of done. No vague steps like "plan" or "finalize".',
     '5. Phrase each title as an achieved state the group can verify — e.g.',
@@ -249,6 +254,10 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     "6. Give each step a category: '' inherits the broken-down task's own,",
     '   or pick one from the "Categories in use" list when it fits the step',
     '   better. Never invent a new category.',
+    '7. Write the reasoning and every step title and description in the SAME',
+    "   LANGUAGE as the task being broken down (its title/description) — an",
+    '   Italian task gets Italian steps, a Spanish task Spanish steps, and so',
+    '   on. Never default to English for a non-English task.',
     'Call propose_steps exactly once.',
   ].join('\n');
 
