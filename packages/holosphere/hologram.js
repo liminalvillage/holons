@@ -299,6 +299,34 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
     }
 }
 
+/**
+ * Session-scoped dedup for the janitor-parseable warning
+ *
+ *   Hologram at <holon>/<lens>/<key> did not resolve (soul=<soul>); skipping.
+ *
+ * The line is LOAD-BEARING — a console-hook garbage collector parses it for
+ * the LOCAL pointer coordinates, and a regression test pins its shape — but
+ * it used to be emitted on EVERY read attempt: each getAll, each get, each
+ * subscribe fire and each timed re-resolve re-warned for the same pointer,
+ * burying the console on a lens with a few cold or dead pointers. Warn once
+ * per (local path, soul) pair per session; when the pointer later resolves,
+ * the memo is cleared so a future regression warns again.
+ */
+const unresolvedWarned = new Set();
+
+/** Emit the unresolved-hologram warning once per (path, soul) per session. */
+export function warnHologramUnresolvedOnce(holon, lens, key, soul) {
+    const memo = `${holon}/${lens}/${key}|${soul}`;
+    if (unresolvedWarned.has(memo)) return;
+    unresolvedWarned.add(memo);
+    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${soul}); skipping.`);
+}
+
+/** Forget a warned pointer — call on successful resolve so regressions re-warn. */
+export function clearHologramUnresolvedWarning(holon, lens, key, soul) {
+    unresolvedWarned.delete(`${holon}/${lens}/${key}|${soul}`);
+}
+
 // Export all hologram operations as default
 export default {
     createHologram,
@@ -310,4 +338,6 @@ export default {
     HOLOGRAM_STATUS,
     PRUNABLE_HOLOGRAM_STATUSES,
     isPrunableHologramStatus,
+    warnHologramUnresolvedOnce,
+    clearHologramUnresolvedWarning,
 };

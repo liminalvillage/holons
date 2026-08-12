@@ -1,5 +1,7 @@
 // holo_content.js
 
+import { warnHologramUnresolvedOnce, clearHologramUnresolvedWarning } from './hologram.js';
+
 /**
  * Default deadline (ms) for the read paths' `.once()` calls. Gun's `.once()`
  * never fires when the requested node isn't in the local graph and no peer
@@ -776,7 +778,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                             // miss). The pointer is prunable. By default the item
                             // reads as gone; `includeDeleted` surfaces a tombstone
                             // so admin/debug views can see it.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                            warnHologramUnresolvedOnce(holon, lens, key, parsed.soul);
                             if (includeDeleted) {
                                 resolve({ id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
                             } else {
@@ -793,11 +795,12 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                             // on the first transient miss. Skip; a real garbage
                             // collector (keyed on this janitor-parseable line, and
                             // on resolveHologramDetailed's status) owns cleanup.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                            warnHologramUnresolvedOnce(holon, lens, key, parsed.soul);
                             resolve(null);
                             return;
                         }
 
+                        clearHologramUnresolvedWarning(holon, lens, key, parsed.soul);
                         if (res.data !== parsed) {
                             parsed = res.data;
                         }
@@ -983,13 +986,14 @@ export async function getAll(holoInstance, holon, lens, password = null, options
                                     // deleting. A soft-deleted source (status
                                     // 'deleted') is definitive; surface it as a
                                     // tombstone only when the caller opted in.
-                                    console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${parsed.soul}); skipping.`);
+                                    warnHologramUnresolvedOnce(holon, lens, key, parsed.soul);
                                     if (res.status === 'deleted' && includeDeleted) {
                                         output.set(parsed.id, { id: parsed.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } });
                                     }
                                     return;
                                 }
 
+                                clearHologramUnresolvedWarning(holon, lens, key, parsed.soul);
                                 const resolved = res.data;
                                 if (resolved && resolved !== parsed) {
                                     if (schema) {

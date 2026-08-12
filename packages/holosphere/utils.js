@@ -1,5 +1,6 @@
 // holo_utils.js
 import * as h3 from 'h3-js';
+import { warnHologramUnresolvedOnce, clearHologramUnresolvedWarning } from './hologram.js';
 
 /**
  * Converts latitude and longitude to a holon identifier.
@@ -126,6 +127,7 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                 if (!holoInstance.subscriptions[subscriptionId]) return;
                 if (res.status === 'resolved') {
                     holoRetries.delete(key);
+                    clearHologramUnresolvedWarning(holon, lens, key, pointer.soul);
                     callback(res.data, key);
                 } else if (res.status === 'deleted') {
                     holoRetries.delete(key);
@@ -285,7 +287,7 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                             // source now propagates as a deletion to the live UI
                             // instead of silently lingering. Also emit the
                             // janitor-parseable line so the dead pointer is GC'd.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                            warnHologramUnresolvedOnce(holon, lens, key, hologramSoul);
                             if (holoInstance.subscriptions[subscriptionId]) {
                                 callback(null, key);
                             }
@@ -303,13 +305,16 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
                             // A transient miss also gets a few timed re-resolves —
                             // a cold cross-holon read races the relay, and without
                             // a retry the item never renders until the next write.
-                            console.warn(`Hologram at ${holon}/${lens}/${key} did not resolve (soul=${hologramSoul}); skipping.`);
+                            // (The warning is deduped per pointer per session —
+                            // retries and lens re-fires must not re-spam it.)
+                            warnHologramUnresolvedOnce(holon, lens, key, hologramSoul);
                             if (res.status === 'unresolved' || res.status === 'error') {
                                 scheduleHoloRetry(key, parsed);
                             }
                             return;
                         }
                         holoRetries.delete(key);
+                        clearHologramUnresolvedWarning(holon, lens, key, hologramSoul);
                         if (res.data !== parsed) {
                             parsed = res.data;
                         }
