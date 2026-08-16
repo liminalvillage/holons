@@ -66,6 +66,12 @@ export interface BreakdownProposal {
   atomic: boolean;
   reasoning: string;
   steps: BreakdownStep[];
+  /**
+   * The language the model named for the task before writing anything else.
+   * Purely an anchoring device (stating it first locks the generation into
+   * it) — callers don't need it, so it's advisory and may be ''.
+   */
+  language?: string;
 }
 
 export class BreakdownValidationError extends Error {
@@ -94,8 +100,19 @@ export const PROPOSE_STEPS_TOOL: {
   input_schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['atomic', 'reasoning', 'steps'],
+    required: ['language', 'atomic', 'reasoning', 'steps'],
     properties: {
+      // Deliberately FIRST: naming the language before writing anything else
+      // anchors the rest of the generation in it. "Same language as the task"
+      // alone lets models drift toward the (often English) canvas context.
+      language: {
+        type: 'string',
+        description:
+          'The language the task being broken down is written in (e.g. ' +
+          '"Italian", "Spanish", "English"), judged ONLY from that task\'s ' +
+          'own title and description — never from the surrounding canvas. ' +
+          'Everything that follows must be written in this language.',
+      },
       atomic: {
         type: 'boolean',
         description:
@@ -125,13 +142,13 @@ export const PROPOSE_STEPS_TOOL: {
               description:
                 'Short title naming the work of this step, written plainly ' +
                 'as it is — no particular phrasing is required. MUST be in ' +
-                'the same language as the task being broken down.',
+                'the language named in the `language` field.',
             },
             description: {
               type: 'string',
               description:
                 '1-3 sentences saying what this step involves. MUST be in ' +
-                'the same language as the task being broken down.',
+                'the language named in the `language` field.',
             },
             existingTaskId: {
               type: 'string',
@@ -234,10 +251,13 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     'You decompose a task into its constituent steps for a shared task canvas',
     'where tasks are linked by dependencies (a task lists its predecessors).',
     'Rules:',
-    '1. Write the reasoning and every step title and description in the SAME',
-    "   LANGUAGE as the task being broken down (its title/description) — an",
-    '   Italian task gets Italian steps, a Spanish task Spanish steps, and so',
-    '   on. Never default to English for a non-English task.',
+    '1. Determine the language of the task being broken down from its OWN',
+    "   title and description (never from the other tasks on the canvas),",
+    "   name it FIRST in propose_steps' `language` field, and then write the",
+    '   reasoning and every step title and description in that SAME LANGUAGE',
+    '   — an Italian task gets Italian steps, a Spanish task Spanish steps,',
+    '   and so on. Never default to English for a non-English task, and',
+    '   never mix languages across steps.',
     '2. Steps are INDEPENDENT and PARALLEL: the broken-down task is the goal,',
     '   and every step feeds DIRECTLY into it — all steps point at the goal,',
     '   never at each other. There is no way to order steps among themselves,',
@@ -292,8 +312,9 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
   // so they are restated here, closest to the actual request.
   lines.push(
     'Break down the task above into independent steps that each feed directly ' +
-      'into it, and write every title and description in the same language as ' +
-      'that task. Call propose_steps exactly once.',
+      'into it. First name the language that task itself is written in via ' +
+      'the `language` field, then write every title and description in that ' +
+      'same language. Call propose_steps exactly once.',
   );
 
   return { system, user: lines.join('\n') };
@@ -322,6 +343,10 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
   }
   if (typeof obj.reasoning !== 'string') {
     throw new BreakdownValidationError('proposal.reasoning must be a string');
+  }
+  const language = obj.language ?? '';
+  if (typeof language !== 'string') {
+    throw new BreakdownValidationError('proposal.language must be a string');
   }
   // Absent fields are defaulted rather than rejected: OpenAI's non-strict
   // tool calling treats `required` as advisory, and gpt-4o omits `steps`
@@ -379,7 +404,7 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
   if (obj.atomic && steps.length > 0) {
     throw new BreakdownValidationError('atomic proposal must have no steps');
   }
-  return { atomic: obj.atomic, reasoning: obj.reasoning, steps };
+  return { atomic: obj.atomic, reasoning: obj.reasoning, steps, language: language.trim() };
 }
 
 // ---------------------------------------------------------------------------

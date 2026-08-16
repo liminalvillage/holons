@@ -96,7 +96,8 @@ describe('buildBreakdownPrompt', () => {
     expect(system).toContain('NEVER recreate');
     expect(system).toContain('INDEPENDENT and PARALLEL');
     expect(system).toContain('never at each other');
-    expect(system).toContain('SAME\n   LANGUAGE');
+    expect(system).toContain('SAME LANGUAGE');
+    expect(system).toContain('`language` field');
     expect(system).toContain('atomic');
     expect(user).toContain('Community garden');
     expect(user).toContain('"id":"a"');
@@ -104,6 +105,14 @@ describe('buildBreakdownPrompt', () => {
     // The two rules weak models drift on are restated in the user turn.
     expect(user).toContain('same language');
     expect(user).toContain('independent steps');
+  });
+
+  it('forces the model to name the language first (anchor against drift)', () => {
+    const schema = PROPOSE_STEPS_TOOL.input_schema as Record<string, any>;
+    // First property = first thing generated; the commitment must precede
+    // the steps it anchors. Required so OpenAI strict mode never omits it.
+    expect(Object.keys(schema.properties)[0]).toBe('language');
+    expect(schema.required).toContain('language');
   });
 
   it('offers the model no way to order steps among themselves', () => {
@@ -172,6 +181,22 @@ describe('parseBreakdownProposal', () => {
       dependsOnSteps: [],
       dependsOnExisting: [],
     });
+  });
+
+  it('carries the language through trimmed, defaults it, rejects non-strings', () => {
+    const p = parseBreakdownProposal({
+      language: '  Italiano ',
+      atomic: true,
+      reasoning: 'già un\'unità',
+      steps: [],
+    });
+    expect(p.language).toBe('Italiano');
+    expect(
+      parseBreakdownProposal({ atomic: true, reasoning: '' }).language,
+    ).toBe('');
+    expect(() =>
+      parseBreakdownProposal({ language: 7, atomic: true, reasoning: '', steps: [] }),
+    ).toThrow(/language/);
   });
 
   it('accepts and trims a step category; rejects a non-string one', () => {
