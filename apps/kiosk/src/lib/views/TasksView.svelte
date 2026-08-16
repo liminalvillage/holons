@@ -1128,7 +1128,9 @@
     display: flex;
     align-items: center;
     gap: 0.8rem;
-    z-index: 6;
+    /* Above the swipe deck's cards (z-index 8) — a card dragged toward the
+       corner passes under the controls instead of hiding them. */
+    z-index: 12;
     transition: bottom 0.18s ease;
   }
   /* Graph layout: the unlinked drawer takes the bottom of the board in

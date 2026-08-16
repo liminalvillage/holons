@@ -320,6 +320,7 @@
             class="card"
             class:top={i === 0}
             class:dragging={i === 0 && dragging}
+            class:nudge={i === 0 && !dragging && !leaving}
             class:is-foreign={!!task.sourceColor}
             class:holo={!!task.hologram}
             style:--holo-seed={holoSeed(task.id)}
@@ -420,36 +421,6 @@
       {/if}
     </div>
 
-    {#if topTask}
-      <div class="actions">
-        <button
-          class="act skip"
-          on:click={() => commit("left")}
-          aria-label={$t("swipe.skipAria")}
-          title={$t("swipe.skipTitle")}
-        >
-          ✕
-        </button>
-        <button
-          class="act like"
-          on:click={() => commit("up")}
-          aria-label={$t("swipe.appreciateAria")}
-          title={$t("tasks.appreciate")}
-        >
-          ♥
-        </button>
-        <button
-          class="act join"
-          on:click={() => commit("right")}
-          aria-label={$t("swipe.joinAria")}
-          title={$t("swipe.joinTitle")}
-        >
-          🤝
-        </button>
-      </div>
-      <p class="hint">swipe → join · ↑ like · ← skip</p>
-    {/if}
-
     {#if undo}
       <button class="undo" on:click={doUndo}>
         ↺ Undo {undo.kind === "join"
@@ -477,7 +448,11 @@
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    padding: 0.5rem 1rem 1rem;
+    /* The bottom band belongs to the board's corner cluster — [⌨][🎤][＋],
+       3.4rem tall sitting 1.3rem off the floor. The action row used to hold
+       that space open; with it gone the deck has to reserve it itself, or the
+       card grows over the voice buttons. */
+    padding: 0.5rem 1rem calc(3.4rem + 1.3rem + 0.5rem);
     position: relative;
   }
   .deck {
@@ -539,6 +514,47 @@
   .card.top.dragging {
     cursor: grabbing;
     transition: none;
+  }
+  /* Idle nudge: with nothing under the deck, the card itself has to say
+     "push me". It leans toward SKIP every few seconds — flashing that
+     direction's stamp so the gesture is labelled, not just implied — and
+     settles back. The animation only rides an idle card: a drag drops the
+     class, so the inline finger transform never fights a keyframe. */
+  .card.top.nudge {
+    animation: swipe-nudge 4.5s ease-in-out 1.4s infinite;
+  }
+  .card.top.nudge .stamp.skip {
+    animation: swipe-nudge-stamp 4.5s ease-in-out 1.4s infinite;
+  }
+  @keyframes swipe-nudge {
+    0%,
+    60% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    68% {
+      transform: translate(-18px, 0) rotate(-1.4deg);
+    }
+    76% {
+      transform: translate(-14px, 0) rotate(-1.1deg);
+    }
+    88%,
+    100% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+  }
+  @keyframes swipe-nudge-stamp {
+    0%,
+    60% {
+      opacity: 0;
+    }
+    68%,
+    76% {
+      opacity: 0.75;
+    }
+    88%,
+    100% {
+      opacity: 0;
+    }
   }
 
   .card h3 {
@@ -838,79 +854,6 @@
     transform: scale(0.96);
   }
 
-  /* The no-gesture path: skip / like / join buttons under the deck. */
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1.1rem;
-  }
-  .act {
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-weight: 800;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    box-shadow: var(--shadow-soft);
-    touch-action: manipulation;
-    transition:
-      transform 0.1s ease,
-      background 0.15s ease,
-      color 0.15s ease;
-  }
-  .act:active {
-    transform: scale(0.9);
-  }
-  .act.skip {
-    width: 3.4rem;
-    height: 3.4rem;
-    font-size: 1.4rem;
-    color: #6d7b79;
-  }
-  .act.like {
-    width: 3.4rem;
-    height: 3.4rem;
-    font-size: 1.5rem;
-    color: #d4493a;
-  }
-  .act.join {
-    width: 4.2rem;
-    height: 4.2rem;
-    font-size: 1.9rem;
-    background: var(--teal);
-    border-color: var(--teal);
-    color: #fff;
-    box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
-  }
-  .act.join:active {
-    background: var(--teal-deep);
-  }
-  .hint {
-    margin: -0.4rem 0 0;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--muted);
-  }
-
-  /* Phone widths: slimmer action buttons so the centred row clears the
-     add-task FAB pinned to the board's bottom-right corner. */
-  @media (max-width: 560px) {
-    .actions {
-      gap: 0.85rem;
-    }
-    .act.skip,
-    .act.like {
-      width: 3rem;
-      height: 3rem;
-      font-size: 1.25rem;
-    }
-    .act.join {
-      width: 3.6rem;
-      height: 3.6rem;
-      font-size: 1.6rem;
-    }
-  }
-
   .undo {
     position: absolute;
     bottom: 0.4rem;
@@ -940,6 +883,10 @@
     }
     .card.top {
       transition: none;
+    }
+    .card.top.nudge,
+    .card.top.nudge .stamp.skip {
+      animation: none;
     }
     .fly-right,
     .fly-left,
