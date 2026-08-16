@@ -5,7 +5,11 @@
 //   - `library` → the library of things
 // Core owns the meaning of these records; here we only shape them for display.
 
-import { isQuestSettled, unmetDependencies } from "@holons/core/tasks";
+import {
+  isQuestSettled,
+  questSchedule,
+  unmetDependencies,
+} from "@holons/core/tasks";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
@@ -186,8 +190,16 @@ export interface CalendarEvent {
   id: string;
   title: string;
   date: Date;
-  /** End time (from the quest's `ends`/`until`), when set; timed events only. */
+  /**
+   * End of the span (from the quest's `ends`/`until`), when set. For an
+   * all-day range this is the LAST day at midnight — inclusive, not a
+   * boundary. See `questSchedule` in @holons/core/tasks.
+   */
   end?: Date;
+  /** Calendar days covered, inclusive: 1 for an ordinary same-day card. */
+  days: number;
+  /** `days > 1` — a range that reads as an event and shows on each day. */
+  multiDay: boolean;
   category?: string;
   location?: string;
   allDay: boolean;
@@ -326,25 +338,22 @@ export function toEvents(
   const seen = new Set<string>();
   for (const q of quests) {
     if (isDone(q)) continue;
-    const date = parseWhen(q.when);
+    // Core owns what a schedule means: all-day vs timed, and the inclusive
+    // span of days a multi-day card covers.
+    const { start: date, end, allDay, days, multiDay } = questSchedule(q);
     if (!date) continue;
     const id = String(q.id ?? q.title);
     // Federation shares quests, so the same id can arrive from several holons —
     // keep the first (the kiosk's own copy) so view keys stay unique.
     if (seen.has(id)) continue;
     seen.add(id);
-    const iso = String(q.when);
-    // Treat a bare date (no time component) as all-day.
-    const allDay = !/T\d\d:/.test(iso);
-    // Canonical end field is `ends`; `until` is the legacy (bot) name.
-    const end = allDay
-      ? undefined
-      : (parseWhen(q.ends ?? q.until) ?? undefined);
     out.push({
       id,
       title: q.title || (t ? t("common.untitled") : "Untitled"),
       date,
-      end,
+      end: end ?? undefined,
+      days,
+      multiDay,
       category: q.category,
       location: q.location,
       allDay,

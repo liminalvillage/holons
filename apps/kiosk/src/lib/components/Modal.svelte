@@ -27,7 +27,7 @@
   <div
     class="card"
     class:holo
-    style="background: {tint};{glow ? ` --glow: ${glow};` : ''}"
+    style="--tint: {tint};{glow ? ` --glow: ${glow};` : ''}"
     style:--holo-seed={seed}
     role="dialog"
     aria-modal="true"
@@ -59,9 +59,23 @@
     width: min(34rem, 100%);
     max-height: 86dvh;
     border-radius: 22px;
+    background: var(--tint);
     box-shadow: 0 30px 70px rgba(15, 30, 28, 0.4);
     animation: pop 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
     overflow: hidden;
+  }
+  /* Dark skin: the post-it palette is re-cast as deep jewel tones (see
+     app.css), and flooding a whole dialog with one turns it into a muddy
+     ground that every form field then sits on. Keep the card on the normal
+     card surface and let the category colour through as a wash — the note
+     still identifies itself, the content stays legible. */
+  :global(:root[data-theme="dark"]) .card {
+    background: color-mix(in srgb, var(--tint) 30%, var(--card));
+  }
+  /* The ✕ rides a translucent-white disc, which is a bright hole on a dark
+     card; flip it to a dark one. */
+  :global(:root[data-theme="dark"]) .x {
+    background: rgba(0, 0, 0, 0.28);
   }
   @keyframes pop {
     from {

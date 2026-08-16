@@ -20,7 +20,12 @@
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
   import { getWriter } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
-  import { createTask, type Quest } from "@holons/core/tasks";
+  import {
+    createTask,
+    localDayNumber,
+    shiftSchedule,
+    type Quest,
+  } from "@holons/core/tasks";
   import { toStoredInstant } from "@holons/core/datetime";
   import {
     noteColor,
@@ -221,28 +226,24 @@
     }
     const oldStart = parseWhen(q.when) ?? new Date(NaN);
     let when: string;
-    let newStart: Date;
     if (min != null) {
       // Dropped on the hour timeline → that day at that wall-clock time.
-      newStart = localDateTime(day, Math.floor(min / 60), min % 60);
-      when = toStoredInstant(newStart);
+      when = toStoredInstant(
+        localDateTime(day, Math.floor(min / 60), min % 60),
+      );
     } else if (q.when && /T\d\d:/.test(String(q.when))) {
       // Dropped on a day cell, but it already had a time → keep the time.
-      newStart = localDateTime(day, oldStart.getHours(), oldStart.getMinutes());
-      when = toStoredInstant(newStart);
+      when = toStoredInstant(
+        localDateTime(day, oldStart.getHours(), oldStart.getMinutes()),
+      );
     } else {
       when = day; // all-day (bare date)
-      newStart = localDateTime(day, 0, 0);
     }
 
-    const updated = { ...q, when };
-    // Moving the whole card shifts the start — carry the end along by the same
-    // delta so the event keeps its length.
-    const oldEnds = parseWhen(q.ends ?? q.until) ?? new Date(NaN);
-    if (!Number.isNaN(oldStart.getTime()) && !Number.isNaN(oldEnds.getTime())) {
-      const delta = newStart.getTime() - oldStart.getTime();
-      updated.ends = toStoredInstant(new Date(oldEnds.getTime() + delta));
-    }
+    // Moving the whole card shifts the start — core carries the end along so
+    // the span keeps its length AND its form (an all-day range stays bare
+    // dates; only a timed one becomes instants).
+    const updated = { ...q, ...shiftSchedule(q, when) };
     await saveQuest(q, updated, "cal.verbMove");
   }
 
@@ -488,10 +489,22 @@
     x.setDate(x.getDate() + n);
     return x;
   }
+  // Every event the day carries — including the middle and last days of a
+  // multi-day span, which shows on each day it covers (its `date` is the FIRST
+  // day, so a plain sameDay test would hide the continuation days).
   function eventsOn(day: Date, all: CalendarEvent[]): CalendarEvent[] {
+    const n = localDayNumber(day);
     return all
-      .filter((e) => sameDay(e.date, day))
+      .filter((e) => {
+        const first = localDayNumber(e.date);
+        return n >= first && n < first + e.days;
+      })
       .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+  /** Which day of a span this is — "2/3" — or "" for a single-day card. */
+  function spanLabel(e: CalendarEvent, day: Date): string {
+    if (!e.multiDay) return "";
+    return `${localDayNumber(day) - localDayNumber(e.date) + 1}/${e.days}`;
   }
   function tiltStyle(id: string, bg: string): string {
     return `--tilt: ${noteTilt(id)}deg; background: ${bg};`;
@@ -661,6 +674,8 @@
 
   interface DayColumn {
     iso: string;
+    /** The day itself — spans need it to say which of their days this is. */
+    date: Date;
     label: string;
     allDay: CalendarEvent[];
     timed: CalendarEvent[];
@@ -675,15 +690,18 @@
     source: CalendarEvent[],
   ): DayColumn {
     const evs = eventsOn(day, source);
-    const timed = evs.filter((e) => !e.allDay);
+    // A span belongs in the all-day band even when it carries a clock: it has
+    // no single position on this day's hour grid.
+    const timed = evs.filter((e) => !e.allDay && !e.multiDay);
     return {
       iso: isoDay(day),
+      date: day,
       label: day.toLocaleDateString($locale, {
         weekday: "short",
         day: "numeric",
         month: "short",
       }),
-      allDay: evs.filter((e) => e.allDay),
+      allDay: evs.filter((e) => e.allDay || e.multiDay),
       timed,
       layout: eventLayout(timed),
       isToday: sameDay(day, $now),
@@ -762,13 +780,20 @@
             year: "numeric",
           });
 
-  function timeLabel(e: CalendarEvent): string {
-    return e.allDay
+  // What a card says about its own timing on `day`. A span says which of its
+  // days this is; only its FIRST day also carries the start time (the later
+  // ones don't begin at that clock).
+  function timeLabel(e: CalendarEvent, day: Date): string {
+    const clock = e.allDay
       ? $t("cal.allDay")
       : e.date.toLocaleTimeString($locale, {
           hour: "2-digit",
           minute: "2-digit",
         });
+    const span = spanLabel(e, day);
+    if (!span) return clock;
+    const label = $t("cal.dayOfSpan", { span });
+    return e.allDay || !sameDay(e.date, day) ? label : `${label} · ${clock}`;
   }
 
   // ── Thin events: inline title + shrink-to-fit ─────────────────────────────--
@@ -891,7 +916,10 @@
                     tabindex="0"
                     on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
                     on:click={() => open(ev.id)}
-                    on:keydown={(e) => onKey(e, ev.id)}>{ev.title}</span
+                    on:keydown={(e) => onKey(e, ev.id)}
+                    >{#if ev.multiDay}<span class="spanb"
+                        >{spanLabel(ev, day)}</span
+                      >{/if}{ev.title}</span
                   >
                 </span>
               {/each}
@@ -942,7 +970,7 @@
                       on:click={() => open(ev.id)}
                       on:keydown={(e) => onKey(e, ev.id)}
                     >
-                      <span class="when">{timeLabel(ev)}</span>
+                      <span class="when">{timeLabel(ev, day)}</span>
                       <span class="ttl">{ev.title}</span>
                     </article>
                   </span>
@@ -995,7 +1023,10 @@
                       title={ev.title}
                       on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
                       on:click={() => open(ev.id)}
-                      on:keydown={(e) => onKey(e, ev.id)}>{ev.title}</span
+                      on:keydown={(e) => onKey(e, ev.id)}
+                      >{#if ev.multiDay}<span class="spanb"
+                          >{spanLabel(ev, col.date)}</span
+                        >{/if}{ev.title}</span
                     >
                   {/each}
                 </div>
@@ -1070,15 +1101,18 @@
                       use:fitLine={`${ev.title}|${durMin}|${HOUR_PX}|${lay.cols}|${bodyWidth}`}
                     >
                       <span class="when"
-                        >{timeLabel(ev)}{#if resize?.id === ev.id}<span
-                            class="dur">&nbsp;· {durLabel}</span
+                        >{timeLabel(
+                          ev,
+                          col.date,
+                        )}{#if resize?.id === ev.id}<span class="dur"
+                            >&nbsp;· {durLabel}</span
                           >{/if}</span
                       >
                       <span class="ttl">{ev.title}</span>
                     </span>
                   {:else}
                     <span class="when"
-                      >{timeLabel(ev)}{#if resize?.id === ev.id}<span
+                      >{timeLabel(ev, col.date)}{#if resize?.id === ev.id}<span
                           class="dur"
                         >
                           · {durLabel}</span
@@ -1536,6 +1570,19 @@
     color: var(--muted);
     font-weight: 700;
     text-align: center;
+  }
+  /* "2/3" — which day of a multi-day span this card is showing. A quiet inked
+     badge on the note itself, so a span reads as one thing continuing rather
+     than as three copies of the same card. */
+  .spanb {
+    display: inline-block;
+    margin-right: 0.3rem;
+    padding: 0 0.24rem;
+    border-radius: 4px;
+    background: rgba(32, 48, 47, 0.14);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9em;
+    opacity: 0.85;
   }
 
   /* ── Week ──────────────────────────────────────────────────────────────── */

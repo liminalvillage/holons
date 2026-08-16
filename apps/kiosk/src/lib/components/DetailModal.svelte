@@ -26,14 +26,12 @@
   import {
     noteColor,
     toPeople,
-    parseWhen,
     sourceRef,
     isHologram,
     sourceGlow,
     sourceLabel,
     holoSeed,
   } from "$lib/data";
-  import { localFieldsToStored } from "@holons/core/datetime";
   import { linkify } from "$lib/linkify";
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
@@ -51,6 +49,9 @@
   } from "@holons/core/library";
   import {
     applyBreakdownProposal,
+    buildScheduleFields,
+    questSchedule,
+    scheduleToFields,
     type ApplyBreakdownResult,
     type BreakdownStep,
     type Quest,
@@ -384,6 +385,7 @@
   let fTitle = "";
   let fDate = "";
   let fTime = "";
+  let fEndDate = "";
   let fEndTime = "";
   let fLocation = "";
   let fCategory = "";
@@ -447,63 +449,81 @@
   function toDateInput(d: Date): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
-  function toTimeInput(d: Date): string {
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
 
-  // End-time choices: 15-minute steps after the start, same day, labelled with
-  // the resulting duration. A native <select> so touch devices get a scrolling
-  // picker. Recomputed whenever the start time changes.
-  $: endOptions = buildEndOptions(fTime, fEndTime);
-  // A start moved past the chosen end invalidates it — clear rather than save
-  // an end before the start. (HH:MM strings compare correctly as text.)
-  $: if (fEndTime && fTime && fEndTime <= fTime) fEndTime = "";
+  // ── The schedule editor ───────────────────────────────────────────────────
+  // Two rows, no modes: a start (date + optional clock) and an end. An end date
+  // on a later day is what makes the card a multi-day event — there is nothing
+  // extra to learn or switch on. Core owns what the fields mean once stored
+  // (`buildScheduleFields`); these guards only keep the pair coherent.
+  //
+  // Clearing the start date clears the rest: an undated card is a backlog task.
+  $: if (!fDate && (fTime || fEndDate || fEndTime))
+    fTime = fEndDate = fEndTime = "";
+  // An end that fell behind the start is dragged along rather than stored
+  // backwards. (ISO day and HH:MM strings both compare correctly as text.)
+  $: if (fEndDate && fDate && fEndDate < fDate) fEndDate = fDate;
+  // Within one day an end before the start is no end at all; across days the
+  // two clocks are independent, so leave them be.
+  $: if (
+    fEndTime &&
+    fTime &&
+    (!fEndDate || fEndDate === fDate) &&
+    fEndTime <= fTime
+  )
+    fEndTime = "";
+  // An all-day card has no clock, so an end time can't outlive the start time
+  // (core ignores one; the form shouldn't pretend otherwise).
+  $: if (!fTime && fEndTime) fEndTime = "";
 
-  function buildEndOptions(
-    start: string,
-    current: string,
-  ): { value: string; label: string }[] {
-    if (!start) return [];
-    const [h, m] = start.split(":").map(Number);
-    const startMin = (h || 0) * 60 + (m || 0);
-    const opts: { value: string; label: string }[] = [];
-    for (let t = startMin + 15; t < 24 * 60; t += 15) {
-      const value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
-      opts.push({ value, label: `${value} · ${durLabel(t - startMin)}` });
+  /** What the two rows currently add up to; blank while the card is undated. */
+  $: scheduleSummary = fDate
+    ? summarize(
+        buildScheduleFields({
+          startDate: fDate,
+          startTime: fTime,
+          endDate: fEndDate,
+          endTime: fEndTime,
+        }),
+        $locale,
+      )
+    : "";
+
+  // One sentence for a stored schedule, used both on the card and live under
+  // the edit fields — so what you're about to save reads exactly as it will.
+  const SPAN_DAY: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  };
+  function summarize(
+    q: { when?: string; ends?: string; until?: string },
+    loc: string,
+  ): string {
+    const s = questSchedule(q);
+    if (!s.start) return $t("detail.noDate");
+    const clock = (d: Date) =>
+      d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+    if (s.multiDay && s.end) {
+      const edge = (d: Date) =>
+        d.toLocaleDateString(loc, SPAN_DAY) + (s.allDay ? "" : ` ${clock(d)}`);
+      return `${edge(s.start)} → ${edge(s.end)} · ${$t("detail.dayCount", {
+        n: s.days,
+      })}`;
     }
-    // A stored end that isn't on a 15-minute step still has to be selectable.
-    if (current && !opts.some((o) => o.value === current)) {
-      const [ch, cm] = current.split(":").map(Number);
-      const curMin = (ch || 0) * 60 + (cm || 0);
-      opts.unshift({
-        value: current,
-        label:
-          curMin > startMin
-            ? `${current} · ${durLabel(curMin - startMin)}`
-            : current,
-      });
-    }
-    return opts;
-  }
-
-  function durLabel(min: number): string {
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
-  }
-
-  function whenText(loc: string): string {
-    if (!quest?.when) return $t("detail.noDate");
-    const d = parseWhen(quest.when);
-    if (!d || Number.isNaN(d.getTime())) return $t("detail.noDate");
-    const hasTime = /T\d\d:/.test(String(quest.when));
-    return d.toLocaleDateString(loc, {
+    const day = s.start.toLocaleDateString(loc, {
       weekday: "short",
       day: "numeric",
       month: "long",
       year: "numeric",
-      ...(hasTime ? { hour: "2-digit", minute: "2-digit" } : {}),
     });
+    if (s.allDay) return day;
+    return s.end
+      ? `${day} · ${clock(s.start)}–${clock(s.end)}`
+      : `${day} · ${clock(s.start)}`;
+  }
+
+  function whenText(loc: string): string {
+    return quest ? summarize(quest, loc) : $t("detail.noDate");
   }
 
   function startEdit() {
@@ -524,18 +544,13 @@
       fCategory = String(q.category ?? "");
       addingCategory = false;
       fDescription = String(q.description ?? "");
-      const d = q.when ? parseWhen(q.when) : null;
-      if (d && !Number.isNaN(d.getTime())) {
-        fDate = toDateInput(d);
-        fTime = /T\d\d:/.test(String(q.when)) ? toTimeInput(d) : "";
-      } else {
-        fDate = "";
-        fTime = "";
-      }
-      // End time only applies to a timed start (`ends` canonical, `until` the
-      // legacy bot name).
-      const dEnd = fTime ? parseWhen(q.ends ?? q.until) : null;
-      fEndTime = dEnd && !Number.isNaN(dEnd.getTime()) ? toTimeInput(dEnd) : "";
+      // Core splits the stored schedule back into the four form fields.
+      ({
+        startDate: fDate,
+        startTime: fTime,
+        endDate: fEndDate,
+        endTime: fEndTime,
+      } = scheduleToFields(q));
     }
     editing = true;
   }
@@ -548,21 +563,16 @@
     if (!sel || sel.kind === "thing" || !$holonId) return;
     saving = true;
     message = "";
-    let when: string | undefined = sel.quest.when;
-    // Store is always UTC: a picked local date+time becomes a timezone-qualified
-    // ISO instant; a date with no time stays a bare all-day date. The end time
-    // follows the same rule; a cleared end is blanked (not deleted — Gun merges)
-    // on both `ends` and its legacy `until` alias, matching CalendarView.
-    let timing: Partial<Quest> = { when };
-    if (fDate) {
-      when = localFieldsToStored(fDate, fTime) ?? when;
-      timing = {
-        when,
-        ends:
-          fTime && fEndTime ? (localFieldsToStored(fDate, fEndTime) ?? "") : "",
-        until: "",
-      };
-    }
+    // Core turns the local form fields into the stored schedule: UTC instants
+    // for a timed card, bare dates for an all-day one, and an inclusive end
+    // date for a span. Cleared fields are blanked, never deleted (Gun merges),
+    // on `ends` and its legacy `until` alias alike.
+    const timing: Partial<Quest> = buildScheduleFields({
+      startDate: fDate,
+      startTime: fTime,
+      endDate: fEndDate,
+      endTime: fEndTime,
+    });
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,
@@ -1273,34 +1283,60 @@
           </div>
         {/if}
       {:else}
-        <!-- edit quest -->
-        <label
+        <!-- ── Edit a task / event ────────────────────────────────────────
+             Title, then when it starts and when it ends, then the flat fields.
+             Leaving the end blank keeps it a one-day card; an end date on a
+             later day is what makes it a multi-day event. -->
+        <label class="lead"
           >{$t("detail.title")}
-          <input type="text" bind:value={fTitle} />
+          <input
+            type="text"
+            bind:value={fTitle}
+            placeholder={$t("detail.titlePlaceholder")}
+          />
         </label>
-        <div class="row2">
-          <label class="fdate"
-            >{$t("detail.date")}
-            <input type="date" bind:value={fDate} />
-          </label>
-          <label
-            >{$t("detail.starts")}
-            <input type="time" bind:value={fTime} />
-          </label>
-          <label
-            >{$t("detail.ends")}
-            <select
-              bind:value={fEndTime}
-              disabled={!fTime}
-              title={fTime ? $t("detail.endTime") : $t("detail.pickStartFirst")}
-            >
-              <option value="">—</option>
-              {#each endOptions as opt (opt.value)}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          </label>
+
+        <div class="when-row">
+          <div class="edge">
+            <span class="elab">{$t("detail.starts")}</span>
+            <div class="pair">
+              <input
+                type="date"
+                bind:value={fDate}
+                aria-label={$t("detail.startDateAria")}
+              />
+              <input
+                class="clock"
+                type="time"
+                bind:value={fTime}
+                aria-label={$t("detail.startTimeAria")}
+              />
+            </div>
+          </div>
+          <div class="edge">
+            <span class="elab">{$t("detail.ends")}</span>
+            <div class="pair">
+              <input
+                type="date"
+                bind:value={fEndDate}
+                min={fDate}
+                disabled={!fDate}
+                aria-label={$t("detail.endDateAria")}
+              />
+              <input
+                class="clock"
+                type="time"
+                bind:value={fEndTime}
+                disabled={!fTime}
+                aria-label={$t("detail.endTimeAria")}
+              />
+            </div>
+          </div>
         </div>
+        <!-- What the fields add up to, in the same words the card will use
+             once saved. -->
+        {#if scheduleSummary}<p class="sched-sum">{scheduleSummary}</p>{/if}
+
         <label
           >{$t("detail.category")}
           {#if addingCategory}
@@ -1591,9 +1627,66 @@
   textarea {
     resize: vertical;
   }
-  /* Date + start + end share a row, but each can shrink (min-width:0 — native
-     date/time controls otherwise keep an intrinsic width and overflow) and wrap
-     when the dialog is too narrow. */
+  /* The title leads the form — no top gap above it, and set at reading size. */
+  .lead {
+    margin-top: 0.6rem;
+  }
+  .lead input {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  /* ── When it starts / when it ends ───────────────────────────────────────
+     Two edges side by side, each a small label over a date + clock pair. No
+     panel, no accent grounds: the inputs carry the same surfaces as every
+     other field, so the row reads correctly in both skins. Each control can
+     shrink (min-width: 0 — native date/time controls keep an intrinsic width
+     and would otherwise overflow) and the pair wraps on a narrow dialog. */
+  .when-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 0.9rem;
+  }
+  .edge {
+    flex: 1 1 14rem;
+    min-width: 0;
+  }
+  .elab {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .pair {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .pair input {
+    flex: 1 1 6rem;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .pair .clock {
+    flex: 0 1 6.5rem;
+  }
+  .pair input:disabled {
+    opacity: 0.45;
+  }
+  /* The sentence the card will read once saved. Ink, not accent — `--teal-deep`
+     is a light-skin colour and goes near-black on the dark card. */
+  .sched-sum {
+    margin: 0.6rem 0 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+
+  /* The booking sheet's from/until pair: each side can shrink (min-width: 0 —
+     native date controls otherwise keep an intrinsic width and overflow) and
+     wraps when the dialog is too narrow. */
   .row2 {
     display: flex;
     flex-wrap: wrap;
@@ -1603,22 +1696,13 @@
     flex: 1 1 8rem;
     min-width: 0;
   }
-  .row2 input,
-  .row2 select {
+  .row2 input {
     box-sizing: border-box;
     max-width: 100%;
   }
-  .row2 select:disabled {
-    opacity: 0.5;
-  }
-  /* Phones: the date takes the full first line; start + end drop to the line
-     below, side by side. */
   @media (max-width: 560px) {
     .row2 label {
       flex-basis: 6rem;
-    }
-    .row2 .fdate {
-      flex-basis: 100%;
     }
   }
   /* "Pick from list" escape hatch under the new-category input. */

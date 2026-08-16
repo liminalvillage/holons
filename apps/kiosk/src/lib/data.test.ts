@@ -19,6 +19,42 @@ function quest(id: string, extra: Partial<Quest> = {}): Quest {
   return { id, title: id, status: "ongoing", participants: [], ...extra };
 }
 
+describe("toEvents — spans", () => {
+  it("carries a multi-day range through as an inclusive span", () => {
+    const [ev] = toEvents([
+      quest("festival", { when: "2026-08-20", ends: "2026-08-22" }),
+    ]);
+    expect(ev.allDay).toBe(true);
+    expect(ev.days).toBe(3);
+    expect(ev.multiDay).toBe(true);
+    // The first day is the card's own date; the end is the LAST day, not a
+    // boundary past it — the calendar shows the card on all three.
+    expect(ev.date).toEqual(new Date(2026, 7, 20));
+    expect(ev.end).toEqual(new Date(2026, 7, 22));
+  });
+
+  it("leaves an ordinary same-day card at one day", () => {
+    const [allDay] = toEvents([quest("standup", { when: "2026-08-20" })]);
+    expect([allDay.days, allDay.multiDay, allDay.end]).toEqual([
+      1,
+      false,
+      undefined,
+    ]);
+    const [timed] = toEvents([
+      quest("meet", {
+        when: new Date(2026, 7, 20, 9, 0).toISOString(),
+        ends: new Date(2026, 7, 20, 17, 0).toISOString(),
+      }),
+    ]);
+    expect([timed.allDay, timed.days, timed.multiDay]).toEqual([
+      false,
+      1,
+      false,
+    ]);
+    expect(timed.end).toEqual(new Date(2026, 7, 20, 17, 0));
+  });
+});
+
 describe("toBacklog — dependency-aware ordering", () => {
   it("marks self-standing tasks and current leaves as unblocked", () => {
     const out = toBacklog([

@@ -96,6 +96,8 @@ describe("personalEvents", () => {
       title: `Event ${id}`,
       date: new Date("2026-08-01T10:00:00Z"),
       allDay: false,
+      days: 1,
+      multiDay: false,
       people,
       appreciation: 0,
     };
