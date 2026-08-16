@@ -125,6 +125,21 @@ describe("toBacklog — dependency-aware ordering", () => {
     const t = out.find((x) => x.id === "t")!;
     expect(t.unmetDeps).toBe(1);
   });
+
+  it("carries the stored dependencies verbatim, for the graph's edges", () => {
+    const out = toBacklog([
+      quest("t", { dependencies: ["d1", "d2", "gone"] }),
+      quest("d1", { status: "completed" }),
+      quest("d2"),
+    ]);
+    const t = out.find((x) => x.id === "t")!;
+    // The raw list, untouched — the graph drops edges that lead nowhere
+    // (d1 settled and off the board, "gone" isn't a quest at all), while
+    // unmetDeps counts only the still-open subset (d2).
+    expect(t.dependencies).toEqual(["d1", "d2", "gone"]);
+    expect(t.unmetDeps).toBe(1);
+    expect(out.find((x) => x.id === "d2")!.dependencies).toEqual([]);
+  });
 });
 
 describe("toSuggestions — search dropdown chips", () => {

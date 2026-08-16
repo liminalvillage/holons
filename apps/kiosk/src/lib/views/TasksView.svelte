@@ -45,6 +45,7 @@
   import {
     createTask,
     deleteTaskWithCascade,
+    wouldCreateDependencyCycle,
     type Quest,
   } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
@@ -52,6 +53,19 @@
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import TaskListView from "./TaskListView.svelte";
   import TaskSwipeView from "./TaskSwipeView.svelte";
+  import TaskGraphView from "./TaskGraphView.svelte";
+
+  // The graph layout's drawer, measured, so the FAB row can clear it: it takes
+  // the bottom of the board in portrait and the right side in landscape, and
+  // each media query below reads whichever of the two applies.
+  let graphTrayH = 0;
+  let graphTrayW = 0;
+  // A `bind:` keeps its last value when the component goes away, so leaving
+  // the graph would otherwise strand the buttons at the old offset.
+  $: if ($taskViewMode !== "graph") {
+    graphTrayH = 0;
+    graphTrayW = 0;
+  }
 
   // Kiosk displays are unattended — glide the wall down to the last note once
   // so the whole backlog is shown without anyone dragging. (The scroll
@@ -515,6 +529,125 @@
     }
   }
 
+  // ── Graph: wire a dependency by dropping one card on another ───────────────
+  // The dragged card comes to WAIT ON the card it lands on. Core owns the rule
+  // that decides whether an edge is legal (a plan must stay a DAG); this only
+  // asks it, and writes the accepted answer.
+  function questFor(id: string): Quest | undefined {
+    return get(rawQuests).find((x) => String(x.id ?? x.title) === id);
+  }
+  function dependencyIds(q: Quest): string[] {
+    return ((q.dependencies as string[] | undefined) ?? []).map(String);
+  }
+
+  /** Live during the drag: may `taskId` be made to wait on `depId`? */
+  function canLink(taskId: string, depId: string): boolean {
+    if (taskId === depId) return false;
+    const q = questFor(taskId);
+    if (!q) return false;
+    if (dependencyIds(q).includes(depId)) return false; // already wired
+    return !wouldCreateDependencyCycle(get(rawQuests), taskId, depId);
+  }
+
+  async function linkDependency(task: BacklogTask, dep: BacklogTask) {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) {
+      loginOpen.set(true);
+      return;
+    }
+    const q = questFor(task.id);
+    if (!q) return;
+    // The edge is stored ON the dependent card, so that card has to be one we
+    // own: writing a foreign/hologram record into this holon's quests would
+    // fork a stray copy (same rule as reorder above), and its real graph lives
+    // in the owner holon anyway.
+    if ((q as any)._federation || (q as any)._hologram) {
+      showNotice($t("tasks.linkForeign"));
+      return;
+    }
+    if (wouldCreateDependencyCycle(get(rawQuests), task.id, dep.id)) {
+      showNotice($t("tasks.linkCycle"));
+      return;
+    }
+    const dependencies = [...new Set([...dependencyIds(q), dep.id])];
+    try {
+      const writer = await getWriter(hid, (msg) =>
+        showNotice($t("tasks.linkFailed", { reason: msg })),
+      );
+      const clean: Record<string, unknown> = { ...q };
+      delete clean._holon;
+      if (await writer.put("quests", { ...clean, dependencies })) {
+        showNotice($t("tasks.linked", { task: task.title, dep: dep.title }));
+      }
+    } catch (err) {
+      console.error("[kiosk] link failed", err);
+      showNotice(
+        $t("tasks.linkFailed", {
+          reason:
+            err instanceof Error ? err.message : $t("clipboard.writeFailed"),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Cut a card loose (dropped into the graph's drawer): drop the dependencies
+   * it waits on, and remove it from every card that waits on IT — otherwise it
+   * would still be wired into the graph and never reach the drawer. Foreign
+   * records are skipped (their edges live in the owner holon), and said so.
+   */
+  async function detachTask(task: BacklogTask) {
+    const hid = get(holonId);
+    const user = get(telegramUser);
+    if (!hid || !user) {
+      loginOpen.set(true);
+      return;
+    }
+    const quests = get(rawQuests);
+    const own = (q: Quest) => !(q as any)._federation && !(q as any)._hologram;
+    const self = questFor(task.id);
+    // Every edge to cut: the card's own dependencies, plus each dependent.
+    const edits: Quest[] = [];
+    if (self && dependencyIds(self).length) {
+      edits.push({ ...self, dependencies: [] });
+    }
+    for (const q of quests) {
+      if (String(q.id ?? q.title) === task.id) continue;
+      const deps = dependencyIds(q);
+      if (!deps.includes(task.id)) continue;
+      edits.push({ ...q, dependencies: deps.filter((d) => d !== task.id) });
+    }
+    if (!edits.length) {
+      showNotice($t("tasks.unlinkNothing", { title: task.title }));
+      return;
+    }
+    if (edits.some((q) => !own(q))) {
+      showNotice($t("tasks.linkForeign"));
+      if (edits.every((q) => !own(q))) return;
+    }
+    try {
+      const writer = await getWriter(hid, (msg) =>
+        showNotice($t("tasks.linkFailed", { reason: msg })),
+      );
+      let all = true;
+      for (const q of edits.filter(own)) {
+        const clean: Record<string, unknown> = { ...q };
+        delete clean._holon;
+        if (!(await writer.put("quests", clean))) all = false;
+      }
+      if (all) showNotice($t("tasks.unlinked", { title: task.title }));
+    } catch (err) {
+      console.error("[kiosk] unlink failed", err);
+      showNotice(
+        $t("tasks.linkFailed", {
+          reason:
+            err instanceof Error ? err.message : $t("clipboard.writeFailed"),
+        }),
+      );
+    }
+  }
+
   // ── Swipe-deck actions ─────────────────────────────────────────────────────
   // One-way join/like for TaskSwipeView (a swipe never un-does), routed to a
   // federated card's owner holon like delete above. The view stays
@@ -631,7 +764,9 @@
   }
 </script>
 
-<div class="board">
+<!-- The graph drawer's live size (0 in every other layout), so the floating
+     buttons can ride clear of it — same contract as the calendar. -->
+<div class="board" style="--tray-h: {graphTrayH}px; --tray-w: {graphTrayW}px;">
   {#if $scope === "personal" && !$telegramUser}
     <div class="tasks scroll">
       <p class="empty">{$t("tasks.loginPersonal")}</p>
@@ -648,6 +783,21 @@
         onRevert={onSwipeRevert}
       />
     </div>
+  {:else if $taskViewMode === "graph" && shownTasks.length}
+    <!-- The graph pans/zooms itself, so it takes the whole board area like
+         the swipe deck (no scroll pane). Empty states fall through below. -->
+    <TaskGraphView
+      tasks={shownTasks}
+      colorFor={noteColorFor}
+      {dueLabel}
+      {completing}
+      onOpen={openTask}
+      onLink={linkDependency}
+      onDetach={detachTask}
+      {canLink}
+      bind:trayHeight={graphTrayH}
+      bind:trayWidth={graphTrayW}
+    />
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
       {#if $scope === "personal" && !shownTasks.length}
@@ -979,6 +1129,20 @@
     align-items: center;
     gap: 0.8rem;
     z-index: 6;
+    transition: bottom 0.18s ease;
+  }
+  /* Graph layout: the unlinked drawer takes the bottom of the board in
+     portrait and the right-hand side in landscape — keep the buttons clear of
+     it either way (the calendar does the same around its own drawer). */
+  @media (max-aspect-ratio: 1/1) {
+    .fabrow {
+      bottom: calc(var(--tray-h, 0px) + 1.3rem);
+    }
+  }
+  @media (min-aspect-ratio: 1/1) {
+    .fabrow {
+      right: calc(var(--tray-w, 0px) + 1.3rem);
+    }
   }
   .fab {
     width: 3.4rem;

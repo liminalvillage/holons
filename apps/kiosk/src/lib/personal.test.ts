@@ -26,6 +26,7 @@ function task(id: string, people: TaskPerson[] = []): BacklogTask {
     appreciatedBy: [],
     created: 0,
     unmetDeps: 0,
+    dependencies: [],
   };
 }
 

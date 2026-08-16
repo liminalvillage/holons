@@ -57,6 +57,7 @@
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
+    { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
   // ── Library: one card at a time / compact list / icon card grid (wall).

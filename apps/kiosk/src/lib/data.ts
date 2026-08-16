@@ -241,6 +241,13 @@ export interface BacklogTask {
    * now. Blocked tasks sort after the leaves and stay out of the swipe deck.
    */
   unmetDeps: number;
+  /**
+   * The quest's stored `dependencies` list, verbatim (its predecessors' ids).
+   * The graph view draws these as edges; ones that lead nowhere — a settled
+   * quest, an id not on the board — are simply not rendered (`layoutDag`
+   * drops dangling endpoints). `unmetDeps` counts the still-open subset.
+   */
+  dependencies: string[];
 }
 
 /**
@@ -408,6 +415,9 @@ export function toBacklog(
         return Number.isFinite(t) ? t : 0;
       })(),
       unmetDeps: unmet.get(id)?.length ?? 0,
+      dependencies: ((q.dependencies as string[] | undefined) ?? []).map(
+        String,
+      ),
     });
   }
   // Current leaves first — a task blocked by open dependencies can't be acted

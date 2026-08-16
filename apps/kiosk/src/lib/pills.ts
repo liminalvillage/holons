@@ -16,6 +16,7 @@ export const LAYOUT_SEGMENTS = {
   list: { glyph: "☰", labelKey: "pills.list" },
   wall: { glyph: "▦", labelKey: "pills.wall" },
   week: { glyph: "▤", labelKey: "pills.week" },
+  graph: { glyph: "⌥", labelKey: "pills.graph" },
 } as const satisfies Record<string, { glyph: string; labelKey: MessageKey }>;
 
 /** Sort pill segments for the Tasks backlog (see `TaskSort` in data.ts). */

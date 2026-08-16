@@ -388,11 +388,11 @@ export function setResolvedLang(l: "en" | "it" | "es"): void {
 
 /**
  * How the Tasks view lays out the backlog: the post-it wall, a compact list,
- * or a one-card-at-a-time swipe deck. Anyone can switch it from the view's
- * Layout pill; the choice sticks per device. Whose tasks appear is the
- * orthogonal `Scope` above.
+ * a one-card-at-a-time swipe deck, or the auto-arranged dependency graph.
+ * Anyone can switch it from the view's Layout pill; the choice sticks per
+ * device. Whose tasks appear is the orthogonal `Scope` above.
  */
-export type TaskViewMode = "cards" | "list" | "swipe";
+export type TaskViewMode = "cards" | "list" | "swipe" | "graph";
 
 /** Below this width the kiosk is a phone, not a wall display (matches TabBar). */
 const MOBILE_MAX_WIDTH_PX = 560;
@@ -415,7 +415,7 @@ export function isPhoneDisplay(): boolean {
  */
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe") return v;
+  if (v === "cards" || v === "list" || v === "swipe" || v === "graph") return v;
   // Legacy "personal" mode rendered the list; the me-filter lives in the scope now.
   if (v === "personal") return "list";
   const mobile =
