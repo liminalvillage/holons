@@ -55,18 +55,6 @@ License: **AGPL-3.0-or-later** with a commercial option — see
   `.env` in commits.
 - Conventional Commits with a scope: `core/scoring: …`, `web: …`, `docs: …`.
 
-## Common commands
-
-```bash
-pnpm install                       # workspace install (lockfile not committed)
-pnpm -r typecheck                  # typecheck all packages
-pnpm test                          # vitest across packages
-pnpm -F @holons/core test          # one package
-pnpm dev                           # web UI  → http://localhost:5173
-pnpm dev:bot                       # Telegram bot
-pnpm -F @holons/text-ui exec holons --help
-```
-
 ## When unsure
 
 If a change might violate the local-first / federated / core-owns-meaning
