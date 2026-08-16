@@ -304,11 +304,12 @@ export function setBrandLogo(value: string | null): void {
 }
 
 /**
- * OpenAI API key for the serverless "direct" voice mode — entered by the
- * caretaker in Settings and kept on THIS device only (localStorage), so a
- * public multi-tenant deploy never ships a key in its bundle. The
- * VITE_OPENAI_API_KEY env var remains as a dev/self-hosted fallback; anything
- * baked that way is readable by whoever can load the site.
+ * OpenAI API key for the serverless "direct" voice mode. Settings no longer
+ * offers a field for it — a deploy holds its key server-side (/api/ai/voice,
+ * /api/ai/breakdown) instead — but a key an earlier build stored on THIS
+ * device is still honoured, so a kiosk already set up that way keeps speaking.
+ * The VITE_OPENAI_API_KEY env var remains as a dev/self-hosted fallback;
+ * anything baked that way is readable by whoever can load the site.
  */
 export function resolveVoiceKey(): string | null {
   const device = deviceVoiceKey();
@@ -318,20 +319,16 @@ export function resolveVoiceKey(): string | null {
 }
 
 /**
- * Just the caretaker-entered key on THIS device (no env fallback). Its
- * presence is an explicit "speak via the API" choice, so the voice mode
- * resolution lets it outrank a VITE_VOICE_WS_URL baked into the build —
- * a dev machine's localhost WS URL means nothing on a kiosk device.
+ * Just the key stored on THIS device (no env fallback). Its presence is an
+ * explicit "speak via the API" choice a caretaker made in an earlier build, so
+ * the voice mode resolution lets it outrank a VITE_VOICE_WS_URL baked into the
+ * build — a dev machine's localhost WS URL means nothing on a kiosk device.
+ * Nothing writes this key any more; clearing one means clearing the device's
+ * site data.
  */
 export function deviceVoiceKey(): string | null {
   const stored = persisted(VOICE_KEY_KEY);
   return stored && stored.trim() ? stored.trim() : null;
-}
-
-/** Persist (or clear, when null/blank) this device's voice API key. */
-export function setVoiceKey(value: string | null): void {
-  if (value && value.trim()) persist(VOICE_KEY_KEY, value.trim());
-  else forget(VOICE_KEY_KEY);
 }
 
 /** The accent colour (hex), used for the teal-derived UI. Defaults to teal. */

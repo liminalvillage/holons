@@ -4,6 +4,13 @@
   // display name, logo, and accent colour. Everything is persisted (see
   // config.ts) and applied reactively — no reload needed. (The dashboard link
   // lives in the user menu; federated visibility is each view's Show pill.)
+  //
+  // Every control applies the moment you touch it — there is no Apply step to
+  // forget on a wall-mounted screen. Switches and pickers write straight
+  // through and render the live store, so what you see is what the kiosk is
+  // actually doing; only the two text fields keep a draft, committed on blur
+  // or Enter, so typing an id doesn't re-point the screen character by
+  // character.
   import {
     holonId,
     holonName,
@@ -30,13 +37,10 @@
     setStatusEnabled,
     setThemeMode,
     setLangMode,
-    resolveVoiceKey,
-    setVoiceKey,
     DEFAULT_ACCENT,
     type ThemeMode,
     type LangMode,
   } from "$lib/config";
-  import { refreshVoice } from "$lib/voice/controller";
   import { themeMode } from "$lib/theme";
   import { langMode, t } from "$lib/i18n";
   import { readSettingsHex } from "@holons/core/federation";
@@ -44,25 +48,11 @@
   import FederationSettings from "./FederationSettings.svelte";
   import HexPicker from "./HexPicker.svelte";
 
-  // Local drafts so typing/uploading doesn't re-point the screen mid-edit.
+  // Drafts for the free-text fields only — every other control writes through
+  // on touch and renders its store.
   let draftHolon = $holonId ?? "";
   let draftName = $brandName;
-  let draftLogo = $brandLogo; // data URL or image URL; "" = bundled logo
   let draftAccent = $accent || DEFAULT_ACCENT;
-  // The Library/Roles switches show the tab's *effective* visibility (an
-  // untouched device is in content-driven `auto` mode). Flipping one records an
-  // explicit on/off; leaving it alone preserves auto — so applying an unrelated
-  // setting never freezes a content-driven tab into a manual choice.
-  let draftLibrary = $libraryEnabled;
-  let draftRoles = $rolesEnabled;
-  let draftChecklists = $checklistsEnabled;
-  const initialLibrary = $libraryEnabled;
-  const initialRoles = $rolesEnabled;
-  const initialChecklists = $checklistsEnabled;
-  let draftStatus = $statusEnabled;
-  let draftTheme: ThemeMode = $themeMode;
-  let draftLang: LangMode = $langMode;
-  let draftVoiceKey = resolveVoiceKey() ?? "";
   let logoError = "";
 
   // The holon's claimed H3 cell (`settings.hex`, shared with wequest and the
@@ -122,49 +112,82 @@
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => (draftLogo = String(reader.result ?? ""));
+    reader.onload = () => commitLogo(String(reader.result ?? ""));
     reader.onerror = () => (logoError = $t("settings.imageReadError"));
     reader.readAsDataURL(file);
   }
 
   function clearLogo() {
-    draftLogo = "";
+    commitLogo("");
     logoError = "";
   }
 
-  function apply() {
+  // -- write-through commits -------------------------------------------------
+
+  /** Point the screen at another holon. A blank field is a no-op, not a wipe. */
+  function commitHolon() {
     const id = draftHolon.trim();
-    if (id) {
-      setHolonId(id);
-      holonId.set(id);
+    if (!id) {
+      draftHolon = $holonId ?? ""; // don't leave a blank field that isn't real
+      return;
     }
+    if (id === $holonId) return;
+    setHolonId(id);
+    holonId.set(id);
+  }
+
+  function commitName() {
     setBrandName(draftName);
     brandName.set(draftName.trim());
-    setBrandLogo(draftLogo || null);
-    brandLogo.set(draftLogo);
-    setAccent(draftAccent);
-    accent.set(draftAccent);
-    if (draftLibrary !== initialLibrary) {
-      setLibraryPref(draftLibrary ? "on" : "off");
-      libraryPref.set(draftLibrary ? "on" : "off");
-    }
-    if (draftRoles !== initialRoles) {
-      setRolesPref(draftRoles ? "on" : "off");
-      rolesPref.set(draftRoles ? "on" : "off");
-    }
-    if (draftChecklists !== initialChecklists) {
-      setChecklistsPref(draftChecklists ? "on" : "off");
-      checklistsPref.set(draftChecklists ? "on" : "off");
-    }
-    setStatusEnabled(draftStatus);
-    statusEnabled.set(draftStatus);
-    setThemeMode(draftTheme);
-    themeMode.set(draftTheme);
-    setLangMode(draftLang);
-    langMode.set(draftLang);
-    setVoiceKey(draftVoiceKey);
-    refreshVoice();
-    settingsOpen.set(false);
+  }
+
+  function commitLogo(value: string) {
+    setBrandLogo(value || null);
+    brandLogo.set(value);
+  }
+
+  function commitAccent(value: string) {
+    draftAccent = value;
+    setAccent(value);
+    accent.set(value);
+  }
+
+  function commitTheme(mode: ThemeMode) {
+    setThemeMode(mode);
+    themeMode.set(mode);
+  }
+
+  function commitLang(mode: LangMode) {
+    setLangMode(mode);
+    langMode.set(mode);
+  }
+
+  // Touching a tab switch records an explicit on/off. Until then the pref stays
+  // `auto` and the switch simply mirrors the tab's content-driven visibility —
+  // so a caretaker who never opens Settings keeps the automatic behaviour.
+  function commitLibrary(on: boolean) {
+    setLibraryPref(on ? "on" : "off");
+    libraryPref.set(on ? "on" : "off");
+  }
+
+  function commitRoles(on: boolean) {
+    setRolesPref(on ? "on" : "off");
+    rolesPref.set(on ? "on" : "off");
+  }
+
+  function commitChecklists(on: boolean) {
+    setChecklistsPref(on ? "on" : "off");
+    checklistsPref.set(on ? "on" : "off");
+  }
+
+  function commitStatus(on: boolean) {
+    setStatusEnabled(on);
+    statusEnabled.set(on);
+  }
+
+  /** Enter on a text field commits and dismisses the on-screen keyboard. */
+  function blurOnEnter(e: KeyboardEvent) {
+    if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
   }
 </script>
 
@@ -179,7 +202,8 @@
       bind:value={draftHolon}
       placeholder={$t("settings.holonPlaceholder")}
       inputmode="numeric"
-      on:keydown={(e) => e.key === "Enter" && apply()}
+      on:change={commitHolon}
+      on:keydown={blurOnEnter}
     />
   </label>
 
@@ -189,16 +213,17 @@
       type="text"
       bind:value={draftName}
       placeholder={$holonName || $t("settings.displayNamePlaceholder")}
-      on:keydown={(e) => e.key === "Enter" && apply()}
+      on:change={commitName}
+      on:keydown={blurOnEnter}
     />
   </label>
 
   <div class="field">
     {$t("settings.logo")} <span class="sub">{$t("settings.logoSub")}</span>
     <div class="logo-row">
-      <div class="logo-preview" class:empty={!draftLogo}>
-        {#if draftLogo}
-          <img src={draftLogo} alt={$t("settings.logoPreview")} />
+      <div class="logo-preview" class:empty={!$brandLogo}>
+        {#if $brandLogo}
+          <img src={$brandLogo} alt={$t("settings.logoPreview")} />
         {:else}
           <span class="wm"
             >{draftName.trim() ||
@@ -212,7 +237,7 @@
           {$t("settings.upload")}
           <input type="file" accept="image/*" on:change={onLogoFile} />
         </label>
-        {#if draftLogo}
+        {#if $brandLogo}
           <button type="button" class="link" on:click={clearLogo}
             >{$t("settings.useDefault")}</button
           >
@@ -232,13 +257,15 @@
           class:sel={draftAccent.toLowerCase() === sw.toLowerCase()}
           style="background: {sw};"
           aria-label={$t("settings.accentAria", { color: sw })}
-          on:click={() => (draftAccent = sw)}
+          on:click={() => commitAccent(sw)}
         ></button>
       {/each}
       <label class="swatch custom" style="background: {draftAccent};">
+        <!-- bind:value previews the drag live; commit once on release. -->
         <input
           type="color"
           bind:value={draftAccent}
+          on:change={() => commitAccent(draftAccent)}
           aria-label={$t("settings.customAccent")}
         />
       </label>
@@ -253,9 +280,9 @@
         <button
           type="button"
           class="theme-opt"
-          class:sel={draftTheme === th.id}
-          aria-pressed={draftTheme === th.id}
-          on:click={() => (draftTheme = th.id)}
+          class:sel={$themeMode === th.id}
+          aria-pressed={$themeMode === th.id}
+          on:click={() => commitTheme(th.id)}
         >
           <span class="theme-glyph" aria-hidden="true">{th.glyph}</span>
           {$t(th.labelKey)}
@@ -272,9 +299,9 @@
         <button
           type="button"
           class="theme-opt"
-          class:sel={draftLang === l.id}
-          aria-pressed={draftLang === l.id}
-          on:click={() => (draftLang = l.id)}
+          class:sel={$langMode === l.id}
+          aria-pressed={$langMode === l.id}
+          on:click={() => commitLang(l.id)}
         >
           {l.label ?? $t("common.auto")}
         </button>
@@ -290,11 +317,11 @@
     <button
       type="button"
       class="switch"
-      class:on={draftLibrary}
+      class:on={$libraryEnabled}
       role="switch"
-      aria-checked={draftLibrary}
+      aria-checked={$libraryEnabled}
       aria-label={$t("settings.libraryTabAria")}
-      on:click={() => (draftLibrary = !draftLibrary)}
+      on:click={() => commitLibrary(!$libraryEnabled)}
     >
       <span class="knob"></span>
     </button>
@@ -308,11 +335,11 @@
     <button
       type="button"
       class="switch"
-      class:on={draftRoles}
+      class:on={$rolesEnabled}
       role="switch"
-      aria-checked={draftRoles}
+      aria-checked={$rolesEnabled}
       aria-label={$t("settings.rolesTabAria")}
-      on:click={() => (draftRoles = !draftRoles)}
+      on:click={() => commitRoles(!$rolesEnabled)}
     >
       <span class="knob"></span>
     </button>
@@ -326,11 +353,11 @@
     <button
       type="button"
       class="switch"
-      class:on={draftChecklists}
+      class:on={$checklistsEnabled}
       role="switch"
-      aria-checked={draftChecklists}
+      aria-checked={$checklistsEnabled}
       aria-label={$t("settings.listsTabAria")}
-      on:click={() => (draftChecklists = !draftChecklists)}
+      on:click={() => commitChecklists(!$checklistsEnabled)}
     >
       <span class="knob"></span>
     </button>
@@ -344,11 +371,11 @@
     <button
       type="button"
       class="switch"
-      class:on={draftStatus}
+      class:on={$statusEnabled}
       role="switch"
-      aria-checked={draftStatus}
+      aria-checked={$statusEnabled}
       aria-label={$t("settings.statusTabAria")}
-      on:click={() => (draftStatus = !draftStatus)}
+      on:click={() => commitStatus(!$statusEnabled)}
     >
       <span class="knob"></span>
     </button>
@@ -391,22 +418,9 @@
     </div>
   {/if}
 
-  <label class="field"
-    >{$t("settings.voice")}
-    <span class="sub">{$t("settings.voiceSub")}</span>
-    <input
-      type="password"
-      bind:value={draftVoiceKey}
-      placeholder="sk-…"
-      autocomplete="off"
-      on:keydown={(e) => e.key === "Enter" && apply()}
-    />
-  </label>
-
   <div class="actions">
-    <button class="primary" on:click={apply}>{$t("common.apply")}</button>
-    <button class="ghost" on:click={() => settingsOpen.set(false)}
-      >{$t("common.cancel")}</button
+    <button class="primary" on:click={() => settingsOpen.set(false)}
+      >{$t("common.close")}</button
     >
   </div>
 </div>
@@ -708,8 +722,7 @@
     gap: 0.6rem;
     margin-top: 1.3rem;
   }
-  .primary,
-  .ghost {
+  .primary {
     flex: 1;
     min-width: 8rem;
     min-height: 52px;
@@ -717,18 +730,11 @@
     font-size: 1rem;
     font-weight: 700;
     transition: transform 0.1s ease;
-  }
-  .primary {
     background: var(--teal);
     color: #fff;
     box-shadow: var(--shadow-soft);
   }
-  .ghost {
-    background: rgba(255, 255, 255, 0.5);
-    color: var(--ink);
-  }
-  .primary:active,
-  .ghost:active {
+  .primary:active {
     transform: scale(0.97);
   }
 </style>

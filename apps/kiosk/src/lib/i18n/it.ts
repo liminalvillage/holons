@@ -331,9 +331,6 @@ export const it: Record<MessageKey, Msg> = {
   "settings.federation": "Federazione",
   "settings.federationSub":
     "— gli holon partner con cui questo schermo condivide · le modifiche si applicano subito",
-  "settings.voice": "Voce",
-  "settings.voiceSub":
-    "— chiave API OpenAI per l'interazione vocale, conservata solo su questo dispositivo; vuota = la chiave condivisa del deploy (quella della scomposizione AI), se configurata",
 
   // Federation editor
   "fed.loading": "Caricamento dei partner…",

@@ -326,9 +326,6 @@ export const en = {
   "settings.federation": "Federation",
   "settings.federationSub":
     "— partner holons this screen shares with · changes apply immediately",
-  "settings.voice": "Voice",
-  "settings.voiceSub":
-    "— OpenAI API key for spoken interaction, kept on this device only; empty = the deploy's shared key (the one AI breakdown uses), if configured",
 
   // Federation editor
   "fed.loading": "Loading partners…",

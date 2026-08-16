@@ -332,9 +332,6 @@ export const es: Record<MessageKey, Msg> = {
   "settings.federation": "Federación",
   "settings.federationSub":
     "— los holones socios con los que comparte esta pantalla · los cambios se aplican de inmediato",
-  "settings.voice": "Voz",
-  "settings.voiceSub":
-    "— clave API de OpenAI para la interacción hablada, guardada solo en este dispositivo; vacía = la clave compartida del despliegue (la del desglose con IA), si está configurada",
 
   // Federation editor
   "fed.loading": "Cargando los socios…",
