@@ -39,7 +39,7 @@ export const es: Record<MessageKey, Msg> = {
   "tasks.waitsOn": "espera {n}",
   "tasks.graphAria": "Grafo de dependencias de tareas",
   "tasks.graphEmpty":
-    "Aún no hay dependencias — las tareas que se esperan entre sí aparecerán aquí. ✶",
+    "Aún no hay dependencias — arrastra una tarea sobre otra para decir qué va primero. ✶",
   "tasks.graphFree": "Sin enlazar todavía",
   "tasks.graphFit": "Ajustar todo el grafo",
   "tasks.linkHint": "Suelta “{title}” sobre la tarea que debe esperarla",

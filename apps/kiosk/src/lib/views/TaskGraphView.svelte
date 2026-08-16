@@ -192,7 +192,11 @@
     return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
   }
 
-  /** The card under a screen point, ignoring the lifted one (pointer-events: none). */
+  /**
+   * The card under a screen point — a canvas node OR a drawer chip; both carry
+   * `data-node`. The thing being dragged is transparent to hit-testing, so
+   * this finds what's UNDER it rather than itself.
+   */
   function cardAt(clientX: number, clientY: number): BacklogTask | null {
     const el = document.elementFromPoint(
       clientX,
@@ -202,13 +206,17 @@
     return (id && byId.get(id)) || null;
   }
 
-  /** Is a screen point over the drawer (the unlink target)? */
+  /**
+   * Is a screen point over the drawer's own space (the unlink target)? A chip
+   * inside it doesn't count — dropping ON a chip links to that task, and only
+   * the empty room around the chips cuts a card loose.
+   */
   function overDrawerAt(clientX: number, clientY: number): boolean {
     const el = document.elementFromPoint(
       clientX,
       clientY,
     ) as HTMLElement | null;
-    return el?.closest(".tray") != null;
+    return el?.closest(".tray") != null && el?.closest("[data-node]") == null;
   }
 
   function onPointerDown(e: PointerEvent) {
@@ -566,11 +574,17 @@
       <div class="tray-items scroll">
         {#each loose as task (task.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+          <!-- Chips carry `data-node` like the canvas cards do, so a drop can
+               land on one: that's how the FIRST dependency gets made, with the
+               board still empty and every task sitting in here. -->
           <span
             class="tray-chip"
             class:is-foreign={!!task.sourceColor}
             class:holo={!!task.hologram}
             class:dragging={chip?.task.id === task.id}
+            class:target={held?.ok && held.over?.id === task.id}
+            class:reject={held != null && !held.ok && held.over?.id === task.id}
+            data-node={task.id}
             style:--holo-seed={holoSeed(task.id)}
             style="background: {colorFor(
               task.category,
@@ -853,7 +867,22 @@
     touch-action: pan-x;
     cursor: grab;
   }
+  /* Same drop affordances the canvas cards get, so a chip-onto-chip link (the
+     way the first dependency is ever made) reads identically. */
+  .tray-chip.target {
+    box-shadow:
+      0 0 0 3px var(--teal),
+      var(--shadow-soft);
+  }
+  .tray-chip.reject {
+    box-shadow:
+      0 0 0 3px #d4493a,
+      var(--shadow-soft);
+    opacity: 0.7;
+  }
   .tray-chip.dragging {
+    /* Transparent to hit-testing so `cardAt` sees the chip underneath. */
+    pointer-events: none;
     opacity: 0.4;
   }
   .tray-empty {

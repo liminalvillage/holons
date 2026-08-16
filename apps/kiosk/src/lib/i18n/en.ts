@@ -42,7 +42,7 @@ export const en = {
   "tasks.waitsOn": "waits on {n}",
   "tasks.graphAria": "Task dependency graph",
   "tasks.graphEmpty":
-    "No dependencies yet — tasks that wait on each other will chart here. ✶",
+    "No dependencies yet — drag one task onto another to say what comes first. ✶",
   "tasks.graphFree": "Not linked yet",
   "tasks.graphFit": "Fit the whole graph",
   "tasks.linkHint": "Drop “{title}” on the task that must wait for it",
