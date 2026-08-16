@@ -4,9 +4,15 @@
 // bottom once, then stop. Built for unattended displays where nobody is around
 // to drag the wall/timeline — so the whole list is shown before it rests.
 //
-// Any user interaction (wheel, touch, pointer, keydown) cancels the glide so a
-// passer-by who grabs the screen keeps control. The returned function also
-// cancels, for component teardown.
+// The glide only runs while the kiosk is unattended (the `rotating` store —
+// minutes of visible stillness; see stores.ts). While someone is present, or
+// the browser tab is hidden, it waits; if attention returns mid-glide it stops
+// and re-arms for the next unattended stretch. Direct input on the container
+// (wheel, touch, pointer, keydown) cancels it for good so a passer-by who
+// grabs the screen keeps control. The returned function also cancels, for
+// component teardown.
+
+import { rotating } from "$lib/stores";
 
 const STEP_PX_PER_SEC = 60; // gentle, readable pace
 // Hold at the top before gliding so a passer-by can read the first rows first.
@@ -22,11 +28,23 @@ export function autoScrollToEnd(
   let timer = 0;
   let cancelled = false;
   let last = 0;
+  let unsub: (() => void) | null = null;
+
+  // Stop any in-flight delay/glide but keep listening for the next unattended
+  // stretch (someone interacted elsewhere, or the page was hidden).
+  const rest = () => {
+    if (raf) cancelAnimationFrame(raf);
+    if (timer) clearTimeout(timer);
+    raf = 0;
+    timer = 0;
+    last = 0;
+  };
 
   const cancel = () => {
     cancelled = true;
-    if (raf) cancelAnimationFrame(raf);
-    if (timer) clearTimeout(timer);
+    rest();
+    unsub?.();
+    unsub = null;
     detach();
   };
 
@@ -59,10 +77,19 @@ export function autoScrollToEnd(
   };
 
   attach();
-  timer = window.setTimeout(() => {
+  unsub = rotating.subscribe((unattended) => {
     if (cancelled) return;
-    raf = requestAnimationFrame(tick);
-  }, opts.startDelayMs ?? START_DELAY_MS);
+    if (!unattended) {
+      rest();
+      return;
+    }
+    if (timer || raf) return; // already armed or gliding
+    timer = window.setTimeout(() => {
+      timer = 0;
+      if (cancelled) return;
+      raf = requestAnimationFrame(tick);
+    }, opts.startDelayMs ?? START_DELAY_MS);
+  });
 
   return cancel;
 }

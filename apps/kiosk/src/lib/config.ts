@@ -531,8 +531,13 @@ export function setGeo(geo: { lat: number; lng: number }): void {
 /** Seconds each view is shown before the kiosk auto-advances to the next. */
 export const FLIP_INTERVAL_MS = 16_000;
 
-/** Idle grace after the last touch before auto-rotation resumes. */
-export const RESUME_AFTER_IDLE_MS = 30_000;
+/**
+ * Stillness required before any autoplay (tab rotation, auto-scroll glide)
+ * kicks in: minutes with no interaction while the page is actually visible.
+ * Time spent on another browser tab never counts — the countdown restarts
+ * from zero when the page becomes visible again.
+ */
+export const RESUME_AFTER_IDLE_MS = 300_000;
 
 /**
  * Idle grace after the last touch before the header chrome (brand, search,

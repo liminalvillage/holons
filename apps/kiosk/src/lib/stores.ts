@@ -384,11 +384,14 @@ export function startClock(): () => void {
 
 // ── Auto-rotation ────────────────────────────────────────────────────────--
 //
-// The kiosk advances one tab every FLIP_INTERVAL_MS. Any interaction pauses
-// rotation and resumes it after RESUME_AFTER_IDLE_MS of stillness. `flipAt`
-// drives the thin progress bar so the screen telegraphs the next move.
+// The kiosk advances one tab every FLIP_INTERVAL_MS — but only once the screen
+// is truly unattended: RESUME_AFTER_IDLE_MS of stillness while the page is
+// visible. Boot counts as activity (someone just opened it), and a hidden
+// browser tab never accrues idle time — the countdown restarts from zero when
+// the page is revealed. `flipAt` drives the thin progress bar so the screen
+// telegraphs the next move.
 
-export const rotating = writable<boolean>(true);
+export const rotating = writable<boolean>(false);
 /** Wall-clock time (ms) of the next scheduled flip, or null while paused. */
 export const flipAt = writable<number | null>(null);
 
@@ -443,20 +446,53 @@ function advance() {
   scheduleFlip();
 }
 
+function pauseRotation() {
+  rotating.set(false);
+  flipAt.set(null);
+  if (resumeTimer) clearTimeout(resumeTimer);
+  resumeTimer = null;
+}
+
+/** Restart the unattended countdown: rotation resumes after a full
+ *  RESUME_AFTER_IDLE_MS of visible stillness from now. */
+function armResume() {
+  if (resumeTimer) clearTimeout(resumeTimer);
+  resumeTimer = setTimeout(() => {
+    rotating.set(true);
+    // A pinned kiosk snaps back to its view once everyone has walked away.
+    const pin = get(pinnedTab);
+    if (pin) activeTab.set(pin);
+    scheduleFlip();
+  }, RESUME_AFTER_IDLE_MS);
+}
+
 /** Begin the rotation loop. Returns a teardown function. */
 export function startRotation(): () => void {
   autoRotates.set(!isPhoneDisplay());
-  rotating.set(true);
-  scheduleFlip();
+  // Boot counts as activity — someone just opened or woke the page — so start
+  // attended and let the countdown promote the screen to unattended.
+  pauseRotation();
+  if (typeof document === "undefined" || !document.hidden) armResume();
   tickTimer = setInterval(() => {
     // Never flip while a detail is zoomed forward or a view holds rotation open
     // (an open overlay) — that would yank the card out from under whoever's
-    // reading or editing it.
+    // reading or editing it. A hidden page never flips either.
+    if (typeof document !== "undefined" && document.hidden) return;
     if (!get(rotating) || get(selection) != null || get(rotationHold)) return;
     const at = get(flipAt);
     if (at != null && Date.now() >= at) advance();
   }, 250);
+  // Time on another browser tab must not count toward the unattended
+  // countdown: freeze while hidden, restart the full countdown on reveal.
+  const onVisibility = () => {
+    if (document.hidden) pauseRotation();
+    else armResume();
+  };
+  if (typeof document !== "undefined")
+    document.addEventListener("visibilitychange", onVisibility);
   return () => {
+    if (typeof document !== "undefined")
+      document.removeEventListener("visibilitychange", onVisibility);
     if (tickTimer) clearInterval(tickTimer);
     if (resumeTimer) clearTimeout(resumeTimer);
     if (idleTimer) clearTimeout(idleTimer);
@@ -472,17 +508,9 @@ export function startRotation(): () => void {
  * immersive, self-advancing state once everyone walks away.
  */
 export function noteInteraction() {
-  rotating.set(false);
-  flipAt.set(null);
+  pauseRotation();
   idle.set(false);
-  if (resumeTimer) clearTimeout(resumeTimer);
-  resumeTimer = setTimeout(() => {
-    rotating.set(true);
-    // A pinned kiosk snaps back to its view once everyone has walked away.
-    const pin = get(pinnedTab);
-    if (pin) activeTab.set(pin);
-    scheduleFlip();
-  }, RESUME_AFTER_IDLE_MS);
+  armResume();
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
 }
@@ -501,14 +529,11 @@ export function togglePin(id: TabId) {
   const next = get(pinnedTab) === id ? null : id;
   pinnedTab.set(next);
   setPinnedTab(next);
-  if (next) {
-    activeTab.set(next);
-    rotating.set(false);
-  } else {
-    rotating.set(true);
-  }
-  // Re-arm (or, while pinned, clear) the flip timer to match the new state.
-  scheduleFlip();
+  if (next) activeTab.set(next);
+  // Either way the long-press itself was an interaction: stay paused and let
+  // noteInteraction's countdown bring rotation back once everyone walks away.
+  pauseRotation();
+  armResume();
 }
 
 /** 0…1 progress toward the next flip, for the header indicator. */
