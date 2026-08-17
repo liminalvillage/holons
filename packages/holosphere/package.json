@@ -63,6 +63,7 @@
     "handshake-shim.js",
     "nostr-events.js",
     "signing.js",
+    "relay-transport.js",
     "README.md",
     "SIGNING.md",
     "LICENSE",
@@ -81,7 +82,9 @@
     "./node": "./holosphere.js",
     "./nostr-events": "./nostr-events.js",
     "./nostr-events.js": "./nostr-events.js",
-    "./signing.js": "./signing.js"
+    "./signing.js": "./signing.js",
+    "./relay-transport": "./relay-transport.js",
+    "./relay-transport.js": "./relay-transport.js"
   },
   "repository": {
     "type": "git",

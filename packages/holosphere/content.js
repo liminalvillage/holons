@@ -673,9 +673,25 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 // read-side envelopes stripped) — the envelope must attest
                 // exactly what the raw store persists, or enforce-mode reads
                 // resurrect `_meta`/`_hologram`/`_federation` fields.
+                let signedEvent = null;
                 if (!isHologram && !isGlobal && !password && !options._skipSign && holoInstance._signer) {
-                    try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, dataToStore); }
+                    try { signedEvent = holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, dataToStore); }
                     catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
+                }
+                // Nostr backend: the relay is the wire — publish every
+                // non-private write, INCLUDING holograms and globals (which
+                // the signature layer deliberately skips). Reuses the signed
+                // envelope event when one was issued above so the wire
+                // carries exactly what the local envelope store attests.
+                // `_skipPublish` marks transport-ingested remote writes; never
+                // re-publish those (it would re-author them under our key).
+                if (!password && !options._skipPublish && holoInstance._relayTransport) {
+                    try {
+                        holoInstance._relayTransport.publishWrite(
+                            isGlobal ? null : targetHolon, targetLens, dataToStore,
+                            { key: targetKey, signedEvent }
+                        );
+                    } catch (e) { console.warn('[nostr] publish failed:', e?.message); }
                 }
                 dataPath.put(payload, putCallback);
             } catch (error) {

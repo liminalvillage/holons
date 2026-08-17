@@ -78,13 +78,32 @@ class HoloSphere {
                 this.client = { publicKey: '' };
             }
 
-            // Map nostr relay/peer config to GunDB peers
+            // `backend: 'nostr'` promotes the relay(s) to the wire — but only
+            // when relays are actually configured. Callers have passed
+            // `backend: 'nostr'` aspirationally since before the transport
+            // existed (bot, discord) while running on Gun's default peer;
+            // without relays we keep that behavior instead of stranding them
+            // on a peerless local cache.
             const relays = config.nostr?.relays || config.nostr?.peers || [];
-            if (relays.length > 0) {
+            this._backend = config.backend === 'nostr' && relays.length > 0 ? 'nostr' : 'gun';
+            if (config.backend === 'nostr' && this._backend !== 'nostr') {
+                console.warn("[holosphere] backend 'nostr' requested without config.nostr.relays — falling back to the gun backend");
+            }
+
+            // Map nostr relay/peer config to GunDB peers (gun backend only).
+            // In the nostr backend the relays ARE the wire: Gun stays a
+            // peerless local-first cache and all networking goes through
+            // relay-transport.js.
+            if (this._backend !== 'nostr' && relays.length > 0) {
                 const gunPeers = relays.map(r =>
                     r.replace('wss://', 'https://').replace('ws://', 'http://') + '/gun'
                 );
                 gunOptions = { peers: gunPeers, ...gunOptions };
+            }
+            if (this._backend === 'nostr' && gunOptions.peers === undefined && !config.gunOptions?.peers) {
+                // Peerless local cache: no gun peers, and no gun stats timer
+                // (it re-arms forever and would pin a finished Node process).
+                gunOptions = { peers: [], stats: false, ...gunOptions };
             }
 
             // Allow explicit Gun options (peers, file, radisk, …) in v2 config.
@@ -100,6 +119,7 @@ class HoloSphere {
             this.client = { publicKey: '' };
             this.strict = strict;
             this._privateKey = null;
+            this._backend = 'gun';
         }
 
         console.log('HoloSphere v' + HOLOSPHERE_VERSION);
@@ -171,14 +191,92 @@ class HoloSphere {
         // Only these are ever auto-restored after a drop.
         this._resilientPeers = new Set(Object.keys(this.gun?._?.opt?.peers || {}));
         this._setupConnectionResilience();
+
+        // Nostr backend: the relay is the wire (see relay-transport.js). Init
+        // is async (dynamic nostr-tools import + enableSigning), so kick it
+        // off here and have every read/write path await it via _awaitBackend.
+        this._relayTransport = null;
+        this._backendReady = null;
+        if (this._backend === 'nostr') {
+            this._backendReady = this._initNostrBackend()
+                .catch((e) => { console.warn('[holosphere] nostr backend init failed:', e?.message); });
+        }
+    }
+
+    // ============================ NOSTR BACKEND ============================
+    //
+    // `backend: 'nostr'` promotes the Nostr relay(s) to the system's wire:
+    // Gun runs peerless as the local-first cache, every non-private write is
+    // published as a signed NIP-01 event, and reads/subscriptions live-sync
+    // each (holon, lens) from the relay. The signing layer runs envelope-only
+    // (relays: []) so verification/enforce works exactly as before while the
+    // transport is the single publisher.
+
+    async _initNostrBackend() {
+        const cfg = this.config || {};
+        const relays = cfg.nostr?.relays || cfg.nostr?.peers || [];
+        if (!relays.length) throw new Error("backend 'nostr' requires config.nostr.relays");
+        if (!this._privateKey) {
+            const { generateSecretKey } = await import('./nostr-events.js');
+            this._privateKey = generateSecretKey();
+            this.client = { publicKey: this._derivePubKey(this._privateKey) };
+            console.warn('[holosphere] nostr backend: no privateKey configured — generated an ephemeral device key', this.client.publicKey);
+        }
+        // Envelope-only signing: local `_events` attestation + shadow/enforce
+        // still work, but the signer never publishes (the transport does, so
+        // nothing goes out twice). The signer is created DIRECTLY (not via
+        // enableSigning) because enableSigning hydrates the federation
+        // read-list with data reads, and every data read awaits this very
+        // init — hydration runs in the background right after instead.
+        const signing = cfg.signing || {};
+        const { createSigner } = await import('./signing.js');
+        this._readSpace = this.client?.publicKey || this.appname;
+        this._signer = await createSigner({
+            privateKey: this._privateKey,
+            relays: [],
+            storeEnvelope: true,
+            shadow: signing.shadow,
+            enforce: signing.enforce,
+            perActorLenses: signing.perActorLenses,
+            verbose: signing.verbose,
+        });
+        const { createRelayTransport } = await import('./relay-transport.js');
+        this._relayTransport = createRelayTransport(this, {
+            relays,
+            privateKey: this._privateKey,
+            syncTimeoutMs: cfg.nostr?.syncTimeoutMs,
+            verbose: signing.verbose || cfg.nostr?.verbose,
+        });
+        // Read-list hydration AFTER init settles: goes through the normal
+        // (backend-awaiting) read path, so it can even pull the saved
+        // federation list over the relay.
+        Promise.resolve().then(() => this._hydrateReadKeys()).catch(() => { /* nothing saved yet */ });
+    }
+
+    /** Await nostr-backend init before touching data (no-op on gun backend). */
+    async _awaitBackend() {
+        if (this._backendReady) {
+            await this._backendReady; // never rejects (constructor attaches catch)
+        }
+    }
+
+    /** Live-sync a (holon, lens) from the relay before/alongside a read. */
+    _relaySync(holon, lens, { await: awaited = false } = {}) {
+        const t = this._relayTransport;
+        if (!t) return awaited ? Promise.resolve() : undefined;
+        const p = t.ensureSync(holon, lens);
+        if (awaited) return p.catch(() => { /* relay unreachable — read local */ });
+        p.catch(() => { /* fire-and-forget */ });
     }
 
     /**
      * Waits for the HoloSphere instance to be ready.
-     * GunDB connects eagerly, so this resolves immediately.
+     * GunDB connects eagerly, so this resolves immediately on the gun
+     * backend; the nostr backend resolves once the relay transport is up.
      * @returns {Promise<HoloSphere>} - The ready instance
      */
     async ready() {
+        await this._awaitBackend();
         return this;
     }
 
@@ -348,6 +446,10 @@ class HoloSphere {
             // v1-style: 4th arg is password string
             password = passwordOrOptions;
         }
+        await this._awaitBackend();
+        // Writing implies interest — open the live relay sync for this lens
+        // (fire-and-forget; the put itself publishes via content.js).
+        if (!password) this._relaySync(holon, lens);
         return ContentOps.put(this, holon, lens, data, password, options);
     }
 
@@ -358,6 +460,11 @@ class HoloSphere {
      *   v2: get(holon, lens) or get(holon, lens, key)
      */
     async get(holon, lens, key = null, password = null, options = {}) {
+        await this._awaitBackend();
+        // Nostr backend: catch up this lens from the relay before reading, so
+        // a cold read sees the wire's current state (bounded by the sync
+        // timeout — an unreachable relay degrades to a local read).
+        if (!password) await this._relaySync(holon, lens, { await: true });
         if (key === null || key === undefined) {
             // v2-style 2-arg call: get entire lens (return first/only item).
             // Route through this.getAll so the signing layer resolves it.
@@ -394,6 +501,8 @@ class HoloSphere {
      * items for auth/ownership — they're for display only.
      */
     async getAll(holon, lens, password = null, options = {}) {
+        await this._awaitBackend();
+        if (!password) await this._relaySync(holon, lens, { await: true });
         const items = await ContentOps.getAll(this, holon, lens, password, options);
         // Private (password) reads bypass the signing layer entirely — see get().
         const signer = this._signer;
@@ -438,16 +547,24 @@ class HoloSphere {
     }
 
     async delete(holon, lens, key, password = null, options = {}) {
+        await this._awaitBackend();
         // Signed delete: authenticate the removal with a signed tombstone so an
         // unauthorized key can't drop your data from the resolved view, and so a
         // per-actor record (participation, …) can be retracted by its owner.
+        let tombstone = null;
         if (this._signer && holon && !options._skipSign) {
-            try { await this._signer.onDelete(this, holon, lens, key); } catch { /* best-effort */ }
+            try { tombstone = await this._signer.onDelete(this, holon, lens, key); } catch { /* best-effort */ }
+        }
+        // Nostr backend: the delete travels the wire as a signed tombstone
+        // event (globals included — the signer above only covers holon paths).
+        if (this._relayTransport && !password && !options._skipPublish) {
+            try { this._relayTransport.publishDelete(holon, lens, key, tombstone); } catch { /* best-effort */ }
         }
         return ContentOps.deleteFunc(this, holon, lens, key, password);
     }
 
     async deleteAll(holon, lens, password = null, options = {}) {
+        await this._awaitBackend();
         // Signed bulk delete: tombstone every id first (mirrors delete()) so an
         // enforce-mode reader can't resurrect the lens from leftover envelopes.
         // Private (password) lenses are never signed, so there's nothing to
@@ -466,9 +583,14 @@ class HoloSphere {
                         for (const it of view || []) if (it && it.id != null) ids.add(String(it.id));
                     } catch { /* best-effort */ }
                 }
-                await Promise.all([...ids].map((id) =>
-                    Promise.resolve(this._signer.onDelete(this, holon, lens, id)).catch(() => {})
-                ));
+                await Promise.all([...ids].map(async (id) => {
+                    try {
+                        const tombstone = await this._signer.onDelete(this, holon, lens, id);
+                        if (this._relayTransport && !options._skipPublish) {
+                            this._relayTransport.publishDelete(holon, lens, id, tombstone);
+                        }
+                    } catch { /* best-effort */ }
+                }));
             } catch { /* best-effort, mirror delete() */ }
         }
         return ContentOps.deleteAll(this, holon, lens, password);
@@ -545,6 +667,9 @@ class HoloSphere {
         } else {
             key = keyOrCallback;
             callback = callbackOrOptions;
+        }
+        if (this._backendReady) {
+            this._backendReady.then(() => this._relaySync(null, lens)).catch(() => {});
         }
         return GlobalOps.subscribeGlobal(this, lens, key, callback, options);
     }
@@ -627,6 +752,12 @@ class HoloSphere {
      * `const s = await holosphere.subscribe(...)` yield the same shape.
      */
     subscribe(holon, lens, callback, options = {}) {
+        // Nostr backend: open the live relay sync for this lens so remote
+        // events flow into the local graph and fire this subscription. The
+        // gun-side listener attaches synchronously below either way.
+        if (this._backendReady) {
+            this._backendReady.then(() => this._relaySync(holon, lens)).catch(() => {});
+        }
         const signer = this._signer;
         const annotate = !!options.includeUnverified;
         // In enforce mode, resolve each update through the signing layer so
@@ -1288,6 +1419,8 @@ class HoloSphere {
             clearInterval(this._heartbeatTimer);
             this._heartbeatTimer = null;
         }
+        try { this._relayTransport?.close(); } catch { /* ignore */ }
+        this._relayTransport = null;
         return Utils.close(this);
     }
 

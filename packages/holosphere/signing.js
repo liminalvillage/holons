@@ -189,7 +189,12 @@ export async function createSigner({
 
     /** Build, store (envelope), and optionally relay-publish a signed event. */
     async signAndStore(holo, holon, lens, item, { at, publish = true } = {}) {
-      const event = buildEvent({ holon, lens, item, sk: privateKey, kind, created_at: at });
+      const event = buildEvent({
+        holon, lens, item, sk: privateKey, kind, created_at: at,
+        // `n` scopes events to one app namespace on a shared relay (see
+        // relay-transport.js); harmless extra tag everywhere else.
+        extraTags: holo ? [['n', holo.appname]] : [],
+      });
       let ok = 0;
       if (publish && relayList.length) {
         const r = await Promise.allSettled(pool.publish(relayList, event));
@@ -209,7 +214,12 @@ export async function createSigner({
       try {
         if (!item || !item.id) return null;
         if (!relayList.length && !envelope) return null;
-        const event = buildEvent({ holon, lens, item, sk: privateKey, kind });
+        const event = buildEvent({
+          holon, lens, item, sk: privateKey, kind,
+          // Namespace tag — lets the relay transport filter a shared relay
+          // down to this app's events. See relay-transport.js.
+          extraTags: holo ? [['n', holo.appname]] : [],
+        });
         if (envelope && holo) {
           // issued synchronously — lands in Gun's in-memory graph before the raw write
           itemNode(holo, holon, lens, item.id).get(event.pubkey).put(JSON.stringify(event));

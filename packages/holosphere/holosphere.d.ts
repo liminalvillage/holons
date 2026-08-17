@@ -236,12 +236,27 @@ interface HoloSphereConfig {
   appname?: string;
   privateKey?: Uint8Array | string | null;
   strict?: boolean;
+  /** 'gun' (default) or 'nostr' — with 'nostr' the relay(s) are the wire and
+   *  Gun runs peerless as the local-first cache (see relay-transport.js). */
   backend?: string;
   openaiKey?: string | null;
+  gunOptions?: Record<string, any>;
   nostr?: {
     peers?: string[];
     relays?: string[];
     persistence?: boolean;
+    /** Cold-read catch-up deadline for backend 'nostr' (ms, default 5000). */
+    syncTimeoutMs?: number;
+    verbose?: boolean;
+  };
+  /** Signing-layer options applied by backend 'nostr' init (shadow/enforce/
+   *  perActorLenses/verbose — relays are always [] there; the transport
+   *  publishes). */
+  signing?: {
+    shadow?: boolean;
+    enforce?: boolean | 'membership';
+    perActorLenses?: string[];
+    verbose?: boolean;
   };
 }
 
