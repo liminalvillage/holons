@@ -331,7 +331,44 @@
   // read (getAll) pulls the missed state — the same recovery a manual reload
   // performs, without the reload.
   const ECHO_GRACE_MS = 3000;
+  // A fresh subscription replays the lens it just bound, so it always emits
+  // within a beat — silence past this means the rebind never attached.
+  const REBIND_ECHO_MS = 5000;
+  // holosphere's post-fire-storm quarantine cooldown (30s), plus a beat.
+  const QUARANTINE_COOLDOWN_MS = 31000;
   let lastRebindAt = 0;
+
+  function rebindAll() {
+    boundHolon = null; // force refresh() to tear down and re-subscribe
+    refresh(
+      get(holonIdStore),
+      get(federated),
+      get(libraryPref) !== "off",
+      get(rolesPref) !== "off",
+      get(checklistsPref) !== "off",
+    );
+  }
+
+  /**
+   * A rebind can be REFUSED. When holosphere quarantines a lens after a
+   * fire-storm it turns every re-subscribe into a no-op for a cooldown, so the
+   * heal above silently does nothing and the board stays frozen until someone
+   * reloads it. Watch for the replay the new subscription owes us and, if it
+   * never comes, try once more past the cooldown.
+   */
+  function verifyRebind(lens: keyof typeof lensEmitAt, at: number) {
+    setTimeout(() => {
+      if (lensEmitAt[lens] >= at) return; // the rebind attached
+      console.error(
+        `[kiosk] rebind of '${lens}' did not attach (lens quarantined?) — retrying after the cooldown`,
+      );
+      setTimeout(() => {
+        if (lensEmitAt[lens] >= at) return;
+        lastRebindAt = Date.now();
+        rebindAll();
+      }, QUARANTINE_COOLDOWN_MS);
+    }, REBIND_ECHO_MS);
+  }
 
   function onLocalWrite(e: Event) {
     const d = (e as CustomEvent).detail as
@@ -358,14 +395,8 @@
         `[kiosk] live '${lens}' subscription missed a local write — rebinding all lens subscriptions`,
       );
       showNotice(tr("layout.resync"));
-      boundHolon = null; // force refresh() to tear down and re-subscribe
-      refresh(
-        get(holonIdStore),
-        get(federated),
-        get(libraryPref) !== "off",
-        get(rolesPref) !== "off",
-        get(checklistsPref) !== "off",
-      );
+      rebindAll();
+      verifyRebind(lens, at);
     }, ECHO_GRACE_MS);
   }
 
