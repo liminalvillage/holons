@@ -13,6 +13,15 @@ function resolvePeer(): string {
   return process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 }
 
+// Nostr backend opt-in: HOLOSPHERE_BACKEND=nostr + HOLOSPHERE_RELAYS=wss://…
+// promotes the relay(s) to the wire (Gun runs peerless as the local cache —
+// see packages/holosphere/relay-transport.js). Without both, the classic gun
+// peer path below is used.
+function resolveRelays(): string[] {
+  return (process.env.HOLOSPHERE_RELAYS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 let hs: any;
 // The app the live instance was built with — frozen at construction so getApp()
 // always agrees with the connected graph even if env changes afterwards.
@@ -23,8 +32,19 @@ export async function getHoloSphere(): Promise<any> {
   resolvedApp = resolveApp();
   const mod: any = await import('holosphere');
   const HoloSphere = mod.HoloSphere || mod.default;
-  hs = new HoloSphere(resolvedApp, false, null, { peers: [resolvePeer()] });
-  await new Promise((r) => setTimeout(r, 1500));
+  const relays = resolveRelays();
+  if ((process.env.HOLOSPHERE_BACKEND || '').toLowerCase() === 'nostr' && relays.length) {
+    hs = new HoloSphere({
+      appName: resolvedApp,
+      backend: 'nostr',
+      privateKey: process.env.HOLOSPHERE_PRIVATE_KEY || null,
+      nostr: { relays },
+    });
+    await hs.ready();
+  } else {
+    hs = new HoloSphere(resolvedApp, false, null, { peers: [resolvePeer()] });
+    await new Promise((r) => setTimeout(r, 1500));
+  }
   return hs;
 }
 

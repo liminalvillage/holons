@@ -101,12 +101,17 @@ Under the hood it runs on **GunDB**, not raw Nostr:
 
 - Default Gun peer: `https://gun.holons.io/gun`. In the browser, `radisk`
   persistence is on and `localStorage` is disabled.
-- Any `nostr: { relays | peers }` URLs are rewritten to Gun HTTP peers:
-  `wss://host` → `https://host/gun` (and `ws://` → `http://`).
-- Today's transport is therefore GunDB graph sync; the Nostr config surface
-  is a forward-compatibility seam for a future Nostr-relay backend (the web
-  app keeps that path commented out in
-  `apps/web/src/routes/+layout.svelte`).
+- On the default gun backend, any `nostr: { relays | peers }` URLs are
+  rewritten to Gun HTTP peers: `wss://host` → `https://host/gun` (and
+  `ws://` → `http://`).
+- **Nostr backend** (`backend: 'nostr'` + `nostr.relays`): the relay IS the
+  wire. Gun runs peerless as the local-first cache; every non-private write
+  is published as a signed NIP-01 event and every read/subscription
+  live-syncs its `(holon, lens)` from the relay. See
+  `packages/holosphere/NOSTR-BACKEND.md`. Opt in per surface:
+  web `VITE_HOLOSPHERE_BACKEND=nostr` + `VITE_HOLOSPHERE_RELAYS=…`,
+  bot `HOLOSPHERE_RELAYS=…`, mcp `HOLOSPHERE_BACKEND=nostr` +
+  `HOLOSPHERE_RELAYS=…`. Without relays the flag falls back to gun.
 
 ### Namespacing and identity
 

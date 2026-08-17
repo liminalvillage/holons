@@ -478,12 +478,36 @@
 		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
 		// render). `awaitReady: true` returns the instance after ready()
 		// has resolved, which is a no-op in alpha7 but keeps the contract.
+		// Backend selection:
+		//   VITE_HOLOSPHERE_BACKEND = gun (default) | nostr
+		//   VITE_HOLOSPHERE_RELAYS  = comma-separated wss:// relay URLs
+		// With `nostr`, the relay(s) are the wire: Gun runs peerless as the
+		// local-first cache and every read/write/subscription syncs over the
+		// Nostr relay (holosphere relay-transport). Requires relays; holosphere
+		// falls back to the gun backend (with a console warning) without them.
+		const backendEnv = (import.meta.env.VITE_HOLOSPHERE_BACKEND || 'gun').toLowerCase();
+		const backendRelays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
+			.split(',').map((r: string) => r.trim()).filter(Boolean);
+		// On the nostr backend, shadow/enforce flow through the constructor
+		// (the backend init owns the signer, envelope-only); the manual
+		// enableSigning call below stays gun-backend-only.
+		const signingModeEnv = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
 		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
 			awaitReady: true,
-			// Holosphere 2: pass `backend: 'nostr'` + `extra: { nostr: { peers: [...] } }`
-			// once the Nostr backend lands.
+			...(backendEnv === 'nostr'
+				? {
+					backend: 'nostr',
+					extra: {
+						nostr: { relays: backendRelays },
+						signing: {
+							shadow: signingModeEnv === 'shadow',
+							enforce: signingModeEnv === 'enforce',
+						},
+					},
+				}
+				: {}),
 		});
 
 		// Log the public key for verification
@@ -502,7 +526,7 @@
 		//            federation read-list (VITE_HOLOSPHERE_READ_KEYS / addReadKey).
 		//            Your own key is always trusted.
 		// Guarded so it's a no-op on holosphere builds without signing.
-		const signingMode = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
+		const signingMode = signingModeEnv;
 		// Install console debug/repair helpers (__del / __nuke / __repairCircular /
 		// __signingReport) regardless of signing mode, then enable signing only when
 		// it's actually on. The repair helpers operate at the raw Gun layer and must
@@ -515,7 +539,10 @@
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
 				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				if (signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
+				// Gun backend only: the nostr backend already enabled its own
+				// envelope-only signer during init (re-enabling here would
+				// bolt on a second publisher next to the relay transport).
+				if (backendEnv !== 'nostr' && signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
 					await (holosphere as any).enableSigning({
 						relays,
 						readKeys,
@@ -523,6 +550,13 @@
 						enforce: signingMode === 'enforce',
 					});
 					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
+				}
+				// Nostr backend: signer is already up (envelope-only) — just
+				// seed the read-list from env for enforce mode.
+				if (backendEnv === 'nostr' && readKeys.length && typeof (holosphere as any).addReadKey === 'function') {
+					for (const k of readKeys) {
+						try { await (holosphere as any).addReadKey(k); } catch { /* bad key format */ }
+					}
 				}
 				if (typeof window !== 'undefined') {
 					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();

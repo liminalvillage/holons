@@ -52,7 +52,7 @@ export default function createHoloSphere(appName, options = {}) {
     privateKey: pkOverride,
     backend,
     logLevel,
-    relays: _ignoredRelays,
+    relays: relaysOption,
     ...extra
   } = options;
   const privateKey =
@@ -60,16 +60,25 @@ export default function createHoloSphere(appName, options = {}) {
     process.env.HOLOSPHERE_PRIVATE_KEY ||
     getOrCreateKey(resolvedAppName, generatePrivateKey);
 
-  // NOTE: `relays` here is intentionally NOT forwarded — holosphere 1.3
-  // ignores top-level `relays` and only consumes `nostr.relays`. The bot
-  // historically passed it as a hint and ran on Gun's default peer; pass
-  // `extra: { nostr: { relays: [...] } }` if/when migrating to nostr.
+  // Backend selection: `backend: 'nostr'` only ACTIVATES the relay transport
+  // when relays are configured (holosphere falls back to the gun backend
+  // otherwise, preserving the bot's historical behavior). Opt in by setting
+  //   HOLOSPHERE_RELAYS=wss://relay.holons.io[,wss://…]
+  // in the environment (or passing options.relays) — then the relay is the
+  // wire: Gun runs peerless as the local cache and every read/write syncs
+  // over Nostr. See packages/holosphere/relay-transport.js.
+  const relays = (Array.isArray(relaysOption) && relaysOption.length
+    ? relaysOption
+    : (process.env.HOLOSPHERE_RELAYS || '').split(',').map((r) => r.trim()).filter(Boolean));
   return coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
     backend: backend || 'nostr',
     logLevel: logLevel || 'INFO',
-    extra,
+    extra: {
+      ...(relays.length ? { nostr: { relays } } : {}),
+      ...extra,
+    },
   });
 }
 
