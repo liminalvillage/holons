@@ -22,6 +22,16 @@ export interface WriteWithIdentityOptions {
   onDenied?: (info: WriteDeniedInfo) => void;
   /** Suppress the `onDenied` callback for this call (errors still logged). */
   silent?: boolean;
+  /**
+   * Write to the given holon/key even when a hologram already sits there.
+   *
+   * HoloSphere normally follows a hologram — a record mirrored here BY
+   * REFERENCE — and redirects the write to the source holon, which is what
+   * editing a federated record should do. Un-mirroring is the exception: the
+   * pointer itself is the thing being changed, so the write has to land on the
+   * local key instead of chasing it to someone else's graph.
+   */
+  disableHologramRedirection?: boolean;
 }
 
 /** Information passed to {@link WriteWithIdentityOptions.onDenied}. */
@@ -56,7 +66,10 @@ export async function writeWithIdentity(
   const actingAs = await resolveActingAs(options.actingAs ?? null);
 
   try {
-    await holosphere.put(holonId, lensName, data as object, { actingAs } as any);
+    await holosphere.put(holonId, lensName, data as object, {
+      actingAs,
+      ...(options.disableHologramRedirection ? { disableHologramRedirection: true } : {}),
+    } as any);
     return true;
   } catch (error: any) {
     if (isAuthError(error)) {
@@ -83,7 +96,11 @@ export async function writeWithIdentity(
 
 /** A pre-bound writer for repeated writes against a single holon. */
 export interface HolonWriter {
-  put(lensName: string, data: unknown, options?: { silent?: boolean }): Promise<boolean>;
+  put(
+    lensName: string,
+    data: unknown,
+    options?: { silent?: boolean; disableHologramRedirection?: boolean }
+  ): Promise<boolean>;
   canWrite(lensName: string): Promise<boolean>;
 }
 
@@ -103,6 +120,7 @@ export function createHolonWriter(
         actingAs: options.actingAs,
         onDenied: options.onDenied,
         silent: callOpts?.silent,
+        disableHologramRedirection: callOpts?.disableHologramRedirection,
       }),
 
     canWrite: (lensName) => canWriteToHolon(holosphere, holonId, lensName, options.actingAs ?? null),
