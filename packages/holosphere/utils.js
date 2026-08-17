@@ -69,7 +69,19 @@ const SUBSCRIBE_WARN_THRESHOLD = 64;
 // circular hologram makes Gun re-emit it without bound), detach every listener
 // on that lens and refuse to re-subscribe for QUARANTINE_COOLDOWN_MS so the tab
 // recovers and cleanup tools (__repairCircular) stop being starved.
+//
+// SUSTAINED, though — one loud second is not a runaway. Resolving a hologram
+// reads its source, and those reads make Gun re-emit the whole lens, so a lens
+// carrying dozens of healthy pointers bursts far past the threshold while it
+// settles at boot (a personal holon with 38 mirrored quests measured 2500/s for
+// one second, then quiet — and got quarantined for it, freezing the board until
+// reload). Only quarantine when the lens is STILL over the threshold
+// QUARANTINE_GRACE_MS after the burst began; a burst that dips back under is a
+// lens settling, not a cycle. Both are overridable per instance
+// (`__quarantineFireThreshold` / `__quarantineGraceMs`) so tests can drive the
+// breaker without generating thousands of fires.
 const QUARANTINE_FIRE_THRESHOLD = 2500;
+const QUARANTINE_GRACE_MS = 3000;
 const QUARANTINE_COOLDOWN_MS = 30000;
 
 export function subscribe(holoInstance, holon, lens, callback, options = {}) {
@@ -183,7 +195,7 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
 
         let group = holoInstance._subscriptionGroups.get(groupKey);
         if (!group) {
-            group = { holon, lens, ids: new Set(), warnThreshold: SUBSCRIBE_WARN_THRESHOLD, fires: [] };
+            group = { holon, lens, ids: new Set(), warnThreshold: SUBSCRIBE_WARN_THRESHOLD, fires: [], stormSince: 0 };
             holoInstance._subscriptionGroups.set(groupKey, group);
         }
         group.ids.add(subscriptionId);
@@ -225,23 +237,36 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
             const gfw = group.fires;
             gfw.push(__fnow);
             if (gfw.length > 64) { while (gfw.length && __fnow - gfw[0] > 1000) gfw.shift(); }
-            if (gfw.length > QUARANTINE_FIRE_THRESHOLD) {
-                // Sustained storm on THIS lens: detach every listener on it and mark
-                // it quarantined so re-subscribes are refused for a cooldown. The tab
-                // recovers and the lens read in __repairCircular stops being starved.
-                holoInstance.__onFireWarnedAt = __fnow; // also quiets the enforce wrapper
-                holoInstance.__quarantined ||= new Map();
-                holoInstance.__quarantined.set(groupKey, __fnow);
-                const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
-                console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s) — QUARANTINING this lens (detaching listeners). Almost certainly a circular hologram; run __repairCircular('${holon}','${lens}') or __nuke the bad pointer, then reload. Stack:\n${__st}`);
-                for (const id of [...group.ids]) {
-                    const sub = holoInstance.subscriptions[id];
-                    try { sub && sub.mapChain && sub.mapChain.off(); } catch { /* ignore */ }
-                    delete holoInstance.subscriptions[id];
+            const fireLimit = holoInstance.__quarantineFireThreshold ?? QUARANTINE_FIRE_THRESHOLD;
+            const graceMs = holoInstance.__quarantineGraceMs ?? QUARANTINE_GRACE_MS;
+            if (gfw.length > fireLimit) {
+                // Over the threshold. Note when the burst started and let the lens
+                // keep working — a hologram-heavy lens roars like this while it
+                // settles and then goes quiet on its own.
+                group.stormSince ||= __fnow;
+                if (__fnow - group.stormSince >= graceMs) {
+                    // Still raging a whole grace window later: a genuine runaway.
+                    // Detach every listener on this lens and mark it quarantined so
+                    // re-subscribes are refused for a cooldown. The tab recovers and
+                    // the lens read in __repairCircular stops being starved.
+                    holoInstance.__onFireWarnedAt = __fnow; // also quiets the enforce wrapper
+                    holoInstance.__quarantined ||= new Map();
+                    holoInstance.__quarantined.set(groupKey, __fnow);
+                    const __st = (new Error().stack || '').split('\n').slice(2, 8).join('\n');
+                    console.error(`[subscribe] FIRE-STORM on ${holon}/${lens} (${gfw.length}/s, sustained ${__fnow - group.stormSince}ms) — QUARANTINING this lens (detaching listeners). Usually a circular hologram; run __repairCircular('${holon}','${lens}') or __nuke the bad pointer, then reload. Stack:\n${__st}`);
+                    for (const id of [...group.ids]) {
+                        const sub = holoInstance.subscriptions[id];
+                        try { sub && sub.mapChain && sub.mapChain.off(); } catch { /* ignore */ }
+                        delete holoInstance.subscriptions[id];
+                    }
+                    group.ids.clear();
+                    holoInstance._subscriptionGroups.delete(groupKey);
+                    return;
                 }
-                group.ids.clear();
-                holoInstance._subscriptionGroups.delete(groupKey);
-                return;
+            } else if (group.stormSince) {
+                // Dipped back under inside the grace window — the lens settled, so
+                // the next burst starts its own clock rather than inheriting this one.
+                group.stormSince = 0;
             }
             const __fw = (holoInstance.__onFireWindow ||= []);
             __fw.push(__fnow);
