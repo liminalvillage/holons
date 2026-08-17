@@ -653,10 +653,37 @@
     // "Untitled" phantom — re-triggering the FLIP reshuffle indefinitely. A
     // tombstone is a stable object that both `isDone` and the lens aggregator
     // drop cleanly, so the card just leaves.
-    const tombstone: Record<string, unknown> = { ...sel.quest, _deleted: true };
-    delete tombstone._holon; // UI-only federation tag — never persist it
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", tombstone);
+    //
+    // WHERE it lands depends on where the card actually lives:
+    //   - a hologram (a joined task mirrored into this holon as a pointer) is
+    //     deleted HERE — dropping our mirror, not the source holon's task. The
+    //     write must say so: HoloSphere otherwise follows the pointer, so the
+    //     tombstone would soft-delete the original for everyone while our
+    //     pointer — and the card — stayed exactly where it was.
+    //   - a federation-aggregated card has no local node at all; it lives in
+    //     its owner's lens, so the tombstone goes there (same routing as
+    //     `saveThing`) or it forks a stray local copy and the card stays.
+    //   - our own task: written in place, as before.
+    const localId = String(sel.quest.id ?? sel.quest.title);
+    const mirrored = isHologram(sel.quest);
+    const ref = mirrored ? undefined : sourceRef(sel.quest, localId);
+    const tombstone: Record<string, unknown> = {
+      ...sel.quest,
+      id: ref?.key ?? localId,
+      _deleted: true,
+    };
+    // Read-side provenance tags — never persist them (and `_hologram` would
+    // re-route this very write to the source holon).
+    delete tombstone._holon;
+    delete tombstone._hologram;
+    delete tombstone._federation;
+    const writer = await getWriter(
+      ref?.holon ?? $holonId,
+      (m) => (message = m),
+    );
+    const ok = await writer.put("quests", tombstone, {
+      disableHologramRedirection: mirrored,
+    });
     saving = false;
     if (ok) closeDetail();
     else if (!message) message = $t("detail.deleteFailed");
