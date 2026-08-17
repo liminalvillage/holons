@@ -13,6 +13,7 @@
   // What's left — and all this file adds — is the canvas: fit-to-screen for
   // an unattended display, plus drag to pan and pinch/wheel to zoom for
   // someone standing at it.
+  import { onDestroy } from "svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
@@ -60,6 +61,12 @@
   const NODE_W = 168;
   const NODE_H = 92;
   const COL_GAP = 26;
+  /**
+   * Gap between different breakdowns sharing a row — wide enough that a long
+   * full row (root's steps next to two other tasks' steps) separates into
+   * visible clusters instead of one packed strip.
+   */
+  const CLUSTER_GAP = 78;
   const ROW_GAP = 74; // the band the arrows are drawn through
   /** Breathing room between the canvas and the viewport edges when fitted. */
   const PAD = 26;
@@ -75,6 +82,10 @@
   const MAX_FIT = 1.5;
   /** Pointer travel (px) that turns a tap into a pan, so a drag never opens. */
   const TAP_SLOP = 6;
+  /** How close to a viewport edge a drag must hover to start auto-panning. */
+  const EDGE_ZONE = 56;
+  /** Auto-pan speed at the very edge, in screen px per frame. */
+  const EDGE_SPEED = 16;
 
   // ── Arrangement ────────────────────────────────────────────────────────────
   $: edges = tasks.flatMap((task) =>
@@ -89,6 +100,7 @@
     nodeH: NODE_H,
     colGap: COL_GAP,
     rowGap: ROW_GAP,
+    clusterGap: CLUSTER_GAP,
   });
   $: byId = new Map(tasks.map((task) => [task.id, task] as const));
   // Canvas order = the layout's own (layers top→bottom), so the DOM order
@@ -174,7 +186,9 @@
   // underneath — "this has to happen before that" — so the dragged card ends
   // up drawn above its new dependent.
   // `grab` is the press before it has travelled far enough to count as a drag.
-  let grab: { task: BacklogTask; x: number; y: number } | null = null;
+  // The anchor is kept in CANVAS coordinates, so a view that moves mid-drag
+  // (the edge auto-pan) never tears the card away from the finger.
+  let grab: { task: BacklogTask; cx: number; cy: number } | null = null;
   let link: {
     task: BacklogTask;
     /** Live offset from the node's laid-out box, in CANVAS px. */
@@ -186,6 +200,113 @@
     /** Over the drawer instead — dropping there cuts the card loose. */
     overDrawer: boolean;
   } | null = null;
+
+  // ── Edge auto-pan ──────────────────────────────────────────────────────────
+  // Carrying a card (or a drawer chip) to a viewport edge slides the canvas
+  // the other way, so a drop target that's off-screen can be reached without
+  // letting go. Over the drawer the same hover scrolls the chip list instead,
+  // for a chip that's scrolled out of view. Runs on rAF while a drag is live;
+  // the finger stays put, the surface moves, and the lifted card is
+  // re-anchored each frame so it never slips out from under the pointer.
+  let edgeRaf = 0;
+  /** The drag pointer's last screen position — what the pan steers by. */
+  let dragClient: { x: number; y: number } | null = null;
+  /** The drawer's scrolling chip list — the auto-scroll target. */
+  let trayItems: HTMLElement | undefined;
+
+  function armEdgePan() {
+    if (!edgeRaf) edgeRaf = requestAnimationFrame(edgePanStep);
+  }
+
+  /** 0 outside the edge zone, ramping to 1 at the very edge. */
+  const ramp = (d: number) => clamp((EDGE_ZONE - d) / EDGE_ZONE, 0, 1);
+
+  function edgePanStep() {
+    edgeRaf = 0;
+    const dragging =
+      link != null || (chip != null && chip.travelled > TAP_SLOP);
+    if (!vp || !dragClient || !dragging) return;
+    armEdgePan();
+    if (edgeScrollTray()) return;
+    const r = vp.getBoundingClientRect();
+    // Outside the viewport the pointer is aiming at the drawer, not the board.
+    if (
+      dragClient.x < r.left ||
+      dragClient.x > r.right ||
+      dragClient.y < r.top ||
+      dragClient.y > r.bottom ||
+      link?.overDrawer
+    )
+      return;
+    const px =
+      EDGE_SPEED * (ramp(dragClient.x - r.left) - ramp(r.right - dragClient.x));
+    const py =
+      EDGE_SPEED * (ramp(dragClient.y - r.top) - ramp(r.bottom - dragClient.y));
+    if (!px && !py) return;
+    const v = userView ?? fitted;
+    const nv = { s: v.s, tx: v.tx + px, ty: v.ty + py };
+    userView = nv;
+    if (link && grab)
+      link = {
+        ...link,
+        // Re-anchor to the stationary finger under the moved view.
+        dx: (dragClient.x - r.left - nv.tx) / nv.s - grab.cx,
+        dy: (dragClient.y - r.top - nv.ty) / nv.s - grab.cy,
+      };
+    retarget();
+  }
+
+  /**
+   * The drawer's share of the edge behavior: hovering a drag near the end of
+   * the chip list scrolls it (sideways as a bottom bar, lengthways as a
+   * sidebar — the axis that doesn't overflow just ignores the nudge). True
+   * while the pointer is over the drawer, whether or not it scrolled, so the
+   * canvas never pans underneath the drawer.
+   */
+  function edgeScrollTray(): boolean {
+    if (!trayItems || !dragClient) return false;
+    const r = trayItems.getBoundingClientRect();
+    if (
+      dragClient.x < r.left ||
+      dragClient.x > r.right ||
+      dragClient.y < r.top ||
+      dragClient.y > r.bottom
+    )
+      return false;
+    const sx =
+      EDGE_SPEED * (ramp(r.right - dragClient.x) - ramp(dragClient.x - r.left));
+    const sy =
+      EDGE_SPEED * (ramp(r.bottom - dragClient.y) - ramp(dragClient.y - r.top));
+    if (sx || sy) {
+      const before = trayItems.scrollLeft + trayItems.scrollTop;
+      trayItems.scrollLeft += sx;
+      trayItems.scrollTop += sy;
+      // A chip may have slid under the stationary finger — re-aim the drop.
+      if (trayItems.scrollLeft + trayItems.scrollTop !== before) retarget();
+    }
+    return true;
+  }
+
+  /** The board slid under a stationary pointer — re-aim the drop. */
+  function retarget() {
+    if (!dragClient) return;
+    const over = cardAt(dragClient.x, dragClient.y);
+    if (link) {
+      link = {
+        ...link,
+        over: over && over.id !== link.task.id ? over : null,
+        ok:
+          !!over && over.id !== link.task.id && canLink(over.id, link.task.id),
+        overDrawer: overDrawerAt(dragClient.x, dragClient.y),
+      };
+    } else if (chip) {
+      chip = { ...chip, over, ok: !!over && canLink(over.id, chip.task.id) };
+    }
+  }
+
+  onDestroy(() => {
+    if (edgeRaf) cancelAnimationFrame(edgeRaf);
+  });
 
   function local(e: PointerEvent): { x: number; y: number } {
     const r = vp?.getBoundingClientRect();
@@ -236,7 +357,8 @@
       const task = hit ? byId.get(hit) : undefined;
       if (task) {
         // Started on a card: this gesture is a link-drag (or a tap), never a pan.
-        grab = { task, x: p.x, y: p.y };
+        const v = userView ?? fitted;
+        grab = { task, cx: (p.x - v.tx) / v.s, cy: (p.y - v.ty) / v.s };
         panFrom = null;
       } else {
         grab = null;
@@ -285,13 +407,15 @@
     }
     if (grab && moved > TAP_SLOP) {
       capture(e.pointerId);
+      dragClient = { x: e.clientX, y: e.clientY };
+      armEdgePan();
       const over = cardAt(e.clientX, e.clientY);
       link = {
         task: grab.task,
-        // Screen travel → canvas travel: the card must keep up with the finger
-        // at whatever zoom the board is at.
-        dx: (p.x - grab.x) / view.s,
-        dy: (p.y - grab.y) / view.s,
+        // Finger's canvas point minus the grab's canvas point: the card keeps
+        // up with the finger at any zoom, and stays put through an auto-pan.
+        dx: (p.x - view.tx) / view.s - grab.cx,
+        dy: (p.y - view.ty) / view.s - grab.cy,
         over: over && over.id !== grab.task.id ? over : null,
         // The card underneath is the one that would come to wait.
         ok:
@@ -320,6 +444,7 @@
     else if (link?.over && link.ok) onLink(link.over, link.task);
     link = null;
     grab = null;
+    dragClient = null;
     if (points.size < 2) pinchFrom = null;
     if (points.size === 0) panFrom = null;
   }
@@ -383,6 +508,10 @@
     if (!chip) return;
     const travelled =
       chip.travelled + Math.hypot(e.clientX - chip.x, e.clientY - chip.y);
+    if (travelled > TAP_SLOP) {
+      dragClient = { x: e.clientX, y: e.clientY };
+      armEdgePan();
+    }
     const over = travelled > TAP_SLOP ? cardAt(e.clientX, e.clientY) : null;
     chip = {
       ...chip,
@@ -399,6 +528,7 @@
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     const dropped = chip;
     chip = null;
+    dragClient = null;
     if (dropped.travelled <= TAP_SLOP)
       onOpen(dropped.task.id); // a tap opens
     else if (dropped.over && dropped.ok) onLink(dropped.over, dropped.task);
@@ -571,7 +701,7 @@
       <span class="tray-label"
         >{link ? $t("tasks.dropUnlinkShort") : $t("tasks.graphFree")}</span
       >
-      <div class="tray-items scroll">
+      <div class="tray-items scroll" bind:this={trayItems}>
         {#each loose as task (task.id)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <!-- Chips carry `data-node` like the canvas cards do, so a drop can

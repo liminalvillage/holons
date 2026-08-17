@@ -168,34 +168,72 @@ export interface PlaceOptions {
   colGap: number;
   /** Vertical gap between layers — the room the edges are drawn through. */
   rowGap: number;
+  /**
+   * Horizontal gap between CLUSTERS: adjacent cards in a layer that feed no
+   * task in common (different breakdowns sharing the row). Defaults to
+   * `colGap`, which keeps every gap uniform.
+   */
+  clusterGap?: number;
 }
 
 /**
  * Turn a layered layout into pixel boxes: layers stack top→bottom, each
- * centred on the canvas. Unlinked nodes are deliberately NOT placed — they
- * live in the view's drawer, off the canvas, so they neither stretch the
- * extent nor shrink the fit. Pure geometry: the caller supplies the node size
- * and gaps and applies its own fit/zoom transform to the result.
+ * centred on the canvas. A row shared by several breakdowns opens the wider
+ * `clusterGap` at each cluster boundary, so a long full row spreads out and
+ * each task's steps read as their own group. Unlinked nodes are deliberately
+ * NOT placed — they live in the view's drawer, off the canvas, so they
+ * neither stretch the extent nor shrink the fit. Pure geometry: the caller
+ * supplies the node size and gaps and applies its own fit/zoom transform to
+ * the result.
  */
 export function placeDag(
   layout: DagLayout,
-  { nodeW, nodeH, colGap, rowGap }: PlaceOptions,
+  { nodeW, nodeH, colGap, rowGap, clusterGap = colGap }: PlaceOptions,
 ): DagPlacement {
-  const rowWidth = (n: number) => (n > 0 ? n * nodeW + (n - 1) * colGap : 0);
   const { layers } = layout;
 
-  const width = layers.reduce((w, l) => Math.max(w, rowWidth(l.length)), 0);
+  // Same cluster = the two cards feed at least one task in common. Sinks
+  // (the bottom row's goals) share nothing, so unrelated goals also sit a
+  // cluster gap apart.
+  const nexts = new Map<string, Set<string>>();
+  for (const e of layout.edges) {
+    let s = nexts.get(e.from);
+    if (!s) nexts.set(e.from, (s = new Set()));
+    s.add(e.to);
+  }
+  const sameCluster = (a: string, b: string): boolean => {
+    const sb = nexts.get(b);
+    if (!sb) return false;
+    for (const t of nexts.get(a) ?? []) if (sb.has(t)) return true;
+    return false;
+  };
+
+  // Per-layer x offsets, gap by gap — rows are no longer a uniform grid.
+  const xs = layers.map((layer) => {
+    const offs: number[] = [];
+    let x = 0;
+    layer.forEach((id, i) => {
+      if (i > 0)
+        x += nodeW + (sameCluster(layer[i - 1], id) ? colGap : clusterGap);
+      offs.push(x);
+    });
+    return offs;
+  });
+  const rowWidth = (l: number) =>
+    xs[l].length ? xs[l][xs[l].length - 1] + nodeW : 0;
+
+  const width = layers.reduce((w, _, l) => Math.max(w, rowWidth(l)), 0);
   const height = layers.length
     ? layers.length * nodeH + (layers.length - 1) * rowGap
     : 0;
 
   const nodes = new Map<string, NodeBox>();
   layers.forEach((layer, l) => {
-    const left = (width - rowWidth(layer.length)) / 2;
+    const left = (width - rowWidth(l)) / 2;
     layer.forEach((id, c) =>
       nodes.set(id, {
         id,
-        x: left + c * (nodeW + colGap),
+        x: left + xs[l][c],
         y: l * (nodeH + rowGap),
       }),
     );

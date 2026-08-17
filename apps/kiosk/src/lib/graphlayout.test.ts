@@ -117,6 +117,36 @@ describe("placeDag", () => {
     expect([width, height]).toEqual([100, 140]);
   });
 
+  it("opens the cluster gap between cards that feed different tasks", () => {
+    // Two breakdowns side by side: {a1, a2} → ga and {b1, b2} → gb share the
+    // top row. Within a breakdown the tight colGap holds; where the clusters
+    // meet — and between the unrelated goals below — the wider gap opens.
+    const layout = layoutDag(
+      ["ga", "gb", "a1", "a2", "b1", "b2"],
+      [e("a1", "ga"), e("a2", "ga"), e("b1", "gb"), e("b2", "gb")],
+    );
+    const { nodes, width } = placeDag(layout, { ...G, clusterGap: 40 });
+    const x = (id: string) => nodes.get(id)!.x;
+    expect(x("a2") - x("a1")).toBe(110); // siblings: nodeW + colGap
+    expect(x("b2") - x("b1")).toBe(110);
+    expect(x("b1") - x("a2")).toBe(140); // cluster boundary: nodeW + clusterGap
+    expect(x("gb") - x("ga")).toBe(140); // unrelated goals part the same way
+    expect(width).toBe(460); // 4 nodes + two colGaps + one clusterGap
+    // The goal row (240 wide) still centres under the full row.
+    expect(x("ga")).toBe(110);
+  });
+
+  it("keeps every gap uniform when clusterGap is not given", () => {
+    const layout = layoutDag(
+      ["ga", "gb", "a1", "b1"],
+      [e("a1", "ga"), e("b1", "gb")],
+    );
+    const { nodes, width } = placeDag(layout, G);
+    const x = (id: string) => nodes.get(id)!.x;
+    expect(x("b1") - x("a1")).toBe(110);
+    expect(width).toBe(210);
+  });
+
   it("gives an empty board no extent", () => {
     const { nodes, width, height } = placeDag(layoutDag([], []), G);
     expect(nodes.size).toBe(0);
