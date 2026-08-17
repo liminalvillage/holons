@@ -366,14 +366,17 @@ class HoloSphere {
         }
         const raw = await ContentOps.get(this, holon, lens, key, password, options);
         // Resolve a single item through the signing layer — every get resolves.
+        // Private (password) reads bypass it: the SEA-encrypted space is
+        // access-controlled by the password itself and never signed, so the
+        // envelope store has nothing to say about it.
         const signer = this._signer;
-        if (signer && signer.enforce && lens !== '_members' && !options._skipAuthorize) {
+        if (signer && signer.enforce && !password && lens !== '_members' && !options._skipAuthorize) {
             if (signer.isPerActor(lens)) {
                 // per-author lens: return the subject's aggregated records
                 return signer.aggregate(this, holon, lens, key);
             }
             // resolve the single item from its signed envelopes (raw-tamper-proof)
-            return signer.resolveItem(this, holon, lens, key);
+            return signer.resolveItem(this, holon, lens, key, { includeDeleted: !!options.includeDeleted });
         }
         return raw;
     }
@@ -392,8 +395,9 @@ class HoloSphere {
      */
     async getAll(holon, lens, password = null, options = {}) {
         const items = await ContentOps.getAll(this, holon, lens, password, options);
+        // Private (password) reads bypass the signing layer entirely — see get().
         const signer = this._signer;
-        if (signer && lens !== '_members' && !options._skipAuthorize) {
+        if (signer && !password && lens !== '_members' && !options._skipAuthorize) {
             // Provenance-annotated dual-source read (signed + grandfathered legacy).
             if (options.includeUnverified) {
                 if (signer.isPerActor(lens)) {
@@ -413,7 +417,9 @@ class HoloSphere {
                 if (signer.isPerActor(lens)) {
                     return signer.aggregate(this, holon, lens);
                 }
-                const { items: view } = await signer.authorizedView(this, holon, lens, items);
+                const { items: view } = await signer.authorizedView(this, holon, lens, items, {
+                    includeDeleted: !!options.includeDeleted,
+                });
                 return view;
             }
             // Phase 1 shadow: measure the forgery surface without changing output
@@ -441,7 +447,30 @@ class HoloSphere {
         return ContentOps.deleteFunc(this, holon, lens, key, password);
     }
 
-    async deleteAll(holon, lens, password = null) {
+    async deleteAll(holon, lens, password = null, options = {}) {
+        // Signed bulk delete: tombstone every id first (mirrors delete()) so an
+        // enforce-mode reader can't resurrect the lens from leftover envelopes.
+        // Private (password) lenses are never signed, so there's nothing to
+        // tombstone there.
+        if (this._signer && holon && !password && !options._skipSign) {
+            try {
+                const raw = await ContentOps.getAll(this, holon, lens, null, {
+                    _skipAuthorize: true, _skipShadow: true, resolveHolograms: false, includeDeleted: true,
+                });
+                const ids = new Set((raw || []).filter((it) => it && it.id != null).map((it) => String(it.id)));
+                if (this._signer.enforce) {
+                    // Union with the enforced view so ids living only in the
+                    // envelope store (raw slot already gone) get tombstoned too.
+                    try {
+                        const view = await this.getAll(holon, lens);
+                        for (const it of view || []) if (it && it.id != null) ids.add(String(it.id));
+                    } catch { /* best-effort */ }
+                }
+                await Promise.all([...ids].map((id) =>
+                    Promise.resolve(this._signer.onDelete(this, holon, lens, id)).catch(() => {})
+                ));
+            } catch { /* best-effort, mirror delete() */ }
+        }
         return ContentOps.deleteAll(this, holon, lens, password);
     }
 

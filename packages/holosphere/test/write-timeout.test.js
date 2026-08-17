@@ -34,7 +34,7 @@ describe('write-path timeout', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeEach(async () => {
-        hs = testSphere(APP);
+        hs = await testSphere(APP);
         await new Promise(r => setTimeout(r, 100));
     }, 30000);
 

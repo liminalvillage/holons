@@ -17,7 +17,7 @@ describe('getAll return-shape contract', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeEach(async () => {
-        hs = testSphere(APP);
+        hs = await testSphere(APP);
         // Clean slate per test so empty/populated cases don't bleed.
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));

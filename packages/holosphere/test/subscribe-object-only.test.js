@@ -17,7 +17,7 @@ describe('subscribe callback contract: object | null only', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeEach(async () => {
-        hs = testSphere(APP);
+        hs = await testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);

@@ -37,8 +37,8 @@ describe('subscribeFederated', () => {
 
     afterAll(cleanupTestEnv, 30000);
 
-    beforeEach(() => {
-        hs = testSphere('test-subscribe-federated');
+    beforeEach(async () => {
+        hs = await testSphere('test-subscribe-federated');
     });
 
     afterEach(async () => {

@@ -14,8 +14,8 @@ describe('HoloSphere Authentication and Authorization', () => {
     const PRIVATE_GLOBAL_TABLE = 'veryPrivateGlobalTable'; // For all private global data tests
 
     beforeAll(async () => {
-        holoSphere = testSphere('test-app');
-        strictHoloSphere = testSphere('test-app-strict', { strict: true });
+        holoSphere = await testSphere('test-app');
+        strictHoloSphere = await testSphere('test-app-strict', { strict: true });
         // Wait for initialization
         await new Promise(resolve => setTimeout(resolve, 1000));
     });

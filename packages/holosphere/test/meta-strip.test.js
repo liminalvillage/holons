@@ -2,6 +2,12 @@
 
 import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
+// KNOWN ENFORCE GAP: these tests assert raw hologram/pointer or raw-internals
+// semantics that enforce-mode signing changes by design (unsigned pointers drop
+// from the authorized view; subscribe wraps the callback for envelope
+// resolution). Skipped only under HOLO_TEST_SIGNING=enforce.
+const testUnlessEnforce = process.env.HOLO_TEST_SIGNING === 'enforce' ? test.skip : test;
+
 describe('Meta Field Stripping Tests', () => {
     let holoSphere;
     const testHolon = 'testHolon';
@@ -11,7 +17,7 @@ describe('Meta Field Stripping Tests', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeEach(async () => {
-        holoSphere = testSphere('test_app');
+        holoSphere = await testSphere('test_app');
         // Clean up before each test
         try {
             await holoSphere.deleteAll(testHolon, testLens);
@@ -160,7 +166,7 @@ describe('Meta Field Stripping Tests', () => {
     });
 
     describe('put() should strip _hologram envelope', () => {
-        test('an envelope-carrying put is redirected to its source and stored clean', async () => {
+        testUnlessEnforce('an envelope-carrying put is redirected to its source and stored clean', async () => {
             // A `_hologram` envelope marks an item as RESOLVED from a
             // hologram. Writing such an item back must land on the ORIGINAL
             // in its owner's graph (source-envelope redirection) — never
@@ -248,7 +254,7 @@ describe('Meta Field Stripping Tests', () => {
             expect(retrieved._federation).toBeUndefined();
         });
 
-        test('should preserve _federation on hologram envelopes (federation propagation path)', async () => {
+        testUnlessEnforce('should preserve _federation on hologram envelopes (federation propagation path)', async () => {
             // Federation propagation legitimately writes `{ id, soul, _federation }`
             // envelopes; the strip only fires for non-hologram payloads, so this
             // path must round-trip the metadata intact.

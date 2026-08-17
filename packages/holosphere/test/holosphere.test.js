@@ -16,8 +16,8 @@ describe('HoloSphere', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeAll(async () => {
-        holoSphere = testSphere('test-app');
-        strictHoloSphere = testSphere('test-app-strict', { strict: true });
+        holoSphere = await testSphere('test-app');
+        strictHoloSphere = await testSphere('test-app-strict', { strict: true });
     });
 
     afterEach(async () => {

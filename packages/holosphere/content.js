@@ -666,8 +666,15 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 // Race-free signing: issue the signed envelope BEFORE the raw write
                 // so reads/subscribers resolve against a consistent envelope the
                 // instant the raw write lands. No-op unless signing is enabled.
-                if (!isHologram && !isGlobal && !options._skipSign && holoInstance._signer) {
-                    try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, data); }
+                //
+                // Private (password) writes are NEVER signed: envelopes live in
+                // the public `_events` namespace, so signing an encrypted-space
+                // write would leak its plaintext. Sign `dataToStore` (sanitized,
+                // read-side envelopes stripped) — the envelope must attest
+                // exactly what the raw store persists, or enforce-mode reads
+                // resurrect `_meta`/`_hologram`/`_federation` fields.
+                if (!isHologram && !isGlobal && !password && !options._skipSign && holoInstance._signer) {
+                    try { holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, dataToStore); }
                     catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
                 }
                 dataPath.put(payload, putCallback);

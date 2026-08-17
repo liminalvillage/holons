@@ -10,8 +10,8 @@ describe('Federation Tests', () => {
 
   afterAll(cleanupTestEnv, 30000);
 
-  beforeEach(() => {
-    holosphere = testSphere('testApp');
+  beforeEach(async () => {
+    holosphere = await testSphere('testApp');
   });
 
   afterEach(async () => {

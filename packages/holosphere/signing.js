@@ -236,7 +236,7 @@ export async function createSigner({
      * that was authorized at signing time. Returns { items, pending } and updates
      * the report. The membership lens itself is never enforced (would be circular).
      */
-    async authorizedView(holo, holon, lens, rawItems) {
+    async authorizedView(holo, holon, lens, rawItems, opts = {}) {
       if (lens === MEMBERSHIP_LENS) return { items: rawItems, pending: [] };
       const isAuth = await authPredicate(holo, holon);
       report.reads++;
@@ -262,7 +262,7 @@ export async function createSigner({
         if (authorized.length) {
           authorized.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
           const item = eventToItem(authorized[0]);
-          if (item && item._deleted) {
+          if (item && item._deleted && !opts.includeDeleted) {
             // authorized SIGNED delete — omit from the view (not pending)
           } else {
             items.push(item);
@@ -281,14 +281,14 @@ export async function createSigner({
     },
 
     /** Resolve a single item id to its authorized value (or null), honoring deletes. */
-    async resolveItem(holo, holon, lens, key) {
+    async resolveItem(holo, holon, lens, key, opts = {}) {
       const isAuth = await authPredicate(holo, holon);
       const events = (await readEnvelopes(holo, holon, lens, key))
         .filter(verifyEvent).filter((e) => isAuth(e.pubkey, e.created_at));
       if (!events.length) return null;
       events.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
       const item = eventToItem(events[0]);
-      return (item && item._deleted) ? null : item;
+      return (item && item._deleted && !opts.includeDeleted) ? null : item;
     },
 
     /**

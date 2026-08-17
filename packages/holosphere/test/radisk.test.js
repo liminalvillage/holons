@@ -20,8 +20,8 @@ describe('HoloSphere Radisk Tests', () => {
         fs.rmSync(sharedDir, { recursive: true, force: true });
     }, 30000);
 
-    beforeEach(() => {
-        holosphere = testSphere('radisk-test', { gunOptions: { file: sharedFile } });
+    beforeEach(async () => {
+        holosphere = await testSphere('radisk-test', { gunOptions: { file: sharedFile } });
     });
 
     afterEach(async () => {
@@ -129,13 +129,13 @@ describe('HoloSphere Radisk Tests', () => {
         expect(stats.until).toBe(allOptions.until);
     });
 
-    test('should handle browser environment radisk configuration', () => {
+    test('should handle browser environment radisk configuration', async () => {
         // Mock browser environment
         const originalWindow = global.window;
         global.window = {};
 
         try {
-            const browserHolosphere = testSphere('browser-test', {
+            const browserHolosphere = await testSphere('browser-test', {
                 gunOptions: {
                     radisk: true,
                     file: './browser-radata'

@@ -18,7 +18,7 @@ describe('HoloSphere Deletion Tests', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeAll(async () => {
-        holoSphere = testSphere(testAppName);
+        holoSphere = await testSphere(testAppName);
     });
 
     afterAll(async () => {

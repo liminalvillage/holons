@@ -20,10 +20,28 @@ import fs from 'node:fs';
 import http from 'node:http';
 import HoloSphere from '../../holosphere.js';
 import Gun from 'gun';
+import { generateSecretKey } from '../../nostr-events.js';
 
 const spheres = [];
 const dirs = [];
 const relays = [];
+
+// HOLO_TEST_SIGNING=shadow|enforce runs every testSphere() with Nostr signing
+// enabled (fresh key per sphere, envelopes stored locally, relays: []) so the
+// whole suite exercises the signed write path. Unset = today's unsigned path.
+//
+// HOLO_TEST_RELAYS=wss://… (comma-separated) additionally dual-publishes every
+// signed write to real Nostr relay(s). Publishes are fire-and-forget and reads
+// stay local, so this exercises live relay connections without making suite
+// results depend on relay latency. Only meaningful together with
+// HOLO_TEST_SIGNING (or an explicit `signing` option).
+const ENV_SIGNING = process.env.HOLO_TEST_SIGNING || '';
+const ENV_RELAYS = (process.env.HOLO_TEST_RELAYS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+// Spheres created in this worker so far, for cross-trust wiring: in enforce
+// mode every sphere must have every other sphere's pubkey in its read-list or
+// multi-instance tests (over startLocalRelay) would drop each other's writes.
+const keyring = [];
 
 /** Gun options for one isolated instance (fresh tmp radisk, no network). */
 export function isolatedGunOptions(overrides = {}) {
@@ -41,15 +59,49 @@ export function isolatedGunOptions(overrides = {}) {
 }
 
 /**
- * An isolated HoloSphere (v1-style construction, hermetic Gun options).
- * Registered for `cleanupTestEnv()`; pass `gunOptions` to override pieces
- * (e.g. `peers: [relay.url]` from `startLocalRelay`, or a shared `file` for
+ * An isolated HoloSphere (hermetic Gun options). Registered for
+ * `cleanupTestEnv()`; pass `gunOptions` to override pieces (e.g.
+ * `peers: [relay.url]` from `startLocalRelay`, or a shared `file` for
  * persistence-across-restart tests).
+ *
+ * Returns the sphere directly on the default unsigned path. With
+ * HOLO_TEST_SIGNING (or an explicit `signing: { mode }`) it returns a
+ * Promise of the sphere instead — `await testSphere(...)` works in both
+ * modes, and every call site awaits.
  */
-export function testSphere(appName, { strict = false, gunOptions = {} } = {}) {
-    const sphere = new HoloSphere(appName, strict, null, isolatedGunOptions(gunOptions));
+export function testSphere(appName, { strict = false, gunOptions = {}, signing } = {}) {
+    const mode = signing?.mode ?? (ENV_SIGNING || null);
+    if (!mode) {
+        const sphere = new HoloSphere(appName, strict, null, isolatedGunOptions(gunOptions));
+        spheres.push(sphere);
+        return sphere;
+    }
+    if (mode !== 'shadow' && mode !== 'enforce') {
+        throw new Error(`testSphere: unknown signing mode '${mode}' (use shadow|enforce)`);
+    }
+    const sphere = new HoloSphere({
+        appName,
+        strict,
+        privateKey: signing?.privateKey ?? generateSecretKey(),
+        gunOptions: isolatedGunOptions(gunOptions),
+    });
     spheres.push(sphere);
-    return sphere;
+    return (async () => {
+        await sphere.enableSigning({
+            relays: signing?.relays ?? ENV_RELAYS,
+            ...(mode === 'shadow' ? { shadow: true } : { enforce: true }),
+            readKeys: [...keyring.map((k) => k.pub), ...(signing?.readKeys ?? [])],
+        });
+        if (!sphere.signingEnabled) {
+            throw new Error('testSphere: enableSigning resolved without an active signer');
+        }
+        const pub = sphere.currentPubkey;
+        for (const k of keyring) {
+            try { await k.sphere.addReadKey(pub); } catch { /* closed sphere */ }
+        }
+        keyring.push({ sphere, pub });
+        return sphere;
+    })();
 }
 
 /**
@@ -88,7 +140,9 @@ export async function startLocalRelay() {
 
 /** Close every tracked sphere/relay and delete their tmp dirs. Call in afterAll. */
 export async function cleanupTestEnv() {
+    keyring.length = 0;
     for (const s of spheres.splice(0)) {
+        try { s.disableSigning?.(); } catch { /* no signer */ }
         try { await s.close?.(); } catch { /* already closed */ }
     }
     for (const r of relays.splice(0)) {

@@ -17,7 +17,7 @@ describe('_deleted: true soft-tombstone filtering', () => {
     afterAll(cleanupTestEnv, 30000);
 
     beforeEach(async () => {
-        hs = testSphere(APP);
+        hs = await testSphere(APP);
         try { await hs.deleteAll(holon, lens); } catch {}
         await new Promise(r => setTimeout(r, 200));
     }, 30000);
