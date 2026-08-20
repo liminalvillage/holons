@@ -67,9 +67,13 @@ export default function createHoloSphere(appName, options = {}) {
   // in the environment (or passing options.relays) — then the relay is the
   // wire: Gun runs peerless as the local cache and every read/write syncs
   // over Nostr. See packages/holosphere/relay-transport.js.
-  const relays = (Array.isArray(relaysOption) && relaysOption.length
-    ? relaysOption
-    : (process.env.HOLOSPHERE_RELAYS || '').split(',').map((r) => r.trim()).filter(Boolean));
+  const relays =
+    Array.isArray(relaysOption) && relaysOption.length
+      ? relaysOption
+      : (process.env.HOLOSPHERE_RELAYS || '')
+          .split(',')
+          .map(r => r.trim())
+          .filter(Boolean);
   return coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
