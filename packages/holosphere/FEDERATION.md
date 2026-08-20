@@ -59,6 +59,35 @@ await holoSphere.put('space1', 'items', data, null, {
 });
 ```
 
+### Retraction — deletes follow the copies
+
+On an **H3-cell holon** a put also fans copies up the whole parent ancestry
+(res-1 … res-0), so the record is readable at every coarser scale. `delete`
+and `deleteAll` retract those copies automatically — without that, deleting
+the original left it visible at every parent hexagon forever, since nothing
+else ever removed it.
+
+```javascript
+await holoSphere.delete('89283082803ffff', 'items', 'item1');
+// … also removes the copies at 8828308281fffff … 8029fffffffffff
+
+await holoSphere.delete(holon, 'items', 'item1', null, { autoPropagate: false }); // opt out
+await holoSphere.delete(holon, 'items', 'item1', null, { awaitPropagation: true }); // await it
+```
+
+A copy is removed **only when it is provably ours**: propagated records carry
+a `_federation` stamp naming their origin holon (full copies keep it via the
+internal `preserveFederationMeta` flag; holograms carry a soul pointing home).
+Anything else at that key — the parent's own record, or a copy from a
+different child holon that happens to share the id — is left untouched, so one
+holon's delete can never take out another's data. Deleting a propagated copy
+retracts nothing further: only the original walks the ancestry.
+
+Records propagated *before* this existed have no `_federation` stamp and so
+can't be identified as copies; retract them by hand with
+`holoSphere.propagateDeletion(holon, lens, key)` (pass `key: null` to sweep
+every copy from that holon in a lens).
+
 ## Accessing Federated Data
 
 ### Direct Retrieval

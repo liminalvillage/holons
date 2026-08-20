@@ -111,6 +111,22 @@ class HoloSphere {
                 gunOptions = { ...gunOptions, ...config.gunOptions };
             }
 
+            // Browser + nostr backend: give the local cache a storage adapter
+            // that actually exists. Gun's radisk has none in a browser (the
+            // IndexedDB adapter, gun/lib/rindexed, is never loaded here), and
+            // the default pair below sets radisk:true + localStorage:false —
+            // so the graph stores NOTHING. That is survivable on the gun
+            // backend, where the remote peer answers every read, but fatal
+            // once the relay is the wire: with no gun peer the cache is the
+            // only reader, so every get/getAll/subscribe resolves empty even
+            // for data this very tab just wrote. localStorage is the adapter
+            // Gun does wire up in a browser. Callers can still override.
+            if (this._backend === 'nostr' && typeof window !== 'undefined'
+                && config.gunOptions?.radisk === undefined
+                && config.gunOptions?.localStorage === undefined) {
+                gunOptions = { ...gunOptions, radisk: false, localStorage: true };
+            }
+
             openaikey = config.openaiKey || config.openaikey || null;
         } else {
             // v1-style positional args
@@ -560,7 +576,7 @@ class HoloSphere {
         if (this._relayTransport && !password && !options._skipPublish) {
             try { this._relayTransport.publishDelete(holon, lens, key, tombstone); } catch { /* best-effort */ }
         }
-        return ContentOps.deleteFunc(this, holon, lens, key, password);
+        return ContentOps.deleteFunc(this, holon, lens, key, password, options);
     }
 
     async deleteAll(holon, lens, password = null, options = {}) {
@@ -593,7 +609,7 @@ class HoloSphere {
                 }));
             } catch { /* best-effort, mirror delete() */ }
         }
-        return ContentOps.deleteAll(this, holon, lens, password);
+        return ContentOps.deleteAll(this, holon, lens, password, options);
     }
 
     // ================================ NODE FUNCTIONS ================================
@@ -730,6 +746,16 @@ class HoloSphere {
 
     async propagate(holon, lens, data, options = {}) {
         return Federation.propagate(this, holon, lens, data, options);
+    }
+
+    /**
+     * Retract a record (or every record this holon propagated, when `key` is
+     * null) from the parent hexagons `propagate` copied it to. Called
+     * automatically by delete/deleteAll; exposed for manual repair of records
+     * deleted before deletion propagation existed.
+     */
+    async propagateDeletion(holon, lens, key = null, options = {}) {
+        return Federation.propagateDeletion(this, holon, lens, key, options);
     }
 
     async getHolon(lat, lng, resolution) {

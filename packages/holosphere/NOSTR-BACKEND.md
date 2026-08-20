@@ -98,6 +98,14 @@ tags: [["h", holon|"_g"], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
   call `refreshReadKeys()` after the first sync.
 - **Relay policy**: the spike relay config is open; production should
   restrict writes (NIP-42 auth / allow-list) — see `spike/README.md`.
+- **Browser cache storage**: in a browser the backend forces
+  `radisk: false, localStorage: true` for Gun (callers can override).
+  Gun's radisk has no browser adapter unless `gun/lib/rindexed` is loaded,
+  so the stock `radisk: true` / `localStorage: false` default stores
+  nothing — survivable on the gun backend (the peer answers every read),
+  fatal here, where the local cache is the only reader and every read would
+  come back empty. localStorage's ~5 MB quota is the current ceiling for the
+  browser cache; loading the IndexedDB adapter would lift it.
 
 ## Wiring in the monorepo
 

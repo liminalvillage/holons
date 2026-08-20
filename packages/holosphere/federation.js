@@ -989,6 +989,171 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
 }
 
 /**
+ * Ancestor hexagons of an H3-cell holon, finest-first (res-1 … res-0).
+ *
+ * Shared by `propagate` and `propagateDeletion` so a record is retracted from
+ * exactly the holons its write fanned it out to — the two must never disagree
+ * about where a copy lives.
+ *
+ * @param {string} holon - Holon identifier (an H3 cell, or anything else)
+ * @param {number} [maxParentLevels=15] - How many levels up to walk
+ * @returns {{isValidH3: boolean, resolution: number|undefined, parents: string[], messages: string[], error?: string}}
+ */
+export function parentHexagonsFor(holon, maxParentLevels = 15) {
+    const out = { isValidH3: false, resolution: undefined, parents: [], messages: [] };
+
+    // H3 hexagons start with '8' and are at least 15 characters long.
+    if (!(typeof holon === 'string' && /^[8][0-9A-Fa-f]+$/.test(holon) && holon.length >= 15)) {
+        out.messages.push(`Holon ${holon} is not a valid H3 hexagon.`);
+        return out;
+    }
+    try {
+        const resolution = h3.getResolution(holon);
+        if (!(resolution >= 0 && resolution <= 15)) {
+            out.messages.push(`Holon ${holon} has invalid resolution: ${resolution}`);
+            return out;
+        }
+        out.isValidH3 = true;
+        out.resolution = resolution;
+    } catch (error) {
+        out.messages.push(`Holon ${holon} failed H3 validation: ${error.message}`);
+        return out;
+    }
+
+    let currentHolon = holon;
+    let currentRes = out.resolution;
+    let levelsProcessed = 0;
+    while (currentRes > 0 && levelsProcessed < maxParentLevels) {
+        try {
+            const parent = h3.cellToParent(currentHolon, currentRes - 1);
+            out.parents.push(parent);
+            currentHolon = parent;
+            currentRes--;
+            levelsProcessed++;
+        } catch (error) {
+            out.messages.push(`Error getting parent for ${currentHolon}: ${error.message}`);
+            out.error = error.message;
+            break;
+        }
+    }
+    return out;
+}
+
+/**
+ * Is `record` a copy this holon propagated (rather than a record the target
+ * owns, or one that arrived from somewhere else)? Full-copy propagation stamps
+ * `_federation.origin`; hologram propagation leaves a soul pointing home.
+ */
+function isPropagatedCopyOf(holosphere, record, holon, lens) {
+    if (!record || typeof record !== 'object') return false;
+    const origin = record._federation?.origin;
+    if (origin != null && String(origin) === String(holon)) return true;
+    if (typeof record.soul === 'string' && holosphere.isHologram?.(record)) {
+        const info = parseSoulPath(record.soul);
+        if (info && String(info.holon) === String(holon) && String(info.lens) === String(lens)) return true;
+    }
+    return false;
+}
+
+/**
+ * Retracts a record from the parent hexagons `propagate` copied it to.
+ *
+ * A put on an H3 holon fans full copies (or holograms) up the whole ancestry,
+ * so a delete that only removes the original leaves it readable at every
+ * coarser scale forever. This is the mirror image: same ancestry walk, and a
+ * copy is removed ONLY when it is provably ours (`_federation.origin` is this
+ * holon, or a hologram soul pointing back at this holon/lens). Anything else
+ * at that key — the parent's own record, or a copy from a different child —
+ * is left untouched, so an id collision between two children can't turn one
+ * holon's delete into another's data loss.
+ *
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} holon - The holon the record was deleted from
+ * @param {string} lens - The lens identifier
+ * @param {string|null} [key] - Record id; `null` retracts every copy this holon propagated into `lens`
+ * @param {object} [options] - Options
+ * @param {boolean} [options.propagateToParents=true] - Set false to disable
+ * @param {number} [options.maxParentLevels=15] - Maximum parent levels to walk
+ * @param {number} [options.readTimeoutMs=2000] - Per-read deadline at each parent
+ * @returns {Promise<object>} - Result with success/skipped/error counts
+ */
+export async function propagateDeletion(holosphere, holon, lens, key = null, options = {}) {
+    if (!holosphere || !holon || !lens) {
+        throw new Error('propagateDeletion: Missing required parameters');
+    }
+    const {
+        propagateToParents = true,
+        maxParentLevels = 15,
+        readTimeoutMs = 2000
+    } = options;
+
+    const result = { success: 0, errors: 0, skipped: 0, messages: [] };
+    if (!propagateToParents) return result;
+
+    const ancestry = parentHexagonsFor(holon, maxParentLevels);
+    result.messages.push(...ancestry.messages);
+    if (!ancestry.isValidH3) {
+        result.skipped++;
+        return result;
+    }
+    if (ancestry.error) result.errors++;
+    if (ancestry.parents.length === 0) {
+        result.messages.push(`No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
+        result.skipped++;
+        return result;
+    }
+
+    const readOpts = { resolveHolograms: false, _skipAuthorize: true, timeout: readTimeoutMs };
+
+    await Promise.all(ancestry.parents.map(async (parentHexagon) => {
+        try {
+            // One read per parent — either the single record, or the whole lens
+            // for a sweep. The records come back with the read, so ownership is
+            // decided from what we already have rather than re-fetching each id.
+            let candidates;
+            if (key != null) {
+                const record = await holosphere.get(parentHexagon, lens, String(key), null, readOpts);
+                candidates = [{ id: String(key), record }];
+            } else {
+                const items = await holosphere.getAll(parentHexagon, lens, null, readOpts);
+                candidates = (items || [])
+                    .filter((it) => it && it.id != null)
+                    .map((it) => ({ id: String(it.id), record: it }));
+            }
+
+            for (const { id, record } of candidates) {
+                if (!record || record._deleted) {
+                    result.skipped++;
+                    continue;
+                }
+                if (!isPropagatedCopyOf(holosphere, record, holon, lens)) {
+                    result.skipped++;
+                    // Only worth naming when the caller asked about one record;
+                    // a lens-wide sweep would otherwise log every foreign record
+                    // at every level of the ancestry.
+                    if (key != null) {
+                        result.messages.push(`Kept ${parentHexagon}/${lens}/${id}: not a copy propagated from ${holon}.`);
+                    }
+                    continue;
+                }
+                // autoPropagate:false — the ancestry was already walked here;
+                // letting each parent delete re-walk its own would fan out
+                // redundant deletes at every level.
+                await holosphere.delete(parentHexagon, lens, id, null, { autoPropagate: false });
+                result.success++;
+            }
+        } catch (error) {
+            console.error(`[Federation] Error retracting ${key ?? '*'} from parent hexagon ${parentHexagon}: ${error.message}`);
+            result.errors++;
+            result.messages.push(`Error retracting ${key ?? '*'} from parent hexagon ${parentHexagon}: ${error.message}`);
+        }
+    }));
+
+    result.propagated = result.success > 0;
+    return result;
+}
+
+/**
  * Propagates data to federated spaces
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} holon - The holon identifier
@@ -1197,10 +1362,13 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 } catch { /* read failed — fall through and write */ }
                             }
 
-                            // Store in the target space with redirection disabled and no further auto-propagation
+                            // Store in the target space with redirection disabled and no further auto-propagation.
+                            // preserveFederationMeta keeps the `_federation` provenance on the stored
+                            // copy — that stamp is what lets propagateDeletion prove the copy is ours.
                             await holosphere.put(targetSpace, lens, payloadToPut, null, {
                                 disableHologramRedirection: true,
-                                autoPropagate: false
+                                autoPropagate: false,
+                                preserveFederationMeta: true
                             });
 
                             result.success++;
@@ -1229,54 +1397,24 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         if (propagateToParents) {
             
             try {
-                // Validate if the holon is a proper H3 hexagon
-                // H3 hexagons should start with '8' and have a valid format
-                let holonResolution;
-                let isValidH3 = false;
-                
-                // First check: H3 hexagons should start with '8' and be at least 15 characters long
-                if (typeof holon === 'string' && /^[8][0-9A-Fa-f]+$/.test(holon) && holon.length >= 15) {
-                    try {
-                        holonResolution = h3.getResolution(holon);
-                        // Additional validation: resolution should be >= 0 and <= 15
-                        if (holonResolution >= 0 && holonResolution <= 15) {
-                            isValidH3 = true;
-                        } else {
-                            console.log(`[Federation] Holon ${holon} has invalid resolution: ${holonResolution}`);
-                        }
-                    } catch (error) {
-                        console.log(`[Federation] Holon ${holon} failed H3 validation: ${error.message}`);
-                    }
-                } else {
+                // Shared with propagateDeletion — a delete must retract copies
+                // from exactly the hexagons this walk writes them to.
+                const ancestry = parentHexagonsFor(holon, maxParentLevels);
+                const { isValidH3, resolution: holonResolution, parents: parentHexagons } = ancestry;
+                for (const message of ancestry.messages) {
+                    result.parentPropagation.messages.push(message);
+                    if (!isValidH3) console.log(`[Federation] ${message}`);
                 }
-                
                 if (!isValidH3) {
-                    result.parentPropagation.messages.push(`Holon ${holon} is not a valid H3 hexagon. Skipping parent propagation.`);
+                    result.parentPropagation.messages.push(`Skipping parent propagation for ${holon}.`);
                     result.parentPropagation.skipped++;
+                }
+                if (ancestry.error) {
+                    console.error(`[Federation] ${ancestry.error}`);
+                    result.parentPropagation.errors++;
                 }
                 
                 if (isValidH3 && holonResolution !== undefined) {
-                    // Get all parent hexagons up to the specified max levels
-                    const parentHexagons = [];
-                    let currentHolon = holon;
-                    let currentRes = holonResolution;
-                    let levelsProcessed = 0;
-                    
-                    while (currentRes > 0 && levelsProcessed < maxParentLevels) {
-                        try {
-                            const parent = h3.cellToParent(currentHolon, currentRes - 1);
-                            parentHexagons.push(parent);
-                            currentHolon = parent;
-                            currentRes--;
-                            levelsProcessed++;
-                        } catch (error) {
-                            console.error(`[Federation] Error getting parent for ${currentHolon}: ${error.message}`);
-                            result.parentPropagation.messages.push(`Error getting parent for ${currentHolon}: ${error.message}`);
-                            result.parentPropagation.errors++;
-                            break;
-                        }
-                    }
-                    
                     if (parentHexagons.length > 0) {
                         result.parentPropagation.messages.push(`Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
                         
@@ -1341,10 +1479,13 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                     return true;
                                 }
 
-                                // Store in the parent hexagon with redirection disabled and no further auto-propagation
+                                // Store in the parent hexagon with redirection disabled and no further
+                                // auto-propagation. preserveFederationMeta keeps the `_federation`
+                                // stamp so the copy stays identifiable as ours (see propagateDeletion).
                                 await holosphere.put(parentHexagon, lens, payloadToPut, null, {
                                     disableHologramRedirection: true,
-                                    autoPropagate: false
+                                    autoPropagate: false,
+                                    preserveFederationMeta: true
                                 });
 
                                 console.log(`[Federation] Successfully propagated to parent hexagon: ${parentHexagon}`);

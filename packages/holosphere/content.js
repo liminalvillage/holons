@@ -417,20 +417,26 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 //
                 // `_federation` is also read-side for ordinary writes — it
                 // describes where data was fetched from, not where it
-                // currently lives. The one legitimate carrier is federation
-                // propagation, which writes hologram envelopes (top-level
-                // `id` + `soul`) tagged with `_federation` provenance; we
-                // detect that via `isHologram(data)` and leave it alone.
-                // Without this, a UI that reads a federated record and puts
-                // it back ends up persisting stale `_federation.origin`
-                // metadata, which then drives downstream code (federation
-                // propagators, hologram resolvers) to write or follow
-                // pointers that don't match the current storage location —
-                // producing "broken hologram" garbage-collection cascades
-                // that silently delete the user's write.
+                // currently lives. Two legitimate carriers keep it:
+                //   • hologram envelopes (top-level `id` + `soul`) tagged with
+                //     `_federation` provenance — detected via isHologram(data);
+                //   • full-copy propagation, which passes the internal
+                //     `preserveFederationMeta` flag (Federation.propagate).
+                //     Without it a propagated copy is byte-identical to a
+                //     record the target holon wrote itself, so nothing can
+                //     later tell them apart — which is exactly what left
+                //     deleted records stranded at every parent hexagon: the
+                //     retraction pass had no way to prove a copy was ours.
+                // Ordinary writes still strip it, so a UI that reads a
+                // federated record and puts it back doesn't persist stale
+                // `_federation.origin` metadata — which would drive downstream
+                // code (federation propagators, hologram resolvers) to write or
+                // follow pointers that don't match the current storage
+                // location, producing "broken hologram" garbage-collection
+                // cascades that silently delete the user's write.
                 if (dataToStore._meta !== undefined) delete dataToStore._meta;
                 if (dataToStore._hologram !== undefined) delete dataToStore._hologram;
-                if (!isHologram && dataToStore._federation !== undefined) delete dataToStore._federation;
+                if (!isHologram && !options.preserveFederationMeta && dataToStore._federation !== undefined) delete dataToStore._federation;
                 const payload = JSON.stringify(dataToStore); // The data being stored
 
                 const putCallback = async (ack) => {
@@ -903,6 +909,9 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
  *   (ms); the shallow probe falls back to "empty" after this on cold paths
  *   where Gun never responds. Pass `0` to disable and keep the historical
  *   "wait forever" behaviour.
+ * @param {boolean} [options.resolveHolograms=true] - When false, hologram
+ *   pointers are returned as stored (`soul`, `_federation`) instead of being
+ *   followed to their source.
  * @returns {Promise<Array<object>>} - The retrieved content.
  */
 export async function getAll(holoInstance, holon, lens, password = null, options = {}) {
@@ -914,6 +923,10 @@ export async function getAll(holoInstance, holon, lens, password = null, options
         // See `get` above: `_deleted: true` records are dropped from the
         // response unless the caller opts in.
         includeDeleted = false,
+        // Also as in `get`: a caller that wants the stored pointers rather
+        // than what they point at (federation retraction walks parents
+        // looking for `soul`/`_federation.origin`) opts out of resolution.
+        resolveHolograms = true,
     } = options;
 
     // The global `schemas` table is exempt from schema lookup/enforcement —
@@ -1022,7 +1035,7 @@ export async function getAll(holoInstance, holon, lens, password = null, options
                         // `{ includeDeleted: true }` to `getAll`.
                         if (!includeDeleted && parsed._deleted === true) return;
 
-                        if (holoInstance.isHologram(parsed)) {
+                        if (resolveHolograms && holoInstance.isHologram(parsed)) {
                             try {
                                 const res = await holoInstance.resolveHologramDetailed(parsed, {
                                     followHolograms: true,
@@ -1173,9 +1186,13 @@ export async function parse(holoInstance, rawData) {
  * @param {string} lens - The lens from which to delete the key.
  * @param {string} key - The specific key to delete.
  * @param {string} [password] - Optional password for private holon.
+ * @param {object} [options] - Delete options.
+ * @param {boolean} [options.autoPropagate=true] - Whether to retract copies from parent hexagons (default: true)
+ * @param {boolean} [options.awaitPropagation=false] - Await the retraction instead of running it in the background
+ * @param {object} [options.propagationOptions] - Options forwarded to propagateDeletion
  * @returns {Promise<boolean>} - Returns true if successful
  */
-export async function deleteFunc(holoInstance, holon, lens, key, password = null) { // Renamed to deleteFunc to avoid keyword conflict
+export async function deleteFunc(holoInstance, holon, lens, key, password = null, options = {}) { // Renamed to deleteFunc to avoid keyword conflict
     if (!lens || !key) {
         throw new Error('delete: Missing required parameters');
     }
@@ -1287,7 +1304,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         // Log removed
 
         // 4. Proceed with the actual deletion of the hologram node itself
-        return new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
             dataPath.put(null, ack => {
                 if (ack.err) {
                     reject(new Error(ack.err));
@@ -1296,6 +1313,35 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
                 }
             });
         });
+
+        // 5. Mirror the write path. A put on an H3 holon fans full copies up
+        //    the whole parent ancestry (see Federation.propagate), so a delete
+        //    that stops at the original leaves the record readable at every
+        //    coarser scale — forever, since nothing else ever retracts it.
+        //    Only the ORIGINAL retracts: a propagated copy carries another
+        //    holon's `_federation.origin`, and deleting one of those must not
+        //    cascade into that holon's other copies. Fire-and-forget by
+        //    default, exactly like auto-propagation on put; callers that need
+        //    the result pass `{ awaitPropagation: true }`.
+        const deletedCopyOrigin = dataToDelete?._federation?.origin;
+        const wasPropagatedCopy = deletedCopyOrigin != null && String(deletedCopyOrigin) !== String(holon);
+        const shouldPropagate = options.autoPropagate !== false && !password && holon && !wasPropagatedCopy;
+        if (shouldPropagate) {
+            const runRetraction = () => holoInstance
+                .propagateDeletion(holon, lens, key, options.propagationOptions)
+                .then((r) => {
+                    if (r && r.errors > 0) console.warn('Deletion propagation had errors:', r);
+                    return r;
+                })
+                .catch((propError) => { console.warn('Error in deletion propagation:', propError); return null; });
+            if (options.awaitPropagation) {
+                await runRetraction();
+            } else {
+                // Background — don't block the delete on the ancestry walk.
+                runRetraction();
+            }
+        }
+        return true;
     } catch (error) {
         console.error('Error in delete:', error);
         throw error;
@@ -1308,9 +1354,10 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
  * @param {string} holon - The holon identifier.
  * @param {string} lens - The lens from which to delete all keys.
  * @param {string} [password] - Optional password for private holon.
+ * @param {object} [options] - Delete options (see deleteFunc).
  * @returns {Promise<boolean>} - Returns true if successful
  */
-export async function deleteAll(holoInstance, holon, lens, password = null) {
+export async function deleteAll(holoInstance, holon, lens, password = null, options = {}) {
     if (!lens) {
         console.error('deleteAll: Missing holon or lens parameter');
         return false;
@@ -1360,6 +1407,20 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
             });
         }
 
+        // Same retraction as deleteFunc, but lens-wide: one pass over each
+        // parent hexagon removing every copy this holon propagated, instead of
+        // an ancestry walk per record.
+        const retractFromParents = () => {
+            if (options.autoPropagate === false || password || !holon) return Promise.resolve(null);
+            return holoInstance
+                .propagateDeletion(holon, lens, null, options.propagationOptions)
+                .then((r) => {
+                    if (r && r.errors > 0) console.warn('Deletion propagation had errors:', r);
+                    return r;
+                })
+                .catch((propError) => { console.warn('Error in deletion propagation:', propError); return null; });
+        };
+
         return new Promise((resolve) => {
             let deletionPromises = [];
 
@@ -1370,7 +1431,12 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
             // First get all the data to find keys to delete
             dataPath.once(async (data) => {
                 if (!data) {
-                    resolve(true); // Nothing to delete
+                    // Nothing local to delete — but copies of records this
+                    // holon propagated may still sit at the parent hexagons
+                    // (e.g. the local lens was already cleared), so still walk.
+                    if (options.awaitPropagation) await retractFromParents();
+                    else retractFromParents();
+                    resolve(true);
                     return;
                 }
 
@@ -1460,8 +1526,10 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
 
                 // Wait for all deletions to complete
                 Promise.all(deletionPromises)
-                    .then(results => {
+                    .then(async results => {
                         const allSuccessful = results.every(result => result === true);
+                        if (options.awaitPropagation) await retractFromParents();
+                        else retractFromParents();
                         resolve(allSuccessful);
                     })
                     .catch(error => {

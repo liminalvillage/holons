@@ -9,10 +9,45 @@ interface PropagationOptions {
   maxParentLevels?: number;
 }
 
+/**
+ * Options for retracting propagated copies (see `propagateDeletion`).
+ */
+interface DeletionPropagationOptions {
+  propagateToParents?: boolean;
+  maxParentLevels?: number;
+  /** Per-read deadline (ms) when inspecting each parent hexagon. */
+  readTimeoutMs?: number;
+}
+
+interface DeletionPropagationResult {
+  /** Copies actually retracted. */
+  success: number;
+  errors: number;
+  /** Copies left alone: absent, already tombstoned, or not ours. */
+  skipped: number;
+  messages: string[];
+  propagated?: boolean;
+}
+
+interface DeleteOptions {
+  /** Retract copies from parent hexagons (default: true). */
+  autoPropagate?: boolean;
+  /** Await the retraction instead of running it in the background. */
+  awaitPropagation?: boolean;
+  propagationOptions?: DeletionPropagationOptions;
+}
+
 interface PutOptions {
   autoPropagate?: boolean;
   propagationOptions?: PropagationOptions;
   disableHologramRedirection?: boolean;
+  /**
+   * Keep the `_federation` provenance stamp on the stored record instead of
+   * stripping it. Internal to `propagate` — it is what makes a propagated copy
+   * distinguishable from a record the target holon wrote itself (and so what
+   * lets `propagateDeletion` retract it later). Ordinary writes must not set it.
+   */
+  preserveFederationMeta?: boolean;
   actingAs?: string;
   password?: string | null;
   /**
@@ -285,8 +320,8 @@ declare class HoloSphere {
     get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
     getAll(holon: string, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
     parse(rawData: any): Promise<object | null>;
-    delete(holon: string, lens: string, key: string, password?: string | null): Promise<boolean>;
-    deleteAll(holon: string, lens: string, password?: string | null): Promise<boolean>;
+    delete(holon: string, lens: string, key: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
+    deleteAll(holon: string, lens: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
 
     // Node
     putNode(holon: string, lens: string, data: object): Promise<boolean>;
@@ -319,6 +354,13 @@ declare class HoloSphere {
     upcast(holon: string, lens: string, content: object, maxLevels?: number): Promise<object>;
     updateParent(id: string, report: string): Promise<object>;
     propagate(holon: string, lens: string, data: object, options?: PropagationOptions): Promise<PropagationResult>;
+    /**
+     * Retract a record from the parent hexagons `propagate` copied it to.
+     * `key: null` retracts every copy this holon propagated into `lens`.
+     * Called automatically by `delete`/`deleteAll`; exposed for repairing
+     * records deleted before deletion propagation existed.
+     */
+    propagateDeletion(holon: string, lens: string, key?: string | null, options?: DeletionPropagationOptions): Promise<DeletionPropagationResult>;
 
     // Location
     getHolon(lat: number, lng: number, resolution: number): Promise<string>;
