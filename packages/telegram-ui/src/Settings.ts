@@ -172,6 +172,27 @@ export default class Settings {
             }
         });
 
+        // /key — open the signing-key vault Mini App (apps/kiosk routes/key).
+        // The key is generated client-side in the Mini App and lives in the
+        // user's Telegram CloudStorage; the bot only hands out the door. The
+        // Mini App must be registered in BotFather under this bot with the
+        // short name in MINIAPP_SHORT_NAME (unset → command stays silent).
+        this.bot.command('key', async (ctx) => {
+            try {
+                const shortName = (process.env.MINIAPP_SHORT_NAME || '').trim();
+                if (!shortName) return;
+                const botUsername = ctx.botInfo?.username;
+                if (!botUsername) return;
+                const link = `https://t.me/${botUsername}/${shortName}`;
+                await ctx.reply(
+                    '🔑 Your signing key lives in your Telegram account — open the vault to view or back it up, or scan a kiosk\'s pairing QR to sign there.',
+                    { reply_markup: { inline_keyboard: [[{ text: '🔑 Open key vault', url: link }]] } }
+                );
+            } catch (error) {
+                console.error('Error handling /key:', error);
+            }
+        });
+
         // Handle bot being added to a group
         this.bot.on('my_chat_member', async (ctx) => {
             try {

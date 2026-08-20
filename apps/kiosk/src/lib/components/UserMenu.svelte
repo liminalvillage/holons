@@ -12,7 +12,8 @@
     settingsOpen,
     userMenuOpen,
   } from "$lib/stores";
-  import { dashboardUrl } from "$lib/config";
+  import { dashboardUrl, resolveMiniapp } from "$lib/config";
+  import { keyLinkOpen, sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
   import { pasteFromSystemClipboard } from "$lib/clipboard";
   import { t } from "$lib/i18n";
 
@@ -32,6 +33,16 @@
   function login() {
     close();
     loginOpen.set(true);
+  }
+  // The key-link flow only exists when a Mini App is registered (see
+  // resolveMiniapp) — otherwise writes stay signed by the device key.
+  const canLinkKey = resolveMiniapp() != null;
+  function linkKey() {
+    close();
+    keyLinkOpen.set(true);
+  }
+  function unlinkKey() {
+    void dropSessionKey();
   }
   // Touch path for card paste (desktop can just press Ctrl/Cmd+V anywhere).
   function pasteCard() {
@@ -81,6 +92,23 @@
   </button>
 
   {#if $telegramUser}
+    {#if $sessionKeyPub}
+      <button class="row" on:click={unlinkKey}>
+        <span class="ico">🔑</span>
+        <span class="label"
+          >{$t("menu.signingAs", {
+            key: `${$sessionKeyPub.slice(0, 8)}…`,
+          })}</span
+        >
+        <span class="chev">✕</span>
+      </button>
+    {:else if canLinkKey}
+      <button class="row" on:click={linkKey}>
+        <span class="ico">🔑</span>
+        <span class="label">{$t("menu.linkKey")}</span>
+        <span class="chev">›</span>
+      </button>
+    {/if}
     <button class="row danger" on:click={logout}>
       <span class="ico">⏻</span>
       <span class="label">{$t("menu.logout")}</span>

@@ -270,6 +270,34 @@ export const en = {
   "menu.pasteCard": "Paste copied card",
   "menu.settings": "Settings",
   "menu.logout": "Log out",
+  "menu.linkKey": "Link your signing key",
+  "menu.signingAs": "Signing as {key}",
+  "keylink.title": "Link your signing key",
+  "keylink.qrAlt": "Pairing QR code",
+  "keylink.scan": "Scan with your phone — your key stays in your Telegram.",
+  "keylink.waiting": "Waiting for your phone…",
+  "keylink.success": "Key linked — your edits are now signed as you.",
+  "keylink.mismatch": "That key belongs to a different Telegram account.",
+  "keylink.timeout": "No answer — close and try again.",
+  "keylink.failed": "Could not adopt the key — try again.",
+  "keylink.noMiniapp": "No key vault is configured for this kiosk.",
+  "key.title": "Your Holons key",
+  "key.loading": "Loading…",
+  "key.outside":
+    "Open this page from Telegram — it manages the key stored in your Telegram account.",
+  "key.unsupported":
+    "Your Telegram app is too old for key storage — please update it.",
+  "key.error": "Something went wrong — close and try again.",
+  "key.identity": "Your signing identity:",
+  "key.sending": "Sending your key to the kiosk…",
+  "key.sent": "Key delivered — check the kiosk screen.",
+  "key.done": "Done",
+  "key.readyHint":
+    "Your key lives in your Telegram cloud. Scan a kiosk's pairing QR to sign there.",
+  "key.revealKey": "Reveal key (backup)",
+  "key.hideKey": "Hide key",
+  "key.backupHint":
+    "Anyone with this key can act as you — store it somewhere safe and private.",
   "menu.loginTelegram": "Log in with Telegram",
 
   // Completion confirmation
@@ -381,8 +409,11 @@ export const en = {
   "detail.couldNotSave": "Could not save.",
   "detail.completeFailed": "Could not complete.",
   "detail.deleteConfirm": 'Delete "{title}"? This can\'t be undone.',
+  "detail.hideConfirm":
+    'Hide "{title}" from this board? It belongs to another holon and stays there — this only removes it from your view.',
   "detail.thisTask": "this task",
   "detail.deleteFailed": "Could not delete — try again.",
+  "detail.hideFailed": "Could not hide — try again.",
   "detail.joinFailed": "Could not join.",
   "detail.overlaps": "Overlaps {who}'s booking ({start} → {end}).",
   "detail.someone": "someone",

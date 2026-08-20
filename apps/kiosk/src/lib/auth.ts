@@ -7,9 +7,12 @@
 // server verifies the id_token and sets an httpOnly session cookie, and the
 // client reads the verified identity from /api/auth/session.
 //
-// We never hold the user's signing key — writes are signed by the kiosk's own
-// device key (see holosphere.ts) and record this user as the actor via
-// `actingAs`. That mirrors how the bot writes on behalf of chat members.
+// By default we never hold the user's signing key — writes are signed by the
+// kiosk's own device key (see holosphere.ts) and record this user as the actor
+// via `actingAs`, mirroring how the bot writes on behalf of chat members. A
+// user CAN adopt their own Telegram-held key for the session via the E2E
+// pairing flow (sessionKey.ts / pairing.ts); it lives in memory only and is
+// dropped on logout.
 
 import { writable, derived, get } from "svelte/store";
 
@@ -71,6 +74,10 @@ export async function logout(): Promise<void> {
     /* best effort */
   }
   telegramUser.set(null);
+  // A shared kiosk must not keep signing as the departed user: drop the
+  // paired session key (in-memory only) along with the identity.
+  const { dropSessionKey } = await import("./sessionKey");
+  await dropSessionKey();
 }
 
 /** Friendly display name for the logged-in user. */

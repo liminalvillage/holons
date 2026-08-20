@@ -114,6 +114,18 @@ export function resolvePeers(): string[] {
   return [peer];
 }
 
+/**
+ * The Telegram Mini App serving the signing-key vault (routes/key), as
+ * "<botUsername>/<appShortName>" — e.g. "HolonsBot/keys", registered in
+ * BotFather. Unset → the key-link flow is hidden and writes stay signed by
+ * the device key alone.
+ */
+export function resolveMiniapp(): string | null {
+  const env = import.meta.env.VITE_KIOSK_MINIAPP as string | undefined;
+  const v = (env && String(env).trim().replace(/^@/, "")) || "";
+  return /^[A-Za-z0-9_]+\/[A-Za-z0-9_]+$/.test(v) ? v : null;
+}
+
 /** Resolve the holon id this kiosk displays, or null if not configured. */
 export function resolveHolonId(): string | null {
   const fromParam = readParam("holon");

@@ -2,9 +2,14 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import "../app.css";
   import { onMount } from "svelte";
-  import { getHolosphere, getHolonName } from "$lib/holosphere";
+  import { page } from "$app/stores";
+  import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
+  import type { Subscription } from "$lib/holosphere";
   import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
   import { getFederationSnapshot } from "@holons/core/federation";
+  import { HIDDEN_LENS, hiddenIdSet, isRefHidden } from "@holons/core/hidden";
+  import type { HiddenEntry } from "@holons/core/hidden";
+  import { sourceRef } from "@holons/core/holosphere";
   import type { HoloSphere } from "holosphere";
   import {
     resolveHolonId,
@@ -68,8 +73,10 @@
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
   import type { Checklist } from "@holons/core/checklists";
+  import { keyLinkOpen } from "$lib/sessionKey";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
+  import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import TelegramLogin from "$lib/components/TelegramLogin.svelte";
   import UserMenu from "$lib/components/UserMenu.svelte";
@@ -94,6 +101,34 @@
   let librarySub: FederatedSub | null = null;
   let rolesSub: FederatedSub | null = null;
   let checklistsSub: FederatedSub | null = null;
+
+  // The holon's mute list (`hidden` lens): source addresses of federated
+  // cards this board has hidden. "Deleting" a federated card writes here —
+  // the owner's record is never touched (see deleteQuest in DetailModal) —
+  // and the quests emission is filtered against it below. Both feeds are
+  // live, so a hide (or un-hide) lands without waiting for the next quests
+  // burst: whichever side emits last re-applies the filter.
+  let hiddenSub: Subscription | null = null;
+  let hiddenSet: Set<string> = new Set();
+  let lastQuestItems: Quest[] = [];
+
+  function emitQuests() {
+    rawQuests.set(
+      hiddenSet.size === 0
+        ? lastQuestItems
+        : lastQuestItems.filter(
+            (q) =>
+              !isRefHidden(
+                hiddenSet,
+                withLens(sourceRef(q, String(q.id ?? q.title))),
+              ),
+          ),
+    );
+  }
+  // A hide-entry keys on the source's full address; provenance refs carry
+  // holon+key, and everything here reads from the quests lens.
+  const withLens = (ref?: { holon: string; key: string }) =>
+    ref && { ...ref, lens: "quests" };
 
   // Board reveal: hold the views hidden while a holon's initial data burst
   // streams in, then reveal once it settles so the entrance animation plays on
@@ -125,8 +160,11 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
-      questsSub = librarySub = rolesSub = checklistsSub = null;
+      hiddenSub?.unsubscribe();
+      questsSub = librarySub = rolesSub = checklistsSub = hiddenSub = null;
       boundHolon = null;
+      hiddenSet = new Set();
+      lastQuestItems = [];
       rawQuests.set([]);
       rawLibrary.set([]);
       rawRoles.set([]);
@@ -166,18 +204,26 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      hiddenSub?.unsubscribe();
       librarySub = null; // recreated below when the Library tab is enabled
       rolesSub = null; // recreated below when the Roles tab is enabled
       checklistsSub = null; // recreated below when the Lists tab is enabled
+      hiddenSet = new Set();
+      lastQuestItems = [];
       questsSub = hs.subscribeFederated(
         id,
         "quests",
         (items) => {
           lensEmitAt.quests = Date.now();
-          rawQuests.set(items as Quest[]);
+          lastQuestItems = items as Quest[];
+          emitQuests();
         },
         { includeFederated: fed },
       );
+      hiddenSub = subscribeLens<HiddenEntry>(hs, id, HIDDEN_LENS, (entries) => {
+        hiddenSet = hiddenIdSet(entries);
+        emitQuests();
+      });
       boundHolon = id;
       boundFed = fed;
       holonName.set("");
@@ -279,6 +325,7 @@
         librarySub?.unsubscribe();
         rolesSub?.unsubscribe();
         checklistsSub?.unsubscribe();
+        hiddenSub?.unsubscribe();
       };
     }
   }
@@ -455,12 +502,18 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      hiddenSub?.unsubscribe();
     };
   });
 
+  // The signing-key vault (routes/key) is a Telegram Mini App — a phone-sized
+  // page with its own life. It must not boot the board: no subscriptions, no
+  // kiosk chrome, just the route.
+  $: isMiniApp = $page.url.pathname.replace(/\/+$/, "") === "/key";
+
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
-  $: if (mounted)
+  $: if (mounted && !isMiniApp)
     refresh(
       $holonIdStore,
       $federated,
@@ -533,62 +586,74 @@
   on:paste={onPaste}
 />
 
-<div class="kiosk">
-  {#if !$holonIdStore && !booting}
-    <div class="setup">
-      {#if $brandLogo}
-        <img class="logo" src={$brandLogo} alt="Kiosk" />
-      {:else}
-        <div class="wordmark">{$brandName || "kiosk"}</div>
-      {/if}
-      <h1>{$t("setup.title")}</h1>
-      <p>{$t("setup.body")}</p>
-      <button class="setup-btn" on:click={() => settingsOpen.set(true)}>
-        {$t("setup.openSettings")}
-      </button>
-    </div>
-  {:else}
-    <TabBar />
-    <main class="stage">
-      <slot />
-    </main>
+{#if isMiniApp}
+  <!-- Telegram Mini App route: no board, no chrome — the page is the app. -->
+  <slot />
+{:else}
+  <div class="kiosk">
+    {#if !$holonIdStore && !booting}
+      <div class="setup">
+        {#if $brandLogo}
+          <img class="logo" src={$brandLogo} alt="Kiosk" />
+        {:else}
+          <div class="wordmark">{$brandName || "kiosk"}</div>
+        {/if}
+        <h1>{$t("setup.title")}</h1>
+        <p>{$t("setup.body")}</p>
+        <button class="setup-btn" on:click={() => settingsOpen.set(true)}>
+          {$t("setup.openSettings")}
+        </button>
+      </div>
+    {:else}
+      <TabBar />
+      <main class="stage">
+        <slot />
+      </main>
+    {/if}
+  </div>
+
+  <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
+  <DetailModal />
+
+  <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
+  {#if $loginOpen}
+    <Modal on:close={() => loginOpen.set(false)}>
+      <TelegramLogin />
+    </Modal>
   {/if}
-</div>
 
-<!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
-<DetailModal />
+  <!-- User menu: identity, federated toggle, dashboard, settings. -->
+  {#if $userMenuOpen}
+    <Modal on:close={() => userMenuOpen.set(false)}>
+      <UserMenu />
+    </Modal>
+  {/if}
 
-<!-- Login overlay, raised from the header chip or an "edit" prompt. -->
-{#if $loginOpen}
-  <Modal on:close={() => loginOpen.set(false)}>
-    <TelegramLogin />
-  </Modal>
-{/if}
+  <!-- Caretaker settings: holon, name, logo, accent. -->
+  {#if $settingsOpen}
+    <Modal on:close={() => settingsOpen.set(false)}>
+      <Settings />
+    </Modal>
+  {/if}
 
-<!-- User menu: identity, federated toggle, dashboard, settings. -->
-{#if $userMenuOpen}
-  <Modal on:close={() => userMenuOpen.set(false)}>
-    <UserMenu />
-  </Modal>
-{/if}
+  <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
+  {#if $keyLinkOpen}
+    <Modal on:close={() => keyLinkOpen.set(false)}>
+      <KeyLinkModal />
+    </Modal>
+  {/if}
 
-<!-- Caretaker settings: holon, name, logo, accent. -->
-{#if $settingsOpen}
-  <Modal on:close={() => settingsOpen.set(false)}>
-    <Settings />
-  </Modal>
-{/if}
+  <!-- Participant confirmation before a completion records REA. -->
+  <CompleteConfirm />
 
-<!-- Participant confirmation before a completion records REA. -->
-<CompleteConfirm />
-
-<!-- Push-to-talk voice agent; renders only when a voice server is reachable.
+  <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
      Sends the displayed holon + active view + open record as turn context. -->
-<VoiceWidget />
+  <VoiceWidget />
 
-<!-- Transient one-line feedback for taps that can't proceed. -->
-{#if $notice}
-  <div class="notice" role="status">{$notice}</div>
+  <!-- Transient one-line feedback for taps that can't proceed. -->
+  {#if $notice}
+    <div class="notice" role="status">{$notice}</div>
+  {/if}
 {/if}
 
 <style>

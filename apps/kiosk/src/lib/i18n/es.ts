@@ -273,6 +273,35 @@ export const es: Record<MessageKey, Msg> = {
   "menu.pasteCard": "Pegar la ficha copiada",
   "menu.settings": "Ajustes",
   "menu.logout": "Cerrar sesión",
+  "menu.linkKey": "Vincula tu clave de firma",
+  "menu.signingAs": "Firmando como {key}",
+  "keylink.title": "Vincula tu clave de firma",
+  "keylink.qrAlt": "QR de emparejamiento",
+  "keylink.scan":
+    "Escanéalo con tu teléfono — tu clave se queda en tu Telegram.",
+  "keylink.waiting": "Esperando tu teléfono…",
+  "keylink.success": "Clave vinculada — tus cambios se firman como tú.",
+  "keylink.mismatch": "Esa clave pertenece a otra cuenta de Telegram.",
+  "keylink.timeout": "Sin respuesta — cierra e inténtalo de nuevo.",
+  "keylink.failed": "No se pudo adoptar la clave — inténtalo de nuevo.",
+  "keylink.noMiniapp": "No hay almacén de claves configurado para este kiosco.",
+  "key.title": "Tu clave de Holons",
+  "key.loading": "Cargando…",
+  "key.outside":
+    "Abre esta página desde Telegram — gestiona la clave guardada en tu cuenta de Telegram.",
+  "key.unsupported":
+    "Tu app de Telegram es demasiado antigua para el almacén de claves — actualízala.",
+  "key.error": "Algo salió mal — cierra e inténtalo de nuevo.",
+  "key.identity": "Tu identidad de firma:",
+  "key.sending": "Enviando tu clave al kiosco…",
+  "key.sent": "Clave entregada — mira la pantalla del kiosco.",
+  "key.done": "Listo",
+  "key.readyHint":
+    "Tu clave vive en tu nube de Telegram. Escanea el QR de un kiosco para firmar allí.",
+  "key.revealKey": "Mostrar clave (copia de seguridad)",
+  "key.hideKey": "Ocultar clave",
+  "key.backupHint":
+    "Cualquiera con esta clave puede actuar como tú — guárdala en un lugar seguro y privado.",
   "menu.loginTelegram": "Entrar con Telegram",
 
   // Completion confirmation
@@ -389,8 +418,11 @@ export const es: Record<MessageKey, Msg> = {
   "detail.couldNotSave": "No se pudo guardar.",
   "detail.completeFailed": "No se pudo completar.",
   "detail.deleteConfirm": '¿Eliminar "{title}"? No se puede deshacer.',
+  "detail.hideConfirm":
+    '¿Ocultar "{title}" de este tablero? Pertenece a otro holón y permanece allí — solo desaparece de tu vista.',
   "detail.thisTask": "esta tarea",
   "detail.deleteFailed": "No se pudo eliminar — inténtalo de nuevo.",
+  "detail.hideFailed": "No se pudo ocultar — inténtalo de nuevo.",
   "detail.joinFailed": "No se pudo unir.",
   "detail.overlaps": "Se solapa con la reserva de {who} ({start} → {end}).",
   "detail.someone": "alguien",

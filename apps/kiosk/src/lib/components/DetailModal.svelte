@@ -21,6 +21,7 @@
   } from "$lib/stores";
   import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
+  import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
   import { toggleJoin, toggleAppreciate } from "$lib/membership";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import {
@@ -635,10 +636,13 @@
       loginOpen.set(true);
       return;
     }
+    const localId = String(sel.quest.id ?? sel.quest.title);
+    const mirrored = isHologram(sel.quest);
+    const ref = mirrored ? undefined : sourceRef(sel.quest, localId);
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        $t("detail.deleteConfirm", {
+        $t(ref ? "detail.hideConfirm" : "detail.deleteConfirm", {
           title: quest?.title ?? $t("detail.thisTask"),
         }),
       )
@@ -646,6 +650,26 @@
       return;
     saving = true;
     message = "";
+    // A federation-aggregated card is someone else's record: it has no local
+    // node, and this viewer has no business tombstoning it in its owner's
+    // lens. "Delete" therefore means MUTE — a hide-entry in THIS holon's
+    // `hidden` lens (core owns the shape; +layout filters the quests feed
+    // against it). The original stays untouched for its holon, and un-hiding
+    // is possible because nothing was destroyed.
+    if (ref) {
+      const writer = await getWriter($holonId, (m) => (message = m));
+      const ok = await writer.put(
+        HIDDEN_LENS,
+        buildHiddenEntry(
+          { holon: ref.holon, lens: "quests", key: ref.key },
+          { by: user.id },
+        ),
+      );
+      saving = false;
+      if (ok) closeDetail();
+      else if (!message) message = $t("detail.hideFailed");
+      return;
+    }
     // Soft-delete: write a `_deleted: true` tombstone (the bot's convention)
     // rather than a hard `put(null)`. A hard delete leaves a husk node that Gun
     // keeps re-emitting; the live subscription forwards it (it only swallows a
@@ -654,22 +678,16 @@
     // tombstone is a stable object that both `isDone` and the lens aggregator
     // drop cleanly, so the card just leaves.
     //
-    // WHERE it lands depends on where the card actually lives:
+    // WHERE it lands:
     //   - a hologram (a joined task mirrored into this holon as a pointer) is
     //     deleted HERE — dropping our mirror, not the source holon's task. The
     //     write must say so: HoloSphere otherwise follows the pointer, so the
     //     tombstone would soft-delete the original for everyone while our
     //     pointer — and the card — stayed exactly where it was.
-    //   - a federation-aggregated card has no local node at all; it lives in
-    //     its owner's lens, so the tombstone goes there (same routing as
-    //     `saveThing`) or it forks a stray local copy and the card stays.
     //   - our own task: written in place, as before.
-    const localId = String(sel.quest.id ?? sel.quest.title);
-    const mirrored = isHologram(sel.quest);
-    const ref = mirrored ? undefined : sourceRef(sel.quest, localId);
     const tombstone: Record<string, unknown> = {
       ...sel.quest,
-      id: ref?.key ?? localId,
+      id: localId,
       _deleted: true,
     };
     // Read-side provenance tags — never persist them (and `_hologram` would
@@ -677,10 +695,7 @@
     delete tombstone._holon;
     delete tombstone._hologram;
     delete tombstone._federation;
-    const writer = await getWriter(
-      ref?.holon ?? $holonId,
-      (m) => (message = m),
-    );
+    const writer = await getWriter($holonId, (m) => (message = m));
     const ok = await writer.put("quests", tombstone, {
       disableHologramRedirection: mirrored,
     });

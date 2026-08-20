@@ -272,6 +272,34 @@ export const it: Record<MessageKey, Msg> = {
   "menu.pasteCard": "Incolla la scheda copiata",
   "menu.settings": "Impostazioni",
   "menu.logout": "Esci",
+  "menu.linkKey": "Collega la tua chiave di firma",
+  "menu.signingAs": "Firmi come {key}",
+  "keylink.title": "Collega la tua chiave di firma",
+  "keylink.qrAlt": "QR di abbinamento",
+  "keylink.scan": "Scansiona col telefono — la chiave resta nel tuo Telegram.",
+  "keylink.waiting": "In attesa del telefono…",
+  "keylink.success": "Chiave collegata — le tue modifiche sono firmate da te.",
+  "keylink.mismatch": "Quella chiave appartiene a un altro account Telegram.",
+  "keylink.timeout": "Nessuna risposta — chiudi e riprova.",
+  "keylink.failed": "Impossibile adottare la chiave — riprova.",
+  "keylink.noMiniapp": "Nessun portachiavi configurato per questo kiosk.",
+  "key.title": "La tua chiave Holons",
+  "key.loading": "Caricamento…",
+  "key.outside":
+    "Apri questa pagina da Telegram — gestisce la chiave conservata nel tuo account Telegram.",
+  "key.unsupported":
+    "La tua app Telegram è troppo vecchia per l'archivio chiavi — aggiornala.",
+  "key.error": "Qualcosa è andato storto — chiudi e riprova.",
+  "key.identity": "La tua identità di firma:",
+  "key.sending": "Invio della chiave al kiosk…",
+  "key.sent": "Chiave consegnata — guarda lo schermo del kiosk.",
+  "key.done": "Fatto",
+  "key.readyHint":
+    "La chiave vive nel tuo cloud Telegram. Scansiona il QR di un kiosk per firmare lì.",
+  "key.revealKey": "Mostra la chiave (backup)",
+  "key.hideKey": "Nascondi la chiave",
+  "key.backupHint":
+    "Chiunque abbia questa chiave può agire come te — conservala in un posto sicuro e privato.",
   "menu.loginTelegram": "Accedi con Telegram",
 
   // Completion confirmation
@@ -389,8 +417,11 @@ export const it: Record<MessageKey, Msg> = {
   "detail.couldNotSave": "Impossibile salvare.",
   "detail.completeFailed": "Impossibile completare.",
   "detail.deleteConfirm": 'Eliminare "{title}"? Non si può annullare.',
+  "detail.hideConfirm":
+    'Nascondere "{title}" da questa bacheca? Appartiene a un altro holon e vi rimane — sparisce solo dalla tua vista.',
   "detail.thisTask": "questa attività",
   "detail.deleteFailed": "Impossibile eliminare — riprova.",
+  "detail.hideFailed": "Impossibile nascondere — riprova.",
   "detail.joinFailed": "Impossibile unirsi.",
   "detail.overlaps":
     "Si sovrappone alla prenotazione di {who} ({start} → {end}).",
