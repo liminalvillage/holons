@@ -404,6 +404,8 @@ declare class HoloSphere {
         includeLocal?: boolean;
         includeFederated?: boolean;
         dedupe?: boolean;
+        /** False when the lens's ids are only holon-unique (e.g. `checklists`). */
+        dedupeAcrossSpaces?: boolean;
         idField?: string;
         maxFederatedSpaces?: number;
     }): { unsubscribe: () => void; setFederated: (on: boolean) => void };

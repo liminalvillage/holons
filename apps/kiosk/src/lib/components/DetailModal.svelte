@@ -42,7 +42,9 @@
     recordBorrowAccounting,
     recordReturnAccounting,
     findOverlappingBooking,
+    bookingOriginLabel,
     getDisplayBookings,
+    isBookingActive,
     dayKey,
     getItemIcon,
     getTypeDisplayName,
@@ -824,6 +826,12 @@
         .slice(0, 3)
     : [];
 
+  // The booking covering today, if any — the status line ("Out · Alex") reads
+  // from it, so a federated borrow can say which holon it came in from.
+  $: activeBooking = item
+    ? (getDisplayBookings(item).find((b) => isBookingActive(b)) ?? null)
+    : null;
+
   function startBooking() {
     if (!item) return;
     const actor = borrowActor();
@@ -867,10 +875,16 @@
     const ref = sourceRef(sel.item, String(sel.item.id));
     const holon = ref?.holon ?? $holonId;
     const key = ref?.key ?? String(sel.item.id);
-    const res = await bookItem(db, holon, key, actor, {
-      start: bStart,
-      end: bEnd,
-    });
+    const res = await bookItem(
+      db,
+      holon,
+      key,
+      actor,
+      { start: bStart, end: bEnd },
+      // Where we're booking FROM. Core stamps the booking's origin when this
+      // differs from the item's holon, so the owner sees a federated borrow.
+      { actingHolon: $holonId, actingHolonName: $holonName || null },
+    );
     saving = false;
     if (res.ok) {
       // Credits move on borrow everywhere (skipped by core for owners and
@@ -946,6 +960,11 @@
                 {item.borrower
                   ? $t("detail.outWith", { who: item.borrower })
                   : $t("detail.out")}
+                {#if bookingOriginLabel(activeBooking)}
+                  <span class="viachip" title={$t("detail.viaHolonTitle")}
+                    >⇄ {bookingOriginLabel(activeBooking)}</span
+                  >
+                {/if}
               {:else}{$t("detail.availableCap")}{/if}
             </dd>
           </div>
@@ -964,7 +983,13 @@
                     >{fmtDay($locale, b.start)} → {fmtDay(
                       $locale,
                       b.end,
-                    )}{b.borrower ? ` · ${b.borrower}` : ""}</span
+                    )}{b.borrower
+                      ? ` · ${b.borrower}`
+                      : ""}{#if bookingOriginLabel(b)}<span
+                        class="viachip"
+                        title={$t("detail.viaHolonTitle")}
+                        >⇄ {bookingOriginLabel(b)}</span
+                      >{/if}</span
                   >
                 {/each}
               </dd>
@@ -1493,6 +1518,24 @@
     border: 1px solid
       color-mix(in srgb, var(--src, var(--teal)) 55%, transparent);
     background: color-mix(in srgb, var(--src, var(--teal)) 12%, transparent);
+  }
+  /* Origin of a FEDERATED booking, shown inline next to the borrower. Reads as
+     a quieter sibling of `.srcchip` (which marks a federated ITEM): this one is
+     about where the borrow came from, not where the item lives. */
+  .viachip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: 0.4rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    color: var(--teal-deep);
+    border: 1px solid color-mix(in srgb, var(--teal) 45%, transparent);
+    background: color-mix(in srgb, var(--teal) 10%, transparent);
   }
   .icon-big {
     font-size: 3rem;

@@ -57,13 +57,13 @@ describe('parent-hexagon deletion propagation', () => {
   });
 
   test('put copies to every parent, delete retracts all of them', async () => {
-    await sphere.put(CHILD, LENS, { id: 'q1', title: 'Repair the well' }, null, { awaitPropagation: true });
+    await sphere.put(CHILD, LENS, { id: 'q1', title: 'Repair the well' }, null, { awaitPropagation: true, autoPropagate: true });
 
     for (const parent of PARENTS) {
       expect(await idsAt(parent)).toContain('q1');
     }
 
-    await sphere.delete(CHILD, LENS, 'q1', null, { awaitPropagation: true });
+    await sphere.delete(CHILD, LENS, 'q1', null, { awaitPropagation: true, autoPropagate: true });
 
     expect(await idsAt(CHILD)).not.toContain('q1');
     for (const parent of PARENTS) {
@@ -73,12 +73,20 @@ describe('parent-hexagon deletion propagation', () => {
 
   test("a parent's own record with the same id survives another holon's delete", async () => {
     const parent = PARENTS[0];
-    await sphere.put(CHILD, LENS, { id: 'collide', title: 'child record' }, null, { awaitPropagation: true });
     // The parent hexagon holds a record of its own under the same id (an id
     // collision between two holons is entirely possible — ids are per-holon).
+    // It is written FIRST, which is the realistic order: a holon has its own
+    // data before a neighbour starts propagating. Propagation must then refuse
+    // to touch that slot at all (mayPropagateInto), and the later delete must
+    // not reach it either.
     await sphere.put(parent, LENS, { id: 'collide', title: 'parent OWN record' }, null, { autoPropagate: false });
+    await sphere.put(CHILD, LENS, { id: 'collide', title: 'child record' }, null, { awaitPropagation: true, autoPropagate: true });
 
-    await sphere.delete(CHILD, LENS, 'collide', null, { awaitPropagation: true });
+    // The guard held: the parent still has its own record, not the child's.
+    const beforeDelete = await sphere.get(parent, LENS, 'collide', null, { resolveHolograms: false, _skipAuthorize: true });
+    expect(beforeDelete?.title).toBe('parent OWN record');
+
+    await sphere.delete(CHILD, LENS, 'collide', null, { awaitPropagation: true, autoPropagate: true });
 
     const survivor = await sphere.get(parent, LENS, 'collide', null, { resolveHolograms: false, _skipAuthorize: true });
     expect(survivor?.title).toBe('parent OWN record');
@@ -86,11 +94,11 @@ describe('parent-hexagon deletion propagation', () => {
   }, 60000);
 
   test('deleting a propagated copy does not cascade into the rest of the ancestry', async () => {
-    await sphere.put(CHILD, LENS, { id: 'q2', title: 'Plant the orchard' }, null, { awaitPropagation: true });
+    await sphere.put(CHILD, LENS, { id: 'q2', title: 'Plant the orchard' }, null, { awaitPropagation: true, autoPropagate: true });
 
     // Delete the copy sitting at the FIRST parent. That copy's origin is the
     // child, not this holon, so it must retract nothing further.
-    await sphere.delete(PARENTS[0], LENS, 'q2', null, { awaitPropagation: true });
+    await sphere.delete(PARENTS[0], LENS, 'q2', null, { awaitPropagation: true, autoPropagate: true });
 
     expect(await idsAt(PARENTS[0])).not.toContain('q2');
     for (const parent of PARENTS.slice(1)) {
@@ -100,7 +108,7 @@ describe('parent-hexagon deletion propagation', () => {
   }, 60000);
 
   test('a non-H3 holon is a no-op (nothing to walk)', async () => {
-    await sphere.put('my-group-holon', LENS, { id: 'q3', title: 'Local only' }, null, { awaitPropagation: true });
+    await sphere.put('my-group-holon', LENS, { id: 'q3', title: 'Local only' }, null, { awaitPropagation: true, autoPropagate: true });
     const result = await sphere.propagateDeletion('my-group-holon', LENS, 'q3');
     expect(result.success).toBe(0);
     expect(result.errors).toBe(0);
@@ -108,7 +116,7 @@ describe('parent-hexagon deletion propagation', () => {
   }, 30000);
 
   test('autoPropagate:false leaves the parent copies alone', async () => {
-    await sphere.put(CHILD, LENS, { id: 'q4', title: 'Keep the copies' }, null, { awaitPropagation: true });
+    await sphere.put(CHILD, LENS, { id: 'q4', title: 'Keep the copies' }, null, { awaitPropagation: true, autoPropagate: true });
     await sphere.delete(CHILD, LENS, 'q4', null, { autoPropagate: false, awaitPropagation: true });
 
     expect(await idsAt(CHILD)).not.toContain('q4');
@@ -125,13 +133,14 @@ describe('parent-hexagon deletion propagation', () => {
     const parent = PARENTS[0];
     await sphere.put(CHILD, LENS, { id: 'h1', title: 'Hologram copy' }, null, {
       awaitPropagation: true,
+      autoPropagate: true,
       propagationOptions: { useHolograms: true }
     });
 
     // What landed at the parent really is a pointer, not a full copy.
     expect(typeof (await storedAt(parent, 'h1'))?.soul).toBe('string');
 
-    await sphere.delete(CHILD, LENS, 'h1', null, { awaitPropagation: true });
+    await sphere.delete(CHILD, LENS, 'h1', null, { awaitPropagation: true, autoPropagate: true });
 
     for (const p of PARENTS) {
       expect(await storedAt(p, 'h1')).toBeNull();
@@ -146,11 +155,12 @@ describe('parent-hexagon deletion propagation', () => {
     const parent = PARENTS[0];
     await sphere.put(CHILD, LENS, { id: 'h2', title: 'Swept hologram' }, null, {
       awaitPropagation: true,
+      autoPropagate: true,
       propagationOptions: { useHolograms: true }
     });
     expect(typeof (await storedAt(parent, 'h2'))?.soul).toBe('string');
 
-    await sphere.deleteAll(CHILD, LENS, null, { awaitPropagation: true });
+    await sphere.deleteAll(CHILD, LENS, null, { awaitPropagation: true, autoPropagate: true });
 
     for (const p of PARENTS) {
       expect(await storedAt(p, 'h2')).toBeNull();
@@ -158,12 +168,12 @@ describe('parent-hexagon deletion propagation', () => {
   }, 90000);
 
   test('deleteAll retracts every copy this holon propagated, in one pass', async () => {
-    await sphere.put(CHILD, LENS, { id: 'a1', title: 'one' }, null, { awaitPropagation: true });
-    await sphere.put(CHILD, LENS, { id: 'a2', title: 'two' }, null, { awaitPropagation: true });
+    await sphere.put(CHILD, LENS, { id: 'a1', title: 'one' }, null, { awaitPropagation: true, autoPropagate: true });
+    await sphere.put(CHILD, LENS, { id: 'a2', title: 'two' }, null, { awaitPropagation: true, autoPropagate: true });
     const parent = PARENTS[0];
     await sphere.put(parent, LENS, { id: 'own', title: 'parent OWN record' }, null, { autoPropagate: false });
 
-    await sphere.deleteAll(CHILD, LENS, null, { awaitPropagation: true });
+    await sphere.deleteAll(CHILD, LENS, null, { awaitPropagation: true, autoPropagate: true });
 
     const left = await idsAt(parent);
     expect(left).not.toContain('a1');

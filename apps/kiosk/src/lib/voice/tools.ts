@@ -15,6 +15,7 @@ import { borrowItem, returnItem } from "@holons/core/library";
 import { localFieldsToStored } from "@holons/core/datetime";
 import {
   holonId,
+  holonName,
   rawQuests,
   rawLibrary,
   rawRoles,
@@ -391,7 +392,10 @@ export async function dispatchKioskTool(
         if (call.name === "library_borrow") {
           const days = typeof input.days === "number" ? input.days : 7;
           const due = new Date(Date.now() + days * 86_400_000);
-          const res = await borrowItem(db, holon, key, actor, due);
+          const res = await borrowItem(db, holon, key, actor, due, {
+            actingHolon: hid,
+            actingHolonName: get(holonName) || null,
+          });
           return res.ok
             ? ok(call.id, `Borrowed "${title}" until ${due.toDateString()}.`)
             : fail(call.id, `Borrow failed: ${res.reason}.`);

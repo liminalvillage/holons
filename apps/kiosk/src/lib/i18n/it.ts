@@ -435,6 +435,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.status": "Stato",
   "detail.out": "In prestito",
   "detail.outWith": "In prestito · {who}",
+  "detail.viaHolonTitle": "Prenotato da un holon federato",
   "detail.availableCap": "Disponibile",
   "detail.value": "Valore",
   "detail.booked": "Prenotato",

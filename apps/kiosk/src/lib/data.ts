@@ -11,6 +11,7 @@ import {
   unmetDependencies,
 } from "@holons/core/tasks";
 import type { Quest } from "@holons/core/tasks";
+import { dayKey, getDisplayBookings } from "@holons/core/library";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import {
@@ -21,7 +22,7 @@ import {
 } from "@holons/core/checklists";
 import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
-import { sourceHolonId, sourceRef } from "@holons/core/holosphere";
+import { recordKey, sourceHolonId, sourceRef } from "@holons/core/holosphere";
 import type { Translator } from "./i18n";
 
 /** Warm post-it palette, indexed deterministically by category. */
@@ -120,7 +121,7 @@ type Names = Record<string, string>;
 // actually lives in, and where a write on it must land). The rule moved to
 // `@holons/core/holosphere` so every surface shares it; these re-exports keep
 // the kiosk's existing call sites stable.
-export { sourceHolonId, sourceRef };
+export { sourceHolonId, sourceRef, recordKey };
 
 /**
  * Resolve a foreign item's source holon to a friendly label — the partner's
@@ -213,6 +214,12 @@ export interface CalendarEvent {
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
   hologram?: boolean;
+  /**
+   * Set only on a library booking span (see {@link toBookingEvents}): the
+   * library item the span belongs to, so a tap opens the item's card rather
+   * than looking for a quest that doesn't exist.
+   */
+  libraryItemId?: string;
 }
 
 export interface TaskPerson {
@@ -516,7 +523,18 @@ export function toRoles(
 }
 
 export interface ChecklistCard {
+  /**
+   * The record's own id — its name in the store, and what a write targets.
+   * NOT unique across holons: every holon has an `agenda` and a `shopping`.
+   * Use {@link ChecklistCard.key} to identify a card in the view.
+   */
   id: string;
+  /**
+   * View identity: unique even when partners contribute a list of the same
+   * name (`recordKey` — `origin::id` for a foreign list, the bare id for our
+   * own). Svelte keys, open-panel state and lookups all run off this.
+   */
+  key: string;
   title: string;
   /** Core's emoji for the list kind (📅 agenda, 🛒 shopping, 📋 …). */
   icon: string;
@@ -551,6 +569,7 @@ export function toChecklists(
       const items = Array.isArray(typed.items) ? typed.items : [];
       return {
         id: String(typed.id),
+        key: recordKey(c, String(typed.id)),
         title: getChecklistDisplayTitle(typed),
         icon: getChecklistIcon(typed),
         done: items.filter((i) => i?.checked).length,
@@ -563,14 +582,21 @@ export function toChecklists(
       };
     })
     .filter((c) => {
-      // Drop federated duplicates so view keys stay unique.
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
+      // Dedupe on the ORIGIN-qualified key, not the bare id: a partner's
+      // `shopping` is a different list from ours and both belong on the board.
+      if (seen.has(c.key)) return false;
+      seen.add(c.key);
       return true;
     })
     .sort((a, b) => {
       if (a.special !== b.special) return a.special ? -1 : 1;
-      return a.title.localeCompare(b.title);
+      if (a.title !== b.title) return a.title.localeCompare(b.title);
+      // Same-named lists from different holons: our own first (its key is the
+      // bare id), then partners by origin.
+      const aOwn = a.key === a.id;
+      const bOwn = b.key === b.id;
+      if (aOwn !== bOwn) return aOwn ? -1 : 1;
+      return a.key.localeCompare(b.key);
     });
 }
 
@@ -604,6 +630,75 @@ export function toThings(
       if (a.available !== b.available) return a.available ? -1 : 1;
       return a.title.localeCompare(b.title);
     });
+}
+
+/** Local midnight of a `YYYY-MM-DD` day, or `null` when it doesn't parse. */
+function dayStart(day: string): Date | null {
+  const d = new Date(`${dayKey(day)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Library bookings → all-day calendar spans, one per booking: the data behind
+ * the Library's calendar layout, which answers "when is this gone?" at a
+ * glance. The web dashboard overlays the very same spans on its main calendar
+ * (`$lib/util/libraryBookings.buildBookingSpans`); the kiosk feeds them to its
+ * own CalendarView instead, so both surfaces read one booking model.
+ *
+ * Core owns what a booking IS — `getDisplayBookings` also synthesizes one for
+ * items that still carry only the legacy single-borrow fields, so old data
+ * shows up too. The shaping here is purely for display:
+ *
+ * - `category` is the item's name, so the note-colour hash gives every item a
+ *   stable colour of its own (the same trick web's `getItemColor` plays).
+ * - the borrower rides in `people`, so the avatar stack and the Mine scope
+ *   ("the bookings that are mine") work without a special case.
+ */
+export function toBookingEvents(
+  items: LibraryItem[],
+  names?: Names,
+): CalendarEvent[] {
+  const out: CalendarEvent[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const itemId = String(item.id ?? "");
+    // Federation shares the library, so the same item can arrive from several
+    // holons — keep the first (our own copy) so view keys stay unique.
+    if (!itemId || item._deleted || seen.has(itemId)) continue;
+    seen.add(itemId);
+    const source = sourceLabel(item, names);
+    const sourceColor = sourceGlow(item);
+    const hologram = isHologram(item);
+    for (const b of getDisplayBookings(item)) {
+      const date = dayStart(b.start);
+      const end = dayStart(b.end);
+      if (!date || !end) continue;
+      // Inclusive day count; rounded because a DST boundary inside the range
+      // makes the millisecond span 23h or 25h, not a whole number of days.
+      const days = Math.max(
+        1,
+        Math.round((end.getTime() - date.getTime()) / 86_400_000) + 1,
+      );
+      const who = b.borrower || (b.borrowerId ? String(b.borrowerId) : "");
+      out.push({
+        id: `booking-${itemId}-${b.id}`,
+        libraryItemId: itemId,
+        title: itemId,
+        date,
+        end,
+        days,
+        multiDay: days > 1,
+        category: itemId,
+        allDay: true,
+        people: who ? [{ id: b.borrowerId || who, name: who }] : [],
+        appreciation: 0,
+        source,
+        sourceColor,
+        hologram,
+      });
+    }
+  }
+  return out.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
 /**

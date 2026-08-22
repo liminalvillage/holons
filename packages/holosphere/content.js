@@ -188,9 +188,12 @@ function sanitizeForStorage(value, path = '', seen = new WeakSet(), warnings = [
  * @param {object} data - The data to store.
  * @param {string} [password] - Optional password for private holon.
  * @param {object} [options] - Additional options
- * @param {boolean} [options.autoPropagate=true] - Whether to automatically propagate to federated holons (default: true)
+ * @param {boolean} [options.autoPropagate=false] - Opt in to fan this write out to federated
+ *   partners and parent hexagons. Off by default: propagation creates stored copies at
+ *   other holons, which is a decision the caller must make deliberately.
  * @param {object} [options.propagationOptions] - Options to pass to propagate
- * @param {boolean} [options.propagationOptions.useHolograms=true] - Whether to use holograms instead of duplicating data
+ * @param {boolean} [options.propagationOptions.useHolograms=true] - Emit soul pointers (default)
+ *   rather than detached full copies.
  * @param {boolean} [options.disableHologramRedirection=false] - Whether to disable hologram redirection
  * @returns {Promise<object>} - Returns an object with success status, path info, propagation result, and list of updated holograms
  */
@@ -622,18 +625,29 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         // multi-hop parent-hexagon walk, would otherwise stall every write — the
                         // receiving holon filters on READ, not on our write). Fire-and-forget by
                         // default; callers that need the result can pass `{ awaitPropagation: true }`.
-                        const shouldPropagate = options.autoPropagate !== false && !isHologram && !isGlobal;
+                        // Auto-propagation is OPT-IN. It used to be on by default, which
+                        // meant every ordinary write fanned a copy into every outbound
+                        // partner and up the whole H3 ancestry — creating stored copies
+                        // nobody asked for, and (for a whole-record lens) replacing the
+                        // target's own record with the writer's. Callers that genuinely
+                        // want fan-out now say so with `autoPropagate: true`.
+                        const shouldPropagate = options.autoPropagate === true && !isHologram && !isGlobal;
                         let propagationResult = null;
 
                         if (shouldPropagate) {
-                            // Holograms are OPT-IN: a plain put propagates full copies to
-                            // partners by default, not soul pointers. Callers that want
-                            // holograms must pass `propagationOptions.useHolograms: true`
-                            // (e.g. @holons/core publishToFederation when opted in).
+                            // Propagation emits HOLOGRAMS — soul pointers back to this
+                            // holon — not full copies. A copy is a second stored truth:
+                            // it drifts from the original, it is indistinguishable from a
+                            // record the target authored once any write strips its
+                            // `_federation` stamp, and for a lens whose record holds a
+                            // collection it REPLACES rather than merges. A pointer has
+                            // none of those failure modes and reads through to the live
+                            // original. Callers that truly need a detached copy must ask
+                            // with `propagationOptions.useHolograms: false`.
                             // NOTE: holosphere is vendored — re-apply this default if it is
                             // ever re-synced from upstream.
                             const propagationOptions = {
-                                useHolograms: false,
+                                useHolograms: true,
                                 ...options.propagationOptions
                             };
                             const runPropagation = () => {

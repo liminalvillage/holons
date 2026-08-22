@@ -425,6 +425,7 @@ export const en = {
   "detail.status": "Status",
   "detail.out": "Out",
   "detail.outWith": "Out · {who}",
+  "detail.viaHolonTitle": "Booked from a federated holon",
   "detail.availableCap": "Available",
   "detail.value": "Value",
   "detail.booked": "Booked",

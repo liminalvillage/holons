@@ -161,6 +161,7 @@ describe("personalChecklists", () => {
   ): ChecklistCard {
     return {
       id,
+      key: id,
       title: id.toUpperCase(),
       icon: "📋",
       done: 0,

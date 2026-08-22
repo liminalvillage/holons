@@ -32,6 +32,7 @@
         recordReturnAccounting,
         returnItem as coreReturnItem,
         updateBookingDates,
+        bookingOriginLabel,
         withBookings,
         type BorrowActor
     } from '@holons/core/library';
@@ -543,9 +544,16 @@
         const range = { start: selectedStartDate, end: selectedReturnDate };
 
         try {
+            // `holon` is where the item LIVES (writeTarget redirects a federated
+            // item to its owner); `holonID` is where we are. Core compares the
+            // two and stamps the booking's origin when they differ, so the owner
+            // can see the borrow came in over a federated link.
             const res = editingBookingId
                 ? await updateBookingDates(holosphere, holon, key, editingBookingId, range, actor)
-                : await bookItem(holosphere, holon, key, actor, range);
+                : await bookItem(holosphere, holon, key, actor, range, {
+                      actingHolon: holonID,
+                      actingHolonName: holonName || null,
+                  });
 
             if (!res.ok) {
                 if (res.reason === 'overlaps' && res.conflict) {
@@ -1064,6 +1072,12 @@
                                                         {overdue ? 'bg-red-900/30 text-red-200' : ''}
                                                         {!active ? 'bg-gray-700/40 text-gray-300' : ''}">
                                                         <span class="font-medium truncate">{booking.borrower || '—'}</span>
+                                                        {#if bookingOriginLabel(booking)}
+                                                            <span
+                                                                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200"
+                                                                title="Booked from a federated holon"
+                                                            >⇄ {bookingOriginLabel(booking)}</span>
+                                                        {/if}
                                                         <span class="whitespace-nowrap text-gray-300">
                                                             {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
                                                             {#if overdue}<span class="ml-1 text-red-300">• overdue</span>{/if}
@@ -1521,7 +1535,12 @@
                                     <span class="text-amber-400 font-medium">🔄 Currently Booked</span>
                                 {/if}
                             </div>
-                            <p class="text-gray-300 text-sm">Booked by: <span class="text-white">{detailActive.borrower}</span></p>
+                            <p class="text-gray-300 text-sm">
+                                Booked by: <span class="text-white">{detailActive.borrower}</span>
+                                {#if bookingOriginLabel(detailActive)}
+                                    <span class="text-indigo-300">· ⇄ via {bookingOriginLabel(detailActive)}</span>
+                                {/if}
+                            </p>
                             <p class="text-gray-300 text-sm">From: <span class="text-white">{formatReturnDate(detailActive.start)}</span></p>
                             <p class="text-gray-300 text-sm">Until: <span class="text-white">{formatReturnDate(detailActive.end)}</span></p>
                         {:else}
@@ -1540,6 +1559,12 @@
                                     <li class="flex items-center justify-between gap-2 text-sm flex-wrap
                                         {active ? 'text-amber-200' : 'text-gray-300'}">
                                         <span class="truncate">{booking.borrower || '—'}</span>
+                                        {#if bookingOriginLabel(booking)}
+                                            <span
+                                                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200"
+                                                title="Booked from a federated holon"
+                                            >⇄ {bookingOriginLabel(booking)}</span>
+                                        {/if}
                                         <span class="whitespace-nowrap">
                                             {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
                                         </span>

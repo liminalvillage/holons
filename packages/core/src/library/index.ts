@@ -23,6 +23,7 @@ export {
   addItem,
   bookItem,
   borrowItem,
+  type BookingContext,
   cancelBooking,
   computeBorrowerInitials,
   createLibraryItem,
@@ -52,14 +53,18 @@ export {
   actorMatchesBooking,
   dayKey,
   findOverlappingBooking,
+  bookingOriginFor,
+  bookingOriginLabel,
   getDisplayBookings,
   isBookingActive,
+  isFederatedBooking,
   makeBooking,
   toDayKey,
   withBookings,
   ymd,
   type BookableItem,
-  type Booking
+  type Booking,
+  type BookingOrigin
 } from './bookings.js';
 
 export {

@@ -772,6 +772,13 @@ function isResolved(item) {
 // this ladder (delays before attempts 2..n) until the config shows up.
 const FEDERATION_CONFIG_RETRY_MS = [1000, 3000, 8000];
 
+// Delays before re-reading a propagation target that came back empty. A cold
+// `get` loses the race against the relay, and mistaking that for an empty slot
+// is precisely how a propagated copy overwrites a real record. Kept to ONE
+// retry: this runs per target, and an ancestry walk has nine of them, so a
+// longer ladder costs seconds on the overwhelmingly common empty-slot path.
+const PROPAGATE_READ_RETRY_MS = [0, 500];
+
 /**
  * Live federated read — the streaming equivalent of {@link getFederated}.
  *
@@ -789,6 +796,19 @@ const FEDERATION_CONFIG_RETRY_MS = [1000, 3000, 8000];
  * `subscribeFederated(...)` once instead of re-implementing partner aggregation
  * (and re-inventing a provenance tag) itself.
  *
+ * That cross-space collapse assumes an id identifies a RECORD, not a record
+ * within a holon. For a lens whose ids are only holon-local — `checklists`,
+ * whose id IS the list's name, so the special `agenda`/`shopping` lists exist
+ * under that exact id in EVERY holon — pass `dedupeAcrossSpaces: false`. A
+ * partner's same-named record then survives instead of being shadowed by ours,
+ * and the consumer keys them by origin.
+ *
+ * It still collapses a partner record that our own copy provably came FROM
+ * (see {@link isCopyOfPartnerRecord}) — otherwise a holon that both receives
+ * pushed copies (outbound propagation) and aggregates live shows every such
+ * list twice. Records are always deduped WITHIN a space (the store is keyed
+ * `${space} ${id}`).
+ *
  * The federation config is read at setup (with a short retry ladder — a cold
  * graph's first `gun.once()` read loses the race against the relay handshake
  * and returns null; see FEDERATION_CONFIG_RETRY_MS): the local subscription
@@ -805,10 +825,39 @@ const FEDERATION_CONFIG_RETRY_MS = [1000, 3000, 8000];
  * @param {boolean} [options.includeLocal=true] - Include the holon's own items.
  * @param {boolean} [options.includeFederated=true] - Fold in inbound partners.
  * @param {boolean} [options.dedupe=true] - Collapse cross-space id collisions (local wins).
+ * @param {boolean} [options.dedupeAcrossSpaces=true] - False when ids are only holon-unique:
+ *   keep a partner's same-named record instead of letting ours shadow it. Partner
+ *   records our own copy came from are still collapsed.
  * @param {string} [options.idField='id'] - Field used as the item id.
  * @param {number} [options.maxFederatedSpaces=-1] - Cap partner count (-1 = all).
  * @returns {{ unsubscribe: () => void }} - Handle; tears down every sub-subscription.
  */
+/**
+ * Whether `local` — a record stored in the viewing holon — is a COPY of the
+ * partner's `remote` record rather than an independently authored record that
+ * merely shares its id.
+ *
+ * Two signals, because the first one erodes:
+ *   • Propagation stamps the copy it writes with `_federation.origin` (via the
+ *     internal `preserveFederationMeta` flag). That's the authoritative mark.
+ *   • But an ORDINARY write strips `_federation` (see content.js) — so the
+ *     first time a UI ticks an item on a propagated copy, the stamp is gone and
+ *     the copy becomes byte-identical to a locally authored record. Fall back
+ *     to the creation instant, which propagation copies verbatim: two lists
+ *     independently created in two holons don't share one to the millisecond.
+ *
+ * Used only when `dedupeAcrossSpaces` is off — where a same-id collision is
+ * normally a genuine second record, and this is the exception.
+ */
+function isCopyOfPartnerRecord(local, remote, partnerSpace) {
+    if (!local || !remote) return false;
+    const stamped = local._federation && local._federation.origin;
+    if (stamped != null && String(stamped) === String(partnerSpace)) return true;
+    const a = local.created;
+    const b = remote.created;
+    return a != null && b != null && String(a) === String(b);
+}
+
 export function subscribeFederated(holosphere, holon, lens, callback, options = {}) {
     if (!holosphere || !holon || !lens || typeof callback !== 'function') {
         throw new Error('subscribeFederated: Missing required parameters');
@@ -817,6 +866,7 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         includeLocal = true,
         includeFederated = true,
         dedupe = true,
+        dedupeAcrossSpaces = true,
         idField = 'id',
         maxFederatedSpaces = -1,
     } = options;
@@ -830,8 +880,34 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
 
     const emit = () => {
         if (closed) return;
+        // `store` is already keyed `${space} ${id}`, so every path below dedupes
+        // within a space; only the cross-space collapse differs.
         if (!dedupe) {
             callback([...store.values()]);
+            return;
+        }
+        if (!dedupeAcrossSpaces) {
+            // Ids are only holon-unique: a partner's same-id record is its own
+            // record and stays — UNLESS our copy provably came from it.
+            const ownById = new Map();
+            for (const [k, item] of store) {
+                if (k.slice(0, k.indexOf(SEP)) !== holon) continue;
+                const id = item && item[idField];
+                if (id != null) ownById.set(String(id), item);
+            }
+            const out = [];
+            for (const [k, item] of store) {
+                const space = k.slice(0, k.indexOf(SEP));
+                if (space === holon) {
+                    out.push(item);
+                    continue;
+                }
+                const id = item && item[idField];
+                const own = id != null ? ownById.get(String(id)) : undefined;
+                if (own && isCopyOfPartnerRecord(own, item, space)) continue;
+                out.push(item);
+            }
+            callback(out);
             return;
         }
         // Two passes so a local item always wins an id collision with a partner.
@@ -1053,6 +1129,49 @@ function isPropagatedCopyOf(holosphere, record, holon, lens) {
         if (info && String(info.holon) === String(holon) && String(info.lens) === String(lens)) return true;
     }
     return false;
+}
+
+/**
+ * May propagation write `id` into `targetSpace`? This is the write-side twin of
+ * the rule `propagateDeletion` already enforces: a propagated copy may only
+ * touch a slot that is EMPTY, tombstoned, or already holds a copy this holon
+ * put there. Anything else at that key belongs to the target — its own record,
+ * or a copy from a different source — and propagation must leave it alone.
+ *
+ * Without this, a full-copy propagation blind-writes the slot. That is not a
+ * merge: a record holding a collection (a checklist's `items`, say) is replaced
+ * whole, so one partner's write silently destroys the other's list. Per-item
+ * lenses hid the problem because their ids differ; whole-record lenses don't.
+ *
+ * The read is retried, because a cold `get` races the relay handshake and a
+ * single null would read as "slot is free" on a slot that is not. Only after
+ * the retries come back empty do we treat it as absent.
+ */
+async function mayPropagateInto(holosphere, targetSpace, lens, id, holon, readTimeoutMs = 1500) {
+    let existing = null;
+    for (let i = 0; i < PROPAGATE_READ_RETRY_MS.length; i++) {
+        try {
+            existing = await holosphere.get(targetSpace, lens, id, null, {
+                resolveHolograms: false,
+                _skipAuthorize: true,
+                timeout: readTimeoutMs,
+            });
+        } catch {
+            existing = null; // read error — treated like an empty read, then retried
+        }
+        if (existing) break;
+        if (i < PROPAGATE_READ_RETRY_MS.length - 1) {
+            await new Promise((r) => setTimeout(r, PROPAGATE_READ_RETRY_MS[i]));
+        }
+    }
+    if (!existing || existing._deleted) return { ok: true };
+    if (isPropagatedCopyOf(holosphere, existing, holon, lens)) return { ok: true };
+    return {
+        ok: false,
+        reason: holosphere.isHologram?.(existing)
+            ? "target holds a hologram of its own"
+            : "target holds its own record",
+    };
 }
 
 /**
@@ -1336,30 +1455,21 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                             // re-emits forever (the map().on() fire-storm). The
                             // federated copy is meant to surface via the read-time
                             // `getFederated` overlay, never by clobbering local storage.
-                            if (useHolograms && payloadToPut && typeof payloadToPut.soul === 'string') {
-                                try {
-                                    const existingAtTarget = await holosphere.get(
-                                        targetSpace, lens, data.id, null,
-                                        { resolveHolograms: false, _skipAuthorize: true, timeout: 2000 }
-                                    );
-                                    const existingIsReal = existingAtTarget &&
-                                        !holosphere.isHologram(existingAtTarget) &&
-                                        !existingAtTarget._deleted;
-                                    // The target already holds a hologram pointing back
-                                    // INTO the holon we're propagating from — writing
-                                    // ours would entrench an A↔B back-edge.
-                                    const existingPointsBack = existingAtTarget &&
-                                        holosphere.isHologram(existingAtTarget) &&
-                                        typeof existingAtTarget.soul === 'string' &&
-                                        String(parseSoulPath(existingAtTarget.soul)?.holon) === String(holon);
-                                    if (existingIsReal || existingPointsBack) {
-                                        result.skipped++;
-                                        result.messages.push(
-                                            `Skipped propagation of ${data.id} to ${targetSpace}: ${existingIsReal ? 'target holds its own real record' : 'target already points back into the source'} (would create a circular hologram).`
-                                        );
-                                        return true;
-                                    }
-                                } catch { /* read failed — fall through and write */ }
+                            // Applies to EVERY propagation, hologram or full copy.
+                            // It used to run only in hologram mode, which left the
+                            // full-copy path free to blind-write the target — and a
+                            // whole-record lens (a checklist and its `items`) is
+                            // REPLACED by that write, not merged, so a partner's list
+                            // was destroyed by an unrelated edit on ours.
+                            const allowed = await mayPropagateInto(
+                                holosphere, targetSpace, lens, data.id, holon, 1500
+                            );
+                            if (!allowed.ok) {
+                                result.skipped++;
+                                result.messages.push(
+                                    `Skipped propagation of ${data.id} to ${targetSpace}: ${allowed.reason} — refusing to overwrite it.`
+                                );
+                                return true;
                             }
 
                             // Store in the target space with redirection disabled and no further auto-propagation.
@@ -1475,6 +1585,22 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                         (result.parentPropagation.skipped || 0) + 1;
                                     result.parentPropagation.messages.push(
                                         `Skipped self-referential parent propagation of ${data.id} to ${parentHexagon} (hologram soul already points there).`
+                                    );
+                                    return true;
+                                }
+
+                                // Same no-overwrite rule as partner propagation: two
+                                // children of one hexagon can share a record id, so a
+                                // blind write up the ancestry turns one child's edit
+                                // into another child's data loss at every parent.
+                                const parentAllowed = await mayPropagateInto(
+                                    holosphere, parentHexagon, lens, data.id, holon, 1500
+                                );
+                                if (!parentAllowed.ok) {
+                                    result.parentPropagation.skipped =
+                                        (result.parentPropagation.skipped || 0) + 1;
+                                    result.parentPropagation.messages.push(
+                                        `Skipped parent propagation of ${data.id} to ${parentHexagon}: ${parentAllowed.reason} — refusing to overwrite it.`
                                     );
                                     return true;
                                 }

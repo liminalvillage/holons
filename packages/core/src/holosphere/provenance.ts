@@ -43,3 +43,23 @@ export function sourceRef(
   const sourceKey = (rec as { _hologram?: { sourceKey?: string | null } })?._hologram?.sourceKey;
   return { holon, key: sourceKey || localId };
 }
+
+/**
+ * A key that stays unique when records from several holons are shown together.
+ *
+ * Most lenses hand out holon-unique ids (timestamps, generated slugs), so a
+ * bare id is a fine key. Some don't: a checklist's id IS its name, and the
+ * special `agenda`/`shopping` lists carry the same id in every holon. Keying an
+ * aggregated view on the bare id silently collapses every partner's copy into
+ * the local one — the partner's list is fetched, then thrown away.
+ *
+ * Prefixing the origin holon keeps them apart. A holon's OWN records keep their
+ * bare id, so local keys (and the URLs/state built from them) are unchanged.
+ *
+ * This is a *view* key — never a store key. Writes still go through
+ * {@link sourceRef} with the record's own `id`.
+ */
+export function recordKey(rec: unknown, localId: string): string {
+  const holon = sourceHolonId(rec);
+  return holon ? `${holon}::${localId}` : localId;
+}

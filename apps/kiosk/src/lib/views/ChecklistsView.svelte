@@ -21,7 +21,7 @@
   import { getChecklistStore } from "$lib/holosphere";
   import { t } from "$lib/i18n";
   import { personalChecklists } from "$lib/personal";
-  import { sourceRef, holoSeed } from "$lib/data";
+  import { recordKey, sourceRef, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import {
@@ -44,12 +44,15 @@
   // ── Open list ─────────────────────────────────────────────────────────────
   // The tapped list "opens" in place of the grid (like the dashboard). The
   // panel renders the RAW record looked up live, so remote ticks stream in.
+  // `openId` holds a card KEY (`recordKey`), not a bare list id — two holons
+  // can both contribute a `shopping` list and the panel must open the right one.
   let openId: string | null = null;
   $: openRaw = openId
-    ? ($rawChecklists.find((c) => String(c.id) === openId) ?? null)
+    ? ($rawChecklists.find((c) => recordKey(c, String(c.id)) === openId) ??
+      null)
     : null;
   $: openCard = openId
-    ? ($checklistCards.find((c) => c.id === openId) ?? null)
+    ? ($checklistCards.find((c) => c.key === openId) ?? null)
     : null;
   $: openItems = Array.isArray(openRaw?.items) ? openRaw.items : [];
   $: openDone = openItems.filter((i) => i?.checked).length;
@@ -86,10 +89,14 @@
     return false;
   }
 
-  /** Where a write on this list must land: `{holon, key}` of the owner. */
-  function writeRef(raw: Checklist | null, id: string) {
+  /**
+   * Where a write on this list must land: `{holon, key}` of the owner. Keyed
+   * off the RAW record's own id (the store key), never the view key.
+   */
+  function writeRef(raw: Checklist | null) {
     const hid = get(holonId);
-    if (!hid) return null;
+    if (!hid || !raw?.id) return null;
+    const id = String(raw.id);
     return sourceRef(raw, id) ?? { holon: hid, key: id };
   }
 
@@ -110,7 +117,7 @@
 
   function toggle(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
-    const ref = writeRef(openRaw, openId);
+    const ref = writeRef(openRaw);
     if (!ref) return;
     void mutate(async () => {
       const store = await getChecklistStore();
@@ -120,7 +127,7 @@
 
   function removeItem(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
-    const ref = writeRef(openRaw, openId);
+    const ref = writeRef(openRaw);
     if (!ref) return;
     void mutate(async () => {
       const store = await getChecklistStore();
@@ -132,7 +139,7 @@
   function addItem() {
     const text = addItemText.trim();
     if (!text || !requireUser() || !openRaw || !openId) return;
-    const ref = writeRef(openRaw, openId);
+    const ref = writeRef(openRaw);
     if (!ref) return;
     void mutate(async () => {
       const store = await getChecklistStore();
@@ -143,7 +150,7 @@
 
   function clearDone() {
     if (!requireUser() || !openRaw || !openId) return;
-    const ref = writeRef(openRaw, openId);
+    const ref = writeRef(openRaw);
     if (!ref) return;
     void mutate(async () => {
       const store = await getChecklistStore();
@@ -162,7 +169,7 @@
       confirmDelete = true;
       return;
     }
-    const ref = writeRef(openRaw, openId);
+    const ref = writeRef(openRaw);
     if (!ref) return;
     void mutate(async () => {
       const store = await getChecklistStore();
@@ -248,7 +255,7 @@
           </button>
           <span class="picon" aria-hidden="true">{openCard?.icon ?? "📋"}</span>
           <div class="ptext">
-            <h2>{openCard?.title ?? openId}</h2>
+            <h2>{openCard?.title ?? openRaw?.id ?? ""}</h2>
             <span class="count">
               {$t("lists.doneCount", {
                 done: openDone,
@@ -329,18 +336,18 @@
     {:else if shownLists.length}
       <!-- The grid of list cards. -->
       <div class="grid">
-        {#each shownLists as list (list.id)}
+        {#each shownLists as list (list.key)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <article
             class="card"
             class:is-foreign={!!list.sourceColor}
             class:holo={!!list.hologram}
-            style:--holo-seed={holoSeed(list.id)}
+            style:--holo-seed={holoSeed(list.key)}
             style="--glow: {list.sourceColor ?? 'transparent'};"
             role="button"
             tabindex="0"
-            on:click={() => openList(list.id)}
-            on:keydown={(e) => onKey(e, list.id)}
+            on:click={() => openList(list.key)}
+            on:keydown={(e) => onKey(e, list.key)}
           >
             <div class="icon">{list.icon}</div>
             <h3>{list.title}</h3>

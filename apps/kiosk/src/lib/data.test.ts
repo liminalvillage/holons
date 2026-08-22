@@ -4,6 +4,7 @@ import { makeTranslator } from "./i18n";
 import {
   dueLabelFor,
   toBacklog,
+  toBookingEvents,
   toChecklists,
   toEvents,
   toRoles,
@@ -306,6 +307,90 @@ describe("toThings — borrow state mapping", () => {
   });
 });
 
+describe("toBookingEvents — library bookings as calendar spans", () => {
+  const drill = {
+    id: "Drill",
+    type: "tool",
+    bookings: [
+      {
+        id: "b1",
+        start: "2026-09-01",
+        end: "2026-09-03",
+        borrowerId: "235",
+        borrower: "Roberto",
+        created: "2026-08-20T10:00:00.000Z",
+      },
+      {
+        id: "b2",
+        start: "2026-09-10",
+        end: "2026-09-10",
+        borrowerId: "77",
+        borrower: "Ana",
+        created: "2026-08-21T10:00:00.000Z",
+      },
+    ],
+  } as unknown as LibraryItem;
+
+  it("makes one inclusive all-day span per booking, soonest first", () => {
+    const spans = toBookingEvents([drill]);
+    expect(spans.map((s) => s.id)).toEqual([
+      "booking-Drill-b1",
+      "booking-Drill-b2",
+    ]);
+    const [first, second] = spans;
+    expect(first.allDay).toBe(true);
+    expect(first.date).toEqual(new Date(2026, 8, 1));
+    // The end is the LAST booked day, not a boundary past it — three days out.
+    expect(first.end).toEqual(new Date(2026, 8, 3));
+    expect([first.days, first.multiDay]).toEqual([3, true]);
+    // A one-day booking is a plain card, not a span.
+    expect([second.days, second.multiDay]).toEqual([1, false]);
+  });
+
+  it("points every span back at its item, and colours by item", () => {
+    const spans = toBookingEvents([drill]);
+    expect(spans.every((s) => s.libraryItemId === "Drill")).toBe(true);
+    expect(spans.every((s) => s.title === "Drill")).toBe(true);
+    // `category` is the item, so the note-colour hash is per item — both of
+    // the Drill's spans read as the same thing on the board.
+    expect(new Set(spans.map((s) => s.category))).toEqual(new Set(["Drill"]));
+  });
+
+  it("carries the borrower as the span's person, for the Mine scope", () => {
+    const [span] = toBookingEvents([drill]);
+    expect(span.people).toEqual([{ id: "235", name: "Roberto" }]);
+  });
+
+  it("synthesizes a span from the legacy single-borrow fields", () => {
+    const legacy = {
+      id: "Ladder",
+      type: "tool",
+      borrowed: true,
+      borrower: "Ana",
+      borrowerId: "77",
+      borrowedAt: "2026-09-05",
+      returnBy: "2026-09-07",
+    } as unknown as LibraryItem;
+    const [span] = toBookingEvents([legacy]);
+    expect(span.date).toEqual(new Date(2026, 8, 5));
+    expect(span.end).toEqual(new Date(2026, 8, 7));
+    expect(span.days).toBe(3);
+  });
+
+  it("skips never-booked and deleted items, and federated duplicates", () => {
+    const free = { id: "Saw", type: "tool", borrowed: false };
+    const gone = { ...drill, id: "Axe", _deleted: true };
+    const dupe = { ...drill };
+    const spans = toBookingEvents([
+      drill,
+      dupe,
+      free,
+      gone,
+    ] as unknown as LibraryItem[]);
+    expect(spans).toHaveLength(2); // the Drill's two bookings, once
+  });
+});
+
 describe("toChecklists — list card mapping", () => {
   it("counts done items, pins special lists first, then alphabetical", () => {
     const lists = [
@@ -342,13 +427,39 @@ describe("toChecklists — list card mapping", () => {
     expect(out[0].icon).toBe("📅");
   });
 
-  it("drops blank ids and federated duplicates", () => {
+  it("drops blank ids, and dedupes on the origin-qualified key", () => {
     const out = toChecklists([
       { id: "chores", items: [] },
       { id: "chores", items: [], _federation: { origin: "999" } },
+      // Same partner, same list, emitted twice — one card.
+      { id: "chores", items: [], _federation: { origin: "999" } },
       { items: [] },
     ] as unknown as Checklist[]);
-    expect(out.map((c) => c.id)).toEqual(["chores"]);
+    // A partner's `chores` is a DIFFERENT list from ours; both belong on the
+    // board. Keying on the bare id used to collapse them into one.
+    expect(out.map((c) => c.key)).toEqual(["chores", "999::chores"]);
+  });
+
+  it("keeps a partner's same-named list, ours first", () => {
+    // `shopping` exists under that exact id in every holon — the case that
+    // made the Lists board look like it received no federated data at all.
+    const out = toChecklists([
+      { id: "shopping", type: "shopping", items: [] },
+      {
+        id: "shopping",
+        type: "shopping",
+        items: [{ text: "oats", checked: false }],
+        _federation: { origin: "-100294", originName: "Neighbours" },
+      },
+    ] as unknown as Checklist[]);
+    expect(out).toHaveLength(2);
+    expect(out[0].key).toBe("shopping");
+    expect(out[0].source).toBeUndefined();
+    expect(out[1].key).toBe("-100294::shopping");
+    expect(out[1].source).toBe("Neighbours");
+    // The record's own id is untouched — that's what a write targets.
+    expect(out[1].id).toBe("shopping");
+    expect(out[1].total).toBe(1);
   });
 
   it("does not mutate the raw record when typing legacy lists", () => {

@@ -28,6 +28,7 @@
         type ChecklistItem,
         type ChecklistStore,
     } from "@holons/core/checklists";
+    import { recordKey, sourceRef } from "@holons/core/holosphere";
 
     const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
@@ -41,6 +42,10 @@
     let selectedChecklist: string | null = null;
     let roles: Record<string, any> = {};
     let quests: Record<string, any> = {};
+    // Keyed by `recordKey`, NOT by the bare checklist id: a checklist's id is
+    // its name, and `agenda`/`shopping` exist under that same id in every
+    // holon — keying on the id would collapse every partner's list into ours.
+    // The record's own `id` is still what a write targets (see `writeRef`).
     let allChecklists: Record<string, Checklist> = {};
 
     // Per-feature filters (search + active tab). Federation/hologram toggles
@@ -228,12 +233,14 @@
                 if (subscribedHolonId !== targetHolon || subscribedFedFlag !== targetFed) return;
                 const next: Record<string, Checklist> = {};
                 for (const item of items as Checklist[]) {
-                    if (item && item.id) next[item.id] = item;
+                    if (item && item.id) next[recordKey(item, String(item.id))] = item;
                 }
                 allChecklists = next;
                 isLoading = false;
             },
-            { includeFederated: targetFed }
+            // Checklist ids are only holon-unique — keep each holon's copy
+            // instead of letting ours shadow the partners' same-named lists.
+            { includeFederated: targetFed, dedupeAcrossSpaces: false }
         );
         checklistsUnsubscribe = () => checklistSub.unsubscribe();
 
@@ -266,14 +273,27 @@
         });
     }
 
+    /**
+     * Where a write on the card `key` must land. A list mirrored in from a
+     * partner lives in THAT holon — writing it here would fork a stray local
+     * copy that unlinks from the original (`sourceRef` owns the rule).
+     */
+    function writeRef(key: string): { holon: string; key: string } | null {
+        const raw = allChecklists[key];
+        if (!raw?.id || !holonID) return null;
+        const id = String(raw.id);
+        return sourceRef(raw, id) ?? { holon: holonID, key: id };
+    }
+
     async function toggleItemStatus(checklistId: string, itemIndex: number): Promise<void> {
-        if (!allChecklists[checklistId] || !holonID) return;
+        const ref = writeRef(checklistId);
+        if (!ref) return;
 
         try {
             const updated = await toggleItem(
                 holosphere as unknown as ChecklistStore,
-                holonID,
-                checklistId,
+                ref.holon,
+                ref.key,
                 itemIndex,
             );
             if (updated) {
@@ -290,9 +310,10 @@
     }
 
     function selectChecklist(checklistId: string): void {
-        // Special case: redirect "shopping" checklist to dedicated shopping page
-        const shoppingKeywords = ['shopping', 'shopping list', 'groceries', 'grocery'];
-        if (shoppingKeywords.some(keyword => checklistId.toLowerCase().includes(keyword))) {
+        // Special case: our OWN shopping list redirects to the dedicated
+        // shopping page. A partner's does not — that page reads this holon's
+        // `shopping` lens, so it would silently show the wrong list.
+        if (opensShoppingPage(allChecklists[checklistId])) {
             goto(`/${holonID}/shopping`);
             return;
         }
@@ -305,13 +326,14 @@
     }
 
     async function clearChecklist(checklistId: string | null): Promise<void> {
-        if (!checklistId || !allChecklists[checklistId] || !holonID) return;
+        const ref = checklistId ? writeRef(checklistId) : null;
+        if (!checklistId || !ref) return;
 
         try {
             const result = await coreClearChecklist(
                 holosphere as unknown as ChecklistStore,
-                holonID,
-                checklistId,
+                ref.holon,
+                ref.key,
             );
             if (result.ok) {
                 allChecklists[checklistId] = result.checklist;
@@ -387,13 +409,16 @@
                 if (!result.ok && result.reason === 'invalid_name') {
                     console.warn(`Invalid checklist name: ${inputText.trim()}`);
                 }
-            } else if (selectedChecklist && allChecklists[selectedChecklist]) {
-                await appendItems(
-                    store,
-                    holonID,
-                    selectedChecklist,
-                    [{ text: inputText.trim(), checked: false }],
-                );
+            } else if (selectedChecklist) {
+                const ref = writeRef(selectedChecklist);
+                if (ref) {
+                    await appendItems(
+                        store,
+                        ref.holon,
+                        ref.key,
+                        [{ text: inputText.trim(), checked: false }],
+                    );
+                }
             }
 
             showInput = false;
@@ -445,16 +470,17 @@
     }
 
     async function deleteChecklist(checklistId: string): Promise<void> {
-        if (!holonID) return;
+        const ref = writeRef(checklistId);
+        if (!ref) return;
 
         try {
             const result = await coreDeleteChecklist(
                 holosphere as unknown as ChecklistStore,
-                holonID,
-                checklistId,
+                ref.holon,
+                ref.key,
             );
             if (!result.ok && result.reason === 'special') {
-                console.warn(`Cannot delete special checklist: ${checklistId}`);
+                console.warn(`Cannot delete special checklist: ${ref.key}`);
                 return;
             }
             delete allChecklists[checklistId];
@@ -472,17 +498,17 @@
     }
 
     async function removeItem(checklistId: string, itemIndex: number): Promise<void> {
-        console.log('removeItem called:', { checklistId, itemIndex, holonID, hasChecklist: !!allChecklists[checklistId] });
-        if (!checklistId || !allChecklists[checklistId] || !holonID) {
-            console.log('removeItem early return - missing data');
+        const ref = checklistId ? writeRef(checklistId) : null;
+        if (!ref) {
+            console.log('removeItem early return - missing data', { checklistId, itemIndex, holonID });
             return;
         }
 
         try {
             const result = await removeItemAt(
                 holosphere as unknown as ChecklistStore,
-                holonID,
-                checklistId,
+                ref.holon,
+                ref.key,
                 itemIndex,
             );
             if (result) {
@@ -516,9 +542,22 @@
         return checklist.id;
     }
 
-    function isShoppingChecklist(checklistId: string): boolean {
+    // Takes the RECORD, not the view key: the key is origin-prefixed for a
+    // federated list, and the partner's holon id must not feed the match.
+    function isShoppingChecklist(checklist: Checklist | null | undefined): boolean {
+        const id = String(checklist?.id ?? '').toLowerCase();
+        if (!id) return false;
         const shoppingKeywords = ['shopping', 'shopping list', 'groceries', 'grocery'];
-        return shoppingKeywords.some(keyword => checklistId.toLowerCase().includes(keyword));
+        return shoppingKeywords.some(keyword => id.includes(keyword));
+    }
+
+    /**
+     * True only for OUR shopping list. The dedicated shopping page reads this
+     * holon's `shopping` lens, so a partner's list opens inline instead.
+     */
+    function opensShoppingPage(checklist: Checklist | null | undefined): boolean {
+        if (!checklist || !isShoppingChecklist(checklist)) return false;
+        return !sourceRef(checklist, String(checklist.id ?? ''));
     }
 </script>
 
@@ -769,7 +808,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
                                             <!-- Checklist Icon -->
-                                            {#if isShoppingChecklist(key)}
+                                            {#if isShoppingChecklist(checklist)}
                                                 <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
                                                     <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
@@ -789,7 +828,7 @@
                                                     <h3 class="text-base font-bold text-white truncate">
                                                         {getChecklistDisplayTitle(checklist)}
                                                     </h3>
-                                                    {#if isShoppingChecklist(key)}
+                                                    {#if isShoppingChecklist(checklist)}
                                                         <span class="px-2 py-1 bg-emerald-600 text-white text-xs rounded-full flex items-center gap-1">
                                                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
@@ -806,7 +845,7 @@
                                                     <SourceBadge item={checklist} currentHolonId={holonID} lensRoute="checklists" />
                                                 </div>
                                                 <p class="text-sm text-gray-400">
-                                                    {#if isShoppingChecklist(key)}
+                                                    {#if opensShoppingPage(checklist)}
                                                         Opens dedicated shopping list
                                                     {:else}
                                                         {(checklist.items || []).filter(item => item.checked).length}/{(checklist.items || []).length} completed

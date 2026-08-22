@@ -18,6 +18,7 @@ import {
 } from './types.js';
 import {
   actorMatchesBooking,
+  bookingOriginFor,
   computeBorrowerInitials,
   findOverlappingBooking,
   getDisplayBookings,
@@ -256,12 +257,24 @@ export interface BookItemResult {
  * in-memory lock around its calendar picker) and any expense/REA bookkeeping
  * (see `recordBorrowAccounting`).
  */
+/**
+ * Who is acting, and from where. Passed by every surface that can show another
+ * holon's items, so core — not the UI — decides whether a booking is federated.
+ */
+export interface BookingContext {
+  /** The holon the borrower is working in. Omit for a purely local surface. */
+  actingHolon?: string | number | null;
+  /** Its display name, when known, for a readable origin chip. */
+  actingHolonName?: string | null;
+}
+
 export async function bookItem(
   db: LibraryDB,
   holonId: string | number,
   itemId: string,
   borrower: BorrowActor,
-  range: { start?: Date | string; end: Date | string }
+  range: { start?: Date | string; end: Date | string },
+  opts: BookingContext = {}
 ): Promise<BookItemResult> {
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
@@ -274,7 +287,15 @@ export async function bookItem(
   const conflict = findOverlappingBooking(item, start, end);
   if (conflict) return { ok: false, item, conflict, reason: 'overlaps' };
 
-  const booking = makeBooking(borrower, start, end);
+  // `holonId` is the holon the item LIVES in (a federated borrow is redirected
+  // there); `opts.actingHolon` is where the borrower actually is. When they
+  // differ the booking is federated, and the owner needs to see that.
+  const booking = makeBooking(
+    borrower,
+    start,
+    end,
+    bookingOriginFor(holon, opts.actingHolon, opts.actingHolonName)
+  );
   const updated = withBookings(item, [...getDisplayBookings(item), booking]);
   await db.put(holon, LENS, updated);
 
@@ -305,9 +326,10 @@ export async function borrowItem(
   holonId: string | number,
   itemId: string,
   borrower: BorrowActor,
-  returnDate: Date | string
+  returnDate: Date | string,
+  opts: BookingContext = {}
 ): Promise<BorrowItemResult> {
-  const res = await bookItem(db, holonId, itemId, borrower, { end: returnDate });
+  const res = await bookItem(db, holonId, itemId, borrower, { end: returnDate }, opts);
   if (res.ok) {
     return { ok: true, item: res.item, isOwner: res.isOwner, booking: res.booking };
   }

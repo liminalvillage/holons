@@ -22,7 +22,7 @@ export {
   type RelayBackupOptions,
 } from './relayBackup.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
-export { sourceHolonId, sourceRef } from './provenance.js';
+export { sourceHolonId, sourceRef, recordKey } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,

@@ -15,6 +15,21 @@
 
 import type { BorrowActor } from './types.js';
 
+/**
+ * The holon a booking was made FROM, when that isn't the holon owning the item.
+ *
+ * Federation lets someone book a partner's item without leaving their own
+ * holon: the write is redirected to the owner (see `sourceRef`), so the owner
+ * ends up holding a booking by a person who is not one of theirs, with nothing
+ * to say where it came from. This records that link at the moment it is known.
+ */
+export interface BookingOrigin {
+  /** Id of the holon the borrower acted from. */
+  holon: string;
+  /** Its display name, when resolved — for a chip that reads better than an id. */
+  name?: string;
+}
+
 export interface Booking {
   id: string;
   start: string; // YYYY-MM-DD (or ISO; always read via dayKey), inclusive
@@ -24,6 +39,14 @@ export interface Booking {
   borrowerInitials?: string | null;
   /** Canonical creation timestamp (ISO). */
   created: string;
+  /**
+   * Set only on a FEDERATED booking — the partner holon the borrower booked
+   * from. Absent means the borrower acted inside the item's own holon, so
+   * every booking made before this existed reads correctly as local.
+   */
+  viaHolon?: string;
+  /** Display name for {@link Booking.viaHolon}, when it was resolvable. */
+  viaHolonName?: string;
 }
 
 /**
@@ -164,7 +187,12 @@ export function computeBorrowerInitials(actor: BorrowActor): string {
 }
 
 /** Build a booking for `actor` over the inclusive [start, end] day range. */
-export function makeBooking(actor: BorrowActor, start: string, end: string): Booking {
+export function makeBooking(
+  actor: BorrowActor,
+  start: string,
+  end: string,
+  via?: BookingOrigin | null
+): Booking {
   return {
     id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     start: dayKey(start),
@@ -172,8 +200,44 @@ export function makeBooking(actor: BorrowActor, start: string, end: string): Boo
     borrowerId: String(actor.id),
     borrower: actorDisplayName(actor),
     borrowerInitials: computeBorrowerInitials(actor),
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
+    // Omitted entirely for a local booking, so the stored shape is unchanged
+    // for the overwhelmingly common case.
+    ...(via?.holon ? { viaHolon: String(via.holon) } : {}),
+    ...(via?.holon && via.name ? { viaHolonName: via.name } : {})
   };
+}
+
+/**
+ * The origin to stamp on a booking of `ownerHolon`'s item by an actor working
+ * in `actingHolon` — or `null` when they are the same holon (a local booking,
+ * which carries no origin).
+ *
+ * Core owns this comparison so no surface has to decide for itself what counts
+ * as "federated": every UI just reports the holon it is showing.
+ */
+export function bookingOriginFor(
+  ownerHolon: string | number,
+  actingHolon?: string | number | null,
+  actingHolonName?: string | null
+): BookingOrigin | null {
+  if (actingHolon == null || actingHolon === '') return null;
+  if (String(actingHolon) === String(ownerHolon)) return null;
+  return {
+    holon: String(actingHolon),
+    ...(actingHolonName ? { name: actingHolonName } : {})
+  };
+}
+
+/** True when the booking was made from another holon through federation. */
+export function isFederatedBooking(b: Booking | null | undefined): boolean {
+  return !!b?.viaHolon;
+}
+
+/** How to label a booking's origin: the partner's name, else its id, else null. */
+export function bookingOriginLabel(b: Booking | null | undefined): string | null {
+  if (!b?.viaHolon) return null;
+  return b.viaHolonName || b.viaHolon;
 }
 
 /** Coerce a Date or date-ish string to a YYYY-MM-DD day key. */

@@ -435,6 +435,7 @@ export const es: Record<MessageKey, Msg> = {
   "detail.status": "Estado",
   "detail.out": "Prestado",
   "detail.outWith": "Prestado · {who}",
+  "detail.viaHolonTitle": "Reservado desde un holon federado",
   "detail.availableCap": "Disponible",
   "detail.value": "Valor",
   "detail.booked": "Reservado",

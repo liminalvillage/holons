@@ -208,4 +208,132 @@ describe('subscribeFederated', () => {
         expect(latest.map((i) => i.id)).toEqual(['Drill']); // partner dropped, local kept
         sub.unsubscribe();
     }, 90000);
+
+    // `checklists` ids are the list's NAME, so `agenda`/`shopping` exist under
+    // that same id in EVERY holon. The default local-wins collapse would drop a
+    // partner's copy entirely — the lens would look like it federated nothing.
+    test('dedupeAcrossSpaces:false keeps a partner copy sharing a local id', async () => {
+        const cl = 'checklists';
+        const local = `subfed_c_${Date.now()}_local`;
+        const partner = `subfed_c_${Date.now()}_partner`;
+
+        await federateRetry(hs, local, partner, { inbound: [cl], outbound: [] });
+        await wait(1500);
+
+        // Independently authored lists: same name, different creation instants.
+        const noProp = { autoPropagate: false };
+        await hs.put(local, cl, { id: 'shopping', created: 'A', items: [{ text: 'ours' }] }, noProp);
+        await hs.put(partner, cl, { id: 'shopping', created: 'B', items: [{ text: 'theirs' }] }, noProp);
+        await wait(1200);
+
+        let latest = [];
+        const sub = hs.subscribeFederated(
+            local,
+            cl,
+            (items) => { latest = items; },
+            { dedupeAcrossSpaces: false },
+        );
+        await wait(5000);
+        sub.unsubscribe();
+
+        // BOTH survive — same id, different holons.
+        const shopping = latest.filter((i) => i.id === 'shopping');
+        expect(shopping).toHaveLength(2);
+
+        const own = shopping.find((i) => !i._federation);
+        const theirs = shopping.find((i) => i._federation);
+        expect(own.items[0].text).toBe('ours');
+        expect(theirs._federation.origin).toBe(partner);
+        expect(theirs.items[0].text).toBe('theirs');
+    }, 90000);
+
+    // A holon that BOTH receives pushed copies (outbound propagation) and
+    // aggregates live holds its own copy of the partner's list. That copy is not
+    // a second list, so it must not render as one — even after an ordinary write
+    // has stripped its `_federation` stamp (content.js), which is why the
+    // creation instant is the fallback signal.
+    test('dedupeAcrossSpaces:false collapses a partner record our copy came from', async () => {
+        const cl = 'checklists';
+        const local = `subfed_e_${Date.now()}_local`;
+        const partner = `subfed_e_${Date.now()}_partner`;
+
+        await federateRetry(hs, local, partner, { inbound: [cl], outbound: [] });
+        await wait(1500);
+
+        const noProp = { autoPropagate: false };
+        const made = '2026-07-21T12:40:15.189Z';
+        // The partner's original, and our de-stamped propagated copy of it.
+        await hs.put(partner, cl, { id: 'shopping', created: made, items: [{ text: 'oats' }] }, noProp);
+        await hs.put(local, cl, { id: 'shopping', created: made, items: [{ text: 'oats' }] }, noProp);
+        await wait(1200);
+
+        let latest = [];
+        const sub = hs.subscribeFederated(
+            local,
+            cl,
+            (items) => { latest = items; },
+            { dedupeAcrossSpaces: false },
+        );
+        await wait(5000);
+        sub.unsubscribe();
+
+        const shopping = latest.filter((i) => i.id === 'shopping');
+        expect(shopping).toHaveLength(1);
+        expect(shopping[0]._federation).toBeUndefined(); // ours survived
+    }, 90000);
+
+    test('dedupeAcrossSpaces:false collapses a partner record we carry stamped', async () => {
+        const cl = 'checklists';
+        const local = `subfed_f_${Date.now()}_local`;
+        const partner = `subfed_f_${Date.now()}_partner`;
+
+        await federateRetry(hs, local, partner, { inbound: [cl], outbound: [] });
+        await wait(1500);
+
+        const noProp = { autoPropagate: false };
+        await hs.put(partner, cl, { id: 'agenda', created: 'X', items: [] }, noProp);
+        // A freshly propagated copy still carries the origin stamp; no shared
+        // `created` needed for it to be recognised as ours-from-them.
+        await hs.put(
+            local,
+            cl,
+            { id: 'agenda', created: 'Y', items: [], _federation: { origin: partner, sourceLens: cl } },
+            { ...noProp, preserveFederationMeta: true },
+        );
+        await wait(1200);
+
+        let latest = [];
+        const sub = hs.subscribeFederated(
+            local,
+            cl,
+            (items) => { latest = items; },
+            { dedupeAcrossSpaces: false },
+        );
+        await wait(5000);
+        sub.unsubscribe();
+
+        expect(latest.filter((i) => i.id === 'agenda')).toHaveLength(1);
+    }, 90000);
+
+    // Within one space the store is still keyed by id, so a re-emit of the same
+    // record replaces it rather than piling up duplicate cards.
+    test('dedupeAcrossSpaces:false still dedups within a single space', async () => {
+        const cl = 'checklists';
+        const local = `subfed_d_${Date.now()}_local`;
+
+        let latest = [];
+        const sub = hs.subscribeFederated(
+            local,
+            cl,
+            (items) => { latest = items; },
+            { includeFederated: false, dedupeAcrossSpaces: false },
+        );
+        await hs.put(local, cl, { id: 'agenda', items: [{ text: 'one' }] }, { autoPropagate: false });
+        await wait(1200);
+        await hs.put(local, cl, { id: 'agenda', items: [{ text: 'two' }] }, { autoPropagate: false });
+        await wait(1500);
+        sub.unsubscribe();
+
+        expect(latest.filter((i) => i.id === 'agenda')).toHaveLength(1);
+    }, 90000);
 });

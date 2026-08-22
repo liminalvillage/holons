@@ -28,6 +28,7 @@
     resolveLibraryView,
     resolveRolesView,
     resolveCalendarView,
+    resolveLibraryCalendarView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
   import { langMode, holonLang, startI18n, t, tr, type Lang } from "$lib/i18n";
@@ -57,6 +58,7 @@
     libraryViewMode,
     rolesViewMode,
     calendarMode,
+    libraryCalendarMode,
     boardReady,
     settingsOpen,
     userMenuOpen,
@@ -296,7 +298,11 @@
           lensEmitAt.checklists = Date.now();
           rawChecklists.set(items as Checklist[]);
         },
-        { includeFederated: fed },
+        // A checklist's id is its NAME, and `agenda`/`shopping` exist under
+        // that same id in every holon — the default cross-space collapse would
+        // let our own copy shadow every partner's. Keep each holon's copy; the
+        // view models key them by origin (`recordKey`).
+        { includeFederated: fed, dedupeAcrossSpaces: false },
       );
     } else if (!checklistsOn && checklistsSub) {
       checklistsSub.unsubscribe();
@@ -474,6 +480,7 @@
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
     calendarMode.set(resolveCalendarView());
+    libraryCalendarMode.set(resolveLibraryCalendarView());
     brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
