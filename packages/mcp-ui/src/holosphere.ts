@@ -5,6 +5,12 @@
 // 'HolonsDebug'. Resolving on demand makes the root .env the single source of
 // truth (HOLONS_APP / HOLONS_PEER, with the legacy APPNAME as a fallback),
 // matching how the bot and web read it.
+import {
+  enableRelayBackup,
+  parseRelayBackupMode,
+  parseRelayList,
+} from '@holons/core/holosphere';
+
 function resolveApp(): string {
   return process.env.HOLONS_APP || process.env.APPNAME || 'HolonsDebug';
 }
@@ -13,13 +19,14 @@ function resolvePeer(): string {
   return process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 }
 
-// Nostr backend opt-in: HOLOSPHERE_BACKEND=nostr + HOLOSPHERE_RELAYS=wss://…
-// promotes the relay(s) to the wire (Gun runs peerless as the local cache —
-// see packages/holosphere/relay-transport.js). Without both, the classic gun
-// peer path below is used.
+// HOLOSPHERE_RELAYS=wss://… feeds either of two arrangements:
+//   HOLOSPHERE_BACKEND=nostr  → the relay is the WIRE (Gun peerless as a local
+//     cache — see packages/holosphere/relay-transport.js).
+//   HOLOSPHERE_SIGNING=shadow → the gun peer stays the wire and the relay is a
+//     BACKUP: writes are mirrored as signed NIP-01 events.
+// Without either, the classic gun peer path below is used unchanged.
 function resolveRelays(): string[] {
-  return (process.env.HOLOSPHERE_RELAYS || '')
-    .split(',').map((s) => s.trim()).filter(Boolean);
+  return parseRelayList(process.env.HOLOSPHERE_RELAYS);
 }
 
 let hs: any;
@@ -44,6 +51,18 @@ export async function getHoloSphere(): Promise<any> {
   } else {
     hs = new HoloSphere(resolvedApp, false, null, { peers: [resolvePeer()] });
     await new Promise((r) => setTimeout(r, 1500));
+    // This constructor takes no key, so signing has no identity of its own —
+    // hand it HOLOSPHERE_PRIVATE_KEY explicitly. Without one the backup stays
+    // off rather than publishing under a throwaway key nobody can verify.
+    const key = process.env.HOLOSPHERE_PRIVATE_KEY;
+    const mode = parseRelayBackupMode(process.env.HOLOSPHERE_SIGNING);
+    if (mode !== 'off' && relays.length && !key) {
+      console.error('[holosphere] HOLOSPHERE_SIGNING set but HOLOSPHERE_PRIVATE_KEY is missing — relay backup off');
+    } else if (
+      await enableRelayBackup(hs, { relays, mode, privateKey: key })
+    ) {
+      console.error(`[holosphere] relay backup on → ${relays.join(', ')}`);
+    }
   }
   return hs;
 }

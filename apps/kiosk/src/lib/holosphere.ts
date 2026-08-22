@@ -12,13 +12,20 @@
 import {
   createHoloSphere,
   createHolonWriter,
+  enableRelayBackup,
   type HolonWriter,
 } from "@holons/core/holosphere";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
 import { Buffer } from "buffer";
-import { resolveAppName, resolvePeers } from "./config";
+import {
+  resolveAppName,
+  resolveBackend,
+  resolvePeers,
+  resolveRelays,
+  resolveSigningMode,
+} from "./config";
 import { actingAs } from "./auth";
 import { lookupHolonName } from "./hns";
 
@@ -56,6 +63,14 @@ let instance: Promise<HoloSphere> | null = null;
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
+    // Backend selection (see config.ts): "gun" reads from the production Gun
+    // peer; "nostr" makes the relay the wire — Gun goes peerless as the local
+    // cache and every read/write/subscription travels as a signed NIP-01
+    // kind-30078 event. Either way the config must go through `extra` — the v2
+    // constructor only honors `gunOptions.peers` / `nostr.relays`; a top-level
+    // `peers` key is silently dropped and the instance falls back to its
+    // built-in default.
+    const backend = resolveBackend();
     // Promise.resolve normalises the factory's overloaded return type.
     instance = Promise.resolve(
       createHoloSphere({
@@ -63,13 +78,25 @@ export function getHolosphere(): Promise<HoloSphere> {
         privateKey: deviceKeyHex(),
         logLevel: "ERROR",
         awaitReady: true,
-        // Read from the production Gun relay (overridable via VITE_KIOSK_PEER).
-        // Must go through `gunOptions` — the v2 config constructor only honors
-        // `gunOptions.peers` / `nostr.relays`; a top-level `peers` key is
-        // silently dropped and the instance falls back to the built-in default.
-        extra: { gunOptions: { peers: resolvePeers() } },
+        ...(backend === "nostr"
+          ? { backend, extra: { nostr: { relays: resolveRelays() } } }
+          : { extra: { gunOptions: { peers: resolvePeers() } } }),
       }),
     );
+    // Mirror every write to the relay as a signed event while Gun stays the
+    // wire, so the display keeps seeing production data. The decision of when
+    // that applies belongs to core (it is a no-op on the nostr backend, where
+    // the transport already publishes).
+    instance = instance.then(async (hs) => {
+      await enableRelayBackup(hs, {
+        relays: resolveRelays(),
+        mode: resolveSigningMode(),
+        backend,
+        onError: (err) => console.error("[kiosk] could not enable signing", err),
+      });
+      return hs;
+    });
+
     // Dev-only: expose the instance so the kiosk can be poked from the console
     // (and from headless smoke tests). Tree-shaken out of production builds.
     if (import.meta.env.DEV && typeof window !== "undefined") {

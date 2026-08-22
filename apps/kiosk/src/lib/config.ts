@@ -13,6 +13,10 @@
 // HolonsDebug), and the Gun peer falls back to the production relay. Override
 // only via the kiosk-specific `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
 //
+// The wire itself is selectable too: `VITE_KIOSK_BACKEND=nostr` plus
+// `VITE_KIOSK_RELAYS=wss://…` moves reads and writes onto a Nostr relay
+// instead of the Gun peer (see `resolveBackend`).
+//
 // The query-param overrides are persisted to localStorage so a one-time setup
 // URL survives reloads and power-cycles of the entrance display.
 
@@ -112,6 +116,59 @@ export function resolvePeers(): string[] {
   const env = import.meta.env.VITE_KIOSK_PEER as string | undefined;
   const peer = (env && String(env).trim()) || PRODUCTION_PEER;
   return [peer];
+}
+
+/**
+ * Relay URL(s) the kiosk syncs over on the `nostr` backend. Kiosk-scoped
+ * `VITE_KIOSK_RELAYS` wins so a single screen can be flipped without moving
+ * the whole monorepo; `VITE_HOLOSPHERE_RELAYS` (the name the web app reads)
+ * is honoured as the shared fallback. Empty → no relays configured.
+ */
+export function resolveRelays(): string[] {
+  const env =
+    (import.meta.env.VITE_KIOSK_RELAYS as string | undefined) ||
+    (import.meta.env.VITE_HOLOSPHERE_RELAYS as string | undefined) ||
+    "";
+  return String(env)
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Which Holosphere backend carries the wire: "gun" (default — the production
+ * Gun peer) or "nostr" (the relay is the wire and Gun runs peerless as the
+ * local cache). Selecting `nostr` without any relay would make holosphere fall
+ * back to Gun anyway, so an unconfigured relay list keeps us on "gun".
+ */
+export function resolveBackend(): "gun" | "nostr" {
+  const env =
+    (import.meta.env.VITE_KIOSK_BACKEND as string | undefined) ||
+    (import.meta.env.VITE_HOLOSPHERE_BACKEND as string | undefined) ||
+    "gun";
+  const want = String(env).trim().toLowerCase();
+  return want === "nostr" && resolveRelays().length ? "nostr" : "gun";
+}
+
+/**
+ * Signing mode for the `gun` backend: "off" (default), "shadow" or "enforce".
+ *
+ * On the gun backend the SIGNER is the publisher — with relays configured,
+ * `shadow` keeps Gun as the wire (so the kiosk still sees everything on
+ * gun.holons.io) while every write is additionally published to the relay as a
+ * signed NIP-01 event. `enforce` additionally narrows reads to trusted keys,
+ * which is not what a public entrance display wants — keep it for testing.
+ *
+ * Ignored on the `nostr` backend, where the relay transport owns publishing and
+ * the signer is created envelope-only during init.
+ */
+export function resolveSigningMode(): "off" | "shadow" | "enforce" {
+  const env =
+    (import.meta.env.VITE_KIOSK_SIGNING as string | undefined) ||
+    (import.meta.env.VITE_HOLOSPHERE_SIGNING as string | undefined) ||
+    "off";
+  const want = String(env).trim().toLowerCase();
+  return want === "shadow" || want === "enforce" ? want : "off";
 }
 
 /**

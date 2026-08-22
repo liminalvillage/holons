@@ -13,6 +13,7 @@
 
 import { writable } from "svelte/store";
 import { getHolosphere } from "./holosphere";
+import { resolveBackend, resolveRelays, resolveSigningMode } from "./config";
 import type { HoloSphere } from "holosphere";
 
 /** Pubkey (hex) of the adopted session identity, or null when none. */
@@ -32,17 +33,32 @@ type SigningIdentity = {
 };
 
 /**
+ * Which relays this session's signer publishes to.
+ *
+ * `login` replaces whatever signer was in place, so it has to re-state the
+ * publishing arrangement or adopting a key would silently stop relay writes:
+ *  - nostr backend → `[]`. The relay transport is the single publisher and
+ *    signs each write with the adopted identity already; a second publisher
+ *    here would duplicate every event.
+ *  - gun backend + a signing mode → the configured relays, so writes keep
+ *    reaching the relay as signed events, now under the user's own key.
+ *  - gun backend, signing off → `[]`, envelope-only, as before.
+ */
+function signingRelays(): string[] {
+  if (resolveBackend() === "nostr") return [];
+  return resolveSigningMode() === "off" ? [] : resolveRelays();
+}
+
+/**
  * Adopt a paired secret key as this session's signing identity. Returns the
- * pubkey, or null when the key is unusable. `relays: []` keeps the signer
- * envelope-only — on the nostr backend the relay transport must stay the
- * single publisher, and on the gun backend there is nothing to publish to.
+ * pubkey, or null when the key is unusable.
  */
 export async function adoptSessionKey(
   secretHex: string,
 ): Promise<string | null> {
   try {
     const hs = (await getHolosphere()) as HoloSphere & SigningIdentity;
-    const { pubkey } = await hs.login(secretHex, { relays: [] });
+    const { pubkey } = await hs.login(secretHex, { relays: signingRelays() });
     sessionKeyPub.set(pubkey);
     return pubkey;
   } catch (err) {

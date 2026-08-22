@@ -7,7 +7,11 @@
  *
  * @module src/createHoloSphere
  */
-import { createHoloSphere as coreCreateHoloSphere } from '@holons/core/holosphere';
+import {
+  createHoloSphere as coreCreateHoloSphere,
+  enableRelayBackup,
+  parseRelayBackupMode,
+} from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
 import KeyManager from './KeyManager.js';
@@ -60,13 +64,18 @@ export default function createHoloSphere(appName, options = {}) {
     process.env.HOLOSPHERE_PRIVATE_KEY ||
     getOrCreateKey(resolvedAppName, generatePrivateKey);
 
-  // Backend selection: `backend: 'nostr'` only ACTIVATES the relay transport
-  // when relays are configured (holosphere falls back to the gun backend
-  // otherwise, preserving the bot's historical behavior). Opt in by setting
-  //   HOLOSPHERE_RELAYS=wss://relay.holons.io[,wss://…]
-  // in the environment (or passing options.relays) — then the relay is the
-  // wire: Gun runs peerless as the local cache and every read/write syncs
-  // over Nostr. See packages/holosphere/relay-transport.js.
+  // Relays serve two DIFFERENT arrangements, picked by HOLOSPHERE_BACKEND:
+  //
+  //   HOLOSPHERE_BACKEND=nostr  → the relay is the WIRE. Gun runs peerless as
+  //     a local cache, so the bot sees only what is on the relay — a full
+  //     migration off gun.holons.io, not something to switch on casually.
+  //
+  //   anything else (default)   → Gun stays the wire and the relay is a
+  //     BACKUP: with HOLOSPHERE_SIGNING=shadow every write is additionally
+  //     published as a signed NIP-01 event. Nothing that works today changes.
+  //
+  // Either way needs HOLOSPHERE_RELAYS=wss://relay.holons.io[,wss://…] (or
+  // options.relays). See packages/holosphere/relay-transport.js.
   const relays =
     Array.isArray(relaysOption) && relaysOption.length
       ? relaysOption
@@ -74,16 +83,33 @@ export default function createHoloSphere(appName, options = {}) {
           .split(',')
           .map(r => r.trim())
           .filter(Boolean);
-  return coreCreateHoloSphere({
+  const resolvedBackend =
+    backend || process.env.HOLOSPHERE_BACKEND?.toLowerCase() || 'gun';
+  const relayIsWire = resolvedBackend === 'nostr' && relays.length > 0;
+
+  const instance = coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
-    backend: backend || 'nostr',
+    backend: resolvedBackend,
     logLevel: logLevel || 'INFO',
     extra: {
-      ...(relays.length ? { nostr: { relays } } : {}),
+      ...(relayIsWire ? { nostr: { relays } } : {}),
       ...extra,
     },
   });
+
+  // Callers depend on this factory staying synchronous, so the backup is armed
+  // in the background: writes in the first moments after startup may land on
+  // Gun before the publisher is up. A no-op unless HOLOSPHERE_SIGNING is set.
+  enableRelayBackup(instance, {
+    relays,
+    mode: parseRelayBackupMode(process.env.HOLOSPHERE_SIGNING),
+    backend: resolvedBackend,
+  }).then(on => {
+    if (on) console.log(`[holosphere] relay backup on → ${relays.join(', ')}`);
+  });
+
+  return instance;
 }
 
 /**
@@ -128,5 +154,8 @@ export function createKeyManager(appName, options = {}) {
   return keyManager;
 }
 
-// Re-export createHologram for convenience
-export { createHologram } from 'holosphere';
+// (There used to be a `export { createHologram } from 'holosphere'` here.
+// `createHologram` is an INSTANCE METHOD on HoloSphere, never a module export,
+// so that line made this file unimportable by any real ESM loader — it only
+// survived because tsx transpiles to CJS, where a missing named export is
+// undefined at runtime instead of a link error. Nothing imported it.)
