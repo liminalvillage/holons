@@ -8,6 +8,15 @@
 
 import * as h3 from 'h3-js';
 import Gun from 'gun'
+// SEA (gun's crypto layer) is what defines `gun.user()`, which every private
+// (password-protected) lens goes through. Node picks it up for free — gun's
+// `main` is lib/server.js, which requires ../sea — but a bundler resolves the
+// package's `browser` field to gun.js, the core graph ALONE. Without this
+// import `gun.user` is simply undefined in every browser build, and the first
+// password read or write dies with "gun.user is not a function". Importing it
+// here (the one module that owns the Gun instance) keeps the two environments
+// on the same API; it self-registers on Gun and is a no-op where already loaded.
+import 'gun/sea.js'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
 import * as SchemaOps from './schema.js';
