@@ -14,6 +14,13 @@ export {
   type WriteDeniedInfo,
   type HolonWriter,
 } from './write.js';
+export {
+  enableRelayBackup,
+  parseRelayBackupMode,
+  parseRelayList,
+  type RelayBackupMode,
+  type RelayBackupOptions,
+} from './relayBackup.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
 export { sourceHolonId, sourceRef } from './provenance.js';
 export {
