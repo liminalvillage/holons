@@ -3,11 +3,15 @@
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
-  // who isn't already listed. Avatars come from the kiosk's /api/avatar route.
+  // who isn't already listed. This dialog IS the participation gate: you never
+  // have to join a task before you can complete it (see complete.ts), so the
+  // current user is always one of the rows.
+  // Avatars come from the kiosk's /api/avatar route.
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
+  import { telegramUser } from "$lib/auth";
   import { getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
   import type { Quest } from "@holons/core/tasks";
@@ -43,6 +47,24 @@
       on: true,
       user: p,
     }));
+    // The person completing is always offered as a row, so crediting yourself
+    // never means joining the task first. Pre-ticked only when nobody else is
+    // on the task — with a team already listed, tapping ✓ for them shouldn't
+    // quietly hand you a share of the credit.
+    const me = get(telegramUser);
+    if (
+      me?.id != null &&
+      !rows.some((r) => String(r.user?.id) === String(me.id))
+    )
+      rows = [
+        ...rows,
+        {
+          key: String(me.id),
+          name: partName(me as Member),
+          on: rows.length === 0,
+          user: me as Member,
+        },
+      ];
     void loadMembers();
   }
 

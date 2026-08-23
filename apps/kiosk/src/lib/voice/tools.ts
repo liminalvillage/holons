@@ -10,7 +10,7 @@
 
 import { get } from "svelte/store";
 import type { AgentTool, ToolCall, ToolResult } from "@holons/ai-ui";
-import { createTask, type Quest } from "@holons/core/tasks";
+import { createTask, addParticipant, type Quest } from "@holons/core/tasks";
 import { borrowItem, returnItem } from "@holons/core/library";
 import { localFieldsToStored } from "@holons/core/datetime";
 import {
@@ -25,7 +25,7 @@ import {
 } from "$lib/stores";
 import { telegramUser, borrowActor } from "$lib/auth";
 import { getHolosphere, getWriter, getLibraryDb } from "$lib/holosphere";
-import { toggleJoin } from "$lib/membership";
+import { toggleJoin, person } from "$lib/membership";
 import { checkComplete, recordCompletion } from "$lib/complete";
 import { sourceRef, toPeople } from "$lib/data";
 
@@ -106,7 +106,7 @@ export const KIOSK_VOICE_TOOLS: AgentTool[] = [
   {
     name: "task_complete",
     description:
-      "Mark a task completed (records the contribution accounting). Only a participant of the task can complete it.",
+      "Mark a task completed (records the contribution accounting). The task's current participants are the ones credited — use task_toggle_join first if the speaker took part but has not joined.",
     inputSchema: {
       type: "object",
       properties: { taskId: str("EXACT id of the task") },
@@ -352,17 +352,24 @@ export async function dispatchKioskTool(
           );
         }
         const { holon, quest } = await freshQuest(hid, local);
-        const check = checkComplete(quest ?? local, user.id);
+        const task = quest ?? local;
+        const check = checkComplete(task);
         if (!check.ok) {
           const why =
             check.reason === "already-completed"
               ? "It is already completed."
-              : check.reason === "stopped"
-                ? "The task was stopped."
-                : "Only a participant can complete it — the user must join the task first (task_toggle_join).";
+              : "The task was stopped.";
           return fail(call.id, `Cannot complete "${local.title}": ${why}`);
         }
-        const rec = await recordCompletion(holon, check.task);
+        // Nobody on the task yet? The speaker completing it is the doer —
+        // credit them, mirroring the confirm dialog's pre-tick in the UI.
+        const credited = (Array.isArray(task.participants)
+          ? task.participants
+          : []
+        ).length
+          ? task
+          : addParticipant(task, person(user));
+        const rec = await recordCompletion(holon, credited, user.id);
         return rec.ok
           ? ok(call.id, `Completed "${local.title}" — contribution recorded.`)
           : fail(call.id, "Completion write failed.");

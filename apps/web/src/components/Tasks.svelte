@@ -4,7 +4,6 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import { replaceState, goto } from "$app/navigation";
-	import { fade, slide } from "svelte/transition";
 	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
@@ -48,16 +47,15 @@
 	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import TaskCard from "./shared/TaskCard.svelte";
+	import CompleterModal from "./shared/CompleterModal.svelte";
 	import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
 	import type { PublishOutcome } from "$lib/holosphere/publish";
 
-	// State for quick completion
+	// State for quick completion. Every completion goes through the participant
+	// picker first — the ticked set is what the REA accounting credits.
 	let showCompleterModal = $state(false);
 	let taskToComplete: { key: string; quest: Quest } | null = $state(null);
-	let availableCompleters: Array<{ id: string; firstName: string; lastName?: string; username: string }> = $state([]);
-	let completersLoading = $state(false);
 	let equation: ScoreEquation = $state(DEFAULT_EQUATION);
-	let selectedCompleters: Set<string> = $state(new Set()); // Multi-select for completers
 
 	// Add filterType prop to allow filtering by quest type
 	let { filterType = 'all' }: { filterType?: 'task' | 'event' | 'all' } = $props();
@@ -890,86 +888,35 @@
 			return;
 		}
 
-		// If task has participants, complete directly with REA accounting
-		if (quest.participants && quest.participants.length > 0) {
-			await completeTaskWithAccounting(key, quest);
-		} else {
-			// No participants - show modal to select who completed it
-			taskToComplete = { key, quest };
-			selectedCompleters = new Set(); // Reset selection
-			await loadAvailableCompleters();
-			showCompleterModal = true;
-		}
+		// Always confirm who actually took part before recording — the picker
+		// starts from the task's participants and lets them be unticked.
+		taskToComplete = { key, quest };
+		showCompleterModal = true;
 	}
 
-	// Load available users for completer selection
-	async function loadAvailableCompleters() {
-		if (!holosphere || !holonID) return;
-
-		completersLoading = true;
-		try {
-			// holosphere.getAll resolves to Array<T>.
-			const usersData = await holosphere.getAll(holonID, 'users');
-			availableCompleters = (usersData ?? [])
-				.filter((u: any) => u?.id)
-				.map((u: any) => ({
-					id: u.id,
-					firstName: u.first_name || u.firstName || 'Unknown',
-					lastName: u.last_name || u.lastName,
-					username: u.username || ''
-				}));
-		} catch (error) {
-			console.error('Error loading users for completion:', error);
-			availableCompleters = [];
-		} finally {
-			completersLoading = false;
-		}
+	// Who is doing the completing: the logged-in Telegram user, else the Nostr key.
+	function currentUserId(): string {
+		const telegramUser = telegramStore.getState().user;
+		return (telegramUser && String(telegramUser.id)) || $nostrPublicKey || '';
 	}
 
-	// Toggle completer selection
-	function toggleCompleterSelection(userId: string) {
-		const newSet = new Set(selectedCompleters);
-		if (newSet.has(userId)) {
-			newSet.delete(userId);
-		} else {
-			newSet.add(userId);
-		}
-		selectedCompleters = newSet;
+	function cancelCompleterModal() {
+		showCompleterModal = false;
+		taskToComplete = null;
 	}
 
-	// Complete task with selected completers (multi-select)
-	async function completeWithSelectedCompleters() {
-		if (!taskToComplete || !holosphere || !holonID || selectedCompleters.size === 0) return;
+	// Complete the task crediting exactly the people confirmed in the picker.
+	async function completeWithSelectedCompleters(participants: any[]) {
+		if (!taskToComplete || !holosphere || !holonID || participants.length === 0) return;
 
 		const { key, quest } = taskToComplete;
+		const updatedQuest = { ...quest, participants };
 
-		// Build participants from selected users
-		const newParticipants = availableCompleters
-			.filter(user => selectedCompleters.has(user.id))
-			.map(user => ({
-				id: user.id,
-				firstName: user.firstName,
-				lastName: user.lastName,
-				username: user.username
-			}));
-
-		// Merge with existing participants (avoid duplicates). Normalize ids to
-		// strings — Telegram users carry numeric ids, MCP writes strings.
-		const existingIds = new Set((quest.participants || []).map((p: any) => String(p.id)));
-		const updatedParticipants = [
-			...(quest.participants || []),
-			...newParticipants.filter(p => !existingIds.has(String(p.id)))
-		];
-
-		const updatedQuest = { ...quest, participants: updatedParticipants };
+		showCompleterModal = false;
+		taskToComplete = null;
 
 		// Now complete with REA accounting
 		await completeTaskWithAccounting(key, updatedQuest);
-
-		// Close modal and reset
-		showCompleterModal = false;
-		taskToComplete = null;
-		selectedCompleters = new Set();
 	}
 
 	// Complete task with full REA accounting (same logic as TaskModal)
@@ -1628,104 +1575,16 @@
 	/>
 {/if}
 
-<!-- Completer Selection Modal -->
-{#if showCompleterModal && taskToComplete}
-	<div
-		class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		onclick={(e) => { if (e.target === e.currentTarget) { showCompleterModal = false; taskToComplete = null; } }}
-		onkeydown={(e) => e.key === 'Escape' && (showCompleterModal = false, taskToComplete = null)}
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		transition:fade={{ duration: 150 }}
-	>
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700" transition:slide={{ duration: 200 }}>
-			<div class="p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-white text-xl font-bold">Who completed this task?</h3>
-					<button
-						onclick={() => { showCompleterModal = false; taskToComplete = null; }}
-						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
-						aria-label="Close modal"
-					>
-						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
-
-				<p class="text-gray-300 mb-2 font-medium truncate">"{taskToComplete.quest.title}"</p>
-				<p class="text-gray-400 text-sm mb-4">Select who completed this task to record their contribution:</p>
-
-				{#if completersLoading}
-					<div class="flex items-center justify-center py-8">
-						<div class="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-						<span class="text-gray-400 text-sm ml-3">Loading team members...</span>
-					</div>
-				{:else if availableCompleters.length === 0}
-					<div class="text-center py-8">
-						<div class="w-12 h-12 mx-auto mb-3 bg-gray-700 rounded-full flex items-center justify-center">
-							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
-							</svg>
-						</div>
-						<p class="text-gray-400">No users found</p>
-						<p class="text-gray-500 text-sm mt-1">Add users to this holon first</p>
-					</div>
-				{:else}
-					<div class="max-h-60 overflow-y-auto space-y-1 mb-4 overscroll-contain">
-						{#each availableCompleters as user (user.id)}
-							{@const isSelected = selectedCompleters.has(user.id)}
-							<button
-								class="w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left touch-manipulation select-none active:scale-[0.98] min-h-[56px] {isSelected ? 'bg-green-500/20 border border-green-500/40' : 'bg-gray-700 hover:bg-gray-600 border border-transparent'}"
-								onclick={() => toggleCompleterSelection(user.id)}
-							>
-								<div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-green-500 border-green-500' : 'border-gray-500'}">
-									{#if isSelected}
-										<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
-										</svg>
-									{/if}
-								</div>
-								<img
-									src={`/api/avatar?user_id=${user.id}`}
-									alt={user.firstName}
-									class="w-10 h-10 rounded-full"
-									loading="lazy"
-								/>
-								<div>
-									<span class="text-white font-medium">{user.firstName} {user.lastName || ''}</span>
-									{#if user.username}
-										<span class="text-gray-400 text-sm block">@{user.username}</span>
-									{/if}
-								</div>
-							</button>
-						{/each}
-					</div>
-				{/if}
-
-				<div class="flex gap-3">
-					<button
-						onclick={() => { showCompleterModal = false; taskToComplete = null; selectedCompleters = new Set(); }}
-						class="btn btn--secondary flex-1"
-					>
-						Cancel
-					</button>
-					<button
-						onclick={completeWithSelectedCompleters}
-						disabled={selectedCompleters.size === 0}
-						class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-						</svg>
-						Complete ({selectedCompleters.size})
-					</button>
-				</div>
-			</div>
-		</div>
-	</div>
-{/if}
+<!-- Participant confirmation — every completion path routes through this. -->
+<CompleterModal
+	open={showCompleterModal}
+	quest={taskToComplete?.quest ?? null}
+	{holosphere}
+	{holonID}
+	selfId={currentUserId()}
+	on:cancel={cancelCompleterModal}
+	on:confirm={(e) => completeWithSelectedCompleters(e.detail.participants)}
+/>
 
 <style>
 	/* Task card styling */

@@ -5,6 +5,7 @@
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul, buildHologramLink, resolveName } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
+    import CompleterModal from './shared/CompleterModal.svelte';
     import SourceBadge from './shared/SourceBadge.svelte';
     import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
     import { formatDate } from "../utils/date";
@@ -471,14 +472,32 @@
     })();
 
     // Toggle completion. For recurring occurrences, only this occurrence is
-    // toggled; otherwise we flip the series status using the participants
-    // already on the quest (no extra participant-picker step).
+    // toggled (no accounting is recorded, so no picker); otherwise the series
+    // completion opens the participant picker first.
     function handleCompleteClick() {
         if (isOccurrenceView) {
             toggleOccurrenceCompleted();
             return;
         }
         completeQuest();
+    }
+
+    // Participant confirmation gate. Completing credits contributions, so the
+    // picker always opens first — pre-ticked with whoever is on the task, so
+    // no-shows can be unticked and late helpers added. Un-completing skips it.
+    let showCompleterModal = false;
+
+    /** Completer = current logged-in user, falling back to the initiator. */
+    function currentUserId(): string {
+        const telegramUser = telegramStore.getState().user;
+        return (telegramUser && String(telegramUser.id))
+            || $nostrPublicKey
+            || (quest.initiator?.id ? String(quest.initiator.id) : '');
+    }
+
+    function confirmCompleters(participants: any[]) {
+        showCompleterModal = false;
+        recordCompletion(participants);
     }
 
     async function toggleOccurrenceCompleted() {
@@ -495,49 +514,49 @@
     }
 
     async function completeQuest() {
-        const newStatus =
-            quest.status === "completed" ? "ongoing" : "completed";
+        if (quest.status !== "completed") {
+            showCompleterModal = true;
+            return;
+        }
+        await updateQuest({ status: "ongoing", completed_at: null });
+    }
 
-        if (newStatus === "completed") {
-            // Completer = current logged-in user, falling back to initiator.
-            const telegramUser = telegramStore.getState().user;
-            const pubKey = $nostrPublicKey;
-            const completerId =
-                (telegramUser && String(telegramUser.id))
-                || pubKey
-                || (quest.initiator?.id ? String(quest.initiator.id) : '');
+    /** Record the completion crediting exactly the confirmed participants. */
+    async function recordCompletion(participants: any[]) {
+        // The confirmed set replaces the task's participants — unticking someone
+        // both drops their credit and takes them off the record.
+        const questToComplete = { ...quest, participants };
 
-            // isAdmin=true mirrors web pre-unify behaviour — the modal already
-            // gates this UI on having access.
-            const result = applyTaskCompletion(quest, completerId, { isAdmin: true });
-            if (!result.ok) {
-                console.warn('[TaskModal] applyTaskCompletion blocked:', result.reason);
+        const completerId = currentUserId();
+
+        // isAdmin=true mirrors web pre-unify behaviour — the modal already
+        // gates this UI on having access.
+        const result = applyTaskCompletion(questToComplete, completerId, { isAdmin: true });
+        if (!result.ok) {
+            console.warn('[TaskModal] applyTaskCompletion blocked:', result.reason);
+            return;
+        }
+
+        const plan = planTaskCompletion(result.task, equation, {
+            holonId,
+            now: Date.now(),
+        });
+        const eventStore = getEventStore(holosphere);
+
+        try {
+            await executeCompletionPlan(holosphere as any, eventStore, holonId, plan);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
                 return;
             }
-
-            const plan = planTaskCompletion(result.task, equation, {
-                holonId,
-                now: Date.now(),
-            });
-            const eventStore = getEventStore(holosphere);
-
-            try {
-                await executeCompletionPlan(holosphere as any, eventStore, holonId, plan);
-            } catch (error: any) {
-                if (error?.name === 'AuthorizationError') {
-                    notifyWriteDenied('Unable to save - no write permission for this holon');
-                    return;
-                }
-                console.error('[TaskModal] executeCompletionPlan failed:', error);
-            }
-
-            quest = result.task;
-            dispatch("updated", { questId, quest: result.task });
-            dispatch("taskCompleted", { questId });
-            dispatch("close");
-        } else {
-            await updateQuest({ status: newStatus, completed_at: null });
+            console.error('[TaskModal] executeCompletionPlan failed:', error);
         }
+
+        quest = result.task;
+        dispatch("updated", { questId, quest: result.task });
+        dispatch("taskCompleted", { questId });
+        dispatch("close");
     }
 
     async function scheduleTask() {
@@ -2068,3 +2087,14 @@
     </div>
 </div>
 
+
+<!-- Participant confirmation — opens before any completion is recorded. -->
+<CompleterModal
+    open={showCompleterModal}
+    {quest}
+    {holosphere}
+    holonID={holonId}
+    selfId={currentUserId()}
+    on:cancel={() => (showCompleterModal = false)}
+    on:confirm={(e) => confirmCompleters(e.detail.participants)}
+/>

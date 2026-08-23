@@ -450,26 +450,25 @@
     }
     const q = get(rawQuests).find((x) => String(x.id ?? x.title) === task.id);
     if (!q) return;
-    // Permission + status check up front, so we only prompt for real completions.
-    const result = checkComplete(q, user.id);
+    // Status check up front, so we only prompt for real completions. Who took
+    // part is settled in the dialog — completing never requires joining first.
+    const result = checkComplete(q);
     if (!result.ok) {
       showNotice(
         result.reason === "already-completed"
           ? $t("tasks.alreadyCompleted")
-          : result.reason === "stopped"
-            ? $t("tasks.stopped")
-            : $t("tasks.joinFirst"),
+          : $t("tasks.stopped"),
       );
       return;
     }
     // Confirm participants (for REA) before recording — see CompleteConfirm.
     completionRequest.set({
-      task: result.task,
-      onConfirm: (adjusted) => startCompletion(task.id, adjusted),
+      task: q,
+      onConfirm: (adjusted) => startCompletion(task.id, adjusted, user.id),
     });
   }
 
-  function startCompletion(id: string, adjusted: Quest) {
+  function startCompletion(id: string, adjusted: Quest, completerId: number) {
     // Burst + drop now; record REA after the animation. The card stays mounted
     // (still in the backlog) until the write lands and the quest drops out.
     completing = { ...completing, [id]: makeConfetti() };
@@ -477,7 +476,8 @@
       let saved = false;
       try {
         const hid = get(holonId);
-        if (hid) saved = (await recordCompletion(hid, adjusted)).ok;
+        if (hid)
+          saved = (await recordCompletion(hid, adjusted, completerId)).ok;
       } catch (err) {
         console.error("[kiosk] completion failed", err);
       }

@@ -600,26 +600,26 @@
     }
     saving = true;
     message = "";
-    // Permission + status guards up front, on the freshest copy.
-    const result = checkComplete(await freshQuest(sel.quest), user.id);
+    // Status guard up front, on the freshest copy. Participation is decided in
+    // the confirm dialog — no "join the task first" step.
+    const fresh = await freshQuest(sel.quest);
+    const result = checkComplete(fresh);
     if (!result.ok) {
       saving = false;
       message =
         result.reason === "already-completed"
           ? $t("tasks.alreadyCompleted")
-          : result.reason === "stopped"
-            ? $t("tasks.stopped")
-            : $t("tasks.joinFirst");
+          : $t("tasks.stopped");
       return;
     }
     saving = false;
     const hid = $holonId;
     // Confirm participants (for REA), then record + celebrate.
     completionRequest.set({
-      task: result.task,
+      task: fresh,
       onConfirm: async (adjusted) => {
         try {
-          const { ok } = await recordCompletion(hid, adjusted);
+          const { ok } = await recordCompletion(hid, adjusted, user.id);
           if (ok) {
             closeDetail(); // close the detail card first, then celebrate
             setTimeout(party, 180);

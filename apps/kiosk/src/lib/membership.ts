@@ -30,7 +30,8 @@ export type TgUser = {
 export type SourceRef = { holon: string; key: string };
 
 /** A participant record without undefined fields (Holosphere warns on those). */
-function person(u: TgUser): QuestParticipant {
+/** The participant record a Telegram user is stored as on a quest. */
+export function person(u: TgUser): QuestParticipant {
   const p: QuestParticipant = { id: u.id };
   if (u.username) p.username = u.username;
   if (u.first_name) p.first_name = u.first_name;

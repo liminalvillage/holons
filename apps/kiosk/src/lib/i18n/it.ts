@@ -24,8 +24,6 @@ export const it: Record<MessageKey, Msg> = {
   "tasks.orderSaveFailed": "Impossibile salvare il nuovo ordine — {reason}",
   "tasks.alreadyCompleted": "Già completata.",
   "tasks.stopped": "Questa attività è stata fermata.",
-  "tasks.joinFirst":
-    "Prima unisciti all'attività — solo chi partecipa può completarla.",
   "tasks.deleteDenied": "Impossibile eliminare — forse non hai i permessi.",
   "tasks.deleteFailed": "Impossibile eliminare questa attività.",
   "tasks.addFailed": "Impossibile aggiungere — {reason}",

@@ -24,8 +24,6 @@ export const es: Record<MessageKey, Msg> = {
   "tasks.orderSaveFailed": "No se pudo guardar el nuevo orden — {reason}",
   "tasks.alreadyCompleted": "Ya completada.",
   "tasks.stopped": "Esta tarea se detuvo.",
-  "tasks.joinFirst":
-    "Únete primero a la tarea — solo un participante puede completarla.",
   "tasks.deleteDenied": "No se pudo eliminar — quizá no tienes permiso.",
   "tasks.deleteFailed": "No se pudo eliminar esta tarea.",
   "tasks.addFailed": "No se pudo añadir — {reason}",

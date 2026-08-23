@@ -27,8 +27,6 @@ export const en = {
   "tasks.orderSaveFailed": "Couldn't save the new order — {reason}",
   "tasks.alreadyCompleted": "Already completed.",
   "tasks.stopped": "This quest was stopped.",
-  "tasks.joinFirst":
-    "Join the task first — only a participant can complete it.",
   "tasks.deleteDenied": "Couldn't delete — you may not have permission.",
   "tasks.deleteFailed": "Couldn't delete this task.",
   "tasks.addFailed": "Couldn't add — {reason}",
