@@ -45,6 +45,7 @@ const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const CAL_VIEW_KEY = "kiosk_cal_view";
+const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
 const LANG_KEY = "kiosk_lang";
 const LANG_RESOLVED_KEY = "kiosk_lang_resolved";
@@ -507,16 +508,18 @@ export function setTaskSort(sort: TaskSort): void {
 }
 
 /**
- * How the Library view lays out the things: the icon card grid or a compact
- * list. Same Layout pill as the Tasks view; the choice sticks per device.
- * `swipe` is the one-at-a-time Card pager (id matches the Tasks deck's).
+ * How the Library view lays out the things: the icon card grid, a compact
+ * list, or the booking calendar (when each thing is out). Same Layout pill as
+ * the Tasks view; the choice sticks per device. `swipe` is the one-at-a-time
+ * Card pager (id matches the Tasks deck's).
  */
-export type LibraryViewMode = "cards" | "list" | "swipe";
+export type LibraryViewMode = "cards" | "list" | "swipe" | "calendar";
 
 /** Resolve the Library view mode; the card grid (wall) is the default. */
 export function resolveLibraryView(): LibraryViewMode {
   const v = persisted(LIBRARY_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe") return v;
+  if (v === "cards" || v === "list" || v === "swipe" || v === "calendar")
+    return v;
   // Legacy "personal" mode rendered the compact rows — closest is the list.
   if (v === "personal") return "list";
   return "cards";
@@ -563,6 +566,23 @@ export function resolveCalendarView(): CalendarMode {
 /** Persist the Calendar mode. */
 export function setCalendarView(mode: CalendarMode): void {
   persist(CAL_VIEW_KEY, mode);
+}
+
+/**
+ * The Library booking calendar's own window. It runs the same CalendarView,
+ * but it answers a different question — "which stretches is this thing gone
+ * for?" — so it keeps its own default (the month grid, where a span reads as
+ * a stretch) and its own stickiness, rather than inheriting whatever the
+ * Calendar tab was last left on.
+ */
+export function resolveLibraryCalendarView(): CalendarMode {
+  const v = persisted(LIBRARY_CAL_VIEW_KEY);
+  return v === "day" || v === "week" ? v : "month";
+}
+
+/** Persist the Library booking calendar's window. */
+export function setLibraryCalendarView(mode: CalendarMode): void {
+  persist(LIBRARY_CAL_VIEW_KEY, mode);
 }
 
 /**

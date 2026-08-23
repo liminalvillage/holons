@@ -17,6 +17,9 @@ export const LAYOUT_SEGMENTS = {
   wall: { glyph: "▦", labelKey: "pills.wall" },
   week: { glyph: "▤", labelKey: "pills.week" },
   graph: { glyph: "⌥", labelKey: "pills.graph" },
+  // The dated board: the same items laid out over time. Its own hatch, since
+  // the plain grid (▦) is already the wall and the rows (▤) the week.
+  calendar: { glyph: "▧", labelKey: "pills.calendar" },
 } as const satisfies Record<string, { glyph: string; labelKey: MessageKey }>;
 
 /** Sort pill segments for the Tasks backlog (see `TaskSort` in data.ts). */

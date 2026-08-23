@@ -12,6 +12,7 @@ import type { Checklist } from "@holons/core/checklists";
 import {
   toEvents,
   toBacklog,
+  toBookingEvents,
   toThings,
   toRoles,
   toChecklists,
@@ -132,6 +133,13 @@ export const rolesViewMode = writable<RolesViewMode>("cards");
 export const calendarMode = writable<CalendarMode>("day");
 
 /**
+ * Window of the Library's booking calendar — its own, not the Calendar tab's:
+ * the question there is "which stretches is this gone for?", which the month
+ * grid answers, so it opens on the month and remembers separately.
+ */
+export const libraryCalendarMode = writable<CalendarMode>("month");
+
+/**
  * Task ids the swipe deck has dealt with this session — skipped, joined, or
  * liked — so the deck strictly advances. A module store (not component state)
  * because tab auto-rotation remounts the Tasks view every flip; deliberately
@@ -209,6 +217,15 @@ export const things = derived(
   [rawLibrary, partnerNames, searchQuery, scope, t],
   ([$l, $n, $query, $s, $t]) =>
     filterBySearch(toThings(scopeLocal($l, $s), $n, $t), $query),
+);
+// The library's bookings as calendar spans — what the Library's calendar
+// layout renders (through the same CalendarView the Calendar tab uses). No
+// translator input: a booking's title is the item's own name, so there is no
+// display text to re-resolve on a language switch.
+export const bookingEvents = derived(
+  [rawLibrary, partnerNames, searchQuery, scope],
+  ([$l, $n, $query, $s]) =>
+    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n), $query),
 );
 export const roleCards = derived(
   [rawRoles, partnerNames, searchQuery, scope, t],

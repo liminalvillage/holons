@@ -24,6 +24,7 @@
     taskViewMode,
     taskSort,
     libraryViewMode,
+    libraryCalendarMode,
     rolesViewMode,
     calendarMode,
   } from "$lib/stores";
@@ -33,6 +34,7 @@
     setLibraryView,
     setRolesView,
     setCalendarView,
+    setLibraryCalendarView,
     type TaskViewMode,
     type LibraryViewMode,
     type RolesViewMode,
@@ -60,7 +62,8 @@
     { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
-  // ── Library: one card at a time / compact list / icon card grid (wall).
+  // ── Library: one card at a time / compact list / icon card grid (wall) /
+  // the booking calendar (when each thing is out).
   const LIBRARY_MODES: {
     id: LibraryViewMode;
     glyph: string;
@@ -69,6 +72,7 @@
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
+    { id: "calendar", ...LAYOUT_SEGMENTS.calendar },
   ];
 
   // ── Roles: compact rows / today cards (wall) / week grid.
@@ -125,6 +129,12 @@
     calendarMode.set(m as CalendarMode);
     setCalendarView(m as CalendarMode);
   }
+  // The Library's booking calendar keeps its own window (month by default),
+  // so switching it never disturbs the Calendar tab.
+  function pickLibraryCalendarMode(m: string) {
+    libraryCalendarMode.set(m as CalendarMode);
+    setLibraryCalendarView(m as CalendarMode);
+  }
 
   // The active tab's own pills, as data, so the visible row and the hidden
   // measuring row render from the same list.
@@ -144,6 +154,7 @@
     taskMode: string,
     sort: string,
     libMode: string,
+    libCalMode: string,
     rolesMode: string,
     calMode: string,
   ): OwnPill[] {
@@ -179,6 +190,21 @@
           title: tr("pills.view"),
           label: tr("pills.libraryLayout"),
         },
+        // On the booking calendar the day/week/month pill comes along — it is
+        // the same CalendarView, over its own (library) window.
+        ...(libMode === "calendar"
+          ? [
+              {
+                key: "window",
+                options: resolve(tr, CAL_MODES),
+                value: libCalMode,
+                onChange: pickLibraryCalendarMode,
+                icon: "eye" as const,
+                title: tr("pills.view"),
+                label: tr("pills.calendarView"),
+              },
+            ]
+          : []),
       ];
     if (tab === "roles")
       return [
@@ -213,6 +239,7 @@
     $taskViewMode,
     $taskSort,
     $libraryViewMode,
+    $libraryCalendarMode,
     $rolesViewMode,
     $calendarMode,
   );

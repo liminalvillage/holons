@@ -4,7 +4,7 @@
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
-    events,
+    events as questEvents,
     backlog,
     now,
     openQuest,
@@ -18,6 +18,7 @@
     calendarMode,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import type { CalendarMode } from "$lib/config";
   import { getWriter } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
   import {
@@ -39,16 +40,39 @@
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
+  // ── What this board shows ──────────────────────────────────────────────---
+  // The Calendar tab passes nothing and gets the holon's dated quests; the
+  // Library's calendar layout passes its booking spans instead, so "when is
+  // this resource gone" is answered by literally the same calendar.
+  //
+  // `readonly` turns off every gesture that writes a quest — drag-to-move,
+  // resize, long-press-to-create, the unscheduled drawer and the ＋ button —
+  // because a booking is changed on the item's own card, not here. `onOpen`
+  // decides what a tap brings forward (a quest, by default).
+  export let events: CalendarEvent[] | null = null;
+  export let readonly = false;
+  export let onOpen: ((ev: CalendarEvent) => void) | null = null;
+  /**
+   * Time window (day / week / month). Defaults to the Calendar tab's own
+   * shared mode; the Library's booking calendar passes its own store, so the
+   * two boards remember their windows separately.
+   */
+  export let mode: CalendarMode | null = null;
+  $: view = mode ?? $calendarMode;
+
   // The Show pill narrows the calendar too: under Mine only events the user
-  // is going to (RSVPs toggle participants, so people IS the RSVP list).
+  // is going to (RSVPs toggle participants, so people IS the RSVP list) — and,
+  // on the booking spans, only the bookings that are theirs (the borrower is
+  // the span's single "participant").
   $: uid = $telegramUser?.id;
+  $: baseEvents = events ?? $questEvents;
   $: shownEvents =
-    $scope === "personal" ? personalEvents($events, uid) : $events;
+    $scope === "personal" ? personalEvents(baseEvents, uid) : baseEvents;
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
   $: baseBacklog =
     $scope === "personal" ? personalTasks($backlog, uid) : $backlog;
-  $: unscheduled = baseBacklog.filter((t) => !t.due);
+  $: unscheduled = readonly ? [] : baseBacklog.filter((t) => !t.due);
 
   // One write path for every calendar gesture (move / unschedule / resize):
   // a federated card's write is routed to its owner holon under its source key
@@ -93,18 +117,19 @@
     }
   }
 
-  function open(id: string) {
+  function open(ev: CalendarEvent) {
     if (justDragged) return;
-    openQuest(id, "event");
+    if (onOpen) onOpen(ev);
+    else openQuest(ev.id, "event");
   }
   function openTask(id: string) {
     if (justDragged) return;
     openQuest(id, "task");
   }
-  function onKey(e: KeyboardEvent, id: string) {
+  function onKey(e: KeyboardEvent, ev: CalendarEvent) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      open(id);
+      open(ev);
     }
   }
 
@@ -156,6 +181,7 @@
   }
 
   function beginDrag(e: PointerEvent, id: string, title: string) {
+    if (readonly) return; // a booking span isn't dragged — see the props above
     if (e.button != null && e.button !== 0) return;
     pendingId = id;
     pendingTitle = title;
@@ -299,6 +325,7 @@
   }
 
   function beginCreatePress(e: PointerEvent) {
+    if (readonly) return;
     if (e.button != null && e.button !== 0) return;
     const el = e.target as HTMLElement;
     // Never start a create-press on an existing card or control — those carry
@@ -372,8 +399,8 @@
   // it falls inside the shown week/month, else the first day of that period.
   function defaultCreateDay(): string {
     const today = startOfDay(get(now));
-    if ($calendarMode === "day") return isoDay(anchorDay);
-    if ($calendarMode === "week")
+    if (view === "day") return isoDay(anchorDay);
+    if (view === "week")
       return isoDay(
         weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
       );
@@ -407,6 +434,7 @@
   }
 
   function beginResize(e: PointerEvent, ev: CalendarEvent) {
+    if (readonly) return;
     if (e.button != null && e.button !== 0) return;
     e.stopPropagation(); // a resize must not also start a move-drag
     e.preventDefault();
@@ -455,19 +483,21 @@
   }
 
   // Navigation offset, in units of the current mode (days / weeks / months).
-  // Resets to 0 whenever the mode changes, so each view opens on "now". The
-  // mode itself lives in the global calendarMode store (the shell's pills
-  // band sets it); this reaction keeps the reset/refocus side effects here.
+  // Resets to 0 whenever the mode changes, so each window opens on "now". The
+  // mode itself lives in a store the shell's pills band sets (`calendarMode`,
+  // or the Library calendar's own via the `mode` prop); this reaction keeps
+  // the reset/refocus side effects here. `null` until the first run, so the
+  // very first pass just records the mode without a spurious reset.
   let offset = 0;
-  let lastMode = get(calendarMode);
-  $: if ($calendarMode !== lastMode) {
-    lastMode = $calendarMode;
+  let lastMode: CalendarMode | null = null;
+  $: if (view !== lastMode) {
+    lastMode = view;
     offset = 0;
-    if ($calendarMode === "day") void focusDay();
+    if (view === "day") void focusDay();
   }
   function step(dir: 1 | -1) {
     offset += dir;
-    if ($calendarMode === "day") void focusDay();
+    if (view === "day") void focusDay();
   }
 
   const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -516,10 +546,7 @@
     noteColor(category);
 
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
-  $: anchorDay = addDays(
-    startOfDay($now),
-    $calendarMode === "day" ? offset : 0,
-  );
+  $: anchorDay = addDays(startOfDay($now), view === "day" ? offset : 0);
 
   $: weekDays = (() => {
     const start = startOfDay($now);
@@ -641,7 +668,7 @@
   onMount(() => {
     measureRem();
     window.addEventListener("resize", measureRem);
-    if (get(calendarMode) === "day") void focusDay();
+    if (view === "day") void focusDay();
     // Kiosk displays are unattended — glide the timeline once so booked content
     // below the fold is shown without anyone dragging. Capped at the lowest
     // booked event so it never scrolls down into empty evening hours.
@@ -665,8 +692,7 @@
   // `data-day`), so the next day is fully interactive too.
   let bodyWidth = 0;
   const TWIN_MIN_REM = 40; // show the second column only past this width
-  $: showNextDay =
-    $calendarMode === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
+  $: showNextDay = view === "day" && bodyWidth >= TWIN_MIN_REM * rootRem;
   $: nextDay = addDays(anchorDay, 1);
   // The "now" line only makes sense while the clock is inside the visible window.
   $: nowInWindow =
@@ -767,13 +793,13 @@
   })();
 
   $: periodLabel =
-    $calendarMode === "day"
+    view === "day"
       ? anchorDay.toLocaleDateString($locale, {
           weekday: "long",
           day: "numeric",
           month: "long",
         })
-      : $calendarMode === "week"
+      : view === "week"
         ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
         : monthAnchor.toLocaleDateString($locale, {
             month: "long",
@@ -878,7 +904,7 @@
     bind:this={scrollEl}
     bind:clientWidth={bodyWidth}
   >
-    {#if $calendarMode === "month"}
+    {#if view === "month"}
       <div class="weekdays">
         {#each WEEKDAYS as w}<span>{w}</span>{/each}
       </div>
@@ -903,7 +929,8 @@
                 <span class="lift chip-wrap">
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
-                    class="chip tilt draggable"
+                    class="chip tilt"
+                    class:draggable={!readonly}
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
                     style:--holo-seed={holoSeed(ev.id)}
@@ -915,8 +942,8 @@
                     role="button"
                     tabindex="0"
                     on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                    on:click={() => open(ev.id)}
-                    on:keydown={(e) => onKey(e, ev.id)}
+                    on:click={() => open(ev)}
+                    on:keydown={(e) => onKey(e, ev)}
                     >{#if ev.multiDay}<span class="spanb"
                         >{spanLabel(ev, day)}</span
                       >{/if}{ev.title}</span
@@ -930,7 +957,7 @@
           </div>
         {/each}
       </div>
-    {:else if $calendarMode === "week"}
+    {:else if view === "week"}
       <div class="week">
         {#each weekDays as day (day.toISOString())}
           {@const evs = eventsOn(day, shownEvents)}
@@ -956,7 +983,8 @@
                   <span class="lift">
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <article
-                      class="note sm tilt draggable"
+                      class="note sm tilt"
+                      class:draggable={!readonly}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
@@ -967,8 +995,8 @@
                       role="button"
                       tabindex="0"
                       on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                      on:click={() => open(ev.id)}
-                      on:keydown={(e) => onKey(e, ev.id)}
+                      on:click={() => open(ev)}
+                      on:keydown={(e) => onKey(e, ev)}
                     >
                       <span class="when">{timeLabel(ev, day)}</span>
                       <span class="ttl">{ev.title}</span>
@@ -1011,7 +1039,8 @@
                   {#each col.allDay as ev (ev.id)}
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <span
-                      class="allday-chip draggable"
+                      class="allday-chip"
+                      class:draggable={!readonly}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
@@ -1022,8 +1051,8 @@
                       tabindex="0"
                       title={ev.title}
                       on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                      on:click={() => open(ev.id)}
-                      on:keydown={(e) => onKey(e, ev.id)}
+                      on:click={() => open(ev)}
+                      on:keydown={(e) => onKey(e, ev)}
                       >{#if ev.multiDay}<span class="spanb"
                           >{spanLabel(ev, col.date)}</span
                         >{/if}{ev.title}</span
@@ -1072,7 +1101,8 @@
                 }`}
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                 <article
-                  class="day-event draggable"
+                  class="day-event"
+                  class:draggable={!readonly}
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
@@ -1089,8 +1119,8 @@
                   role="button"
                   tabindex="0"
                   on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                  on:click={() => open(ev.id)}
-                  on:keydown={(e) => onKey(e, ev.id)}
+                  on:click={() => open(ev)}
+                  on:keydown={(e) => onKey(e, ev)}
                 >
                   {#if compact}
                     <!-- Too thin to stack: time then title on one shrink-to-fit
@@ -1133,12 +1163,14 @@
                       </div>
                     {/if}
                   {/if}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span
-                    class="resize-handle"
-                    on:pointerdown={(e) => beginResize(e, ev)}
-                    aria-hidden="true"
-                  ></span>
+                  {#if !readonly}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span
+                      class="resize-handle"
+                      on:pointerdown={(e) => beginResize(e, ev)}
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
                 </article>
               {/each}
 
@@ -1199,15 +1231,17 @@
     </div>
   {/if}
 
-  <div class="fabrow">
-    <VoiceButtons />
-    <button
-      class="fab"
-      on:click={openCreate}
-      aria-label={$t("cal.newTask")}
-      title={$t("cal.newTask")}>＋</button
-    >
-  </div>
+  {#if !readonly}
+    <div class="fabrow">
+      <VoiceButtons />
+      <button
+        class="fab"
+        on:click={openCreate}
+        aria-label={$t("cal.newTask")}
+        title={$t("cal.newTask")}>＋</button
+      >
+    </div>
+  {/if}
 </div>
 
 {#if drag}

@@ -3,6 +3,8 @@
   import { get } from "svelte/store";
   import {
     things,
+    bookingEvents,
+    libraryCalendarMode,
     openThing,
     holonId,
     showNotice,
@@ -15,9 +17,15 @@
   import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
-  import { dueLabelFor, type LibraryThing, holoSeed } from "$lib/data";
+  import {
+    dueLabelFor,
+    type CalendarEvent,
+    type LibraryThing,
+    holoSeed,
+  } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
+  import CalendarView from "./CalendarView.svelte";
   import {
     addItem,
     getItemIcon,
@@ -31,6 +39,14 @@
       e.preventDefault();
       openThing(id);
     }
+  }
+
+  // The calendar layout runs the Calendar tab's own CalendarView over the
+  // library's booking spans, so a booked stretch reads the same wherever it
+  // shows. Tapping a span opens the ITEM (the span is only a projection of
+  // its bookings), which is also where a booking is changed — hence readonly.
+  function openSpan(ev: CalendarEvent): void {
+    openThing(ev.libraryItemId ?? ev.id);
   }
 
   // Layout is chosen in the shell's global pills band (see GlobalPills);
@@ -154,67 +170,39 @@
 </script>
 
 <div class="board">
-  <div class="lib scroll">
+  {#if $libraryViewMode === "calendar"}
+    <!-- The booking calendar: the Calendar tab's board, fed the library's
+         spans. It brings its own header (‹ period ›) and scrolling, so it
+         sits beside `.lib` rather than inside it — and the ＋/voice row below
+         stays the LIBRARY's (share an item), which is why it renders
+         read-only. The personal scope narrows to the user's own bookings
+         inside CalendarView, so it needs no `shownThings` guard here: a
+         future booking is not a thing that is out today. -->
     {#if $scope === "personal" && !$telegramUser}
       <p class="empty">{$t("library.loginPersonal")}</p>
-    {:else if $scope === "personal" && !shownThings.length}
-      <p class="empty">{$t("library.emptyPersonal")}</p>
-    {:else if $libraryViewMode === "swipe"}
-      <!-- One big card at a time — the library's Card layout. -->
-      {#if shownThings.length}
-        {@const thing =
-          shownThings[Math.min(cardIndex, shownThings.length - 1)]}
-        <div class="pager">
-          <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-          <article
-            class="card big"
-            class:out={!thing.available}
-            class:is-foreign={!!thing.sourceColor}
-            class:holo={!!thing.hologram}
-            style:--holo-seed={holoSeed(thing.id)}
-            style="--glow: {thing.sourceColor ?? 'transparent'};"
-            role="button"
-            tabindex="0"
-            on:click={() => openThing(thing.id)}
-            on:keydown={(e) => onKey(e, thing.id)}
-          >
-            <div class="icon">{getItemIcon({ type: thing.type })}</div>
-            <h3>{thing.title}</h3>
-            <span class="type">{typeName($t, thing.type)}</span>
-            {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
-            <span class="status" class:available={thing.available}>
-              {statusLabel(thing, $scope, $now, $t, $locale)}
-            </span>
-          </article>
-          <div class="pagenav">
-            <button
-              class="arrow"
-              on:click={() => (cardIndex = Math.max(0, cardIndex - 1))}
-              disabled={cardIndex <= 0}
-              aria-label={$t("library.prevItem")}>‹</button
-            >
-            <span class="count"
-              >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
-            >
-            <button
-              class="arrow"
-              on:click={() =>
-                (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
-              disabled={cardIndex >= shownThings.length - 1}
-              aria-label={$t("library.nextItem")}>›</button
-            >
-          </div>
-        </div>
-      {:else}
-        <p class="empty">{$t("library.emptyShared")}</p>
-      {/if}
-    {:else if $libraryViewMode === "cards"}
-      {#if shownThings.length}
-        <div class="grid">
-          {#each shownThings as thing (thing.id)}
+    {:else}
+      <CalendarView
+        events={$bookingEvents}
+        mode={$libraryCalendarMode}
+        readonly
+        onOpen={openSpan}
+      />
+    {/if}
+  {:else}
+    <div class="lib scroll">
+      {#if $scope === "personal" && !$telegramUser}
+        <p class="empty">{$t("library.loginPersonal")}</p>
+      {:else if $scope === "personal" && !shownThings.length}
+        <p class="empty">{$t("library.emptyPersonal")}</p>
+      {:else if $libraryViewMode === "swipe"}
+        <!-- One big card at a time — the library's Card layout. -->
+        {#if shownThings.length}
+          {@const thing =
+            shownThings[Math.min(cardIndex, shownThings.length - 1)]}
+          <div class="pager">
             <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
             <article
-              class="card"
+              class="card big"
               class:out={!thing.available}
               class:is-foreign={!!thing.sourceColor}
               class:holo={!!thing.hologram}
@@ -230,57 +218,105 @@
               <span class="type">{typeName($t, thing.type)}</span>
               {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
               <span class="status" class:available={thing.available}>
-                {thing.available
-                  ? $t("library.available")
-                  : thing.borrower
-                    ? $t("library.outWith", { who: thing.borrower })
-                    : $t("library.out")}
+                {statusLabel(thing, $scope, $now, $t, $locale)}
               </span>
             </article>
+            <div class="pagenav">
+              <button
+                class="arrow"
+                on:click={() => (cardIndex = Math.max(0, cardIndex - 1))}
+                disabled={cardIndex <= 0}
+                aria-label={$t("library.prevItem")}>‹</button
+              >
+              <span class="count"
+                >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
+              >
+              <button
+                class="arrow"
+                on:click={() =>
+                  (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
+                disabled={cardIndex >= shownThings.length - 1}
+                aria-label={$t("library.nextItem")}>›</button
+              >
+            </div>
+          </div>
+        {:else}
+          <p class="empty">{$t("library.emptyShared")}</p>
+        {/if}
+      {:else if $libraryViewMode === "cards"}
+        {#if shownThings.length}
+          <div class="grid">
+            {#each shownThings as thing (thing.id)}
+              <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+              <article
+                class="card"
+                class:out={!thing.available}
+                class:is-foreign={!!thing.sourceColor}
+                class:holo={!!thing.hologram}
+                style:--holo-seed={holoSeed(thing.id)}
+                style="--glow: {thing.sourceColor ?? 'transparent'};"
+                role="button"
+                tabindex="0"
+                on:click={() => openThing(thing.id)}
+                on:keydown={(e) => onKey(e, thing.id)}
+              >
+                <div class="icon">{getItemIcon({ type: thing.type })}</div>
+                <h3>{thing.title}</h3>
+                <span class="type">{typeName($t, thing.type)}</span>
+                {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+                <span class="status" class:available={thing.available}>
+                  {thing.available
+                    ? $t("library.available")
+                    : thing.borrower
+                      ? $t("library.outWith", { who: thing.borrower })
+                      : $t("library.out")}
+                </span>
+              </article>
+            {/each}
+          </div>
+        {:else}
+          <p class="empty">{$t("library.emptyShared")}</p>
+        {/if}
+      {:else if shownThings.length}
+        <!-- Compact rows: the list layout, whatever the scope. -->
+        <ul class="rows">
+          {#each shownThings as thing (thing.id)}
+            <li>
+              <div
+                class="row"
+                class:out={!thing.available && $scope !== "personal"}
+                class:is-foreign={!!thing.sourceColor}
+                class:holo={!!thing.hologram}
+                style:--holo-seed={holoSeed(thing.id)}
+                style="--glow: {thing.sourceColor ?? 'transparent'};"
+                role="button"
+                tabindex="0"
+                on:click={() => openThing(thing.id)}
+                on:keydown={(e) => onKey(e, thing.id)}
+              >
+                <span class="ricon" aria-hidden="true"
+                  >{getItemIcon({ type: thing.type })}</span
+                >
+                <div class="text">
+                  <h3>{thing.title}</h3>
+                  <div class="meta">
+                    <span class="rtype">{typeName($t, thing.type)}</span>
+                    {#if thing.source}<span class="src">⇄ {thing.source}</span
+                      >{/if}
+                  </div>
+                </div>
+                <span class="status" class:available={thing.available}>
+                  {statusLabel(thing, $scope, $now, $t, $locale)}
+                </span>
+              </div>
+            </li>
           {/each}
-        </div>
+        </ul>
       {:else}
         <p class="empty">{$t("library.emptyShared")}</p>
       {/if}
-    {:else if shownThings.length}
-      <!-- Compact rows: the list layout, whatever the scope. -->
-      <ul class="rows">
-        {#each shownThings as thing (thing.id)}
-          <li>
-            <div
-              class="row"
-              class:out={!thing.available && $scope !== "personal"}
-              class:is-foreign={!!thing.sourceColor}
-              class:holo={!!thing.hologram}
-              style:--holo-seed={holoSeed(thing.id)}
-              style="--glow: {thing.sourceColor ?? 'transparent'};"
-              role="button"
-              tabindex="0"
-              on:click={() => openThing(thing.id)}
-              on:keydown={(e) => onKey(e, thing.id)}
-            >
-              <span class="ricon" aria-hidden="true"
-                >{getItemIcon({ type: thing.type })}</span
-              >
-              <div class="text">
-                <h3>{thing.title}</h3>
-                <div class="meta">
-                  <span class="rtype">{typeName($t, thing.type)}</span>
-                  {#if thing.source}<span class="src">⇄ {thing.source}</span
-                    >{/if}
-                </div>
-              </div>
-              <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $scope, $now, $t, $locale)}
-              </span>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="empty">{$t("library.emptyShared")}</p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <div class="fabrow">
     <VoiceButtons />
