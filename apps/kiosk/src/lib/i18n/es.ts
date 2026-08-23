@@ -220,6 +220,7 @@ export const es: Record<MessageKey, Msg> = {
   "pills.wall": "Muro",
   "pills.week": "Semana",
   "pills.graph": "Grafo",
+  "pills.calendar": "Calendario",
   "pills.day": "Día",
   "pills.month": "Mes",
   "pills.loved": "Favoritas",

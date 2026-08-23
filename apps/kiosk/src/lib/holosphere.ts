@@ -92,7 +92,8 @@ export function getHolosphere(): Promise<HoloSphere> {
         relays: resolveRelays(),
         mode: resolveSigningMode(),
         backend,
-        onError: (err) => console.error("[kiosk] could not enable signing", err),
+        onError: (err) =>
+          console.error("[kiosk] could not enable signing", err),
       });
       return hs;
     });

@@ -217,6 +217,7 @@ export const en = {
   "pills.wall": "Wall",
   "pills.week": "Week",
   "pills.graph": "Graph",
+  "pills.calendar": "Calendar",
   "pills.day": "Day",
   "pills.month": "Month",
   "pills.loved": "Loved",

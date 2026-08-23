@@ -219,6 +219,7 @@ export const it: Record<MessageKey, Msg> = {
   "pills.wall": "Bacheca",
   "pills.week": "Settimana",
   "pills.graph": "Grafo",
+  "pills.calendar": "Calendario",
   "pills.day": "Giorno",
   "pills.month": "Mese",
   "pills.loved": "Preferite",
