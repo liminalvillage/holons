@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { ID } from './store';
@@ -35,10 +36,44 @@
 	// Group navigation items for better organization
 	const primaryNav = data.slice(0, 6);  // Dashboard, Tasks, Schedule, Expenses, Roles, Map
 	const secondaryNav = data.slice(6);   // Rest of the items
+
+	// The tab strip scrolls horizontally when the lenses don't fit (always, on a
+	// phone). Without an affordance it just looks like the page is cut off at the
+	// edge, so fade whichever side still has tabs beyond it.
+	let listEl: HTMLDivElement | undefined;
+	let atStart = true;
+	let atEnd = true;
+
+	function updateEdges() {
+		if (!listEl) return;
+		const max = listEl.scrollWidth - listEl.clientWidth;
+		atStart = listEl.scrollLeft <= 1;
+		// `max <= 1` → nothing to scroll: both fades stay off.
+		atEnd = listEl.scrollLeft >= max - 1;
+	}
+
+	onMount(() => {
+		updateEdges();
+		// The strip's own box changes with the window; its *content* width changes
+		// when the labels drop out at the mobile breakpoint, which the reactive
+		// statement below picks up.
+		const ro = new ResizeObserver(updateEdges);
+		if (listEl) ro.observe(listEl);
+		return () => ro.disconnect();
+	});
+
+	// Re-measure after a navigation (active tab styling can change widths) and
+	// once the holon id arrives (tabs go from disabled to live).
+	$: if (listEl && (currentPath || currentHolonId)) tick().then(updateEdges);
 </script>
 
-<nav class="tabs" aria-label="Main navigation">
-	<div class="tabs__list" role="tablist">
+<nav
+	class="tabs"
+	class:tabs--fade-start={!atStart}
+	class:tabs--fade-end={!atEnd}
+	aria-label="Main navigation"
+>
+	<div class="tabs__list" role="tablist" bind:this={listEl} on:scroll={updateEdges}>
 		{#each data as item (item.title)}
 			<button
 				class="tab"
@@ -66,6 +101,53 @@
 		flex: 1;
 		min-width: 0;
 		height: 100%;
+		position: relative;
+	}
+
+	/* Scroll affordance: a short wash of the topbar's own background over
+	   whichever end still has tabs past it. Purely decorative — never eats a
+	   tap meant for the tab underneath. */
+	.tabs::before,
+	.tabs::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1.5rem;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 150ms ease;
+		z-index: 1;
+	}
+
+	.tabs::before {
+		left: 0;
+		background: linear-gradient(
+			to right,
+			var(--color-bg-secondary) 15%,
+			transparent
+		);
+	}
+
+	.tabs::after {
+		right: 0;
+		background: linear-gradient(
+			to left,
+			var(--color-bg-secondary) 15%,
+			transparent
+		);
+	}
+
+	.tabs--fade-start::before,
+	.tabs--fade-end::after {
+		opacity: 1;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.tabs::before,
+		.tabs::after {
+			transition: none;
+		}
 	}
 
 	.tabs__list {

@@ -157,9 +157,11 @@
     </div>
   </div>
 
+  <!-- delayTouchStart: same long-press rule as the list view — without it a
+       swipe to scroll the column is converted straight into a card drag. -->
   <div
     class="cards-container"
-    use:dndzone={{ items, flipDurationMs, dropTargetStyle: { outline: '2px dashed #6366f1', outlineOffset: '-2px' } }}
+    use:dndzone={{ items, flipDurationMs, delayTouchStart: 280, dropTargetStyle: { outline: '2px dashed #6366f1', outlineOffset: '-2px' } }}
     onconsider={handleDndConsider}
     onfinalize={handleDndFinalize}
   >

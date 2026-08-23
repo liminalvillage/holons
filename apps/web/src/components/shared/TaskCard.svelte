@@ -168,6 +168,100 @@
 				{/if}
 			</div>
 		</div>
+	{:else if variant === 'list'}
+		<!-- Compact list row, shaped like the kiosk's list mode: a category dot,
+		     the title with a wrapped meta line under it, then the appreciation
+		     heart and the participant avatars pinned right. The card itself is
+		     a neutral surface (TaskCardShell) — the colour lives in the dot. -->
+		<div class="row">
+			<span class="dot" aria-hidden="true"></span>
+
+			{#if quest.picture}
+				<img
+					class="row-thumb"
+					src={resolveImage(quest.picture)}
+					alt={quest.title}
+					loading="lazy"
+					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+				/>
+			{/if}
+
+			<div class="row-text">
+				<div class="row-title-line">
+					<!-- No `.card-title` here: the shell's completed line-through
+					     already targets h3, and the kanban `.card-title` rules
+					     (nowrap + ellipsis) would override this row's clamp. -->
+					<h3 class="row-title">{quest.title}</h3>
+					<SourceBadge item={quest} currentHolonId={holonID} lensRoute="tasks" />
+					<RecurringBadge item={quest} />
+				</div>
+
+				<div class="row-meta">
+					{#if quest.category}<span class="row-tag">{quest.category}</span>{/if}
+					{#if quest.when}
+						<span class="row-due" class:is-overdue={isOverdue}>
+							{formatDate(quest.when)}
+							<span class="row-due-time">@ {formatTime(quest.when)}{#if quest.ends}–{formatTime(quest.ends)}{/if}</span>
+						</span>
+					{/if}
+					{#if quest.location}
+						<span class="row-loc" title={quest.location}>📍 {quest.location.split(',')[0]}</span>
+					{/if}
+					{#if showCreated && quest.created}
+						<span class="row-created">Created {formatDate(quest.created)}</span>
+					{/if}
+					{#if showDependencies}
+						{#each quest.dependencies! as depId}
+							{@const depTitle = resolveDependencyTitle!(depId)}
+							{#if depTitle}
+								<button
+									type="button"
+									class="dep-badge"
+									title={`Open dependency: ${depTitle}`}
+									onclick={(e) => { e.stopPropagation(); onDependencyClick?.(depId); }}
+								>
+									⛓ {depTitle.length > 18 ? depTitle.slice(0, 18) + '…' : depTitle}
+								</button>
+							{:else}
+								<span class="dep-badge dep-badge--missing">⛓ Unknown</span>
+							{/if}
+						{/each}
+					{/if}
+				</div>
+
+				{#if quest.description}
+					<p class="row-desc">{quest.description}</p>
+				{/if}
+			</div>
+
+			{#if quest.appreciation && quest.appreciation.length > 0}
+				<span class="row-heart" title={`${quest.appreciation.length} appreciations`}>
+					<span class="row-heart-glyph" aria-hidden="true">♥</span>
+					<span class="row-heart-count">{quest.appreciation.length}</span>
+				</span>
+			{/if}
+
+			{#if displayedParticipants.length > 0}
+				<div class="row-avatars" title={quest.participants?.map(participantLabel).join(', ') ?? ''}>
+					{#each displayedParticipants as participant}
+						<span class="row-av">
+							<span class="row-av-ini">{participantInitial(participant)}</span>
+							{#if participant.id}
+								<img
+									src={`/api/avatar?user_id=${participant.id}`}
+									alt=""
+									loading="lazy"
+									onerror={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+								/>
+							{/if}
+						</span>
+					{/each}
+					{#if extraParticipants > 0}
+						<span class="row-av row-av--more"><span class="row-av-ini">+{extraParticipants}</span></span>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	{:else}
 	<div class="card-body">
 		{#if quest.picture}
@@ -296,6 +390,197 @@
 </TaskCardShell>
 
 <style>
+	/* ---- Compact list row (kiosk "rows" parity) --------------------------- */
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		min-width: 0;
+	}
+
+	/* The category colour, carried by a dot instead of the whole card.
+	   --card-dot is set by TaskCardShell. */
+	.dot {
+		flex: 0 0 auto;
+		width: 0.9rem;
+		height: 0.9rem;
+		border-radius: 50%;
+		background: var(--card-dot, var(--color-accent));
+		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+	}
+
+	.row-thumb {
+		flex: 0 0 auto;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 0.375rem;
+		object-fit: cover;
+		background-color: rgba(0, 0, 0, 0.1);
+	}
+
+	.row-text {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.row-title-line {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		min-width: 0;
+	}
+
+	.row-title {
+		font-size: 0.95rem;
+		font-weight: 700;
+		line-height: 1.3;
+		margin: 0;
+		color: var(--color-text-primary);
+		/* Wrap to two clamped lines rather than nowrap-ellipsis: a nowrap
+		   title's full width counts as min-content and propagates up the flex
+		   ancestors, overflowing a phone viewport; wrapped text only
+		   contributes its longest word. */
+		flex: 1 1 auto;
+		min-width: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		overflow-wrap: anywhere;
+	}
+
+	.row-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem;
+		margin-top: 0.15rem;
+	}
+	.row-meta:empty {
+		display: none;
+	}
+
+	.row-tag {
+		font-size: 0.68rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+	}
+
+	.row-due {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: var(--color-text-secondary);
+		white-space: nowrap;
+	}
+	.row-due.is-overdue {
+		color: #ef4444;
+	}
+	.row-due-time {
+		opacity: 0.75;
+		font-weight: 600;
+	}
+
+	.row-loc,
+	.row-created {
+		font-size: 0.68rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 9rem;
+	}
+
+	.row-desc {
+		font-size: 0.72rem;
+		line-height: 1.3;
+		color: var(--color-text-muted);
+		margin: 0.15rem 0 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.row-heart {
+		flex: 0 0 auto;
+		display: grid;
+		place-items: center;
+		width: 1.7rem;
+		height: 1.7rem;
+		line-height: 1;
+		color: #d4493a;
+	}
+	.row-heart-glyph {
+		grid-area: 1 / 1;
+		font-size: 1.6rem;
+	}
+	.row-heart-count {
+		grid-area: 1 / 1;
+		transform: translateY(0.1em);
+		font-size: 0.6rem;
+		font-weight: 800;
+		color: #fff;
+		text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+	}
+
+	.row-avatars {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+	}
+	.row-av {
+		flex: 0 0 auto;
+		position: relative;
+		width: 1.6rem;
+		height: 1.6rem;
+		border-radius: 50%;
+		overflow: hidden;
+		background: var(--color-accent-light);
+		display: grid;
+		place-items: center;
+		margin-left: -0.4rem;
+		box-shadow: 0 0 0 2px var(--color-bg-secondary);
+	}
+	.row-av:first-child {
+		margin-left: 0;
+	}
+	.row-av-ini {
+		font-size: 0.68rem;
+		font-weight: 800;
+		color: #fff;
+	}
+	.row-av img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.row-av--more {
+		background: var(--color-bg-tertiary);
+	}
+
+	/* Phone-width rows stay slim: the secondary text drops out and the detail
+	   modal (tap the row) carries it, exactly as the kiosk list does. */
+	@container (max-width: 420px) {
+		.row {
+			gap: 0.55rem;
+		}
+		.row-desc,
+		.row-loc,
+		.row-created {
+			display: none;
+		}
+		.row-title {
+			font-size: 0.9rem;
+		}
+	}
+
 	.card-body {
 		display: flex;
 		flex-direction: row;

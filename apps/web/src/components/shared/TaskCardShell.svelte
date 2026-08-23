@@ -58,12 +58,17 @@
 	const hologram = $derived(!!item._hologram?.isHologram);
 	const isCanvas = $derived(variant === 'canvas');
 
-	// Card colour follows the item's category in every view. On the canvas a
-	// completed note turns green to match the minimap dot.
+	const categoryColor = $derived(getColorFromCategory(item.category, item.type));
+
+	// Card colour follows the item's category on the wall-like views (canvas
+	// post-its, kanban cards). On the canvas a completed note turns green to
+	// match the minimap dot. The list variant is a neutral row instead — the
+	// category shows up as a coloured dot (see TaskCard), the same split the
+	// kiosk makes between its post-it wall and its compact list.
 	const baseBg = $derived(
 		completed
 			? isCanvas ? '#10b981' : '#374151'
-			: getColorFromCategory(item.category, item.type),
+			: categoryColor,
 	);
 	// Red overlay intensity ramps from 0 at "just due" to ~0.55 once a task is
 	// a week overdue. Capped so the title stays readable.
@@ -79,7 +84,7 @@
 	class="task-card-shell task-card-shell--{variant} {extraClass}"
 	class:is-completed={completed}
 	class:is-hologram={hologram}
-	style="--card-bg: {baseBg}; --card-overdue-alpha: {overdueAlpha};"
+	style="--card-bg: {baseBg}; --card-dot: {categoryColor}; --card-overdue-alpha: {overdueAlpha};"
 	{onclick}
 	{onkeydown}
 	{role}
@@ -114,15 +119,30 @@
 		transform: translateY(-1px);
 	}
 
+	/* List row (kiosk "rows" look): a neutral surface with a soft shadow, the
+	   category carried by the leading dot rather than the whole card. Only the
+	   overdue overlay tints it. */
 	.task-card-shell--list {
-		--card-padding: 0.375rem;
-		--card-radius: 0.5rem;
+		--card-padding: 0.5rem 0.65rem;
+		--card-radius: 14px;
+		background-color: var(--color-bg-secondary);
+		/* A row keeps only a hint of the overdue red — the due chip in the row
+		   already turns red, and a fully tinted row would drown out the dot. */
+		background-image: linear-gradient(
+			rgba(239, 68, 68, calc(var(--card-overdue-alpha, 0) * 0.35)),
+			rgba(239, 68, 68, calc(var(--card-overdue-alpha, 0) * 0.35))
+		);
+		border: 1.5px solid var(--color-border);
+		box-shadow: var(--shadow-sm);
 	}
 	@media (min-width: 640px) {
 		.task-card-shell--list {
-			--card-padding: 0.5rem;
-			--card-radius: 0.5rem;
+			--card-padding: 0.6rem 0.8rem;
 		}
+	}
+	.task-card-shell--list:hover {
+		border-color: var(--color-border-light);
+		box-shadow: var(--shadow-md);
 	}
 	.task-card-shell--kanban {
 		--card-padding: 0.5rem;

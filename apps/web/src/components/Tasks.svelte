@@ -631,6 +631,9 @@
 
 	type DndCard = { id: string; key: string; quest: Quest };
 	const LIST_FLIP_MS = 200;
+	// Long-press (ms) that arms drag-to-reorder on touch devices — matches the
+	// kiosk list's 280ms hold. Mouse drags are unaffected.
+	const LIST_TOUCH_HOLD_MS = 280;
 
 	let listDndItems: DndCard[] = $state([]);
 	// Same protection as KanbanColumn — while dndzone is mutating `items`,
@@ -1354,6 +1357,13 @@
 						use:dndzone={{
 							items: listDndItems,
 							flipDurationMs: LIST_FLIP_MS,
+							// Touch: a finger must rest on a card for LIST_TOUCH_HOLD_MS
+							// before the gesture becomes a drag. Without it dnd-action
+							// converts the very first 3px of a swipe into a reorder, so
+							// scrolling the list on a phone shuffled the tasks. Moving
+							// before the hold elapses cancels the drag and the browser
+							// keeps the scroll (same long-press rule as the kiosk list).
+							delayTouchStart: LIST_TOUCH_HOLD_MS,
 							dropTargetStyle: { outline: '2px dashed #6366f1', outlineOffset: '-2px', borderRadius: '0.75rem' }
 						}}
 						onconsider={handleListDndConsider}
