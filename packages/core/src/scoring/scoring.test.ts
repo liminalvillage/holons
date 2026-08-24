@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_EQUATION,
   REAAggregator,
@@ -12,6 +12,8 @@ import {
   getScoreBreakdown,
   migrateEquation,
   normalizeShares,
+  parseCurrencyCodes,
+  saveEquation,
   scoreHolonUsers,
   toAggregates,
   type REAEventStoreLike,
@@ -558,5 +560,134 @@ describe('extractReaUsers', () => {
       { provider: { id: 1578071183, type: 'user', name: 'alex' } },
     ]);
     expect(users).toEqual([{ id: '1578071183', name: 'alex' }]);
+  });
+});
+
+describe('saveEquation', () => {
+  /** Minimal holosphere double: one settings document per holon. */
+  function fakeHolosphere(existing: any = null) {
+    const puts: any[] = [];
+    return {
+      puts,
+      get: vi.fn(async () => existing),
+      put: vi.fn(async (_holon: string, _lens: string, doc: any) => {
+        puts.push(doc);
+      }),
+    };
+  }
+
+  it('stores the migrated equation under valueEquation, keeping other settings', async () => {
+    const hs = fakeHolosphere({ id: '42', language: 'it', hex: '8a1f' });
+    const saved = await saveEquation(hs, '42', {
+      ...DEFAULT_EQUATION,
+      completed: 5,
+    });
+
+    expect(hs.put).toHaveBeenCalledWith('42', 'settings', expect.any(Object));
+    const doc = hs.puts[0];
+    expect(doc.language).toBe('it');
+    expect(doc.hex).toBe('8a1f');
+    expect(doc.id).toBe('42');
+    expect(doc.valueEquation.completed).toBe(5);
+    expect(saved.completed).toBe(5);
+  });
+
+  it('folds a legacy top-level hours weight into currencies.hour', async () => {
+    const hs = fakeHolosphere();
+    const saved = await saveEquation(hs, '42', {
+      ...DEFAULT_EQUATION,
+      currencies: {},
+      hours: 3,
+    } as any);
+
+    expect(saved.currencies.hour).toBe(3);
+    expect('hours' in saved).toBe(false);
+  });
+
+  it('zeroes blank or non-numeric weights instead of storing NaN', async () => {
+    const hs = fakeHolosphere();
+    const saved = await saveEquation(hs, '42', {
+      ...DEFAULT_EQUATION,
+      completed: null,
+      sent: '' as any,
+      currencies: { hour: undefined as any, euro: '2' as any },
+    } as any);
+
+    expect(saved.completed).toBe(0);
+    expect(saved.sent).toBe(0);
+    expect(saved.currencies.hour).toBe(0);
+    expect(saved.currencies.euro).toBe(2);
+  });
+
+  it('lets a group zero every weight — an all-zero equation round-trips', async () => {
+    const hs = fakeHolosphere();
+    const saved = await saveEquation(hs, '42', {
+      initiated: 0,
+      completed: 0,
+      sent: 0,
+      received: 0,
+      collaboration: 0,
+      participation: 0,
+      coParticipants: 0,
+      activity: 0,
+      groupSize: 0,
+      variance: 0,
+      currencies: { hour: 0 },
+    });
+
+    expect(Object.values(saved).every((v) => v === 0 || typeof v === 'object')).toBe(true);
+    expect(getCachedEquation('42').completed).toBe(0);
+  });
+
+  it('registers weighted currencies in the holon currency list', async () => {
+    const hs = fakeHolosphere({ currencies: ['euro'] });
+    await saveEquation(hs, '42', {
+      ...DEFAULT_EQUATION,
+      currencies: { hour: 1, euro: 2, token: 0 },
+    });
+
+    expect(hs.puts[0].currencies).toEqual(['euro', 'hour', 'token']);
+  });
+
+  it('never duplicates a currency that differs only in case', async () => {
+    const hs = fakeHolosphere({ currencies: ['Euro'] });
+    await saveEquation(hs, '42', {
+      ...DEFAULT_EQUATION,
+      currencies: { euro: 2 },
+    });
+
+    expect(hs.puts[0].currencies).toEqual(['Euro']);
+  });
+
+  it('still writes the equation when the settings read fails', async () => {
+    const hs = fakeHolosphere();
+    hs.get = vi.fn(async () => {
+      throw new Error('relay down');
+    });
+
+    await saveEquation(hs, '99', { ...DEFAULT_EQUATION, initiated: 4 });
+
+    expect(hs.puts[0].valueEquation.initiated).toBe(4);
+  });
+});
+
+describe('parseCurrencyCodes', () => {
+  it('splits on commas and spaces, lowercasing as it goes', () => {
+    expect(parseCurrencyCodes('Euro, hour  Token')).toEqual([
+      'euro',
+      'hour',
+      'token',
+    ]);
+  });
+
+  it('drops blanks, duplicates and codes the holon already has', () => {
+    expect(parseCurrencyCodes('  euro,,euro , HOUR ', ['Hour'])).toEqual([
+      'euro',
+    ]);
+  });
+
+  it('returns nothing for an empty or absent entry', () => {
+    expect(parseCurrencyCodes('   ')).toEqual([]);
+    expect(parseCurrencyCodes(undefined as any)).toEqual([]);
   });
 });

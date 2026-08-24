@@ -11,7 +11,9 @@ export {
   getCachedEquation,
   loadEquation,
   migrateEquation,
+  parseCurrencyCodes,
   preloadEquation,
+  saveEquation,
   subscribeToEquationChanges,
   type ScoreEquation,
 } from './equation.js';

@@ -212,6 +212,110 @@ async function refreshEquationCache(
 }
 
 /**
+ * Coerce a weight coming off a form input. Blank fields arrive as `null`,
+ * `''` or `NaN`; a poisoned weight would silently zero-or-NaN every score,
+ * so anything non-finite settles to 0 ("this metric doesn't count here").
+ */
+function toWeight(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Parse a free-text currency entry ("euro, hour  Token") into clean codes,
+ * dropping blanks, duplicates and anything the holon already knows about.
+ *
+ * Codes are lowercased so `Euro` and `euro` can never become two currencies
+ * with two different weights.
+ */
+export function parseCurrencyCodes(
+  input: string,
+  existing: Iterable<string> = [],
+): string[] {
+  const known = new Set(
+    [...existing].map((c) => String(c).trim().toLowerCase()).filter(Boolean),
+  );
+  const out: string[] = [];
+  for (const raw of String(input ?? '').split(/[,\s]+/)) {
+    const code = raw.trim().toLowerCase();
+    if (!code || known.has(code)) continue;
+    known.add(code);
+    out.push(code);
+  }
+  return out;
+}
+
+/**
+ * Persist a holon's value equation to `settings.valueEquation`.
+ *
+ * The equation is a group decision, so every surface that lets people edit it
+ * (kiosk, dashboard, bot) writes through here: weights are coerced to finite
+ * numbers, migrated to the canonical shape (no top-level `hours`, currencies
+ * folded into `currencies`), merged into the existing settings document, and
+ * the cache is primed so the next `getCachedEquation` already agrees.
+ *
+ * `id` is stamped so the record collides with the bot's settings doc (read via
+ * `get(holonId, 'settings', holonId)`) instead of forking a second one.
+ *
+ * Returns the equation as it was actually stored.
+ */
+export async function saveEquation(
+  holosphere: any,
+  holonId: string,
+  equation: ScoreEquation,
+): Promise<ScoreEquation> {
+  const migrated = migrateEquation(equation);
+  const currencies: Record<string, number> = {};
+  for (const [code, weight] of Object.entries(migrated.currencies ?? {})) {
+    currencies[code] = toWeight(weight);
+  }
+  const clean: ScoreEquation = {
+    ...migrated,
+    initiated: toWeight(migrated.initiated),
+    completed: toWeight(migrated.completed),
+    sent: toWeight(migrated.sent),
+    received: toWeight(migrated.received),
+    collaboration: toWeight(migrated.collaboration),
+    participation: toWeight(migrated.participation),
+    coParticipants: toWeight(migrated.coParticipants),
+    activity: toWeight(migrated.activity),
+    groupSize: toWeight(migrated.groupSize),
+    variance: toWeight(migrated.variance),
+    currencies,
+  };
+
+  let existing: any = null;
+  try {
+    existing = await holosphere.get(String(holonId), 'settings', String(holonId));
+  } catch {
+    // A failed read must not cost the group its edit: fall back to writing a
+    // settings document that carries the equation alone.
+  }
+  // The holon's currency list (`settings.currencies`, what the expense UIs
+  // offer) is kept in step with the weights: a currency someone weighted here
+  // is a currency the holon uses. Existing order is preserved.
+  const listed = Array.isArray((existing as any)?.currencies)
+    ? ((existing as any).currencies as unknown[]).map((c) => String(c))
+    : [];
+  const seen = new Set(listed.map((c) => c.toLowerCase()));
+  for (const code of Object.keys(clean.currencies)) {
+    if (!seen.has(code.toLowerCase())) {
+      seen.add(code.toLowerCase());
+      listed.push(code);
+    }
+  }
+
+  await holosphere.put(String(holonId), 'settings', {
+    ...(existing ?? {}),
+    id: String(holonId),
+    currencies: listed,
+    valueEquation: clean,
+  });
+  equationCache.set(holonId, clean);
+  return clean;
+}
+
+/**
  * Subscribe to settings changes to keep the equation cache fresh.
  * Call this once per holon (e.g. in app layout or holon context init).
  */
