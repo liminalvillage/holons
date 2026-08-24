@@ -351,6 +351,29 @@ export const es: Record<MessageKey, Msg> = {
   "settings.statusTab": "Pestaña Estado",
   "settings.statusTabSub": "— una clasificación de contribuciones",
   "settings.statusTabAria": "Mostrar la pestaña Estado",
+  "settings.statusConfirmTitle": "¿Activar el tablero de Estado?",
+  "settings.statusConfirmAccept": "Entendido — actívalo",
+  "settings.valueEquation": "Ecuación de valor",
+  "settings.valueEquationSub":
+    "— qué cuenta el tablero, y cuánto. Decídanlo en grupo; cualquier peso puede ir a 0, y también todos.",
+  "settings.eqSignals": "Señales de colaboración",
+  "settings.eqCurrencies": "Monedas",
+  "settings.eqReset": "Restablecer los valores por defecto",
+  "settings.eqZero": "Poner todos los pesos a 0",
+  "settings.eqSaving": "Guardando…",
+  "settings.eqSaved": "Guardado",
+  "settings.eqLoading": "Cargando la ecuación…",
+  "settings.eqLess": "Bajar el peso de {metric}",
+  "settings.eqMore": "Subir el peso de {metric}",
+  "settings.eqValue": "Peso de {metric}",
+  "settings.eqMetrics": "Contribuciones",
+  "settings.eqAbout": "{section}: qué cuentan",
+  "settings.eqAboutAria": "Información sobre {section}",
+  "settings.eqAddCurrency": "Añadir una moneda",
+  "settings.eqCurrencyPlaceholder": "euro, token…",
+  "settings.eqAdd": "Añadir",
+  "settings.eqCurrencyStartsAtZero":
+    "Las monedas nuevas empiezan en 0 — no cambia nada hasta que el grupo suba el peso.",
   "settings.location": "Ubicación",
   "settings.locationSub":
     "— la celda H3 que este holón reclama en el mapa compartido",
@@ -498,6 +521,15 @@ export const es: Record<MessageKey, Msg> = {
   "status.tallying": "Sumando contribuciones… ♛",
   "status.noActivity": "Aún no hay actividad clasificada. ♛",
   "status.seeScore": "Mira cómo se formó la puntuación de {name}",
+  "status.disclaimerLead":
+    "La tecnología recuerda. El sentido lo dan las personas.",
+  "status.disclaimerBody":
+    "Este tablero muestra lo que quedó registrado — horas dedicadas, personas acogidas, tareas completadas. Nunca decide cuánto vale alguien. No existe una puntuación humana.",
+  "status.disclaimerUse":
+    "Así que no actúes solo con el número: cuenta únicamente lo que alguien recordó registrar, y el cuidado, la reparación y la escucha que sostienen a un grupo casi nunca se registran. Una clasificación sirve para abrir una conversación, no para cerrarla.",
+  "status.disclaimerEquation":
+    "Y la ecuación detrás de estos números es del grupo, no del software: decídanla juntos, revísenla cuando deje de encajar y pongan cualquier peso — o todos — a cero si así funciona mejor.",
+  "status.disclaimerMore": "Qué cuenta — y qué no puede contar",
   "status.score": "Puntuación",
   "status.share": "{pct}% de participación",
   "status.valueEquation": "Ecuación de valor",
@@ -523,6 +555,24 @@ export const es: Record<MessageKey, Msg> = {
   "status.metric.variance": "Varianza del tamaño del grupo",
   "status.metric.declaredHours": "Horas declaradas",
   "status.metric.currencyBalance": "Saldo {currency}",
+  "status.about.initiated": "Puntos cada vez que alguien propone una tarea.",
+  "status.about.completed": "Puntos cada vez que alguien termina una tarea.",
+  "status.about.sent": "Puntos por cada reconocimiento que alguien regala.",
+  "status.about.received": "Puntos por cada reconocimiento que alguien recibe.",
+  "status.about.collaboration":
+    "Puntos por cada momento registrado de trabajo con otras personas.",
+  "status.about.participation":
+    "Puntos por cada quest distinta en la que alguien participó — premia estar presente en muchas cosas.",
+  "status.about.coParticipants":
+    "Puntos por cada persona distinta con la que se trabajó — premia un círculo amplio.",
+  "status.about.activity":
+    "Puntos por cada evento registrado, del tipo que sea — premia el volumen puro, así que mantenlo bajo.",
+  "status.about.groupSize":
+    "Multiplicado por el tamaño medio de los grupos en los que se trabajó — premia trabajar acompañado.",
+  "status.about.variance":
+    "Multiplicado por cuánto variaron esos tamaños — premia alternar entre grandes encuentros y trabajo uno a uno.",
+  "status.about.currency":
+    "Cada unidad de {currency} en el saldo de alguien vale estos puntos.",
   "status.event.questInitiated": "Tarea propuesta",
   "status.event.questCompleted": "Tarea completada",
   "status.event.timeLogged": "Tiempo registrado",

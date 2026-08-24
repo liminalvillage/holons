@@ -349,6 +349,29 @@ export const it: Record<MessageKey, Msg> = {
   "settings.statusTab": "Scheda Stato",
   "settings.statusTabSub": "— una classifica dei contributi",
   "settings.statusTabAria": "Mostra la scheda Stato",
+  "settings.statusConfirmTitle": "Attivare la scheda Stato?",
+  "settings.statusConfirmAccept": "Abbiamo capito — attivala",
+  "settings.valueEquation": "Equazione del valore",
+  "settings.valueEquationSub":
+    "— che cosa conta la classifica, e quanto. Decidetela insieme; ogni peso può andare a 0, e possono andarci tutti.",
+  "settings.eqSignals": "Segnali di collaborazione",
+  "settings.eqCurrencies": "Valute",
+  "settings.eqReset": "Ripristina i valori predefiniti",
+  "settings.eqZero": "Azzera tutti i pesi",
+  "settings.eqSaving": "Salvataggio…",
+  "settings.eqSaved": "Salvato",
+  "settings.eqLoading": "Carico l'equazione…",
+  "settings.eqLess": "Abbassa il peso di {metric}",
+  "settings.eqMore": "Alza il peso di {metric}",
+  "settings.eqValue": "Peso di {metric}",
+  "settings.eqMetrics": "Contributi",
+  "settings.eqAbout": "{section}: che cosa contano",
+  "settings.eqAboutAria": "Informazioni su {section}",
+  "settings.eqAddCurrency": "Aggiungi una valuta",
+  "settings.eqCurrencyPlaceholder": "euro, token…",
+  "settings.eqAdd": "Aggiungi",
+  "settings.eqCurrencyStartsAtZero":
+    "Le nuove valute partono da 0 — non cambia nulla finché il gruppo non alza il peso.",
   "settings.location": "Posizione",
   "settings.locationSub":
     "— la cella H3 che questo holon rivendica sulla mappa condivisa",
@@ -499,6 +522,15 @@ export const it: Record<MessageKey, Msg> = {
   "status.tallying": "Conteggio dei contributi… ♛",
   "status.noActivity": "Ancora nessuna attività in classifica. ♛",
   "status.seeScore": "Guarda come si è formato il punteggio di {name}",
+  "status.disclaimerLead":
+    "La tecnologia ricorda. Il significato lo danno le persone.",
+  "status.disclaimerBody":
+    "Questa classifica mostra ciò che è stato registrato — ore donate, persone ospitate, compiti portati a termine. Non decide quanto vale una persona. Non esiste un punteggio umano.",
+  "status.disclaimerUse":
+    "Quindi non agire sul numero da solo: conta soltanto ciò che qualcuno ha pensato di registrare, mentre la cura, la riparazione e l'ascolto che tengono insieme un gruppo quasi mai finiscono nel registro. Una classifica serve ad aprire una conversazione, non a chiuderla.",
+  "status.disclaimerEquation":
+    "E l'equazione dietro questi numeri appartiene al gruppo, non al software: discutetela insieme, rivedetela ogni volta che smette di rappresentarvi e portate qualsiasi peso — o tutti i pesi — a zero se così funziona meglio.",
+  "status.disclaimerMore": "Che cosa conta — e che cosa non può contare",
   "status.score": "Punteggio",
   "status.share": "quota {pct}%",
   "status.valueEquation": "Equazione del valore",
@@ -524,6 +556,25 @@ export const it: Record<MessageKey, Msg> = {
   "status.metric.variance": "Varianza della dimensione del gruppo",
   "status.metric.declaredHours": "Ore dichiarate",
   "status.metric.currencyBalance": "Saldo {currency}",
+  "status.about.initiated": "Punti ogni volta che qualcuno propone un compito.",
+  "status.about.completed":
+    "Punti ogni volta che qualcuno porta a termine un compito.",
+  "status.about.sent": "Punti per ogni riconoscimento che qualcuno dona.",
+  "status.about.received": "Punti per ogni riconoscimento che qualcuno riceve.",
+  "status.about.collaboration":
+    "Punti per ogni momento registrato di lavoro insieme a qualcun altro.",
+  "status.about.participation":
+    "Punti per ogni quest distinta a cui si è preso parte — premia l'esserci in molte cose.",
+  "status.about.coParticipants":
+    "Punti per ogni persona diversa con cui si è lavorato — premia una cerchia ampia.",
+  "status.about.activity":
+    "Punti per ogni evento registrato, di qualunque tipo — premia la quantità pura, quindi tienilo basso.",
+  "status.about.groupSize":
+    "Moltiplicato per la dimensione media dei gruppi in cui si è lavorato — premia il lavorare in compagnia.",
+  "status.about.variance":
+    "Moltiplicato per quanto quelle dimensioni sono variate — premia il passare da grandi ritrovi al lavoro a due.",
+  "status.about.currency":
+    "Ogni unità di {currency} nel saldo di una persona vale questi punti.",
   "status.event.questInitiated": "Attività proposta",
   "status.event.questCompleted": "Attività completata",
   "status.event.timeLogged": "Tempo registrato",

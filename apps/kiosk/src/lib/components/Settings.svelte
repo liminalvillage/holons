@@ -42,11 +42,13 @@
     type LangMode,
   } from "$lib/config";
   import { themeMode } from "$lib/theme";
-  import { langMode, t } from "$lib/i18n";
+  import { langMode, t, type MessageKey } from "$lib/i18n";
   import { readSettingsHex } from "@holons/core/federation";
   import { getHolosphere } from "$lib/holosphere";
   import FederationSettings from "./FederationSettings.svelte";
   import HexPicker from "./HexPicker.svelte";
+  import Modal from "./Modal.svelte";
+  import ValueEquation from "./ValueEquation.svelte";
 
   // Drafts for the free-text fields only — every other control writes through
   // on touch and renders its store.
@@ -180,10 +182,34 @@
     checklistsPref.set(on ? "on" : "off");
   }
 
+  // Turning the board ON is gated behind the framing modal below: a ranking
+  // changes how a group reads itself, so nobody switches one on without having
+  // read what it does and doesn't mean. Turning it off needs no ceremony.
+  let statusConfirmOpen = false;
+
   function commitStatus(on: boolean) {
-    setStatusEnabled(on);
-    statusEnabled.set(on);
+    if (on) {
+      statusConfirmOpen = true;
+      return;
+    }
+    setStatusEnabled(false);
+    statusEnabled.set(false);
   }
+
+  function confirmStatus() {
+    statusConfirmOpen = false;
+    setStatusEnabled(true);
+    statusEnabled.set(true);
+  }
+
+  // ---- Value equation ----------------------------------------------------
+  // The weights the Status board scores with are settings too, so the group
+  // that reads the board can retune them here. The editor itself lives in
+  // ValueEquation.svelte (the board's own footer opens the same one).
+  //
+  // It is a disclosure: settings stays scannable, and the equation is only
+  // read from the graph once someone actually opens it.
+  let eqOpen = false;
 
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
   function blurOnEnter(e: KeyboardEvent) {
@@ -381,6 +407,31 @@
     </button>
   </div>
 
+  <!--
+    With the board on, the weights it scores with are settings too: the group
+    that reads the board retunes it here. (The framing lives on the board
+    itself and in the modal that gates switching it on.)
+  -->
+  {#if $statusEnabled && $holonId}
+    <div class="field">
+      <button
+        type="button"
+        class="eq-toggle"
+        aria-expanded={eqOpen}
+        on:click={() => (eqOpen = !eqOpen)}
+      >
+        <span class="eq-toggle-label"
+          >{$t("settings.valueEquation")}
+          <span class="sub">{$t("settings.valueEquationSub")}</span></span
+        >
+        <span class="chev" class:open={eqOpen} aria-hidden="true">▾</span>
+      </button>
+      {#if eqOpen}
+        <ValueEquation holon={$holonId} />
+      {/if}
+    </div>
+  {/if}
+
   {#if $holonId}
     <div class="field">
       {$t("settings.location")}
@@ -424,6 +475,26 @@
     >
   </div>
 </div>
+
+{#if statusConfirmOpen}
+  <Modal on:close={() => (statusConfirmOpen = false)}>
+    <div class="confirm">
+      <h4>{$t("settings.statusConfirmTitle")}</h4>
+      <p class="lead">{$t("status.disclaimerLead")}</p>
+      <p>{$t("status.disclaimerBody")}</p>
+      <p>{$t("status.disclaimerUse")}</p>
+      <p>{$t("status.disclaimerEquation")}</p>
+      <div class="confirm-actions">
+        <button type="button" on:click={() => (statusConfirmOpen = false)}>
+          {$t("common.cancel")}
+        </button>
+        <button type="button" class="primary" on:click={confirmStatus}>
+          {$t("settings.statusConfirmAccept")}
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
 
 {#if hexPickerOpen && $holonId}
   <HexPicker
@@ -577,6 +648,36 @@
     text-transform: none;
     letter-spacing: 0;
   }
+
+  /* Value-equation editor under the Status toggle (see markup). */
+  .eq-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.2rem 0;
+    text-align: left;
+    font: inherit;
+    color: var(--muted);
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+  .eq-toggle-label {
+    flex: 1;
+    min-width: 0;
+  }
+  .chev {
+    flex: 0 0 auto;
+    font-size: 1rem;
+    color: var(--teal-deep);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+  }
+  .chev.open {
+    transform: rotate(0deg);
+  }
+
   .hex-cell {
     margin: 0.4rem 0 0;
     padding: 0.55rem 0.8rem;
@@ -735,6 +836,56 @@
     box-shadow: var(--shadow-soft);
   }
   .primary:active {
+    transform: scale(0.97);
+  }
+
+  /* Framing modal shown before the Status board can be switched on. */
+  .confirm {
+    text-align: left;
+    color: var(--ink);
+  }
+  .confirm h4 {
+    margin: 0 0 0.8rem;
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+  .confirm p {
+    margin: 0 0 0.7rem;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .confirm .lead {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.1rem;
+  }
+  .confirm-actions button {
+    flex: 1;
+    min-width: 8rem;
+    min-height: 52px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--teal-deep);
+    font-size: 0.95rem;
+    font-weight: 700;
+    transition: transform 0.1s ease;
+  }
+  /* Beats the generic rule above (same file order, higher specificity). */
+  .confirm-actions button.primary {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+    box-shadow: var(--shadow-soft);
+  }
+  .confirm-actions button:active {
     transform: scale(0.97);
   }
 </style>

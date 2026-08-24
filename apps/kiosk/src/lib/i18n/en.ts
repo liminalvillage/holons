@@ -345,6 +345,29 @@ export const en = {
   "settings.statusTab": "Status tab",
   "settings.statusTabSub": "— a ranked contribution leaderboard",
   "settings.statusTabAria": "Show the Status tab",
+  "settings.statusConfirmTitle": "Turn on the Status board?",
+  "settings.statusConfirmAccept": "We understand — turn it on",
+  "settings.valueEquation": "Value equation",
+  "settings.valueEquationSub":
+    "— what the board counts, and how much. Decide it as a group; any weight can go to 0, and so can all of them.",
+  "settings.eqSignals": "Collaboration signals",
+  "settings.eqCurrencies": "Currencies",
+  "settings.eqReset": "Reset to defaults",
+  "settings.eqZero": "Zero every weight",
+  "settings.eqSaving": "Saving…",
+  "settings.eqSaved": "Saved",
+  "settings.eqLoading": "Loading the equation…",
+  "settings.eqLess": "Lower the weight for {metric}",
+  "settings.eqMore": "Raise the weight for {metric}",
+  "settings.eqValue": "Weight for {metric}",
+  "settings.eqMetrics": "Contributions",
+  "settings.eqAbout": "{section}: what these count",
+  "settings.eqAboutAria": "About {section}",
+  "settings.eqAddCurrency": "Add a currency",
+  "settings.eqCurrencyPlaceholder": "euro, token…",
+  "settings.eqAdd": "Add",
+  "settings.eqCurrencyStartsAtZero":
+    "New currencies start at 0 — nothing changes until the group raises the weight.",
   "settings.location": "Location",
   "settings.locationSub": "— the H3 cell this holon claims on the shared map",
   "settings.checking": "Checking…",
@@ -485,6 +508,16 @@ export const en = {
   "status.tallying": "Tallying contributions… ♛",
   "status.noActivity": "No ranked activity yet. ♛",
   "status.seeScore": "See how {name}'s score was reached",
+  // The framing the board is never shown without: it measures
+  // contributions, not people — and warns against acting on the number.
+  "status.disclaimerLead": "Technology remembers. Humans make meaning.",
+  "status.disclaimerBody":
+    "This board shows what was recorded — hours given, people hosted, tasks finished. It never decides what anyone is worth. There is no human score.",
+  "status.disclaimerUse":
+    "So don't act on the number by itself: it counts only what someone thought to log, and the care, repair and listening that hold a group together are almost never logged. Let a ranking open a conversation, not settle one.",
+  "status.disclaimerEquation":
+    "And the equation behind these numbers belongs to the group, not to the software: agree on it together, revisit it whenever it stops fitting, and set any weight — or every weight — to zero if that serves you better.",
+  "status.disclaimerMore": "What this counts — and what it can't",
   "status.score": "Score",
   "status.share": "{pct}% share",
   "status.valueEquation": "Value equation",
@@ -510,6 +543,24 @@ export const en = {
   "status.metric.variance": "Group-size variance",
   "status.metric.declaredHours": "Declared hours",
   "status.metric.currencyBalance": "{currency} balance",
+  "status.about.initiated": "Points every time someone proposes a task.",
+  "status.about.completed": "Points every time someone finishes a task.",
+  "status.about.sent": "Points for each appreciation someone gives away.",
+  "status.about.received": "Points for each appreciation someone receives.",
+  "status.about.collaboration":
+    "Points for each recorded moment of working with someone else.",
+  "status.about.participation":
+    "Points per distinct quest someone took part in — rewards showing up across many things.",
+  "status.about.coParticipants":
+    "Points per distinct person someone worked alongside — rewards a wide circle.",
+  "status.about.activity":
+    "Points per recorded event of any kind — rewards sheer volume, so keep it small.",
+  "status.about.groupSize":
+    "Multiplied by the average size of the groups someone worked in — rewards working in company.",
+  "status.about.variance":
+    "Multiplied by how much those group sizes varied — rewards moving between big gatherings and one-to-one work.",
+  "status.about.currency":
+    "Each unit of {currency} in someone's balance is worth this many points.",
   "status.event.questInitiated": "Proposed a quest",
   "status.event.questCompleted": "Completed a quest",
   "status.event.timeLogged": "Logged time",

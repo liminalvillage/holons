@@ -43,6 +43,7 @@
     showImg,
   } from "$lib/components/Avatars.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import ValueEquation from "$lib/components/ValueEquation.svelte";
 
   type Row = {
     id: string;
@@ -417,9 +418,14 @@
   // board upgrades usernames to real names without waiting for the 30s refresh.
   $: if ($rawQuests) scheduleRescore();
 
-  // Suspend the kiosk's auto-rotation while the breakdown modal is open so the
-  // screen can't flip away mid-read.
-  $: rotationHold.set(selected != null);
+  /** The framing sheet the footer opens: the disclaimer in full, plus the
+   * equation that produced the numbers — readable and editable by whoever is
+   * standing at the board. */
+  let framingOpen = false;
+
+  // Suspend the kiosk's auto-rotation while a modal is open so the screen
+  // can't flip away mid-read.
+  $: rotationHold.set(selected != null || framingOpen);
 
   onMount(() => {
     // Fires immediately with the current holon (initial bind) and again on any
@@ -478,7 +484,33 @@
       </ol>
     {/if}
   </div>
+
+  <!--
+    The board is never shown without its framing: it measures contributions,
+    not people. One line, pinned outside the scroll area so it can't be
+    scrolled away; tapping it opens the whole thing — and the equation the
+    numbers came from.
+  -->
+  <button class="disclaimer" on:click={() => (framingOpen = true)}>
+    <strong>{$t("status.disclaimerLead")}</strong>
+    <span class="more">{$t("status.disclaimerMore")} ›</span>
+  </button>
 </div>
+
+{#if framingOpen}
+  <Modal on:close={() => (framingOpen = false)}>
+    <div class="framing">
+      <h3>{$t("status.disclaimerLead")}</h3>
+      <p>{$t("status.disclaimerBody")}</p>
+      <p>{$t("status.disclaimerUse")}</p>
+      <p>{$t("status.disclaimerEquation")}</p>
+      {#if hid}
+        <h4>{$t("settings.valueEquation")}</h4>
+        <ValueEquation holon={hid} />
+      {/if}
+    </div>
+  </Modal>
+{/if}
 
 {#if selected}
   {@const lines = breakdownLines($t, selected)}
@@ -694,6 +726,58 @@
     text-align: center;
     padding: 3rem 1rem;
     font-size: 1.1rem;
+  }
+  .disclaimer {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.55rem 1.4rem 0.7rem;
+    border-top: 1.5px solid var(--line);
+    color: var(--muted);
+    font-size: 0.76rem;
+    line-height: 1.3;
+    text-align: center;
+  }
+  .disclaimer strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .disclaimer .more {
+    color: var(--teal-deep);
+    font-weight: 700;
+    text-decoration: underline;
+  }
+  .disclaimer:active {
+    opacity: 0.7;
+  }
+
+  /* The sheet the footer opens. */
+  .framing {
+    text-align: left;
+  }
+  .framing h3 {
+    margin: 0 0 0.8rem;
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+  .framing h4 {
+    margin: 1.4rem 0 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .framing p {
+    margin: 0 0 0.7rem;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: var(--muted);
   }
 
   /* Narrow portrait screens: drop the share bar + percentage, keep the score. */

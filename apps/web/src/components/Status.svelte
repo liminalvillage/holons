@@ -80,6 +80,10 @@
     // Score breakdown popover state
     let breakdownUserId: string | null = null;
 
+    // The framing sheet the footer line opens: the disclaimer in full. The
+    // board is never shown without at least its first line (see markup).
+    let showFramingModal = false;
+
     // Add currency state
     let showAddCurrencyModal = false;
     let newCurrencyInput = '';
@@ -913,6 +917,21 @@
     <!-- TitleBar -->
     <TitleBar {holonName} holonId={holonID} title="Status Rankings" />
 
+    <!--
+        The framing the rankings are never shown without: the board measures
+        recorded contributions, not people. One line above the numbers so it is
+        read before them; tapping it opens the whole thing. The kiosk board
+        carries the same words in the same shape.
+    -->
+    <button
+        type="button"
+        class="flex w-full flex-wrap items-baseline justify-center gap-2 px-2 py-1 text-center text-xs text-gray-400"
+        onclick={() => (showFramingModal = true)}
+    >
+        <strong class="font-bold text-gray-200">Technology remembers. Humans make meaning.</strong>
+        <span class="font-bold text-teal-400 underline">What this counts — and what it can't ›</span>
+    </button>
+
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
         <div class="p-8">
@@ -1544,6 +1563,61 @@
         </div>
     </div>
 </div>
+
+<!-- Framing sheet (opened from the line above the rankings) -->
+{#if showFramingModal}
+    <div
+        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        onclick={(e) => { if (e.target === e.currentTarget) showFramingModal = false; }}
+        onkeydown={(e) => e.key === 'Escape' && (showFramingModal = false)}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+    >
+        <div
+            class="bg-gray-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-gray-700 max-h-[85vh] overflow-y-auto"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="framing-title"
+            tabindex="-1"
+        >
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <h3 id="framing-title" class="text-lg font-bold text-white">
+                    Technology remembers. Humans make meaning.
+                </h3>
+                <button
+                    type="button"
+                    onclick={() => { showFramingModal = false; }}
+                    class="text-gray-400 hover:text-white transition-colors p-2 -m-2"
+                    aria-label="Close"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-sm leading-relaxed text-gray-400">
+                <p>
+                    This board shows what was recorded — hours given, people hosted, tasks
+                    finished. It never decides what anyone is worth. There is no human score.
+                </p>
+                <p>
+                    So don't act on the number by itself: it counts only what someone thought
+                    to log, and the care, repair and listening that hold a group together are
+                    almost never logged. Let a ranking open a conversation, not settle one.
+                </p>
+                <p>
+                    And the equation behind these numbers belongs to the group, not to the
+                    software: agree on it together, revisit it whenever it stops fitting, and
+                    set any weight — or every weight — to zero if that serves you better. The
+                    weights live in the Value Equation section further down this page.
+                </p>
+            </div>
+        </div>
+    </div>
+{/if}
 
 <!-- Add Currency Modal -->
 {#if showAddCurrencyModal}
