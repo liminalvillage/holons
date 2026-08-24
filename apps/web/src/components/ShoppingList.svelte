@@ -479,14 +479,11 @@
                     >
                         <div class="flex items-center justify-between gap-3 w-full">
                             <div class="flex items-center gap-3 flex-1 min-w-0">
-                                <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center">
-                                    <span class="text-sm">{item.checked ? '✅' : '🛒'}</span>
-                                </div>
+                                <span class="list-row__icon">{item.checked ? '✅' : '🛒'}</span>
                                 <h3
-                                    class="text-base font-bold truncate"
+                                    class="list-row__title"
                                     class:text-gray-400={item.checked}
                                     class:line-through={item.checked}
-                                    class:text-white={!item.checked}
                                 >
                                     {item.text}
                                 </h3>
@@ -501,7 +498,7 @@
                                     </span>
                                 {/if}
                             </div>
-                            <div class="flex items-center gap-3 flex-shrink-0">
+                            <div class="list-row__actions gap-3">
                                 {#if isLocalItem(item) && !item.checked && !item.needId}
                                     <button
                                         on:click|stopPropagation={() => openShareModal(item)}

@@ -1141,17 +1141,26 @@
 	.expense-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: 0.5rem;
 	}
 
+	/* Same surface as the shared `.list-row` (components.css) so an expense
+	   reads like every other row in the dashboard. */
 	.expense-card {
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.75rem;
-		background: var(--color-bg-tertiary);
-		padding: 1rem;
-		border-radius: 0.75rem;
+		align-items: center;
+		gap: 0.7rem;
+		background: var(--color-bg-secondary);
+		border: 1.5px solid var(--color-border);
+		box-shadow: var(--shadow-sm);
+		padding: 0.6rem 0.8rem;
+		border-radius: 14px;
+		transition: all 0.2s ease;
+	}
+	.expense-card:hover {
+		border-color: var(--color-border-light);
+		box-shadow: var(--shadow-md);
 	}
 
 	.expense-thumb {

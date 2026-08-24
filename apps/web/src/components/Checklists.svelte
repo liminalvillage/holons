@@ -648,38 +648,30 @@
                     <div class="space-y-3">
                         {#each selectedChecklistData.items as item, index}
                             <div class="w-full">
+                                <!-- The shared list-row shape (see components.css). -->
                                 <div
-                                    class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md cursor-pointer transform hover:scale-[1.002]"
-                                    class:bg-gray-800={item.checked}
-                                    class:border-gray-700={item.checked}
-                                    class:opacity-70={item.checked}
-                                    class:bg-gray-700={!item.checked}
-                                    class:border-transparent={!item.checked}
-                                    class:hover:bg-gray-600={!item.checked}
-                                    class:hover:border-gray-500={!item.checked}
+                                    class="list-row"
+                                    class:list-row--completed={item.checked}
                                     on:click={() => selectedChecklist && toggleItemStatus(selectedChecklist, index)}
                                     on:keydown={(e) => e.key === 'Enter' && selectedChecklist && toggleItemStatus(selectedChecklist, index)}
                                     role="button"
                                     tabindex="0"
                                     aria-label={`Toggle ${item.text} - ${item.checked ? 'completed' : 'pending'}`}
                                 >
-                                    <div class="flex items-center justify-between gap-3">
-                                        <div class="flex items-center gap-3 flex-1 min-w-0">
-                                            <!-- Item Icon -->
-                                            <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center">
-                                                <span class="text-sm">{item.checked ? '✅' : '📝'}</span>
-                                            </div>
+                                    <span class="list-row__icon">{item.checked ? '✅' : '📝'}</span>
 
+                                    <div class="flex items-center justify-between gap-3 flex-1 min-w-0">
+                                        <div class="flex items-center gap-3 flex-1 min-w-0">
                                             <!-- Main Content -->
-                                            <div class="flex-1 min-w-0">
-                                                <h3 class="text-base font-bold truncate" class:text-gray-400={item.checked} class:line-through={item.checked} class:text-white={!item.checked}>
+                                            <div class="list-row__body">
+                                                <h3 class="list-row__title">
                                                     {item.text}
                                                 </h3>
                                             </div>
                                         </div>
 
                                                                 <!-- Right Side - Actions -->
-                        <div class="flex items-center gap-3 flex-shrink-0">
+                        <div class="list-row__actions gap-3">
                             <div class="flex items-center">
                                 <input
                                     type="checkbox"
@@ -797,35 +789,36 @@
                     <div class="space-y-3">
                         {#each checklistEntries as [key, checklist]}
                             <div id={key} class="w-full relative">
-                                <div 
-                                    class="p-4 rounded-xl transition-all duration-300 border border-transparent bg-gray-700 hover:bg-gray-600 hover:border-gray-500 hover:shadow-md transform hover:scale-[1.005] cursor-pointer"
+                                <!-- The shared list-row shape (see components.css). -->
+                                <div
+                                    class="list-row"
                                     on:click={() => selectChecklist(key)}
                                     on:keydown={(e) => e.key === 'Enter' && selectChecklist(key)}
                                     role="button"
                                     tabindex="0"
                                     aria-label={`Open checklist: ${getChecklistDisplayTitle(checklist)}`}
                                 >
-                                    <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center justify-between gap-3 flex-1 min-w-0">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
                                             <!-- Checklist Icon -->
                                             {#if isShoppingChecklist(checklist)}
-                                                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
-                                                    <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <div class="list-row__icon bg-emerald-600/20">
+                                                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
                                                     </svg>
                                                 </div>
                                             {:else}
-                                                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center">
-                                                    <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <div class="list-row__icon bg-indigo-600/20">
+                                                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
                                                     </svg>
                                                 </div>
                                             {/if}
 
                                             <!-- Main Content -->
-                                            <div class="flex-1 min-w-0">
-                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
-                                                    <h3 class="text-base font-bold text-white truncate">
+                                            <div class="list-row__body">
+                                                <div class="list-row__title-line">
+                                                    <h3 class="list-row__title">
                                                         {getChecklistDisplayTitle(checklist)}
                                                     </h3>
                                                     {#if isShoppingChecklist(checklist)}
@@ -844,7 +837,7 @@
                                                     {/if}
                                                     <SourceBadge item={checklist} currentHolonId={holonID} lensRoute="checklists" />
                                                 </div>
-                                                <p class="text-sm text-gray-400">
+                                                <p class="list-row__meta">
                                                     {#if opensShoppingPage(checklist)}
                                                         Opens dedicated shopping list
                                                     {:else}

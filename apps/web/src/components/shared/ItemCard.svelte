@@ -87,8 +87,9 @@
 <style>
 	.item-card__inner {
 		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
+		/* Centred like every other list row (see `.list-row`). */
+		align-items: center;
+		gap: 0.7rem;
 	}
 
 	.item-card__content {

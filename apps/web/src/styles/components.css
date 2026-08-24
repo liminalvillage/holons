@@ -1134,6 +1134,178 @@ button.stats-bar__item:active {
 }
 
 /* ==========================================================================
+   List Row - the "kiosk rows" shape shared by every lens list
+   ==========================================================================
+   One row shape for tasks, library items, roles, checklists, shopping items,
+   offers, expenses and announcements: a neutral surface with a soft border,
+   the item's colour carried by a leading dot rather than by tinting the whole
+   card, a bold title clamped to two lines and a small meta line beneath it.
+   Grid / kanban / canvas modes keep their colour-filled cards — the same split
+   the kiosk makes between its post-it wall and its rows.
+
+   The tasks list renders through TaskCardShell (`.task-card-shell--list`),
+   whose scoped styles mirror these values; keep the two in step.
+   ========================================================================== */
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border-radius: 14px;
+  background-color: var(--color-bg-secondary);
+  border: 1.5px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+@media (min-width: 640px) {
+  .list-row {
+    padding: 0.6rem 0.8rem;
+  }
+}
+
+.list-row:hover {
+  border-color: var(--color-border-light);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Non-interactive rows (a read-only listing) drop the affordances. */
+.list-row--static,
+.list-row--static:hover {
+  cursor: default;
+  transform: none;
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-border);
+}
+
+/* The item's colour, carried by a dot instead of the whole card.
+   Set `--list-row-dot` on the row (or on the dot) to colour it. */
+.list-row__dot {
+  flex: 0 0 auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: var(--list-row-dot, var(--color-accent));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+/* A leading glyph/thumbnail tile, where a row carries one (library, roles). */
+.list-row__icon {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 1.1rem;
+  overflow: hidden;
+}
+
+.list-row__body {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.list-row__title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.list-row__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+  /* Wrapped-and-clamped rather than nowrap-ellipsis: a nowrap title's full
+     width counts as min-content and overflows a phone viewport. */
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.list-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.list-row__meta:empty {
+  display: none;
+}
+
+/* The category/type chip in a meta line. */
+.list-row__tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+/* Actions pinned to the trailing edge. */
+.list-row__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.list-row--completed {
+  opacity: 0.65;
+}
+
+.list-row--completed .list-row__title {
+  text-decoration: line-through;
+}
+
+/* State tints stay a hint: the row's own chips already say "due" or "out". */
+.list-row--warn {
+  background-image: linear-gradient(
+    rgba(217, 119, 6, 0.16),
+    rgba(217, 119, 6, 0.16)
+  );
+  border-color: rgba(217, 119, 6, 0.5);
+}
+
+.list-row--alert {
+  background-image: linear-gradient(
+    rgba(239, 68, 68, 0.16),
+    rgba(239, 68, 68, 0.16)
+  );
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.list-row--hologram {
+  opacity: 0.78;
+  border: 2px solid #00bfff;
+  box-shadow:
+    0 0 20px rgba(0, 191, 255, 0.4),
+    inset 0 0 20px rgba(0, 191, 255, 0.1);
+}
+
+/* ==========================================================================
    Empty State - No Content Display
    ========================================================================== */
 
@@ -1175,20 +1347,28 @@ button.stats-bar__item:active {
   width: 100%;
 }
 
+/* Same surface as `.list-row` above — an item card IS a list row, it just
+   carries its own source badge and actions slot. */
 .item-card__inner {
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
-  transition: all 300ms ease;
-  border: 1px solid transparent;
+  padding: 0.5rem 0.65rem;
+  border-radius: 14px;
+  background-color: var(--color-bg-secondary);
+  border: 1.5px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
   cursor: pointer;
+}
+
+@media (min-width: 640px) {
+  .item-card__inner {
+    padding: 0.6rem 0.8rem;
+  }
 }
 
 .item-card__inner:hover {
   border-color: var(--color-border-light);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  transform: scale(1.005);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .item-card--completed .item-card__inner {

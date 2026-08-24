@@ -953,17 +953,18 @@
 					{#if offers.length > 0}
 						<div class="space-y-3">
 							{#each offers as offer (offer.key)}
+								<!-- The shared list-row shape (see components.css): the
+								     type colour rides the leading dot, the row stays neutral. -->
 								<div
-									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									class="task-card relative text-left group list-row {offer._hologram?.isHologram ? 'list-row--hologram' : ''}"
 									role="button"
 									tabindex="0"
 									on:click={() => openDetail(offer)}
 									on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(offer); } }}
-									style="background-color: {getItemBackgroundColor(offer.type)};
-										   opacity: {offer._hologram?.isHologram ? '0.75' : '1'};
-										   {offer._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+									style="--list-row-dot: {getItemBackgroundColor(offer.type)};"
 								>
-									<div class="flex items-center justify-between gap-3">
+									<span class="list-row__dot" aria-hidden="true"></span>
+									<div class="flex items-center justify-between gap-3 flex-1 min-w-0">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
 											<!-- Initiator Picture -->
 											{#if offer.initiator?.id}
@@ -974,20 +975,20 @@
 												/>
 											{:else}
 												<!-- Fallback Offer Icon -->
-												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+												<div class="list-row__icon">
 													🤝
 												</div>
 											{/if}
 
 											<!-- Main Content -->
-											<div class="flex-1 min-w-0">
-												<div class="flex items-center gap-2 mb-1">
-													<h3 class="text-base font-bold text-gray-800 truncate">
+											<div class="list-row__body">
+												<div class="list-row__title-line">
+													<h3 class="list-row__title">
 														{offer.title}
 													</h3>
 													<SourceBadge item={offer} currentHolonId={holonID} lensRoute="offers" />
 													{#if offer._userSpecific}
-														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-300 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
 																<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
 															</svg>
@@ -996,7 +997,7 @@
 													{/if}
 													{#if offer.published}
 														<span
-															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
+															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-300 border border-green-500/50"
 															title="Cast to {offer.publishedTo || 'federated'} chat(s) on {new Date(offer.publishedAt).toLocaleDateString()}"
 															style="display: none"
 														>
@@ -1008,12 +1009,12 @@
 													{/if}
 												</div>
 												{#if offer.initiator?.firstName || offer.initiator?.username}
-													<p class="text-xs text-gray-600 mb-1">
+													<p class="list-row__meta">
 														Offered by {offer.initiator.firstName || offer.initiator.username}
 													</p>
 												{/if}
 												{#if offer.description}
-													<p class="text-sm text-gray-700 truncate">
+													<p class="list-row__meta">
 														{offer.description}
 													</p>
 												{/if}
@@ -1046,7 +1047,7 @@
 										</div>
 
 										<!-- Right Side Meta Info -->
-										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+										<div class="list-row__actions gap-3 text-sm">
 											<!-- Cast Button -->
 											<button
 												class="btn btn--primary btn--sm"
@@ -1111,8 +1112,8 @@
 											{/if}
 
 											{#if offer.when}
-												<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
-													<div class="text-xs text-gray-600 mb-1">{formatDate(offer.when)}</div>
+												<div class="text-xs font-medium text-gray-300 whitespace-nowrap">
+													<div class="text-xs text-gray-400 mb-1">{formatDate(offer.when)}</div>
 													{formatTime(offer.when)}
 													{#if offer.ends}<br/>{formatTime(offer.ends)}{/if}
 												</div>
@@ -1169,17 +1170,18 @@
 					{#if needs.length > 0}
 						<div class="space-y-3">
 							{#each needs as need (need.key)}
+								<!-- The shared list-row shape (see components.css): the
+								     type colour rides the leading dot, the row stays neutral. -->
 								<div
-									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									class="task-card relative text-left group list-row {need._hologram?.isHologram ? 'list-row--hologram' : ''}"
 									role="button"
 									tabindex="0"
 									on:click={() => openDetail(need)}
 									on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(need); } }}
-									style="background-color: {getItemBackgroundColor(need.type)};
-										   opacity: {need._hologram?.isHologram ? '0.75' : '1'};
-										   {need._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+									style="--list-row-dot: {getItemBackgroundColor(need.type)};"
 								>
-									<div class="flex items-center justify-between gap-3">
+									<span class="list-row__dot" aria-hidden="true"></span>
+									<div class="flex items-center justify-between gap-3 flex-1 min-w-0">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
 											<!-- Initiator Picture -->
 											{#if need.initiator?.id}
@@ -1190,33 +1192,33 @@
 												/>
 											{:else}
 												<!-- Fallback Request Icon -->
-												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+												<div class="list-row__icon">
 													📋
 												</div>
 											{/if}
 											
 											<!-- Main Content -->
-											<div class="flex-1 min-w-0">
-												<div class="flex items-center gap-2 mb-1">
-													<h3 class="text-base font-bold text-gray-800 truncate">
+											<div class="list-row__body">
+												<div class="list-row__title-line">
+													<h3 class="list-row__title">
 														{need.title}
 													</h3>
 													<SourceBadge item={need} currentHolonId={holonID} lensRoute="offers" />
 													{#if need.type === 'need' && typeof need.status === 'string' && ['requested', 'offered', 'claimed', 'fulfilled', 'cancelled'].includes(need.status)}
 														<span
 															class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 uppercase tracking-wide
-																{need.status === 'requested' ? 'bg-indigo-500/20 text-indigo-800' : ''}
-																{need.status === 'offered' ? 'bg-amber-500/25 text-amber-800' : ''}
-																{need.status === 'claimed' ? 'bg-sky-500/20 text-sky-800' : ''}
-																{need.status === 'fulfilled' ? 'bg-emerald-500/25 text-emerald-800' : ''}
-																{need.status === 'cancelled' ? 'bg-red-500/20 text-red-800' : ''}"
+																{need.status === 'requested' ? 'bg-indigo-500/20 text-indigo-300' : ''}
+																{need.status === 'offered' ? 'bg-amber-500/25 text-amber-300' : ''}
+																{need.status === 'claimed' ? 'bg-sky-500/20 text-sky-300' : ''}
+																{need.status === 'fulfilled' ? 'bg-emerald-500/25 text-emerald-300' : ''}
+																{need.status === 'cancelled' ? 'bg-red-500/20 text-red-300' : ''}"
 															title="Need status"
 														>
 															{need.status}
 														</span>
 													{/if}
 													{#if need._userSpecific}
-														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-300 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
 																<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
 															</svg>
@@ -1225,7 +1227,7 @@
 													{/if}
 													{#if need.published}
 														<span
-															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
+															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-300 border border-green-500/50"
 															title="Cast to {need.publishedTo || 'federated'} chat(s) on {new Date(need.publishedAt).toLocaleDateString()}"
 															style="display: none"
 														>
@@ -1237,12 +1239,12 @@
 													{/if}
 												</div>
 												{#if need.initiator?.firstName || need.initiator?.username}
-													<p class="text-xs text-gray-600 mb-1">
+													<p class="list-row__meta">
 														Requested by {need.initiator.firstName || need.initiator.username}
 													</p>
 												{/if}
 												{#if need.description}
-													<p class="text-sm text-gray-700 truncate">
+													<p class="list-row__meta">
 														{need.description}
 													</p>
 												{/if}
@@ -1275,7 +1277,7 @@
 										</div>
 
 										<!-- Right Side Meta Info -->
-										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+										<div class="list-row__actions gap-3 text-sm">
 											<!-- Cast Button -->
 											<button
 												class="btn btn--primary btn--sm"
@@ -1340,8 +1342,8 @@
 											{/if}
 
 											{#if need.when}
-												<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
-													<div class="text-xs text-gray-600 mb-1">{formatDate(need.when)}</div>
+												<div class="text-xs font-medium text-gray-300 whitespace-nowrap">
+													<div class="text-xs text-gray-400 mb-1">{formatDate(need.when)}</div>
 													{formatTime(need.when)}
 													{#if need.ends}<br/>{formatTime(need.ends)}{/if}
 												</div>
@@ -1620,7 +1622,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.375rem;
-		margin-top: 0.5rem;
+		margin-top: 0.25rem;
 	}
 
 	.meta-row__icon {
@@ -1628,13 +1630,14 @@
 		line-height: 1;
 	}
 
+	/* Chips read on the neutral list row, not on a colour-filled card. */
 	.meta-row__pill {
 		display: inline-flex;
 		align-items: center;
 		padding: 0.125rem 0.5rem;
 		border-radius: 9999px;
-		background: rgba(17, 24, 39, 0.15);
-		color: #1f2937;
+		background: rgba(255, 255, 255, 0.08);
+		color: var(--color-text-secondary);
 		font-size: 0.7rem;
 		font-weight: 500;
 	}
@@ -1645,14 +1648,14 @@
 		padding: 0.125rem 0.5rem;
 		border-radius: 9999px;
 		background: rgba(99, 102, 241, 0.2);
-		color: #3730a3;
+		color: var(--color-accent-light);
 		font-size: 0.7rem;
 		font-weight: 500;
 	}
 
 	.meta-row__expiry {
 		font-size: 0.7rem;
-		color: #374151;
+		color: var(--color-text-muted);
 		margin-left: auto;
 	}
 

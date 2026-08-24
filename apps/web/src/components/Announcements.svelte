@@ -103,22 +103,18 @@
 			<Bell size="20" class="text-indigo-400" />
 			<h2 class="text-lg font-semibold">Announcements</h2>
 		</div>
-		<div>
+		<!-- The shared list-row shape (see components.css). -->
+		<div class="space-y-3">
 			{#each announcements.reverse() as [key, announcement]}
-				<div
-					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
-				>
+				<div class="list-row list-row--static items-start">
 					<img
 						src="/api/avatar?user_id={announcement.user?.id}"
 						alt="profile"
-						class="object-cover w-10 h-10 rounded-full"
+						class="object-cover w-8 h-8 rounded-full flex-shrink-0"
 					/>
-					<div class="pl-4 w-full">
+					<div class="list-row__body">
 						<div class="flex items center justify-between w-full">
-							<div
-								class="text-white
-                            font-medium"
-							>
+							<div class="list-row__title">
 								{announcement.user?.first_name
 									? announcement.user.first_name
 									: announcement.user?.username}
@@ -147,13 +143,10 @@
 								</svg>
 							</div>
 						</div>
-						<p class="my-2 text-sm text-gray-400">
+						<p class="my-1 text-sm text-gray-300">
 							{announcement.content}
 						</p>
-						<p
-							class="text-right
-                        text-gray-400 text-sm"
-						>
+						<p class="list-row__meta justify-end">
 							{new Date(announcement.created ?? announcement.date ?? '').toLocaleDateString()}
 							{new Date(announcement.created ?? announcement.date ?? '').toLocaleTimeString()}
 						</p>

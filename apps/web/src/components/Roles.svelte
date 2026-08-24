@@ -407,41 +407,39 @@
 						role="button"
 						tabindex="0"
 					>
-						<div
-							class="p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-							style="background-color: {getRoleColor(role)}; color: var(--role-card-text);"
-						>
-							<div class="flex items-center justify-between gap-4">
-								<div class="flex items-center gap-4 flex-1 min-w-0">
-									<!-- Role Icon -->
-									<div class="flex-shrink-0 w-12 h-12 rounded-xl bg-black/20 flex items-center justify-center text-2xl">
-										{todayAssignment ? '👥' : '👤'}
-									</div>
+						<!-- The shared list-row shape (see components.css): the role's
+						     colour rides the leading dot, the row itself stays neutral.
+						     The grid below keeps the colour-filled cards. -->
+						<div class="list-row" style="--list-row-dot: {getRoleColor(role)};">
+							<span class="list-row__dot" aria-hidden="true"></span>
+							<span class="list-row__icon">{todayAssignment ? '👥' : '👤'}</span>
 
+							<div class="flex items-center justify-between gap-4 flex-1 min-w-0">
+								<div class="flex items-center gap-4 flex-1 min-w-0">
 									<!-- Main Content -->
-									<div class="flex-1 min-w-0">
-										<h3 class="text-lg font-bold text-white mb-1 line-clamp-2">
-											{role.title}
+									<div class="list-row__body">
+										<div class="list-row__title-line">
+											<h3 class="list-row__title">{role.title}</h3>
 											<SourceBadge item={role} currentHolonId={activeHolonId} lensRoute="roles" />
-										</h3>
+										</div>
 										{#if role.description}
-											<p class="text-sm text-white/80 line-clamp-2">
+											<p class="list-row__meta line-clamp-2">
 												{role.description}
 											</p>
 										{/if}
 									</div>
 								</div>
 
-								<div class="flex items-center gap-4 text-sm whitespace-nowrap">
+								<div class="list-row__actions gap-4 text-sm whitespace-nowrap">
 									<!-- Show "Today" indicator -->
-									<div class="text-xs text-white/60 font-medium uppercase tracking-wide">
+									<div class="list-row__tag">
 										Today
 									</div>
 
 									{#if todayAssignment}
 										<div class="flex items-center gap-3">
 											<!-- Participant Name -->
-											<div class="text-white/90 text-sm font-medium">
+											<div class="text-sm font-medium text-gray-200">
 												{todayAssignment.username?.split(' ')[0] || todayAssignment.username}
 											</div>
 
@@ -465,7 +463,7 @@
 											</div>
 										</div>
 									{:else}
-										<div class="text-white/70 text-sm font-medium">
+										<div class="text-sm font-medium text-gray-400">
 											Unassigned
 										</div>
 									{/if}

@@ -1013,52 +1013,46 @@
                     {@const activeBooking = getActiveBooking(item)}
                     {@const booked = activeBooking !== null}
                     <div id={key} class="w-full">
+                        <!-- The shared list-row shape (see components.css): a neutral
+                             surface with the item's colour on the leading dot, the
+                             booked / overdue state only a hint of tint. -->
                         <div
-                            class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md transform hover:scale-[1.005] cursor-pointer
-                                {!booked ? 'bg-gray-700 hover:bg-gray-600 hover:border-gray-500' : ''}
-                                {!item._hologram?.isHologram && !booked ? 'border-transparent' : ''}
-                                {booked && !isOverdue(activeBooking?.end ?? null) ? 'bg-amber-900/30 border-amber-600/50' : ''}
-                                {booked && isOverdue(activeBooking?.end ?? null) ? 'bg-red-900/30 border-red-600/50' : ''}
-                                {item._hologram?.isHologram ? 'opacity-75 border-2' : ''}
-                                {item._hologram?.isHologram && !booked ? 'border-indigo-500' : ''}"
-                            style="border-left: 4px solid {itemColor};{item._hologram?.isHologram ? ' box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
+                            class="list-row
+                                {booked && !isOverdue(activeBooking?.end ?? null) ? 'list-row--warn' : ''}
+                                {booked && isOverdue(activeBooking?.end ?? null) ? 'list-row--alert' : ''}
+                                {item._hologram?.isHologram ? 'list-row--hologram' : ''}"
+                            style="--list-row-dot: {itemColor};"
                             on:click={() => openItemDetail(item)}
                             on:keydown={(e) => e.key === 'Enter' && openItemDetail(item)}
                             role="button"
                             tabindex="0"
                             aria-label={`View ${item.id} details`}
                         >
-                            <div class="flex items-center justify-between gap-3">
-                                <div class="flex items-center gap-3 flex-1 min-w-0">
-                                    <!-- Item Icon -->
-                                    <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center
-                                        {!booked ? 'bg-black/20' : ''}
-                                        {booked && !isOverdue(activeBooking?.end ?? null) ? 'bg-amber-600/20' : ''}
-                                        {booked && isOverdue(activeBooking?.end ?? null) ? 'bg-red-600/20' : ''}">
-                                        <span class="text-xl">{getItemIcon(item)}</span>
-                                    </div>
+                            <span class="list-row__dot" aria-hidden="true"></span>
+                            <span class="list-row__icon">{getItemIcon(item)}</span>
 
+                            <div class="flex items-center justify-between gap-3 flex-1 min-w-0">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
                                     <!-- Main Content -->
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex items-center gap-2 mb-1 flex-wrap">
-                                            <h3 class="text-base font-bold text-white break-words">
+                                    <div class="list-row__body">
+                                        <div class="list-row__title-line">
+                                            <h3 class="list-row__title">
                                                 {item.id}
                                             </h3>
-                                            {#if item.value > 0}
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-600/30 text-emerald-300">
-                                                    {item.value}●
-                                                </span>
-                                            {/if}
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-600/50 text-gray-300">
-                                                {getTypeDisplayName(item.type)}
-                                            </span>
                                             <SourceBadge {item} currentHolonId={holonID} lensRoute="library" />
                                         </div>
-                                        <div class="text-sm text-gray-400">
+                                        <!-- Type, worth and availability read as one meta
+                                             line under the title, the way a task row carries
+                                             its category and due date. -->
+                                        <div class="list-row__meta">
+                                            <span class="list-row__tag">{getTypeDisplayName(item.type)}</span>
+                                            {#if item.value > 0}
+                                                <span class="text-emerald-300">{item.value}●</span>
+                                            {/if}
                                             {#if !booked}
                                                 <span class="text-emerald-400">✓ Available</span>
                                                 {#if item.createdByUsername}
-                                                    <span> • Owner: {item.createdByUsername}</span>
+                                                    <span>• Owner: {item.createdByUsername}</span>
                                                 {/if}
                                             {/if}
                                         </div>
@@ -1090,7 +1084,7 @@
                                 </div>
 
                                 <!-- Right Side - Action Button -->
-                                <div class="flex items-center gap-2 flex-shrink-0">
+                                <div class="list-row__actions">
                                     {#if !item._federation?.origin && !item._hologram?.isHologram}
                                         <!-- Publish to partners or the holon's hex so the item
                                              shows on the map's library layer (needs-network). -->
