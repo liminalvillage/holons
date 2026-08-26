@@ -17,6 +17,13 @@ import {
   type TelegramProfile,
 } from "$lib/server/telegramAuth";
 
+// Logging out in dev used to be a no-op you couldn't see: DELETE cleared the
+// cookie, and the very next session read handed back a freshly minted dev user,
+// so a reload silently signed you back in and the logged-out state was
+// untestable locally. DELETE now leaves this marker, and the auto-login stands
+// down while it is set; a real login (the OIDC callback) clears it.
+const DEV_LOGOUT_COOKIE = "kiosk_dev_logout";
+
 function devProfile(): TelegramProfile | null {
   if (import.meta.env.PROD) return null;
   const id = import.meta.env.VITE_DEV_TELEGRAM_USER_ID;
@@ -52,8 +59,9 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     return json({ user: profile });
   }
 
-  // Dev-only auto-login so editing works locally without a real round-trip.
-  const dev = devProfile();
+  // Dev-only auto-login so editing works locally without a real round-trip —
+  // unless this browser has deliberately logged out (see DELETE).
+  const dev = cookies.get(DEV_LOGOUT_COOKIE) ? null : devProfile();
   if (dev) {
     const token = await mintSession(dev, cfg.jwtSecret);
     cookies.set(
@@ -73,5 +81,16 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 export const DELETE: RequestHandler = async ({ url, cookies }) => {
   const domain = cookieDomain(url.hostname);
   cookies.delete(SESSION_COOKIE, { path: "/", ...(domain ? { domain } : {}) });
+  // Hold the dev auto-login off until someone logs in for real, so "log out"
+  // means the same thing locally as it does in production.
+  if (!import.meta.env.PROD)
+    cookies.set(DEV_LOGOUT_COOKIE, "1", {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: url.protocol === "https:",
+      maxAge: 60 * 60 * 24 * 365,
+      ...(domain ? { domain } : {}),
+    });
   return json({ ok: true });
 };

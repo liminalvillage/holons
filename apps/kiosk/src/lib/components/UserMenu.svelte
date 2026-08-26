@@ -13,6 +13,7 @@
     userMenuOpen,
   } from "$lib/stores";
   import { dashboardUrl, resolveMiniapp } from "$lib/config";
+  import { showHomePage } from "$lib/home";
   import { keyLinkOpen, sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
   import { pasteFromSystemClipboard } from "$lib/clipboard";
   import { t } from "$lib/i18n";
@@ -29,6 +30,9 @@
   function openSettings() {
     close();
     settingsOpen.set(true);
+  }
+  function goHome() {
+    void showHomePage();
   }
   function login() {
     close();
@@ -88,6 +92,14 @@
   <button class="row" on:click={openSettings}>
     <span class="ico">⚙</span>
     <span class="label">{$t("menu.settings")}</span>
+    <span class="chev">›</span>
+  </button>
+
+  <!-- Leaving a holon is not logging out — the identity and the holon are
+       separate — so this is where people look for the way back out. -->
+  <button class="row" on:click={goHome} disabled={!$holonId}>
+    <span class="ico">⌂</span>
+    <span class="label">{$t("menu.homePage")}</span>
     <span class="chev">›</span>
   </button>
 

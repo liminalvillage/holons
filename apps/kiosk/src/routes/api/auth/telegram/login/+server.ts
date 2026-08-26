@@ -28,10 +28,17 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 
   const { verifier, challenge } = generatePkce();
   const state = generateState();
-  const opts = transientCookieOptions(
-    url.protocol === "https:",
-    cookieDomain(url.hostname),
-  );
+  const domain = cookieDomain(url.hostname);
+  const opts = transientCookieOptions(url.protocol === "https:", domain);
+  // Asking to log in lifts the dev-only "stay logged out" hold (see the session
+  // endpoint's DELETE) — released HERE rather than on the callback so that in
+  // local dev, where the OIDC round-trip often can't complete, tapping "Log in"
+  // still gets you back to the dev identity instead of stranding you.
+  if (!import.meta.env.PROD)
+    cookies.delete("kiosk_dev_logout", {
+      path: "/",
+      ...(domain ? { domain } : {}),
+    });
   cookies.set("tg_oidc_verifier", verifier, opts);
   cookies.set("tg_oidc_state", state, opts);
   // Where to return the user after the canonical callback completes.

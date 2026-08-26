@@ -26,10 +26,9 @@
     statusEnabled,
     settingsOpen,
   } from "$lib/stores";
-  import { goto } from "$app/navigation";
+  import { showHomePage } from "$lib/home";
   import {
     setHolonId,
-    clearHolonId,
     setBrandName,
     setBrandLogo,
     setAccent,
@@ -140,21 +139,10 @@
     holonId.set(id);
   }
 
-  /**
-   * Unpin the screen and go back to the home page. Forgetting the remembered
-   * id is only half of it: a holon named by the PATH (`/<id>`, how the home
-   * page's "open the board" field navigates) outranks the stored one and would
-   * bring the board straight back on the next load — so leave that URL behind
-   * too. A holon named by the HOST (`<hub>.hubs.network`) is that address's
-   * whole point and is deliberately NOT overridden here.
-   */
+  /** Unpin the screen and go back to the home page (see lib/home.ts). */
   async function clearHolon() {
-    clearHolonId();
     draftHolon = "";
-    holonId.set(null);
-    settingsOpen.set(false);
-    if (typeof location !== "undefined" && location.pathname !== "/")
-      await goto("/");
+    await showHomePage();
   }
 
   function commitName() {

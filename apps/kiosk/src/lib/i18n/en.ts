@@ -268,6 +268,7 @@ export const en = {
   "menu.dashboard": "Open full dashboard",
   "menu.pasteCard": "Paste copied card",
   "menu.settings": "Settings",
+  "menu.homePage": "Show the home page",
   "menu.logout": "Log out",
   "menu.linkKey": "Link your signing key",
   "menu.signingAs": "Signing as {key}",

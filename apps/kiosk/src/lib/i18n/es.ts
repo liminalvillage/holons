@@ -271,6 +271,7 @@ export const es: Record<MessageKey, Msg> = {
   "menu.dashboard": "Abrir el panel completo",
   "menu.pasteCard": "Pegar la ficha copiada",
   "menu.settings": "Ajustes",
+  "menu.homePage": "Mostrar la página de inicio",
   "menu.logout": "Cerrar sesión",
   "menu.linkKey": "Vincula tu clave de firma",
   "menu.signingAs": "Firmando como {key}",
