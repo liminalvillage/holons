@@ -275,6 +275,7 @@
         "settings_max_tasks_unlimited": "Unlimited",
         "task_limit_reached": "You have reached the maximum limit of {{maxTasks}} active tasks. Please complete or cancel some existing tasks before creating new ones. You can see your current tasks by typing /tasks in the main chat.",
         "dashboard": "Holonic Dashboard",
+        "openBoard": "Open this holon's board",
         "provenance": "Provenance",
         "local_provenance": "Local",
         "holon_prefix": "Holon",

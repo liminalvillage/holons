@@ -237,6 +237,7 @@
         "settings_max_tasks_unlimited": "Ilimitadas",
         "task_limit_reached": "Has alcanzado el límite máximo de {{maxTasks}} tareas activas. Por favor, completa o cancela algunas tareas existentes antes de crear nuevas. Puedes ver tus tareas actuales escribiendo /tasks en el chat principal.",
         "dashboard": "Panel Holónico",
+        "openBoard": "Abrir el tablero de este holón",
         "provenance": "Procedencia",
         "local_provenance": "Local",
         "holon_prefix": "Holón",

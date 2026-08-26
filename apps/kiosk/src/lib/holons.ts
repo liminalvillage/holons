@@ -7,11 +7,13 @@
 //   liminal.hubs.network        → "liminal" → <holon id>
 //   www.liminal.hubs.network    → "liminal" → <holon id>
 //
-// Point a wildcard domain (`*.hubs.network`) at the one Netlify site, then add
-// an entry below for each holon you want reachable by subdomain. A `?holon=<id>`
-// query param still overrides this (for testing), and hosts that aren't a
-// subdomain of BASE_DOMAIN (localhost, previews) fall back to the usual
-// localStorage / env resolution (see config.ts).
+// Point a wildcard domain (`*.hubs.network`) at the one Netlify site. A holon
+// needs NO entry below to be reachable: an undeclared subdomain is read as the
+// holon id itself (`1003864542239.hubs.network`, see `holonForHost`). Adding an
+// entry is how a holon earns a *name* instead — and a declared mapping always
+// wins. A `?holon=<id>` query param still overrides both (for testing), and
+// hosts that aren't a subdomain of BASE_DOMAIN (localhost, previews) fall back
+// to the usual localStorage / env resolution (see config.ts).
 //
 // A holon can also be picked by URL *path* — `site.com/<holon id>` or
 // `site.com/<registered label>` (see `holonForPath`) — which wins over the
@@ -21,8 +23,10 @@
 export const BASE_DOMAIN = "hubs.network";
 
 /**
- * Map of subdomain label → holon id. Add one line per registered holon.
+ * Map of subdomain label → holon id: the holons that have earned a NAME.
  * (Holon ids are the negative chat-id strings, e.g. "-1001234567890".)
+ * Optional — an unlisted holon is still reachable at `<id>.hubs.network` —
+ * but an entry here takes precedence over that fall-through.
  */
 export const SUBDOMAIN_HOLONS: Record<string, string> = {
   residence: "-1001652773351",
@@ -49,12 +53,52 @@ export function subdomainOf(host: string): string | null {
   return sub.split(".").pop() || null;
 }
 
-/** The holon id mapped to a host's subdomain, or null if none is registered. */
+/**
+ * Subdomain labels that are infrastructure, not holons. Without this, the
+ * fall-through below would turn `www.hubs.network` into a board for a holon
+ * called "www" instead of serving the home page.
+ */
+const RESERVED_SUBDOMAINS = new Set([
+  "www",
+  "api",
+  "app",
+  "admin",
+  "dev",
+  "docs",
+  "mail",
+  "preview",
+  "staging",
+  "test",
+]);
+
+/**
+ * The holon a host's subdomain selects, or null when the host doesn't name one.
+ *
+ * A declared mapping in SUBDOMAIN_HOLONS always wins — that is what gives a hub
+ * a memorable name. Anything else falls through as the holon id ITSELF, so a
+ * new holon is reachable at `<id>.hubs.network` without a code change or a
+ * redeploy. Because DNS labels cannot begin with "-", a Telegram supergroup id
+ * is written without it (`1003864542239.hubs.network`) and the sign is restored
+ * here; every other label is taken verbatim.
+ */
 export function holonForHost(host: string): string | null {
   const sub = subdomainOf(host);
   if (!sub) return null;
-  const id = SUBDOMAIN_HOLONS[sub];
-  return id && id.trim() ? id : null;
+  const declared = SUBDOMAIN_HOLONS[sub];
+  if (declared && declared.trim()) return declared;
+  if (RESERVED_SUBDOMAINS.has(sub)) return null;
+  return holonIdFromLabel(sub);
+}
+
+/**
+ * A DNS label read as a holon id. Telegram group ids are "-100" + 10 digits and
+ * a hostname can't carry that leading "-", so a label of exactly that shape
+ * gets it back. Shorter numeric labels (personal holons are a plain user id)
+ * and non-numeric ones are their own id, unchanged.
+ */
+function holonIdFromLabel(label: string): string | null {
+  if (/^100\d{10}$/.test(label)) return `-${label}`;
+  return /^[a-z0-9][a-z0-9-]*$/.test(label) ? label : null;
 }
 
 /**
@@ -68,8 +112,82 @@ export function holonForPath(pathname: string): string | null {
     pathname.replace(/^\/+/, "").split("/")[0] ?? "",
   ).trim();
   if (!seg || seg.toLowerCase() === "api") return null;
-  const byLabel = SUBDOMAIN_HOLONS[seg.toLowerCase()];
+  return holonForToken(seg);
+}
+
+/**
+ * The holon a token names, or null. A token is either a registered label
+ * ("liminal") or a raw holon id — a group chat id ("-100…") or a personal
+ * numeric id. Same rules `holonForPath` applies to a URL segment.
+ */
+function holonForToken(token: string): string | null {
+  const tok = token.trim();
+  if (!tok) return null;
+  const byLabel = SUBDOMAIN_HOLONS[tok.toLowerCase()];
   if (byLabel && byLabel.trim()) return byLabel;
-  // Holon ids: group chat ids ("-100…") or personal numeric ids.
-  return /^-?\d+$/.test(seg) ? seg : null;
+  return /^-?\d+$/.test(tok) ? tok : null;
+}
+
+/** Parse `raw` as a URL, tolerating a missing scheme ("liminal.hubs.network"). */
+function asUrl(raw: string): URL | null {
+  for (const candidate of [raw, `https://${raw}`]) {
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "http:" || url.protocol === "https:") return url;
+    } catch {
+      /* try the next shape */
+    }
+  }
+  return null;
+}
+
+/**
+ * The holon id a person pasted, whatever shape they had to hand — the one
+ * thing the landing page asks for when someone comes back from the bot.
+ * Accepts, in order of what people actually copy:
+ *
+ *   -1001234567890                       a holon id straight from the bot
+ *   liminal                              a registered label
+ *   https://t.me/c/1234567890/42         "Copy link" on a message in the group
+ *   https://dashboard.holons.io/-100…    what `/dashboard` replies with
+ *   https://liminal.hubs.network         a hub's own screen
+ *   https://hubs.network/-100…           this kiosk, deep-linked
+ *
+ * Returns null when nothing in the input names a holon (a public `t.me/<name>`
+ * link, for instance, carries a username the chat id can't be derived from).
+ */
+export function parseHolonRef(input: string): string | null {
+  const raw = (input ?? "").trim();
+  if (!raw) return null;
+
+  // A bare id or label — the common case, and unambiguous.
+  const direct = holonForToken(raw);
+  if (direct) return direct;
+
+  const url = asUrl(raw);
+  if (!url) return null;
+  const segments = url.pathname
+    .split("/")
+    .map((s) => decodeURIComponent(s).trim())
+    .filter(Boolean);
+
+  // Telegram's private-supergroup links drop the "-100" prefix that every
+  // chat id carries, so `t.me/c/1234567890/42` is holon "-1001234567890".
+  if (url.hostname.replace(/^www\./, "") === "t.me") {
+    if (segments[0] === "c" && /^\d+$/.test(segments[1] ?? ""))
+      return `-100${segments[1]}`;
+    return null; // t.me/<username> names a chat we can't resolve to an id
+  }
+
+  // A registered subdomain (liminal.hubs.network) names its holon outright.
+  const bySubdomain = holonForHost(url.hostname);
+  if (bySubdomain) return bySubdomain;
+
+  // Otherwise the id/label sits in the path — dashboard.holons.io/<id>,
+  // hubs.network/<id>, a preview host, anything shaped that way.
+  for (const seg of segments) {
+    const id = holonForToken(seg);
+    if (id) return id;
+  }
+  return null;
 }

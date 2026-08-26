@@ -60,6 +60,32 @@ the few knobs that matter.
   and it resumes after 30s of stillness. A thin bar under the active tab shows
   time to the next flip. Rotation freezes while a detail card is open.
 - **PWA:** installable, fullscreen, portrait-locked, with an offline app shell.
+- **Home page:** a screen with no holon (the bare domain, an unboxed display)
+  shows the landing page instead of a board — what Holons is, what it's for,
+  and one button that starts a holon. See below.
+
+## The home page
+
+`src/lib/views/HomeView.svelte` is the front door: the layout renders it in
+place of the kiosk chrome whenever no holon resolves. It closes a round trip
+that leaves the web entirely:
+
+1. **Out.** "Start a holon" deep-links to `t.me/<bot>?startgroup=hub` —
+   Telegram's own group chooser, with "create a new group" right there. The
+   group _is_ the holon, so there is nothing to sign up for.
+2. **Over.** The bot joins and posts its group welcome, now carrying an
+   **Open this holon's board** button pointing at `KIOSK_ADDRESS/<holon id>`
+   (`packages/telegram-ui/src/Settings.ts`). That button is the way back.
+3. **Back.** Telegram can't hand anything to the tab that was left behind, so
+   the page notes the hand-off in `localStorage` on the way out and re-checks it
+   when the tab regains focus. A visitor who returns lands on a highlighted
+   "welcome back" step whose field takes whatever they happen to have copied —
+   a holon id, a `t.me/c/…` message link, a `/dashboard` link, a hub address
+   (`parseHolonRef` in `src/lib/holons.ts`, spec'd in `holons.test.ts`).
+
+Opening a board from that field navigates to `/<holon id>` and is deliberately
+**not** remembered on the device — the URL is the shareable thing, and only
+**Settings** pins a screen for good.
 
 ## Configuration
 
@@ -78,6 +104,18 @@ or open **Settings** and type the id. To _visit_ a holon without re-pointing the
 device, open `https://…/<holon-id>` (or `/<registered label>`, e.g. `/liminal`)
 — the path wins for that page load but is not remembered. The kiosk reads
 production data by default.
+
+To **unpin** a screen, open **Settings** and use _Clear — show the home page_
+(emptying the holon field does the same). That forgets the stored id and
+returns to `/`, so the screen lands back on the home page.
+
+Every holon is reachable by **subdomain without a code change**: an undeclared
+label is read as the holon id itself. Because a hostname can't start with `-`,
+a Telegram group id is written without it and the sign is restored —
+`1003864542239.hubs.network` shows holon `-1003864542239`. A label declared in
+`SUBDOMAIN_HOLONS` (`src/lib/holons.ts`) takes precedence, which is how a hub
+gets a name (`liminal.hubs.network`) instead of a number; `www`, `api`,
+`staging` and friends are reserved and always serve the home page.
 
 **Editing** is optional and off until configured. Set
 `VITE_TELEGRAM_BOT_USERNAME` to the hub's bot to enable the Telegram Login

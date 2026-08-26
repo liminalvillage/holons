@@ -246,6 +246,7 @@
         "settings_max_tasks_unlimited": "Illimitées",
         "task_limit_reached": "Vous avez atteint la limite maximale de {{maxTasks}} tâches actives. Veuillez compléter ou annuler certaines tâches existantes avant d'en créer de nouvelles. Vous pouvez voir vos tâches actuelles en tapant /tasks dans le chat principal.",
         "dashboard": "Tableau de Bord Holonique",
+        "openBoard": "Ouvrir le tableau de ce holon",
         "provenance": "Provenance",
         "local_provenance": "Locale",
         "holon_prefix": "Holon",

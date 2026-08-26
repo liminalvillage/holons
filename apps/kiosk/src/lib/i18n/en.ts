@@ -311,6 +311,7 @@ export const en = {
   "settings.title": "Kiosk settings",
   "settings.holon": "Holon",
   "settings.holonPlaceholder": "holon id",
+  "settings.unpinHolon": "Clear — show the home page",
   "settings.displayName": "Display name",
   "settings.displayNamePlaceholder": "shown in the header",
   "settings.logo": "Logo",
@@ -586,11 +587,160 @@ export const en = {
   "voice.serviceUnreachable":
     "Could not reach the voice service — check the network connection.",
 
-  // Setup screen (no holon configured)
-  "setup.title": "No holon configured",
-  "setup.body":
-    "Point this screen at a holon: open Settings and enter a holon id, open the kiosk at /<holon id>, open it once with a ?holon=<id> parameter, or set VITE_KIOSK_HOLON in the root .env. Settings and ?holon= are remembered on this device.",
-  "setup.openSettings": "Open settings",
+  // Home / landing page — what this screen shows when it isn't pointed at a
+  // holon yet. Long-form on purpose: it is the front door of holons.io.
+  "home.metaTitle": "Holons — coordinate what you already have",
+  "home.metaDescription":
+    "An open protocol for groups who want to circulate what they already have — time, tools, beds, land, skills, care, money — without turning all of it into a commodity. Start a holon in Telegram.",
+
+  "home.heroTitle": "Make relationships economically meaningful.",
+  "home.heroLead":
+    "Holons is an open protocol for groups who want to circulate what they already have — time, tools, beds, land, skills, care, money — without turning all of it into a commodity.",
+  "home.heroNote":
+    "Free and open source. Local-first and peer-to-peer. Your holon is a chat group you already have.",
+  "home.ctaStart": "Start a holon",
+  "home.ctaRead": "What is a holon?",
+
+  "home.problemKicker": "Why",
+  "home.problemTitle": "We live inside a strange contradiction.",
+  "home.problemP1":
+    "We have more capacity to produce, communicate, coordinate and share knowledge than at any previous moment in history. Yet most of us still organize our lives around scarcity.",
+  "home.problemP2":
+    "Houses sit empty while people need somewhere to live. People with spare capacity cannot easily find the people who need it. And money has become the language through which extraordinarily different things — time, land, food, care, creativity, risk, knowledge — are forced to speak to one another.",
+  "home.fearsTitle": "And underneath it is fear.",
+  "home.fear1": "If I give too much, will there be enough left for me?",
+  "home.fear2": "If I stop earning, who will take care of me?",
+  "home.fear3": "If I share what I have, will others take advantage?",
+  "home.fear4": "If I contribute now, will anyone remember later?",
+  "home.fearsNote":
+    "These fears are not irrational. Our institutions give us good reasons to have them.",
+  "home.problemP3":
+    "Capitalism solved a profound coordination problem: markets let millions of strangers cooperate without needing to know or trust one another. We are now facing the next one — can millions of people cooperate without needing to turn everything they value into a commodity?",
+
+  "home.holonKicker": "What a holon is",
+  "home.holonTitle": "A whole, and a part of something larger.",
+  "home.holonP1":
+    "The word is Greek: holos (whole) + on (part). Your body is a holon — a whole organism, and part of a family, a community, an ecosystem. A team is a holon. So is a household, a co-op, a neighbourhood, a bioregion.",
+  "home.holonP2":
+    "Any group can run as one: self-governing inside, composable with other holons outside. Four questions make that work, and each has a primitive in the protocol.",
+  "home.pillar1Title": "Membrane",
+  "home.pillar1Body":
+    "A flexible boundary that says who is in, what the holon is for, and what it values. Semi-permeable: people, resources and information cross under conditions the holon sets for itself.",
+  "home.pillar2Title": "Value equation",
+  "home.pillar2Body":
+    "Each holon decides what counts — hours, outcomes, appreciations, the relationships someone brings. Two holons can run identical software and grow very different cultures, simply by tuning the weights.",
+  "home.pillar3Title": "Splitters and thresholds",
+  "home.pillar3Body":
+    "Resources that arrive get routed rather than hoarded: fund what the holon actually needs first, then let the surplus overflow to the people and projects that help it thrive.",
+  "home.pillar4Title": "Federation",
+  "home.pillar4Body":
+    "Holons declare trust with other holons — as light as sharing appreciations, as committed as a shared mutual-aid pool. Bilateral, revocable, and never at the price of autonomy.",
+
+  "home.layerKicker": "What the software does",
+  "home.layerTitle": "It makes the flows visible.",
+  "home.layerP1":
+    "Nothing is made communal. Instead a digital layer learns to see the network: where there are empty beds, unused tools, food surpluses, available land, skills, projects needing help, and people looking for work.",
+  "home.layerSay": "So that anyone can say:",
+  "home.say1": "I have this.",
+  "home.say2": "I need this.",
+  "home.say3": "I can offer this.",
+  "home.say4": "I am trying to create this.",
+  "home.layerP2":
+    "And AI keeps making connections no one could hold in their head. “You need a bookkeeper — Sofia has three free hours this week.” “There are six unused beds next month.” “Four people here have the skills this project is missing.”",
+  "home.mapsTitle": "What a holon keeps",
+  "home.map1": "People",
+  "home.map2": "Places",
+  "home.map3": "Needs",
+  "home.map4": "Offers",
+  "home.map5": "Projects",
+  "home.map6": "Resources",
+  "home.map7": "A memory of contributions",
+  "home.memoryP":
+    "That last one matters most. The system remembers who cared for people when they were struggling, who repaired the roof, who spent three months making someone else's work viable — not to price it. The purpose is not capitalism with a better spreadsheet. It is memory where before there was only trust, or bureaucracy — and memory is what lets trust reach past the people you already know.",
+
+  "home.designKicker": "By design",
+  "home.designTitle": "Sovereignty, not surveillance.",
+  "home.designLead":
+    "A system that can see a network can also watch it. So these are constraints on the software, not promises about intentions.",
+  "home.design1": "Participation is voluntary — always, at every layer.",
+  "home.design2": "Different information carries different visibility.",
+  "home.design3": "You can challenge what the system says about you.",
+  "home.design4": "AI suggests; humans stay able to say no.",
+  "home.design5": "Contribution never collapses into a single score.",
+  "home.design6": "Care is never made equivalent to money.",
+  "home.design7":
+    "There is always room for gifts that disappear without being recorded at all.",
+  "home.design8":
+    "The network is not owned by whoever wrote the software: open source, local-first, peer-to-peer. The infrastructure through which we cooperate is itself a commons.",
+
+  "home.levelsKicker": "How it grows",
+  "home.levelsTitle": "Small enough to begin today.",
+  "home.levelsLead":
+    "You can stop after any step. Each one leaves you with a working holon.",
+  "home.level0Tag": "Level 0",
+  "home.level0Title": "A chat group",
+  "home.level0Body":
+    "Create a group, write its purpose in the description, invite the people. That is already a holon: a membrane, a shared purpose, and members.",
+  "home.level1Tag": "Level 1",
+  "home.level1Title": "Add the bot",
+  "home.level1Body":
+    "Informal coordination becomes an attributable record. /task names work, /appreciate recognizes it, /offer and /request open a board of what could circulate, /status shows where everyone stands.",
+  "home.level2Tag": "Level 2",
+  "home.level2Title": "Say what counts",
+  "home.level2Body":
+    "Describe your values and practices, then tune the weights of the value equation. There is no universal right answer — the equation is the culture.",
+  "home.level3Tag": "Level 3",
+  "home.level3Title": "Federate",
+  "home.level3Body":
+    "Find a sibling holon doing related work and declare the trust. Quests, offers, requests and appreciations can then cross the boundary — only the ones each side chooses to publish.",
+  "home.level4Tag": "Level 4",
+  "home.level4Title": "Open to agents",
+  "home.level4Body":
+    "Connect an AI agent and it becomes a participant rather than a spectator: it reads the holon's state and acts through exactly the same rules everyone else does.",
+
+  "home.startKicker": "Begin",
+  "home.startTitle": "Start a holon.",
+  "home.startLead":
+    "It takes about a minute, and it happens where you already talk: Telegram.",
+  "home.step1":
+    "Tap the button. Telegram opens and asks which group to add @{bot} to.",
+  "home.step2":
+    "Pick a group you already have, or create a new one with the people you want to begin with.",
+  "home.step3":
+    "Make the bot an admin, write the purpose in the group description, and type /task. That is a holon.",
+  "home.startButton": "Add {bot} to a group",
+  "home.startAlt": "Or open a private chat first",
+  "home.startAltNote":
+    "A direct chat with @{bot} gives you your own personal holon — where your work across every group comes together.",
+
+  "home.backTitle": "Welcome back.",
+  "home.backLead":
+    "Once the bot is in your group it posts a link straight to this board. If you missed it, type /dashboard in the group and paste the link here.",
+  "home.openTitle": "Already have a holon?",
+  "home.openLead":
+    "Paste its link or its id, and this screen becomes its board.",
+  "home.openPlaceholder": "-1001234567890, or a link to your group",
+  "home.openButton": "Open the board",
+  "home.openInvalid":
+    "That doesn't name a holon yet. Try a holon id, a link to a message in your group, or the link /dashboard gives you.",
+  "home.openAria": "Holon id or link",
+
+  "home.closingKicker": "Where this goes",
+  "home.closingP1":
+    "Perhaps someone in the network loses their income and discovers that they have not lost their livelihood. There is somewhere to live. There is food. There are people who need their skills. There is a community that remembers what they have already given.",
+  "home.closingP2":
+    "That may be the threshold — the moment security moves from accumulated money toward accumulated relationship.",
+  "home.closingP3":
+    "And wealth becomes something you can actually see: healthy land, useful infrastructure, knowledge, trusted relationships, meaningful work, places of belonging, and a network that knows how to take care of its own.",
+
+  "home.footerDocs": "Documentation",
+  "home.footerDashboard": "Web dashboard",
+  "home.footerCommunity": "Community chat",
+  "home.footerSource": "Source code",
+  "home.footerSetup": "Set up this screen",
+  "home.footerLicense": "Open source under AGPL-3.0-or-later.",
+  "home.caretakerNote":
+    "Mounting this on a wall? Settings points the screen at a holon and remembers it on this device — or open the kiosk at /<holon id> to skip the setup entirely.",
 
   // Shell
   "layout.resync": "Live view stalled — resyncing…",

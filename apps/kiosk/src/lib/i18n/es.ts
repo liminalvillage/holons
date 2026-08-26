@@ -315,6 +315,7 @@ export const es: Record<MessageKey, Msg> = {
   "settings.title": "Ajustes del quiosco",
   "settings.holon": "Holón",
   "settings.holonPlaceholder": "id del holón",
+  "settings.unpinHolon": "Borrar — mostrar la página de inicio",
   "settings.displayName": "Nombre visible",
   "settings.displayNamePlaceholder": "se muestra en la cabecera",
   "settings.logo": "Logotipo",
@@ -598,11 +599,159 @@ export const es: Record<MessageKey, Msg> = {
   "voice.serviceUnreachable":
     "No se pudo conectar con el servicio de voz — comprueba la conexión de red.",
 
-  // Setup screen
-  "setup.title": "Ningún holón configurado",
-  "setup.body":
-    "Apunta esta pantalla a un holón: abre Ajustes e introduce un id de holón, abre el quiosco en /<id del holón>, ábrelo una vez con el parámetro ?holon=<id>, o define VITE_KIOSK_HOLON en el .env raíz. Los Ajustes y ?holon= se recuerdan en este dispositivo.",
-  "setup.openSettings": "Abrir los ajustes",
+  // Home / landing page
+  "home.metaTitle": "Holons — coordinar lo que ya tenemos",
+  "home.metaDescription":
+    "Un protocolo abierto para grupos que quieren hacer circular lo que ya tienen — tiempo, herramientas, camas, tierra, saberes, cuidado, dinero — sin convertirlo todo en mercancía. Empieza un holón en Telegram.",
+
+  "home.heroTitle": "Hacer que las relaciones tengan sentido económico.",
+  "home.heroLead":
+    "Holons es un protocolo abierto para grupos que quieren hacer circular lo que ya tienen — tiempo, herramientas, camas, tierra, saberes, cuidado, dinero — sin convertirlo todo en mercancía.",
+  "home.heroNote":
+    "Libre y de código abierto. Local-first y peer-to-peer. Tu holón es un grupo de chat que ya tienes.",
+  "home.ctaStart": "Empieza un holón",
+  "home.ctaRead": "¿Qué es un holón?",
+
+  "home.problemKicker": "Por qué",
+  "home.problemTitle": "Vivimos dentro de una extraña contradicción.",
+  "home.problemP1":
+    "Tenemos más capacidad de producir, comunicar, coordinarnos y compartir conocimiento que en ningún otro momento de la historia. Y aun así, casi todos seguimos organizando nuestra vida en torno a la escasez.",
+  "home.problemP2":
+    "Hay casas vacías mientras hay personas sin dónde vivir. Quien tiene capacidad libre no encuentra fácilmente a quien la necesita. Y el dinero se ha convertido en la lengua en la que cosas radicalmente distintas — tiempo, tierra, comida, cuidado, creatividad, riesgo, conocimiento — se ven obligadas a hablarse entre sí.",
+  "home.fearsTitle": "Y debajo de todo eso hay miedo.",
+  "home.fear1": "Si doy demasiado, ¿quedará suficiente para mí?",
+  "home.fear2": "Si dejo de ganar dinero, ¿quién cuidará de mí?",
+  "home.fear3": "Si comparto lo que tengo, ¿se aprovecharán los demás?",
+  "home.fear4": "Si contribuyo ahora, ¿alguien lo recordará después?",
+  "home.fearsNote":
+    "Estos miedos no son irracionales. Nuestras instituciones nos dan buenas razones para tenerlos.",
+  "home.problemP3":
+    "El capitalismo resolvió un problema de coordinación profundo: los mercados permitieron que millones de desconocidos cooperaran sin necesidad de conocerse ni confiar entre sí. Ahora tenemos delante el siguiente — ¿pueden millones de personas cooperar sin convertir en mercancía todo lo que valoran?",
+
+  "home.holonKicker": "Qué es un holón",
+  "home.holonTitle": "Un todo, y una parte de algo mayor.",
+  "home.holonP1":
+    "La palabra viene del griego: holos (todo) + on (parte). Tu cuerpo es un holón — un organismo entero y, a la vez, parte de una familia, una comunidad, un ecosistema. Un equipo es un holón. También lo son una casa, una cooperativa, un barrio, una biorregión.",
+  "home.holonP2":
+    "Cualquier grupo puede funcionar así: autónomo por dentro, componible con otros holones por fuera. Cuatro preguntas lo hacen posible, y cada una tiene una primitiva en el protocolo.",
+  "home.pillar1Title": "Membrana",
+  "home.pillar1Body":
+    "Un límite flexible que dice quién está dentro, para qué existe el holón y qué valora. Semipermeable: personas, recursos e información lo cruzan bajo las condiciones que el propio holón se da.",
+  "home.pillar2Title": "Ecuación de valor",
+  "home.pillar2Body":
+    "Cada holón decide qué cuenta — horas, resultados, reconocimientos, las relaciones que alguien aporta. Dos holones con el mismo software pueden hacer crecer culturas muy distintas, solo ajustando los pesos.",
+  "home.pillar3Title": "Divisores y umbrales",
+  "home.pillar3Body":
+    "Los recursos que llegan se enrutan en vez de acumularse: primero se cubre lo que el holón realmente necesita, y después el excedente desborda hacia las personas y proyectos que lo hacen prosperar.",
+  "home.pillar4Title": "Federación",
+  "home.pillar4Body":
+    "Los holones declaran confianza con otros holones — tan ligera como compartir reconocimientos, tan comprometida como un fondo de apoyo mutuo común. Bilateral, revocable y nunca a costa de la autonomía.",
+
+  "home.layerKicker": "Qué hace el software",
+  "home.layerTitle": "Hace visibles los flujos.",
+  "home.layerP1":
+    "Nada se vuelve comunal a la fuerza. Lo que ocurre es que una capa digital aprende a ver la red: dónde hay camas libres, herramientas sin usar, excedentes de comida, tierra disponible, saberes, proyectos que piden ayuda y personas que buscan trabajo.",
+  "home.layerSay": "Para que cualquiera pueda decir:",
+  "home.say1": "Esto lo tengo.",
+  "home.say2": "Esto lo necesito.",
+  "home.say3": "Esto puedo ofrecerlo.",
+  "home.say4": "Esto estoy intentando crear.",
+  "home.layerP2":
+    "Y la IA no deja de tejer conexiones que nadie podría sostener en la cabeza. «Necesitas una contable — Sofía tiene tres horas libres esta semana.» «El mes que viene hay seis camas sin usar.» «Cuatro personas de aquí tienen los saberes que le faltan a este proyecto.»",
+  "home.mapsTitle": "Qué guarda un holón",
+  "home.map1": "Personas",
+  "home.map2": "Lugares",
+  "home.map3": "Necesidades",
+  "home.map4": "Ofertas",
+  "home.map5": "Proyectos",
+  "home.map6": "Recursos",
+  "home.map7": "Una memoria de las contribuciones",
+  "home.memoryP":
+    "Esta última es la que más importa. El sistema recuerda quién cuidó de los demás en los momentos difíciles, quién arregló el tejado, quién pasó tres meses haciendo viable el trabajo de otra persona — no para ponerle precio. El propósito no es un capitalismo con mejor hoja de cálculo. Es tener memoria donde antes solo había confianza o burocracia — y es la memoria la que permite que la confianza llegue más allá de quienes ya conoces.",
+
+  "home.designKicker": "Por diseño",
+  "home.designTitle": "Soberanía, no vigilancia.",
+  "home.designLead":
+    "Un sistema capaz de ver una red también es capaz de vigilarla. Por eso esto son restricciones sobre el software, no promesas sobre las intenciones.",
+  "home.design1": "La participación es voluntaria — siempre, en cada capa.",
+  "home.design2": "Cada tipo de información tiene su propia visibilidad.",
+  "home.design3": "Puedes impugnar lo que el sistema dice de ti.",
+  "home.design4": "La IA sugiere; las personas siguen pudiendo decir que no.",
+  "home.design5": "La contribución nunca se reduce a una sola puntuación.",
+  "home.design6": "El cuidado nunca se hace equivalente al dinero.",
+  "home.design7":
+    "Siempre queda sitio para regalos que desaparecen sin quedar registrados.",
+  "home.design8":
+    "La red no pertenece a quien escribió el software: código abierto, local-first, peer-to-peer. La infraestructura con la que cooperamos es ella misma un bien común.",
+
+  "home.levelsKicker": "Cómo crece",
+  "home.levelsTitle": "Lo bastante pequeño para empezar hoy.",
+  "home.levelsLead":
+    "Puedes parar después de cualquier paso. Cada uno te deja un holón que funciona.",
+  "home.level0Tag": "Nivel 0",
+  "home.level0Title": "Un grupo de chat",
+  "home.level0Body":
+    "Crea un grupo, escribe su propósito en la descripción, invita a la gente. Eso ya es un holón: una membrana, un propósito compartido y miembros.",
+  "home.level1Tag": "Nivel 1",
+  "home.level1Title": "Añade el bot",
+  "home.level1Body":
+    "La coordinación informal se convierte en un registro atribuible. /task nombra el trabajo, /appreciate lo reconoce, /offer y /request abren un tablón de lo que podría circular, /status muestra cómo va cada quien.",
+  "home.level2Tag": "Nivel 2",
+  "home.level2Title": "Di qué cuenta",
+  "home.level2Body":
+    "Describe vuestros valores y prácticas, y luego ajusta los pesos de la ecuación de valor. No hay una respuesta correcta universal — la ecuación es la cultura.",
+  "home.level3Tag": "Nivel 3",
+  "home.level3Title": "Federaos",
+  "home.level3Body":
+    "Encuentra un holón hermano que haga un trabajo afín y declarad la confianza. Quests, ofertas, peticiones y reconocimientos podrán cruzar la frontera — solo los que cada parte elija publicar.",
+  "home.level4Tag": "Nivel 4",
+  "home.level4Title": "Ábrete a los agentes",
+  "home.level4Body":
+    "Conecta un agente de IA y pasa a ser participante en vez de espectador: lee el estado del holón y actúa con exactamente las mismas reglas que todos los demás.",
+
+  "home.startKicker": "Empieza",
+  "home.startTitle": "Empieza un holón.",
+  "home.startLead":
+    "Lleva alrededor de un minuto, y ocurre donde ya habláis: Telegram.",
+  "home.step1":
+    "Toca el botón. Telegram se abre y te pregunta a qué grupo añadir a @{bot}.",
+  "home.step2":
+    "Elige un grupo que ya tengas, o crea uno nuevo con las personas con las que quieras empezar.",
+  "home.step3":
+    "Haz al bot administrador, escribe el propósito en la descripción del grupo y escribe /task. Eso es un holón.",
+  "home.startButton": "Añadir {bot} a un grupo",
+  "home.startAlt": "O abre antes un chat privado",
+  "home.startAltNote":
+    "Un chat directo con @{bot} te da tu propio holón personal — donde converge tu trabajo en todos los grupos.",
+
+  "home.backTitle": "Bienvenido de vuelta.",
+  "home.backLead":
+    "En cuanto el bot está en tu grupo, publica un enlace directo a este tablero. Si se te pasó, escribe /dashboard en el grupo y pega aquí el enlace.",
+  "home.openTitle": "¿Ya tienes un holón?",
+  "home.openLead":
+    "Pega su enlace o su id, y esta pantalla se convierte en su tablero.",
+  "home.openPlaceholder": "-1001234567890, o un enlace a tu grupo",
+  "home.openButton": "Abrir el tablero",
+  "home.openInvalid":
+    "Eso todavía no nombra un holón. Prueba con un id de holón, un enlace a un mensaje de tu grupo, o el enlace que te da /dashboard.",
+  "home.openAria": "Id o enlace del holón",
+
+  "home.closingKicker": "Hacia dónde va",
+  "home.closingP1":
+    "Quizá alguien de la red pierda sus ingresos y descubra que no ha perdido su sustento. Hay dónde vivir. Hay comida. Hay quien necesita sus saberes. Hay una comunidad que recuerda lo que ya ha dado.",
+  "home.closingP2":
+    "Puede que ese sea el umbral — el momento en que la seguridad se desplaza del dinero acumulado a las relaciones acumuladas.",
+  "home.closingP3":
+    "Y la riqueza pasa a ser algo que de verdad se puede ver: tierra sana, infraestructura útil, conocimiento, relaciones de confianza, trabajo con sentido, lugares de pertenencia, y una red que sabe cuidar de los suyos.",
+
+  "home.footerDocs": "Documentación",
+  "home.footerDashboard": "Panel web",
+  "home.footerCommunity": "Chat de la comunidad",
+  "home.footerSource": "Código fuente",
+  "home.footerSetup": "Configurar esta pantalla",
+  "home.footerLicense": "Código abierto con licencia AGPL-3.0-or-later.",
+  "home.caretakerNote":
+    "¿La vas a montar en la pared? Los Ajustes apuntan la pantalla a un holón y lo recuerdan en este dispositivo — o abre el quiosco en /<id del holón> y sáltate la configuración por completo.",
 
   // Shell
   "layout.resync": "Vista en vivo detenida — resincronizando…",

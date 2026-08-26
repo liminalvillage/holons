@@ -71,6 +71,40 @@ export function dashboardUrl(holonId: string): string {
   return `${DASHBOARD_BASE}/${encodeURIComponent(holonId)}`;
 }
 
+/** Where the landing page sends people who want to read the protocol. */
+export const DOCS_URL = "https://docs.holons.io";
+/** The open community chat (feedback, questions, what others are building). */
+export const COMMUNITY_URL = "https://t.me/HolonicDAO";
+/** The source. Holons is AGPL-3.0-or-later; the landing page says so. */
+export const SOURCE_URL = "https://github.com/HolonicLabs/holons";
+
+/**
+ * The Telegram bot a holon is started with. Public by design (it ends up in
+ * every deep link on the landing page); override per-deploy with
+ * `VITE_TELEGRAM_BOT_USERNAME` when a fork runs its own bot.
+ */
+export function resolveBotUsername(): string {
+  const env = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined;
+  const v = (env && String(env).trim().replace(/^@/, "")) || "";
+  return /^[A-Za-z0-9_]{3,}$/.test(v) ? v : "HolonsBot";
+}
+
+/**
+ * "Start a holon": Telegram's own add-to-group chooser. `?startgroup=<payload>`
+ * opens the group picker (with "create a new group" right there), adds the bot
+ * to the chosen chat, and delivers the payload as the group's first `/start` —
+ * which is where the bot posts the link back to this screen. That round trip
+ * IS the onboarding: the group is the holon, so there is nothing to sign up for.
+ */
+export function addToGroupUrl(payload = "hub"): string {
+  return `https://t.me/${resolveBotUsername()}?startgroup=${encodeURIComponent(payload)}`;
+}
+
+/** "Talk to the bot first": a private chat, i.e. the visitor's personal holon. */
+export function botChatUrl(payload = "hub"): string {
+  return `https://t.me/${resolveBotUsername()}?start=${encodeURIComponent(payload)}`;
+}
+
 function readParam(name: string): string | null {
   if (typeof window === "undefined") return null;
   const v = new URLSearchParams(window.location.search).get(name);
@@ -102,6 +136,38 @@ function forget(key: string): void {
   } catch {
     /* ignore */
   }
+}
+
+// ── The bot round trip ──────────────────────────────────────────────────────
+//
+// Starting a holon leaves this site for Telegram, and Telegram has no way to
+// hand anything back. So we leave ourselves a note: when the visitor returns to
+// this tab, the landing page opens the "your holon is ready" step instead of
+// making them find it again. The note expires so a screen someone poked at
+// last month doesn't greet the next visitor with it.
+
+const BOT_HANDOFF_KEY = "kiosk_bot_handoff_at";
+const BOT_HANDOFF_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Note that this device just left for Telegram to start (or open) a holon. */
+export function markBotHandoff(): void {
+  persist(BOT_HANDOFF_KEY, String(Date.now()));
+}
+
+/** Did this device leave for the bot recently enough to still be mid-flow? */
+export function returningFromBot(now = Date.now()): boolean {
+  const at = Number(persisted(BOT_HANDOFF_KEY) ?? "");
+  if (!Number.isFinite(at) || at <= 0) return false;
+  if (now - at > BOT_HANDOFF_TTL_MS) {
+    forget(BOT_HANDOFF_KEY);
+    return false;
+  }
+  return true;
+}
+
+/** The round trip is over — the visitor landed on a holon. */
+export function clearBotHandoff(): void {
+  forget(BOT_HANDOFF_KEY);
 }
 
 /** Resolve the Holosphere app namespace this kiosk connects to. */
@@ -213,6 +279,16 @@ export function resolveHolonId(): string | null {
 /** Persist the holon id chosen from the in-app Settings panel. */
 export function setHolonId(id: string): void {
   persist(HOLON_KEY, id.trim());
+}
+
+/**
+ * Unpin the screen: forget the remembered holon so the kiosk falls back to
+ * whatever the URL says, and — at the bare root — to the home page. Note that
+ * a holon named by the PATH or the HOST still wins on the next load; clearing
+ * is paired with a trip back to `/` in the Settings panel.
+ */
+export function clearHolonId(): void {
+  forget(HOLON_KEY);
 }
 
 /**

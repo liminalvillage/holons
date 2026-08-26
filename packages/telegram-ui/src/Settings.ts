@@ -35,6 +35,42 @@ export type { HolonSettings, AvailableLens };
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 /**
+ * The kiosk / hub board (apps/kiosk). `<base>/<holon id>` is a whole holon's
+ * screen — a wildcard domain serves every one of them from a single deploy.
+ */
+const KIOSK_ADDRESS = process.env.KIOSK_ADDRESS || 'https://hubs.network';
+
+/**
+ * The buttons that close the loop for someone who started here from the web:
+ * they tapped "Start a holon" on the landing page, Telegram took over, and
+ * Telegram has no way to hand them back. So the welcome the bot posts on
+ * arrival carries the link home — straight to this holon's own board.
+ */
+function boardButtons(holonId: string | number, language: string) {
+    const raw = String(holonId ?? '').trim();
+    // `getholonId` falls back to "0" when it can't read the chat — a link built
+    // from that would 404 on arrival, so post the welcome without buttons.
+    if (!/^-?\d+$/.test(raw) || raw === '0') return undefined;
+    const id = encodeURIComponent(raw);
+    return {
+        inline_keyboard: [
+            [
+                {
+                    text: `🌱 ${i18next.t('openBoard', { lng: language, defaultValue: 'Open this holon\'s board' })}`,
+                    url: `${KIOSK_ADDRESS}/${id}`,
+                },
+            ],
+            [
+                {
+                    text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`,
+                    url: `${DASHBOARD_ADDRESS}/${id}`,
+                },
+            ],
+        ],
+    };
+}
+
+/**
  * All available lenses that can be configured for a holon.
  * Sourced from `@holons/core/settings` so other UIs stay aligned.
  */
@@ -164,7 +200,12 @@ export default class Settings {
                 const welcomeKey = chatType === 'private' ? 'personalWelcome' : 'groupWelcome';
                 const welcomeMessage = i18next.t(welcomeKey, { lng: language });
 
-                await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+                // Every holon — a group, or the private chat that IS someone's
+                // personal holon — gets its board link with the welcome.
+                await ctx.reply(welcomeMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: boardButtons(holonId, language),
+                });
             } catch (error) {
                 console.error('Error sending welcome message:', error);
                 // Fallback to simple message if translation fails
@@ -210,7 +251,12 @@ export default class Settings {
                     const language = await this.getLanguage(holonId);
                     const welcomeMessage = i18next.t('groupWelcome', { lng: language });
 
-                    await ctx.telegram.sendMessage(holonId, welcomeMessage, { parse_mode: 'Markdown' });
+                    // This is the moment someone who came from the landing
+                    // page arrives: hand them the way back to their board.
+                    await ctx.telegram.sendMessage(holonId, welcomeMessage, {
+                        parse_mode: 'Markdown',
+                        reply_markup: boardButtons(holonId, language),
+                    });
                 }
             } catch (error) {
                 console.error('Error handling my_chat_member event:', error);

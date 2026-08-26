@@ -26,8 +26,10 @@
     statusEnabled,
     settingsOpen,
   } from "$lib/stores";
+  import { goto } from "$app/navigation";
   import {
     setHolonId,
+    clearHolonId,
     setBrandName,
     setBrandLogo,
     setAccent,
@@ -126,16 +128,33 @@
 
   // -- write-through commits -------------------------------------------------
 
-  /** Point the screen at another holon. A blank field is a no-op, not a wipe. */
+  /** Point the screen at another holon. Emptying the field unpins it. */
   function commitHolon() {
     const id = draftHolon.trim();
     if (!id) {
-      draftHolon = $holonId ?? ""; // don't leave a blank field that isn't real
+      void clearHolon();
       return;
     }
     if (id === $holonId) return;
     setHolonId(id);
     holonId.set(id);
+  }
+
+  /**
+   * Unpin the screen and go back to the home page. Forgetting the remembered
+   * id is only half of it: a holon named by the PATH (`/<id>`, how the home
+   * page's "open the board" field navigates) outranks the stored one and would
+   * bring the board straight back on the next load — so leave that URL behind
+   * too. A holon named by the HOST (`<hub>.hubs.network`) is that address's
+   * whole point and is deliberately NOT overridden here.
+   */
+  async function clearHolon() {
+    clearHolonId();
+    draftHolon = "";
+    holonId.set(null);
+    settingsOpen.set(false);
+    if (typeof location !== "undefined" && location.pathname !== "/")
+      await goto("/");
   }
 
   function commitName() {
@@ -232,6 +251,13 @@
       on:keydown={blurOnEnter}
     />
   </label>
+  <!-- Emptying the field above does this too, but a blank field is nobody's
+       idea of a button: say plainly how a screen gets unpinned. -->
+  {#if $holonId}
+    <button class="unpin" on:click={clearHolon}>
+      {$t("settings.unpinHolon")}
+    </button>
+  {/if}
 
   <label class="field"
     >{$t("settings.displayName")}
@@ -518,6 +544,18 @@
     margin: 0.4rem 0 1rem;
     font-size: 1.3rem;
     color: var(--ink);
+  }
+  .unpin {
+    display: block;
+    margin-top: 0.5rem;
+    padding: 0.4rem 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--teal);
+    text-align: left;
+  }
+  .unpin:active {
+    opacity: 0.6;
   }
   .field {
     display: block;

@@ -254,6 +254,7 @@
         "settings_max_tasks_unlimited": "Illimitate",
         "task_limit_reached": "Hai raggiunto il limite massimo di {{maxTasks}} attività attive. Completa o annulla alcune attività esistenti prima di crearne di nuove. Puoi vedere le tue attività correnti digitando /tasks nella chat principale.",
         "dashboard": "Dashboard Olonica",
+        "openBoard": "Apri la bacheca di questo holon",
         "provenance": "Provenienza",
         "local_provenance": "Locale",
         "holon_prefix": "Olone",

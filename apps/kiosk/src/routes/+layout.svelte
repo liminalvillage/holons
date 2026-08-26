@@ -31,7 +31,7 @@
     resolveLibraryCalendarView,
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
-  import { langMode, holonLang, startI18n, t, tr, type Lang } from "$lib/i18n";
+  import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
   import {
@@ -76,6 +76,7 @@
   import type { Role } from "@holons/core/roles";
   import type { Checklist } from "@holons/core/checklists";
   import { keyLinkOpen } from "$lib/sessionKey";
+  import HomeView from "$lib/views/HomeView.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
   import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
@@ -464,7 +465,10 @@
       .trim()
       .toLowerCase();
     const label = SUBDOMAIN_HOLONS[seg] ? seg : subdomainOf(location.host);
-    return label ? label.charAt(0).toUpperCase() + label.slice(1) : "";
+    // An undeclared subdomain can be a bare holon id (see holonForHost); a
+    // string of digits is no kind of tab title, so fall through to "Holons".
+    if (!label || /^\d+$/.test(label)) return "";
+    return label.charAt(0).toUpperCase() + label.slice(1);
   }
 
   onMount(() => {
@@ -517,6 +521,11 @@
   // page with its own life. It must not boot the board: no subscriptions, no
   // kiosk chrome, just the route.
   $: isMiniApp = $page.url.pathname.replace(/\/+$/, "") === "/key";
+
+  // No holon resolved and nothing left to wait for → this isn't a board, it's
+  // the front door: show the landing page (HomeView) instead of the kiosk
+  // chrome, with the board-only overlays stood down.
+  $: isHome = !isMiniApp && !booting && !$holonIdStore;
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
@@ -580,8 +589,11 @@
   <!-- Browser-tab / PWA title: the holon's name (caretaker override first).
        Until one is known, the subdomain/path label that selected the holon
        stands in (e.g. armoniaduale.hubs.network → "Armoniaduale") — never
-       the app's own name. -->
-  <title>{$brandName || $holonName || holonLabel || "Holons"}</title>
+       the app's own name. The landing page titles itself (HomeView), so stand
+       aside there rather than racing it for the same tag. -->
+  {#if !isHome}
+    <title>{$brandName || $holonName || holonLabel || "Holons"}</title>
+  {/if}
 </svelte:head>
 
 <svelte:window
@@ -597,30 +609,20 @@
   <!-- Telegram Mini App route: no board, no chrome — the page is the app. -->
   <slot />
 {:else}
-  <div class="kiosk">
-    {#if !$holonIdStore && !booting}
-      <div class="setup">
-        {#if $brandLogo}
-          <img class="logo" src={$brandLogo} alt="Kiosk" />
-        {:else}
-          <div class="wordmark">{$brandName || "kiosk"}</div>
-        {/if}
-        <h1>{$t("setup.title")}</h1>
-        <p>{$t("setup.body")}</p>
-        <button class="setup-btn" on:click={() => settingsOpen.set(true)}>
-          {$t("setup.openSettings")}
-        </button>
-      </div>
-    {:else}
+  {#if isHome}
+    <!-- Front door: what Holons is, and the button that starts one. -->
+    <HomeView />
+  {:else}
+    <div class="kiosk">
       <TabBar />
       <main class="stage">
         <slot />
       </main>
-    {/if}
-  </div>
+    </div>
 
-  <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
-  <DetailModal />
+    <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
+    <DetailModal />
+  {/if}
 
   <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
   {#if $loginOpen}
@@ -643,19 +645,23 @@
     </Modal>
   {/if}
 
-  <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
-  {#if $keyLinkOpen}
-    <Modal on:close={() => keyLinkOpen.set(false)}>
-      <KeyLinkModal />
-    </Modal>
+  <!-- Board-only companions: they all act on the displayed holon, and the
+       landing page has none. -->
+  {#if !isHome}
+    <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
+    {#if $keyLinkOpen}
+      <Modal on:close={() => keyLinkOpen.set(false)}>
+        <KeyLinkModal />
+      </Modal>
+    {/if}
+
+    <!-- Participant confirmation before a completion records REA. -->
+    <CompleteConfirm />
+
+    <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
+       Sends the displayed holon + active view + open record as turn context. -->
+    <VoiceWidget />
   {/if}
-
-  <!-- Participant confirmation before a completion records REA. -->
-  <CompleteConfirm />
-
-  <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
-     Sends the displayed holon + active view + open record as turn context. -->
-  <VoiceWidget />
 
   <!-- Transient one-line feedback for taps that can't proceed. -->
   {#if $notice}
@@ -685,55 +691,6 @@
     position: relative;
     display: flex;
     flex-direction: column;
-  }
-
-  .setup {
-    margin: auto;
-    max-width: 30rem;
-    padding: 2rem;
-    text-align: center;
-  }
-  .setup .logo {
-    height: 44px;
-    width: auto;
-    max-width: 70%;
-    object-fit: contain;
-    margin: 0 auto 1.5rem;
-    display: block;
-  }
-  .setup .wordmark {
-    font-family: var(--font-logo);
-    font-size: 2rem;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    color: var(--teal-deep);
-    margin-bottom: 1.5rem;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-  }
-  .setup h1 {
-    font-size: 1.6rem;
-    margin: 0 0 0.75rem;
-    color: var(--ink);
-  }
-  .setup p {
-    color: var(--ink-soft);
-    line-height: 1.6;
-    font-size: 1.02rem;
-  }
-  .setup-btn {
-    margin-top: 1.5rem;
-    min-height: 52px;
-    padding: 0 1.8rem;
-    border-radius: 14px;
-    font-weight: 700;
-    font-size: 1rem;
-    color: #fff;
-    background: var(--teal);
-    box-shadow: var(--shadow-soft);
-  }
-  .setup-btn:active {
-    transform: scale(0.97);
   }
 
   .notice {
