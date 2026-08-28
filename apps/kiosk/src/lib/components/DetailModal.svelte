@@ -96,6 +96,23 @@
   // A hologram opens as a hologram: the zoomed card keeps the projection
   // style in the source holon's hue, and any foreign record (hologram or
   // federated) names where it came from next to its category.
+  // `picture` isn't in the LibraryItem interface (nothing writes one yet) but
+  // the record is open-ended, so read it through the index signature.
+  $: itemPicture = (item?.picture as string | undefined) || null;
+
+  // Tap the hero to see the whole photo: the card crops to a banner, and a
+  // task photographed in portrait (the usual, it comes from a phone) is mostly
+  // outside that band. The lightbox rides above the modal and takes Escape
+  // first, so one press backs out of the photo rather than the whole card.
+  let lightbox: { src: string; alt: string } | null = null;
+  function openLightbox(src: string | null | undefined, alt: string): void {
+    if (src) lightbox = { src: resolveImage(src), alt };
+  }
+  function onLightboxKey(e: KeyboardEvent): void {
+    if (!lightbox || e.key !== "Escape") return;
+    e.stopPropagation(); // …before Modal's window handler closes the card too
+    lightbox = null;
+  }
   $: rec = isThing ? item : quest;
   $: holo = isHologram(rec);
   $: srcGlow = sourceGlow(rec);
@@ -127,6 +144,7 @@
       editing = false;
       booking = false;
       message = "";
+      lightbox = null; // a new card means a new photo
       cancelBreakdown();
     }
   }
@@ -939,7 +957,28 @@
   <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
     {#if isThing && item}
       <!-- ── Library thing ─────────────────────────────────────────────── -->
-      <div class="icon-big">{getItemIcon({ type: item.type })}</div>
+      <!-- A thing's photo stands in for the type icon when it has one: the
+           icon says "this is a tool", the photo says WHICH tool. Nothing in
+           the kiosk writes `picture` on a library item yet — bot-created and
+           federated items may carry one, so render it wherever it turns up. -->
+      {#if itemPicture}
+        <button
+          class="hero-btn"
+          on:click={() => openLightbox(itemPicture, item.id)}
+          title={$t("detail.enlargePicture")}
+          aria-label={$t("detail.enlargePicture")}
+        >
+          <img
+            class="hero"
+            src={resolveImage(itemPicture)}
+            alt={item.id}
+            loading="lazy"
+            on:error={hideImg}
+          />
+        </button>
+      {:else}
+        <div class="icon-big">{getItemIcon({ type: item.type })}</div>
+      {/if}
       <h2>{item.id}</h2>
       <div class="chips">
         <span class="kind">{getTypeDisplayName(item.type)}</span>
@@ -1131,13 +1170,20 @@
       <!-- ── Calendar event / task ─────────────────────────────────────── -->
       {#if !editing}
         {#if quest.picture}
-          <img
-            class="hero"
-            src={resolveImage(quest.picture)}
-            alt={quest.title}
-            loading="lazy"
-            on:error={hideImg}
-          />
+          <button
+            class="hero-btn"
+            on:click={() => openLightbox(quest.picture, quest.title)}
+            title={$t("detail.enlargePicture")}
+            aria-label={$t("detail.enlargePicture")}
+          >
+            <img
+              class="hero"
+              src={resolveImage(quest.picture)}
+              alt={quest.title}
+              loading="lazy"
+              on:error={hideImg}
+            />
+          </button>
         {/if}
         {#if quest.category || srcName}
           <div class="chips">
@@ -1463,6 +1509,29 @@
   </Modal>
 {/if}
 
+<!-- Escape is claimed in the capture phase so it never reaches Modal's own
+     window listener while the photo is up (both listen on window). -->
+<svelte:window on:keydown|capture={onLightboxKey} />
+
+{#if lightbox}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="lightbox"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-label={lightbox.alt}
+    on:click={() => (lightbox = null)}
+  >
+    <img src={lightbox.src} alt={lightbox.alt} />
+    <button
+      class="lb-x"
+      on:click={() => (lightbox = null)}
+      aria-label={$t("common.close")}>✕</button
+    >
+  </div>
+{/if}
+
 {#if celebrate}
   <Confetti />
 {/if}
@@ -1480,14 +1549,57 @@
     text-decoration: underline;
     overflow-wrap: anywhere;
   }
-  .hero {
+  .hero-btn {
     display: block;
     width: 100%;
-    max-height: 240px;
-    object-fit: cover;
-    border-radius: 14px;
+    padding: 0;
     margin: 0 0 0.7rem;
+    background: none;
+    border: 0;
+    cursor: zoom-in;
+  }
+  /* Whole picture, not a crop of it: phone photos arrive portrait, and a
+     `cover` banner showed a band across the middle of one. Sized by height so
+     a tall photo keeps its shape and centres instead of letterboxing. */
+  .hero {
+    display: block;
+    max-width: 100%;
+    max-height: 42dvh;
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+    border-radius: 14px;
     background: rgba(0, 0, 0, 0.05);
+  }
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 60; /* above Modal's backdrop (50) */
+    display: grid;
+    place-items: center;
+    padding: 1.2rem;
+    background: rgba(12, 20, 19, 0.88);
+    animation: kiosk-fade 0.18s ease both;
+    cursor: zoom-out;
+  }
+  .lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 10px;
+  }
+  .lb-x {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.18);
+    display: grid;
+    place-items: center;
   }
   .kind {
     display: inline-block;

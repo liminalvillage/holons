@@ -15,6 +15,20 @@
   function close() {
     dispatch("close");
   }
+  // Dismiss on CLICK, not pointerdown. Closing on pointerdown unmounts the
+  // backdrop before the browser dispatches the paired click, which then lands
+  // on whatever is now under the finger — a card, or its ✕/✓ corner button —
+  // so a tap meant to dismiss the sheet deleted or completed a task instead.
+  // Requiring the pointer to have both gone down AND come up on the backdrop
+  // keeps a drag that merely ends outside the card from dismissing it.
+  let downOnBackdrop = false;
+  function onBackdropDown() {
+    downOnBackdrop = true;
+  }
+  function onBackdropClick() {
+    if (downOnBackdrop) close();
+    downOnBackdrop = false;
+  }
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") close();
   }
@@ -23,7 +37,11 @@
 <svelte:window on:keydown={onKey} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="backdrop" on:pointerdown|self={close}>
+<div
+  class="backdrop"
+  on:pointerdown|self={onBackdropDown}
+  on:click|self={onBackdropClick}
+>
   <div
     class="card"
     class:holo

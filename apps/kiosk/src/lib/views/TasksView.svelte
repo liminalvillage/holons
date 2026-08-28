@@ -1243,8 +1243,9 @@
   .note h3 {
     margin: 0;
     /* Symmetric clearance so the centred title never tucks under the corner
-       complete button (top-right). */
-    padding: 0 1.7rem;
+       delete (top-left) / complete (top-right) buttons — a finger on the
+       title's edge must not land on ✕. */
+    padding: 0 2rem;
     font-size: 0.98rem;
     line-height: 1.25;
     color: var(--ink);
