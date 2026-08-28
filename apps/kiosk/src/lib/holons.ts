@@ -148,6 +148,7 @@ function asUrl(raw: string): URL | null {
  *
  *   -1001234567890                       a holon id straight from the bot
  *   liminal                              a registered label
+ *   This holon ID is -1001234567890      the whole `/id` reply, pasted
  *   https://t.me/c/1234567890/42         "Copy link" on a message in the group
  *   https://dashboard.holons.io/-100…    what `/dashboard` replies with
  *   https://liminal.hubs.network         a hub's own screen
@@ -190,4 +191,41 @@ export function parseHolonRef(input: string): string | null {
     if (id) return id;
   }
   return null;
+}
+
+/**
+ * Ids the way people actually arrive with them: not typed, but pasted whole
+ * out of Telegram. The landing page tells them to run `/id`, and the reply is
+ * a sentence — "This holon ID is -1001234567890" — so the field has to read an
+ * id out of prose as well as on its own.
+ *
+ * Only a Telegram chat id counts here: `-100`-prefixed, or a bare run of
+ * digits long enough to be a user id. A stray "42" in a sentence is not an
+ * id, and a registered label ("liminal") is only honoured as the whole input,
+ * where `parseHolonRef` already resolves it — picking words out of prose and
+ * hoping one is a label would fire on any sentence containing that word.
+ */
+const ID_IN_TEXT = /(?:^|[^\d-])(-100\d{6,}|-?\d{6,})(?![\d])/;
+
+/**
+ * `parseHolonRef`, plus a last pass that finds an id embedded in pasted text.
+ * Kept separate so the strict parse stays available (and testable) on its own.
+ */
+export function parseHolonPaste(input: string): string | null {
+  const strict = parseHolonRef(input);
+  if (strict) return strict;
+
+  const raw = (input ?? "").trim();
+  // A pasted line can carry a LINK with the id in it as easily as a bare
+  // number, so retry each link-shaped token on its own. Link-shaped ONLY:
+  // handing every word to parseHolonRef would let a sentence that merely
+  // mentions a hub's name ("we met the liminal crew") redirect the screen.
+  for (const token of raw.split(/\s+/)) {
+    const clean = token.replace(/^[(<\[]+|[)>\].,;:!?]+$/g, "");
+    if (!/^(https?:\/\/|[\w-]+(\.[\w-]+)+\/)/i.test(clean)) continue;
+    const id = parseHolonRef(clean);
+    if (id) return id;
+  }
+  const m = ID_IN_TEXT.exec(raw);
+  return m ? m[1] : null;
 }

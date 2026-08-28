@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readHolonSettings } from '@holons/core/settings';
   import { getContext, onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -43,7 +44,16 @@
 
   async function ensureSdgHolon() {
     try {
-      await holosphere.put(sdgHolonId, 'settings', { name: `SDG ${sdg?.number}: ${sdg?.title}` });
+      // `id` is required: a put without one makes ContentOps.put mint a RANDOM
+      // key, so this ran on every page view and left a fresh orphan record on
+      // the settings lens each time. Merged over what is stored so re-running
+      // it cannot wipe a name someone edited.
+      const existing = (await readHolonSettings(holosphere, sdgHolonId)) ?? {};
+      await holosphere.put(sdgHolonId, 'settings', {
+        ...existing,
+        id: sdgHolonId,
+        name: `SDG ${sdg?.number}: ${sdg?.title}`
+      });
     } catch (e) {
       // non-fatal
     }
@@ -102,7 +112,7 @@
     const id = newHolonId.trim() || newHolonName.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,64);
     // optionally seed a settings name
     try {
-      await holosphere.put(id, 'settings', { name: newHolonName.trim() });
+      await holosphere.put(id, 'settings', { id, name: newHolonName.trim() });
       await holosphere.federate(sdgHolonId, id, null, null, true, { inbound: [], outbound: [] });
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();

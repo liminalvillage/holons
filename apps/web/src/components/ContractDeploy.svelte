@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readHolonSettings } from '@holons/core/settings';
   import { onMount, getContext } from 'svelte';
   import { ethers } from 'ethers';
   import { walletAddress } from '../dashboard/store';
@@ -270,7 +271,15 @@
     console.log('[SaveContract] Saving holon contract:', contractData);
 
     try {
-      await holosphere.put(holonId, 'settings', contractData);
+      // Merged onto the canonical settings document and stamped with `id`.
+      // Without the stamp ContentOps.put mints a random key, so every deploy
+      // left another orphan record that `loadHolonContract` could never find.
+      const existing = (await readHolonSettings(holosphere, holonId)) ?? {};
+      await holosphere.put(holonId, 'settings', {
+        ...existing,
+        id: holonId,
+        ...contractData
+      });
       console.log('[SaveContract] Successfully saved holon contract to Nostr');
       // Record the new holon in the global registry so it shows up in the
       // global view for everyone. Best-effort: never throws.
@@ -290,7 +299,9 @@
     if (!holosphere || !holonId) return null;
 
     try {
-      const settings = await holosphere.getAll(holonId, 'settings');
+      // `getAll` returns an ARRAY, so the old `settings?.bundle?.address` here
+      // was always undefined and this function could never return a contract.
+      const settings = await readHolonSettings(holosphere, holonId);
       console.log('[LoadContract] Settings from Nostr:', settings);
 
       if (settings?.bundle?.address) {

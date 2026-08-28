@@ -13,6 +13,13 @@
   } from '../../lib/scoring/ContributionScoring';
   import { REAAggregator, ZERO_USER_AGGREGATES, computeHolonUserScores, scoreHolonUsers, toAggregates, type UserAggregates } from '@holons/core/scoring';
   import { getEventStore } from '../../lib/rea/eventStore';
+  import { syncAllocation } from '../../lib/holons/allocationSync';
+  import {
+    saveBundleRecord,
+    readBundleRecord,
+    readZoneAssignments,
+    migrateLegacyBundleRecord
+  } from '@holons/core/flows';
 
   import FlowHeader from './FlowHeader.svelte';
   import FlowControls from './FlowControls.svelte';
@@ -175,16 +182,32 @@
     try {
       loading = true;
 
-      // First, try to load bundle from holosphere settings
+      // First, try to load the bundle from the canonical settings document.
+      //
+      // This used to scan `getAll(...).find(s => s.bundle)`, because the writes
+      // below stored the bundle under a RANDOM key (a put with no `id` mints a
+      // new record every call). With more than one deploy that scan was a coin
+      // toss between the live address and a stale one. The writes are fixed;
+      // `migrateLegacyBundleRecord` folds any records the old code already
+      // scattered onto the canonical document and clears them away, so this
+      // read is a single keyed lookup.
       if (holosphere) {
         try {
-          const settings = await holosphere.getAll(holonId, 'settings');
-          const bundleSettings = settings?.find((s: any) => s.bundle)?.bundle;
+          const migration = await migrateLegacyBundleRecord(holosphere, holonId);
+          if (migration.movedBundle || migration.movedZones) {
+            console.log('[FlowMgmt] Migrated legacy settings records:', migration);
+            if (migration.ambiguous) {
+              showNotification(
+                'Recovered zone assignments from an older record — please check them.',
+                'info'
+              );
+            }
+          }
 
-          const isValidAddress = (addr: string) =>
-            addr && addr.startsWith('0x') && addr.length === 42;
+          const settings = await holosphere.get(holonId, 'settings', holonId);
+          const bundleSettings = readBundleRecord(settings);
 
-          if (bundleSettings?.address && isValidAddress(bundleSettings.address)) {
+          if (bundleSettings) {
             const contractSteepness = BigInt(bundleSettings.steepness || '500000000000000000');
             existingBundle = {
               address: bundleSettings.address,
@@ -268,12 +291,18 @@
       }
 
       if (federationData.length > 0) {
-        const settings = await holosphere.getAll(holonId, 'settings');
+        // Read the canonical settings document, not `getAll(...)[0]` — the
+        // lens can hold more than one record and index 0 is whichever Gun
+        // happened to list first. `readZoneAssignments` prefers the current
+        // `allocation.zones` and falls back to the legacy top-level
+        // `federationZones` for holons not yet migrated.
+        const settings = await holosphere.get(holonId, 'settings', holonId);
+        const savedZones = readZoneAssignments(settings);
         const holonsWithNames = await Promise.all(
           federationData.map(async (fed: any, index: number) => {
             const targetId = fed.targetId || fed.id || fed;
             const name = await awaitName(String(targetId));
-            const savedZone = settings?.[0]?.federationZones?.[targetId];
+            const savedZone = savedZones[String(targetId)];
             return {
               id: String(targetId),
               name,
@@ -442,17 +471,19 @@
           zonedAddress: finalAddress
         };
 
-        // Save to holosphere settings
+        // Save to holosphere settings. Through the core helper, which merges
+        // onto the canonical document and stamps `id` — a bare put here forked
+        // a fresh random-keyed record on every deploy and left the real
+        // settings document (name, hex, valueEquation, currencies) untouched
+        // by the bundle but clobbered by everything else.
         if (holosphere) {
-          await holosphere.put(holonId, 'settings', {
-            bundle: {
-              address: finalAddress,
-              creatorUserId: holonId,
-              steepness: contractSteepness.toString(),
-              nzones,
-              deployedAt: Date.now(),
-              txHash: result.transaction.hash
-            }
+          await saveBundleRecord(holosphere, holonId, {
+            address: finalAddress,
+            creatorUserId: holonId,
+            steepness: contractSteepness.toString(),
+            nzones,
+            deployedAt: Date.now(),
+            txHash: result.transaction.hash
           });
         }
 
@@ -530,13 +561,17 @@
         exteriorMembers: exteriorMembersData
       });
 
-      // Single transaction to sync everything
-      await manager.syncAll(existingBundle.address, {
-        interiorPercent,
-        steepness: contractSteepness,
-        nzones,
-        interiorMembers: interiorMembersData,
-        exteriorMembers: exteriorMembersData
+      // Single transaction to sync everything, then the off-chain mirror —
+      // both in `syncAllocation`, which the Flows board's allocation panel
+      // syncs through too, so the two editors cannot push different things.
+      await syncAllocation({
+        manager,
+        holosphere,
+        holonId,
+        bundleAddress: existingBundle.address,
+        draft: { interiorPercent, steepness, nzones },
+        members: interiorMembersData,
+        partners: federatedHolons.map(h => ({ id: h.id, zone: h.zone }))
       });
 
       // Update original values after successful sync
@@ -546,15 +581,6 @@
       assignedHolons.forEach(h => {
         originalZoneAssignments.set(h.id, h.zone);
       });
-
-      // Save zone assignments to holosphere
-      if (holosphere) {
-        const federationZones: Record<string, number> = {};
-        federatedHolons.forEach(h => {
-          federationZones[h.id] = h.zone;
-        });
-        await holosphere.put(holonId, 'settings', { federationZones });
-      }
 
       showNotification('All changes synced in a single transaction!', 'success');
     } catch (err: any) {

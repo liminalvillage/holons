@@ -8,6 +8,7 @@
   import ChecklistsView from "$lib/views/ChecklistsView.svelte";
   import RolesView from "$lib/views/RolesView.svelte";
   import StatusView from "$lib/views/StatusView.svelte";
+  import FlowsView from "$lib/views/FlowsView.svelte";
 </script>
 
 <div class="surface">
@@ -33,6 +34,8 @@
           <RolesView />
         {:else if $activeTab === "status"}
           <StatusView />
+        {:else if $activeTab === "flows"}
+          <FlowsView />
         {/if}
       </div>
     {/key}

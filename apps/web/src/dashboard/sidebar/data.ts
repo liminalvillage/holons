@@ -75,9 +75,17 @@ export const data = [
     link: "/federation",
   },
   {
+    // The on-chain editor. "Value Flows" below is the read-only picture over
+    // the same split — distinct entries on purpose, so the one that moves real
+    // money is never opened by accident.
     title: "Flow",
     icon: FlowIcon,
     link: "/flow",
+  },
+  {
+    title: "Value Flows",
+    icon: FlowIcon,
+    link: "/flows",
   },
   {
     title: "Settings",

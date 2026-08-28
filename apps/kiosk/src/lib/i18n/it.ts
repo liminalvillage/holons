@@ -212,6 +212,7 @@ export const it: Record<MessageKey, Msg> = {
   "tabs.checklists": "Liste",
   "tabs.roles": "Ruoli",
   "tabs.status": "Stato",
+  "tabs.flows": "Flussi",
 
   // Pill segments
   "pills.card": "Scheda",
@@ -476,6 +477,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.onLoanTo": "In prestito a {who}",
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",
+  "detail.enlargePicture": "Tocca per vedere l'immagine intera",
   "detail.copyTitle": "Copia questa scheda — incollala in qualsiasi holon",
   "detail.copy": "Copia",
   "detail.loginBorrowEdit":
@@ -603,158 +605,79 @@ export const it: Record<MessageKey, Msg> = {
     "Impossibile raggiungere il servizio vocale — controlla la connessione di rete.",
 
   // Home / landing page
-  "home.metaTitle": "Holons — coordinare ciò che già abbiamo",
+  "home.metaTitle": "Hubs Network — un hub per ogni gruppo",
   "home.metaDescription":
-    "Un protocollo aperto per gruppi che vogliono far circolare ciò che già hanno — tempo, strumenti, posti letto, terra, competenze, cura, denaro — senza trasformare tutto in merce. Avvia un holon su Telegram.",
+    "Ogni gruppo è un hub: i suoi strumenti, alle sue condizioni, connesso agli hub di cui si fida. Avviane uno su Telegram.",
 
-  "home.heroTitle": "Rendere le relazioni economicamente significative.",
+  "home.artNetAlt":
+    "Cinque hub disegnati come cerchi di membri, collegati fra loro, uno al centro.",
+  "home.artConnectAlt":
+    "Due hub affiancati, con cose che attraversano il confine in entrambe le direzioni.",
+
+  "home.heroTitle": "Non sei solo di passaggio. Ne diventi parte.",
   "home.heroLead":
-    "Holons è un protocollo aperto per gruppi che vogliono far circolare ciò che già hanno — tempo, strumenti, posti letto, terra, competenze, cura, denaro — senza trasformare tutto in merce.",
-  "home.heroNote":
-    "Libero e open source. Local-first e peer-to-peer. Il tuo holon è una chat di gruppo che hai già.",
-  "home.ctaStart": "Avvia un holon",
-  "home.ctaRead": "Che cos'è un holon?",
+    "Gli hub sono spazi dove si costruisce allo scoperto, tra discipline diverse, per i beni comuni. Questo è il livello su cui si coordinano: ogni gruppo è un hub, con i propri strumenti, alle proprie condizioni, connesso agli hub di cui si fida.",
 
-  "home.problemKicker": "Perché",
-  "home.problemTitle": "Viviamo dentro una strana contraddizione.",
-  "home.problemP1":
-    "Abbiamo più capacità di produrre, comunicare, coordinarci e condividere conoscenza che in qualsiasi altro momento della storia. Eppure quasi tutti continuiamo a organizzare la nostra vita intorno alla scarsità.",
-  "home.problemP2":
-    "Le case restano vuote mentre c'è chi non sa dove abitare. Chi ha capacità inutilizzata non riesce a incontrare chi ne ha bisogno. E il denaro è diventato la lingua in cui cose profondamente diverse — tempo, terra, cibo, cura, creatività, rischio, conoscenza — sono costrette a parlarsi.",
-  "home.fearsTitle": "E sotto tutto questo c'è la paura.",
-  "home.fear1": "Se do troppo, resterà abbastanza per me?",
-  "home.fear2": "Se smetto di guadagnare, chi si prenderà cura di me?",
-  "home.fear3": "Se condivido ciò che ho, qualcuno ne approfitterà?",
-  "home.fear4": "Se contribuisco adesso, qualcuno se ne ricorderà poi?",
-  "home.fearsNote":
-    "Queste paure non sono irrazionali. Le nostre istituzioni ci danno buone ragioni per averle.",
-  "home.problemP3":
-    "Il capitalismo ha risolto un profondo problema di coordinamento: i mercati hanno permesso a milioni di sconosciuti di cooperare senza doversi conoscere o fidare. Oggi ne abbiamo davanti un altro — milioni di persone possono cooperare senza dover trasformare in merce tutto ciò a cui tengono?",
+  "home.personalKicker": "Per una persona",
+  "home.personalTitle": "Il tuo hub personale",
+  "home.personalBody":
+    "Una chat privata è un hub tutto tuo: cosa stai costruendo, cosa hai, cosa ti serve — e tutto ciò che prendi in carico nella rete, in un unico posto.",
+  "home.personalButton": "Apri il tuo hub personale",
+  "home.groupKicker": "Per un gruppo",
+  "home.groupTitle": "Ogni gruppo è un hub",
+  "home.groupBody":
+    "Aggiungi il bot a un qualsiasi gruppo di chat — quello che usate già, o uno nuovo. Il gruppo stesso diventa l'hub: non c'è nulla da registrare, nessuno da invitare due volte, niente da spostare.",
+  "home.groupButton": "Aggiungi il bot a un gruppo",
+  "home.pathsNote":
+    "Sono entrambi hub veri, e ciascuno dei due può connettersi al resto della rete.",
 
-  "home.holonKicker": "Che cos'è un holon",
-  "home.holonTitle": "Un tutto, e una parte di qualcosa di più grande.",
-  "home.holonP1":
-    "La parola viene dal greco: holos (tutto) + on (parte). Il tuo corpo è un holon — un organismo intero, e insieme parte di una famiglia, di una comunità, di un ecosistema. Una squadra è un holon. Lo sono anche una casa, una cooperativa, un quartiere, una bioregione.",
-  "home.holonP2":
-    "Qualsiasi gruppo può funzionare così: autonomo al proprio interno, componibile con altri holon all'esterno. Quattro domande lo rendono possibile, e ciascuna ha una primitiva nel protocollo.",
-  "home.pillar1Title": "Membrana",
-  "home.pillar1Body":
-    "Un confine flessibile che dice chi è dentro, a cosa serve l'holon e cosa gli sta a cuore. Semipermeabile: persone, risorse e informazioni lo attraversano alle condizioni che l'holon si dà da sé.",
-  "home.pillar2Title": "Equazione di valore",
-  "home.pillar2Body":
-    "Ogni holon decide che cosa conta — ore, risultati, apprezzamenti, le relazioni che qualcuno porta. Due holon con lo stesso software possono far crescere culture molto diverse, semplicemente regolando i pesi.",
-  "home.pillar3Title": "Splitter e soglie",
-  "home.pillar3Body":
-    "Le risorse che arrivano vengono instradate invece che accumulate: prima si copre ciò di cui l'holon ha davvero bisogno, poi il surplus trabocca verso le persone e i progetti che lo fanno prosperare.",
-  "home.pillar4Title": "Federazione",
-  "home.pillar4Body":
-    "Gli holon dichiarano fiducia verso altri holon — può essere leggera come condividere gli apprezzamenti o impegnativa come un fondo di mutuo aiuto comune. Bilaterale, revocabile, e mai al prezzo dell'autonomia.",
+  "home.toolsKicker": "Ogni hub",
+  "home.toolsTitle": "I suoi strumenti, alle sue condizioni.",
+  "home.toolsLead":
+    "Ogni hub riceve lo stesso set e decide cosa usare, chi può vederlo e cosa conta come contributo. Non una singola app o un unico sistema di valori — una costellazione di hub che si sviluppano l'uno con l'altro.",
+  "home.tool1": "Compiti",
+  "home.tool2": "Calendario",
+  "home.tool3": "Biblioteca delle cose",
+  "home.tool4": "Ruoli e turni",
+  "home.tool5": "Liste",
+  "home.tool6": "Offerte e bisogni",
+  "home.tool7": "Spese e flussi",
+  "home.tool8": "Una memoria dei contributi",
+  "home.toolsNote":
+    "Questo schermo è uno di loro: puntalo su un hub e diventa la sua bacheca, appesa al muro accanto alla porta.",
 
-  "home.layerKicker": "Cosa fa il software",
-  "home.layerTitle": "Rende visibili i flussi.",
-  "home.layerP1":
-    "Niente viene messo in comune per forza. Piuttosto, uno strato digitale impara a vedere la rete: dove ci sono letti liberi, attrezzi inutilizzati, eccedenze di cibo, terra disponibile, competenze, progetti che cercano aiuto e persone che cercano lavoro.",
-  "home.layerSay": "Così che chiunque possa dire:",
-  "home.say1": "Questo ce l'ho.",
-  "home.say2": "Di questo ho bisogno.",
-  "home.say3": "Questo posso offrirlo.",
-  "home.say4": "Questo sto cercando di creare.",
-  "home.layerP2":
-    "E l'AI continua a creare connessioni che nessuno potrebbe tenere in testa. «Ti serve una contabile — Sofia ha tre ore libere questa settimana.» «Il mese prossimo ci sono sei letti liberi.» «Quattro persone qui hanno le competenze che mancano a questo progetto.»",
-  "home.mapsTitle": "Cosa custodisce un holon",
-  "home.map1": "Persone",
-  "home.map2": "Luoghi",
-  "home.map3": "Bisogni",
-  "home.map4": "Offerte",
-  "home.map5": "Progetti",
-  "home.map6": "Risorse",
-  "home.map7": "Una memoria dei contributi",
-  "home.memoryP":
-    "È l'ultima a contare di più. Il sistema ricorda chi si è preso cura degli altri nei momenti difficili, chi ha riparato il tetto, chi ha passato tre mesi a rendere sostenibile il lavoro di qualcun altro — non per dargli un prezzo. Lo scopo non è il capitalismo con un foglio di calcolo migliore. È avere memoria dove prima c'erano solo fiducia o burocrazia — ed è la memoria che permette alla fiducia di andare oltre le persone che già conosci.",
+  "home.fedKicker": "Connettori",
+  "home.fedTitle": "Come si connettono gli hub.",
+  "home.fedP1":
+    "Un hub dichiara fiducia verso un altro hub e le cose attraversano il confine: lavoro che cerca mani, strumenti e spazi che potrebbero circolare, persone che si spostano da un hub all'altro, bisogni che qualcuno lì vicino può soddisfare, apprezzamenti che viaggiano con chi se li è guadagnati.",
+  "home.fedP2":
+    "Solo ciò che ciascuna parte pubblica, in entrambe le direzioni, revocabile in qualsiasi momento. Nessun hub rinuncia a governarsi per far parte di qualcosa di più grande — privacy, autosovranità e potere decentralizzato sono il modo in cui il software è costruito, non una promessa sulle intenzioni.",
+  "home.fedP3":
+    "Non possiamo dipendere dal sistema che mettiamo in discussione. Scegliamo invece di dipendere gli uni dagli altri. Come rete.",
 
-  "home.designKicker": "Per come è fatto",
-  "home.designTitle": "Sovranità, non sorveglianza.",
-  "home.designLead":
-    "Un sistema capace di vedere una rete è anche capace di sorvegliarla. Perciò questi sono vincoli sul software, non promesse sulle intenzioni.",
-  "home.design1": "La partecipazione è volontaria — sempre, a ogni livello.",
-  "home.design2": "Informazioni diverse hanno visibilità diverse.",
-  "home.design3": "Puoi contestare ciò che il sistema dice di te.",
-  "home.design4": "L'AI suggerisce; le persone restano libere di dire no.",
-  "home.design5": "Il contributo non si riduce mai a un unico punteggio.",
-  "home.design6": "La cura non viene mai resa equivalente al denaro.",
-  "home.design7":
-    "Resta sempre spazio per doni che spariscono senza essere registrati.",
-  "home.design8":
-    "La rete non appartiene a chi ha scritto il software: open source, local-first, peer-to-peer. L'infrastruttura con cui cooperiamo è essa stessa un bene comune.",
-
-  "home.levelsKicker": "Come cresce",
-  "home.levelsTitle": "Abbastanza piccolo da iniziare oggi.",
-  "home.levelsLead":
-    "Puoi fermarti dopo qualsiasi passo. Ognuno ti lascia un holon funzionante.",
-  "home.level0Tag": "Livello 0",
-  "home.level0Title": "Una chat di gruppo",
-  "home.level0Body":
-    "Crea un gruppo, scrivi il suo scopo nella descrizione, invita le persone. È già un holon: una membrana, uno scopo condiviso e dei membri.",
-  "home.level1Tag": "Livello 1",
-  "home.level1Title": "Aggiungi il bot",
-  "home.level1Body":
-    "Il coordinamento informale diventa una traccia attribuibile. /task dà un nome al lavoro, /appreciate lo riconosce, /offer e /request aprono una bacheca di ciò che potrebbe circolare, /status mostra a che punto è ciascuno.",
-  "home.level2Tag": "Livello 2",
-  "home.level2Title": "Dì cosa conta",
-  "home.level2Body":
-    "Descrivi i vostri valori e le vostre pratiche, poi regola i pesi dell'equazione di valore. Non esiste una risposta giusta universale — l'equazione è la cultura.",
-  "home.level3Tag": "Livello 3",
-  "home.level3Title": "Federati",
-  "home.level3Body":
-    "Trova un holon fratello che fa un lavoro affine e dichiara la fiducia. Quest, offerte, richieste e apprezzamenti possono poi attraversare il confine — solo quelli che ciascuno sceglie di pubblicare.",
-  "home.level4Tag": "Livello 4",
-  "home.level4Title": "Apri agli agenti",
-  "home.level4Body":
-    "Collega un agente AI e diventa un partecipante invece che uno spettatore: legge lo stato dell'holon e agisce esattamente con le stesse regole di tutti gli altri.",
-
-  "home.startKicker": "Inizia",
-  "home.startTitle": "Avvia un holon.",
-  "home.startLead":
-    "Ci vuole circa un minuto, e succede dove già parlate: Telegram.",
-  "home.step1":
-    "Tocca il pulsante. Telegram si apre e ti chiede in quale gruppo aggiungere @{bot}.",
-  "home.step2":
-    "Scegli un gruppo che hai già, o creane uno nuovo con le persone con cui vuoi cominciare.",
-  "home.step3":
-    "Rendi il bot amministratore, scrivi lo scopo nella descrizione del gruppo e digita /task. Quello è un holon.",
-  "home.startButton": "Aggiungi {bot} a un gruppo",
-  "home.startAlt": "Oppure apri prima una chat privata",
-  "home.startAltNote":
-    "Una chat diretta con @{bot} ti dà il tuo holon personale — dove converge il tuo lavoro in tutti i gruppi.",
-
-  "home.backTitle": "Bentornato.",
+  "home.backTitle": "Bentornatə.",
   "home.backLead":
-    "Appena il bot è nel gruppo, pubblica un link diretto a questa bacheca. Se te lo sei perso, digita /dashboard nel gruppo e incolla qui il link.",
-  "home.openTitle": "Hai già un holon?",
+    "Appena il bot entra nella tua chat, pubblica un link diretto a questa bacheca. Se te lo sei perso, lancia il comando qui sotto in quella chat e incolla qui la risposta.",
+  "home.openTitle": "Hai già un hub?",
   "home.openLead":
-    "Incolla il suo link o il suo id, e questo schermo diventa la sua bacheca.",
-  "home.openPlaceholder": "-1001234567890, o un link al tuo gruppo",
+    "Incolla il suo link o il suo id e questo schermo diventa la sua bacheca.",
+  "home.openHint":
+    "Scrivilo nella chat del tuo hub. Il bot risponde con l'id — incolla pure tutta la risposta, lo troverà.",
+  "home.openPlaceholder": "-1001234567890, oppure un link al tuo gruppo",
   "home.openButton": "Apri la bacheca",
   "home.openInvalid":
-    "Questo non indica ancora un holon. Prova con un id di holon, un link a un messaggio del tuo gruppo, o il link che ti dà /dashboard.",
-  "home.openAria": "Id o link dell'holon",
-
-  "home.closingKicker": "Dove porta",
-  "home.closingP1":
-    "Forse qualcuno nella rete perderà il proprio reddito e scoprirà di non aver perso il proprio sostentamento. C'è un posto dove stare. C'è del cibo. C'è chi ha bisogno delle sue competenze. C'è una comunità che ricorda ciò che ha già dato.",
-  "home.closingP2":
-    "Potrebbe essere quella la soglia — il momento in cui la sicurezza si sposta dal denaro accumulato alle relazioni accumulate.",
-  "home.closingP3":
-    "E la ricchezza diventa qualcosa che si può davvero vedere: terra sana, infrastrutture utili, conoscenza, relazioni di fiducia, lavoro che ha senso, luoghi di appartenenza, e una rete che sa prendersi cura dei suoi.",
+    "Qui dentro non c'è nessun id. Lancia /id nella chat del tuo hub e incolla la risposta del bot.",
+  "home.openAria": "Id o link dell'hub",
 
   "home.footerDocs": "Documentazione",
   "home.footerDashboard": "Dashboard web",
   "home.footerCommunity": "Chat della comunità",
   "home.footerSource": "Codice sorgente",
   "home.footerSetup": "Configura questo schermo",
-  "home.footerLicense": "Open source con licenza AGPL-3.0-or-later.",
+  "home.footerLicense":
+    "Open source con licenza AGPL-3.0-or-later — local-first, peer-to-peer, nessun hub che dipende dal server di qualcun altro.",
   "home.caretakerNote":
-    "Lo stai montando a parete? Le Impostazioni puntano lo schermo su un holon e lo ricordano su questo dispositivo — oppure apri il kiosk su /<id holon> e salti del tutto la configurazione.",
+    "Lo stai montando a parete? Le Impostazioni puntano lo schermo su un hub e lo ricordano su questo dispositivo — oppure apri il kiosk su /<id holon> e salti del tutto la configurazione.",
 
   // Shell
   "layout.resync": "Vista live in stallo — risincronizzazione…",
@@ -780,4 +703,45 @@ export const it: Record<MessageKey, Msg> = {
   "breakdown.rateLimit":
     "Limite di richieste OpenAI raggiunto — riprova tra poco.",
   "breakdown.failed": "Scomposizione AI non riuscita (HTTP {status}).",
+
+  "settings.flowsTab": "Pannello Flussi",
+  "settings.flowsTabSub":
+    "Da dove arriva il valore, dove va e come si ripartisce.",
+  "settings.flowsTabAria": "Mostra il pannello Flussi",
+  "settings.collective": "OpenCollective",
+  "settings.collectiveSub":
+    "Il collettivo di cui questo holon riporta il saldo.",
+  "settings.collectivePlaceholder": "slug o URL del collettivo",
+  "settings.collectiveFailed": "Impossibile salvare il collettivo.",
+  // Flows board
+  "flows.loading": "Lettura del registro\u2026",
+  "flows.empty": "Qui non si \u00e8 ancora mosso nulla.",
+  "flows.emptyTrack": "Nulla si \u00e8 mosso in questo periodo.",
+  "flows.emptyAllocation":
+    "Non ci sono ancora membri o partner con cui condividere.",
+  "flows.hub": "Holon",
+  "flows.movementTitle": "Movimento",
+  "flows.movementAbout":
+    "Da dove \u00e8 arrivato il valore e dove \u00e8 andato.",
+  "flows.allocationTitle": "Allocazione",
+  "flows.allocationAboutFunds": "Come viene ripartito {name}.",
+  "flows.allocationAboutShares": "Come viene ripartito il valore.",
+  "flows.allocationPot": "Totale",
+  "flows.interior": "Interno",
+  "flows.exterior": "Esterno",
+  "flows.zones": "Zone",
+  "flows.in": "Entrate",
+  "flows.out": "Uscite",
+  "flows.balance": "Saldo",
+  "flows.trackLabel": "Quale unit\u00e0 mostrare",
+  "flows.trackTime": "Ore",
+  "flows.trackAppreciation": "Kudos",
+  "flows.trackCredits": "Crediti",
+  "flows.unitHours": "h",
+  "flows.unitKudos": "kudos",
+  "flows.windowLabel": "In quale periodo",
+  "flows.window30": "30 giorni",
+  "flows.window90": "90 giorni",
+  "flows.windowAll": "Sempre",
+  "flows.collectiveFailed": "Impossibile raggiungere OpenCollective.",
 };

@@ -6,7 +6,8 @@
   // TasksView's pointer handlers key off the rows' data-task attributes, and
   // the resulting order persists as each quest's orderIndex.
   import { glide } from "$lib/glide";
-  import Avatars from "$lib/components/Avatars.svelte";
+  import Avatars, { hideImg } from "$lib/components/Avatars.svelte";
+  import { resolveImage } from "$lib/image";
   import { telegramUser } from "$lib/auth";
   import { sameId } from "$lib/personal";
   import type { BacklogTask } from "$lib/data";
@@ -62,6 +63,15 @@
           on:keydown={(e) => onKey(e, task.id)}
         >
           <span class="dot" aria-hidden="true"></span>
+          {#if task.picture}
+            <img
+              class="row-thumb"
+              src={resolveImage(task.picture)}
+              alt=""
+              loading="lazy"
+              on:error={hideImg}
+            />
+          {/if}
           <div class="text">
             <h3>{task.title}</h3>
             <div class="meta">
@@ -168,6 +178,16 @@
     border-radius: 50%;
     background: var(--dot);
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+  /* Same shape as the web dashboard's list rows: a small square between the
+     category dot and the title. */
+  .row-thumb {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 6px;
+    object-fit: cover;
+    background: rgba(0, 0, 0, 0.08);
   }
   .text {
     flex: 1;

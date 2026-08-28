@@ -24,7 +24,9 @@
     rolesPref,
     checklistsPref,
     statusEnabled,
+    flowsEnabled,
     settingsOpen,
+    showNotice,
   } from "$lib/stores";
   import { showHomePage } from "$lib/home";
   import {
@@ -36,6 +38,7 @@
     setRolesPref,
     setChecklistsPref,
     setStatusEnabled,
+    setFlowsEnabled,
     setThemeMode,
     setLangMode,
     DEFAULT_ACCENT,
@@ -43,8 +46,10 @@
     type LangMode,
   } from "$lib/config";
   import { themeMode } from "$lib/theme";
-  import { langMode, t, type MessageKey } from "$lib/i18n";
+  import { langMode, t, tr, type MessageKey } from "$lib/i18n";
   import { readSettingsHex } from "@holons/core/federation";
+  import { loadSettings } from "@holons/core/settings";
+  import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
   import { getHolosphere } from "$lib/holosphere";
   import FederationSettings from "./FederationSettings.svelte";
   import HexPicker from "./HexPicker.svelte";
@@ -217,6 +222,55 @@
   // It is a disclosure: settings stays scannable, and the equation is only
   // read from the graph once someone actually opens it.
   let eqOpen = false;
+
+  // ---- Flows board -------------------------------------------------------
+  // The collective slug is per-holon (it lives on the settings lens, not this
+  // device), so a hub that switches holons shows the right collective without
+  // anyone re-pasting anything. Written through the core helper, which merges
+  // over the existing settings document rather than replacing it.
+  let ocSlug = "";
+  let ocLoadedFor: string | null = null;
+  let ocSaving = false;
+
+  $: void loadCollectiveSlug($holonId);
+
+  async function loadCollectiveSlug(holon: string | null) {
+    if (holon === ocLoadedFor) return;
+    ocLoadedFor = holon;
+    ocSlug = "";
+    if (!holon) return;
+    try {
+      const hs = await getHolosphere();
+      const doc = await loadSettings(hs, holon);
+      if (ocLoadedFor !== holon) return; // holon changed while reading
+      ocSlug = readCollectiveSlug(doc);
+    } catch (err) {
+      console.warn("[kiosk] settings: collective slug read failed", err);
+    }
+  }
+
+  /** Commit on blur/Enter, the same as the other text fields here. */
+  async function commitCollective() {
+    const holon = $holonId;
+    if (!holon) return;
+    ocSaving = true;
+    try {
+      const hs = await getHolosphere();
+      // Accepts a pasted collective URL as readily as a bare slug, and hands
+      // back what was actually stored so the field shows the truth.
+      ocSlug = await saveCollectiveSlug(hs, holon, ocSlug);
+    } catch (err) {
+      console.error("[kiosk] settings: collective slug save failed", err);
+      showNotice(tr("settings.collectiveFailed"));
+    } finally {
+      ocSaving = false;
+    }
+  }
+
+  function commitFlows(on: boolean) {
+    setFlowsEnabled(on);
+    flowsEnabled.set(on);
+  }
 
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
   function blurOnEnter(e: KeyboardEvent) {
@@ -443,6 +497,46 @@
       {#if eqOpen}
         <ValueEquation holon={$holonId} />
       {/if}
+    </div>
+  {/if}
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.flowsTab")}
+      <span class="sub">{$t("settings.flowsTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$flowsEnabled}
+      role="switch"
+      aria-checked={$flowsEnabled}
+      aria-label={$t("settings.flowsTabAria")}
+      on:click={() => commitFlows(!$flowsEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <!--
+    Per-holon, not per-device: the slug lives on the settings lens so every
+    surface reading this holon finds the same collective.
+  -->
+  {#if $flowsEnabled && $holonId}
+    <div class="field">
+      {$t("settings.collective")}
+      <span class="sub">{$t("settings.collectiveSub")}</span>
+      <input
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder={$t("settings.collectivePlaceholder")}
+        bind:value={ocSlug}
+        disabled={ocSaving}
+        on:change={commitCollective}
+        on:keydown={blurOnEnter}
+      />
     </div>
   {/if}
 

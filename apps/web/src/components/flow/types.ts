@@ -79,48 +79,23 @@ export const ZONE_COLORS = [
   "#6366F1", // Zone 10 - Indigo
 ];
 
-// Calculate zone percentages based on steepness
-export function calculateZonePercentages(
-  steepness: number,
-  nzones: number,
-): number[] {
-  if (nzones <= 0) return [];
+// Zone percentages from the steepness decay.
+//
+// The implementation moved to `@holons/core/flows` so the kiosk (which has no
+// wallet and no d3) can compute the same split, and so there is exactly one
+// version of this math. Re-exported here to keep every existing import working.
+// `allocation.test.ts` in core pins the output against the numbers this file
+// used to produce.
+export { calculateZonePercentages } from "@holons/core/flows";
 
-  // steepness: 0-100, represents decay factor (higher = more even distribution)
-  const decay = steepness / 100;
-
-  let weights: number[] = [];
-  let total = 0;
-
-  for (let z = 0; z < nzones; z++) {
-    const weight = Math.pow(decay, z);
-    weights.push(weight);
-    total += weight;
-  }
-
-  // Normalize to percentages
-  if (total === 0) {
-    return weights.map(() => 100 / nzones);
-  }
-
-  return weights.map((w) => (w / total) * 100);
-}
-
-// Convert steepness from UI value (0-100) to contract value (BigInt)
-export function steepnessToContract(uiValue: number): bigint {
-  // Contract expects 0 < s < 1e18 (WAD scale, strictly between)
-  // Clamp to valid range: 1 to 999999999999999999 (just under 1e18)
-  const minValue = 1n;
-  const maxValue = BigInt(1e18) - 1n;
-  const scaled = BigInt(Math.floor((uiValue / 100) * 1e18));
-  if (scaled <= 0n) return minValue;
-  if (scaled >= BigInt(1e18)) return maxValue;
-  return scaled;
-}
-
-// Convert steepness from contract value (BigInt) to UI value (0-100)
-export function steepnessFromContract(contractValue: bigint): number {
-  return Number((contractValue * 100n) / BigInt(1e18));
-}
+// Steepness conversion between the UI scale (0-100) and the contract's WAD.
+//
+// It lives next to the contract calls in `lib/holons/allocationSync`, which is
+// what both allocation editors sync through. Re-exported here so every existing
+// import keeps working.
+export {
+  steepnessToContract,
+  steepnessFromContract,
+} from "../../lib/holons/allocationSync";
 
 export type { HolonBundle, FlowConfig };

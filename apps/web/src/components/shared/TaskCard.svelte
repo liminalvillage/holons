@@ -468,6 +468,13 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
+		/* A long single-word category (REQUIREMENTS) must ellipsis rather than
+		   push the row wider than the column it sits in. */
+		min-width: 0;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-due {
@@ -578,6 +585,26 @@
 		}
 		.row-title {
 			font-size: 0.9rem;
+		}
+	}
+
+	/* Narrower still (the calendar's unscheduled drawer, a resized side panel):
+	   the title is what a row IS, so everything decorative gives up its width
+	   before the title does — otherwise a 176px row squeezes it to a letter per
+	   line while a thumbnail and two avatars keep their full size. The dot stays
+	   (it carries the category in 0.9rem) and the detail modal carries the rest. */
+	@container (max-width: 340px) {
+		.row-thumb {
+			display: none;
+		}
+	}
+	@container (max-width: 270px) {
+		.row {
+			gap: 0.45rem;
+		}
+		.row-heart,
+		.row-avatars {
+			display: none;
 		}
 	}
 

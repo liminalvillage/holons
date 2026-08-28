@@ -33,6 +33,7 @@ const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
 const CHECKLISTS_KEY = "kiosk_checklists";
 const STATUS_KEY = "kiosk_status";
+const FLOWS_KEY = "kiosk_flows";
 const PINNED_KEY = "kiosk_pinned";
 const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
@@ -403,6 +404,20 @@ export function resolveStatusEnabled(): boolean {
 /** Persist the Status-tab toggle. */
 export function setStatusEnabled(on: boolean): void {
   persist(STATUS_KEY, on ? "1" : "0");
+}
+
+/**
+ * Whether the Flows board is shown. Like Status, a pure caretaker opt-in
+ * rather than content-driven: a hub with expenses still may not want its
+ * finances on a screen by the door.
+ */
+export function resolveFlowsEnabled(): boolean {
+  return persisted(FLOWS_KEY) === "1";
+}
+
+/** Persist the Flows-tab toggle. */
+export function setFlowsEnabled(on: boolean): void {
+  persist(FLOWS_KEY, on ? "1" : "0");
 }
 
 /**

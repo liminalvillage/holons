@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { readHolonSettings } from '@holons/core/settings';
 import { z } from 'zod';
 import { getApp } from '../holosphere.js';
 import type { ToolDeps } from './index.js';
@@ -48,8 +49,11 @@ export function registerHolosphereTools(server: McpServer, deps: ToolDeps): void
       const results = await Promise.all(
         subset.map(async (id) => {
           try {
-            const settings = await h.getAll(id, 'settings');
-            const s = Array.isArray(settings) ? settings[0] : null;
+            // Not `getAll(...)[0]`: the lens can hold several records and
+            // Gun's map order is undefined, so index 0 can be an unrelated one
+            // (imported calendars, a legacy id-less write) and the holon would
+            // list under its raw id instead of its name.
+            const s = await readHolonSettings(h as never, id);
             const name = s?.name || s?.title || id;
             return { id, name };
           } catch {
@@ -184,13 +188,13 @@ export function registerHolosphereTools(server: McpServer, deps: ToolDeps): void
     async ({ holon }) => {
       const h = await deps.getHoloSphere();
       const [settings, users, quests, events, roles] = await Promise.all([
-        h.getAll(holon, 'settings').catch(() => []),
+        readHolonSettings(h as never, holon).catch(() => null),
         h.getAll(holon, 'users').catch(() => []),
         h.getAll(holon, 'quests').catch(() => []),
         h.getAll(holon, 'events').catch(() => []),
         h.getAll(holon, 'roles').catch(() => []),
       ]);
-      const s = Array.isArray(settings) && settings[0] ? settings[0] : {};
+      const s = settings ?? {};
 
       return {
         content: [

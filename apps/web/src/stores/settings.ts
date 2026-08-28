@@ -1,4 +1,5 @@
 import { writable, derived } from "svelte/store";
+import { readHolonSettings } from "@holons/core/settings";
 import { browser } from "$app/environment";
 
 // Settings interface matching the Settings component
@@ -98,10 +99,12 @@ export const settingsHelpers = {
     try {
       if (!holosphere || !holonId) return;
 
-      const data = await holosphere.getAll(holonId, "settings");
+      // Not `getAll(...)[0]`: the lens can hold several records (imported
+      // calendars, legacy id-less writes) and Gun's map order is undefined.
+      const data = await readHolonSettings(holosphere, holonId);
 
-      if (data && data[0]) {
-        const loadedSettings = { ...defaultSettings, ...data[0], id: holonId };
+      if (data) {
+        const loadedSettings = { ...defaultSettings, ...data, id: holonId };
         settingsStore.set(loadedSettings);
         console.log("Settings loaded from holosphere:", loadedSettings);
 

@@ -42,6 +42,41 @@ export function hasBotToken(): boolean {
   return botTokens().length > 0;
 }
 
+// A token Telegram no longer accepts fails every call. Without remembering
+// that, every single image on a wall of picture-carrying tasks pays a dead
+// round-trip to api.telegram.org before falling through to the peer proxy —
+// which is the state a host whose .env still holds a rotated token sits in.
+// Park such a token briefly instead: long enough to stop the per-request tax,
+// short enough that a fresh value starts working without a restart.
+const deadTokens = new Map<string, number>();
+const DEAD_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Confirm with getMe before parking a token. The Bot API answers 401 for a
+ * well-formed but revoked token and 404 for one it doesn't recognise at all
+ * (which is what a rotated value in the environment looks like) — but a
+ * per-file failure is never proof about the token, so ask about the token
+ * directly. One extra call on the first failure, then nothing for DEAD_TTL_MS.
+ */
+async function markDeadIfRevoked(token: string): Promise<void> {
+  const resp = await fetch(`https://api.telegram.org/bot${token}/getMe`).catch(
+    () => null,
+  );
+  if (resp && !resp.ok) deadTokens.set(token, Date.now());
+}
+
+/** Configured tokens minus the ones Telegram just told us are revoked. */
+function liveTokens(): string[] {
+  const now = Date.now();
+  return botTokens().filter((token) => {
+    const at = deadTokens.get(token);
+    if (at === undefined) return true;
+    if (now - at < DEAD_TTL_MS) return false;
+    deadTokens.delete(token); // give it another chance
+    return true;
+  });
+}
+
 // Telegram guarantees a file_path stays valid for at least an hour; cached
 // entries expire well before that. Keyed by "<kind>:<id>", per server
 // instance.
@@ -57,6 +92,8 @@ async function getFile(token: string, fileId: string): Promise<string | null> {
   const resp = await fetch(
     `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
   );
+  if (resp.status === 401 || resp.status === 404)
+    await markDeadIfRevoked(token);
   if (!resp.ok) return null;
   const data = (await resp.json().catch(() => null)) as {
     ok?: boolean;
@@ -72,7 +109,7 @@ export async function resolveFileById(
   const key = `file:${fileId}`;
   const hit = cached(key);
   if (hit) return hit;
-  for (const token of botTokens()) {
+  for (const token of liveTokens()) {
     const path = await getFile(token, fileId);
     if (path) {
       const entry = { token, path };
@@ -94,10 +131,12 @@ export async function resolveAvatarFile(
   const key = `avatar:${userId}`;
   const hit = cached(key);
   if (hit) return hit;
-  for (const token of botTokens()) {
+  for (const token of liveTokens()) {
     const resp = await fetch(
       `https://api.telegram.org/bot${token}/getUserProfilePhotos?user_id=${encodeURIComponent(userId)}&limit=1`,
     );
+    if (resp.status === 401 || resp.status === 404)
+      await markDeadIfRevoked(token);
     if (!resp.ok) continue;
     const data = (await resp.json().catch(() => null)) as {
       ok?: boolean;

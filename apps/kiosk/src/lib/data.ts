@@ -467,6 +467,13 @@ export interface LibraryThing {
   id: string;
   title: string;
   type: string;
+  /**
+   * Optional photo of the thing, same encoding as a quest's (URL, data-URI or
+   * Telegram file_id — see `$lib/image`). Not part of core's `LibraryItem`
+   * interface: no writer sets one today, but bot-created and federated items
+   * can carry it, so it's read through the record's open index signature.
+   */
+  picture?: string | null;
   available: boolean;
   borrower?: string | null;
   /** Who has it out (Telegram id), for the "my things" filter. */
@@ -612,6 +619,7 @@ export function toThings(
       id: String(it.id ?? ""),
       title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
       type: String(it.type ?? "other"),
+      picture: (it.picture as string | undefined) ?? null,
       available: !it.borrowed,
       borrower: it.borrower ?? null,
       borrowerId: it.borrowerId ?? null,

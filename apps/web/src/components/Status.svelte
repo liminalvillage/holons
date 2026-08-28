@@ -11,6 +11,7 @@
     import { migrateEquation, type ScoreEquation } from "$lib/scoring/ContributionScoring";
     import { REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
+    import { readHolonSettings } from "@holons/core/settings";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
@@ -109,8 +110,11 @@
     // Function to save equation changes
     async function saveEquation() {
         try {
-            const settings = await holosphere.getAll(holonID, 'settings');
-            const currentSettings = settings && settings[0] ? settings[0] : {};
+            // Not `getAll(...)[0]`: the settings lens can hold more than one
+            // record (imported calendars, legacy id-less writes) and Gun's map
+            // order is undefined, so index 0 is a coin toss. Spreading the
+            // wrong record here would save it back over the real settings.
+            const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
 
             // Coerce every numeric field before migrating so a blank input
             // (which the browser hands us as null/NaN) doesn't poison the
@@ -188,8 +192,11 @@
 
         try {
             // Get current settings first to check for existing currencies
-            const settings = await holosphere.getAll(holonID, 'settings');
-            const currentSettings = settings && settings[0] ? settings[0] : {};
+            // Not `getAll(...)[0]`: the settings lens can hold more than one
+            // record (imported calendars, legacy id-less writes) and Gun's map
+            // order is undefined, so index 0 is a coin toss. Spreading the
+            // wrong record here would save it back over the real settings.
+            const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
             const existingCurrencies = Array.isArray(currentSettings.currencies) ? currentSettings.currencies : [];
 
             // Parse input and filter out duplicates (check against both local and saved currencies)
@@ -354,8 +361,7 @@
 
     async function loadEquation() {
         try {
-            const settings = await holosphere.getAll(holonID, 'settings');
-            const stored = settings && settings[0]?.valueEquation;
+            const stored = (await readHolonSettings(holosphere, holonID))?.valueEquation;
             if (stored && typeof stored === 'object') {
                 equation = migrateEquation(stored);
                 // If the stored shape was the legacy one with a top-level
@@ -363,7 +369,7 @@
                 // re-running this on every load. Best-effort; ignore failures.
                 if (typeof (stored as any).hours === 'number') {
                     holosphere.put(holonID, 'settings', {
-                        ...(settings[0] || {}),
+                        ...((await readHolonSettings(holosphere, holonID)) ?? {}),
                         id: holonID,
                         valueEquation: equation
                     }).catch((e: any) => console.warn('[Status] Could not persist migrated equation:', e?.message));

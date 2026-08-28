@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readHolonSettings } from '@holons/core/settings';
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
   import { skin, setSkin, accentOverride, setAccent, clearAccent, DEFAULT_ACCENT } from '$lib/stores/skin';
@@ -131,10 +132,13 @@
   async function loadSettings() {
     try {
       loading = true;
-      const data = await holosphere.getAll(holonId, 'settings');
+      // Not `getAll(...)[0]`: this component spreads what it reads and saves it
+      // straight back, so picking the wrong record (imported calendars, a
+      // legacy id-less write) would overwrite the holon's real settings with it.
+      const data = await readHolonSettings(holosphere, holonId);
 
-      if (data && data[0]) {
-        settings = { ...getDefaultSettings(holonId), ...data[0] };
+      if (data) {
+        settings = { ...getDefaultSettings(holonId), ...data };
       } else {
         settings = getDefaultSettings(holonId);
       }

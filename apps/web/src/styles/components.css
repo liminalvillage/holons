@@ -1153,6 +1153,9 @@ button.stats-bar__item:active {
   gap: 0.7rem;
   width: 100%;
   box-sizing: border-box;
+  /* So a row placed in a narrow column (a drawer, a side panel) can give the
+     title the room instead of squeezing it — see the queries below. */
+  container-type: inline-size;
   padding: 0.5rem 0.65rem;
   border-radius: 14px;
   background-color: var(--color-bg-secondary);
@@ -1262,6 +1265,22 @@ button.stats-bar__item:active {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
+  /* A long single-word category must ellipsis rather than push the row wider
+     than the column it sits in. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The title is what a row IS: in a narrow column the decorative parts give up
+   their width before it does. The dot stays — it carries the category in
+   0.9rem — and so do the actions, which are controls, not decoration. */
+@container (max-width: 340px) {
+  .list-row__icon {
+    display: none;
+  }
 }
 
 /* Actions pinned to the trailing edge. */

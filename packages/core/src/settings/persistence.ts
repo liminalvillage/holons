@@ -93,6 +93,95 @@ export async function loadSettings(
 }
 
 /**
+ * Fields that mark a record as an actual holon settings document.
+ *
+ * The settings lens is not guaranteed to hold exactly one record: some writers
+ * deliberately key a second one (CalendarSettings stores `imported_calendars`),
+ * and historically several wrote with no `id` at all, which makes
+ * `ContentOps.put` mint a random key. So "the settings doc" cannot be found by
+ * position.
+ */
+const SETTINGS_MARKERS = [
+  'name',
+  'language',
+  'timezone',
+  'theme',
+  'valueEquation',
+  'currencies',
+  'purpose',
+  'maxTasks',
+  'hex',
+  'admin',
+] as const;
+
+/** How many settings-ish fields a record carries. */
+function settingsAffinity(record: unknown): number {
+  const doc = (record ?? {}) as Record<string, unknown>;
+  let score = 0;
+  for (const key of SETTINGS_MARKERS) {
+    if (doc[key] !== undefined && doc[key] !== null && doc[key] !== '') score++;
+  }
+  return score;
+}
+
+/**
+ * Read a holon's settings document, safely.
+ *
+ * Prefer this over `getAll(holonId, 'settings')[0]`. That idiom is common in
+ * this repo and it is a bug: Gun's map iteration has no defined order, so index
+ * 0 is whichever record happened to arrive first. On a holon that has imported
+ * a calendar, index 0 can be the `imported_calendars` record — and a caller
+ * that then spreads it and saves it back copies calendar data into the holon's
+ * settings while losing its name, language and value equation.
+ *
+ * The lookup goes canonical-first:
+ *
+ *  1. the record keyed by the holon id — the only correct home, and where every
+ *     fixed writer now puts it;
+ *  2. failing that, a record in the lens whose own `id` matches (covers a keyed
+ *     write that has not replicated into the keyed read yet);
+ *  3. failing that, the orphan that most looks like a settings document.
+ *
+ * Step 3 is what keeps this from being a regression: holons whose name was
+ * written by one of the id-less writers have it in a randomly-keyed orphan and
+ * nothing under the canonical key, so a strict keyed read would blank them.
+ * Records carrying no settings markers at all (a lone `bundle`, a lone
+ * `federationZones`, `imported_calendars`) score zero and are never returned.
+ */
+export async function readHolonSettings(
+  holosphere: HoloSphere,
+  holonId: string
+): Promise<any | null> {
+  const id = String(holonId ?? '').trim();
+  if (!id) return null;
+
+  try {
+    const keyed = await holosphere.get(id, 'settings', id);
+    if (keyed) return keyed;
+  } catch {
+    // Fall through to the scan; a keyed-read failure is not proof of absence.
+  }
+
+  let records: any[] = [];
+  try {
+    records = (await (holosphere as any).getAll(id, 'settings')) ?? [];
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(records) || records.length === 0) return null;
+
+  const own = records.find((r) => r && String(r.id ?? '') === id);
+  if (own) return own;
+
+  const best = records
+    .map((r) => ({ record: r, affinity: settingsAffinity(r) }))
+    .filter((c) => c.affinity > 0)
+    .sort((a, b) => b.affinity - a.affinity)[0];
+
+  return best?.record ?? null;
+}
+
+/**
  * Saves raw settings for a holon to holosphere.
  *
  * Accepts any settings shape (web `HolonSettings`, telegram bot settings,

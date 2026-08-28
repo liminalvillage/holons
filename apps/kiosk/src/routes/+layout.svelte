@@ -18,6 +18,7 @@
     resolveRolesPref,
     resolveChecklistsPref,
     resolveStatusEnabled,
+    resolveFlowsEnabled,
     resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
@@ -53,6 +54,7 @@
     rolesPref,
     checklistsPref,
     statusEnabled,
+    flowsEnabled,
     taskViewMode,
     taskSort,
     libraryViewMode,
@@ -479,6 +481,7 @@
     rolesPref.set(resolveRolesPref());
     checklistsPref.set(resolveChecklistsPref());
     statusEnabled.set(resolveStatusEnabled());
+    flowsEnabled.set(resolveFlowsEnabled());
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
     libraryViewMode.set(resolveLibraryView());

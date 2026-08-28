@@ -24,6 +24,8 @@
     holoSeed,
   } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
+  import { hideImg } from "$lib/components/Avatars.svelte";
+  import { resolveImage } from "$lib/image";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import CalendarView from "./CalendarView.svelte";
   import {
@@ -213,7 +215,17 @@
               on:click={() => openThing(thing.id)}
               on:keydown={(e) => onKey(e, thing.id)}
             >
-              <div class="icon">{getItemIcon({ type: thing.type })}</div>
+              {#if thing.picture}
+                <img
+                  class="shot"
+                  src={resolveImage(thing.picture)}
+                  alt=""
+                  loading="lazy"
+                  on:error={hideImg}
+                />
+              {:else}
+                <div class="icon">{getItemIcon({ type: thing.type })}</div>
+              {/if}
               <h3>{thing.title}</h3>
               <span class="type">{typeName($t, thing.type)}</span>
               {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
@@ -260,7 +272,17 @@
                 on:click={() => openThing(thing.id)}
                 on:keydown={(e) => onKey(e, thing.id)}
               >
-                <div class="icon">{getItemIcon({ type: thing.type })}</div>
+                {#if thing.picture}
+                  <img
+                    class="shot"
+                    src={resolveImage(thing.picture)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                  />
+                {:else}
+                  <div class="icon">{getItemIcon({ type: thing.type })}</div>
+                {/if}
                 <h3>{thing.title}</h3>
                 <span class="type">{typeName($t, thing.type)}</span>
                 {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
@@ -294,9 +316,19 @@
                 on:click={() => openThing(thing.id)}
                 on:keydown={(e) => onKey(e, thing.id)}
               >
-                <span class="ricon" aria-hidden="true"
-                  >{getItemIcon({ type: thing.type })}</span
-                >
+                {#if thing.picture}
+                  <img
+                    class="rthumb"
+                    src={resolveImage(thing.picture)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                  />
+                {:else}
+                  <span class="ricon" aria-hidden="true"
+                    >{getItemIcon({ type: thing.type })}</span
+                  >
+                {/if}
                 <div class="text">
                   <h3>{thing.title}</h3>
                   <div class="meta">
@@ -433,6 +465,14 @@
     font-size: 1.5rem;
     line-height: 1;
   }
+  .rthumb {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 6px;
+    object-fit: cover;
+    background: rgba(0, 0, 0, 0.08);
+  }
   .row .text {
     flex: 1;
     min-width: 0;
@@ -498,6 +538,18 @@
   .icon {
     font-size: 2.1rem;
     line-height: 1;
+  }
+  /* A thing's photo, where it has one, stands in for the type emoji: same
+     slot, same footprint, so a shelf of mixed items still lines up. */
+  .shot {
+    width: 100%;
+    height: 4.4rem;
+    object-fit: cover;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.08);
+  }
+  .card.big .shot {
+    height: 8rem;
   }
   .card h3 {
     margin: 0.2rem 0 0;

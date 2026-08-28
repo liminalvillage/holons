@@ -15,6 +15,10 @@ export {
   saveSettings,
 } from './flow-settings.js';
 
+// The safe replacement for the `getAll(holonId, 'settings')[0]` idiom — see the
+// doc comment for why position is never a valid way to find the settings doc.
+export { readHolonSettings } from './persistence.js';
+
 export type {
   FederationPartnerView,
   FlowEdge,

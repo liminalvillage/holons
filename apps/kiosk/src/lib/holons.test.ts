@@ -8,6 +8,7 @@ import { describe, it as spec, expect } from "vitest";
 import {
   holonForHost,
   holonForPath,
+  parseHolonPaste,
   parseHolonRef,
   subdomainOf,
 } from "./holons";
@@ -116,4 +117,43 @@ describe("holonForHost", () => {
   spec("deeper labels still resolve by the one next to the base domain", () => {
     expect(holonForHost("staging.liminal.hubs.network")).toBe("-1003864542239");
   });
+});
+
+describe("parseHolonPaste", () => {
+  spec("reads the id out of the whole /id reply", () => {
+    expect(parseHolonPaste("This holon ID is -1001234567890")).toBe(
+      "-1001234567890",
+    );
+    expect(parseHolonPaste("🔑 Holon ID: -1001234567890")).toBe(
+      "-1001234567890",
+    );
+  });
+
+  spec("takes a personal holon id out of prose too", () => {
+    expect(parseHolonPaste("This holon ID is 235114395")).toBe("235114395");
+  });
+
+  spec("finds a link buried in a pasted line", () => {
+    expect(
+      parseHolonPaste("Open your board: https://t.me/c/1234567890/42 — enjoy"),
+    ).toBe("-1001234567890");
+  });
+
+  spec("still accepts everything the strict parse does", () => {
+    expect(parseHolonPaste("-1001234567890")).toBe("-1001234567890");
+    expect(parseHolonPaste("liminal")).toBe("-1003864542239");
+    expect(parseHolonPaste("  ")).toBeNull();
+  });
+
+  spec("does not mistake a short number in prose for an id", () => {
+    expect(parseHolonPaste("there are 42 quests open")).toBeNull();
+  });
+
+  spec(
+    "a label only counts as the whole input, never scraped from prose",
+    () => {
+      // Otherwise any sentence mentioning a hub's name would silently redirect.
+      expect(parseHolonPaste("we met the liminal crew last week")).toBeNull();
+    },
+  );
 });

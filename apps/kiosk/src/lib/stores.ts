@@ -98,6 +98,14 @@ export const checklistsPref = writable<TabPref>("auto");
  */
 export const statusEnabled = writable<boolean>(false);
 
+/**
+ * Whether the optional Flows board (value movement + allocation) is shown.
+ * Same shape as `statusEnabled`: a caretaker opt-in rather than one of the
+ * tri-state content-driven prefs, because a hub can hold expenses and still not
+ * want its finances on a screen by the front door. FlowsView owns its own reads.
+ */
+export const flowsEnabled = writable<boolean>(false);
+
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
 
@@ -320,6 +328,7 @@ export const TABS = [
   { id: "checklists", labelKey: "tabs.checklists", glyph: "☑" },
   { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
   { id: "status", labelKey: "tabs.status", glyph: "♛" },
+  { id: "flows", labelKey: "tabs.flows", glyph: "⇄" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
@@ -357,14 +366,21 @@ export const checklistsEnabled = derived(
  * content-driven) visibility above, Status only when the caretaker enabled it.
  */
 export const visibleTabs = derived(
-  [libraryEnabled, checklistsEnabled, rolesEnabled, statusEnabled],
-  ([$library, $checklists, $roles, $status]) =>
+  [
+    libraryEnabled,
+    checklistsEnabled,
+    rolesEnabled,
+    statusEnabled,
+    flowsEnabled,
+  ],
+  ([$library, $checklists, $roles, $status, $flows]) =>
     TABS.filter(
       (t) =>
         (t.id !== "library" || $library) &&
         (t.id !== "checklists" || $checklists) &&
         (t.id !== "roles" || $roles) &&
-        (t.id !== "status" || $status),
+        (t.id !== "status" || $status) &&
+        (t.id !== "flows" || $flows),
     ),
 );
 
