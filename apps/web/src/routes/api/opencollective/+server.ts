@@ -27,7 +27,7 @@ import {
   parseOpenCollectiveResponse,
 } from "@holons/core/flows";
 import {
-  verifySession,
+  verifySessionIdentity,
   authConfig,
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
@@ -56,11 +56,11 @@ export const GET: RequestHandler = async ({ url, cookies, fetch }) => {
 
   // Only gate when this deploy would be lending out its own credentials.
   if (token && import.meta.env.PROD) {
-    const profile = await verifySession(
+    const identity = await verifySessionIdentity(
       cookies.get(SESSION_COOKIE),
       authConfig().jwtSecret,
     );
-    if (!profile) {
+    if (!identity) {
       return json(
         { error: "Sign in to read the collective." },
         { status: 401 },

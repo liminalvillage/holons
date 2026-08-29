@@ -3,6 +3,7 @@
 	import { slide } from 'svelte/transition';
 	import { Key, ChevronDown, Copy, Check, LogOut } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+	import { authStore } from '$lib/stores/auth';
 	import { nostrUtils } from 'holosphere';
 
 	const { hexToNsec } = nostrUtils;
@@ -69,10 +70,9 @@
 	}
 
 	function logout() {
-		sessionStorage.setItem('just_logged_out', 'true');
-		nostrStore.clearKey();
 		dispatch('keyChanged', { action: 'exit' });
-		window.location.reload();
+		// One logout for every provider: clears the server session cookie too.
+		void authStore.logout();
 	}
 
 	function resetView() {

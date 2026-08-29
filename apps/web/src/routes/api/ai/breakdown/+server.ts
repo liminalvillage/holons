@@ -29,7 +29,7 @@ import {
   type BreakdownContextTask,
 } from "@holons/core/tasks";
 import {
-  verifySession,
+  verifySessionIdentity,
   authConfig,
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
@@ -170,11 +170,11 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
   }
 
   if (import.meta.env.PROD) {
-    const profile = await verifySession(
+    const identity = await verifySessionIdentity(
       cookies.get(SESSION_COOKIE),
       authConfig().jwtSecret,
     );
-    if (!profile) {
+    if (!identity) {
       return json({ error: "Sign in to use AI breakdown." }, { status: 401 });
     }
   }

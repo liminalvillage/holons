@@ -120,8 +120,19 @@ Under the hood it runs on **GunDB**, not raw Nostr:
   `HolonsDebug` (otherwise). `apps/web/src/configuration/config.ts` exposes
   the analogous `Holosphere` / `HolosphereDebug` helper.
 - A user's private key (Nostr-style hex) derives their public key, which is
-  their personal holon id. Telegram-mapped sessions are namespaced by
-  Telegram user id instead.
+  their personal holon id. Telegram sessions are namespaced by Telegram user
+  id instead (they sign with a per-user key derived server-side).
+- Sign-in (web, `@holons/core/auth`): every provider ends in a Nostr keypair
+  the HoloSphere signing layer can use — Telegram (suggested; OIDC + a
+  server-derived key), a **passkey** (WebAuthn PRF output → key, no server
+  store; bound to the `rpId` hostname, so localhost and production yield
+  different identities), the user's **own Nostr key** (nsec import or a new
+  key with a one-time backup), or an **Ethereum wallet** (deterministic
+  `personal_sign` of the frozen `ETH_IDENTITY_MESSAGE` → key; injected
+  wallets only). Key-based identities prove ownership to the web server with
+  a NIP-98 event (`POST /api/auth/key`) and share the same session cookie.
+  The derivation constants in `packages/core/src/auth/derive.ts` are frozen:
+  changing one rotates every user's identity.
 - Data is addressed as `<appName> → <holonId> → <lens> → <id>`. A "lens" is
   a typed slice of a holon (e.g. `quests`, `expenses`, `settings`, `users`).
 

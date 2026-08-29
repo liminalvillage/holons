@@ -86,8 +86,9 @@
 
 		// Telegram users are namespaced by their Telegram user id, so the URL and
 		// holon storage key reflect who they are (e.g. /12345678/...) rather
-		// than the underlying derived Nostr signing key. Falls back to the
-		// client pubkey only if there's no Telegram id (shouldn't happen now).
+		// than the underlying derived Nostr signing key. Key-based logins
+		// (passkey / Nostr key / Ethereum wallet) have no Telegram id: their
+		// holon id IS the signing pubkey.
 		const userPublicKey = pendingTelegramUserId
 			? String(pendingTelegramUserId)
 			: holosphere.client.publicKey;
@@ -201,12 +202,12 @@
 			const isGenuinelyNewUser = !!pendingNameForThisUser && !existingSettings;
 			const isFirstTimeUser = !existingSettings || !existingNameValid;
 
-			// Telegram is the primary identity flow now, so it writes
-			// settings/HNS/mappings just like a Nostr session. A new user is
-			// either one that arrived via the Create flow (pendingName set) or
-			// a fresh telegram user with no settings yet.
-			const isFreshTelegramUser = !!pendingTelegramUserId && !existingSettings;
-			if (isGenuinelyNewUser || isFreshTelegramUser) {
+			// Any verified identity — Telegram, passkey, Nostr key, wallet — that
+			// has no settings yet is a fresh user and gets its personal holon
+			// (settings + HNS) created here. Telegram-specific bookkeeping
+			// (telegram_mappings) stays gated on pendingTelegramUserId below.
+			const isFreshUser = !existingSettings;
+			if (isGenuinelyNewUser || isFreshUser) {
 				console.log('New user - creating personal holon:', holonName);
 				// Library default is 5s; splash needs faster. Local radisk
 				// ack returns in <100ms.

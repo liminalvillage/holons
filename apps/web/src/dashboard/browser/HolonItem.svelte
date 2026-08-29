@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X, Settings, ArrowDown, ArrowUp } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+	import { authStore } from '$lib/stores/auth';
 	import { nostrUtils } from 'holosphere';
 
 	const { hexToNsec } = nostrUtils;
@@ -133,9 +134,8 @@
 
 	function logout(event: MouseEvent) {
 		event.stopPropagation();
-		sessionStorage.setItem('just_logged_out', 'true');
-		nostrStore.clearKey();
-		window.location.reload();
+		// One logout for every provider: clears the server session cookie too.
+		void authStore.logout();
 	}
 
 	// Generate avatar initials from name

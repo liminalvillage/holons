@@ -16,7 +16,9 @@
   },
   "typesVersions": {
     "*": {
-      "*": ["./src/*/index.ts"]
+      "*": [
+        "./src/*/index.ts"
+      ]
     }
   },
   "scripts": {
@@ -29,7 +31,10 @@
   },
   "dependencies": {
     "holosphere": "workspace:*",
-    "ical.js": "^2.2.1"
+    "ical.js": "^2.2.1",
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.8.0",
+    "nostr-tools": "^2.23.5"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",

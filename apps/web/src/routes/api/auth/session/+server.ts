@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// GET    /api/auth/session — restore the logged-in user from the session cookie.
+// GET    /api/auth/session — restore the logged-in user from the session cookie
+//        (a Telegram profile + derived key, or a bare key identity).
 // DELETE /api/auth/session — log out (clear the cookie).
 //
 // In non-production builds, GET falls back to minting a session for the
@@ -11,9 +12,10 @@
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
-  verifySession,
+  verifySessionIdentity,
   buildAuthResult,
   mintSession,
+  mintKeySession,
   sessionCookieOptions,
   authConfig,
   SESSION_COOKIE,
@@ -36,10 +38,30 @@ function devProfile(): TelegramProfile | null {
 export const GET: RequestHandler = async ({ cookies, url }) => {
   const cfg = authConfig();
 
-  const profile = await verifySession(
+  const identity = await verifySessionIdentity(
     cookies.get(SESSION_COOKIE),
     cfg.jwtSecret,
   );
+  if (identity?.kind === "key") {
+    // Key-based identities (passkey / Nostr key / wallet) hold their own
+    // secret in the browser; the server only vouches for the pubkey. Kept
+    // out of `user` on purpose — the client treats `user` as a Telegram
+    // profile (numeric id).
+    const token = await mintKeySession(
+      { pubkey: identity.pubkey, provider: identity.provider },
+      cfg.jwtSecret,
+    );
+    cookies.set(
+      SESSION_COOKIE,
+      token,
+      sessionCookieOptions(url.protocol === "https:"),
+    );
+    return json({
+      user: null,
+      identity: { provider: identity.provider, pubkey: identity.pubkey },
+    });
+  }
+  const profile = identity?.kind === "telegram" ? identity.profile : null;
   if (profile) {
     // Sliding session: re-mint on every restore so active users never hit the
     // fixed JWT expiry — only SESSION_TTL_S of complete absence logs you out.
