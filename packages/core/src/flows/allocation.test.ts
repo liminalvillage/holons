@@ -31,6 +31,28 @@ const members = [
   { id: 'c', name: 'Cyd', percentage: 20 },
 ];
 
+describe('allocate dedupes repeated ids', () => {
+  it('yields one slice per member and per partner', () => {
+    const result = allocate({
+      total: 100,
+      config: { interiorPercent: 50, steepness: 1, nzones: 1 },
+      members: [
+        { id: 'a', name: 'A', percentage: 50 },
+        { id: 'a', name: 'A', percentage: 50 },
+        { id: 'b', name: 'B', percentage: 50 },
+      ],
+      zoned: [
+        { id: 'p', name: 'P', zone: 1 },
+        { id: 'p', name: 'P', zone: 1 },
+      ],
+    });
+    const ids = [...result.interior, ...result.exterior].map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const zone = result.exterior.find((s) => s.id === "zone-1");
+    expect(zone?.members?.map((m) => m.id)).toEqual(['p']);
+  });
+});
+
 describe('calculateZonePercentages', () => {
   it('matches the web implementation it was ported from', () => {
     for (const steepness of [0, 1, 25, 50, 75, 99, 100]) {

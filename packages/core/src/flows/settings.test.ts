@@ -143,6 +143,11 @@ describe('readZoneAssignments', () => {
 });
 
 describe('toAllocationPartners', () => {
+  it('drops duplicate and empty partner ids', () => {
+    const partners = toAllocationPartners(['p1', 'p1', '', 'p2'], {}, {});
+    expect(partners.map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
   it('pairs partners with their zone and name', () => {
     const partners = toAllocationPartners(['p1', 'p2'], { p1: 'One' }, { p1: 2 });
     expect(partners).toEqual([

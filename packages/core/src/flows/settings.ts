@@ -111,7 +111,10 @@ export function toAllocationPartners(
   partnerNames: Record<string, string>,
   zones: Record<string, number>,
 ): AllocationPartner[] {
-  return (federated ?? []).map((id) => ({
+  // The federation record can list a partner twice (double link, replayed
+  // write); UIs key on the id, so dedupe here rather than in every renderer.
+  const ids = [...new Set((federated ?? []).map((id) => String(id ?? '')).filter(Boolean))];
+  return ids.map((id) => ({
     id,
     name: partnerNames?.[id] || id,
     zone: zones[id] ?? 0,

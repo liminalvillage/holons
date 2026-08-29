@@ -139,6 +139,16 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
  * with no partners keeps its share and simply shows as unassigned — hiding it
  * would misreport how much is actually committed outward.
  */
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const id = String(item.id ?? '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 export function allocate(input: {
   total: number | null;
   unit?: string;
@@ -160,7 +170,10 @@ export function allocate(input: {
   // Interior: split by contribution score. Scores are re-normalized against
   // their own sum so a partial roster (or rounding in the scorer) still fills
   // the interior exactly rather than quietly losing value.
-  const members = input.members ?? [];
+  // Slices are keyed by id downstream; a roster or partner list that repeats
+  // an id (replayed graph reads) must not produce two slices for one party.
+  const members = uniqueById(input.members ?? []);
+  const zoned = uniqueById(input.zoned ?? []);
   const scoreTotal = members.reduce(
     (s, m) => s + (Number.isFinite(m.percentage) && m.percentage > 0 ? m.percentage : 0),
     0,
@@ -191,7 +204,7 @@ export function allocate(input: {
     for (let z = 0; z < config.nzones; z++) {
       const zone = z + 1;
       const percentage = (zonePercentages[z] / 100) * exteriorShare;
-      const partners = (input.zoned ?? []).filter((p) => p.zone === zone);
+      const partners = zoned.filter((p) => p.zone === zone);
       const each = partners.length > 0 ? percentage / partners.length : 0;
       exterior.push({
         id: `zone-${zone}`,
