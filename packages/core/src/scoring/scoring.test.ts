@@ -20,21 +20,62 @@ import {
   type UserAggregates,
 } from './index.js';
 
+/**
+ * A deliberately weighted equation for the arithmetic tests below. The
+ * shipped DEFAULT_EQUATION is egalitarian (all zeros), so the tests that
+ * check weighting maths need an explicit non-trivial one.
+ */
+const WEIGHTED = {
+  initiated: 1,
+  completed: 2,
+  sent: 1,
+  received: 1,
+  collaboration: 1,
+  participation: 0,
+  coParticipants: 0,
+  activity: 0,
+  groupSize: 0,
+  variance: 0,
+  currencies: { hour: 1 },
+};
+
 describe('DEFAULT_EQUATION', () => {
-  it('uses the canonical weights shared across UIs', () => {
+  it('is egalitarian: every weight is 0, including every currency', () => {
     expect(DEFAULT_EQUATION).toEqual({
-      initiated: 1,
-      completed: 2,
-      sent: 1,
-      received: 1,
-      collaboration: 1,
+      initiated: 0,
+      completed: 0,
+      sent: 0,
+      received: 0,
+      collaboration: 0,
       participation: 0,
       coParticipants: 0,
       activity: 0,
       groupSize: 0,
       variance: 0,
-      currencies: { hour: 1 },
+      currencies: { hour: 0 },
     });
+    for (const [key, value] of Object.entries(DEFAULT_EQUATION)) {
+      if (key === 'currencies') {
+        for (const weight of Object.values(value as Record<string, number>)) expect(weight).toBe(0);
+      } else {
+        expect(value).toBe(0);
+      }
+    }
+  });
+
+  it('gives every member an equal share regardless of activity', () => {
+    const rows = scoreHolonUsers(
+      [
+        { userId: 'busy', aggregates: toAggregates({ initiated: [1, 2, 3], completed: [1, 2], hours: 40 }), balances: { eur: 500 } },
+        { userId: 'idle', aggregates: toAggregates({}), balances: {} },
+        { userId: 'debtor', aggregates: toAggregates({}), balances: { eur: -300 } },
+      ],
+      DEFAULT_EQUATION,
+    );
+    for (const row of rows) {
+      expect(row.score).toBe(0);
+      expect(row.percentage).toBeCloseTo(100 / 3);
+    }
   });
 
   it('omits the deprecated top-level hours field', () => {
@@ -163,7 +204,7 @@ describe('calculateUserScore', () => {
       collaboration: 1,
     };
     // 3*1 + 2*2 + 5*1 + 1*1 = 3 + 4 + 5 + 1 = 13
-    expect(calculateUserScore(aggregates, DEFAULT_EQUATION)).toBe(13);
+    expect(calculateUserScore(aggregates, WEIGHTED)).toBe(13);
   });
 
   it('respects custom equation weights', () => {
@@ -198,7 +239,7 @@ describe('calculateUserScore', () => {
       collaboration: 0,
     };
     const equation = {
-      ...DEFAULT_EQUATION,
+      ...WEIGHTED,
       // Clear everything except the currency weights so the test is focused.
       initiated: 0, completed: 0, sent: 0, received: 0, hours: 0,
       collaboration: 0,
@@ -215,7 +256,7 @@ describe('calculateUserScore', () => {
       hours: 4, collaboration: 0,
     };
     // Migrated equation: currencies.hour = 2, hours mirrored to 2.
-    const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
+    const equation = { ...WEIGHTED, hours: 2, currencies: { hour: 2 } };
     // Without currencyBalances, hours fall-through path applies once: 4*2 = 8.
     expect(calculateUserScore(aggregates, equation)).toBe(8);
   });
@@ -225,7 +266,7 @@ describe('calculateUserScore', () => {
       initiated: 0, completed: 0, sent: 0, received: 0,
       hours: 4, collaboration: 0,
     };
-    const equation = { ...DEFAULT_EQUATION, hours: 2, currencies: { hour: 2 } };
+    const equation = { ...WEIGHTED, hours: 2, currencies: { hour: 2 } };
     // Explicit hour balance wins; aggregates.hours fallback is suppressed.
     expect(calculateUserScore(aggregates, equation, { hour: 4 })).toBe(8);
   });
@@ -236,7 +277,7 @@ describe('calculateScoreFromUserData', () => {
     expect(
       calculateScoreFromUserData(
         { initiated: [1, 2], completed: [1], hours: 3 },
-        DEFAULT_EQUATION,
+        WEIGHTED,
       ),
     ).toBe(2 + 2 + 3); // 2*1 + 1*2 + 3*1 = 7
   });
@@ -253,11 +294,11 @@ describe('getScoreBreakdown', () => {
         hours: 4,
         collaboration: 1,
       },
-      DEFAULT_EQUATION,
+      WEIGHTED,
     );
     expect(breakdown.initiated).toBe(2);
     expect(breakdown.completed).toBe(2);
-    // DEFAULT_EQUATION has currencies.hour=1, so hours flows through the
+    // WEIGHTED has currencies.hour=1, so hours flows through the
     // currency path; breakdown.hours equals currencies.hour.
     expect(breakdown.hours).toBe(4);
     expect(breakdown.currencies.hour).toBe(4);
@@ -268,13 +309,13 @@ describe('getScoreBreakdown', () => {
 
 describe('getActionScore', () => {
   it('returns initiated points', () => {
-    const s = getActionScore('initiated', 1, DEFAULT_EQUATION);
+    const s = getActionScore('initiated', 1, WEIGHTED);
     expect(s.type).toBe('initiated');
     expect(s.points).toBe(1);
   });
 
   it('maps "joined" to collaboration', () => {
-    const s = getActionScore('joined', 1, DEFAULT_EQUATION);
+    const s = getActionScore('joined', 1, WEIGHTED);
     expect(s.type).toBe('collaboration');
     expect(s.points).toBe(1);
   });
@@ -286,7 +327,7 @@ describe('calculateTaskCompletionScores', () => {
       'alice',
       ['bob', 'carol'],
       { bob: 2, carol: 0 },
-      DEFAULT_EQUATION,
+      WEIGHTED,
     );
     expect(scores.get('alice')?.total).toBe(1); // initiated
     expect(scores.get('bob')?.total).toBe(2 + 2 + 1); // completed + 2h + collab
@@ -347,7 +388,7 @@ describe('normalizeShares', () => {
 });
 
 describe('scoreHolonUsers', () => {
-  const eq = { ...DEFAULT_EQUATION, currencies: { hour: 1, eur: 1 } };
+  const eq = { ...WEIGHTED, currencies: { hour: 1, eur: 1 } };
   const loaded = [
     { userId: 'a', aggregates: { ...toAggregates({ initiated: [1], completed: [1] }) }, balances: { eur: 100 } },
     { userId: 'b', aggregates: { ...toAggregates({ initiated: [1] }) }, balances: { eur: -100 } },
@@ -384,7 +425,7 @@ describe('calculateAllUserScores', () => {
         { id: 'a', username: 'A', initiated: [1], completed: [1] },
         { id: 'b', username: 'B', initiated: [1, 2], completed: [] },
       ],
-      DEFAULT_EQUATION,
+      WEIGHTED,
     );
     expect(result[0].score).toBe(3); // 1 + 2
     expect(result[1].score).toBe(2); // 2 + 0
@@ -400,7 +441,7 @@ describe('getCachedEquation', () => {
     expect(eq).toEqual(DEFAULT_EQUATION);
     eq.initiated = 999;
     // Mutating the returned copy must not affect the canonical default.
-    expect(DEFAULT_EQUATION.initiated).toBe(1);
+    expect(DEFAULT_EQUATION.initiated).toBe(0);
   });
 });
 
@@ -497,7 +538,7 @@ describe('REAAggregator', () => {
         { eventType: 'quest:completed', provider: { id: 'u1' }, resource: {} },
       ]),
     );
-    const score = await aggregator.calculateUserScore('h1', 'u1', DEFAULT_EQUATION);
+    const score = await aggregator.calculateUserScore('h1', 'u1', WEIGHTED);
     // 1 initiated + 1*2 completed = 3
     expect(score).toBe(3);
   });

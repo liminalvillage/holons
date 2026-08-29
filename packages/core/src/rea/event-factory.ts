@@ -3,11 +3,21 @@
  *
  * Static factory class producing properly structured Resource-Event-Agent
  * events: quests, appreciation, expenses, time logs, items, offers/wants,
- * credits. Output matches the original JS factory so existing stored events
- * keep aggregating correctly.
+ * credits. Every event is a ValueFlows `EconomicEvent` (see `valueflows.ts`)
+ * and also carries the original JS factory's shape, so existing stored
+ * events keep aggregating correctly.
  */
 
 import type { REAEvent } from './event-store.js';
+import { normalizeAgent, normalizeReaEvent, type VfAgent } from './valueflows.js';
+
+/**
+ * Give an event both its ValueFlows and legacy views. Every factory method
+ * returns through here so the stored record is a `vf:EconomicEvent`.
+ */
+function vf(event: Record<string, unknown>): REAEvent {
+  return normalizeReaEvent(event) as REAEvent;
+}
 
 /** Loose user shape accepted by the factory (id required, name fields optional). */
 interface UserLike {
@@ -17,12 +27,11 @@ interface UserLike {
   [key: string]: any;
 }
 
-/** Agent object produced by the factory. */
-interface Agent {
-  id: string;
-  type: 'user' | 'holon' | 'external';
-  name?: string;
-}
+/**
+ * Agent reference produced by the factory: a `vf:Person` (users) or
+ * `vf:Organization` (holons, the outside world), with the legacy `type`.
+ */
+type Agent = VfAgent;
 
 /** Loose expense shape used by `expenseEvents`. */
 interface ExpenseLike {
@@ -81,29 +90,29 @@ export class REAEventFactory {
 
   /** Build a user Agent from a user-like object. */
   static createUserAgent(user: UserLike): Agent {
-    return {
+    return normalizeAgent({
       id: String(user.id),
       type: 'user',
       name: user.username || user.first_name || String(user.id),
-    };
+    });
   }
 
   /** Build a holon Agent. */
   static createHolonAgent(holonId: string | number, name: string | null = null): Agent {
-    return {
+    return normalizeAgent({
       id: String(holonId),
       type: 'holon',
       name: name || String(holonId),
-    };
+    });
   }
 
   /** Build an external Agent (used as the receiver for expense:paid). */
   static createExternalAgent(description: string): Agent {
-    return {
+    return normalizeAgent({
       id: 'external',
       type: 'external',
       name: description,
-    };
+    });
   }
 
   // ==================== Quest Events ====================
@@ -114,7 +123,7 @@ export class REAEventFactory {
     initiator: UserLike,
     quest: { id: string | number; title: string },
   ): REAEvent {
-    return {
+    return vf({
       id: this.stableEventId(holonId, 'quest_initiated', initiator.id, quest.id),
       timestamp: Date.now(),
       resource: {
@@ -131,7 +140,7 @@ export class REAEventFactory {
       },
       eventType: 'quest:initiated',
       status: 'confirmed',
-    };
+    });
   }
 
   /** Quest completed event. */
@@ -140,7 +149,7 @@ export class REAEventFactory {
     participant: UserLike,
     quest: { id: string | number; title: string },
   ): REAEvent {
-    return {
+    return vf({
       id: this.stableEventId(holonId, 'quest_completed', participant.id, quest.id),
       timestamp: Date.now(),
       resource: {
@@ -157,7 +166,7 @@ export class REAEventFactory {
       },
       eventType: 'quest:completed',
       status: 'confirmed',
-    };
+    });
   }
 
   /** Time logged event. */
@@ -168,7 +177,7 @@ export class REAEventFactory {
     questId: string | number | null = null,
     note: string | null = null,
   ): REAEvent {
-    return {
+    return vf({
       id: this.stableEventId(holonId, 'quest_time_logged', user.id, questId),
       timestamp: Date.now(),
       resource: {
@@ -185,7 +194,7 @@ export class REAEventFactory {
       },
       eventType: 'quest:time_logged',
       status: 'confirmed',
-    };
+    });
   }
 
   // ==================== Appreciation Events ====================
@@ -217,7 +226,7 @@ export class REAEventFactory {
     const receiverAgent = this.createUserAgent(receiver);
 
     return [
-      {
+      vf({
         id: `${baseId}_sent`,
         timestamp,
         resource: { type: 'appreciation', quantity: amount, unit: 'kudos' },
@@ -230,8 +239,8 @@ export class REAEventFactory {
         },
         eventType: 'appreciation:sent',
         status: 'confirmed',
-      },
-      {
+      }),
+      vf({
         id: `${baseId}_received`,
         timestamp,
         resource: { type: 'appreciation', quantity: amount, unit: 'kudos' },
@@ -244,7 +253,7 @@ export class REAEventFactory {
         },
         eventType: 'appreciation:received',
         status: 'confirmed',
-      },
+      }),
     ];
   }
 
@@ -281,7 +290,7 @@ export class REAEventFactory {
     })();
     const shareAmount = expense.amount / expense.splitWith.length;
 
-    events.push({
+    events.push(vf({
       id: `${baseId}_paid`,
       timestamp,
       resource: {
@@ -298,11 +307,11 @@ export class REAEventFactory {
       },
       eventType: 'expense:paid',
       status: 'confirmed',
-    });
+    }));
 
     expense.splitWith.forEach((userId, index) => {
       if (String(userId) !== String(expense.paidBy)) {
-        events.push({
+        events.push(vf({
           id: `${baseId}_share_${index}`,
           timestamp,
           resource: {
@@ -319,7 +328,7 @@ export class REAEventFactory {
           },
           eventType: 'expense:share',
           status: 'confirmed',
-        });
+        }));
       }
     });
 
@@ -335,7 +344,7 @@ export class REAEventFactory {
     currency: string,
     note: string | null = null,
   ): REAEvent {
-    return {
+    return vf({
       id: this.generateId(holonId),
       timestamp: Date.now(),
       resource: {
@@ -348,7 +357,7 @@ export class REAEventFactory {
       context: { holonId: String(holonId), note },
       eventType: 'transfer:direct',
       status: 'confirmed',
-    };
+    });
   }
 
   // ==================== Library/Item Events ====================
@@ -365,7 +374,7 @@ export class REAEventFactory {
     const timestamp = Date.now();
     const events: REAEvent[] = [];
 
-    events.push({
+    events.push(vf({
       id: `${baseId}_borrow`,
       timestamp,
       resource: {
@@ -379,10 +388,10 @@ export class REAEventFactory {
       context: { holonId: String(holonId), itemId: item.id },
       eventType: 'item:borrowed',
       status: 'confirmed',
-    });
+    }));
 
     if (credits > 0) {
-      events.push({
+      events.push(vf({
         id: `${baseId}_fee`,
         timestamp,
         resource: { type: 'credit', quantity: credits, unit: 'credits' },
@@ -391,11 +400,11 @@ export class REAEventFactory {
         context: { holonId: String(holonId), itemId: item.id },
         eventType: 'item:fee_paid',
         status: 'confirmed',
-      });
+      }));
     }
 
     if (deposit > 0) {
-      events.push({
+      events.push(vf({
         id: `${baseId}_deposit`,
         timestamp,
         resource: { type: 'credit', quantity: deposit, unit: 'credits' },
@@ -404,7 +413,7 @@ export class REAEventFactory {
         context: { holonId: String(holonId), itemId: item.id },
         eventType: 'item:deposit_held',
         status: 'pending',
-      });
+      }));
     }
 
     return events;
@@ -421,7 +430,7 @@ export class REAEventFactory {
     const timestamp = Date.now();
     const events: REAEvent[] = [];
 
-    events.push({
+    events.push(vf({
       id: `${baseId}_return`,
       timestamp,
       resource: {
@@ -435,10 +444,10 @@ export class REAEventFactory {
       context: { holonId: String(holonId), itemId: item.id },
       eventType: 'item:returned',
       status: 'confirmed',
-    });
+    }));
 
     if (depositAmount > 0) {
-      events.push({
+      events.push(vf({
         id: `${baseId}_deposit_return`,
         timestamp,
         resource: { type: 'credit', quantity: depositAmount, unit: 'credits' },
@@ -447,7 +456,7 @@ export class REAEventFactory {
         context: { holonId: String(holonId), itemId: item.id },
         eventType: 'item:deposit_returned',
         status: 'confirmed',
-      });
+      }));
     }
 
     return events;
@@ -463,7 +472,7 @@ export class REAEventFactory {
     amount: number,
     note: string | null = null,
   ): REAEvent {
-    return {
+    return vf({
       id: this.generateId(holonId),
       timestamp: Date.now(),
       resource: { type: 'credit', quantity: amount, unit: 'credits' },
@@ -472,7 +481,7 @@ export class REAEventFactory {
       context: { holonId: String(holonId), note },
       eventType: 'credit:issued',
       status: 'confirmed',
-    };
+    });
   }
 
   /** Credit transfer event (user -> user). */
@@ -483,7 +492,7 @@ export class REAEventFactory {
     amount: number,
     note: string | null = null,
   ): REAEvent {
-    return {
+    return vf({
       id: this.generateId(holonId),
       timestamp: Date.now(),
       resource: { type: 'credit', quantity: amount, unit: 'credits' },
@@ -492,7 +501,7 @@ export class REAEventFactory {
       context: { holonId: String(holonId), note },
       eventType: 'credit:transfer',
       status: 'confirmed',
-    };
+    });
   }
 }
 

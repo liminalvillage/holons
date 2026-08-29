@@ -1,36 +1,66 @@
 {
   "title": "rea_events",
-  "description": "Records stored at (holonId, 'rea_events', <id>). Resource-Event-Agent events. Intentionally loose \u2014 UIs add fields freely.",
+  "description": "Records stored at (holonId, 'rea_events', <id>). A ValueFlows vf:EconomicEvent (https://valueflo.ws) carrying the pre-ValueFlows Holons projection (eventType/resource/timestamp/context/status) alongside. Loose \u2014 UIs add fields freely.",
   "type": "object",
   "properties": {
-    "id": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "number",
-      "description": "Wall-clock ms."
-    },
-    "resource": {
-      "type": "object"
+    "id": { "type": "string" },
+    "action": {
+      "type": "string",
+      "description": "vf:action \u2014 one of the ValueFlows action vocabulary.",
+      "enum": ["produce", "consume", "use", "cite", "work", "pickup", "dropoff", "accept", "modify", "combine", "separate", "deliverService", "transferAllRights", "transferCustody", "transfer", "move", "copy", "raise", "lower"]
     },
     "provider": {
-      "type": "object"
+      "type": "object",
+      "description": "vf:provider \u2014 an Agent reference.",
+      "properties": {
+        "id": { "type": "string" },
+        "agentType": { "type": "string", "enum": ["Person", "Organization", "EcologicalAgent"] },
+        "name": { "type": "string" },
+        "type": { "type": "string", "description": "Legacy projection of agentType: user | holon | external." }
+      }
     },
     "receiver": {
-      "type": "object"
+      "type": "object",
+      "description": "vf:receiver \u2014 an Agent reference.",
+      "properties": {
+        "id": { "type": "string" },
+        "agentType": { "type": "string", "enum": ["Person", "Organization", "EcologicalAgent"] },
+        "name": { "type": "string" },
+        "type": { "type": "string" }
+      }
     },
-    "context": {
-      "type": "object"
+    "resourceQuantity": {
+      "type": "object",
+      "description": "vf:resourceQuantity \u2014 a vf:Measure.",
+      "properties": {
+        "hasNumericalValue": { "type": "number" },
+        "hasUnit": { "type": "string" }
+      },
+      "required": ["hasNumericalValue", "hasUnit"]
     },
-    "eventType": {
-      "type": "string"
+    "effortQuantity": {
+      "type": "object",
+      "description": "vf:effortQuantity \u2014 a vf:Measure of labour applied.",
+      "properties": {
+        "hasNumericalValue": { "type": "number" },
+        "hasUnit": { "type": "string" }
+      },
+      "required": ["hasNumericalValue", "hasUnit"]
     },
-    "status": {
-      "type": "string"
-    }
+    "resourceConformsTo": { "type": "string", "description": "vf:resourceConformsTo \u2014 ResourceSpecification id: appreciation | time | money | credit | item." },
+    "resourceInventoriedAs": { "type": "string", "description": "vf:resourceInventoriedAs \u2014 the concrete resource (library item id)." },
+    "resourceClassifiedAs": { "type": "array", "items": { "type": "string" }, "description": "vf:resourceClassifiedAs \u2014 tags." },
+    "hasPointInTime": { "type": "string", "format": "date-time", "description": "vf:hasPointInTime \u2014 ISO 8601 instant." },
+    "inScopeOf": { "type": "string", "description": "vf:inScopeOf \u2014 the holon id." },
+    "inputOf": { "type": "string", "description": "vf:inputOf \u2014 the quest (Process) id." },
+    "outputOf": { "type": "string", "description": "vf:outputOf \u2014 the quest (Process) id." },
+    "note": { "type": "string", "description": "vf:note." },
+
+    "timestamp": { "type": "number", "description": "Legacy projection of hasPointInTime: wall-clock ms." },
+    "resource": { "type": "object", "description": "Legacy projection: { type, quantity, unit, resourceId }." },
+    "context": { "type": "object", "description": "Legacy projection: { holonId, questId, itemId, expenseId, note }." },
+    "eventType": { "type": "string", "description": "Holons event kind, e.g. quest:completed; maps 1:1 to a ValueFlows action." },
+    "status": { "type": "string", "description": "confirmed | pending." }
   },
-  "required": [
-    "id",
-    "timestamp"
-  ]
+  "required": ["id", "action", "provider", "receiver", "hasPointInTime", "timestamp"]
 }

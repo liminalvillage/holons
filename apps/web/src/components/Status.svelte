@@ -9,7 +9,7 @@
     import PieChart3D from "./PieChart3D.svelte";
     import { expenseCurrency } from "../utils/expenseCalculations";
     import { migrateEquation, type ScoreEquation } from "$lib/scoring/ContributionScoring";
-    import { REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
+    import { DEFAULT_EQUATION, REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
     import { readHolonSettings } from "@holons/core/settings";
     import TitleBar from "./shared/TitleBar.svelte";
@@ -64,15 +64,9 @@
     let contractShares: Record<string, { sharePercent: number; etherFormatted: string }> = {};
     let contractSharesLoaded = false;
 
-    // Initialize equation with default values
-    let equation: Equation = migrateEquation({
-        initiated: 1,
-        completed: 1,
-        sent: 1,
-        received: 1,
-        collaboration: 1,
-        currencies: { hour: 1 }
-    });
+    // Initialize with the core default: egalitarian, every weight 0, until
+    // the holon's saved equation loads.
+    let equation: Equation = migrateEquation(DEFAULT_EQUATION);
 
     // Add state for editing
     let isEditingEquation = false;

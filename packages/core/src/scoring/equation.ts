@@ -40,24 +40,28 @@ export interface ScoreEquation {
 
 /**
  * Default equation weights — must match across all UIs (web, telegram, text, ai).
+ *
+ * A fresh holon starts EGALITARIAN: every weight is 0, so every member scores
+ * 0 and `normalizeShares` splits value equally between them. Nothing is
+ * valued above anything else until the group decides it is, by raising
+ * weights in the equation editor. Contributions are still recorded in the
+ * REA stream regardless — the equation is a valuation, not a filter.
+ *
  * The hour weight lives at `currencies.hour`; there is no top-level `hours`
  * field on freshly-created equations.
  */
 export const DEFAULT_EQUATION: ScoreEquation = {
-  initiated: 1,
-  completed: 2, // Completing is worth 2x more than initiating
-  sent: 1,
-  received: 1,
-  collaboration: 1,
-  // Collaboration signals default to 0 so a fresh holon's scores match the
-  // pre-feature behaviour exactly. Holons that want to reward teamwork
-  // raise these via the equation editor.
+  initiated: 0,
+  completed: 0,
+  sent: 0,
+  received: 0,
+  collaboration: 0,
   participation: 0,
   coParticipants: 0,
   activity: 0,
   groupSize: 0,
   variance: 0,
-  currencies: { hour: 1 },
+  currencies: { hour: 0 },
 };
 
 // 'hours', 'wants', and 'offers' are retired weights kept here so a saved

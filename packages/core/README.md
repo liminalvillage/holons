@@ -39,7 +39,7 @@ subpath export makes new domains importable without editing a central file.
 | `dna` | Holon DNA: chromosomes, sequences, values/tools/practices library. |
 | `categories` | Shared category → color palette. |
 | `commands` | Abstract command/intent registry + dispatch for CLI/AI/text UIs. |
-| `rea` | REA event store/factory capturing user actions for scoring. |
+| `rea` | REA event store/factory: every user action recorded as a ValueFlows `vf:EconomicEvent` (https://valueflo.ws) for scoring and flows. |
 
 ## Scripts
 
