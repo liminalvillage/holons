@@ -9,6 +9,14 @@ import { bookItem, borrowItem } from './operations.js';
 import { bookingOriginFor, bookingOriginLabel, isFederatedBooking, makeBooking } from './bookings.js';
 import type { LibraryItem } from './types.js';
 
+// Dates relative to today, so the "booking window must not be in the past"
+// rule never turns these tests stale as the calendar moves on.
+const iso = (daysFromNow: number) =>
+	new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const START = iso(1);
+const END = iso(8);
+
+
 const OWNER = '-1003864542239';   // holon that owns the item
 const GUEST = '-1002964866719';   // holon the borrower is working in
 
@@ -48,14 +56,14 @@ describe('bookingOriginFor', () => {
 
 describe('makeBooking', () => {
 	it('omits the origin fields entirely for a local booking', () => {
-		const b = makeBooking(actor, '2026-08-20', '2026-08-27', null);
+		const b = makeBooking(actor, START, END, null);
 		expect('viaHolon' in b).toBe(false);
 		expect('viaHolonName' in b).toBe(false);
 		expect(isFederatedBooking(b)).toBe(false);
 	});
 
 	it('stamps the origin for a federated booking', () => {
-		const b = makeBooking(actor, '2026-08-20', '2026-08-27', { holon: GUEST, name: 'Casaselva' });
+		const b = makeBooking(actor, START, END, { holon: GUEST, name: 'Casaselva' });
 		expect(b.viaHolon).toBe(GUEST);
 		expect(b.viaHolonName).toBe('Casaselva');
 		expect(isFederatedBooking(b)).toBe(true);
@@ -63,7 +71,7 @@ describe('makeBooking', () => {
 	});
 
 	it('falls back to the holon id when the name is unresolved', () => {
-		const b = makeBooking(actor, '2026-08-20', '2026-08-27', { holon: GUEST });
+		const b = makeBooking(actor, START, END, { holon: GUEST });
 		expect(bookingOriginLabel(b)).toBe(GUEST);
 	});
 });
@@ -75,7 +83,7 @@ describe('bookItem — federated origin', () => {
 			OWNER,
 			'Chainsaw',
 			actor,
-			{ start: '2026-08-20', end: '2026-08-27' },
+			{ start: START, end: END },
 			{ actingHolon: GUEST, actingHolonName: 'Casaselva' }
 		);
 		expect(res.ok).toBe(true);
@@ -91,7 +99,7 @@ describe('bookItem — federated origin', () => {
 			OWNER,
 			'Chainsaw',
 			actor,
-			{ start: '2026-08-20', end: '2026-08-27' },
+			{ start: START, end: END },
 			{ actingHolon: OWNER, actingHolonName: 'Liminal' }
 		);
 		expect(res.ok).toBe(true);
@@ -100,7 +108,7 @@ describe('bookItem — federated origin', () => {
 
 	it('leaves callers that pass no context unchanged', async () => {
 		const res = await bookItem(
-			db(item()) as never, OWNER, 'Chainsaw', actor, { end: '2026-08-27' }
+			db(item()) as never, OWNER, 'Chainsaw', actor, { end: END }
 		);
 		expect(res.ok).toBe(true);
 		expect(isFederatedBooking(res.booking)).toBe(false);
@@ -114,7 +122,7 @@ describe('borrowItem — federated origin', () => {
 			OWNER,
 			'Chainsaw',
 			actor,
-			'2026-08-27',
+			END,
 			{ actingHolon: GUEST, actingHolonName: 'Casaselva' }
 		);
 		expect(res.ok).toBe(true);
