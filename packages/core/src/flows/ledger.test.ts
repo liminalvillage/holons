@@ -236,6 +236,23 @@ describe('the ledger and the diagram agree', () => {
   });
 });
 
+describe('ledger ids are unique', () => {
+	it('suffixes colliding rows instead of handing UIs duplicate keys', () => {
+		const expense = {
+			id: undefined,
+			amount: 30,
+			currency: 'EUR',
+			paidBy: 'alice',
+			splitWith: ['bob', 'bob', 'carol'],
+			created: new Date(NOW - 1000).toISOString(),
+		} as unknown as Expense;
+		const { entries } = buildLedger({ expenses: [expense, expense], now: NOW });
+		const ids = entries.map((e) => e.id);
+		expect(new Set(ids).size).toBe(ids.length);
+		expect(entries.length).toBe(8);
+	});
+});
+
 describe('filterLedger', () => {
   const entries = ledger({
     expenses: [

@@ -114,13 +114,18 @@ export function buildLedger(input: BuildFlowsInput): LedgerResult {
 	};
 
 	const entries: LedgerEntry[] = [];
+	// Ids must be unique: UIs key rows on them. The natural key collides when
+	// a record has no id (empty reference), when the graph replays the same
+	// record twice, or when a split lists a member twice — suffix those.
+	const seenIds = new Map<string, number>();
 	const collector: Collector = {
 		push(entry) {
 			if (!(entry.amount > 0)) return;
-			entries.push({
-				...entry,
-				id: entry.id ?? `${entry.source}:${entry.reference}:${entry.direction}:${entry.nodeId}`,
-			} as LedgerEntry);
+			const base =
+				entry.id ?? `${entry.source}:${entry.reference}:${entry.direction}:${entry.nodeId}`;
+			const n = seenIds.get(base) ?? 0;
+			seenIds.set(base, n + 1);
+			entries.push({ ...entry, id: n === 0 ? base : `${base}#${n}` } as LedgerEntry);
 		},
 	};
 
