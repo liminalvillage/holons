@@ -3,9 +3,10 @@
 //
 // Per-lens projection codecs: how a HoloSphere record is ALSO published as a
 // standard Nostr kind (NIP-52 calendar, NIP-99 classified, kind-0 profile,
-// NIP-51 set) next to the canonical kind-30078 event. Phase 1 is one-way —
-// the 30078 event stays the source of truth; `parse`/`primary` are the seam
-// for a later phase where a lens can make the standard kind primary.
+// NIP-51 set) next to the canonical kind-30078 event — and, since phase 2,
+// how an external edit of that standard event is folded BACK into the record
+// (`parse` + `merge`). The 30078 event stays the source of truth: a parsed
+// standard event is an authorized *claim* the host merges and re-signs.
 
 /** Unsigned NIP-01 event. */
 export interface EventTemplate {
@@ -39,6 +40,8 @@ export interface ProjectionCtx {
   cellToLatLng?: (h3: string) => [number, number];
   /** Telegram/user id → hex pubkey, when the host can derive it. */
   pubkeyFor?: (userId: string | number) => string | undefined;
+  /** Reverse lookup for ingest: hex pubkey → the member it belongs to. */
+  userIdFor?: (pubkey: string) => string | number | undefined;
 }
 
 export interface Companion {
@@ -50,6 +53,28 @@ export interface Companion {
 export interface Projected {
   primary: EventTemplate;
   companions?: Companion[];
+}
+
+/**
+ * What a standard event says about a Holons record, as understood by `parse`.
+ * Authorization (is `pubkey` allowed to say this?) is the host's job; the
+ * codec only maps fields.
+ */
+export interface Reversed<T = Record<string, unknown>> {
+  /** Record address, from the `d` tag (or the `a` tag of an RSVP). */
+  lens: string;
+  holon: string;
+  id: string;
+  kind: number;
+  pubkey: string;
+  createdAt: number;
+  eventId?: string;
+  /** Field-level update; only fields the event actually carries. */
+  patch?: Partial<T>;
+  /** NIP-52 RSVP: the SIGNER's participation, never a self-reported id. */
+  rsvp?: { pubkey: string; userId?: string | number; status: 'accepted' | 'declined' };
+  /** kind 0: the record must belong to the signer (`userIdFor(pubkey) === id`). */
+  ownerOnly?: boolean;
 }
 
 export interface LensCodec<T = Record<string, unknown>> {
@@ -65,9 +90,11 @@ export interface LensCodec<T = Record<string, unknown>> {
   project(holon: string, item: T, ctx: ProjectionCtx): Projected | null;
   /** NIP-09 kind-5 templates retracting every projected event for `id`. */
   retract(holon: string, id: string, ctx: ProjectionCtx): EventTemplate[];
-  /** Phase-2 seam: rebuild the record from its standard event. Not implemented. */
-  parse?(event: NostrEventLike): T | null;
-  /** Phase-2 seam: which encoding is authoritative. Always `'30078'` today. */
+  /** Map an external standard event back to a record claim; `null` = not ours / unparsable. */
+  parse?(event: NostrEventLike, ctx: ProjectionCtx): Reversed<T> | null;
+  /** Fold a claim into the current record; `null` = no change. Pure. */
+  merge?(current: T, reversed: Reversed<T>, ctx: ProjectionCtx): T | null;
+  /** Which encoding is authoritative. Always `'30078'` today. */
   primary?: '30078' | 'standard';
 }
 
@@ -78,4 +105,6 @@ export interface ProjectionHook {
   requiresAuthor?: 'user';
   project(holon: string, lens: string, item: unknown): Projected | null;
   retract(holon: string, lens: string, id: string): EventTemplate[];
+  parse?(event: NostrEventLike): Reversed | null;
+  merge?(current: unknown, reversed: Reversed): unknown | null;
 }

@@ -68,6 +68,13 @@ filter by kind + `#t`, not by `d`: Holons uses `d = holons:<lens>:<holon>:<id>`,
 not Elinor's `shift-<group>-<date>-<code>`, so `parseShiftOccurrence` will not
 parse them. See `packages/holosphere/NOSTR-BACKEND.md` → Projections.
 
+And back: a 31925 RSVP against a **Holons** event, signed with a member's
+derived key (from any client — Elinor-style bots, a NIP-52 app, `/shifts`),
+adds or removes that member in the event's `participants[]`; a 31923 edit by
+the holon key updates title/time/location. Keys the bot does not know are
+ignored (`NOSTR-BACKEND.md` → Mutual update). Elinor's own occurrences are
+still not imported as Holons records.
+
 ## Not (yet) covered
 
 - Publishing Elinor-grammar occurrences (acting as coordinator) — Holons

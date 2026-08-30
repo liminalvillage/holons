@@ -78,6 +78,7 @@ export async function createSigner({
   privateKey, relays = [], kind = HOLOSPHERE_KIND, verbose = false,
   shadow = false, enforce = false, storeEnvelope, perActorLenses = [],
   projections = [], signerFor = null,
+  reverseSync = true, trustedAuthors = null, reverseLookbackSec,
 }) {
   if (!privateKey) throw new Error('enableSigning: a privateKey is required');
   const { SimplePool } = await import('nostr-tools/pool');
@@ -109,6 +110,22 @@ export async function createSigner({
   const publishProjections = (events) => {
     if (!relayList.length) return;
     for (const e of events) Promise.allSettled(pool.publish(relayList, e)).catch(() => {});
+  };
+  // Relay-backup mode has no wire subscription of its own, so the reverse
+  // sync (external edits of projected kinds → records) lives here.
+  const { createReverseSync } = await import('./reverse-sync.js');
+  let reverse = null;
+  let reverseHolo = null;
+  const ensureReverse = (holo, holon) => {
+    if (!reverseSync || !projector.enabled || !relayList.length || holon === null || holon === undefined) return;
+    if (!reverse) {
+      reverseHolo = holo;
+      reverse = createReverseSync(holo, {
+        poolReady: Promise.resolve(pool), relays: relayList, projector, pubkey, trustedAuthors,
+        lookbackSec: reverseLookbackSec, verbose,
+      });
+    }
+    if (reverseHolo === holo) reverse.ensure(holon);
   };
 
   // --- Gun sidecar I/O (reserved _events namespace; reads never see it) -------
@@ -219,7 +236,7 @@ export async function createSigner({
      * after, so reads/subscribers resolve against a consistent envelope the
      * instant the raw write lands — race-free by construction.
      */
-    signEnvelope(holo, holon, lens, item) {
+    signEnvelope(holo, holon, lens, item, { skipProjections = false } = {}) {
       try {
         if (!item || !item.id) return null;
         if (!relayList.length && !envelope) return null;
@@ -237,7 +254,7 @@ export async function createSigner({
           if (ownEnvelopes.size > 10000) ownEnvelopes.delete(ownEnvelopes.keys().next().value);
         }
         if (relayList.length) Promise.allSettled(pool.publish(relayList, event)).catch(() => {});
-        publishProjections(projector.eventsForWrite(holon, lens, item));
+        if (!skipProjections) publishProjections(projector.eventsForWrite(holon, lens, item));
         return event;
       } catch (e) { vlog('signEnvelope failed:', e?.message); return null; }
     },
@@ -419,7 +436,14 @@ export async function createSigner({
       return { total: events.length, moved, switched: doSwitch && moved > 0 };
     },
 
-    close() { try { pool.close(relayList); } catch { /* ignore */ } },
+    /** Reverse sync: open the external-edit subscriptions for a holon (relay-backup mode). */
+    ensureReverse,
+    get reverse() { return reverse; },
+    close() {
+      try { reverse?.close(); } catch { /* ignore */ }
+      reverse = null;
+      try { pool.close(relayList); } catch { /* ignore */ }
+    },
   };
 
   return signer;

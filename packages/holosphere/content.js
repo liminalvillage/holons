@@ -695,7 +695,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                 // resurrect `_meta`/`_hologram`/`_federation` fields.
                 let signedEvent = null;
                 if (!isHologram && !isGlobal && !password && !options._skipSign && holoInstance._signer) {
-                    try { signedEvent = holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, dataToStore); }
+                    try { signedEvent = holoInstance._signer.signEnvelope(holoInstance, targetHolon, targetLens, dataToStore, { skipProjections: !!options._skipProjections }); }
                     catch (e) { console.warn('[signing] signEnvelope failed:', e?.message); }
                 }
                 // Nostr backend: the relay is the wire — publish every
@@ -709,7 +709,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                     try {
                         holoInstance._relayTransport.publishWrite(
                             isGlobal ? null : targetHolon, targetLens, dataToStore,
-                            { key: targetKey, signedEvent }
+                            { key: targetKey, signedEvent, skipProjections: !!options._skipProjections }
                         );
                     } catch (e) { console.warn('[nostr] publish failed:', e?.message); }
                 }

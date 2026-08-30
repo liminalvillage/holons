@@ -87,11 +87,11 @@ tags: [["h", holon|"_g"], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
 
 The 30078 record is opaque to every other Nostr client. With projection
 hooks configured, each write on a listed lens is ALSO published as the
-lens's standard kind, and each delete as a NIP-09 retraction. One-way: the
-transport never ingests projected kinds (`ingest` drops `kind !== 30078`)
-and they never enter the `_events` sidecar — 30078 stays the source of
-truth. Codecs live in `@holons/core/nostr`; `projections.js` here only signs
-and publishes what a hook returns.
+lens's standard kind, and each delete as a NIP-09 retraction. Projected kinds
+never enter the `_events` sidecar and the 30078 `ingest` path never touches
+them — 30078 stays the source of truth. External edits of them come back
+through the reverse sync below. Codecs live in `@holons/core/nostr`;
+`projections.js` here only signs and publishes what a hook returns.
 
 | lens | kind | notes |
 |---|---|---|
@@ -113,9 +113,49 @@ Build hooks with `buildProjections(parseProjectionList(env), ctx)` from
 `@holons/core/nostr`; the monorepo apps read `HOLOSPHERE_PROJECTIONS` /
 `VITE_HOLOSPHERE_PROJECTIONS` (`off` default | `all` | comma list).
 
-Phase 2 (not built): a codec's `parse`/`primary` seam lets a lens make the
-standard kind authoritative later, with Holons-only fields under the
-reserved `x-holons` tag.
+### Mutual update — folding external edits back (`reverse-sync.js`)
+
+When another Nostr client republishes one of those events — a calendar app
+moving a 31923, Elinor-style RSVPs (31925), a market client closing a 30402,
+a member editing their kind 0 — the edit is folded back into the record:
+
+1. Per holon, two live REQs: `{kinds, '#t': ['group-<holon>']}` (clients that
+   keep our tags) and `{kinds, authors: trusted}` (clients that rebuild tags;
+   kind 0 only arrives here). Opened lazily by the first read/subscribe of a
+   holon, `since = now − lookback` (7 days default).
+2. **Trust**: `event.pubkey ∈ trustedAuthors(holon)` — host-supplied (the
+   monorepo bot: holon key ∪ members' derived keys ∪
+   `settings.nostrTrustedPubkeys`); default own key ∪ read-list. Anything
+   else is dropped. An RSVP toggles the SIGNER's participation (the codec
+   resolves the member via `ctx.userIdFor(pubkey)`); kind 0 only patches the
+   signer's own `users` record.
+3. **Merge**: the lens codec's `parse` maps the event to a claim and `merge`
+   folds it into the current record — only fields the event carries, so a
+   client that drops `location` does not blank it. Then a normal
+   `put(..., { _skipProjections: true })`: signed and published as OUR 30078
+   (gun subscribers, other Holons instances and enforce reads see it as an
+   ordinary write) but not re-projected, so the ingested event is never
+   echoed. `projector.noteExternal` keeps our next projection of that
+   address strictly newer than the edit (no ratchet, no stale overwrite).
+4. Guards: our own projections (`projector.wasEmitted`) are never folded
+   back; a claim older than the last accepted one per `(kind, address)` is
+   dropped; a claim for a record that does not exist locally is dropped —
+   foreign records are never imported.
+
+Lossiness (one-directional, by design): calendar kinds carry no
+status/category/participants (RSVPs do); NIP-99 `sold` closes an open
+listing (`fulfilled`), `active` never reopens one; NIP-51 sets rebuild
+`items[]` from `item` tags (library: only `borrowed`); kind 0 patches
+`first_name/username/picture/about`.
+
+Options: `nostr: { reverseSync, trustedAuthors, reverseLookbackSec }` /
+`enableSigning({ … same … })`; `reverseSync` defaults to on whenever
+`projections` are set. Apps: `HOLOSPHERE_PROJECTIONS_SYNC=on|off`,
+`HOLOSPHERE_PROJECTIONS_LOOKBACK=7d` (and `VITE_…` for the web, which trusts
+only its own key and read-list — the bot is the authority for member RSVPs).
+
+Still not built: a lens making the standard kind *authoritative*
+(`primary: 'standard'`, `x-holons` extras) and importing foreign records.
 
 ## Semantics & limits
 

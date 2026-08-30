@@ -5,8 +5,8 @@
 // as `['item', …]` tags — third-party NIP-51 clients show the set's title but
 // not these custom tags; that is the accepted phase-1 limitation.
 
-import type { EventTemplate, LensCodec, Projected, ProjectionCtx } from '../types.js';
-import { commonTags, deletionTemplate, nowOf, projectionDTag, pushIf } from '../tags.js';
+import type { EventTemplate, LensCodec, NostrEventLike, Projected, ProjectionCtx, Reversed } from '../types.js';
+import { commonTags, deletionTemplate, nowOf, parseProjectionDTag, projectionDTag, pushIf, sameRecord, tagValue, tagValues } from '../tags.js';
 
 export const SET_KIND = 30003;
 
@@ -49,6 +49,64 @@ function projectSet(lens: string, holon: string, item: SetRecord, ctx: Projectio
   return { primary };
 }
 
+/**
+ * Reverse of `itemTags`. Checklists/shopping: `items[]` is rebuilt from the
+ * `item` tags, keeping extra fields (ids, creator) of entries whose text still
+ * matches. Library: only `borrowed` is patched (a set cannot express bookings).
+ */
+function parseSet(lens: string, event: NostrEventLike): Reversed<SetRecord> | null {
+  if (event.kind !== SET_KIND) return null;
+  const addr = parseProjectionDTag(tagValue(event, 'd'));
+  if (!addr || addr.lens !== lens) return null;
+  const patch: Partial<SetRecord> = {};
+  const items = tagValues(event, 'item');
+  if (lens === 'library') {
+    const mine = items[0];
+    if (mine && (mine[2] === 'borrowed' || mine[2] === 'available')) patch.borrowed = mine[2] === 'borrowed';
+  } else {
+    const title = tagValue(event, 'title');
+    if (typeof title === 'string' && title.trim()) patch.title = title;
+    patch.items = items.filter((t) => typeof t[0] === 'string' && t[0].trim()).map((t) => ({ text: t[0], checked: t[1] === '1' }));
+  }
+  return {
+    lens, holon: addr.holon, id: addr.id, kind: event.kind, pubkey: event.pubkey,
+    createdAt: event.created_at, eventId: event.id, patch,
+  };
+}
+
+function mergeSet(lens: string, current: SetRecord, r: Reversed<SetRecord>): SetRecord | null {
+  if (!r.patch) return null;
+  const next: SetRecord = { ...current };
+  let changed = false;
+  if (lens === 'library') {
+    if (r.patch.borrowed !== undefined && Boolean(current.borrowed) !== r.patch.borrowed) {
+      next.borrowed = r.patch.borrowed;
+      changed = true;
+    }
+    return changed ? next : null;
+  }
+  if (r.patch.title !== undefined && r.patch.title !== current.title && lens !== 'shopping') {
+    next.title = r.patch.title;
+    changed = true;
+  }
+  if (Array.isArray(r.patch.items)) {
+    const cur = Array.isArray(current.items) ? current.items : [];
+    const byText = new Map<string, Record<string, unknown>>();
+    for (const e of cur) if (e && typeof e === 'object' && typeof e.text === 'string') byText.set(e.text, e as Record<string, unknown>);
+    const merged = r.patch.items.map((e) => {
+      const text = typeof e === 'string' ? e : String(e.text ?? '');
+      const checked = typeof e === 'string' ? false : Boolean(e.checked);
+      const prev = byText.get(text);
+      return prev ? { ...prev, checked } : { text, checked };
+    });
+    if (!sameRecord(cur, merged)) {
+      next.items = merged as SetRecord['items'];
+      changed = true;
+    }
+  }
+  return changed ? next : null;
+}
+
 export function setCodec(lens: 'checklists' | 'shopping' | 'library'): LensCodec<SetRecord> {
   return {
     lens,
@@ -56,5 +114,7 @@ export function setCodec(lens: 'checklists' | 'shopping' | 'library'): LensCodec
     primary: '30078',
     project: (holon, item, ctx) => projectSet(lens, holon, item, ctx),
     retract: (holon, id, ctx) => [deletionTemplate(ctx, [{ kind: SET_KIND, dTag: projectionDTag(lens, holon, id) }])],
+    parse: (event) => parseSet(lens, event),
+    merge: (current, r) => mergeSet(lens, current, r),
   };
 }

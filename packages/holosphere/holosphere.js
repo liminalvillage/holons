@@ -273,6 +273,9 @@ class HoloSphere {
             verbose: signing.verbose || cfg.nostr?.verbose,
             projections: cfg.nostr?.projections,
             signerFor: cfg.nostr?.signerFor,
+            reverseSync: cfg.nostr?.reverseSync,
+            trustedAuthors: cfg.nostr?.trustedAuthors,
+            reverseLookbackSec: cfg.nostr?.reverseLookbackSec,
         });
         // Read-list hydration AFTER init settles: goes through the normal
         // (backend-awaiting) read path, so it can even pull the saved
@@ -289,6 +292,11 @@ class HoloSphere {
 
     /** Live-sync a (holon, lens) from the relay before/alongside a read. */
     _relaySync(holon, lens, { await: awaited = false } = {}) {
+        // Relay-backup mode: the signer owns the reverse sync (external edits
+        // of projected standard kinds → records). Cheap, memoized per holon.
+        if (!this._relayTransport && this._signer?.ensureReverse && lens && String(lens) !== '_events') {
+            try { this._signer.ensureReverse(this, holon); } catch { /* best-effort */ }
+        }
         const t = this._relayTransport;
         if (!t) return awaited ? Promise.resolve() : undefined;
         const p = t.ensureSync(holon, lens);
@@ -1155,6 +1163,8 @@ class HoloSphere {
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
             perActorLenses: opts.perActorLenses,
             projections: opts.projections, signerFor: opts.signerFor,
+            reverseSync: opts.reverseSync, trustedAuthors: opts.trustedAuthors,
+            reverseLookbackSec: opts.reverseLookbackSec,
         });
         return this._signer;
     }

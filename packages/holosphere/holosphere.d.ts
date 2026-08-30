@@ -288,6 +288,12 @@ interface HoloSphereConfig {
     projections?: ProjectionHook[];
     /** Per-user signing key lookup for kind-0 / RSVP projections. */
     signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+    /** Fold external edits of projected kinds back into records (default true when projections are set). */
+    reverseSync?: boolean;
+    /** Pubkeys allowed to edit a holon's records over Nostr (default: own key ∪ read-list). */
+    trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+    /** Cold-start catch-up window for reverse sync, seconds (default 7 days). */
+    reverseLookbackSec?: number;
   };
   /** Signing-layer options applied by backend 'nostr' init (shadow/enforce/
    *  perActorLenses/verbose — relays are always [] there; the transport
@@ -307,6 +313,8 @@ export interface ProjectionHook {
   requiresAuthor?: 'user';
   project(holon: string, lens: string, item: unknown): { primary: any; companions?: any[] } | null;
   retract(holon: string, lens: string, id: string): any[];
+  parse?(event: any): any | null;
+  merge?(current: unknown, reversed: any): unknown | null;
 }
 
 declare class HoloSphere {

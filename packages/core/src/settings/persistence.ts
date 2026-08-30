@@ -55,6 +55,9 @@ export function parseHolonSettings(data: any): HolonSettings {
     theme: data.theme || 'dark',
     hex: data.hex || '',
     maxTasks: data.maxTasks || 10,
+    ...(Array.isArray(data.nostrTrustedPubkeys)
+      ? { nostrTrustedPubkeys: data.nostrTrustedPubkeys.filter((k: unknown) => typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k)) }
+      : {}),
     // Legacy `federation[]` / `lensConfig` settings-lens fields are NOT parsed
     // — the native federation record is the single store (see
     // migrateLegacyFederationLinks in @holons/core/federation).
@@ -112,6 +115,7 @@ const SETTINGS_MARKERS = [
   'maxTasks',
   'hex',
   'admin',
+  'nostrTrustedPubkeys',
 ] as const;
 
 /** How many settings-ish fields a record carries. */

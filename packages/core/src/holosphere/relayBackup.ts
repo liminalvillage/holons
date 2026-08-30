@@ -35,6 +35,9 @@ interface SigningCapable {
     enforce?: boolean;
     projections?: ProjectionHook[];
     signerFor?: RelayBackupOptions['signerFor'];
+    reverseSync?: boolean;
+    trustedAuthors?: RelayBackupOptions['trustedAuthors'];
+    reverseLookbackSec?: number;
   }): Promise<unknown>;
 }
 
@@ -63,6 +66,15 @@ export interface RelayBackupOptions {
   projections?: ProjectionHook[];
   /** Per-user signing key lookup for kind-0 / RSVP projections. */
   signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+  /**
+   * Fold external edits of projected kinds back into the records (phase 2).
+   * Defaults to on whenever `projections` are given.
+   */
+  reverseSync?: boolean;
+  /** Pubkeys allowed to edit a holon's records over Nostr (holon key ∪ members ∪ settings extras). */
+  trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+  /** Cold-start catch-up window for reverse sync, seconds (default 7 days). */
+  reverseLookbackSec?: number;
 }
 
 /**
@@ -92,7 +104,7 @@ export function parseRelayList(raw: string | undefined | null): string[] {
  */
 export async function enableRelayBackup(
   holosphere: unknown,
-  { relays, mode = 'off', privateKey, backend, onError, projections, signerFor }: RelayBackupOptions,
+  { relays, mode = 'off', privateKey, backend, onError, projections, signerFor, reverseSync, trustedAuthors, reverseLookbackSec }: RelayBackupOptions,
 ): Promise<boolean> {
   if (mode === 'off') return false;
   if (!relays.length) return false;
@@ -111,6 +123,9 @@ export async function enableRelayBackup(
       enforce: mode === 'enforce',
       ...(projections?.length ? { projections } : {}),
       ...(signerFor ? { signerFor } : {}),
+      ...(reverseSync !== undefined ? { reverseSync } : {}),
+      ...(trustedAuthors ? { trustedAuthors } : {}),
+      ...(reverseLookbackSec ? { reverseLookbackSec } : {}),
     });
     return true;
   } catch (err) {

@@ -115,3 +115,58 @@ export function pushIf(tags: string[][], name: string, value: unknown, ...rest: 
   if (typeof value === 'string' && value.trim()) tags.push([name, value, ...rest]);
   else if (typeof value === 'number' && Number.isFinite(value)) tags.push([name, String(value), ...rest]);
 }
+
+// ---------------------------------------------------------------------------
+// Reverse helpers (phase 2 — folding external edits back into records).
+// ---------------------------------------------------------------------------
+
+/** First value of tag `name`, or undefined. */
+export function tagValue(event: { tags: string[][] }, name: string): string | undefined {
+  return (event.tags || []).find((t) => t[0] === name)?.[1];
+}
+
+/** Every `[name, …]` tag, without the name. */
+export function tagValues(event: { tags: string[][] }, name: string): string[][] {
+  return (event.tags || []).filter((t) => t[0] === name).map((t) => t.slice(1));
+}
+
+/** Inverse of `projectionDTag`; `null` for any other grammar (e.g. Elinor's `shift-…`). */
+export function parseProjectionDTag(d: unknown): { lens: string; holon: string; id: string } | null {
+  if (typeof d !== 'string') return null;
+  const parts = d.split(':');
+  if (parts.length < 4 || parts[0] !== 'holons' || !parts[1] || !parts[2]) return null;
+  const id = parts.slice(3).join(':');
+  if (!id) return null;
+  return { lens: parts[1], holon: parts[2], id };
+}
+
+/** `<kind>:<pubkey>:<d>` → parts; `null` when malformed. */
+export function parseProjectionAddress(a: unknown): { kind: number; pubkey: string; dTag: string } | null {
+  if (typeof a !== 'string') return null;
+  const i = a.indexOf(':');
+  const j = a.indexOf(':', i + 1);
+  if (i <= 0 || j <= i) return null;
+  const kind = Number(a.slice(0, i));
+  const pubkey = a.slice(i + 1, j);
+  const dTag = a.slice(j + 1);
+  if (!Number.isInteger(kind) || !/^[0-9a-f]{64}$/i.test(pubkey) || !dTag) return null;
+  return { kind, pubkey, dTag };
+}
+
+/** Unix seconds → ISO instant (`undefined` when not a finite number). */
+export function unixToIso(value: unknown): string | undefined {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return undefined;
+  return new Date(n * 1000).toISOString();
+}
+
+/** Shallow structural equality for plain records (arrays/objects, JSON-safe). */
+export function sameRecord(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a as object).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b as object).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => sameRecord((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}

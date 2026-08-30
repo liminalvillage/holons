@@ -100,6 +100,19 @@ export default function createHoloSphere(appName, options = {}) {
   const projectionOptions = projectionLenses.length
     ? buildProjectionOptions(resolvedAppName, privateKey, projectionLenses)
     : {};
+  // Reverse sync (HOLOSPHERE_PROJECTIONS_SYNC=on|off, default on): external
+  // edits of those standard kinds — by the holon key, a member's derived key
+  // or a pubkey listed in the holon's settings.nostrTrustedPubkeys — are
+  // folded back into the records. HOLOSPHERE_PROJECTIONS_LOOKBACK=7d bounds
+  // the cold-start catch-up.
+  if (projectionLenses.length) {
+    const sync = (process.env.HOLOSPHERE_PROJECTIONS_SYNC || 'on')
+      .trim()
+      .toLowerCase();
+    projectionOptions.reverseSync = !['off', 'false', '0', 'no'].includes(sync);
+    const lookback = parseDuration(process.env.HOLOSPHERE_PROJECTIONS_LOOKBACK);
+    if (lookback) projectionOptions.reverseLookbackSec = lookback;
+  }
 
   const instance = coreCreateHoloSphere({
     appName: resolvedAppName,
@@ -163,6 +176,10 @@ function buildProjectionOptions(appName, privateKey, lenses) {
         }
       }
     : undefined;
+  const holonPubkey = getPublicKey(
+    Uint8Array.from(Buffer.from(privateKey, 'hex'))
+  );
+  const trust = createTrustCache(holonPubkey, secret);
   const tzCache = new Map();
   const timezoneFor = holon => {
     if (tzCache.has(holon)) return tzCache.get(holon) || undefined;
@@ -180,15 +197,98 @@ function buildProjectionOptions(appName, privateKey, lenses) {
   };
   const projections = buildProjections(lenses, {
     appName,
-    holonPubkey: getPublicKey(Uint8Array.from(Buffer.from(privateKey, 'hex'))),
+    holonPubkey,
     cellToLatLng,
     timezoneFor,
     pubkeyFor,
+    userIdFor: trust.userIdFor,
   });
   console.log(
     `[holosphere] projections on → ${lenses.join(', ')}${signerFor ? ' (+ per-user signer)' : ''}`
   );
-  return { projections, ...(signerFor ? { signerFor } : {}) };
+  return {
+    projections,
+    ...(signerFor ? { signerFor } : {}),
+    trustedAuthors: trust.trustedAuthors,
+  };
+}
+
+/**
+ * Who may edit a holon's records over Nostr, and who a pubkey is.
+ *
+ * Per holon: the holon signer, every member's derived key (from the `users`
+ * lens, via NOSTR_DERIVATION_SECRET) and `settings.nostrTrustedPubkeys`.
+ * Cached 5 minutes; the reverse sync asks on every accepted event, so a new
+ * member is trusted within that window. Without the secret only the holon
+ * key is trusted (RSVPs / kind 0 cannot be attributed to anyone).
+ *
+ * @param {string} holonPubkey
+ * @param {string} secret NOSTR_DERIVATION_SECRET ('' = none)
+ */
+export function createTrustCache(holonPubkey, secret, ttlMs = 5 * 60 * 1000) {
+  const byPubkey = new Map(); // pubkey -> telegram user id (all holons)
+  const perHolon = new Map(); // holon -> { at, list }
+  let warned = false;
+
+  async function refresh(holon) {
+    const list = new Set([holonPubkey]);
+    const hs = projectionHost.instance;
+    if (!hs || typeof hs.getAll !== 'function') return [...list];
+    if (secret) {
+      let users = [];
+      try {
+        users = (await hs.getAll(String(holon), 'users')) || [];
+      } catch {
+        users = [];
+      }
+      for (const u of users) {
+        if (!u || u.id === undefined || u.id === null) continue;
+        try {
+          const pk = deriveTelegramNostrKey(u.id, secret).publicKey;
+          byPubkey.set(pk, u.id);
+          list.add(pk);
+        } catch {
+          /* skip */
+        }
+      }
+    } else if (!warned) {
+      warned = true;
+      console.warn(
+        '[holosphere] NOSTR_DERIVATION_SECRET unset — reverse sync trusts the holon key only (no member RSVPs / profiles)'
+      );
+    }
+    try {
+      const settings = await hs.get(String(holon), 'settings', String(holon));
+      for (const k of Array.isArray(settings?.nostrTrustedPubkeys)
+        ? settings.nostrTrustedPubkeys
+        : [])
+        if (typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k))
+          list.add(k.toLowerCase());
+    } catch {
+      /* no settings yet */
+    }
+    return [...list];
+  }
+
+  return {
+    async trustedAuthors(holon) {
+      const cached = perHolon.get(String(holon));
+      if (cached && Date.now() - cached.at < ttlMs) return cached.list;
+      const list = await refresh(holon);
+      perHolon.set(String(holon), { at: Date.now(), list });
+      return list;
+    },
+    userIdFor: pubkey => byPubkey.get(pubkey),
+  };
+}
+
+/** `7d`, `12h`, `30m`, `3600` (seconds) → seconds; undefined when unparsable. */
+export function parseDuration(raw) {
+  const m = /^\s*(\d+)\s*([smhd]?)\s*$/i.exec(String(raw ?? ''));
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  const unit = { '': 1, s: 1, m: 60, h: 3600, d: 86400 }[m[2].toLowerCase()];
+  return n > 0 ? n * unit : undefined;
 }
 
 /** The most recent instance, so timezoneFor can read settings without a cycle. */

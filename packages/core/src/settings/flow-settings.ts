@@ -48,6 +48,12 @@ export interface HolonSettings {
   theme: string;
   hex: string;
   maxTasks: number;
+  /**
+   * Extra hex pubkeys allowed to edit this holon's records over Nostr
+   * (reverse sync of projected standard kinds), on top of the holon key and
+   * members' derived keys — e.g. an Elinor coordinator. Optional, no UI yet.
+   */
+  nostrTrustedPubkeys?: string[];
   flowManagement: {
     internalPercent: number;
     externalPercent: number;

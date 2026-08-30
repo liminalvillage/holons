@@ -503,6 +503,13 @@
 			? parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS)
 			: [];
 		const ownPubkey = nostrStore.getState().publicKey || '';
+		// Reverse sync (VITE_HOLOSPHERE_PROJECTIONS_SYNC=on|off, default on):
+		// external edits of those kinds are folded back into the records. In
+		// the browser only our own key and the read-list are trusted; the bot
+		// (which knows every member's derived key) is the authority for RSVPs.
+		const reverseSync = !['off', 'false', '0', 'no'].includes(
+			String(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS_SYNC || 'on').trim().toLowerCase()
+		);
 		const projectionOptions = projectionLenses.length && ownPubkey
 			? {
 				projections: buildProjections(projectionLenses, {
@@ -513,9 +520,16 @@
 						pendingTelegramUserId && String(id) === String(pendingTelegramUserId)
 							? ownPubkey
 							: undefined,
+					userIdFor: (pubkey: string) =>
+						pendingTelegramUserId && pubkey === ownPubkey ? pendingTelegramUserId : undefined,
 				}),
 				signerFor: (id: string | number) =>
 					pendingTelegramUserId && String(id) === String(pendingTelegramUserId) ? privateKey : null,
+				reverseSync,
+				trustedAuthors: () => [
+					ownPubkey,
+					...((holosphere as any)?.getReadKeys?.() ?? []),
+				],
 			}
 			: {};
 		holosphere = await createHoloSphere({

@@ -5,7 +5,7 @@
 // date-based) plus one 31925 RSVP companion per participant. Quests of
 // `type:'need'` are classifieds, not calendar entries — see classified.ts.
 
-import type { Companion, EventTemplate, LensCodec, Projected, ProjectionCtx } from '../types.js';
+import type { Companion, EventTemplate, LensCodec, NostrEventLike, Projected, ProjectionCtx, Reversed } from '../types.js';
 import {
   commonTags,
   deletionTemplate,
@@ -14,11 +14,17 @@ import {
   isUrl,
   isoToUnix,
   nowOf,
+  parseProjectionAddress,
+  parseProjectionDTag,
   projectionAddress,
   projectionDTag,
   pushIf,
+  tagValue,
+  unixToIso,
 } from '../tags.js';
-import { classifiedCodec } from './classified.js';
+import { addParticipant, removeParticipant } from '../../tasks/participants.js';
+import type { Quest, QuestParticipant } from '../../tasks/types.js';
+import { classifiedCodec, CLASSIFIED_KIND } from './classified.js';
 
 export const CALENDAR_TIME_KIND = 31923;
 export const CALENDAR_DATE_KIND = 31922;
@@ -135,6 +141,93 @@ function retractCalendar(lens: string, holon: string, id: string, ctx: Projectio
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Reverse: external 31923/31922 edits and 31925 RSVPs → record claims.
+// ---------------------------------------------------------------------------
+
+/**
+ * Only fields the event carries are patched — a calendar client that drops
+ * `location` does not blank it. Status/category/participants never round-trip
+ * through the calendar kinds (RSVPs do, separately).
+ */
+function parseCalendar(lens: string, event: NostrEventLike, ctx: ProjectionCtx): Reversed<CalendarRecord> | null {
+  if (event.kind === CALENDAR_RSVP_KIND) return parseRsvp(lens, event, ctx);
+  if (event.kind === CLASSIFIED_KIND) {
+    const r = classifiedCodec.parse!(event, ctx);
+    return r && r.lens === lens ? (r as Reversed<CalendarRecord>) : null;
+  }
+  if (event.kind !== CALENDAR_TIME_KIND && event.kind !== CALENDAR_DATE_KIND) return null;
+  const addr = parseProjectionDTag(tagValue(event, 'd'));
+  if (!addr || addr.lens !== lens) return null;
+  const patch: Partial<CalendarRecord> = {};
+  const title = tagValue(event, 'title');
+  if (typeof title === 'string' && title.trim()) patch.title = title;
+  if (typeof event.content === 'string' && event.content.trim()) patch.description = event.content;
+  const start = tagValue(event, 'start');
+  const end = tagValue(event, 'end');
+  if (event.kind === CALENDAR_DATE_KIND) {
+    if (isDateOnly(start)) patch.when = start;
+    if (isDateOnly(end)) patch.ends = end;
+  } else {
+    const s = unixToIso(start);
+    if (s) patch.when = s;
+    const e = unixToIso(end);
+    if (e) patch.ends = e;
+  }
+  const location = tagValue(event, 'location');
+  if (typeof location === 'string' && location.trim()) patch.location = location;
+  return {
+    lens, holon: addr.holon, id: addr.id, kind: event.kind, pubkey: event.pubkey,
+    createdAt: event.created_at, eventId: event.id, patch,
+  };
+}
+
+function parseRsvp(lens: string, event: NostrEventLike, ctx: ProjectionCtx): Reversed<CalendarRecord> | null {
+  // The `a` address is authoritative; the RSVP's own `d` may follow another
+  // grammar (Elinor's `rsvp-…`) and is ignored. Any pubkey in the address is
+  // accepted — web and bot publish under different holon keys.
+  const a = parseProjectionAddress(tagValue(event, 'a'));
+  if (!a || (a.kind !== CALENDAR_TIME_KIND && a.kind !== CALENDAR_DATE_KIND)) return null;
+  const addr = parseProjectionDTag(a.dTag);
+  if (!addr || addr.lens !== lens) return null;
+  const status = tagValue(event, 'status');
+  if (status !== 'accepted' && status !== 'declined') return null;
+  return {
+    lens, holon: addr.holon, id: addr.id, kind: event.kind, pubkey: event.pubkey,
+    createdAt: event.created_at, eventId: event.id,
+    rsvp: { pubkey: event.pubkey, userId: ctx.userIdFor?.(event.pubkey), status },
+  };
+}
+
+function mergeCalendar(current: CalendarRecord, r: Reversed<CalendarRecord>, ctx: ProjectionCtx): CalendarRecord | null {
+  if (r.rsvp) {
+    const uid = r.rsvp.userId;
+    if (uid === undefined || uid === null) return null; // unknown signer — nothing to toggle
+    const quest = current as unknown as Quest;
+    const has = (Array.isArray(quest.participants) ? quest.participants : []).some((p) => p && String(p.id) === String(uid));
+    if (r.rsvp.status === 'accepted') {
+      if (has) return null;
+      const existing = (current.participants ?? []).find((p) => typeof p === 'object' && p && String(p.id) === String(uid));
+      const user: QuestParticipant = (existing as QuestParticipant) ?? { id: uid };
+      return addParticipant(quest, user) as unknown as CalendarRecord;
+    }
+    if (!has) return null;
+    return removeParticipant(quest, uid) as unknown as CalendarRecord;
+  }
+  if (r.patch) {
+    if (r.kind === CLASSIFIED_KIND) return classifiedCodec.merge!(current, r as never, ctx) as CalendarRecord | null;
+    let changed = false;
+    const next: CalendarRecord = { ...current };
+    for (const [k, v] of Object.entries(r.patch)) {
+      if (v === undefined || (current as Record<string, unknown>)[k] === v) continue;
+      (next as Record<string, unknown>)[k] = v;
+      changed = true;
+    }
+    return changed ? next : null;
+  }
+  return null;
+}
+
 export function calendarCodec(lens: 'quests' | 'events'): LensCodec<CalendarRecord> {
   return {
     lens,
@@ -142,5 +235,7 @@ export function calendarCodec(lens: 'quests' | 'events'): LensCodec<CalendarReco
     primary: '30078',
     project: (holon, item, ctx) => projectCalendar(lens, holon, item, ctx),
     retract: (holon, id, ctx) => retractCalendar(lens, holon, id, ctx),
+    parse: (event, ctx) => parseCalendar(lens, event, ctx),
+    merge: (current, r, ctx) => mergeCalendar(current, r, ctx),
   };
 }

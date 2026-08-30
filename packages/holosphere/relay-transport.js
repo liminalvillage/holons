@@ -34,6 +34,7 @@ import {
   HOLOSPHERE_KIND,
 } from './nostr-events.js';
 import { createProjector } from './projections.js';
+import { createReverseSync } from './reverse-sync.js';
 
 /** `h`-tag sentinel for holon-less (global) records — `app/table/key`. */
 export const GLOBAL_HOLON_TAG = '_g';
@@ -56,6 +57,10 @@ export function createRelayTransport(holo, {
   // Standard-kind projections (see projections.js / @holons/core/nostr).
   projections = [],
   signerFor = null,
+  // Reverse sync of external standard-kind edits (see reverse-sync.js).
+  reverseSync = true,
+  trustedAuthors = null,
+  reverseLookbackSec,
 } = {}) {
   if (!relays.length) throw new Error('relay-transport: at least one relay is required');
   if (!privateKey) throw new Error('relay-transport: a privateKey is required');
@@ -71,6 +76,9 @@ export function createRelayTransport(holo, {
     pool = new SimplePool();
     return pool;
   });
+  const reverse = reverseSync && projector.enabled
+    ? createReverseSync(holo, { poolReady, relays, projector, pubkey, trustedAuthors, lookbackSec: reverseLookbackSec, verbose })
+    : null;
 
   // ---- loop / ordering guards ------------------------------------------------
   // Applied wire state per location: skip events at-or-older than what we've
@@ -114,7 +122,7 @@ export function createRelayTransport(holo, {
    * pass it as `signedEvent` so the wire carries the exact event the local
    * envelope store attests (no double signing).
    */
-  function publishWrite(holon, lens, item, { key, signedEvent } = {}) {
+  function publishWrite(holon, lens, item, { key, signedEvent, skipProjections = false } = {}) {
     if (closed) return;
     try {
       const addressed = withId(item, key);
@@ -131,7 +139,10 @@ export function createRelayTransport(holo, {
         trim(applied, 20000);
       }
       publishEvent(event);
-      // Standard-kind projections ride alongside; never ingested back (see ingest).
+      // Standard-kind projections ride alongside; never ingested back here (see
+      // ingest) — external edits of them arrive via reverse-sync.js, and a write
+      // that folds such an edit in must not re-project it (`skipProjections`).
+      if (skipProjections) return;
       for (const p of projector.eventsForWrite(holon, lens, addressed)) {
         seen.add(p.id);
         publishEvent(p);
@@ -242,6 +253,7 @@ export function createRelayTransport(holo, {
     const existing = syncs.get(key);
     if (existing) return existing.promise;
 
+    reverse?.ensure(holon);
     const state = { sub: null, lastAt: 0, promise: null };
     state.promise = (async () => {
       const p = await poolReady;
@@ -293,12 +305,14 @@ export function createRelayTransport(holo, {
     relays: [...relays],
     publishWrite,
     projector,
+    reverse,
     publishDelete,
     ensureSync,
     /** Test/diagnostic hook: number of live (holon, lens) subscriptions. */
     syncCount: () => syncs.size,
     close() {
       closed = true;
+      reverse?.close();
       for (const { sub } of syncs.values()) { try { sub?.close(); } catch { /* ignore */ } }
       syncs.clear();
       poolReady.then((p) => { try { p.close(relays); } catch { /* ignore */ } }).catch(() => {});

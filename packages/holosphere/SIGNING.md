@@ -265,3 +265,7 @@ Note: standard-kind projections (`projections.js`, see `NOSTR-BACKEND.md`)
 are published beside each envelope but NEVER stored in the `_events`
 sidecar — envelopes stay kind-30078 only, so `aggregate`/`authorizedView`
 always parse `content` as the JSON record.
+
+With relays configured the signer also runs the **reverse sync** (`reverse-sync.js`):
+external edits of projected kinds by trusted keys are merged and re-signed as your
+own 30078 write, so relay-backup mode gets mutual updates without switching wires.

@@ -8,12 +8,14 @@
 // @holons/core/nostr), every publish additionally emits the lens's standard
 // Nostr kind (NIP-52 calendar, NIP-99 classified, kind-0 profile, NIP-51
 // set) and every delete emits a NIP-09 retraction — so third-party clients
-// can read Holons data without knowing HoloSphere. One-way: projected kinds
-// are never ingested and never enter the `_events` envelope sidecar.
+// can read Holons data without knowing HoloSphere. Projected kinds never
+// enter the `_events` envelope sidecar; external edits of them come back
+// through reverse-sync.js as merged 30078 writes.
 //
 // Hook shape (framework-free, supplied by the host):
 //   { lens, kinds, requiresAuthor?, project(holon, lens, item) -> {primary, companions?} | null,
-//     retract(holon, lens, id) -> template[] }
+//     retract(holon, lens, id) -> template[],
+//     parse?(event) -> claim | null, merge?(current, claim) -> record | null }   // reverse-sync.js
 
 import { signEvent, getPublicKey } from './nostr-events.js';
 
@@ -37,6 +39,9 @@ export function createProjector({ projections = [], privateKey, signerFor = null
   // Relays replace addressable events by created_at (second granularity):
   // keep every (kind, d | pubkey) strictly monotone across rapid re-puts.
   const lastAt = new Map();
+  // Ids of every event we signed, so the reverse sync never folds our own
+  // projections back in.
+  const emitted = new Set();
   const trim = (m, cap) => { if (m.size > cap) m.delete(m.keys().next().value); };
 
   const dTag = (t) => (t.tags || []).find((x) => x[0] === 'd')?.[1];
@@ -47,7 +52,17 @@ export function createProjector({ projections = [], privateKey, signerFor = null
     const created_at = Math.max(template.created_at || 0, prev + 1, Math.floor(Date.now() / 1000));
     lastAt.set(key, created_at);
     trim(lastAt, 20000);
-    return signEvent({ ...template, created_at }, sk);
+    const event = signEvent({ ...template, created_at }, sk);
+    emitted.add(event.id);
+    trim(emitted, 20000);
+    return event;
+  }
+
+  /** An external edit was accepted for (kind, d|pubkey): our next projection must be strictly newer. */
+  function noteExternal(kind, dOrPubkey, createdAt) {
+    const key = `${kind}|${dOrPubkey}`;
+    lastAt.set(key, Math.max(lastAt.get(key) || 0, createdAt || 0));
+    trim(lastAt, 20000);
   }
 
   function userKey(userId) {
@@ -92,6 +107,9 @@ export function createProjector({ projections = [], privateKey, signerFor = null
   return {
     eventsForWrite,
     eventsForDelete,
+    noteExternal,
+    wasEmitted: (id) => emitted.has(id),
+    hooks,
     kinds,
     lenses: [...hooks.keys()],
     get enabled() { return hooks.size > 0; },
