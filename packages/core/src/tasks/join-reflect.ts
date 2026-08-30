@@ -38,7 +38,12 @@ export interface ReflectContext {
 /** @deprecated kept for back-compat; use {@link ReflectContext}. */
 export type ReflectJoinContext = ReflectContext;
 
-export type ReflectSkipReason = 'no-user-id' | 'no-quest-id' | 'same-as-home';
+export type ReflectSkipReason =
+  | 'no-user-id'
+  | 'no-quest-id'
+  | 'same-as-home'
+  | 'no-mirror'
+  | 'not-a-mirror';
 
 export interface ReflectResult {
   /** True when the member's personal-holon mirror was changed (added/removed). */
@@ -106,13 +111,51 @@ export async function reflectJoin(ctx: ReflectContext): Promise<ReflectResult> {
  * `{ id, soul }` pointer), so `holosphere.delete` also unregisters it from the
  * source quest's `_holograms` set — no dangling pointer left behind.
  *
- * Idempotent: deleting an absent hologram is a no-op.
+ * Deletes ONLY a mirror of this exact quest: the record must be a hologram
+ * whose soul points back at `(homeHolonId, 'quests', questId)`. Quest ids are
+ * Telegram message ids and collide across chats, so the member's personal
+ * holon can hold — under the same id — a real quest of their own, the actual
+ * SOURCE of this quest (created in their DM and holographed into the group),
+ * or a mirror of a different group's quest. None of those are ours to delete.
+ *
+ * Idempotent: an absent or non-mirror record is a no-op.
  */
 export async function reflectLeave(ctx: ReflectContext): Promise<ReflectResult> {
   const target = resolveTarget(ctx);
   if (!target.ok) return target.result;
 
-  await (ctx.holosphere as any).delete(target.callerHolonId, 'quests', String(ctx.quest.id));
+  const hs = ctx.holosphere as any;
+  const questId = String(ctx.quest.id);
+  let existing: any = null;
+  try {
+    existing = await hs.get(target.callerHolonId, 'quests', questId, null, {
+      resolveHolograms: false,
+    });
+  } catch {
+    existing = null; // unreadable — treat as absent
+  }
+  if (!existing) {
+    return { reflected: false, callerHolonId: target.callerHolonId, reason: 'no-mirror' };
+  }
+
+  const isMirror =
+    typeof hs.isHologram === 'function'
+      ? hs.isHologram(existing)
+      : typeof existing.soul === 'string' && Object.keys(existing).length <= 2;
+  const soulInfo =
+    isMirror && typeof existing.soul === 'string' && typeof hs.parseSoulPath === 'function'
+      ? hs.parseSoulPath(existing.soul)
+      : null;
+  const pointsHome =
+    soulInfo != null &&
+    String(soulInfo.holon) === String(ctx.homeHolonId) &&
+    soulInfo.lens === 'quests' &&
+    String(soulInfo.key) === questId;
+  if (!pointsHome) {
+    return { reflected: false, callerHolonId: target.callerHolonId, reason: 'not-a-mirror' };
+  }
+
+  await hs.delete(target.callerHolonId, 'quests', questId);
 
   return { reflected: true, callerHolonId: target.callerHolonId };
 }
