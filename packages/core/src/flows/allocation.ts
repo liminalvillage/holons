@@ -14,11 +14,15 @@
  *
  *   interior — `interiorPercent` of the pot, divided among members in
  *              proportion to their contribution score
- *   exterior — the remainder, divided across `nzones` rings by a geometric
- *              decay, then evenly among the federated partners in each ring
+ *   exterior — the remainder, divided among the federated partners placed in
+ *              `nzones` rings: each partner carries its ring's geometric decay
+ *              weight and shares are normalized over placed partners only,
+ *              exactly as the Bundle contract distributes on-chain
  *
  * The on-chain contract remains the authority wherever a bundle is deployed;
- * `readAllocationConfig` is the off-chain mirror that wallet-less surfaces read.
+ * `readAllocationConfig` is the off-chain mirror that wallet-less surfaces read,
+ * and this math is kept in lockstep with the contract so the mirror shows what
+ * the chain would pay (pinned by the Sepolia-parity cases in the spec).
  */
 
 /** The three knobs that shape the split. */
@@ -136,8 +140,10 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
  *
  * Every returned `percentage` is a share of the whole, so the interior and
  * exterior slices together sum to 100 and their amounts sum to `total`. A zone
- * with no partners keeps its share and simply shows as unassigned — hiding it
- * would misreport how much is actually committed outward.
+ * with no partners pays nothing while others are occupied — the contract
+ * redistributes its weight to the placed partners, and the mirror must not
+ * show value going where the chain would never send it. Only when no partner
+ * is placed at all do zones keep their decay shares, as a structural preview.
  */
 function uniqueById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -196,16 +202,29 @@ export function allocate(input: {
     }
   }
 
-  // Exterior: split across zones by the steepness decay, then evenly among the
-  // partners in each zone.
-  const zonePercentages = calculateZonePercentages(config.steepness, config.nzones);
+  // Exterior: contract parity. The Bundle contract weighs each PLACED member
+  // by its zone's geometric decay and normalizes over those members only —
+  // an empty zone pays nothing and the whole exterior pot reaches actual
+  // partners (verified against the deployed contract on Sepolia, 2026-08-30).
+  // With nobody placed the contract retains the exterior pot, so there is no
+  // payout to mirror; the zones then keep their configured decay shares as a
+  // structural preview of the split being edited.
   const exterior: AllocationSlice[] = [];
   if (exteriorShare > 0) {
+    const decay = config.steepness / 100;
+    const weightOf = (zone: number) => Math.pow(decay, zone - 1);
+    const placed = zoned.filter((p) => p.zone >= 1 && p.zone <= config.nzones);
+    const totalWeight = placed.reduce((s, p) => s + weightOf(p.zone), 0);
+    const zonePercentages = calculateZonePercentages(config.steepness, config.nzones);
+
     for (let z = 0; z < config.nzones; z++) {
       const zone = z + 1;
-      const percentage = (zonePercentages[z] / 100) * exteriorShare;
-      const partners = zoned.filter((p) => p.zone === zone);
-      const each = partners.length > 0 ? percentage / partners.length : 0;
+      const partners = placed.filter((p) => p.zone === zone);
+      const each = totalWeight > 0 ? (weightOf(zone) / totalWeight) * exteriorShare : 0;
+      const percentage =
+        totalWeight > 0
+          ? each * partners.length
+          : (zonePercentages[z] / 100) * exteriorShare;
       exterior.push({
         id: `zone-${zone}`,
         label: `Zone ${zone}`,

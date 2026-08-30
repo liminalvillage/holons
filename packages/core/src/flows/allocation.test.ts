@@ -170,7 +170,10 @@ describe('allocate', () => {
     expect(result.exterior.reduce((s, z) => s + z.percentage, 0)).toBeCloseTo(100, 8);
   });
 
-  it('divides a zone evenly among its partners', () => {
+  it('gives each partner its full zone weight, like the contract', () => {
+    // Two partners share zone 1: on-chain each carries the whole zone weight
+    // (normalized per member), so together they take the zone's doubled share
+    // rather than splitting a fixed zone share.
     const result = allocate({
       total: 1000,
       config: { interiorPercent: 0, steepness: 100, nzones: 2 },
@@ -182,19 +185,82 @@ describe('allocate', () => {
     });
     const zone1 = result.exterior[0];
     expect(zone1.members).toHaveLength(2);
-    expect(zone1.members![0].percentage).toBeCloseTo(zone1.percentage / 2, 8);
+    // steepness 100 → equal weights; zone 2 is empty, so the two partners
+    // split the entire exterior side between them.
+    expect(zone1.members![0].percentage).toBeCloseTo(50, 8);
+    expect(zone1.percentage).toBeCloseTo(100, 8);
+    expect(result.exterior[1].percentage).toBeCloseTo(0, 8);
   });
 
-  it('keeps an empty zone visible with its share', () => {
+  it('redistributes an empty zone to the occupied ones, like the contract', () => {
+    // The Bundle contract normalizes over placed members only — an empty zone
+    // pays nothing and the full exterior pot reaches actual partners.
     const result = allocate({
       total: 1000,
       config: { interiorPercent: 0, steepness: 100, nzones: 2 },
       members: [],
       zoned: [{ id: 'p1', name: 'One', zone: 1 }],
     });
+    expect(result.exterior[0].percentage).toBeCloseTo(100, 8);
     const zone2 = result.exterior[1];
-    expect(zone2.percentage).toBeGreaterThan(0);
+    expect(zone2.percentage).toBeCloseTo(0, 8);
     expect(zone2.members).toHaveLength(0);
+  });
+
+  it('matches the on-chain distribution observed on Sepolia', () => {
+    // Pinned against the Bundle contract test of 2026-08-30: 0.01 ETH through
+    // interior 70% (alice 60 / bob 40) and exterior 30% (partners in zones 1
+    // and 2 of 3, steepness 0.5) paid 0.0042 / 0.0028 / 0.002 / 0.001.
+    const result = allocate({
+      total: 0.01,
+      config: { interiorPercent: 70, steepness: 50, nzones: 3 },
+      members: [
+        { id: 'alice', name: 'Alice', percentage: 60 },
+        { id: 'bob', name: 'Bob', percentage: 40 },
+      ],
+      zoned: [
+        { id: 'pa', name: 'Partner A', zone: 1 },
+        { id: 'pb', name: 'Partner B', zone: 2 },
+      ],
+    });
+    expect(result.interior[0].amount).toBeCloseTo(0.0042, 10);
+    expect(result.interior[1].amount).toBeCloseTo(0.0028, 10);
+    expect(result.exterior[0].members![0].amount).toBeCloseTo(0.002, 10);
+    expect(result.exterior[1].members![0].amount).toBeCloseTo(0.001, 10);
+    expect(result.exterior[2].percentage).toBeCloseTo(0, 8);
+  });
+
+  it('matches the on-chain multi-member zone probe', () => {
+    // Pinned against the Sepolia probe: zones [1,1,2] at steepness 0.5 split
+    // 0.003 as 0.0012 / 0.0012 / 0.0006 — per-member weights, not per-zone.
+    const result = allocate({
+      total: 0.003,
+      config: { interiorPercent: 0, steepness: 50, nzones: 3 },
+      members: [],
+      zoned: [
+        { id: 'x', name: 'X', zone: 1 },
+        { id: 'y', name: 'Y', zone: 1 },
+        { id: 'z', name: 'Z', zone: 2 },
+      ],
+    });
+    const [zone1, zone2] = result.exterior;
+    expect(zone1.members![0].amount).toBeCloseTo(0.0012, 10);
+    expect(zone1.members![1].amount).toBeCloseTo(0.0012, 10);
+    expect(zone2.members![0].amount).toBeCloseTo(0.0006, 10);
+  });
+
+  it('previews the structural decay shares when nobody is placed', () => {
+    // With no partners the contract retains the exterior pot, so there is no
+    // payout to mirror; the zones keep their configured decay shares so the
+    // editor still shows the shape being configured.
+    const result = allocate({
+      total: 1000,
+      config: { interiorPercent: 0, steepness: 50, nzones: 2 },
+      members: [],
+      zoned: [],
+    });
+    expect(result.exterior[0].percentage).toBeGreaterThan(result.exterior[1].percentage);
+    expect(result.exterior.reduce((s, z) => s + z.percentage, 0)).toBeCloseTo(100, 8);
   });
 
   it('ignores unassigned partners', () => {
@@ -252,7 +318,9 @@ describe('allocationToGraph', () => {
     expect(intoMembers).toBeCloseTo(500, 8);
   });
 
-  it('ends a partner-less zone at depth 2', () => {
+  it('drops an empty zone when others are occupied', () => {
+    // Contract parity: an empty zone pays nothing, so it carries no value and
+    // does not appear; the occupied zone takes the whole exterior side.
     const lonely = allocationToGraph(
       allocate({
         total: 100,
@@ -261,9 +329,25 @@ describe('allocationToGraph', () => {
         zoned: [{ id: 'p1', name: 'One', zone: 1 }],
       }),
     );
-    const zone2 = lonely.nodes.find((n) => n.id === 'zone-2');
+    expect(lonely.nodes.find((n) => n.id === 'zone-2')).toBeUndefined();
+    const zone1 = lonely.nodes.find((n) => n.id === 'zone-1');
+    expect(zone1!.value).toBeCloseTo(100, 8);
+  });
+
+  it('ends a partner-less zone at depth 2 in the structural preview', () => {
+    // With nobody placed anywhere, zones show their configured decay shares
+    // and terminate at depth 2 (the layout allows a column to end early).
+    const preview = allocationToGraph(
+      allocate({
+        total: 100,
+        config: { interiorPercent: 0, steepness: 100, nzones: 2 },
+        members: [],
+        zoned: [],
+      }),
+    );
+    const zone2 = preview.nodes.find((n) => n.id === 'zone-2');
     expect(zone2!.depth).toBe(2);
-    expect(lonely.links.some((l) => l.source === 'zone-2')).toBe(false);
+    expect(preview.links.some((l) => l.source === 'zone-2')).toBe(false);
   });
 
   it('falls back to percentages when there is no pot', () => {
