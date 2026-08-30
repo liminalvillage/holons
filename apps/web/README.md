@@ -1,11 +1,11 @@
-# Harvest
+# Holons
 
 A decentralized holonic platform for organizational governance, resource distribution, and wisdom aggregation.
 
-[![Documentation](https://img.shields.io/badge/docs-GitBook-blue)](https://liminalvillage.gitbook.io/harvest)
+[![Documentation](https://img.shields.io/badge/docs-GitBook-blue)](https://liminalvillage.gitbook.io/holons)
 [![License](https://img.shields.io/badge/license-AGPL-green)](LICENSE)
 
-> **Full Documentation**: [https://liminalvillage.gitbook.io/harvest](https://liminalvillage.gitbook.io/harvest)
+> **Full Documentation**: [https://liminalvillage.gitbook.io/holons](https://liminalvillage.gitbook.io/holons)
 >
 > **User Guide**: See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for detailed user journeys and tutorials.
 
@@ -13,7 +13,7 @@ A decentralized holonic platform for organizational governance, resource distrib
 
 ## Overview
 
-Harvest is an advanced, decentralized holonic platform built on Svelte 5 and TypeScript that enables organizations to manage themselves as **holons** - self-organizing units that are simultaneously whole and part of larger wholes.
+Holons is an advanced, decentralized holonic platform built on Svelte 5 and TypeScript that enables organizations to manage themselves as **holons** - self-organizing units that are simultaneously whole and part of larger wholes.
 
 The platform integrates blockchain smart contracts, federated data sharing, and real-time collaborative features to create a comprehensive ecosystem for:
 
@@ -45,8 +45,8 @@ The platform integrates blockchain smart contracts, federated data sharing, and 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/harvest.git
-cd harvest
+git clone https://github.com/liminalvillage/holons.git
+cd holons
 
 # Install dependencies
 npm install
@@ -178,7 +178,7 @@ src/
 
 ## Quick Start for Users
 
-1. **Visit the App**: Open Harvest in your browser
+1. **Visit the App**: Open Holons in your browser
 2. **Create Identity**: Click "Keys & Access" in the sidebar, then "Create Identity"
 3. **Explore Your Home**: Your personal holon is created automatically
 4. **Add Holons**: Use the "+" button to add other holons by ID or QR code
@@ -190,12 +190,12 @@ For detailed user journeys, see the [User Guide](docs/USER_GUIDE.md).
 
 ## Documentation
 
-| Resource                                                           | Description                    |
-| ------------------------------------------------------------------ | ------------------------------ |
-| [GitBook Documentation](https://liminalvillage.gitbook.io/harvest) | Full platform documentation    |
-| [User Guide](docs/USER_GUIDE.md)                                   | User journeys and tutorials    |
-| [Architecture Guide](docs/ARCHITECTURE.md)                         | Technical architecture details |
-| [Quick Reference](docs/QUICK_REFERENCE.md)                         | Key files and data flow        |
+| Resource                                                          | Description                    |
+| ----------------------------------------------------------------- | ------------------------------ |
+| [GitBook Documentation](https://liminalvillage.gitbook.io/holons) | Full platform documentation    |
+| [User Guide](docs/USER_GUIDE.md)                                  | User journeys and tutorials    |
+| [Architecture Guide](docs/ARCHITECTURE.md)                        | Technical architecture details |
+| [Quick Reference](docs/QUICK_REFERENCE.md)                        | Key files and data flow        |
 
 ---
 
@@ -215,6 +215,6 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ## Support
 
-- **Documentation**: [GitBook](https://liminalvillage.gitbook.io/harvest)
-- **Issues**: [GitHub Issues](https://github.com/liminalvillage/harvest/issues)
+- **Documentation**: [GitBook](https://liminalvillage.gitbook.io/holons)
+- **Issues**: [GitHub Issues](https://github.com/liminalvillage/holons/issues)
 - **User Guide**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)

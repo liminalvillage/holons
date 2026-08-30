@@ -40,7 +40,7 @@ Useful workspace commands:
 
 ```bash
 pnpm -F @holons/core test           # one package's tests
-pnpm -F harvest-web dev             # run just the web app
+pnpm -F holons-web dev             # run just the web app
 pnpm -r --if-present build          # build everything
 ```
 

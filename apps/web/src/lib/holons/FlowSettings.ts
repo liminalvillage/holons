@@ -1,5 +1,5 @@
 // Thin re-export. The implementation now lives in `@holons/core/settings`
-// so the Telegram bot and Harvest web app share a single settings layer.
+// so the Telegram bot and Holons web app share a single settings layer.
 // Existing imports from `./FlowSettings` keep working unchanged.
 //
 // NOTE: federation link helpers are gone from the settings layer — the native

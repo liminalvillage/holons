@@ -2,7 +2,7 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The Lists tab — the holon's shared checklists (agenda, shopping, ad-hoc
-  // lists), mirroring the harvest dashboard's Checklists feature. Core owns
+  // lists), mirroring the holons dashboard's Checklists feature. Core owns
   // every mutation (@holons/core/checklists); this view only renders cards and
   // an open-list panel. Writes on a federated list are routed to its owner
   // holon via `sourceRef` so ticking a partner's list never forks a local copy.

@@ -42,7 +42,7 @@ export interface QRActionResult {
 
 /**
  * Processes QR code actions for role assignment, event creation, task assignment,
- * badge awarding, and invite processing within the Harvest ecosystem.
+ * badge awarding, and invite processing within the Holons ecosystem.
  *
  * This service handles the complete lifecycle of QR code-based actions including
  * user management, data persistence, and audit logging.

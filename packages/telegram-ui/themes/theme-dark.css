@@ -1,6 +1,6 @@
 /* ==========================================================================
    HolonsBot Theme — Dark
-   Mirrors the Harvest design system (../harvest/src/styles/theme.css).
+   Mirrors the Holons design system (../holons/src/styles/theme.css).
    ========================================================================== */
 
 :root {
@@ -919,8 +919,8 @@ ul {
 }
 
 /* ==========================================================================
-   Quest Card (questimage) — harvest panel pattern
-   Mirrors .panel from ../harvest/src/styles/components.css:
+   Quest Card (questimage) — holons panel pattern
+   Mirrors .panel from ../holons/src/styles/components.css:
    bg-secondary surface, 1px solid border, radius-lg (8px), divider rows.
    ========================================================================== */
 .quest-card-container {
@@ -929,7 +929,7 @@ ul {
     margin: 5px auto;
     background: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
-    border-radius: 8px;                 /* harvest --radius-lg */
+    border-radius: 8px;                 /* holons --radius-lg */
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5),
                 0 8px 10px -6px rgba(0, 0, 0, 0.4);
     overflow: hidden;
@@ -948,7 +948,7 @@ ul {
 
 /* Body row (panel__body-style divider rows) */
 .quest-section {
-    padding: 12px 16px;                 /* harvest spacing-3 spacing-4 */
+    padding: 12px 16px;                 /* holons spacing-3 spacing-4 */
     margin: 0;
     border-bottom: 1px solid var(--color-border);
     display: flex;
@@ -972,7 +972,7 @@ ul {
 .quest-image {
     max-width: 100%;
     max-height: 300px;
-    border-radius: 6px;                 /* harvest --radius-md */
+    border-radius: 6px;                 /* holons --radius-md */
     object-fit: cover;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
     border: 1px solid var(--color-border);
@@ -1015,7 +1015,7 @@ ul {
     border-left: 3px solid var(--color-error);
 }
 
-/* Header band — matches harvest .panel__header */
+/* Header band — matches holons .panel__header */
 .quest-header {
     background: var(--color-bg-secondary);
     padding: 12px 16px;
@@ -1027,12 +1027,12 @@ ul {
     border-bottom: 1px solid var(--color-border);
 }
 
-/* Type pill — harvest .btn--primary / accent style */
+/* Type pill — holons .btn--primary / accent style */
 .quest-type {
     background: var(--color-accent);
     color: #ffffff;
     padding: 4px 10px;
-    border-radius: 6px;                 /* harvest --radius-md */
+    border-radius: 6px;                 /* holons --radius-md */
     font-weight: 500;
     font-size: 12px;
     text-transform: none;
@@ -1041,7 +1041,7 @@ ul {
     line-height: 1.25;
 }
 
-/* Status pill — harvest secondary chip */
+/* Status pill — holons secondary chip */
 .quest-status {
     background: var(--color-bg-tertiary);
     color: var(--color-text-secondary);
@@ -1065,12 +1065,12 @@ ul {
     text-align: center;
 }
 
-/* Title — harvest font-size-2xl, in the body, no border */
+/* Title — holons font-size-2xl, in the body, no border */
 .quest-title {
-    font-size: 24px;                    /* harvest --font-size-2xl */
-    font-weight: 700;                   /* harvest --font-weight-bold */
+    font-size: 24px;                    /* holons --font-size-2xl */
+    font-weight: 700;                   /* holons --font-weight-bold */
     color: var(--color-text-primary);
-    line-height: 1.25;                  /* harvest --line-height-tight */
+    line-height: 1.25;                  /* holons --line-height-tight */
     margin: 0;
     padding: 16px 16px 12px 16px;
     text-align: left;
@@ -1083,7 +1083,7 @@ ul {
     box-sizing: border-box;
 }
 
-/* Section label — small icon column, harvest text-muted */
+/* Section label — small icon column, holons text-muted */
 .section-label {
     font-weight: 500;
     color: var(--color-text-muted);
@@ -1102,8 +1102,8 @@ ul {
 
 .section-content {
     color: var(--color-text-secondary);
-    font-size: 14px;                    /* harvest --font-size-sm */
-    line-height: 1.5;                   /* harvest --line-height-normal */
+    font-size: 14px;                    /* holons --font-size-sm */
+    line-height: 1.5;                   /* holons --line-height-normal */
     margin: 0;
     flex: 1;
     padding: 0;
@@ -1125,13 +1125,13 @@ ul {
     box-shadow: none;
 }
 
-/* Participant chip — harvest pill */
+/* Participant chip — holons pill */
 .participant-name {
     display: inline-flex;
     align-items: center;
     background: var(--color-accent-subtle);
     padding: 2px 10px;
-    border-radius: 9999px;              /* harvest --radius-full */
+    border-radius: 9999px;              /* holons --radius-full */
     margin: 2px 6px 2px 0;
     font-size: 13px;
     font-weight: 500;
@@ -1141,7 +1141,7 @@ ul {
     line-height: 1.4;
 }
 
-/* Footer — matches harvest .panel__footer */
+/* Footer — matches holons .panel__footer */
 .quest-footer {
     background: var(--color-bg-primary);
     padding: 12px 16px;

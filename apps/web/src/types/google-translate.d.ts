@@ -20,7 +20,7 @@ declare global {
         };
       };
     };
-    harvestLanguageSetting?: string;
+    holonsLanguageSetting?: string;
     triggerTranslation?: (language: string) => void;
     googleTranslateInitialized?: boolean;
     googleTranslateElementInit?: () => void;

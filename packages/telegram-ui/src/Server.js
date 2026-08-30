@@ -80,7 +80,7 @@ class Server {
     // Setup image endpoints (isolated)
     this.setupImageEndpoints(app);
 
-    // Setup refresh endpoints (harvest → telegram message edits)
+    // Setup refresh endpoints (holons → telegram message edits)
     this.setupRefreshEndpoints(app);
 
     // Global error handler
@@ -128,7 +128,7 @@ class Server {
   setupSecurityMiddleware(app) {
     const isDebug = process.env.NODE_ENV === 'development';
 
-    // CORS — required so browsers can preflight POST /refresh/* from harvest.
+    // CORS — required so browsers can preflight POST /refresh/* from holons.
     // In debug, allow any origin; in production, restrict via CORS_ORIGIN.
     app.use(
       cors({
@@ -650,7 +650,7 @@ class Server {
       res.status(202).json({ scheduled: true });
     });
 
-    // Need-lifecycle notifications (harvest → DMs). The writer (WeQuest, the
+    // Need-lifecycle notifications (holons → DMs). The writer (WeQuest, the
     // dashboard) tells the bot WHAT happened; the bot re-reads the need from
     // the graph and DMs the party that must act next. Best-effort: a user who
     // never started the bot simply gets no DM.
@@ -770,12 +770,12 @@ class Server {
       return;
     }
 
-    // Quest IDs from harvest are opaque strings, so we can't blindly do
+    // Quest IDs from holons are opaque strings, so we can't blindly do
     // Number(questId). ensureMainTelegramMessage resolves the message_id via
     // activeHolograms (legacy bot-native quests fall through to a numeric
     // quest.id) — and creates a fresh Telegram message in the home holon if
     // none exists yet. That makes /refresh/quest the canonical way for
-    // harvest to bootstrap a Telegram representation for a brand-new task.
+    // holons to bootstrap a Telegram representation for a brand-new task.
     const markupConfig = quests.markup(quest, language);
     const messageId = await quests.ensureMainTelegramMessage(
       quest,

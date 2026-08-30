@@ -8,14 +8,14 @@
     "src/utils/qr-action-service.ts"
   ],
   "out": "docs/api",
-  "name": "Harvest API Documentation",
+  "name": "Holons API Documentation",
   "readme": "./README.md",
   "excludePrivate": false,
   "excludeProtected": false,
   "excludeInternal": false,
   "includeVersion": true,
   "navigationLinks": {
-    "Harvest": "https://github.com/your-org/harvest",
+    "Holons": "https://github.com/liminalvillage/holons",
     "HoloSphere": "https://holosphere.dev"
   },
   "categorizeByGroup": true,

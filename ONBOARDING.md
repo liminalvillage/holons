@@ -35,7 +35,7 @@ pnpm -r typecheck && pnpm test     # should be green on a clean clone
 ## 3. Repository map
 
 ```
-apps/web/              harvest-web — Svelte 5 dashboard (primary UI)
+apps/web/              holons-web — Svelte 5 dashboard (primary UI)
 packages/core/         @holons/core — all domain logic (start here)
 packages/telegram-ui/  Telegraf bot
 packages/text-ui/      CLI / REPL

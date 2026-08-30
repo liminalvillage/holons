@@ -5,8 +5,8 @@
   "enum": ["value", "tool", "practice"],
   "metadata": {
     "creator": {
-      "name": "Harvest Project",
-      "url": "https://harvest.network"
+      "name": "Holons Project",
+      "url": "https://holons.io"
     },
     "field": {
       "name": "chromosome-type",

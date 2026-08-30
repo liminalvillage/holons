@@ -41,7 +41,7 @@ export interface HolonsManagerEvents {
  * Main Holons Manager class that integrates smart contracts with flow visualization.
  *
  * This class serves as the primary interface for managing holons (decentralized organizational units)
- * in the Harvest ecosystem. It combines smart contract interactions with flow visualization
+ * in the Holons ecosystem. It combines smart contract interactions with flow visualization
  * and settings management.
  *
  * Based on the original Holons.js and Settings.js but modernized for web frontend usage.

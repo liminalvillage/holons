@@ -24,7 +24,7 @@ A clear description of the bug.
 
 ## Scope
 
-- Package(s): <!-- @holons/core, harvest-web, telegram-ui, … -->
+- Package(s): <!-- @holons/core, holons-web, telegram-ui, … -->
 - UI / interface: <!-- web, telegram, text, ai, mcp -->
 
 ## Environment

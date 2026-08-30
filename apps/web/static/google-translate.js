@@ -3,7 +3,7 @@
 // element.js script (loaded async right after) fires.
 
 // Global variable to store current language setting
-window.harvestLanguageSetting = 'en';
+window.holonsLanguageSetting = 'en';
 
 // Track retry attempts to avoid infinite loops
 window.googleTranslateRetryCount = 0;
@@ -112,7 +112,7 @@ function googleTranslateElementInit() {
 		// Listen for settings language changes
 		window.addEventListener('settingsLanguageChanged', (event) => {
 			const newLanguage = event.detail.language;
-			window.harvestLanguageSetting = newLanguage;
+			window.holonsLanguageSetting = newLanguage;
 
 			if (newLanguage && newLanguage !== 'en') {
 				window.triggerTranslation(newLanguage);
@@ -159,8 +159,8 @@ function googleTranslateElementInit() {
 		let targetLang = null;
 
 		// First try saved setting, then browser language
-		if (window.harvestLanguageSetting && window.harvestLanguageSetting !== 'en') {
-			targetLang = window.harvestLanguageSetting;
+		if (window.holonsLanguageSetting && window.holonsLanguageSetting !== 'en') {
+			targetLang = window.holonsLanguageSetting;
 		} else if (supportedLangs[browserLang]) {
 			targetLang = supportedLangs[browserLang];
 		} else {
@@ -175,7 +175,7 @@ function googleTranslateElementInit() {
 
 		// Trigger translation if we found a supported language
 		if (targetLang && targetLang !== 'en') {
-			window.harvestLanguageSetting = targetLang;
+			window.holonsLanguageSetting = targetLang;
 			window.triggerTranslation(targetLang);
 		}
 

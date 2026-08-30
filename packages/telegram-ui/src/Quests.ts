@@ -77,7 +77,7 @@ export default class Quests {
 
     // Parse callback data of the form `<prefix><holonId>_<questId>`. Holon IDs
     // are Telegram chat IDs (digits + optional leading `-`, no underscores), so
-    // the holon is everything before the first `_`. Quest IDs from harvest can
+    // the holon is everything before the first `_`. Quest IDs from holons can
     // contain `_` (e.g. `"1714510123456_abc123def"`), so the rest is the quest
     // id verbatim. Pass `prefix` when the handler runs through a generic
     // dispatcher that doesn't set ctx.match for the inner action.
@@ -116,11 +116,11 @@ export default class Quests {
 
     // Resolve the Telegram message_id that represents this quest in the given
     // holon. Returns null when no Telegram representation exists (e.g. a quest
-    // created in harvest that has never been rendered as a Telegram hologram).
+    // created in holons that has never been rendered as a Telegram hologram).
     //
     // quest.id is an opaque identifier — it equals the Telegram message_id only
     // for legacy bot-native quests created via /task, where the bot assigns
-    // quest.id = sent.message_id. Harvest quests use string IDs that look
+    // quest.id = sent.message_id. Holons quests use string IDs that look
     // nothing like message_ids, so any code that needs to call editMessage*,
     // deleteMessage, pinChatMessage, etc. must go through this resolver.
     static resolveTelegramMessageId(quest, holonId) {
@@ -575,7 +575,7 @@ export default class Quests {
 
         await holonDB.delete(holonId, 'quests', messageId);
         // unpin/delete need real Telegram message_ids — resolve from the quest's
-        // active holograms (handles harvest quests where messageId is a string).
+        // active holograms (handles holons quests where messageId is a string).
         const mainTgId = Quests.resolveTelegramMessageId(quest, holonId);
         if (mainTgId != null) {
             await ctx.telegram.unpinChatMessage(holonId, mainTgId).catch(() => {});
@@ -1048,7 +1048,7 @@ export default class Quests {
         }
 
         // 2. Update the main Telegram message. For legacy bot-native quests
-        // it lives at (questHolon, quest.id); for harvest quests (string
+        // it lives at (questHolon, quest.id); for holons quests (string
         // quest.id) we may need to bootstrap one — same hologram mechanism,
         // just rooted in the home holon. ensureMainTelegramMessage returns
         // the resolved/created message_id, or null if we have no chat to
@@ -2358,7 +2358,7 @@ export default class Quests {
         try {
             // Callback format: view_original_quest_<holonId>_<questId>
             // Holon IDs are Telegram chat IDs (no underscores), but quest IDs from
-            // harvest contain underscores (e.g. "1714510123456_abc123def"). Split
+            // holons contain underscores (e.g. "1714510123456_abc123def"). Split
             // on the FIRST underscore so the whole rest is the quest id.
             const firstSep = originalQuestIdParts.indexOf('_');
             let originalQuestholonId, actualOriginalQuestId;
@@ -2501,7 +2501,7 @@ export default class Quests {
         }
     }
     // Ensure the quest has a "main" Telegram message in its home holon, creating
-    // one if necessary. Quests created in harvest live in holosphere with
+    // one if necessary. Quests created in holons live in holosphere with
     // string ids and have no Telegram representation until the bot renders one;
     // we reuse the activeHolograms tracking (the same mechanism used for
     // hologram copies in other chats) so every code path that reaches for a

@@ -22,7 +22,7 @@ cp apps/web/.env.example apps/web/.env
 pnpm dev
 ```
 
-Open <http://localhost:5173>. You're looking at `harvest-web` reading from a
+Open <http://localhost:5173>. You're looking at `holons-web` reading from a
 Holosphere (GUN) namespace. No keys are required just to boot the UI; features
 like maps need their token (`VITE_MAPBOX_TOKEN`) in `apps/web/.env`.
 

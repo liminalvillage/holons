@@ -18,7 +18,7 @@ Title: use Conventional Commits with a scope, e.g.
 
 ## Scope
 
-- Affected package(s): <!-- @holons/core, harvest-web, … -->
+- Affected package(s): <!-- @holons/core, holons-web, … -->
 - Domain logic changed in `@holons/core`? <!-- yes/no — if a UI changed behavior, it probably belongs in core -->
 
 ## Checklist

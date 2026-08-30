@@ -44,7 +44,7 @@ pnpm -F @holons/voice-ui build && pnpm -F @holons/voice-ui start
 #   dev: pnpm -F @holons/voice-ui dev
 
 # 4. Open the browser front-end
-pnpm -F harvest-web dev      # then visit /voice
+pnpm -F holons-web dev      # then visit /voice
 ```
 
 Click **Start talking**, allow the mic, and speak. Talking over the agent

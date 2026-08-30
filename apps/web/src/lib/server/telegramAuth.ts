@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Server-side Telegram authentication for harvest-web — OpenID Connect.
+// Server-side Telegram authentication for holons-web — OpenID Connect.
 //
 // Telegram runs a standard OIDC provider at https://oauth.telegram.org (set up
 // via BotFather → Bot Settings → Web Login, which issues a client_id +

@@ -168,7 +168,7 @@ The complete history of HolonsBot — from first commit to decentralized communi
 - **Intersubjective Values** - Community-defined worth
 - **Money & Hour Credits** - Dual currency system
 - **Balance Function** - Track community wealth
-- **Harvest Board** - Community dashboard
+- **Holons Board** - Community dashboard
 
 ### Quest Types
 - **Events** - Scheduled gatherings

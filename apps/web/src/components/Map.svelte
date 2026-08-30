@@ -120,7 +120,7 @@
 	// positives. Uses the shared resolver so the BrowserPanel toggle is
 	// honored here too.
 	const cacheAppName: string = getEffectiveAppName();
-	const presenceCacheKey = (lens: string) => `harvest.presence.${cacheAppName}.${lens}`;
+	const presenceCacheKey = (lens: string) => `holons.presence.${cacheAppName}.${lens}`;
 
 	function hydratePresenceCache() {
 		if (!browser) return;
@@ -173,7 +173,7 @@
 	// independent preferences. `lensInitialized` gates the auto-persist
 	// reactive block so the very first run (which observes the prop default
 	// 'quests' before onMount hydrates) doesn't overwrite the stored value.
-	const selectedLensStorageKey = `harvest.selectedLens.${cacheAppName}`;
+	const selectedLensStorageKey = `holons.selectedLens.${cacheAppName}`;
 	const VALID_LENSES: ReadonlyArray<LensType> = [
 		'quests', 'needs', 'offers', 'communities', 'organizations',
 		'projects', 'currencies', 'people', 'holons',

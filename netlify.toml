@@ -8,12 +8,12 @@
   base = "apps/web"
   publish = "build"           # resolves to apps/web/build
   # Install + build run from the monorepo root (cd ../..) so the pnpm
-  # workspace is intact and @holons/core is built BEFORE harvest-web,
+  # workspace is intact and @holons/core is built BEFORE holons-web,
   # then the final `pnpm run build` runs from apps/web so the adapter
   # writes its output where Netlify expects it.
   # --no-frozen-lockfile is required: pnpm-lock.yaml is deliberately not
   # committed, and pnpm turns frozen-lockfile ON by default when CI=true.
-  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F harvest-web build"
+  command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F holons-web build"
 
 [build.environment]
   # Node.js version for builds

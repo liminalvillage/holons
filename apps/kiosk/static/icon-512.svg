@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Holons">
   <rect width="512" height="512" rx="112" fill="#0e6b66"/>
-  <!-- Holons mark: two interlocking circles (matches harvest's favicon). -->
+  <!-- Holons mark: two interlocking circles (matches holons's favicon). -->
   <g fill="none" stroke="#f7f4ec" stroke-width="25">
     <circle cx="218.5" cy="256" r="75"/>
     <circle cx="293.5" cy="256" r="75"/>

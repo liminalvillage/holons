@@ -61,7 +61,7 @@
 	}
 
 	function uiContext(): Record<string, string> {
-		const ctx: Record<string, string> = { app: 'harvest' };
+		const ctx: Record<string, string> = { app: 'holons' };
 		const holon = $ID;
 		if (holon) ctx.holon = holon;
 		// Route id like "/[id]/tasks" → view "tasks" ("dashboard" at the root).

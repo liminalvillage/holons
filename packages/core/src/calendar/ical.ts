@@ -31,14 +31,14 @@ export interface HolonEvent {
 
 /** Options for iCal feed generation. */
 export interface ICalFeedOptions {
-    /** Calendar product identifier. Defaults to Harvest. */
+    /** Calendar product identifier. Defaults to Holons. */
     prodId?: string;
-    /** Domain used to scope event UIDs. Defaults to `harvest.app`. */
+    /** Domain used to scope event UIDs. Defaults to `holons.io`. */
     uidDomain?: string;
 }
 
-const DEFAULT_PRODID = '-//Harvest Holon Calendar//EN';
-const DEFAULT_UID_DOMAIN = 'harvest.app';
+const DEFAULT_PRODID = '-//Holons Holon Calendar//EN';
+const DEFAULT_UID_DOMAIN = 'holons.io';
 
 /**
  * Generate an iCal feed string from holon events.

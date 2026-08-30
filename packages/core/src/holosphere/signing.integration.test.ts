@@ -1,6 +1,6 @@
 /**
  * Integration: HoloSphere signing exercised through the real @holons/core
- * factory, in the harvest runtime. Default authorized-read model = your
+ * factory, in the holons runtime. Default authorized-read model = your
  * FEDERATION read-list (sign with your key, read from keys you trust).
  *
  * Requires the local holosphere build (root pnpm override
@@ -37,14 +37,14 @@ describe('holosphere signing — federation read-list via @holons/core factory',
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'harvest-sign-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holons-sign-'));
     const Ask = generateSecretKey();
     Apub = getPublicKey(Ask);
     Bsk = generateSecretKey();
     Bpub = getPublicKey(Bsk);
 
     sphere = createHoloSphere({
-      appName: 'harvest-sign-test',
+      appName: 'holons-sign-test',
       privateKey: Ask,
       extra: {
         gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },

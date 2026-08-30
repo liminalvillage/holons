@@ -51,6 +51,6 @@ At the time of the cleanup the packages were at:
 - `@holons/text-ui` — 0.1.0
 - `@holons/mcp-ui` — 0.1.0
 - `@holons/telegram-ui` — 2.0.0
-- `harvest-web` — 2.0.0
+- `holons-web` — 2.0.0
 
 [Unreleased]: https://github.com/HolonicLabs/holons/commits/main

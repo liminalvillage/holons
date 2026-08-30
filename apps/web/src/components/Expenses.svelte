@@ -9,7 +9,7 @@
 
 	// Canonical creation timestamp is `created: ISO string` across every
 	// shape. Older records may carry the bot's legacy `date` (ms / numeric
-	// string) or harvest's legacy `timestamp` (ISO); read all three for
+	// string) or holons's legacy `timestamp` (ISO); read all three for
 	// back-compat so cross-system data sorts/displays correctly.
 	function expenseTimestampMs(e: any): number {
 		if (typeof e?.created === 'string') {

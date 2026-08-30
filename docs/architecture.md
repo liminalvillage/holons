@@ -30,9 +30,9 @@ UIs never reimplement domain logic; they render and collect input.
 ## Workspace layout
 
 ```
-harvest/
+holons/
 ├── apps/
-│   └── web/                # harvest-web — SvelteKit web UI
+│   └── web/                # holons-web — SvelteKit web UI
 └── packages/
     ├── core/               # @holons/core — UI-agnostic domain logic (TS)
     ├── telegram-ui/        # @holons/telegram-ui — Telegraf bot
@@ -49,7 +49,7 @@ run commands.
 
 | Package | Path | Owns |
 | --- | --- | --- |
-| `harvest-web` | `apps/web/` | SvelteKit app — routes, components, stores, Mapbox/H3 visuals, splash/identity flow. |
+| `holons-web` | `apps/web/` | SvelteKit app — routes, components, stores, Mapbox/H3 visuals, splash/identity flow. |
 | `@holons/core` | `packages/core/` | All domain logic. Subpath modules under `packages/core/src/<domain>/`. |
 | `@holons/telegram-ui` | `packages/telegram-ui/` | Telegraf bot: scenes, inline keyboards, Puppeteer screenshots. |
 | `@holons/text-ui` | `packages/text-ui/` | Framework-agnostic CLI/REPL over `@holons/core/commands`. |

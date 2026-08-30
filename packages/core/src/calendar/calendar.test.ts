@@ -29,7 +29,7 @@ describe('iCal generation', () => {
         expect(ical).toContain('END:VCALENDAR');
         expect(ical).toContain('BEGIN:VEVENT');
         expect(ical).toContain('SUMMARY:Standup');
-        expect(ical).toContain('UID:evt1@holon-123.harvest.app');
+        expect(ical).toContain('UID:evt1@holon-123.holons.io');
     });
 
     it('skips events without `when`', () => {

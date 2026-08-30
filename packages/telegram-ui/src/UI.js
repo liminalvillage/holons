@@ -792,7 +792,7 @@ class UI {
 
       // Filter by type and status. Federated holograms (source holon !==
       // current) are kept — they render with the cyan-glow style so they're
-      // visually distinct from local tasks (matches harvest's Tasks view).
+      // visually distinct from local tasks (matches holons's Tasks view).
       quests = quests.filter(
         quest =>
           (quest.type === 'task' ||
@@ -1707,7 +1707,7 @@ class UI {
     const settings = await this.settings.getSettings(holonId);
     const isDark = (settings?.theme || 'dark') !== 'light';
 
-    // Harvest-aligned palette. Dark mirrors harvest's gray-900/800/700 stack
+    // Holons-aligned palette. Dark mirrors holons's gray-900/800/700 stack
     // with indigo accent; light keeps the prior light look.
     const p = isDark
       ? {

@@ -822,7 +822,7 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                         return;
                     }
 
-                    // Treat the harvest-side `_deleted: true` soft-tombstone
+                    // Treat the holons-side `_deleted: true` soft-tombstone
                     // as "not found" by default. Callers that want to see
                     // tombstones can pass `{ includeDeleted: true }`.
                     if (!includeDeleted && parsed._deleted === true) {

@@ -47,7 +47,7 @@ where it already is.
                 ▲            ▲            ▲            ▲            ▲
                 │            │            │            │            │
           ┌──────────┐ ┌───────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐
-          │harvest-web│ │telegram-ui│ │ text-ui │ │  ai-ui  │ │  mcp-ui  │
+          │holons-web│ │telegram-ui│ │ text-ui │ │  ai-ui  │ │  mcp-ui  │
           │ (Svelte 5)│ │ (Telegraf)│ │  (CLI)  │ │ (Claude)│ │  (MCP)   │
           └──────────┘ └───────────┘ └─────────┘ └─────────┘ └──────────┘
                 └────────────┴────────────┴────────────┴───────────┘
@@ -64,7 +64,7 @@ details in [`docs/architecture.md`](./docs/architecture.md).
 | Package | Path | What it owns |
 | --- | --- | --- |
 | `@holons/core` | `packages/core/` | UI-agnostic domain logic: scoring, tasks, federation, Holosphere I/O, shopping, settings, DNA, users, expenses, calendar, library, checklists, categories, commands, REA event store (ValueFlows ontology). |
-| `harvest-web` | `apps/web/` | Svelte 5 / SvelteKit web dashboard — the primary UI (maps, governance, federation, expenses). |
+| `holons-web` | `apps/web/` | Svelte 5 / SvelteKit web dashboard — the primary UI (maps, governance, federation, expenses). |
 | `@holons/telegram-ui` | `packages/telegram-ui/` | Telegraf Telegram bot. Stateful chat interface over `@holons/core`. |
 | `@holons/text-ui` | `packages/text-ui/` | Framework-agnostic CLI/REPL renderer over `@holons/core/commands`. |
 | `@holons/ai-ui` | `packages/ai-ui/` | Natural-language interface: Claude (Anthropic SDK) tool-use loop exposing core actions. |

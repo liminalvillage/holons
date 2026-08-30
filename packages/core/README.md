@@ -1,6 +1,6 @@
 # @holons/core
 
-UI-agnostic domain logic for Holons. Every interface — `harvest-web`,
+UI-agnostic domain logic for Holons. Every interface — `holons-web`,
 `@holons/telegram-ui`, `@holons/text-ui`, `@holons/ai-ui`, `@holons/mcp-ui` —
 calls into this package so that an action means the same thing everywhere.
 

@@ -5,7 +5,7 @@
 	// localStorage flag — once the user clicks "Got it" we don't show the
 	// banner again on this device. New devices / cleared storage will see
 	// it again, which is the desired behavior for a beta-software warning.
-	const STORAGE_KEY = 'harvest.betaDisclaimerDismissed';
+	const STORAGE_KEY = 'holons.betaDisclaimerDismissed';
 
 	let dismissed = true; // start hidden so SSR / pre-mount doesn't flash the banner
 

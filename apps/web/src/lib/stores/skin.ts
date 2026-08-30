@@ -1,4 +1,4 @@
-// Visual skin for harvest-web.
+// Visual skin for holons-web.
 //
 // The default "blackboard" is the dark theme baked into theme.css + Tailwind
 // utilities. "whiteboard" is the light, paper-and-ink counterpart layered on
@@ -11,7 +11,7 @@ import { browser } from "$app/environment";
 
 export type Skin = "blackboard" | "whiteboard";
 
-const STORAGE_KEY = "harvest_skin";
+const STORAGE_KEY = "holons_skin";
 
 /** Built-in accent per skin (mirrors theme.css / whiteboard.css). Used as the
  *  colour-picker default before any custom override. */
@@ -20,7 +20,7 @@ export const DEFAULT_ACCENT: Record<Skin, string> = {
   whiteboard: "#3b9ef5",
 };
 
-const accentKey = (s: Skin) => `harvest_accent_${s}`;
+const accentKey = (s: Skin) => `holons_accent_${s}`;
 
 function stored(): Skin {
   if (!browser) return "blackboard";

@@ -10,7 +10,7 @@ A **pnpm monorepo** for Holons — agent-centric, federated group coordination.
 One UI-agnostic domain core, five interfaces over it.
 
 ```
-apps/web/              harvest-web — Svelte 5 / SvelteKit dashboard
+apps/web/              holons-web — Svelte 5 / SvelteKit dashboard
 packages/core/         @holons/core — ALL domain logic (TypeScript)
 packages/telegram-ui/  Telegraf bot (mixed JS+TS, migrating)
 packages/text-ui/      CLI / REPL

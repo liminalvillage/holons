@@ -15,7 +15,7 @@
  *   $: saveFilters('shopping', filters);  // re-persist whenever filters changes
  */
 
-const PREFIX = "harvest_filters_";
+const PREFIX = "holons_filters_";
 
 function storageKey(feature: string): string {
   return `${PREFIX}${feature}`;

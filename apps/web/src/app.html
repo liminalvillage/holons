@@ -23,16 +23,30 @@
 
     <!-- Apply the saved visual skin AND any custom accent before first paint to
          avoid a flash of the wrong theme. Mirrors $lib/stores/skin (keys:
-         harvest_skin, harvest_accent_<skin>). -->
+         holons_skin, holons_accent_<skin>). Also migrates pre-rename
+         "harvest_*" / "harvest.*" localStorage keys to "holons_*" / "holons.*"
+         once, so existing users keep their preferences. -->
     <script>
       (function () {
         try {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var k = localStorage.key(i);
+            if (
+              k &&
+              (k.indexOf("harvest_") === 0 || k.indexOf("harvest.") === 0)
+            ) {
+              var nk = "holons" + k.slice(7);
+              if (localStorage.getItem(nk) === null)
+                localStorage.setItem(nk, localStorage.getItem(k));
+              localStorage.removeItem(k);
+            }
+          }
           var s =
-            localStorage.getItem("harvest_skin") === "whiteboard"
+            localStorage.getItem("holons_skin") === "whiteboard"
               ? "whiteboard"
               : "blackboard";
           document.documentElement.setAttribute("data-skin", s);
-          var hex = localStorage.getItem("harvest_accent_" + s);
+          var hex = localStorage.getItem("holons_accent_" + s);
           if (hex && /^#[0-9a-fA-F]{6}$/.test(hex)) {
             var n = parseInt(hex.slice(1), 16),
               r = (n >> 16) & 255,

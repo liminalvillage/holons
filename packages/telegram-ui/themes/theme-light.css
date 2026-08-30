@@ -1,11 +1,11 @@
 /* ==========================================================================
    HolonsBot Theme — Light
-   Mirrors the Harvest design system (../harvest/src/styles/theme.css) with
+   Mirrors the Holons design system (../holons/src/styles/theme.css) with
    inverted backgrounds/text. Accent and status colors are identical to dark.
    ========================================================================== */
 
 :root {
-    /* Backgrounds — light mirror of harvest's dark scale.
+    /* Backgrounds — light mirror of holons's dark scale.
        bg-primary is the page surface; bg-secondary is the card surface
        (what most rendered images capture); bg-tertiary is hover/accent. */
     --color-bg-primary: #ffffff;       /* white    — page surface */
@@ -922,7 +922,7 @@ ul {
 }
 
 /* ==========================================================================
-   Quest Card (questimage) — harvest panel pattern, light variant.
+   Quest Card (questimage) — holons panel pattern, light variant.
    ========================================================================== */
 .quest-card-container {
     max-width: 600px;

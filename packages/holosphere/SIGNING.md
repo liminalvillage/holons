@@ -227,7 +227,7 @@ signer), not its self-reported fields.
 | `await sphere.auditLens(holon, lens)` | Shadow-audit a lens (accounted vs would-drop); output unchanged |
 | `sphere.getShadowReport()` / `sphere.resetShadowReport()` | Cumulative shadow stats |
 
-## Using it in the harvest dashboard
+## Using it in the holons dashboard
 
 The web dashboard (`apps/web`) wires signing onto the instance it builds, controlled
 by env (default **off** — no behavior change):
