@@ -294,6 +294,9 @@ interface HoloSphereConfig {
     trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
     /** Cold-start catch-up window for reverse sync, seconds (default 7 days). */
     reverseLookbackSec?: number;
+    /** Legacy Gun relay(s) for `getAllLegacy` reads (default
+     *  `['https://gun.holons.io/gun']`; `[]` disables legacy reads). */
+    legacyGunPeers?: string[];
   };
   /** Signing-layer options applied by backend 'nostr' init (shadow/enforce/
    *  perActorLenses/verbose — relays are always [] there; the transport
@@ -346,6 +349,14 @@ declare class HoloSphere {
     get(holon: string, lens: string): Promise<any | null>;
     get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
     getAll(holon: string, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
+    /**
+     * Nostr backend only: read a lens from the legacy Gun relay(s) through an
+     * in-memory read-only mirror (`config.nostr.legacyGunPeers`, default
+     * `['https://gun.holons.io/gun']`). Items are tagged `_verified: false,
+     * _unverified: true, _legacy: true` — display-only, never trust for auth.
+     * Returns `[]` on the gun backend.
+     */
+    getAllLegacy(holon: string, lens: string, options?: GetAllOptions): Promise<Array<any>>;
     parse(rawData: any): Promise<object | null>;
     delete(holon: string, lens: string, key: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
     deleteAll(holon: string, lens: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;

@@ -153,6 +153,31 @@ describe('nostr backend (relay is the wire)', () => {
     expect(ids(items)).toContain('book-1');
   }, 20000);
 
+  test('reload with the same key: own newest write survives an older other-author copy', async () => {
+    // NIP-33 replaceables are per-pubkey, so the relay holds BOTH the other
+    // author's older copy and our newer one for the same address. A cold
+    // sync (reload, second device with the same derived key, evicted
+    // browser cache) must converge on the newest event — it used to skip
+    // own-pubkey events as "already local" and regress to the older copy.
+    const kb = generateSecretKey();
+    const a = nostrSphere();                    // other author (bot, kiosk, …)
+    const b1 = nostrSphere({ privateKey: kb }); // "the browser session"
+    await a.put(HOLON, 'quests2', { id: 'p1', title: 'Garden day' });
+    await eventually(async () => (await b1.getAll(HOLON, 'quests2')).some((i) => i.id === 'p1'));
+    // b joins the task: same address, newer created_at, different pubkey.
+    await b1.put(HOLON, 'quests2', { id: 'p1', title: 'Garden day', participants: [{ id: 42 }] });
+    await wait(500); // let both events land on the relay
+
+    // "Reload": same key, empty local cache — state must come from the wire.
+    const b2 = nostrSphere({ privateKey: kb });
+    const item = await eventually(async () => {
+      const got = await b2.get(HOLON, 'quests2', 'p1');
+      return got && got.participants?.length ? got : null;
+    });
+    expect(item).toBeTruthy();
+    expect(item.participants).toEqual([{ id: 42 }]);
+  }, 25000);
+
   test('a forged event on the relay is not ingested', async () => {
     const b = nostrSphere();
     // Craft a valid event, then tamper the content — signature no longer

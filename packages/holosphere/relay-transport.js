@@ -82,8 +82,14 @@ export function createRelayTransport(holo, {
 
   // ---- loop / ordering guards ------------------------------------------------
   // Applied wire state per location: skip events at-or-older than what we've
-  // already ingested, and skip our own events entirely (they were written
-  // locally before publishing). `seen` dedups the cold-query/live overlap.
+  // already ingested. `seen` dedups the cold-query/live overlap AND our own
+  // same-session echoes (publishWrite marks the event id seen before
+  // publishing). Own-pubkey events from the wire are otherwise ingested like
+  // anyone else's: NIP-33 replacement is per pubkey, so the relay can hold an
+  // older other-author copy of the same address next to our newer one — a
+  // cold sync (reload, evicted browser cache, second device on the same
+  // derived key) must converge on the newest event, not regress to the other
+  // author's copy because ours was skipped as "already local".
   const applied = new Map();   // "holon|lens|id" -> created_at of last applied event
   const seen = new Set();      // event ids already processed
   const chains = new Map();    // "holon|lens|id" -> tail promise (ordered apply)
@@ -196,7 +202,6 @@ export function createRelayTransport(holo, {
     seen.add(event.id);
     trim(seen, 20000);
     if (event.kind !== kind) return Promise.resolve(); // projected/other kinds are never ingested
-    if (event.pubkey === pubkey) return Promise.resolve(); // our own write — already local
     if (!verifyEvent(event)) { vlog('dropped forged event', event.id); return Promise.resolve(); }
     if (tag(event, 'n') !== app) return Promise.resolve(); // another app namespace
 

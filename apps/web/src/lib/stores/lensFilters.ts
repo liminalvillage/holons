@@ -59,9 +59,10 @@ export const showFederated: Writable<boolean> = writable(initial.showFederated);
 export const showHolograms: Writable<boolean> = writable(initial.showHolograms);
 /**
  * "Show all data": when on, surfaces unsigned/legacy records (tagged
- * `_unverified`) that enforce-mode authorized-read would otherwise hide. For
- * display/migration only — never trust `_unverified` items. No-op unless
- * holosphere signing is in enforce mode (off/shadow already show everything).
+ * `_unverified`) that enforce-mode authorized-read would otherwise hide, and —
+ * on the nostr backend — records that only exist on the legacy Gun relay
+ * (fetched via holosphere.getAllLegacy, tagged `_unverified`/`_legacy`). For
+ * display/migration only — never trust `_unverified` items.
  */
 export const showUnverified: Writable<boolean> = writable(
   initial.showUnverified,

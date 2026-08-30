@@ -215,6 +215,22 @@ Generic host API: `holosphere.publishNostrEvents(events)`,
   come back empty. localStorage's ~5 MB quota is the current ceiling for the
   browser cache; loading the IndexedDB adapter would lift it.
 
+## Legacy Gun relay reads (`getAllLegacy`)
+
+Gun runs peerless on this backend, so records that only exist on the legacy
+Gun relay(s) — written before the Nostr relay became the wire — are invisible
+to `get`/`getAll`/`subscribe`. `getAllLegacy(holon, lens)` reads them through
+a lazily-created, **in-memory, read-only mirror** peered with the legacy
+relay(s) (`config.nostr.legacyGunPeers`, default
+`['https://gun.holons.io/gun']`; `[]` disables it). The mirror's graph never
+touches the primary instance's local cache and nothing is ever written
+through it. Every item comes back tagged
+`_verified: false, _unverified: true, _legacy: true` so UIs can gate it
+behind a "show all data" affordance — display-only, never trust legacy items
+for auth/ownership. On the gun backend it returns `[]` (the relay data is
+already the wire there). The web dashboard's "Show all data" toggle merges
+these into every subscribed lens view.
+
 ## Wiring in the monorepo
 
 - **web** (`apps/web`): `VITE_HOLOSPHERE_BACKEND=nostr` +

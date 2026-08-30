@@ -222,6 +222,8 @@ class HoloSphere {
         // off here and have every read/write path await it via _awaitBackend.
         this._relayTransport = null;
         this._backendReady = null;
+        // Lazy in-memory mirror for legacy Gun relay reads (see getAllLegacy).
+        this._legacyMirror = null;
         if (this._backend === 'nostr') {
             this._backendReady = this._initNostrBackend()
                 .catch((e) => { console.warn('[holosphere] nostr backend init failed:', e?.message); });
@@ -575,6 +577,62 @@ class HoloSphere {
             }
         }
         return items;
+    }
+
+    // ============================ LEGACY GUN READS ============================
+    //
+    // On the nostr backend Gun runs peerless, so records that only exist on
+    // the legacy Gun relay(s) — written before the Nostr relay became the
+    // wire — are invisible to get/getAll/subscribe. `getAllLegacy` reads them
+    // through a lazily-created, in-memory mirror instance peered with the
+    // legacy relay(s): a read-only side channel whose graph never touches
+    // this instance's local cache, and through which nothing is ever written.
+    // Every item comes back tagged `_verified: false, _unverified: true,
+    // _legacy: true` so UIs can gate it behind a "show all data" affordance.
+    // Display-only — NEVER trust legacy items for auth/ownership.
+
+    /** Legacy Gun relay URLs (nostr backend). Configurable via
+     *  `config.nostr.legacyGunPeers`; `[]` disables legacy reads. */
+    _legacyGunPeers() {
+        const cfg = this.config?.nostr?.legacyGunPeers;
+        if (Array.isArray(cfg)) return cfg.filter(Boolean);
+        return ['https://gun.holons.io/gun'];
+    }
+
+    /** Lazily build the in-memory mirror peered with the legacy Gun relay(s). */
+    _legacyMirrorInstance() {
+        if (this._legacyMirror) return this._legacyMirror;
+        const peers = this._legacyGunPeers();
+        if (!peers.length) return null;
+        this._legacyMirror = new HoloSphere({
+            appName: this.appname,
+            gunOptions: {
+                peers,
+                axe: false,
+                multicast: false,
+                stats: false,
+                // In-memory only: the mirror must never persist, or shadow the
+                // primary instance's local cache (same appname, same souls).
+                radisk: false,
+                localStorage: false,
+            },
+        });
+        return this._legacyMirror;
+    }
+
+    /**
+     * Read a whole lens from the legacy Gun relay(s) (nostr backend only —
+     * `[]` on the gun backend, where the relay data is already the wire).
+     * Items are tagged `_verified: false, _unverified: true, _legacy: true`.
+     */
+    async getAllLegacy(holon, lens, options = {}) {
+        if (this._backend !== 'nostr') return [];
+        const mirror = this._legacyMirrorInstance();
+        if (!mirror) return [];
+        const items = await mirror.getAll(holon, lens, null, options);
+        return (items || []).map((i) => ({
+            ...i, _verified: false, _unverified: true, _legacy: true,
+        }));
     }
 
     async parse(rawData) {
@@ -1503,6 +1561,11 @@ class HoloSphere {
         }
         try { this._relayTransport?.close(); } catch { /* ignore */ }
         this._relayTransport = null;
+        if (this._legacyMirror) {
+            const mirror = this._legacyMirror;
+            this._legacyMirror = null;
+            try { await mirror.close(); } catch { /* ignore */ }
+        }
         return Utils.close(this);
     }
 

@@ -20,6 +20,10 @@ interface CacheEntry {
   data: Map<string, any>;
   timestamp: number;
   subscription?: { unsubscribe: () => void };
+  // Kept so toggle-driven refetches (legacy Gun reads) can address the
+  // holon/lens without parsing the cache key back apart.
+  holonId?: string;
+  lens?: string;
 }
 
 interface PendingQuery {
@@ -111,6 +115,9 @@ class QueryManager {
   private pendingNotifications: Set<string> = new Set();
   private notifyScheduled = false;
   private toggleHooked = false;
+  // In-flight legacy Gun reads, so a toggle flip + a new subscribe don't
+  // fetch the same lens twice.
+  private legacyFetches: Set<string> = new Set();
 
   /**
    * Initialize the query manager with a HoloSphere instance
@@ -119,13 +126,56 @@ class QueryManager {
     this.holosphere = holosphere;
     // Re-emit every active subscription when the "show all data" toggle flips,
     // so the _unverified filter in notifySubscribers re-applies without a
-    // re-fetch (items are already loaded & tagged under enforce).
+    // re-fetch (items are already loaded & tagged under enforce). Flipping ON
+    // additionally pulls each subscribed lens from the legacy Gun relay
+    // (nostr backend only) so records stranded there show up too.
     if (!this.toggleHooked) {
       this.toggleHooked = true;
-      showUnverified.subscribe(() => {
-        for (const key of this.subscribers.keys()) this.scheduleNotify(key);
+      showUnverified.subscribe((on) => {
+        for (const key of this.subscribers.keys()) {
+          this.scheduleNotify(key);
+          if (on) this.fetchLegacy(key);
+        }
       });
     }
+  }
+
+  /**
+   * One-shot read of a subscribed lens from the legacy Gun relay(s) —
+   * holosphere.getAllLegacy is a no-op off the nostr backend. Items arrive
+   * tagged `_unverified`/`_legacy`, so notifySubscribers keeps hiding them
+   * whenever "Show all data" is off; the live (relay) copy of an id always
+   * wins over the legacy one.
+   */
+  private fetchLegacy(key: string) {
+    const hs = this.holosphere as any;
+    if (typeof hs?.getAllLegacy !== "function") return;
+    const entry = this.cache.get(key);
+    if (!entry?.holonId || !entry.lens) return;
+    if (this.legacyFetches.has(key)) return;
+    this.legacyFetches.add(key);
+    hs.getAllLegacy(entry.holonId, entry.lens)
+      .then((items: any[]) => {
+        const cur = this.cache.get(key);
+        if (!cur) return;
+        let merged = false;
+        for (const item of items || []) {
+          if (!this.isValidItem(item)) continue;
+          if (cur.data.has(item.id)) continue; // live copy wins
+          cur.data.set(item.id, item);
+          merged = true;
+        }
+        if (merged) {
+          cur.timestamp = Date.now();
+          this.scheduleNotify(key);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(`QueryManager: legacy read failed for ${key}:`, error);
+      })
+      .finally(() => {
+        this.legacyFetches.delete(key);
+      });
   }
 
   /**
@@ -224,7 +274,12 @@ class QueryManager {
         data: dataMap,
         timestamp: Date.now(),
         subscription: existingEntry?.subscription,
+        holonId,
+        lens,
       });
+
+      // The fresh map wiped any merged legacy items — re-pull them.
+      if (get(showUnverified)) this.fetchLegacy(key);
 
       return Array.from(dataMap.values());
     } catch (error) {
@@ -263,6 +318,12 @@ class QueryManager {
       entry = { data: new Map(), timestamp: 0 };
       this.cache.set(key, entry);
     }
+    entry.holonId = holonId;
+    entry.lens = lens;
+
+    // "Show all data" already on: pull this lens from the legacy Gun relay
+    // too (no-op off the nostr backend, deduped while in flight).
+    if (get(showUnverified)) this.fetchLegacy(key);
 
     // Emit current cached snapshot immediately so the UI paints what we
     // already know without waiting on the network.
