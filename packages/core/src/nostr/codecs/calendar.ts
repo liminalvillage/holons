@@ -25,6 +25,8 @@ import {
 import { addParticipant, removeParticipant } from '../../tasks/participants.js';
 import type { Quest, QuestParticipant } from '../../tasks/types.js';
 import { classifiedCodec, CLASSIFIED_KIND } from './classified.js';
+import { REACTION_KIND, parseReaction, reactionCompanions } from './reactions.js';
+import { addAppreciation, removeAppreciation } from '../../tasks/participants.js';
 
 export const CALENDAR_TIME_KIND = 31923;
 export const CALENDAR_DATE_KIND = 31922;
@@ -47,6 +49,7 @@ export interface CalendarRecord {
   location?: string;
   hex?: string;
   participants?: Participant[];
+  appreciation?: Participant[];
   [key: string]: unknown;
 }
 
@@ -76,6 +79,15 @@ function rsvpCompanion(ctx: ProjectionCtx, holon: string, kind: number, dTag: st
 }
 
 function projectCalendar(lens: string, holon: string, item: CalendarRecord, ctx: ProjectionCtx): Projected | null {
+  const out = projectCalendarPrimary(lens, holon, item, ctx);
+  if (!out || item.id === undefined || item.id === null) return out;
+  const d = out.primary.tags.find((t) => t[0] === 'd')?.[1];
+  if (!d) return out;
+  const reactions = reactionCompanions(ctx, holon, lens, item.id, out.primary.kind, d, item.appreciation);
+  return reactions.length ? { ...out, companions: [...(out.companions ?? []), ...reactions] } : out;
+}
+
+function projectCalendarPrimary(lens: string, holon: string, item: CalendarRecord, ctx: ProjectionCtx): Projected | null {
   if (item.id === undefined || item.id === null) return null;
   if (item.type === 'need') return classifiedCodec.project(holon, item, ctx);
   if (item.type === 'offer' || item.type === 'request') return classifiedCodec.project(holon, item, ctx);
@@ -152,6 +164,7 @@ function retractCalendar(lens: string, holon: string, id: string, ctx: Projectio
  */
 function parseCalendar(lens: string, event: NostrEventLike, ctx: ProjectionCtx): Reversed<CalendarRecord> | null {
   if (event.kind === CALENDAR_RSVP_KIND) return parseRsvp(lens, event, ctx);
+  if (event.kind === REACTION_KIND) return parseReaction(event, ctx, lens) as Reversed<CalendarRecord> | null;
   if (event.kind === CLASSIFIED_KIND) {
     const r = classifiedCodec.parse!(event, ctx);
     return r && r.lens === lens ? (r as Reversed<CalendarRecord>) : null;
@@ -200,6 +213,15 @@ function parseRsvp(lens: string, event: NostrEventLike, ctx: ProjectionCtx): Rev
 }
 
 function mergeCalendar(current: CalendarRecord, r: Reversed<CalendarRecord>, ctx: ProjectionCtx): CalendarRecord | null {
+  if (r.reaction) {
+    const uid = r.reaction.userId;
+    if (uid === undefined || uid === null) return null;
+    const quest = current as unknown as Quest;
+    const list = Array.isArray(quest.appreciation) ? quest.appreciation : [];
+    const has = list.some((p) => p && String(p.id) === String(uid));
+    if (r.reaction.status === 'add') return has ? null : (addAppreciation(quest, { id: uid }) as unknown as CalendarRecord);
+    return has ? (removeAppreciation(quest, uid) as unknown as CalendarRecord) : null;
+  }
   if (r.rsvp) {
     const uid = r.rsvp.userId;
     if (uid === undefined || uid === null) return null; // unknown signer — nothing to toggle
@@ -231,7 +253,7 @@ function mergeCalendar(current: CalendarRecord, r: Reversed<CalendarRecord>, ctx
 export function calendarCodec(lens: 'quests' | 'events'): LensCodec<CalendarRecord> {
   return {
     lens,
-    kinds: [CALENDAR_TIME_KIND, CALENDAR_DATE_KIND, CALENDAR_RSVP_KIND, ...classifiedCodec.kinds],
+    kinds: [CALENDAR_TIME_KIND, CALENDAR_DATE_KIND, CALENDAR_RSVP_KIND, REACTION_KIND, ...classifiedCodec.kinds],
     primary: '30078',
     project: (holon, item, ctx) => projectCalendar(lens, holon, item, ctx),
     retract: (holon, id, ctx) => retractCalendar(lens, holon, id, ctx),

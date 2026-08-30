@@ -99,6 +99,10 @@ through the reverse sync below. Codecs live in `@holons/core/nostr`;
 | `offers` (+ need/offer/request quests) | 30402 (NIP-99) | `status active|sold`, `g` from `geohash` or the H3 `hex` |
 | `users` | 0 (profile) | signed by the USER's key only (`signerFor`), never the holon's |
 | `checklists`, `shopping`, `library` | 30003 (NIP-51 set) | entries as `['item', …]` tags |
+| `quests`/`events` `appreciation[]` | 7 (NIP-25 reaction) per appreciator | signed by the APPRECIATOR's key on the record's address; `+` gives, `-` withdraws (Holons' reading of NIP-25) |
+| `roles` | 30009 badge definition + kind 8 award (NIP-58) | holon-signed; award lists current holders with a key, re-issued only when holders change; no 30008 (user-owned) |
+| `settings` (the holon doc) | 39000 group metadata + 39001 admins (NIP-29) | holon-signed; 39000 edits by a trusted key fold back into name/purpose/picture |
+| `users` (membership) | 9000 put-user (holon) + 9021 join request (member) on join, 9001 remove-user on leave (NIP-29) | plus 39002 members published by the host from `buildGroupState` |
 
 Every projected event carries `['n', appname]`, `['h', holon]`,
 `['t', 'group-<holon>']` (same grammar as Elinor), `['holons', lens, holon, id]`
@@ -143,7 +147,8 @@ a member editing their kind 0 — the edit is folded back into the record:
    foreign records are never imported.
 
 Lossiness (one-directional, by design): calendar kinds carry no
-status/category/participants (RSVPs do); NIP-99 `sold` closes an open
+status/category/participants (RSVPs and reactions do); badge awards are
+holon-authored and never folded back; NIP-99 `sold` closes an open
 listing (`fulfilled`), `active` never reopens one; NIP-51 sets rebuild
 `items[]` from `item` tags (library: only `borrowed`); kind 0 patches
 `first_name/username/picture/about`.
@@ -156,6 +161,35 @@ only its own key and read-list — the bot is the authority for member RSVPs).
 
 Still not built: a lens making the standard kind *authoritative*
 (`primary: 'standard'`, `x-holons` extras) and importing foreign records.
+
+## NIP-29 groups — holon-authored
+
+A holon is a NIP-29 group whose id is the holon id (the `h` tag). The relay
+(strfry) does not implement NIP-29, so the **holon key** publishes what a
+NIP-29 relay would sign: 39000 metadata (from `settings`: name, purpose →
+`about`, picture, `public`, `closed`), 39001 admins (holon key +
+`settings.admin` when their derived key resolves) and 39002 members (every
+`users` record whose key resolves, via `buildGroupState` in
+`@holons/core/nostr`, republished by the host only when the state hash
+changes). Joining emits 9000 put-user (holon) and 9021 join-request
+(member); leaving emits 9001. Consumers trust these from the holon pubkey —
+the same root the reverse sync uses — and a real NIP-29 relay can take over
+unchanged. Not built: honouring 9021 from pubkeys Holons cannot attribute
+to a member (there is no Telegram id to create a `users` record for).
+
+## NIP-17 private messages
+
+`nostr-dm.js` sends/receives NIP-17 DMs (NIP-59 gift wrap, NIP-44) on the
+active relay set: `sendDirectMessage(holo, { privateKey, recipientPubkey,
+content, subject })`, `subscribeDirectMessages(holo, privateKey, onMessage)`.
+The relay sees a kind-1059 by a throwaway key addressed to the recipient;
+the sender is authenticated by the seal, never by the payload. The
+federation handshake (`handshake-shim.js`) now rides on it whenever the
+caller passes its key and relays exist, while still writing/reading the
+legacy plaintext Gun `_dm/<pubkey>` channel for peers that have not
+upgraded (messages carry an `id`, so a copy on both paths is handled once).
+Generic host API: `holosphere.publishNostrEvents(events)`,
+`holosphere.subscribeNostr(filter, onevent)`, `holosphere.nostrRelays()`.
 
 ## Semantics & limits
 

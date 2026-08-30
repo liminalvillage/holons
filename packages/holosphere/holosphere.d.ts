@@ -325,6 +325,11 @@ declare class HoloSphere {
     subscriptions: Record<string, any>;
 
     constructor(config: HoloSphereConfig);
+    /** Publish already-signed Nostr events (any kind) on the active relay set. */
+    publishNostrEvents(events: any | any[]): void;
+    /** Raw live REQ on the active relay set; returns a close function. */
+    subscribeNostr(filter: Record<string, unknown>, onevent: (event: any) => void): () => void;
+    nostrRelays(): string[];
     constructor(appname: string, strict?: boolean, openaikey?: string | null, gunOptions?: any);
 
     ready(): Promise<HoloSphere>;

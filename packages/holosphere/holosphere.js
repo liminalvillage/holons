@@ -1169,6 +1169,40 @@ class HoloSphere {
         return this._signer;
     }
 
+    /**
+     * Publish already-signed Nostr events of any kind on whichever relay
+     * arrangement is active (nostr backend transport, or the relay-backup
+     * signer). No-op without relays. Used for group state (NIP-29), gift
+     * wraps (NIP-17) and other events the host builds itself.
+     */
+    publishNostrEvents(events) {
+        // The nostr backend builds its transport asynchronously — queue behind it.
+        this._awaitBackend().then(() => {
+            if (this._relayTransport) return this._relayTransport.publishEvents(events);
+            if (this._signer?.publishEvents) return this._signer.publishEvents(events);
+        }).catch(() => {});
+    }
+
+    /** Raw live REQ on the active relay set; returns a close function. */
+    subscribeNostr(filter, onevent) {
+        let close = null;
+        let stopped = false;
+        this._awaitBackend().then(() => {
+            if (stopped) return;
+            if (this._relayTransport) close = this._relayTransport.subscribeRaw(filter, onevent);
+            else if (this._signer?.subscribeRaw) close = this._signer.subscribeRaw(filter, onevent);
+        }).catch(() => {});
+        return () => { stopped = true; try { close?.(); } catch { /* ignore */ } };
+    }
+
+    /** Relay URLs of the active arrangement ([] when none). */
+    nostrRelays() {
+        if (this._relayTransport) return [...this._relayTransport.relays];
+        if (this._signer?.relays?.length) return [...this._signer.relays];
+        if (this.config?.backend === 'nostr') return [...(this.config?.nostr?.relays || this.config?.nostr?.peers || [])];
+        return [];
+    }
+
     /** Disable signing and close relay connections. */
     disableSigning() {
         try { this._signer?.close(); } catch { /* ignore */ }

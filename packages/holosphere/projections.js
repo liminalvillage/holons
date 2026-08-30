@@ -42,6 +42,9 @@ export function createProjector({ projections = [], privateKey, signerFor = null
   // Ids of every event we signed, so the reverse sync never folds our own
   // projections back in.
   const emitted = new Set();
+  // Non-replaceable companions (reactions, awards): last published state per
+  // dedupe key, so an unchanged record re-put does not re-emit them.
+  const dedupeState = new Map();
   const trim = (m, cap) => { if (m.size > cap) m.delete(m.keys().next().value); };
 
   const dTag = (t) => (t.tags || []).find((x) => x[0] === 'd')?.[1];
@@ -89,7 +92,13 @@ export function createProjector({ projections = [], privateKey, signerFor = null
       else vlog('no user key for', lens, item.id, '— primary dropped');
       for (const c of out.companions || []) {
         const sk = c.authorHint ? userKey(c.authorHint.userId) : privateKey;
-        if (sk) events.push(sign(c.template, sk));
+        if (!sk) continue;
+        if (c.dedupe) {
+          if (dedupeState.get(c.dedupe.key) === c.dedupe.state) continue;
+          dedupeState.set(c.dedupe.key, c.dedupe.state);
+          trim(dedupeState, 20000);
+        }
+        events.push(sign(c.template, sk));
       }
     } catch (e) { vlog('sign failed:', lens, e?.message); }
     return events;

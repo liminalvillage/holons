@@ -12,6 +12,7 @@ import https from 'https';
 import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
 import { i18next } from './utilities.js';
+import { notifyNostr } from './createHoloSphere.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -702,6 +703,7 @@ class Server {
       } catch (err) {
         log.info(`notify: DM to ${userId} failed (${err?.message || err})`);
       }
+      notifyNostr(userId, text, 'Holons need').catch(() => {});
     };
 
     if (event === 'responded') {

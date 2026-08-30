@@ -48,6 +48,12 @@ export interface Companion {
   template: EventTemplate;
   /** Who should sign this. The host signs only if it has that user's key. */
   authorHint?: { userId: string | number };
+  /**
+   * For non-replaceable kinds (reactions, badge awards): the host publishes
+   * only when `state` differs from what it last published under `key`, so
+   * re-puts of an unchanged record do not flood the relay.
+   */
+  dedupe?: { key: string; state: string };
 }
 
 export interface Projected {
@@ -73,6 +79,8 @@ export interface Reversed<T = Record<string, unknown>> {
   patch?: Partial<T>;
   /** NIP-52 RSVP: the SIGNER's participation, never a self-reported id. */
   rsvp?: { pubkey: string; userId?: string | number; status: 'accepted' | 'declined' };
+  /** NIP-25 reaction: the SIGNER's appreciation (`+`/emoji = give, `-` = withdraw). */
+  reaction?: { pubkey: string; userId?: string | number; status: 'add' | 'remove' };
   /** kind 0: the record must belong to the signer (`userIdFor(pubkey) === id`). */
   ownerOnly?: boolean;
 }

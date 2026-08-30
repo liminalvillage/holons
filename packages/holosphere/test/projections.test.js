@@ -78,6 +78,23 @@ describe('createProjector', () => {
     expect(tag(dels[0], 'a')).toContain('holons:events:');
   });
 
+  test('dedupe companions are re-emitted only when their state changes', () => {
+    const hook = {
+      lens: 'quests', kinds: [31923, 7],
+      project(holon, lens, item) {
+        return {
+          primary: { kind: 31923, created_at: 0, content: '', tags: [['d', `holons:${lens}:${holon}:${item.id}`]] },
+          companions: [{ template: { kind: 7, created_at: 0, content: item.thanks, tags: [] }, dedupe: { key: `r|${item.id}`, state: item.thanks } }],
+        };
+      },
+      retract() { return []; },
+    };
+    const p = createProjector({ projections: [hook], privateKey: sk });
+    expect(p.eventsForWrite(HOLON, 'quests', { id: 1, thanks: '+' }).map((e) => e.kind)).toEqual([31923, 7]);
+    expect(p.eventsForWrite(HOLON, 'quests', { id: 1, thanks: '+' }).map((e) => e.kind)).toEqual([31923]);
+    expect(p.eventsForWrite(HOLON, 'quests', { id: 1, thanks: '-' }).map((e) => e.kind)).toEqual([31923, 7]);
+  });
+
   test('a throwing hook never breaks the write', () => {
     const p = createProjector({ projections: [{ lens: 'x', kinds: [1], project() { throw new Error('boom'); }, retract() { throw new Error('boom'); } }], privateKey: sk });
     expect(p.eventsForWrite(HOLON, 'x', { id: 1 })).toEqual([]);

@@ -300,10 +300,32 @@ export function createRelayTransport(holo, {
     return state.promise;
   }
 
+  /** Publish already-signed events (any kind) to the relay set; ids are marked seen. */
+  function publishEvents(events) {
+    for (const e of Array.isArray(events) ? events : [events]) {
+      if (!e || !e.id) continue;
+      seen.add(e.id);
+      publishEvent(e);
+    }
+  }
+
+  /** Open a raw live REQ on the relay set. Returns a close function. */
+  function subscribeRaw(filter, onevent) {
+    let sub = null;
+    let stopped = false;
+    poolReady.then((p) => {
+      if (closed || stopped) return;
+      sub = p.subscribeMany(relays, filter, { onevent: (e) => { try { onevent(e); } catch { /* handler */ } } });
+    }).catch(() => {});
+    return () => { stopped = true; try { sub?.close(); } catch { /* ignore */ } };
+  }
+
   return {
     pubkey,
     relays: [...relays],
     publishWrite,
+    publishEvents,
+    subscribeRaw,
     projector,
     reverse,
     publishDelete,

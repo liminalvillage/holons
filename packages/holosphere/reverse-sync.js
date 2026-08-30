@@ -76,7 +76,7 @@ export function createReverseSync(holo, {
   }
 
   function applyKey(r, holon) {
-    return r.rsvp ? `${r.kind}|${r.pubkey}|${r.lens}|${holon}|${r.id}`
+    return (r.rsvp || r.reaction) ? `${r.kind}|${r.pubkey}|${r.lens}|${holon}|${r.id}`
       : r.kind === 0 ? `0|${r.pubkey}`
         : `${r.kind}|${r.lens}|${holon}|${r.id}`;
   }
@@ -99,7 +99,7 @@ export function createReverseSync(holo, {
       trim(applied, 20000);
       // Keep our next projection of this address strictly newer than the edit.
       const d = r.kind === 0 ? event.pubkey : tag(event, 'd');
-      if (!r.rsvp && d) projector?.noteExternal?.(event.kind, d, event.created_at);
+      if (!r.rsvp && !r.reaction && d) projector?.noteExternal?.(event.kind, d, event.created_at);
       const lk = `${r.lens}|${holon}|${r.id}`;
       const prev = chains.get(lk) || Promise.resolve();
       const next = prev.then(() => apply(hook, r, holon)).catch((e) => vlog('apply failed:', e?.message));

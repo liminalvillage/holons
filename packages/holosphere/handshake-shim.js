@@ -1,9 +1,16 @@
 /**
- * GunDB-based federation handshake protocol for HoloSphere v1.3
- * Replaces Nostr NIP-44 encrypted DMs with GunDB DM channels.
- * Same protocol payloads (JSON with type: federation_request/response/update),
- * different transport layer.
+ * Federation handshake protocol for HoloSphere.
+ *
+ * Payloads are JSON with `type: federation_request | federation_response |
+ * federation_update | federation_update_response`. Transport:
+ *   - NIP-17 private DMs (nostr-dm.js) whenever the sphere has relays and the
+ *     caller passes its private key — encrypted, sender-hidden, readable by
+ *     any Nostr client holding the recipient key;
+ *   - the legacy plaintext GunDB `_dm/<pubkey>` channel, still written and
+ *     read so peers that have not upgraded keep working. Messages carry an
+ *     `id`, so a message that arrives on both paths is handled once.
  */
+import { sendDirectMessage, subscribeDirectMessages } from './nostr-dm.js';
 
 /**
  * Generate a unique message ID
@@ -22,13 +29,18 @@ function getDMPath(holosphere, recipientPubKey) {
 /**
  * Write a DM to a recipient's channel
  */
-async function sendDM(holosphere, recipientPubKey, message) {
+async function sendDM(holosphere, recipientPubKey, message, privateKey = null) {
     const msgId = generateMessageId();
     const payload = JSON.stringify({
         ...message,
         id: msgId,
         timestamp: Date.now()
     });
+
+    if (privateKey && holosphere?.nostrRelays?.().length) {
+        sendDirectMessage(holosphere, { privateKey, recipientPubkey: recipientPubKey, content: payload, subject: message.type })
+            .catch((e) => console.warn('[handshake] NIP-17 send failed:', e?.message));
+    }
 
     return new Promise((resolve) => {
         getDMPath(holosphere, recipientPubKey).get(msgId).put(payload, (ack) => {
@@ -61,6 +73,44 @@ export function subscribeToFederationDMs(holosphere, privateKey, publicKey, hand
     let active = true;
     const processedMessages = new Set();
 
+    const dispatch = (message, senderPubKey) => {
+        switch (message.type) {
+            case 'federation_request':
+                if (handlers.onRequest) handlers.onRequest(message, senderPubKey);
+                break;
+            case 'federation_response':
+                if (handlers.onResponse) handlers.onResponse(message, senderPubKey);
+                break;
+            case 'federation_update':
+                if (handlers.onUpdate) handlers.onUpdate(message, senderPubKey);
+                break;
+            case 'federation_update_response':
+                if (handlers.onUpdateResponse) handlers.onUpdateResponse(message, senderPubKey);
+                break;
+            default:
+                console.log('[handshake] Unknown DM type:', message.type);
+        }
+    };
+
+    // NIP-17 path: the SEALED sender is authoritative, not the payload's claim.
+    let closeNostr = () => {};
+    if (privateKey) {
+        try {
+            closeNostr = subscribeDirectMessages(holosphere, privateKey, ({ content, sender }) => {
+                if (!active) return;
+                try {
+                    const message = JSON.parse(content);
+                    if (!message || typeof message !== 'object' || !message.type) return;
+                    if (message.id && processedMessages.has(message.id)) return;
+                    if (message.id) processedMessages.add(message.id);
+                    dispatch({ ...message, senderPubKey: sender }, sender);
+                } catch { /* not a handshake payload */ }
+            });
+        } catch (e) {
+            console.warn('[handshake] NIP-17 subscribe failed:', e?.message);
+        }
+    }
+
     dmPath.map().on((data, key) => {
         if (!active || !data || key === '_') return;
 
@@ -72,30 +122,7 @@ export function subscribeToFederationDMs(holosphere, privateKey, publicKey, hand
             const message = typeof data === 'string' ? JSON.parse(data) : data;
             const senderPubKey = message.senderPubKey || message.sender || '';
 
-            switch (message.type) {
-                case 'federation_request':
-                    if (handlers.onRequest) {
-                        handlers.onRequest(message, senderPubKey);
-                    }
-                    break;
-                case 'federation_response':
-                    if (handlers.onResponse) {
-                        handlers.onResponse(message, senderPubKey);
-                    }
-                    break;
-                case 'federation_update':
-                    if (handlers.onUpdate) {
-                        handlers.onUpdate(message, senderPubKey);
-                    }
-                    break;
-                case 'federation_update_response':
-                    if (handlers.onUpdateResponse) {
-                        handlers.onUpdateResponse(message, senderPubKey);
-                    }
-                    break;
-                default:
-                    console.log('[handshake] Unknown DM type:', message.type);
-            }
+            dispatch(message, senderPubKey);
         } catch (e) {
             // Skip unparseable messages
         }
@@ -104,6 +131,7 @@ export function subscribeToFederationDMs(holosphere, privateKey, publicKey, hand
     // Return unsubscribe function
     return () => {
         active = false;
+        closeNostr();
         dmPath.off();
     };
 }
@@ -142,7 +170,7 @@ export async function initiateFederationHandshake(holosphere, privateKey, params
         status: 'pending'
     };
 
-    const result = await sendDM(holosphere, partnerPubKey, request);
+    const result = await sendDM(holosphere, partnerPubKey, request, privateKey);
     if (result.success) {
         console.log('[handshake] Federation request sent to:', partnerPubKey?.slice(0, 8));
     }
@@ -188,7 +216,7 @@ export async function acceptFederationRequest(holosphere, privateKey, params) {
         holosphere.addAllowedAuthor(requesterPubKey);
     }
 
-    return sendDM(holosphere, requesterPubKey, response);
+    return sendDM(holosphere, requesterPubKey, response, privateKey);
 }
 
 /**
@@ -207,7 +235,7 @@ export async function rejectFederationRequest(holosphere, privateKey, params) {
         requestId
     };
 
-    return sendDM(holosphere, requesterPubKey, response);
+    return sendDM(holosphere, requesterPubKey, response, privateKey);
 }
 
 /**
@@ -279,7 +307,7 @@ export async function requestFederationUpdate(holosphere, privateKey, params) {
         message
     };
 
-    return sendDM(holosphere, partnerPubKey, update);
+    return sendDM(holosphere, partnerPubKey, update, privateKey);
 }
 
 /**
@@ -298,7 +326,7 @@ export async function acceptFederationUpdate(holosphere, privateKey, params) {
         updateId
     };
 
-    return sendDM(holosphere, requesterPubKey, response);
+    return sendDM(holosphere, requesterPubKey, response, privateKey);
 }
 
 /**
@@ -317,5 +345,5 @@ export async function rejectFederationUpdate(holosphere, privateKey, params) {
         updateId
     };
 
-    return sendDM(holosphere, requesterPubKey, response);
+    return sendDM(holosphere, requesterPubKey, response, privateKey);
 }

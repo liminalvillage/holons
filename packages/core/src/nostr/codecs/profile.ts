@@ -6,8 +6,12 @@
 // (which would overwrite the holon's profile with every member). The host
 // signs only when it can derive that user's key (`requiresAuthor: 'user'`).
 
-import type { LensCodec, NostrEventLike, Projected, ProjectionCtx, Reversed } from '../types.js';
+import type { Companion, LensCodec, NostrEventLike, Projected, ProjectionCtx, Reversed } from '../types.js';
 import { commonTags, isUrl, nowOf } from '../tags.js';
+import {
+  GROUP_JOIN_REQUEST_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND,
+  groupJoinRequestTemplate, groupPutUserTemplate, groupRemoveUserTemplate,
+} from '../groups.js';
 
 export const PROFILE_KIND = 0;
 
@@ -37,9 +41,19 @@ export function profileContent(user: UserRecord): Record<string, string> {
   return out;
 }
 
+/** NIP-29 membership companions: the holon admits the member (9000), the member asks to join (9021). */
+function membershipCompanions(ctx: ProjectionCtx, holon: string, id: string | number): Companion[] {
+  const pk = ctx.pubkeyFor?.(id);
+  if (!pk) return [];
+  return [
+    { template: groupPutUserTemplate(ctx, holon, pk), dedupe: { key: `member|${holon}|${pk}`, state: 'in' } },
+    { template: groupJoinRequestTemplate(ctx, holon), authorHint: { userId: id }, dedupe: { key: `join|${holon}|${pk}`, state: 'in' } },
+  ];
+}
+
 export const profileCodec: LensCodec<UserRecord> = {
   lens: 'users',
-  kinds: [PROFILE_KIND],
+  kinds: [PROFILE_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND, GROUP_JOIN_REQUEST_KIND],
   requiresAuthor: 'user',
   primary: '30078',
   project(holon, item, ctx): Projected | null {
@@ -53,11 +67,14 @@ export const profileCodec: LensCodec<UserRecord> = {
         tags: commonTags(ctx, holon, 'users', item.id),
         content: JSON.stringify(content),
       },
+      companions: membershipCompanions(ctx, holon, item.id),
     };
   },
-  // A profile is never retracted — it belongs to the person, not the holon.
-  retract() {
-    return [];
+  // A profile is never retracted — it belongs to the person, not the holon;
+  // leaving the holon is a NIP-29 remove-user by the holon key.
+  retract(holon, id, ctx) {
+    const pk = ctx.pubkeyFor?.(id);
+    return pk ? [groupRemoveUserTemplate(ctx, holon, pk)] : [];
   },
   /**
    * Kind 0 has no `d` and no holon: the record is whoever `userIdFor(pubkey)`

@@ -4,6 +4,9 @@ import {
   CALENDAR_RSVP_KIND,
   CALENDAR_TIME_KIND,
   CLASSIFIED_KIND,
+  REACTION_KIND,
+  BADGE_DEFINITION_KIND,
+  BADGE_AWARD_KIND,
   PROFILE_KIND,
   PROJECTION_CODECS,
   REVERSE_KINDS,
@@ -52,7 +55,7 @@ describe('reverse tag helpers', () => {
     expect(sameRecord({ a: [1] }, { a: [2] })).toBe(false);
   });
   it('exposes reverse kinds for every codec', () => {
-    expect(Object.keys(REVERSE_KINDS).sort()).toEqual(['checklists', 'events', 'library', 'offers', 'quests', 'shopping', 'users']);
+    expect(Object.keys(REVERSE_KINDS).sort()).toEqual(['checklists', 'events', 'library', 'offers', 'quests', 'settings', 'shopping', 'users']); // roles are one-way
   });
 });
 
@@ -176,5 +179,50 @@ describe('buildProjections (reverse)', () => {
     const r = hook.parse!(ev(CALENDAR_RSVP_KIND, [['a', a], ['status', 'accepted']], '', ALICE))!;
     expect(r.rsvp!.userId).toBe(42);
     expect((hook.merge!({ id: 1, participants: [] }, r) as { participants: unknown[] }).participants).toEqual([{ id: 42 }]);
+  });
+});
+
+describe('reactions (NIP-25) and badges (NIP-58)', () => {
+  const quests = PROJECTION_CODECS.quests;
+  const roles = PROJECTION_CODECS.roles;
+  const record = { id: 734, title: 'Garden day', when: '2026-09-01T08:00:00Z', participants: [], appreciation: [{ id: 42 }, { id: 'nobody' }] };
+  it('projects one kind-7 + per appreciator with dedupe state, signed by the appreciator', () => {
+    const out = quests.project(HOLON, record, ctx)!;
+    const reactions = out.companions!.filter((c) => c.template.kind === REACTION_KIND);
+    expect(reactions).toHaveLength(2);
+    expect(reactions[0].authorHint).toEqual({ userId: 42 });
+    expect(reactions[0].template.content).toBe('+');
+    expect(reactions[0].template.tags).toEqual(expect.arrayContaining([
+      ['a', `${CALENDAR_TIME_KIND}:${PUB}:${projectionDTag('quests', HOLON, 734)}`], ['k', String(CALENDAR_TIME_KIND)],
+    ]));
+    expect(reactions[0].dedupe).toEqual({ key: `reaction|42|${projectionDTag('quests', HOLON, 734)}`, state: '+' });
+    // need quests react on the 30402 address
+    const need = quests.project(HOLON, { id: 9, type: 'need', title: 'Ladder', appreciation: [{ id: 7 }] }, ctx)!;
+    expect(need.companions![0].template.tags[0]).toEqual(['a', `${CLASSIFIED_KIND}:${PUB}:${projectionDTag('quests', HOLON, 9)}`]);
+  });
+  it('folds external reactions into appreciation by the signer; - withdraws', () => {
+    const a = projectionAddress(CALENDAR_TIME_KIND, PUB, projectionDTag('quests', HOLON, 734));
+    const give = quests.parse!(ev(REACTION_KIND, [['a', a], ['k', '31923']], '🙏', BOB), ctx)!;
+    expect(give.reaction).toEqual({ pubkey: BOB, userId: 7, status: 'add' });
+    const next = quests.merge!(record, give, ctx)!;
+    expect(next.appreciation).toEqual([{ id: 42 }, { id: 'nobody' }, { id: 7 }]);
+    expect(quests.merge!(next, give, ctx)).toBeNull();
+    const withdraw = quests.parse!(ev(REACTION_KIND, [['a', a]], '-', ALICE), ctx)!;
+    expect(quests.merge!(record, withdraw, ctx)!.appreciation).toEqual([{ id: 'nobody' }]);
+    expect(quests.merge!(record, quests.parse!(ev(REACTION_KIND, [['a', a]], '+', 'd'.repeat(64)), ctx)!, ctx)).toBeNull();
+    expect(quests.parse!(ev(REACTION_KIND, [['a', projectionAddress(CALENDAR_TIME_KIND, PUB, projectionDTag('events', HOLON, 1))]], '+', BOB), ctx)).toBeNull();
+  });
+  it('projects a role as a 30009 definition and one kind-8 award to resolvable holders', () => {
+    const out = roles.project(HOLON, { id: 'Cook', title: 'Cook', description: 'Feeds people', participants: [{ id: 42 }, { id: 7 }, { id: 'unknown' }] }, ctx)!;
+    expect(out.primary.kind).toBe(BADGE_DEFINITION_KIND);
+    expect(out.primary.tags).toEqual(expect.arrayContaining([['d', projectionDTag('roles', HOLON, 'Cook')], ['name', 'Cook'], ['description', 'Feeds people']]));
+    const [award] = out.companions!;
+    expect(award.template.kind).toBe(BADGE_AWARD_KIND);
+    expect(award.template.tags[0]).toEqual(['a', `${BADGE_DEFINITION_KIND}:${PUB}:${projectionDTag('roles', HOLON, 'Cook')}`]);
+    expect(award.template.tags.filter((t) => t[0] === 'p').map((t) => t[1]).sort()).toEqual([ALICE, BOB].sort());
+    expect(award.authorHint).toBeUndefined(); // holon-signed
+    expect(award.dedupe!.state).toBe([ALICE, BOB].sort().join(','));
+    expect(roles.project(HOLON, { id: 'Empty', title: 'Empty', participants: [] }, ctx)!.companions).toEqual([]);
+    expect(roles.retract(HOLON, 'Cook', ctx)[0].tags).toEqual(expect.arrayContaining([['k', String(BADGE_DEFINITION_KIND)]]));
   });
 });

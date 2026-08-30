@@ -139,7 +139,9 @@ describe('profile codec', () => {
     expect(JSON.parse(out.primary.content)).toEqual({ name: 'ann', display_name: 'Ann Lee' });
     expect(tag(out.primary.tags, 'd')).toBeUndefined();
     expect(codec.project(HOLON, { id: 1 }, ctx)).toBeNull();
-    expect(codec.retract(HOLON, '42', ctx)).toEqual([]);
+    // leaving is a NIP-29 remove-user by the holon key (pubkey 42 resolves); unknown ids emit nothing
+    expect(codec.retract(HOLON, '42', ctx).map((t) => t.kind)).toEqual([9001]);
+    expect(codec.retract(HOLON, '1', ctx)).toEqual([]);
   });
 });
 

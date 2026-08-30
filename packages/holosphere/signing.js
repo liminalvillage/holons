@@ -436,6 +436,15 @@ export async function createSigner({
       return { total: events.length, moved, switched: doSwitch && moved > 0 };
     },
 
+    get relays() { return [...relayList]; },
+    /** Publish already-signed events (any kind) to the relay set. */
+    publishEvents(events) { publishProjections(Array.isArray(events) ? events.filter(Boolean) : [events].filter(Boolean)); },
+    /** Open a raw live REQ on the relay set; returns a close function (no-op without relays). */
+    subscribeRaw(filter, onevent) {
+      if (!relayList.length) return () => {};
+      const sub = pool.subscribeMany(relayList, filter, { onevent: (e) => { try { onevent(e); } catch { /* handler */ } } });
+      return () => { try { sub.close(); } catch { /* ignore */ } };
+    },
     /** Reverse sync: open the external-edit subscriptions for a holon (relay-backup mode). */
     ensureReverse,
     get reverse() { return reverse; },

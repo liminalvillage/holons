@@ -9,6 +9,8 @@ import { calendarCodec } from './codecs/calendar.js';
 import { classifiedCodec } from './codecs/classified.js';
 import { profileCodec } from './codecs/profile.js';
 import { setCodec } from './codecs/sets.js';
+import { badgeCodec } from './codecs/badges.js';
+import { groupCodec } from './codecs/group.js';
 
 /** All lenses that have a standard-kind projection. */
 export const PROJECTION_CODECS: Readonly<Record<string, LensCodec<any>>> = {
@@ -19,6 +21,8 @@ export const PROJECTION_CODECS: Readonly<Record<string, LensCodec<any>>> = {
   checklists: setCodec('checklists'),
   shopping: setCodec('shopping'),
   library: setCodec('library'),
+  roles: badgeCodec,
+  settings: groupCodec,
 };
 
 export const PROJECTABLE_LENSES: readonly string[] = Object.keys(PROJECTION_CODECS);

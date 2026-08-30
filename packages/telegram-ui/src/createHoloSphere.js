@@ -15,7 +15,13 @@ import {
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
 import { cellToLatLng } from 'h3-js';
-import { buildProjections, parseProjectionList } from '@holons/core/nostr';
+import {
+  buildProjections,
+  parseProjectionList,
+  buildGroupState,
+  groupStateHash,
+  wrapDirectMessage,
+} from '@holons/core/nostr';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import KeyManager from './KeyManager.js';
 
@@ -225,15 +231,42 @@ function buildProjectionOptions(appName, privateKey, lenses) {
  * @param {string} holonPubkey
  * @param {string} secret NOSTR_DERIVATION_SECRET ('' = none)
  */
-export function createTrustCache(holonPubkey, secret, ttlMs = 5 * 60 * 1000) {
+export function createTrustCache(
+  holonPubkey,
+  secret,
+  ttlMs = 5 * 60 * 1000,
+  { ctx = null, publish = null } = {}
+) {
   const byPubkey = new Map(); // pubkey -> telegram user id (all holons)
   const perHolon = new Map(); // holon -> { at, list }
+  const groupHashes = new Map(); // holon -> [hash of 39000, 39001, 39002]
   let warned = false;
+
+  /** Republish the holon's NIP-29 state when (and only when) it changed. */
+  function publishGroupState(holon, settings, memberIds) {
+    if (!ctx || !publish) return;
+    try {
+      const templates = buildGroupState(
+        ctx,
+        String(holon),
+        settings || {},
+        memberIds
+      );
+      const hashes = templates.map(groupStateHash);
+      const prev = groupHashes.get(String(holon)) || [];
+      const changed = templates.filter((_, i) => hashes[i] !== prev[i]);
+      groupHashes.set(String(holon), hashes);
+      if (changed.length) publish(changed);
+    } catch (e) {
+      console.warn('[holosphere] group state publish failed:', e?.message);
+    }
+  }
 
   async function refresh(holon) {
     const list = new Set([holonPubkey]);
     const hs = projectionHost.instance;
     if (!hs || typeof hs.getAll !== 'function') return [...list];
+    const memberIds = [];
     if (secret) {
       let users = [];
       try {
@@ -243,6 +276,7 @@ export function createTrustCache(holonPubkey, secret, ttlMs = 5 * 60 * 1000) {
       }
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
+        memberIds.push(u.id);
         try {
           const pk = deriveTelegramNostrKey(u.id, secret).publicKey;
           byPubkey.set(pk, u.id);
@@ -257,8 +291,9 @@ export function createTrustCache(holonPubkey, secret, ttlMs = 5 * 60 * 1000) {
         '[holosphere] NOSTR_DERIVATION_SECRET unset — reverse sync trusts the holon key only (no member RSVPs / profiles)'
       );
     }
+    let settings = null;
     try {
-      const settings = await hs.get(String(holon), 'settings', String(holon));
+      settings = await hs.get(String(holon), 'settings', String(holon));
       for (const k of Array.isArray(settings?.nostrTrustedPubkeys)
         ? settings.nostrTrustedPubkeys
         : [])
@@ -267,6 +302,7 @@ export function createTrustCache(holonPubkey, secret, ttlMs = 5 * 60 * 1000) {
     } catch {
       /* no settings yet */
     }
+    publishGroupState(holon, settings, memberIds);
     return [...list];
   }
 
@@ -292,7 +328,42 @@ export function parseDuration(raw) {
 }
 
 /** The most recent instance, so timezoneFor can read settings without a cycle. */
-const projectionHost = { instance: null };
+const projectionHost = { instance: null, notifier: null };
+
+/** Test seam: point the projection host at a fake instance. */
+export function setProjectionHostForTests(instance) {
+  projectionHost.instance = instance;
+}
+
+/**
+ * Best-effort NIP-17 DM to a member's derived key (reminders, need events).
+ * The member reads it in any Nostr client holding the key the web login
+ * exposes. No relays / no secret / non-numeric id → silently skipped.
+ *
+ * @param {string|number} userId Telegram user id
+ * @param {string} text
+ * @param {string} [subject]
+ * @returns {Promise<boolean>} whether a wrap was published
+ */
+export async function notifyNostr(userId, text, subject = 'Holons') {
+  const hs = projectionHost.instance;
+  const n = projectionHost.notifier;
+  if (!hs || !n?.secret || typeof hs.publishNostrEvents !== 'function')
+    return false;
+  if (userId == null || !/^\d+$/.test(String(userId))) return false;
+  if (typeof hs.nostrRelays === 'function' && !hs.nostrRelays().length)
+    return false;
+  try {
+    const { publicKey } = deriveTelegramNostrKey(userId, n.secret);
+    hs.publishNostrEvents(
+      wrapDirectMessage(n.holonSk, publicKey, text, subject)
+    );
+    return true;
+  } catch (e) {
+    console.warn('[holosphere] nostr DM failed:', e?.message);
+    return false;
+  }
+}
 
 /**
  * Creates a KeyManager instance for per-holon key management.

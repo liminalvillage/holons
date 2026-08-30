@@ -20,6 +20,7 @@ import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
 import { log } from '../utils/logger.js';
 import { getQuestHolon } from './utilities.js';
+import { notifyNostr } from './createHoloSphere.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -838,6 +839,11 @@ class Scheduler {
                 `${itemType}: "${freshItem.title}" is starting now!`,
                 { reply_to_message_id: freshItem.id }
               );
+              // Personal holon (chat id == user id): mirror as a NIP-17 DM.
+              notifyNostr(
+                freshItemHolon,
+                `${itemType}: "${freshItem.title}" is starting now!`
+              ).catch(() => {});
               console.log(
                 `Direct reminder sent for ${lens} ${freshItem.id} in holon ${freshItemHolon}`
               );
@@ -1392,6 +1398,10 @@ class Scheduler {
                         `${itemType}: "${freshItem.title}" is starting now!`,
                         { reply_to_message_id: reminder.questId }
                       );
+                      notifyNostr(
+                        reminder.holonId,
+                        `${itemType}: "${freshItem.title}" is starting now!`
+                      ).catch(() => {});
                       console.log(
                         `Direct reminder sent for ${itemLens} ${reminder.questId} in chat ${reminder.holonId}`
                       );
