@@ -212,12 +212,15 @@ export const DEPLOYMENTS: DeploymentsConfig = {
           "0xb921d31aa0a53d4801c10e421aa3756f5721c7e993feb5d5f65d975b0b2866b5",
         deployer: "0x22FCFCde1010aD545484E3D11B56E892Ba0F9A79",
       },
+      // Reconstructed Bundle with the cascadeCount fix; the 2025-12
+      // deployment (0xC2DBA11019AcE422576cE8869fdFD65C8D2fc562) predates the
+      // current ABI and always emitted cascadeCount=0.
       Bundle: {
-        address: "0xC2DBA11019AcE422576cE8869fdFD65C8D2fc562",
-        deployedAt: 1765796535556,
+        address: "0x7E4a1bE888078887A83f86B17A073484A3c65067",
+        deployedAt: 1788122868000,
         txHash:
-          "0x320ae406d26384992499e14140c0e8df35e23b3430ddb615e292d7b077c2a56a",
-        deployer: "0x22FCFCde1010aD545484E3D11B56E892Ba0F9A79",
+          "0x955adbaeaec41fa8f2f3a3d458a757fb09510838eaa9c9a5c10b06450b1e651f",
+        deployer: "0x1CAE687b6a5F587A9936E4a4218a54da7e2FCcCf",
       },
     },
   },
