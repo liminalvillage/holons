@@ -183,4 +183,20 @@ describe('nostr backend (relay is the wire)', () => {
     const theirs = await other.getAll(HOLON, 'notes');
     expect(theirs.every((i) => i.id !== 'n1')).toBe(true);
   }, 25000);
+
+  test('same-second create-then-update publishes strictly increasing created_at', async () => {
+    const sphere = nostrSphere({ appName: APP + '-mono' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v1' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v2' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v3' });
+    const evs = await eventually(() => {
+      const e = relay.events().filter((x) => x.kind === 30078 && x.tags.some((t) => t[0] === 'd' && t[1] === `${HOLON}/tasks/mono`));
+      return e.length ? e : null;
+    });
+    // mini-relay keeps only the newest per address; it must be v3 and its
+    // timestamp must exceed the first publish (three puts in one second).
+    const newest = evs[evs.length - 1];
+    expect(JSON.parse(newest.content).title).toBe('v3');
+    expect(newest.created_at).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 1);
+  }, 15000);
 });

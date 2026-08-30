@@ -105,13 +105,22 @@ export function createRelayTransport(holo, {
       .catch((e) => vlog('publish failed:', e?.message));
   }
 
+  // Relays replace an addressable event only when the new created_at is
+  // strictly newer (strfry keeps the first of two equal timestamps), so a
+  // create-then-update within one second must still bump the clock.
+  function nextCreatedAt(lk) {
+    return Math.max(Math.floor(Date.now() / 1000), (applied.get(lk) || 0) + 1);
+  }
+
   function buildFor(holon, lens, item) {
+    const lk = item?.id != null ? locKey(holon, lens, String(item.id)) : null;
     return buildEvent({
       holon: holon == null ? GLOBAL_HOLON_TAG : String(holon),
       lens,
       item,
       sk: privateKey,
       kind,
+      created_at: lk ? nextCreatedAt(lk) : undefined,
       extraTags: [['n', app]],
     });
   }

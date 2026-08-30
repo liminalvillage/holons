@@ -103,6 +103,15 @@ export async function createSigner({
   // that made a just-created item resolve as unverified until a reload.
   const ownEnvelopes = new Map();
   const ownKey = (holon, lens, id) => `${holon}|${lens}|${id}`;
+  // Strictly monotone created_at per location: relays keep the first of two
+  // equal-timestamp replacements, which would silently drop a same-second update.
+  const lastAt = new Map();
+  const nextCreatedAt = (key) => {
+    const at = Math.max(Math.floor(Date.now() / 1000), (lastAt.get(key) || 0) + 1);
+    lastAt.set(key, at);
+    if (lastAt.size > 20000) lastAt.delete(lastAt.keys().next().value);
+    return at;
+  };
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
   // Standard-kind projections published next to each envelope (relay-backup
   // mode). They never enter the `_events` sidecar.
@@ -242,6 +251,7 @@ export async function createSigner({
         if (!relayList.length && !envelope) return null;
         const event = buildEvent({
           holon, lens, item, sk: privateKey, kind,
+          created_at: nextCreatedAt(ownKey(holon, lens, item.id)),
           // Namespace tag — lets the relay transport filter a shared relay
           // down to this app's events. See relay-transport.js.
           extraTags: holo ? [['n', holo.appname]] : [],
