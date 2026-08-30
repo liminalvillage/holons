@@ -49,6 +49,7 @@
     readZoneAssignments,
     toAllocationPartners,
     type OpenCollectiveSnapshot,
+    type SankeyLayoutLink,
     type SankeyLayoutNode,
     type ValueFlowTrack,
   } from "@holons/core/flows";
@@ -87,6 +88,9 @@
   let windowId: string = "90";
   let trackId = "";
   let selected: SankeyLayoutNode | null = null;
+  // The detail modal must format in the unit of the chart the tap came from —
+  // an allocation node shown with the movement track's currency would lie.
+  let selectedFormat: (value: number) => string = (v) => String(Math.round(v));
 
   $: windowDays = WINDOWS.find((w) => w.id === windowId)?.days ?? 90;
 
@@ -200,6 +204,126 @@
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency } as ValueFlowTrack)
     : (v: number) => `${Math.round(v)}%`;
+
+  // ── Hover details ────────────────────────────────────────────────────────
+  // The tooltip's extra rows. Same semantics as the dashboard's Flows view, so
+  // both surfaces say the same thing about the same picture — and the shares
+  // quoted are the ACTUAL slice sums from `allocate()`, which since the
+  // contract-parity change are exactly what the Bundle contract pays.
+
+  const pctOf = (value: number) => `${Math.round(value * 10) / 10}%`;
+
+  function findSlice(nodeId: string) {
+    if (nodeId.startsWith("member-")) {
+      const id = nodeId.slice("member-".length);
+      return allocationResult.interior.find((m) => m.id === id) ?? null;
+    }
+    if (nodeId.startsWith("zone-")) {
+      const zone = Number(nodeId.slice("zone-".length));
+      return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
+    }
+    if (nodeId.startsWith("partner-")) {
+      const id = nodeId.slice("partner-".length);
+      for (const zone of allocationResult.exterior) {
+        const hit = (zone.members ?? []).find((p) => p.id === id);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  function allocationDetails(
+    node: SankeyLayoutNode,
+  ): { label: string; value: string }[] {
+    const interiorPct = allocationResult.interior.reduce(
+      (sum, m) => sum + m.percentage,
+      0,
+    );
+    const exteriorPct = allocationResult.exterior.reduce(
+      (sum, z) => sum + z.percentage,
+      0,
+    );
+
+    if (node.kind === "pot") {
+      const rows = collective
+        ? [
+            { label: $t("flows.tipCollective"), value: collective.name },
+            {
+              label: $t("flows.balance"),
+              value: formatAllocation(collective.balance),
+            },
+          ]
+        : [];
+      rows.push(
+        { label: $t("flows.interior"), value: pctOf(interiorPct) },
+        { label: $t("flows.exterior"), value: pctOf(exteriorPct) },
+      );
+      return rows;
+    }
+
+    if (node.kind === "interior") {
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(interiorPct) },
+        {
+          label: $t("flows.tipMembers"),
+          value: String(allocationResult.interior.length),
+        },
+        { label: $t("flows.tipSplitBy"), value: $t("flows.tipByContribution") },
+      ];
+    }
+
+    if (node.kind === "exterior") {
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(exteriorPct) },
+        { label: $t("flows.zones"), value: String(allocationConfig.nzones) },
+        { label: $t("flows.tipSplitBy"), value: $t("flows.tipByZone") },
+      ];
+    }
+
+    const slice = findSlice(node.id);
+    if (!slice) return [];
+
+    const rows = [
+      { label: $t("flows.tipShareOfPot"), value: pctOf(slice.percentage) },
+    ];
+    if (node.kind === "member") {
+      rows.push({
+        label: $t("flows.tipSplitBy"),
+        value: $t("flows.tipByContribution"),
+      });
+    }
+    if (node.kind === "zone") {
+      const partnerNames = (slice.members ?? []).map((p) => p.label);
+      rows.push({
+        label: $t("flows.tipRing"),
+        value: $t("flows.tipZoneN", { n: String(slice.zone) }),
+      });
+      rows.push({
+        label: $t("flows.tipPartners"),
+        value: partnerNames.length
+          ? partnerNames.join(", ")
+          : $t("flows.tipNoPartners"),
+      });
+    }
+    if (node.kind === "partner" && slice.zone) {
+      rows.push({
+        label: $t("flows.tipRing"),
+        value: $t("flows.tipZoneN", { n: String(slice.zone) }),
+      });
+    }
+    return rows;
+  }
+
+  /** A ribbon says what its deeper end would say. */
+  function allocationLinkDetails(
+    link: SankeyLayoutLink,
+  ): { label: string; value: string }[] {
+    const node = allocationLayout?.nodes.find((n) => n.id === link.target);
+    return node ? allocationDetails(node) : [];
+  }
+
+  $: shareLine = (pct: number) =>
+    $t("flows.tipShareShown", { pct: String(pct) });
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -474,7 +598,11 @@
             <SankeyChart
               layout={movementLayout}
               format={formatMovement}
-              onSelect={(n) => (selected = n)}
+              {shareLine}
+              onSelect={(n) => {
+                selectedFormat = formatMovement;
+                selected = n;
+              }}
             >
               <p slot="empty" class="empty">{$t("flows.emptyTrack")}</p>
             </SankeyChart>
@@ -514,7 +642,13 @@
           <SankeyChart
             layout={allocationLayout}
             format={formatAllocation}
-            onSelect={(n) => (selected = n)}
+            {shareLine}
+            nodeDetails={allocationDetails}
+            linkDetails={allocationLinkDetails}
+            onSelect={(n) => {
+              selectedFormat = formatAllocation;
+              selected = n;
+            }}
           >
             <p slot="empty" class="empty">{$t("flows.emptyAllocation")}</p>
           </SankeyChart>
@@ -532,7 +666,17 @@
   <Modal on:close={() => (selected = null)}>
     <div class="detail">
       <h3>{selected.label}</h3>
-      <p class="amount">{formatMovement(selected.value)}</p>
+      <p class="amount">{selectedFormat(selected.value)}</p>
+      {#if allocationLayout?.nodes.some((n) => n.id === selected?.id)}
+        <dl class="detail-rows">
+          {#each allocationDetails(selected) as row (row.label)}
+            <div class="detail-row">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
     </div>
   </Modal>
 {/if}
@@ -634,5 +778,28 @@
     margin: 0;
     font-size: 1.6rem;
     color: var(--teal);
+  }
+
+  .detail-rows {
+    margin: 0.7rem 0 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .detail-row {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    font-size: 0.9rem;
+  }
+
+  .detail-row dt {
+    color: var(--muted);
+  }
+
+  .detail-row dd {
+    margin: 0;
+    color: var(--ink);
+    text-align: right;
   }
 </style>

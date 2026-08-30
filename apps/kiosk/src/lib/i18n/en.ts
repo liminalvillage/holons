@@ -711,6 +711,17 @@ export const en = {
   "flows.window90": "90 days",
   "flows.windowAll": "All time",
   "flows.collectiveFailed": "Could not reach OpenCollective.",
+  "flows.tipShareShown": "{pct}% of the flow shown",
+  "flows.tipShareOfPot": "Share of pot",
+  "flows.tipSplitBy": "Split by",
+  "flows.tipByContribution": "Contribution score",
+  "flows.tipByZone": "Zone weights",
+  "flows.tipMembers": "Members",
+  "flows.tipRing": "Ring",
+  "flows.tipZoneN": "Zone {n}",
+  "flows.tipPartners": "Partners",
+  "flows.tipNoPartners": "None yet",
+  "flows.tipCollective": "Collective",
 } as const satisfies Record<string, Msg>;
 
 export type MessageKey = keyof typeof en;
