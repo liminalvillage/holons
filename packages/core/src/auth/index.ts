@@ -36,6 +36,7 @@ export {
   ETH_IDENTITY_MESSAGE,
   PASSKEY_PRF_SALT,
   deriveNostrKeyFromEntropy,
+  deriveTelegramNostrKey,
   entropyFromBytes,
   type DerivedNostrKey,
 } from './derive.js';

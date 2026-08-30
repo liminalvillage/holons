@@ -21,6 +21,7 @@ import Library from '../src/Library.js';
 import Users from '../src/Users.js';
 import Tags from '../src/Tags.js';
 import Participation from '../src/RSVP.js';
+import Shifts from '../src/Shifts.js';
 import Roles from '../src/Roles.js';
 import OneOnOne from '../src/OneOnOne.js';
 import Announcements from '../src/Announcements.js';
@@ -540,6 +541,12 @@ export const serviceDefinitions = {
 
   participation: {
     factory: ({ telebot, database }) => new Participation(telebot, database),
+    singleton: true,
+    dependencies: ['telebot', 'database'],
+  },
+
+  shifts: {
+    factory: ({ telebot, database }) => new Shifts(telebot, database),
     singleton: true,
     dependencies: ['telebot', 'database'],
   },

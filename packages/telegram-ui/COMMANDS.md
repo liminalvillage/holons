@@ -25,6 +25,12 @@
   - Example: `/facilitate i don't feel recognized`
 - `/bigtalk` - Get to know each other better by collectively answering the prompt
 
+## Shifts (Elinor-compatible)
+Shifts are read from a Nostr relay in the [Elinor](https://elinor.commonshub.dev/docs) format (kind 31923 occurrences, kind 31925 signups); any Elinor client sees the same signups.
+- `/shifts [today|tomorrow|week|YYYY-MM-DD]` - Lists this chat's shifts with ✋ Take / ❌ Drop buttons
+  - Example: `/shifts tomorrow`
+- `/myshifts` - Lists the shifts you are signed up for in the next two weeks
+
 ## Role Management
 - `/assignroles` - Assigns roles to members of the community based on their actions
 - `/setroles [roles]` - Defines roles within the community
