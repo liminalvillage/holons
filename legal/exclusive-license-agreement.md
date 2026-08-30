@@ -40,8 +40,7 @@ B. The Work is published, or is to be published, at
 C. The Licensor wishes to grant, and the Licensee wishes to obtain, an
    **exclusive, irrevocable, perpetual, sublicensable license** to the Work,
    so that the Licensee may operate the project, accept community
-   contributions, publish under AGPL-3.0-or-later (including by sublicensing
-   stewardship of the non-commercial side to **Regenerativa APS-ETS**), and
+   contributions, publish under AGPL-3.0-or-later, and
    grant the **commercial license** described in
    [`../LICENSE-COMMERCIAL.md`](../LICENSE-COMMERCIAL.md). The Licensor
    retains bare legal title to the underlying copyright.
@@ -74,10 +73,7 @@ and the version-control history.
 2.2 The Licensee may, without further consent of the Licensor:
 
 (a) **publish and distribute** the Work, and authorize others to do so,
-    under the **GNU AGPL-3.0-or-later**, including by sublicensing
-    **Regenerativa APS-ETS** to steward the non-commercial / open-source
-    distribution of the Work as set out in
-    [`./noncommercial-license-srl-to-aps.md`](./noncommercial-license-srl-to-aps.md);
+    under the **GNU AGPL-3.0-or-later**;
 (b) **grant commercial licenses** to the Work and any derivative works on
     such terms as the Licensee determines, including the proprietary terms
     set out in [`../LICENSE-COMMERCIAL.md`](../LICENSE-COMMERCIAL.md);

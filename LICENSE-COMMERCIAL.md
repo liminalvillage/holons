@@ -8,7 +8,7 @@ takes effect only through a separate written agreement signed by the Licensor.
 > (holds an exclusive, irrevocable, sublicensable license to Holons from the
 > copyright holder Roberto Valenti, and grants commercial licenses on that
 > basis)
-> **Contact:** we@holons.io
+> **Contact:** admin@rigenerativa.it
 
 ## Who needs this
 
@@ -49,7 +49,7 @@ provides:
 
 ## How to obtain one
 
-Email **we@holons.io** with:
+Email **admin@rigenerativa.it** with:
 
 1. Your organization and the product/service you intend to build.
 2. How you intend to use Holons (embedded, hosted, distributed, …).

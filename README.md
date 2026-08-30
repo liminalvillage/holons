@@ -128,7 +128,6 @@ See **[LICENSING.md](./LICENSING.md)** for which one applies to you and why.
 
 Copyright © Roberto Valenti and the Holons contributors.
 IP is held personally by **Roberto Valenti**, who grants an exclusive,
-irrevocable license to **Rigenerativa SRL** — the commercial operator that
-issues the commercial license and sublicenses **Regenerativa APS-ETS** to
-steward the non-commercial / open-source (AGPL) side — see
+irrevocable license to **Rigenerativa SRL** — the single Licensor, which
+publishes Holons under the AGPL and issues the commercial license — see
 [LICENSING.md](./LICENSING.md).

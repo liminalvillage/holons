@@ -6,11 +6,11 @@ Together they establish, on paper, what the repository asserts in code
 (SPDX headers, the `©` line, the CLA Licensor):
 
 ```
-Roberto Valenti ──[1] exclusive,         Rigenerativa SRL ──[2] non-commercial
- (sole author,        irrevocable,        (commercial         sublicense──▶ Regenerativa
-  ~2016–2026,         sublicensable       operator,                          APS-ETS
-  retains             license────▶)        commercial licensor,             (AGPL
-  copyright)                              dual-license aggregator)          steward)
+Roberto Valenti ──[1] exclusive,         Rigenerativa SRL
+ (sole author,        irrevocable,        (single Licensor:
+  ~2016–2026,         sublicensable       AGPL publisher,
+  retains             license────▶)        commercial licensor,
+  copyright)                              CLA licensee)
 
 future external
 contributors ──────[CLA, see ../CLA.md]──▶ Rigenerativa SRL
@@ -19,14 +19,12 @@ contributors ──────[CLA, see ../CLA.md]──▶ Rigenerativa SRL
 | # | Document | Parties | Purpose |
 | --- | --- | --- | --- |
 | 1 | [`exclusive-license-agreement.md`](./exclusive-license-agreement.md) | Roberto Valenti → **Rigenerativa SRL** | Grants an exclusive, irrevocable, perpetual, sublicensable license to the entire pre-existing Holons codebase. Roberto retains bare legal title; the SRL operates the dual-license model. Symbolic €100/year royalty defuses re-characterization-as-assignment risk. |
-| 2 | [`noncommercial-license-srl-to-aps.md`](./noncommercial-license-srl-to-aps.md) | **Rigenerativa SRL** → Regenerativa APS-ETS | Royalty-free, non-commercial-only sublicense letting the non-profit steward and publish Holons under AGPL-3.0-or-later. |
 | — | [`../CLA.md`](../CLA.md) | future contributors → Rigenerativa SRL | Covers contributions made *after* publication. |
 
 ## Status & how to use
 
-- These are **unexecuted templates**. Sign and date with the authorized
-  signatories (Roberto Valenti personally; the SRL's *amministratore unico*;
-  the APS-ETS's President / *legale rappresentante*).
+- This is an **unexecuted template**. Sign and date with the authorized
+  signatories (Roberto Valenti personally; the SRL's *amministratore unico*).
 - Have an Italian **commercialista / avvocato** review them. The license-only
   structure is designed to avoid the transfer/realization event a full IP
   assignment would create, but **the Agenzia delle Entrate may re-characterize
@@ -41,8 +39,7 @@ contributors ──────[CLA, see ../CLA.md]──▶ Rigenerativa SRL
 - Italian-law notes baked into the templates: economic rights are
   assignable/licensable in writing (art. 110 L. 633/1941); **moral rights are
   inalienable** (art. 20–22 L. 633/1941) — handled via a non-assertion
-  covenant, not a waiver; APS-ETS scope is kept non-commercial to protect
-  *Ente del Terzo Settore* status (D.Lgs. 117/2017).
+  covenant, not a waiver.
 - Upgrade path: if a future investment or corporate event makes the tax cost
   of a full assignment worth paying, the exclusive license can be converted
   into an outright assignment via a separate instrument (see §8.2 of the

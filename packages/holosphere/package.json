@@ -18,7 +18,7 @@
     "prepublish:skip-tests": "npm run build"
   },
   "author": "Roberto Valenti",
-  "license": "GPL-3.0-or-later",
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@noble/curves": "^1.8.0",
     "@noble/hashes": "^1.8.0",

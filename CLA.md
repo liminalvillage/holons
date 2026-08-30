@@ -7,16 +7,16 @@ Thank you for contributing to Holons. To keep the project
 license every contribution under **both**. This Agreement makes that explicit
 while letting you keep ownership of your work.
 
-> **Licensor ("We"/"Us"):** **Rigenerativa SRL** — we@holons.io
+> **Licensor ("We"/"Us"):** **Rigenerativa SRL** — admin@rigenerativa.it
 > (the project's commercial operator and CLA assignee, holding an exclusive,
 > irrevocable, sublicensable license to the pre-existing Holons codebase
 > granted by the copyright holder **Roberto Valenti**, and aggregating new
 > contributions via this CLA). The rights You grant below include the right
-> to **sublicense**. Rigenerativa SRL grants the paid
-> [commercial license](./LICENSE-COMMERCIAL.md) directly and sublicenses
-> **Regenerativa APS-ETS** to steward the non-commercial / open-source (AGPL)
-> side. You grant Your rights to Rigenerativa SRL; You are not entering an
-> agreement with Roberto Valenti or Regenerativa APS-ETS.
+> to **sublicense**. Rigenerativa SRL publishes Holons under the
+> [AGPL-3.0-or-later](./LICENSE.md) and grants the paid
+> [commercial license](./LICENSE-COMMERCIAL.md) directly. You grant Your
+> rights to Rigenerativa SRL; You are not entering an agreement with Roberto
+> Valenti.
 > **Contributor ("You"):** the individual or legal entity submitting a
 > Contribution.
 
@@ -96,7 +96,7 @@ you which applies; the default is the first):
    (`git commit -s`), where the sign-off additionally indicates acceptance of
    this CLA as stated in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 3. **Manual** — for substantial or entity contributions, emailing a signed copy
-   of this Agreement to we@holons.io.
+   of this Agreement to admin@rigenerativa.it.
 
 If no CLA automation is configured yet, opening a pull request constitutes Your
 acceptance of this CLA for the Contribution in that pull request, and you should

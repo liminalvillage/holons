@@ -45,11 +45,11 @@ The commercial option is offered out-of-band (it is a private agreement) and is
 intentionally **not** encoded as an SPDX `OR` expression in package metadata, so
 that automated tooling treats the public package as plain AGPL.
 
-## The Licensors
+## The Licensor
 
-Holons is owned **personally** by its author and operated commercially by a
-company under an exclusive license, with a non-profit stewarding the
-open-source side:
+Holons is owned **personally** by its author and operated — both the
+open-source and the commercial side — by a single company under an exclusive
+license:
 
 > **IP owner & copyright holder:** **Roberto Valenti** — sole author and
 > original copyright holder. Roberto retains bare legal title to the Work.
@@ -58,19 +58,12 @@ open-source side:
 > holds an **exclusive, irrevocable, perpetual, sublicensable license** to
 > Holons from Roberto Valenti (see
 > [`legal/exclusive-license-agreement.md`](./legal/exclusive-license-agreement.md)).
-> Acts as the project's commercial operator: grants the paid
-> [commercial license](./LICENSE-COMMERCIAL.md), receives all new
-> contributions via the [Contributor License Agreement](./CLA.md), and
-> sublicenses the non-commercial side to the non-profit below.
+> It is the **single Licensor**: it publishes Holons under the
+> [AGPL-3.0-or-later](./LICENSE.md), grants the paid
+> [commercial license](./LICENSE-COMMERCIAL.md), and receives all new
+> contributions via the [Contributor License Agreement](./CLA.md).
 >
-> **Non-commercial / open-source operator:** **Regenerativa APS-ETS** (a
-> non-profit *Associazione di Promozione Sociale – Ente del Terzo Settore*).
-> Sublicensed by Rigenerativa SRL to steward Holons for everyone under the
-> [AGPL-3.0-or-later](./LICENSE.md) and run the community/commons side. It
-> does not own the IP and does not earn commercial revenue, which keeps its
-> non-profit/ETS status clean.
->
-> **Contact (all):** we@holons.io
+> **Contact:** admin@rigenerativa.it
 
 ```
                                 Roberto Valenti
@@ -80,25 +73,20 @@ open-source side:
                                        │ license  (see legal/exclusive-license-agreement.md)
                                        ▼
                   contributions     Rigenerativa SRL
-   contributors ─────(via CLA)───▶   commercial operator,
-                                     grants commercial license,
-                                     dual-license aggregator
-                                       │ non-commercial sublicense
-                                       ▼
-                                Regenerativa APS-ETS
-                             non-commercial / AGPL steward
+   contributors ─────(via CLA)───▶   single Licensor:
+                                     publishes under AGPL,
+                                     grants commercial license
                   ┌────────────────────┴────────────────────┐
                   ▼                                         ▼
          everyone, under AGPL                  customers, under a paid
-      (stewarded by the APS-ETS)         commercial agreement with the SRL
+                                         commercial agreement with the SRL
 ```
 
-Roberto keeps title to the underlying IP; the SRL runs commercial licensing
-under an exclusive license from him; the APS-ETS runs the commons under a
-non-commercial sublicense from the SRL. The [CLA](./CLA.md) assigns new
-contributions to **Rigenerativa SRL**, which — combining its exclusive license
-to the original code with its ownership of contributions — has the full rights
-needed to operate the dual-license model. The license-not-assignment structure
+Roberto keeps title to the underlying IP; the SRL operates both sides under an
+exclusive license from him. The [CLA](./CLA.md) licenses new contributions to
+**Rigenerativa SRL**, which — combining its exclusive license to the original
+code with the rights it holds in contributions — has the full rights needed to
+operate the dual-license model. The license-not-assignment structure
 avoids triggering a personal IP-transfer event today, and §8.2 of the exclusive
 license preserves the option to convert into a full assignment later.
 
@@ -107,8 +95,7 @@ If an entity name changes, update it only where its role appears:
 | Role | Entity | Appears in |
 | --- | --- | --- |
 | IP owner / copyright / SPDX | Roberto Valenti | source `SPDX-FileCopyrightText` headers, `README.md`, this file, `legal/exclusive-license-agreement.md` |
-| CLA assignee / commercial operator | Rigenerativa SRL | `README.md`, this file, `CLA.md`, [`LICENSE-COMMERCIAL.md`](./LICENSE-COMMERCIAL.md), `legal/*.md` |
-| Non-commercial / AGPL operator | Regenerativa APS-ETS | `README.md`, this file, `CLA.md`, `legal/noncommercial-license-srl-to-aps.md` |
+| Licensor (AGPL publisher, CLA licensee, commercial licensor) | Rigenerativa SRL | `README.md`, this file, `CLA.md`, [`LICENSE-COMMERCIAL.md`](./LICENSE-COMMERCIAL.md), `legal/*.md` |
 
 Nothing else depends on the names, so a change is a scoped find-and-replace
 plus the corresponding IP-assignment / inter-company license record.

@@ -327,7 +327,7 @@ Data in HoloSphere is organized by:
 
 ## License
 
-GPL-3.0-or-later
+AGPL-3.0-or-later — see [LICENSE](./LICENSE) and the monorepo [LICENSING.md](../../LICENSING.md) (commercial license available).
 
 # HoloSphere Federation
 

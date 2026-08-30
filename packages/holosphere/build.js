@@ -37,7 +37,7 @@ try {
  * </script>
  * 
  * @author Roberto Valenti
- * @license GPL-3.0-or-later
+ * @license AGPL-3.0-or-later
  */`
     },
     footer: {
