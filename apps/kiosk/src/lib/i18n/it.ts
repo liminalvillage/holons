@@ -269,7 +269,6 @@ export const it: Record<MessageKey, Msg> = {
   // User menu
   "menu.notSignedIn": "Accesso non effettuato",
   "menu.dashboard": "Apri la dashboard completa",
-  "menu.pasteCard": "Incolla la scheda copiata",
   "menu.settings": "Impostazioni",
   "menu.homePage": "Mostra la pagina iniziale",
   "menu.logout": "Esci",
@@ -478,8 +477,6 @@ export const it: Record<MessageKey, Msg> = {
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",
   "detail.enlargePicture": "Tocca per vedere l'immagine intera",
-  "detail.copyTitle": "Copia questa scheda — incollala in qualsiasi holon",
-  "detail.copy": "Copia",
   "detail.loginBorrowEdit":
     "Accedi con Telegram per prendere in prestito o modificare",
   "detail.loginEdit": "Accedi con Telegram per modificare",
@@ -682,20 +679,7 @@ export const it: Record<MessageKey, Msg> = {
   // Shell
   "layout.resync": "Vista live in stallo — risincronizzazione…",
 
-  // Clipboard
-  "clipboard.copied":
-    "Scheda copiata — incollala in qualsiasi holon (o in qualsiasi chat).",
-  "clipboard.copyFailed": "Impossibile raggiungere gli appunti.",
-  "clipboard.noHolon": "Prima punta il kiosk a un holon.",
-  "clipboard.loginToPaste": "Accedi per incollare la scheda copiata.",
-  "clipboard.pasted": 'Incollata "{title}".',
-  "clipboard.pastedLibrary": '"{title}" incollato nella biblioteca.',
-  "clipboard.alreadyInLibrary": '"{title}" è già in questa biblioteca.',
-  "clipboard.pasteCardFailed": "Impossibile incollare la scheda.",
-  "clipboard.pasteFailed": "Impossibile incollare — {reason}",
   "clipboard.writeFailed": "scrittura non riuscita",
-  "clipboard.blocked": "Appunti bloccati — premi Ctrl/Cmd+V invece.",
-  "clipboard.noCard": "Nessuna scheda copiata negli appunti.",
 
   // AI breakdown errors
   "breakdown.badKey":

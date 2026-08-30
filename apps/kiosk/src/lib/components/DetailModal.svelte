@@ -60,7 +60,6 @@
     type Quest,
   } from "@holons/core/tasks";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
-  import { copySelection } from "$lib/clipboard";
   import { t, locale } from "$lib/i18n";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
@@ -1098,23 +1097,12 @@
               <button class="ghost" on:click={startEdit} disabled={saving}
                 >{$t("detail.edit")}</button
               >
-              <button
-                class="ghost"
-                on:click={() => copySelection(sel)}
-                disabled={saving}
-                title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
-              >
             </div>
           {/if}
         {:else}
           <div class="actions">
             <button class="primary" on:click={requestLogin}
               >{$t("detail.loginBorrowEdit")}</button
-            >
-            <button
-              class="ghost"
-              on:click={() => copySelection(sel)}
-              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
             >
           </div>
         {/if}
@@ -1265,12 +1253,6 @@
             <button class="ghost" on:click={startEdit} disabled={saving}
               >{$t("detail.edit")}</button
             >
-            <button
-              class="ghost"
-              on:click={() => copySelection(sel)}
-              disabled={saving}
-              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
-            >
             {#if canBreakdown && breakdownSteps === null}
               <button
                 class="ghost"
@@ -1387,11 +1369,6 @@
           <div class="actions">
             <button class="primary" on:click={requestLogin}
               >{$t("detail.loginEdit")}</button
-            >
-            <button
-              class="ghost"
-              on:click={() => copySelection(sel)}
-              title={$t("detail.copyTitle")}>⧉ {$t("detail.copy")}</button
             >
           </div>
         {/if}

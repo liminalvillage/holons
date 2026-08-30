@@ -270,7 +270,6 @@ export const es: Record<MessageKey, Msg> = {
   // User menu
   "menu.notSignedIn": "Sesión no iniciada",
   "menu.dashboard": "Abrir el panel completo",
-  "menu.pasteCard": "Pegar la ficha copiada",
   "menu.settings": "Ajustes",
   "menu.homePage": "Mostrar la página de inicio",
   "menu.logout": "Cerrar sesión",
@@ -478,8 +477,6 @@ export const es: Record<MessageKey, Msg> = {
   "detail.bookAhead": "Reservar con antelación",
   "detail.edit": "Editar",
   "detail.enlargePicture": "Toca para ver la imagen completa",
-  "detail.copyTitle": "Copia esta ficha — pégala en cualquier holón",
-  "detail.copy": "Copiar",
   "detail.loginBorrowEdit": "Entra con Telegram para tomar prestado o editar",
   "detail.loginEdit": "Entra con Telegram para editar",
   "detail.category": "Categoría",
@@ -680,20 +677,7 @@ export const es: Record<MessageKey, Msg> = {
   // Shell
   "layout.resync": "Vista en vivo detenida — resincronizando…",
 
-  // Clipboard
-  "clipboard.copied":
-    "Ficha copiada — pégala en cualquier holón (o en cualquier chat).",
-  "clipboard.copyFailed": "No se pudo acceder al portapapeles.",
-  "clipboard.noHolon": "Primero apunta el quiosco a un holón.",
-  "clipboard.loginToPaste": "Inicia sesión para pegar la ficha copiada.",
-  "clipboard.pasted": 'Pegada "{title}".',
-  "clipboard.pastedLibrary": '"{title}" pegado en la biblioteca.',
-  "clipboard.alreadyInLibrary": '"{title}" ya está en esta biblioteca.',
-  "clipboard.pasteCardFailed": "No se pudo pegar la ficha.",
-  "clipboard.pasteFailed": "No se pudo pegar — {reason}",
   "clipboard.writeFailed": "fallo de escritura",
-  "clipboard.blocked": "Portapapeles bloqueado — pulsa Ctrl/Cmd+V en su lugar.",
-  "clipboard.noCard": "No hay ninguna ficha copiada en el portapapeles.",
 
   // AI breakdown errors
   "breakdown.badKey": "OpenAI rechazó la clave API de este dispositivo.",

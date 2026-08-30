@@ -267,7 +267,6 @@ export const en = {
   // User menu
   "menu.notSignedIn": "Not signed in",
   "menu.dashboard": "Open full dashboard",
-  "menu.pasteCard": "Paste copied card",
   "menu.settings": "Settings",
   "menu.homePage": "Show the home page",
   "menu.logout": "Log out",
@@ -468,8 +467,6 @@ export const en = {
   "detail.bookAhead": "Book ahead",
   "detail.edit": "Edit",
   "detail.enlargePicture": "Tap to see the whole picture",
-  "detail.copyTitle": "Copy this card — paste it in any holon",
-  "detail.copy": "Copy",
   "detail.loginBorrowEdit": "Log in with Telegram to borrow or edit",
   "detail.loginEdit": "Log in with Telegram to edit",
   "detail.category": "Category",
@@ -671,19 +668,7 @@ export const en = {
   // Shell
   "layout.resync": "Live view stalled — resyncing…",
 
-  // Clipboard (copy/paste cards)
-  "clipboard.copied": "Card copied — paste it in any holon (or any chat).",
-  "clipboard.copyFailed": "Couldn't reach the clipboard.",
-  "clipboard.noHolon": "Point the kiosk at a holon first.",
-  "clipboard.loginToPaste": "Log in to paste the copied card.",
-  "clipboard.pasted": 'Pasted "{title}".',
-  "clipboard.pastedLibrary": 'Pasted "{title}" into the library.',
-  "clipboard.alreadyInLibrary": '"{title}" is already in this library.',
-  "clipboard.pasteCardFailed": "Couldn't paste the card.",
-  "clipboard.pasteFailed": "Couldn't paste — {reason}",
   "clipboard.writeFailed": "write failed",
-  "clipboard.blocked": "Clipboard blocked — press Ctrl/Cmd+V instead.",
-  "clipboard.noCard": "No copied card in the clipboard.",
 
   // AI breakdown errors
   "breakdown.badKey": "OpenAI rejected this device's API key.",

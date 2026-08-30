@@ -15,7 +15,6 @@
   import { dashboardUrl, resolveMiniapp } from "$lib/config";
   import { showHomePage } from "$lib/home";
   import { keyLinkOpen, sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
-  import { pasteFromSystemClipboard } from "$lib/clipboard";
   import { t } from "$lib/i18n";
 
   $: who = $brandName || $holonName;
@@ -48,11 +47,6 @@
   function unlinkKey() {
     void dropSessionKey();
   }
-  // Touch path for card paste (desktop can just press Ctrl/Cmd+V anywhere).
-  function pasteCard() {
-    close();
-    void pasteFromSystemClipboard();
-  }
 </script>
 
 <div class="menu">
@@ -82,11 +76,6 @@
     <span class="ico">⬡</span>
     <span class="label">{$t("menu.dashboard")}</span>
     <span class="chev">↗</span>
-  </button>
-
-  <button class="row" on:click={pasteCard} disabled={!$holonId}>
-    <span class="ico">⧉</span>
-    <span class="label">{$t("menu.pasteCard")}</span>
   </button>
 
   <button class="row" on:click={openSettings}>

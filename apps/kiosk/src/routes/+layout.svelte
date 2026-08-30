@@ -71,7 +71,6 @@
     noteInteraction,
   } from "$lib/stores";
   import { initAuth, loginOpen } from "$lib/auth";
-  import { parseCardText, pasteCardText } from "$lib/clipboard";
   import { startSwAutoReload } from "$lib/swUpdate";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
@@ -573,19 +572,6 @@
     lastMove = t;
     noteInteraction();
   }
-
-  // Ctrl/Cmd+V anywhere on the board lands a copied card in this holon. Text
-  // pasted into a real field (search, edit forms) is never intercepted, and
-  // non-card text falls through to the browser's normal paste.
-  function onPaste(e: ClipboardEvent) {
-    // The target can be window/document (no .closest) when nothing is focused.
-    const t = e.target instanceof Element ? e.target : null;
-    if (t?.closest("input, textarea, select, [contenteditable]")) return;
-    const text = e.clipboardData?.getData("text/plain") ?? "";
-    if (!parseCardText(text)) return;
-    e.preventDefault();
-    void pasteCardText(text);
-  }
 </script>
 
 <svelte:head>
@@ -605,7 +591,6 @@
   on:keydown|capture={onActivity}
   on:wheel|capture={onActivity}
   on:pointermove|capture={onMove}
-  on:paste={onPaste}
 />
 
 {#if isMiniApp}
