@@ -5,7 +5,7 @@ import i18next from 'i18next';
 
 // Import all modules
 import Server from '../src/Server.js';
-// createHoloSphere removed — using HoloSphere 1.3 directly in service factory
+// HoloSphere comes from src/createHoloSphere.js (env-driven: backend/relays/projections)
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
 import Holons from '../src/Holons.js';
@@ -146,9 +146,21 @@ export const serviceDefinitions = {
       const appname =
         process.env.HOLONS_APP ||
         (config.isDevelopment ? 'HolonsDebug' : 'Holons');
-      const peers = [process.env.HOLONS_PEER || 'https://gun.holons.io/gun'];
-      const { HoloSphere } = await import('holosphere');
-      const holosphere = new HoloSphere(appname, false, null, { peers });
+      // Env-driven factory (src/createHoloSphere.js): HOLOSPHERE_BACKEND
+      // ('nostr' = relay is the wire, gun peerless cache), HOLOSPHERE_RELAYS,
+      // HOLOSPHERE_PROJECTIONS(+_SYNC) standard-kind projections + reverse
+      // sync, HOLOSPHERE_SIGNING relay backup. The previous direct
+      // `new HoloSphere(appname, false, null, { peers })` bypassed all of it.
+      const { default: createHoloSphere } = await import(
+        '../src/createHoloSphere.js'
+      );
+      const backend = (process.env.HOLOSPHERE_BACKEND || 'gun').toLowerCase();
+      const holosphere = createHoloSphere(appname, {
+        // Gun-wire mode keeps the HOLONS_PEER override; the nostr wire is peerless.
+        ...(backend !== 'nostr' && process.env.HOLONS_PEER
+          ? { gunOptions: { peers: [process.env.HOLONS_PEER] } }
+          : {}),
+      });
       // Inspect the local radisk file at startup so we can see what survived
       try {
         const fs = await import('fs');
