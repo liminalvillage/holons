@@ -271,6 +271,8 @@ class HoloSphere {
             privateKey: this._privateKey,
             syncTimeoutMs: cfg.nostr?.syncTimeoutMs,
             verbose: signing.verbose || cfg.nostr?.verbose,
+            projections: cfg.nostr?.projections,
+            signerFor: cfg.nostr?.signerFor,
         });
         // Read-list hydration AFTER init settles: goes through the normal
         // (backend-awaiting) read path, so it can even pull the saved
@@ -1152,6 +1154,7 @@ class HoloSphere {
             privateKey, relays, verbose: opts.verbose,
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
             perActorLenses: opts.perActorLenses,
+            projections: opts.projections, signerFor: opts.signerFor,
         });
         return this._signer;
     }

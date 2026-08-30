@@ -33,6 +33,7 @@ import {
   tag,
   HOLOSPHERE_KIND,
 } from './nostr-events.js';
+import { createProjector } from './projections.js';
 
 /** `h`-tag sentinel for holon-less (global) records — `app/table/key`. */
 export const GLOBAL_HOLON_TAG = '_g';
@@ -52,6 +53,9 @@ export function createRelayTransport(holo, {
   kind = HOLOSPHERE_KIND,
   syncTimeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
   verbose = false,
+  // Standard-kind projections (see projections.js / @holons/core/nostr).
+  projections = [],
+  signerFor = null,
 } = {}) {
   if (!relays.length) throw new Error('relay-transport: at least one relay is required');
   if (!privateKey) throw new Error('relay-transport: a privateKey is required');
@@ -59,6 +63,7 @@ export function createRelayTransport(holo, {
   const pubkey = getPublicKey(privateKey);
   const app = holo.appname;
   const vlog = (...a) => { if (verbose) console.log('[nostr-transport]', ...a); };
+  const projector = createProjector({ projections, privateKey, signerFor, verbose });
 
   let pool = null;
   let closed = false;
@@ -126,6 +131,11 @@ export function createRelayTransport(holo, {
         trim(applied, 20000);
       }
       publishEvent(event);
+      // Standard-kind projections ride alongside; never ingested back (see ingest).
+      for (const p of projector.eventsForWrite(holon, lens, addressed)) {
+        seen.add(p.id);
+        publishEvent(p);
+      }
     } catch (e) {
       vlog('publishWrite failed:', e?.message);
     }
@@ -137,6 +147,10 @@ export function createRelayTransport(holo, {
   function publishDelete(holon, lens, key, signedEvent = null) {
     if (closed || key == null) return;
     publishWrite(holon, lens, { id: String(key), _deleted: true }, { signedEvent });
+    for (const p of projector.eventsForDelete(holon, lens, key)) {
+      seen.add(p.id);
+      publishEvent(p);
+    }
   }
 
   function withId(item, key) {
@@ -161,6 +175,7 @@ export function createRelayTransport(holo, {
     if (closed || !event || seen.has(event.id)) return Promise.resolve();
     seen.add(event.id);
     trim(seen, 20000);
+    if (event.kind !== kind) return Promise.resolve(); // projected/other kinds are never ingested
     if (event.pubkey === pubkey) return Promise.resolve(); // our own write — already local
     if (!verifyEvent(event)) { vlog('dropped forged event', event.id); return Promise.resolve(); }
     if (tag(event, 'n') !== app) return Promise.resolve(); // another app namespace
@@ -277,6 +292,7 @@ export function createRelayTransport(holo, {
     pubkey,
     relays: [...relays],
     publishWrite,
+    projector,
     publishDelete,
     ensureSync,
     /** Test/diagnostic hook: number of live (holon, lens) subscriptions. */

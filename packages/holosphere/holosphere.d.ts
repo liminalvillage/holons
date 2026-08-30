@@ -283,6 +283,11 @@ interface HoloSphereConfig {
     /** Cold-read catch-up deadline for backend 'nostr' (ms, default 5000). */
     syncTimeoutMs?: number;
     verbose?: boolean;
+    /** Standard-kind projection hooks (build with `buildProjections` from
+     *  `@holons/core/nostr`). Published next to every 30078 event. */
+    projections?: ProjectionHook[];
+    /** Per-user signing key lookup for kind-0 / RSVP projections. */
+    signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
   };
   /** Signing-layer options applied by backend 'nostr' init (shadow/enforce/
    *  perActorLenses/verbose — relays are always [] there; the transport
@@ -293,6 +298,15 @@ interface HoloSphereConfig {
     perActorLenses?: string[];
     verbose?: boolean;
   };
+}
+
+/** Hook shape consumed by projections.js (see @holons/core/nostr). */
+export interface ProjectionHook {
+  lens: string;
+  kinds: number[];
+  requiresAuthor?: 'user';
+  project(holon: string, lens: string, item: unknown): { primary: any; companions?: any[] } | null;
+  retract(holon: string, lens: string, id: string): any[];
 }
 
 declare class HoloSphere {

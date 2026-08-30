@@ -11,6 +11,8 @@
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import AssistantWidget from '../components/AssistantWidget.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
+	import { buildProjections, parseProjectionList } from '@holons/core/nostr';
+	import { cellToLatLng } from 'h3-js';
 	import { homeHolonIdOverride } from '$lib/stores/homeHolonId';
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
@@ -493,6 +495,29 @@
 		// (the backend init owns the signer, envelope-only); the manual
 		// enableSigning call below stays gun-backend-only.
 		const signingModeEnv = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
+		// Standard-kind projections (VITE_HOLOSPHERE_PROJECTIONS=off|all|quests,…):
+		// listed lenses are ALSO published as their standard Nostr kind next to
+		// the 30078 record. The logged-in user's own key signs their kind-0
+		// profile / RSVPs; nobody else's. See packages/holosphere/NOSTR-BACKEND.md.
+		const projectionLenses = backendRelays.length
+			? parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS)
+			: [];
+		const ownPubkey = nostrStore.getState().publicKey || '';
+		const projectionOptions = projectionLenses.length && ownPubkey
+			? {
+				projections: buildProjections(projectionLenses, {
+					appName: environmentName,
+					holonPubkey: ownPubkey,
+					cellToLatLng,
+					pubkeyFor: (id: string | number) =>
+						pendingTelegramUserId && String(id) === String(pendingTelegramUserId)
+							? ownPubkey
+							: undefined,
+				}),
+				signerFor: (id: string | number) =>
+					pendingTelegramUserId && String(id) === String(pendingTelegramUserId) ? privateKey : null,
+			}
+			: {};
 		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
@@ -501,7 +526,7 @@
 				? {
 					backend: 'nostr',
 					extra: {
-						nostr: { relays: backendRelays },
+						nostr: { relays: backendRelays, ...projectionOptions },
 						signing: {
 							shadow: signingModeEnv === 'shadow',
 							enforce: signingModeEnv === 'enforce',
@@ -549,6 +574,7 @@
 						readKeys,
 						shadow: signingMode === 'shadow',
 						enforce: signingMode === 'enforce',
+						...projectionOptions,
 					});
 					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
 				}

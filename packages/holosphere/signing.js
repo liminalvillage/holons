@@ -20,6 +20,7 @@ import {
   getPublicKey,
   HOLOSPHERE_KIND,
 } from './nostr-events.js';
+import { createProjector } from './projections.js';
 
 const EVENTS_NS = '_events';        // appname/holon/_events/lens/itemId/pubkey -> signed event
 const MEMBERSHIP_LENS = '_members'; // signed membership log lens
@@ -76,6 +77,7 @@ function buildTimeline(events, pinnedGenesis) {
 export async function createSigner({
   privateKey, relays = [], kind = HOLOSPHERE_KIND, verbose = false,
   shadow = false, enforce = false, storeEnvelope, perActorLenses = [],
+  projections = [], signerFor = null,
 }) {
   if (!privateKey) throw new Error('enableSigning: a privateKey is required');
   const { SimplePool } = await import('nostr-tools/pool');
@@ -101,6 +103,13 @@ export async function createSigner({
   const ownEnvelopes = new Map();
   const ownKey = (holon, lens, id) => `${holon}|${lens}|${id}`;
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
+  // Standard-kind projections published next to each envelope (relay-backup
+  // mode). They never enter the `_events` sidecar.
+  const projector = createProjector({ projections, privateKey, signerFor, verbose });
+  const publishProjections = (events) => {
+    if (!relayList.length) return;
+    for (const e of events) Promise.allSettled(pool.publish(relayList, e)).catch(() => {});
+  };
 
   // --- Gun sidecar I/O (reserved _events namespace; reads never see it) -------
   const lensRoot = (holo, holon, lens) => holo.gun.get(holo.appname).get(holon).get(EVENTS_NS).get(lens);
@@ -228,6 +237,7 @@ export async function createSigner({
           if (ownEnvelopes.size > 10000) ownEnvelopes.delete(ownEnvelopes.keys().next().value);
         }
         if (relayList.length) Promise.allSettled(pool.publish(relayList, event)).catch(() => {});
+        publishProjections(projector.eventsForWrite(holon, lens, item));
         return event;
       } catch (e) { vlog('signEnvelope failed:', e?.message); return null; }
     },
@@ -238,6 +248,7 @@ export async function createSigner({
     /** Signed delete: a signed tombstone, issued before the raw removal. */
     async onDelete(holo, holon, lens, key) {
       if (!key) return null;
+      publishProjections(projector.eventsForDelete(holon, lens, key));
       return signer.signEnvelope(holo, holon, lens, { id: String(key), _deleted: true });
     },
 

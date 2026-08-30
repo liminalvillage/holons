@@ -260,3 +260,8 @@ no-op against a holosphere build without signing.
   wrote what* and now gates *what is displayed*, but does not yet hide content;
   relay write-policy/NIP-42; lens-scoped roles; hard (retroactive) revocation
   tombstones; cross-holon/federated authorization import.
+
+Note: standard-kind projections (`projections.js`, see `NOSTR-BACKEND.md`)
+are published beside each envelope but NEVER stored in the `_events`
+sidecar — envelopes stay kind-30078 only, so `aggregate`/`authorizedView`
+always parse `content` as the JSON record.

@@ -83,6 +83,40 @@ tags: [["h", holon|"_g"], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
   signing layer uses); receivers store the tombstone, and normal reads
   filter it.
 
+## Projections — standard kinds next to 30078
+
+The 30078 record is opaque to every other Nostr client. With projection
+hooks configured, each write on a listed lens is ALSO published as the
+lens's standard kind, and each delete as a NIP-09 retraction. One-way: the
+transport never ingests projected kinds (`ingest` drops `kind !== 30078`)
+and they never enter the `_events` sidecar — 30078 stays the source of
+truth. Codecs live in `@holons/core/nostr`; `projections.js` here only signs
+and publishes what a hook returns.
+
+| lens | kind | notes |
+|---|---|---|
+| `quests`, `events` | 31923 / 31922 (NIP-52) + 31925 RSVP per participant | undated quests skipped; `type:'need'` → 30402 |
+| `offers` (+ need/offer/request quests) | 30402 (NIP-99) | `status active|sold`, `g` from `geohash` or the H3 `hex` |
+| `users` | 0 (profile) | signed by the USER's key only (`signerFor`), never the holon's |
+| `checklists`, `shopping`, `library` | 30003 (NIP-51 set) | entries as `['item', …]` tags |
+
+Every projected event carries `['n', appname]`, `['h', holon]`,
+`['t', 'group-<holon>']` (same grammar as Elinor), `['holons', lens, holon, id]`
+(origin pointer) and, for addressable kinds, `d = holons:<lens>:<holon>:<id>` —
+holon-scoped so H3/federation copies never collide. Hologram/federation
+copies and globals are not projected. `created_at` is kept strictly
+monotone per `(kind, d)` so rapid re-puts are not rejected as "older".
+
+Configure: `nostr: { relays, projections, signerFor }` (nostr backend) or
+`enableSigning({ relays, projections, signerFor })` (gun + relay backup).
+Build hooks with `buildProjections(parseProjectionList(env), ctx)` from
+`@holons/core/nostr`; the monorepo apps read `HOLOSPHERE_PROJECTIONS` /
+`VITE_HOLOSPHERE_PROJECTIONS` (`off` default | `all` | comma list).
+
+Phase 2 (not built): a codec's `parse`/`primary` seam lets a lens make the
+standard kind authoritative later, with Holons-only fields under the
+reserved `x-holons` tag.
+
 ## Semantics & limits
 
 - **Conflicts** are last-writer-wins by event `created_at` (second

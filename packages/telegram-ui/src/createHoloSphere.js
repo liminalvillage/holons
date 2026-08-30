@@ -13,7 +13,10 @@ import {
   parseRelayBackupMode,
 } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
-import { generateSecretKey } from 'nostr-tools';
+import { generateSecretKey, getPublicKey } from 'nostr-tools';
+import { cellToLatLng } from 'h3-js';
+import { buildProjections, parseProjectionList } from '@holons/core/nostr';
+import { deriveTelegramNostrKey } from '@holons/core/auth';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -87,13 +90,24 @@ export default function createHoloSphere(appName, options = {}) {
     backend || process.env.HOLOSPHERE_BACKEND?.toLowerCase() || 'gun';
   const relayIsWire = resolvedBackend === 'nostr' && relays.length > 0;
 
+  // Standard-kind projections (HOLOSPHERE_PROJECTIONS=off|all|quests,events,…):
+  // every write on a listed lens is ALSO published as its standard Nostr kind
+  // (NIP-52 / NIP-99 / kind 0 / NIP-51) so third-party clients can read it.
+  // Opt-in and only meaningful with relays. See packages/holosphere/NOSTR-BACKEND.md.
+  const projectionLenses = relays.length
+    ? parseProjectionList(process.env.HOLOSPHERE_PROJECTIONS)
+    : [];
+  const projectionOptions = projectionLenses.length
+    ? buildProjectionOptions(resolvedAppName, privateKey, projectionLenses)
+    : {};
+
   const instance = coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
     backend: resolvedBackend,
     logLevel: logLevel || 'INFO',
     extra: {
-      ...(relayIsWire ? { nostr: { relays } } : {}),
+      ...(relayIsWire ? { nostr: { relays, ...projectionOptions } } : {}),
       ...extra,
     },
   });
@@ -101,16 +115,84 @@ export default function createHoloSphere(appName, options = {}) {
   // Callers depend on this factory staying synchronous, so the backup is armed
   // in the background: writes in the first moments after startup may land on
   // Gun before the publisher is up. A no-op unless HOLOSPHERE_SIGNING is set.
+  projectionHost.instance = instance;
   enableRelayBackup(instance, {
     relays,
     mode: parseRelayBackupMode(process.env.HOLOSPHERE_SIGNING),
     backend: resolvedBackend,
+    ...projectionOptions,
   }).then(on => {
     if (on) console.log(`[holosphere] relay backup on → ${relays.join(', ')}`);
   });
 
   return instance;
 }
+
+/**
+ * Projection hooks + per-user signer for this bot.
+ *
+ * - `signerFor(telegramId)` derives the member's key with NOSTR_DERIVATION_SECRET
+ *   (same rule as the web login and /shifts), enabling kind-0 profiles and
+ *   NIP-52 RSVP companions signed by the member, not the holon. Without the
+ *   secret those events are simply dropped.
+ * - `timezoneFor(holon)` reads the holon's settings lens lazily (first call
+ *   returns undefined and warms the cache).
+ *
+ * @param {string} appName
+ * @param {string} privateKey hex
+ * @param {string[]} lenses
+ * @returns {{projections: object[], signerFor?: Function}}
+ */
+function buildProjectionOptions(appName, privateKey, lenses) {
+  const secret = (process.env.NOSTR_DERIVATION_SECRET || '').trim();
+  const signerFor = secret
+    ? id => {
+        try {
+          return deriveTelegramNostrKey(id, secret).privateKey;
+        } catch {
+          return null;
+        }
+      }
+    : undefined;
+  const pubkeyFor = secret
+    ? id => {
+        try {
+          return deriveTelegramNostrKey(id, secret).publicKey;
+        } catch {
+          return undefined;
+        }
+      }
+    : undefined;
+  const tzCache = new Map();
+  const timezoneFor = holon => {
+    if (tzCache.has(holon)) return tzCache.get(holon) || undefined;
+    tzCache.set(holon, ''); // warm once; later writes pick it up
+    const hs = projectionHost.instance;
+    if (hs && typeof hs.get === 'function') {
+      hs.get(String(holon), 'settings', String(holon))
+        .then(s => {
+          if (s && typeof s.timezone === 'string')
+            tzCache.set(holon, s.timezone);
+        })
+        .catch(() => {});
+    }
+    return undefined;
+  };
+  const projections = buildProjections(lenses, {
+    appName,
+    holonPubkey: getPublicKey(Uint8Array.from(Buffer.from(privateKey, 'hex'))),
+    cellToLatLng,
+    timezoneFor,
+    pubkeyFor,
+  });
+  console.log(
+    `[holosphere] projections on → ${lenses.join(', ')}${signerFor ? ' (+ per-user signer)' : ''}`
+  );
+  return { projections, ...(signerFor ? { signerFor } : {}) };
+}
+
+/** The most recent instance, so timezoneFor can read settings without a cycle. */
+const projectionHost = { instance: null };
 
 /**
  * Creates a KeyManager instance for per-holon key management.

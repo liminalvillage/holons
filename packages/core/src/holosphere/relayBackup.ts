@@ -25,12 +25,16 @@
 export type RelayBackupMode = 'off' | 'shadow' | 'enforce';
 
 /** The signing surface this module needs. Not in holosphere.d.ts yet. */
+import type { ProjectionHook } from '../nostr/types.js';
+
 interface SigningCapable {
   enableSigning?(opts: {
     privateKey?: Uint8Array | string;
     relays?: string[];
     shadow?: boolean;
     enforce?: boolean;
+    projections?: ProjectionHook[];
+    signerFor?: RelayBackupOptions['signerFor'];
   }): Promise<unknown>;
 }
 
@@ -52,6 +56,13 @@ export interface RelayBackupOptions {
   backend?: string;
   /** Notified when enabling fails. Defaults to `console.error`. */
   onError?: (err: unknown) => void;
+  /**
+   * Standard-kind projection hooks (from `buildProjections` in
+   * `@holons/core/nostr`) published next to every signed write.
+   */
+  projections?: ProjectionHook[];
+  /** Per-user signing key lookup for kind-0 / RSVP projections. */
+  signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
 }
 
 /**
@@ -81,7 +92,7 @@ export function parseRelayList(raw: string | undefined | null): string[] {
  */
 export async function enableRelayBackup(
   holosphere: unknown,
-  { relays, mode = 'off', privateKey, backend, onError }: RelayBackupOptions,
+  { relays, mode = 'off', privateKey, backend, onError, projections, signerFor }: RelayBackupOptions,
 ): Promise<boolean> {
   if (mode === 'off') return false;
   if (!relays.length) return false;
@@ -98,6 +109,8 @@ export async function enableRelayBackup(
       relays,
       shadow: mode === 'shadow',
       enforce: mode === 'enforce',
+      ...(projections?.length ? { projections } : {}),
+      ...(signerFor ? { signerFor } : {}),
     });
     return true;
   } catch (err) {

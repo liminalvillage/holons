@@ -84,7 +84,9 @@
     "./nostr-events.js": "./nostr-events.js",
     "./signing.js": "./signing.js",
     "./relay-transport": "./relay-transport.js",
-    "./relay-transport.js": "./relay-transport.js"
+    "./relay-transport.js": "./relay-transport.js",
+    "./projections": "./projections.js",
+    "./projections.js": "./projections.js"
   },
   "repository": {
     "type": "git",
