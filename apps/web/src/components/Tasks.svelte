@@ -229,7 +229,7 @@
 	// Live federation-aware quests stream; `setFederated` toggles partners without
 	// a re-subscribe. Replaces the separate local (fetchData) + federated-overlay
 	// (fetchFederatedTasks) paths.
-	let questsSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
+	let questsSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
 
 	// Add initialization state tracking
 	let isLoading = $state(true);
@@ -995,6 +995,16 @@
 		}
 	});
 
+	let lastTasksLegacyFlag = $showUnverified;
+	$effect(() => {
+		// "Show all data" also folds in legacy Gun-relay records, live.
+		if ($showUnverified !== lastTasksLegacyFlag) {
+			lastTasksLegacyFlag = $showUnverified;
+			if (!holosphere || !holonID) return;
+			questsSub?.setLegacy($showUnverified);
+		}
+	});
+
 	// Identity of the current load — `${holonID}:${federated}`. Lets us drop
 	// stale callbacks from a previous holon/mode after a switch.
 	let questsLoadKey: string | null = null;
@@ -1061,7 +1071,7 @@
 				preResolveHologramNames(Object.entries(store));
 				maybeOpenSelectedTask();
 			},
-			{ includeFederated: $showFederated }
+			{ includeFederated: $showFederated, includeLegacy: $showUnverified }
 		);
 		questsUnsubscribe = () => questsSub?.unsubscribe();
 	}

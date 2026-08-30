@@ -824,6 +824,8 @@ const PROPAGATE_READ_RETRY_MS = [0, 500];
  * @param {object} [options]
  * @param {boolean} [options.includeLocal=true] - Include the holon's own items.
  * @param {boolean} [options.includeFederated=true] - Fold in inbound partners.
+ * @param {boolean} [options.includeLegacy=false] - Fold in legacy Gun-relay records
+ *   (tagged `_unverified`/`_legacy`, live copies win; no-op off the nostr backend).
  * @param {boolean} [options.dedupe=true] - Collapse cross-space id collisions (local wins).
  * @param {boolean} [options.dedupeAcrossSpaces=true] - False when ids are only holon-unique:
  *   keep a partner's same-named record instead of letting ours shadow it. Partner
@@ -865,6 +867,11 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     const {
         includeLocal = true,
         includeFederated = true,
+        // Fold in records that only exist on the legacy Gun relay(s) — see
+        // holosphere.getAllLegacy. Items arrive tagged `_unverified`/`_legacy`
+        // (display-only); a live copy of the same id always wins. No-op off
+        // the nostr backend. Toggled live via the handle's `setLegacy`.
+        includeLegacy = false,
         dedupe = true,
         dedupeAcrossSpaces = true,
         idField = 'id',
@@ -876,6 +883,15 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     // identical ids across holons don't collide before dedup.
     const store = new Map();
     const subs = new Map(); // space → unsubscribe()
+    // Live tombstones per `${space} ${id}` key: async seeds (getAll, legacy)
+    // resolve AFTER the live subscription attaches, so without this a slow
+    // seed could resurrect an item a live event already deleted. Shared
+    // across spaces (keys embed the space) and kept across removeSpace so a
+    // re-attached partner can't resurrect either.
+    const tombstones = new Set();
+    // Store keys currently holding a legacy (Gun-relay) copy — a live
+    // arrival replaces the copy, and `setLegacy(false)` removes exactly these.
+    const legacyKeys = new Set();
     let closed = false;
 
     const emit = () => {
@@ -934,10 +950,6 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
 
     const addSpace = (space, originName) => {
         if (closed || subs.has(space)) return;
-        // Live tombstones seen for this space. The getAll seed below resolves
-        // AFTER the live subscription attaches, so without this a slow seed
-        // could resurrect an item a live event already deleted.
-        const tombstones = new Set();
         const raw = holosphere.subscribe(space, lens, (data, key) => {
             if (closed) return;
             const id = String((data && (data[idField] ?? key)) ?? key ?? '');
@@ -946,8 +958,10 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
             if (data == null || data._deleted) {
                 tombstones.add(k);
                 store.delete(k);
+                legacyKeys.delete(k);
             } else {
                 tombstones.delete(k);
+                legacyKeys.delete(k); // a live copy replaces the legacy one
                 store.set(k, tagWithSource(data, space, originName));
             }
             emit();
@@ -971,7 +985,10 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
                     const id = item[idField];
                     if (id == null) continue;
                     const k = `${space}${SEP}${String(id)}`;
-                    if (store.has(k) || tombstones.has(k)) continue;
+                    // A real (relay/graph) item may replace a legacy copy,
+                    // but never the other way around.
+                    if ((store.has(k) && !legacyKeys.has(k)) || tombstones.has(k)) continue;
+                    legacyKeys.delete(k);
                     store.set(k, tagWithSource(item, space, originName));
                     added = true;
                 }
@@ -986,8 +1003,54 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         try { un(); } catch { /* best-effort teardown */ }
         subs.delete(space);
         for (const k of [...store.keys()]) {
-            if (k.slice(0, k.indexOf(SEP)) === space) store.delete(k);
+            if (k.slice(0, k.indexOf(SEP)) === space) {
+                store.delete(k);
+                legacyKeys.delete(k);
+            }
         }
+    };
+
+    // ---- legacy Gun relay overlay (see holosphere.getAllLegacy) -----------
+    // One-shot fold of records stranded on the legacy Gun relay(s) into the
+    // LOCAL space's slice of the store. Items are pre-tagged `_unverified`/
+    // `_legacy` by getAllLegacy, so lens views can gate them behind their
+    // "show all data" affordance; a live copy of an id always wins.
+    let legacyOn = false;
+    let legacyToken = 0;
+    const attachLegacy = () => {
+        if (closed) return;
+        legacyOn = true;
+        const token = ++legacyToken;
+        Promise.resolve()
+            .then(() => (typeof holosphere.getAllLegacy === 'function'
+                ? holosphere.getAllLegacy(holon, lens)
+                : []))
+            .then((items) => {
+                if (closed || !legacyOn || token !== legacyToken || !Array.isArray(items)) return;
+                let added = false;
+                for (const item of items) {
+                    if (!item || item._deleted) continue;
+                    const id = item[idField];
+                    if (id == null) continue;
+                    const k = `${holon}${SEP}${String(id)}`;
+                    if (store.has(k) || tombstones.has(k)) continue; // live copy wins
+                    store.set(k, item);
+                    legacyKeys.add(k);
+                    added = true;
+                }
+                if (added) emit();
+            })
+            .catch(() => { /* legacy relay unreachable — nothing to fold */ });
+    };
+    const detachLegacy = () => {
+        legacyOn = false;
+        legacyToken++; // cancel any in-flight fold
+        let removed = false;
+        for (const k of [...legacyKeys]) {
+            if (store.delete(k)) removed = true;
+            legacyKeys.delete(k);
+        }
+        if (removed) emit();
     };
 
     // Attach a subscription to every partner this holon receives `lens` from.
@@ -1041,6 +1104,7 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     if (includeLocal) addSpace(holon, null);
     emit();
     if (includeFederated) attachPartners();
+    if (includeLegacy) attachLegacy();
 
     return {
         /**
@@ -1052,6 +1116,16 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
             if (closed) return;
             if (on) attachPartners();
             else detachPartners();
+        },
+        /**
+         * Fold legacy Gun-relay records in (`true`) or drop them (`false`)
+         * live — the "Show all data" toggle's data source. Re-reads the
+         * legacy relay on each enable; no-op off the nostr backend.
+         */
+        setLegacy(on) {
+            if (closed) return;
+            if (on) attachLegacy();
+            else detachLegacy();
         },
         unsubscribe() {
             closed = true;

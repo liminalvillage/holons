@@ -302,7 +302,7 @@
 	// emit and refreshed one-shot in federated mode only: the per-USER-holon
 	// offers fan-out (`_userSpecific` — a DIFFERENT aggregation than federation,
 	// so it can't fold into subscribeFederated) and the participations lens.
-	let offersSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
+	let offersSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
 	let latestOfferItems: any[] = [];
 	let userSpecificOverlay: Record<string, any> = {};
 	let participationsMap = new Map<string, any[]>();
@@ -389,7 +389,7 @@
 					latestOfferItems = items;
 					rebuildOffersStore();
 				},
-				{ includeFederated: $showFederated }
+				{ includeFederated: $showFederated, includeLegacy: $showUnverified }
 			);
 			questSubscriptionOff = () => offersSub?.unsubscribe();
 			void refreshOfferOverlays();
@@ -460,6 +460,13 @@
 		lastFederatedFlag = $showFederated;
 		offersSub?.setFederated($showFederated);
 		void refreshOfferOverlays();
+	}
+
+	// "Show all data" also folds in legacy Gun-relay records, live.
+	let lastLegacyFlag = $showUnverified;
+	$: if ($showUnverified !== lastLegacyFlag) {
+		lastLegacyFlag = $showUnverified;
+		offersSub?.setLegacy($showUnverified);
 	}
 
 

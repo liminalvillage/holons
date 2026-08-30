@@ -195,6 +195,14 @@
     let questsUnsubscribe: (() => void) | undefined;
     let subscribedHolonId: string | null = null;
     let subscribedFedFlag: boolean | null = null;
+    let checklistsFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+
+    // "Show all data" also folds in legacy Gun-relay records, live.
+    let lastChecklistsLegacyFlag = $showUnverified;
+    $: if ($showUnverified !== lastChecklistsLegacyFlag) {
+        lastChecklistsLegacyFlag = $showUnverified;
+        checklistsFedSub?.setLegacy($showUnverified);
+    }
 
     // Local-first + progressive load via queryManager.subscribe.
     // - Cached snapshot paints immediately (no waiting on peers).
@@ -240,9 +248,10 @@
             },
             // Checklist ids are only holon-unique — keep each holon's copy
             // instead of letting ours shadow the partners' same-named lists.
-            { includeFederated: targetFed, dedupeAcrossSpaces: false }
+            { includeFederated: targetFed, includeLegacy: $showUnverified, dedupeAcrossSpaces: false }
         );
-        checklistsUnsubscribe = () => checklistSub.unsubscribe();
+        checklistsFedSub = checklistSub;
+        checklistsUnsubscribe = () => { checklistsFedSub = undefined; checklistSub.unsubscribe(); };
 
         rolesUnsubscribe = queryManager.subscribe({
             holonId: targetHolon,

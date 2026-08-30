@@ -74,7 +74,7 @@
     // docs are partners' (flattened into `federatedItems`). `setFederated` folds
     // partners in/out live. Replaces the local subscribe + one-shot getFederated.
     let shoppingSub:
-        | { unsubscribe: () => void; setFederated: (on: boolean) => void }
+        | { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void }
         | undefined;
 
     let filters = loadFilters('shopping', {
@@ -177,7 +177,7 @@
                     localList = local;
                     federatedItems = fedItems;
                 },
-                { includeFederated: $showFederated, dedupe: false },
+                { includeFederated: $showFederated, includeLegacy: $showUnverified, dedupe: false },
             );
         } catch (error) {
             console.error('Error fetching shopping list:', error);
@@ -188,6 +188,13 @@
     $: if (holonID && holosphere && $showFederated !== lastShoppingFedFlag) {
         lastShoppingFedFlag = $showFederated;
         shoppingSub?.setFederated($showFederated);
+    }
+
+    // "Show all data" also folds in legacy Gun-relay records, live.
+    let lastShoppingLegacyFlag = $showUnverified;
+    $: if (holonID && holosphere && $showUnverified !== lastShoppingLegacyFlag) {
+        lastShoppingLegacyFlag = $showUnverified;
+        shoppingSub?.setLegacy($showUnverified);
     }
 
     onMount(() => {

@@ -181,6 +181,14 @@
 	let unsubscribeFunctions: (() => void)[] = [];
 	let subscribedHolonId: string | null = null;
 	let subscribedFedFlag: boolean | null = null;
+	let expensesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+
+	// "Show all data" also folds in legacy Gun-relay records, live.
+	let lastExpensesLegacyFlag = $showUnverified;
+	$: if ($showUnverified !== lastExpensesLegacyFlag) {
+		lastExpensesLegacyFlag = $showUnverified;
+		expensesFedSub?.setLegacy($showUnverified);
+	}
 	let reaRefreshTimer: ReturnType<typeof setTimeout>;
 
 	function cleanupSubscriptions() {
@@ -232,9 +240,10 @@
 				expenses = next;
 				isLoading = false;
 			},
-			{ includeFederated: targetFed }
+			{ includeFederated: targetFed, includeLegacy: $showUnverified }
 		);
-		unsubscribeFunctions.push(() => expensesSub.unsubscribe());
+		expensesFedSub = expensesSub;
+		unsubscribeFunctions.push(() => { expensesFedSub = undefined; expensesSub.unsubscribe(); });
 
 		// Users stream
 		const usersOff = subscribeHolonUsers({

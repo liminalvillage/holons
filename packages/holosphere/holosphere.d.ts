@@ -441,12 +441,15 @@ declare class HoloSphere {
     subscribeFederated(holon: string, lens: string, callback: (items: any[]) => void, options?: {
         includeLocal?: boolean;
         includeFederated?: boolean;
+        /** Fold in legacy Gun-relay records (tagged `_unverified`/`_legacy`,
+         *  live copies win; no-op off the nostr backend). Default false. */
+        includeLegacy?: boolean;
         dedupe?: boolean;
         /** False when the lens's ids are only holon-unique (e.g. `checklists`). */
         dedupeAcrossSpaces?: boolean;
         idField?: string;
         maxFederatedSpaces?: number;
-    }): { unsubscribe: () => void; setFederated: (on: boolean) => void };
+    }): { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void };
     federateMessage(originalChatId: string, messageId: string, federatedChatId: string, federatedMessageId: string, type?: string): Promise<void>;
     getFederatedMessages(originalChatId: string, messageId: string): Promise<object | null>;
     updateFederatedMessages(originalChatId: string, messageId: string, updateCallback: (chatId: string, messageId: string) => Promise<void>): Promise<void>;

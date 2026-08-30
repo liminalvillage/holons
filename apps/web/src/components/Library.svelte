@@ -178,7 +178,7 @@
     // toggles partners without dropping the local stream — replacing the old
     // local queryManager.subscribe + one-shot getFederated fork.
     let librarySub:
-        | { unsubscribe: () => void; setFederated: (on: boolean) => void }
+        | { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void }
         | undefined;
     let hologramSourceNames = new Map<string, string>();
 
@@ -348,7 +348,7 @@
                     store = next;
                     preResolveHologramNames(items as LibraryItem[]);
                 },
-                { includeFederated: $showFederated },
+                { includeFederated: $showFederated, includeLegacy: $showUnverified },
             );
         } catch (error) {
             console.error('Error fetching library:', error);
@@ -361,6 +361,13 @@
     $: if (holonID && holosphere && $showFederated !== lastLibraryFedFlag) {
         lastLibraryFedFlag = $showFederated;
         librarySub?.setFederated($showFederated);
+    }
+
+    // "Show all data" also folds in legacy Gun-relay records, live.
+    let lastLibraryLegacyFlag = $showUnverified;
+    $: if (holonID && holosphere && $showUnverified !== lastLibraryLegacyFlag) {
+        lastLibraryLegacyFlag = $showUnverified;
+        librarySub?.setLegacy($showUnverified);
     }
 
     onMount(() => {

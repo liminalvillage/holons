@@ -111,6 +111,38 @@ describe('getAllLegacy (legacy Gun relay reads on the nostr backend)', () => {
     expect(after.map((i) => i.id)).not.toContain('legacy-1');
   }, 20000);
 
+  test('subscribeFederated folds legacy items in and setLegacy toggles them live', async () => {
+    const sphere = nostrSphere({ legacyGunPeers: [gunRelay.url] });
+    await sphere.ready();
+    await sphere.put(HOLON, LENS, { id: 'native-2', title: 'Relay quest 2' });
+
+    let snapshot = [];
+    const sub = sphere.subscribeFederated(
+      HOLON, LENS,
+      (items) => { snapshot = items; },
+      { includeFederated: false, includeLegacy: true },
+    );
+
+    const withLegacy = await eventually(() => {
+      const legacy = snapshot.find((i) => i.id === 'legacy-1');
+      const native = snapshot.find((i) => i.id === 'native-2');
+      return legacy && native ? { legacy, native } : null;
+    });
+    expect(withLegacy).toBeTruthy();
+    expect(withLegacy.legacy._legacy).toBe(true);
+    expect(withLegacy.legacy._unverified).toBe(true);
+    expect(withLegacy.native._legacy).toBeUndefined();
+
+    sub.setLegacy(false);
+    const dropped = await eventually(() => (snapshot.some((i) => i.id === 'legacy-1') ? null : snapshot));
+    expect(dropped.some((i) => i.id === 'native-2')).toBe(true);
+
+    sub.setLegacy(true);
+    const back = await eventually(() => snapshot.find((i) => i.id === 'legacy-1'));
+    expect(back).toBeTruthy();
+    sub.unsubscribe();
+  }, 30000);
+
   test('no-op off the nostr backend and with legacy reads disabled', async () => {
     // gun backend → [] (the relay data already IS the wire there)
     const gunSphere = await testSphere(APP);
