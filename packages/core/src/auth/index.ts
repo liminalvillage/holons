@@ -33,8 +33,10 @@ export function holonIdForIdentity(identity: AuthIdentity): string {
 
 export {
   IDENTITY_DERIVATION_PREFIX,
+  IDENTITY_PROVIDER_CONTEXT,
   ETH_IDENTITY_MESSAGE,
   PASSKEY_PRF_SALT,
+  deriveIdentityProviderKey,
   deriveNostrKeyFromEntropy,
   deriveTelegramNostrKey,
   entropyFromBytes,
