@@ -228,6 +228,7 @@ export const en = {
   "shifts.drop": "Drop",
   "shifts.youAreOn": "You're on it",
   "shifts.rsvpFailed": "Couldn't update your signup — {reason}",
+  "shifts.more": { one: "+{n} more", other: "+{n} more" },
   "shifts.noSigner":
     "This screen can't sign for you yet — use /shifts in Telegram.",
 

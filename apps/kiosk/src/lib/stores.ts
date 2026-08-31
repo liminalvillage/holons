@@ -201,6 +201,13 @@ export const rawShifts = writable<{
 }>({ occurrences: [], rsvps: [] });
 
 /**
+ * pubkey → display name for shift participants, from kind-31926 identity
+ * attestations on the shift relay ($lib/shifts owns the lookup). Pubkeys
+ * missing here render as a hex prefix.
+ */
+export const shiftNames = writable<Map<string, string>>(new Map());
+
+/**
  * False until the first schedule fetch for the current holon settles (with
  * data or empty), so the Shifts view can show "reading…" instead of a
  * misleading empty state during the initial relay round-trip.

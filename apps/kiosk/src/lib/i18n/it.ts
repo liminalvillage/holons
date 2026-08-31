@@ -230,6 +230,7 @@ export const it: Record<MessageKey, Msg> = {
   "shifts.drop": "Lascia",
   "shifts.youAreOn": "Ci sei tu",
   "shifts.rsvpFailed": "Impossibile aggiornare l'iscrizione — {reason}",
+  "shifts.more": { one: "+{n} altro", other: "+{n} altri" },
   "shifts.noSigner":
     "Questo schermo non può ancora firmare per te — usa /shifts su Telegram.",
 

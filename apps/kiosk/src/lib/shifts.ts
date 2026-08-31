@@ -11,6 +11,7 @@
 // so the feed simply follows the displayed holon.
 
 import {
+  attestationNameMap,
   createShiftRelayClient,
   enrolledPubkeys,
   resolveRsvps,
@@ -25,7 +26,13 @@ import { get, writable } from "svelte/store";
 import { currentUser } from "./auth";
 import { resolveShiftCoordinator, resolveShiftRelays } from "./config";
 import { getSessionSecret } from "./sessionKey";
-import { holonId, rawShifts, shiftsLoaded, shiftsPref } from "./stores";
+import {
+  holonId,
+  rawShifts,
+  shiftNames,
+  shiftsLoaded,
+  shiftsPref,
+} from "./stores";
 
 /** How far ahead the board looks. Two weeks reads as "the schedule". */
 export const SHIFT_HORIZON_DAYS = 14;
@@ -88,6 +95,23 @@ export function startShifts(): () => void {
       if (my !== seq || get(holonId) !== id) return;
       rawShifts.set(schedule);
       shiftsLoaded.set(true);
+      // Participant names, from kind-31926 identity attestations (Elinor's
+      // coordinator directory + any provider). Best-effort: a failed lookup
+      // keeps the previous map and the view falls back to hex prefixes.
+      const participants = [...new Set(schedule.rsvps.map((r) => r.pubkey))];
+      if (participants.length) {
+        try {
+          const atts = await c.fetchAttestations({ participants });
+          if (my !== seq) return;
+          shiftNames.set(
+            attestationNameMap(atts, {
+              coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
+            }),
+          );
+        } catch (err) {
+          console.warn("[kiosk] shift attestation fetch failed", err);
+        }
+      }
     } catch (err) {
       // A dead relay must not take the board down — the tab simply stays
       // hidden (auto) or shows its empty state (forced on).
@@ -136,6 +160,7 @@ export function startShifts(): () => void {
   const unsubHolon = holonId.subscribe((id) => {
     seq++; // invalidate any in-flight load for the previous holon
     rawShifts.set({ occurrences: [], rsvps: [] });
+    shiftNames.set(new Map());
     shiftsLoaded.set(false);
     if (id && get(shiftsPref) !== "off") void load(id);
   });
@@ -145,6 +170,7 @@ export function startShifts(): () => void {
     if (pref === "off") {
       seq++;
       rawShifts.set({ occurrences: [], rsvps: [] });
+      shiftNames.set(new Map());
       shiftsLoaded.set(false);
     } else if (!get(shiftsLoaded)) {
       refetch();
@@ -280,6 +306,24 @@ export function spotsLeft(
     0,
     occurrence.capacity - enrolledPubkeys(occurrence, rsvps).length,
   );
+}
+
+/**
+ * Display names of a shift's enrolled participants, capped for wall
+ * readability: `shown` carries at most `max` entries (attested name or an
+ * 8-hex prefix), `more` counts the rest.
+ */
+export function participantNames(
+  occurrence: Pick<ShiftOccurrence, "address">,
+  rsvps: Iterable<ShiftRsvp>,
+  names: Map<string, string>,
+  max = 4,
+): { shown: string[]; more: number } {
+  const enrolled = enrolledPubkeys(occurrence, rsvps);
+  const shown = enrolled
+    .slice(0, max)
+    .map((pk) => names.get(pk) ?? `${pk.slice(0, 8)}…`);
+  return { shown, more: Math.max(0, enrolled.length - max) };
 }
 
 /** Whether the shift is happening right now. */

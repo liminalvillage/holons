@@ -12,7 +12,13 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
-  import { rawShifts, shiftsLoaded, now, searchQuery } from "$lib/stores";
+  import {
+    rawShifts,
+    shiftNames,
+    shiftsLoaded,
+    now,
+    searchQuery,
+  } from "$lib/stores";
   import { showNotice } from "$lib/stores";
   import { isLoggedIn, loginOpen } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
@@ -25,6 +31,7 @@
   import {
     groupShiftsByDay,
     isRunningNow,
+    participantNames,
     setShiftRsvp,
     shiftMatchesQuery,
     shiftSigner,
@@ -171,6 +178,13 @@
                   <span class="ttl">{occ.title}</span>
                   {#if occ.location}<span class="where">⌖ {occ.location}</span
                     >{/if}
+                  {#if taken > 0}
+                    {@const who = participantNames(occ, rsvps, $shiftNames)}
+                    <span class="who"
+                      >{who.shown.join(", ")}{#if who.more > 0}
+                        {$t("shifts.more", { n: who.more })}{/if}</span
+                    >
+                  {/if}
                   <span class="cap">
                     {#if dots(taken, occ.capacity).length}
                       <span class="pips" aria-hidden="true">
@@ -390,6 +404,15 @@
   /* Secondary text on a tinted note: `--ink-soft` flips with the theme, so
      it stays legible on both the pastel (light) and jewel (dark) grounds. */
   .where {
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Who is on the shift — names from the identity attestations, hex
+     prefixes for keys nobody has attested yet. */
+  .who {
     font-size: 0.8rem;
     color: var(--ink-soft);
     overflow: hidden;

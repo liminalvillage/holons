@@ -10,6 +10,7 @@ import {
   groupShiftsByDay,
   isRunningNow,
   mergeRsvps,
+  participantNames,
   shiftMatchesQuery,
   spotsLeft,
   upcomingShifts,
@@ -149,6 +150,31 @@ describe("mergeRsvps", () => {
       id: "r-stale",
     };
     expect(mergeRsvps([newer], stale)[0].status).toBe("accepted");
+  });
+});
+
+describe("participantNames", () => {
+  const a = occ({});
+  const pks = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
+  const enrolled = pks.map((pk) => rsvp(a.address, pk, "accepted"));
+
+  it("maps attested names and falls back to hex prefixes", () => {
+    const names = new Map([[pks[0], "Alice"]]);
+    const { shown, more } = participantNames(a, enrolled, names);
+    expect(shown).toEqual(["Alice", `${"2".repeat(8)}…`, `${"3".repeat(8)}…`]);
+    expect(more).toBe(0);
+  });
+
+  it("caps the list and counts the rest", () => {
+    const { shown, more } = participantNames(a, enrolled, new Map(), 2);
+    expect(shown).toHaveLength(2);
+    expect(more).toBe(1);
+  });
+
+  it("ignores declined signups and handles the empty shift", () => {
+    const withDecline = [...enrolled, rsvp(a.address, "4".repeat(64), "declined")];
+    expect(participantNames(a, withDecline, new Map()).shown).toHaveLength(3);
+    expect(participantNames(a, [], new Map())).toEqual({ shown: [], more: 0 });
   });
 });
 
