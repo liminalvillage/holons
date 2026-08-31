@@ -14,6 +14,7 @@ Telegram chat id — i.e. the holon id.
 |-------|------------|----------------------------------|-----------------------------------------------------------------------------|
 | 31923 | occurrence | `shift-<groupId>-<date>-<code>`  | `title` `start` `end` (unix s) `start_tzid` `location` `capacity` `t:shift` `t:<code>` `t:group-<groupId>` |
 | 31925 | signup     | `rsvp-<groupId>-<date>-<code>`   | `a = 31923:<coordinator>:<occurrence d>` `status = accepted\|declined` `t:shift` `p <actor> "" changed-by` (optional) |
+| 31926 | identity   | `telegram:<telegram_user_id>`    | one `p` per key currently linked to that user; `content = {"name":"…"}` |
 
 Resolution: for each `(author, a)` the RSVP with the highest `created_at`
 wins; ties go to the lexically smallest `id`. A person is enrolled iff their
@@ -29,15 +30,23 @@ behalf, under *their* key) publish 31925.
 
 - **`@holons/core/shifts`** — all rules: d-tag/address builders and parsers,
   `parseShiftOccurrence`, `parseShiftRsvp`, `resolveRsvps`, `enrolledPubkeys`,
-  `hasCapacity`, `buildRsvpTemplate`, the REQ filters, and
-  `createShiftRelayClient({ relays, coordinatorPubkey })` which fetches,
-  resolves and signs against a `nostr-tools` pool (injectable for tests).
+  `hasCapacity`, `buildRsvpTemplate`, the 31926 attestation rules
+  (`attestation.ts`: parse/build/resolve, `attestationNameMap`), the REQ
+  filters, and `createShiftRelayClient({ relays, coordinatorPubkey })` which
+  fetches, resolves and signs against a `nostr-tools` pool (injectable for
+  tests). RSVPs are signed through a `NostrSigner` from
+  `@holons/core/holosphere` (`createIdentityContext` / `signerFromSecretKey`)
+  — no raw private key crosses a module boundary.
 - **`packages/telegram-ui/src/Shifts.js`** — rendering + Telegraf wiring only:
   `/shifts [today|tomorrow|week|YYYY-MM-DD]`, `/myshifts`, and the inline
-  `✋ Take` / `❌ Drop` buttons.
+  `✋ Take` / `❌ Drop` buttons; names via the users lens + 31926 lookup.
+- **`packages/core/src/nostr/codecs/profile.ts`** — the `users`-lens codec:
+  kind 0 (with the NIP-39 `i` claim) + NIP-29 membership + the 31926
+  attestation companion the projection host signs as the identity provider.
 - **`apps/kiosk/src/lib/views/ShiftsView.svelte`** — a Shifts tab on the
-  kiosk: the next two weeks as day rows of shift notes with capacity meters,
-  fed by `apps/kiosk/src/lib/shifts.ts` (periodic relay fetch). The tab
+  kiosk: the next two weeks as day rows of shift notes with capacity meters
+  and participant names, fed by `apps/kiosk/src/lib/shifts.ts` (periodic
+  relay fetch). The tab
   appears by itself when the displayed holon has upcoming occurrences
   (tri-state caretaker pref, like Library/Roles). Relay + coordinator come
   from `VITE_KIOSK_SHIFT_RELAYS` / `VITE_KIOSK_SHIFT_COORDINATOR`, defaulting
@@ -58,20 +67,51 @@ behalf, under *their* key) publish 31925.
 ```
 SHIFTS_RELAYS=wss://relay.holons.io      # falls back to HOLOSPHERE_RELAYS
 SHIFTS_COORDINATOR_PUBKEY=<hex>          # trust only this author's 31923s
-NOSTR_DERIVATION_SECRET=<same as web>    # required for signups
+NOSTR_DERIVATION_SECRET=<same as web>    # required for signups + attestations
+SHIFTS_IDENTITY_BLACKLIST=               # optional: 31926 providers to ignore
 ```
 
 Without `NOSTR_DERIVATION_SECRET` the bot can still list shifts but refuses
 to sign up. Without `SHIFTS_COORDINATOR_PUBKEY` any author's occurrences are
 shown — fine for development, set it in production.
 
-## Identity caveat
+## Identity attestations (kind 31926)
 
 Elinor and Holons derive per-user keys independently, so the same person has
-a different pubkey in each bot. Signups made through HolonsBot are counted by
-Elinor (it counts unknown pubkeys) but shown without a name until the pubkey
-is introduced to it; the reverse holds for Elinor signups shown by HolonsBot
-(rendered as `<8 hex>…`). Sharing keys or a name-registry is future work.
+a different pubkey in each bot. Kind 31926 is the name registry that bridges
+them: any app may act as an identity provider (no registration) by publishing
+`{d: telegram:<id>, p: <every key linked to that user>, content: {"name"}}`.
+Addressable — republishing the same `d` **replaces** the provider's previous
+list, so the `p` set must always be the user's complete key set: an omitted
+key is unlinked. Elinor honors attestations from any provider by default
+(governance is a community blacklist), and its coordinator publishes the same
+directory for every member it manages — `{kinds:[31926],
+authors:[<coordinator>]}` is the authoritative Telegram↔npub mapping.
+
+How Holons plays both sides:
+
+- **Publishing (provider role)** — the holosphere **projection layer** emits a
+  31926 companion beside each member's kind-0 profile (`users` lens), signed
+  by a service-level provider key derived from `NOSTR_DERIVATION_SECRET`
+  (`deriveIdentityProviderKey`, context `service:identity-provider` — same
+  secret ⇒ same provider key on every surface, so republishes replace rather
+  than duplicate). Deduped: an unchanged (pubkey, name) pair is not re-sent.
+- **NIP-39 claim** — the projected kind 0 also carries
+  `["i","telegram:<id>"]` (numeric ids only, no proof element): Elinor sees
+  it and asks that Telegram member to confirm the link with one tap.
+- **Consuming** — the bot's `/shifts` board and the kiosk resolve signup
+  pubkeys the local `users` lens cannot explain through 31926 attestations
+  (`fetchAttestations` + `attestationNameMap`). Precedence: local lens name →
+  coordinator directory → other providers (newest wins) → `<8 hex>…`.
+  `SHIFTS_IDENTITY_BLACKLIST` (comma-separated provider pubkeys) mutes
+  misbehaving providers.
+
+**Relay overlap matters**: attestations and kind-0 claims ride the projection
+publishers, i.e. `HOLOSPHERE_RELAYS` — that list must include the shifts
+relay (e.g. `wss://relay.commonshub.dev`) for Elinor to see them. And only
+members with a `users`-lens record are attested: someone who signs up via
+the kiosk without ever appearing in a holon roster stays a bare pubkey until
+they do.
 
 ## Holons data as NIP-52 (projections)
 
