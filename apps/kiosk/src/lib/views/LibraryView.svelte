@@ -12,7 +12,7 @@
     scope,
     now,
   } from "$lib/stores";
-  import { telegramUser, loginOpen } from "$lib/auth";
+  import { currentUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
   import { type Scope } from "$lib/config";
   import { personalThings } from "$lib/personal";
@@ -56,7 +56,7 @@
 
   // Things the logged-in user currently has out (legacy borrow fields are
   // core-maintained today-mirrors of bookings, so this is "out with me now").
-  $: mine = personalThings($things, $telegramUser?.id);
+  $: mine = personalThings($things, $currentUser?.id);
   $: shownThings = $scope === "personal" ? mine : $things;
 
   // The Card pager's position; clamped as live updates grow/shrink the set.
@@ -121,7 +121,7 @@
   let adding = false;
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -132,7 +132,7 @@
   }
 
   async function addThing() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     const hid = get(holonId);
     if (!user) {
       loginOpen.set(true);
@@ -180,7 +180,7 @@
          read-only. The personal scope narrows to the user's own bookings
          inside CalendarView, so it needs no `shownThings` guard here: a
          future booking is not a thing that is out today. -->
-    {#if $scope === "personal" && !$telegramUser}
+    {#if $scope === "personal" && !$currentUser}
       <p class="empty">{$t("library.loginPersonal")}</p>
     {:else}
       <CalendarView
@@ -192,7 +192,7 @@
     {/if}
   {:else}
     <div class="lib scroll">
-      {#if $scope === "personal" && !$telegramUser}
+      {#if $scope === "personal" && !$currentUser}
         <p class="empty">{$t("library.loginPersonal")}</p>
       {:else if $scope === "personal" && !shownThings.length}
         <p class="empty">{$t("library.emptyPersonal")}</p>

@@ -256,13 +256,36 @@ export const en = {
   "tabbar.unpinView": "Unpin this view",
   "tabbar.pinView": "Pin this view",
 
-  // Telegram login sheet
+  // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",
   "login.signedInAs":
     "You're signed in as {name} and can edit what's on the screen.",
-  "login.title": "Log in with Telegram",
+  "login.title": "Sign in",
   "login.lead":
     "Sign in to add and edit what's on the screen. Viewing stays open to all.",
+  "login.orKey": "or use your own key",
+  "login.nostrTile": "Nostr key",
+  "login.nostrHint": "Paste an nsec or create one",
+  "login.ethTile": "Ethereum",
+  "login.ethHint": "MetaMask, Rabby, Brave…",
+  "login.ethNoWallet": "No wallet detected",
+  "login.cancelled": "Sign-in was cancelled.",
+  "login.importTab": "Import key",
+  "login.createTab": "Create new",
+  "login.keyField": "Your nsec or hex secret key",
+  "login.show": "Show",
+  "login.hide": "Hide",
+  "login.signsInAs": "Signs in as {npub}",
+  "login.invalidKey": "Not a valid nsec or 64-character hex key",
+  "login.keyStays":
+    "Your key stays on this device. It is never sent to a server.",
+  "login.saveWarn":
+    "Save this key now. It is the only way back in — there is no reset.",
+  "login.copy": "Copy",
+  "login.copied": "Copied",
+  "login.copyFailed": "Copy failed — select the key and copy it manually.",
+  "login.savedCheck": "I've saved my key somewhere safe",
+  "login.continue": "Continue",
 
   // User menu
   "menu.notSignedIn": "Not signed in",
@@ -299,6 +322,7 @@ export const en = {
   "key.backupHint":
     "Anyone with this key can act as you — store it somewhere safe and private.",
   "menu.loginTelegram": "Log in with Telegram",
+  "menu.login": "Sign in",
 
   // Completion confirmation
   "complete.title": "Complete this task?",

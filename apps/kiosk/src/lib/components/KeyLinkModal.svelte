@@ -11,7 +11,7 @@
   import QRCode from "qrcode";
   import { get } from "svelte/store";
   import { t } from "$lib/i18n";
-  import { telegramUser } from "$lib/auth";
+  import { currentUser } from "$lib/auth";
   import { getHolosphere } from "$lib/holosphere";
   import { resolveMiniapp } from "$lib/config";
   import { adoptSessionKey, keyLinkOpen } from "$lib/sessionKey";
@@ -58,7 +58,7 @@
     if (!envelope?.ct) return;
     // The envelope claims a sender; a mismatch with the logged-in editor means
     // someone else's phone answered this QR — refuse rather than sign as them.
-    const me = get(telegramUser);
+    const me = get(currentUser);
     if (envelope.telegramId && me && envelope.telegramId !== String(me.id)) {
       stop();
       state = "mismatch";

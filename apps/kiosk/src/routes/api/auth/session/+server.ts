@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// GET    /api/auth/session — return the logged-in Telegram profile from the
-//                            session cookie (or a dev user in non-prod).
+// GET    /api/auth/session — return the logged-in identity from the session
+//                            cookie (or a dev user in non-prod): a Telegram
+//                            profile, or a bare key user (pubkey + provider).
 // DELETE /api/auth/session — log out (clear the cookie).
 
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import {
   authConfig,
-  verifySession,
+  verifySessionIdentity,
   mintSession,
+  mintKeySession,
   sessionCookieOptions,
   cookieDomain,
   SESSION_COOKIE,
@@ -40,14 +42,17 @@ function devProfile(): TelegramProfile | null {
 export const GET: RequestHandler = async ({ url, cookies }) => {
   const cfg = authConfig();
 
-  const profile = await verifySession(
+  const identity = await verifySessionIdentity(
     cookies.get(SESSION_COOKIE),
     cfg.jwtSecret,
   );
-  if (profile) {
+  if (identity) {
     // Sliding session: re-mint on every restore so active users never hit the
     // fixed JWT expiry — only SESSION_TTL_S of complete absence logs you out.
-    const token = await mintSession(profile, cfg.jwtSecret);
+    const token =
+      identity.kind === "telegram"
+        ? await mintSession(identity.profile, cfg.jwtSecret)
+        : await mintKeySession(identity, cfg.jwtSecret);
     cookies.set(
       SESSION_COOKIE,
       token,
@@ -56,7 +61,11 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
         cookieDomain(url.hostname),
       ),
     );
-    return json({ user: profile });
+    return json(
+      identity.kind === "telegram"
+        ? { user: identity.profile }
+        : { key: { pubkey: identity.pubkey, provider: identity.provider } },
+    );
   }
 
   // Dev-only auto-login so editing works locally without a real round-trip —

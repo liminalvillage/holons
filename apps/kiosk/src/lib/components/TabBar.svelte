@@ -20,7 +20,7 @@
     flipProgress,
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
-  import { telegramUser, displayName } from "$lib/auth";
+  import { currentUser, displayName } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
 
   // Long-press a tab to (un)pin the kiosk to it. A press that crosses ~half a
@@ -207,19 +207,19 @@
     <div class="right">
       <button
         class="account"
-        class:in={$telegramUser != null}
+        class:in={$currentUser != null}
         on:click={() => userMenuOpen.set(true)}
         aria-label={$t("tabbar.menu")}
       >
-        {#if $telegramUser}
-          {#if $telegramUser.photo_url}
-            <img src={$telegramUser.photo_url} alt="" />
+        {#if $currentUser}
+          {#if $currentUser.photo_url}
+            <img src={$currentUser.photo_url} alt="" />
           {:else}
             <span class="initial"
-              >{$telegramUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
+              >{$currentUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
             >
           {/if}
-          <span class="who">{displayName($telegramUser)}</span>
+          <span class="who">{displayName($currentUser)}</span>
         {:else}
           <span class="tg">✦</span><span class="who">{$t("tabbar.login")}</span>
         {/if}

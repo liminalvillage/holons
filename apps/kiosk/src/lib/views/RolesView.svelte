@@ -18,7 +18,7 @@
     rolesViewMode,
     scope,
   } from "$lib/stores";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
   import { t, locale } from "$lib/i18n";
   import { sameId } from "$lib/personal";
@@ -61,7 +61,7 @@
 
   // Source records keyed for writes; the cards list is display-only.
   $: byId = new Map($rawRoles.map((r) => [String(r.id ?? r.title), r]));
-  $: myId = $telegramUser?.id ?? null;
+  $: myId = $currentUser?.id ?? null;
 
   // "Today" as the week-day cell matching the local date, so the card and the
   // week grid always agree on which day (and key) "today" is. Updates only when
@@ -129,7 +129,7 @@
     return full || (p.username ? String(p.username) : `#${p.id}`);
   }
   function meScheduled(): ScheduledUser {
-    const u = get(telegramUser)!;
+    const u = get(currentUser)!;
     const name =
       [u.first_name, u.last_name].filter(Boolean).join(" ").trim() ||
       (u.username ?? String(u.id));
@@ -141,7 +141,7 @@
     };
   }
   function meParticipant(): RoleParticipant {
-    const u = get(telegramUser)!;
+    const u = get(currentUser)!;
     return {
       id: u.id,
       username: u.username ?? null,
@@ -161,7 +161,7 @@
   }
 
   async function takeDay(card: RoleCard, raw: Role, day: Date, token: string) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -198,7 +198,7 @@
   let adding = false;
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -208,7 +208,7 @@
   }
 
   async function addRole() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -241,7 +241,7 @@
   $: editRaw = editCard ? (byId.get(editCard.id) ?? null) : null;
 
   function openEdit(card: RoleCard) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -268,7 +268,7 @@
 
   async function makeFixed() {
     if (!editRaw) return;
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -345,7 +345,7 @@
   {/if}
 
   <div class="scrollarea scroll" class:clear={$rolesViewMode !== "week"}>
-    {#if $scope === "personal" && !$telegramUser}
+    {#if $scope === "personal" && !$currentUser}
       <p class="empty">{$t("rolesv.loginPersonal")}</p>
     {:else if !shownCards.length}
       <p class="empty">

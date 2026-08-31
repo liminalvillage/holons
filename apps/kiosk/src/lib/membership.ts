@@ -14,8 +14,10 @@ import {
 } from "@holons/core/tasks";
 import { getHolosphere, getWriter } from "./holosphere";
 
+// A Telegram user id (number) or a key user's pubkey hex — core stores
+// QuestParticipant.id as string | number and compares identities stringified.
 export type TgUser = {
-  id: number;
+  id: number | string;
   username?: string;
   first_name?: string;
   last_name?: string;
@@ -70,7 +72,7 @@ export async function toggleAppreciate(
 }
 
 /** Is the user a participant of the (already-toggled) quest? */
-function isParticipant(quest: Quest, userId: number): boolean {
+function isParticipant(quest: Quest, userId: number | string): boolean {
   const list = (quest.participants ?? []) as QuestParticipant[];
   return list.some((p) => String(p?.id) === String(userId));
 }
@@ -178,7 +180,7 @@ export async function joinOnly(
 }
 
 /** Is the user among the quest's appreciators? */
-function isAppreciating(quest: Quest, userId: number): boolean {
+function isAppreciating(quest: Quest, userId: number | string): boolean {
   const list = (quest.appreciation ?? []) as QuestParticipant[];
   return list.some((p) => String(p?.id) === String(userId));
 }

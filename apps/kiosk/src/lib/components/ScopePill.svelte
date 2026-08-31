@@ -8,7 +8,7 @@
   import PillSwitch from "./PillSwitch.svelte";
   import { scope } from "$lib/stores";
   import { setScope, type Scope } from "$lib/config";
-  import { telegramUser } from "$lib/auth";
+  import { currentUser } from "$lib/auth";
   import { t } from "$lib/i18n";
 
   /** Force the small cycling toggle (see PillSwitch). */
@@ -20,7 +20,7 @@
   // when a persisted personal scope is active, so the pill still shows what's
   // selected (the views render their own log-in prompts).
   $: options = [
-    ...($telegramUser || $scope === "personal"
+    ...($currentUser || $scope === "personal"
       ? [
           {
             id: "personal",

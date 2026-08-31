@@ -258,13 +258,37 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Sblocca questa vista",
   "tabbar.pinView": "Fissa questa vista",
 
-  // Telegram login sheet
+  // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Accesso effettuato",
   "login.signedInAs":
     "Hai effettuato l'accesso come {name} e puoi modificare ciò che è sullo schermo.",
-  "login.title": "Accedi con Telegram",
+  "login.title": "Accedi",
   "login.lead":
     "Accedi per aggiungere e modificare ciò che è sullo schermo. La visualizzazione resta aperta a tutti.",
+  "login.orKey": "oppure usa la tua chiave",
+  "login.nostrTile": "Chiave Nostr",
+  "login.nostrHint": "Incolla un nsec o creane una",
+  "login.ethTile": "Ethereum",
+  "login.ethHint": "MetaMask, Rabby, Brave…",
+  "login.ethNoWallet": "Nessun wallet rilevato",
+  "login.cancelled": "Accesso annullato.",
+  "login.importTab": "Importa chiave",
+  "login.createTab": "Crea nuova",
+  "login.keyField": "La tua chiave segreta nsec o hex",
+  "login.show": "Mostra",
+  "login.hide": "Nascondi",
+  "login.signsInAs": "Accederai come {npub}",
+  "login.invalidKey": "Non è un nsec né una chiave hex di 64 caratteri valida",
+  "login.keyStays":
+    "La chiave resta su questo dispositivo. Non viene mai inviata a un server.",
+  "login.saveWarn":
+    "Salva questa chiave adesso. È l'unico modo per rientrare — non c'è alcun ripristino.",
+  "login.copy": "Copia",
+  "login.copied": "Copiata",
+  "login.copyFailed":
+    "Copia non riuscita — seleziona la chiave e copiala a mano.",
+  "login.savedCheck": "Ho salvato la mia chiave in un posto sicuro",
+  "login.continue": "Continua",
 
   // User menu
   "menu.notSignedIn": "Accesso non effettuato",
@@ -301,6 +325,7 @@ export const it: Record<MessageKey, Msg> = {
   "key.backupHint":
     "Chiunque abbia questa chiave può agire come te — conservala in un posto sicuro e privato.",
   "menu.loginTelegram": "Accedi con Telegram",
+  "menu.login": "Accedi",
 
   // Completion confirmation
   "complete.title": "Completare questa attività?",

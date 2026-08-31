@@ -17,7 +17,7 @@
     scope,
     calendarMode,
   } from "$lib/stores";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import type { CalendarMode } from "$lib/config";
   import { getWriter } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
@@ -64,7 +64,7 @@
   // is going to (RSVPs toggle participants, so people IS the RSVP list) — and,
   // on the booking spans, only the bookings that are theirs (the borrower is
   // the span's single "participant").
-  $: uid = $telegramUser?.id;
+  $: uid = $currentUser?.id;
   $: baseEvents = events ?? $questEvents;
   $: shownEvents =
     $scope === "personal" ? personalEvents(baseEvents, uid) : baseEvents;
@@ -370,7 +370,7 @@
   async function createAt(day: string, min: number | null) {
     const hid = get(holonId);
     if (!hid) return;
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -895,7 +895,7 @@
     </div>
   </header>
 
-  {#if $scope === "personal" && !$telegramUser}
+  {#if $scope === "personal" && !$currentUser}
     <p class="scopehint">{$t("cal.loginEvents")}</p>
   {/if}
 

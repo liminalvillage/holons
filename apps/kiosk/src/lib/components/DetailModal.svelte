@@ -19,7 +19,7 @@
     editOnOpen,
     partnerNames,
   } from "$lib/stores";
-  import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
+  import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
   import { toggleJoin, toggleAppreciate } from "$lib/membership";
@@ -157,10 +157,10 @@
   // Whether the logged-in user is already a participant of this quest.
   $: amParticipant =
     quest != null &&
-    $telegramUser != null &&
+    $currentUser != null &&
     Array.isArray(quest.participants) &&
     quest.participants.some(
-      (p: any) => String(p?.id) === String($telegramUser?.id),
+      (p: any) => String(p?.id) === String($currentUser?.id),
     );
 
   // Participants as display people (id + friendly name) for the chips below.
@@ -172,10 +172,10 @@
     : 0;
   $: amAppreciating =
     quest != null &&
-    $telegramUser != null &&
+    $currentUser != null &&
     Array.isArray(quest.appreciation) &&
     quest.appreciation.some(
-      (a: any) => String(a?.id) === String($telegramUser?.id),
+      (a: any) => String(a?.id) === String($currentUser?.id),
     );
 
   let editing = false;
@@ -218,7 +218,7 @@
   }
 
   function breakdownInitiator() {
-    const u = $telegramUser;
+    const u = $currentUser;
     if (!u) return undefined; // core falls back to the parent's initiator
     return {
       id: String(u.id),
@@ -610,7 +610,7 @@
 
   async function completeQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -650,7 +650,7 @@
 
   async function deleteQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -725,7 +725,7 @@
 
   async function joinQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -749,7 +749,7 @@
 
   async function appreciate() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -948,8 +948,8 @@
 
   $: borrowedByMe =
     item?.borrowed &&
-    ($telegramUser?.id === item?.borrowerId ||
-      ($telegramUser?.username && item?.borrower === $telegramUser.username));
+    ($currentUser?.id === item?.borrowerId ||
+      ($currentUser?.username && item?.borrower === $currentUser.username));
 </script>
 
 {#if sel}

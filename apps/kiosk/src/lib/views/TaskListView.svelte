@@ -8,7 +8,7 @@
   import { glide } from "$lib/glide";
   import Avatars, { hideImg } from "$lib/components/Avatars.svelte";
   import { resolveImage } from "$lib/image";
-  import { telegramUser } from "$lib/auth";
+  import { currentUser } from "$lib/auth";
   import { sameId } from "$lib/personal";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
@@ -28,7 +28,7 @@
   /** Id of the row currently lifted as a drag clone; it holds its gap. */
   export let dragId: string | null = null;
 
-  $: uid = $telegramUser?.id;
+  $: uid = $currentUser?.id;
   function amAppreciating(t: BacklogTask): boolean {
     return t.appreciatedBy.some((id) => sameId(id, uid));
   }

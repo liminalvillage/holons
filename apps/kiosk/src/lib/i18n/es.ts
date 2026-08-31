@@ -259,13 +259,37 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Soltar esta vista",
   "tabbar.pinView": "Fijar esta vista",
 
-  // Telegram login sheet
+  // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",
   "login.signedInAs":
     "Has iniciado sesión como {name} y puedes editar lo que hay en pantalla.",
-  "login.title": "Entrar con Telegram",
+  "login.title": "Iniciar sesión",
   "login.lead":
     "Inicia sesión para añadir y editar lo que hay en pantalla. Ver sigue abierto a todos.",
+  "login.orKey": "o usa tu propia clave",
+  "login.nostrTile": "Clave Nostr",
+  "login.nostrHint": "Pega un nsec o crea una",
+  "login.ethTile": "Ethereum",
+  "login.ethHint": "MetaMask, Rabby, Brave…",
+  "login.ethNoWallet": "No se detectó ninguna cartera",
+  "login.cancelled": "Inicio de sesión cancelado.",
+  "login.importTab": "Importar clave",
+  "login.createTab": "Crear nueva",
+  "login.keyField": "Tu clave secreta nsec o hex",
+  "login.show": "Mostrar",
+  "login.hide": "Ocultar",
+  "login.signsInAs": "Entrarás como {npub}",
+  "login.invalidKey": "No es un nsec ni una clave hex de 64 caracteres válida",
+  "login.keyStays":
+    "Tu clave se queda en este dispositivo. Nunca se envía a un servidor.",
+  "login.saveWarn":
+    "Guarda esta clave ahora. Es la única forma de volver a entrar — no hay restablecimiento.",
+  "login.copy": "Copiar",
+  "login.copied": "Copiada",
+  "login.copyFailed":
+    "No se pudo copiar — selecciona la clave y cópiala a mano.",
+  "login.savedCheck": "He guardado mi clave en un lugar seguro",
+  "login.continue": "Continuar",
 
   // User menu
   "menu.notSignedIn": "Sesión no iniciada",
@@ -303,6 +327,7 @@ export const es: Record<MessageKey, Msg> = {
   "key.backupHint":
     "Cualquiera con esta clave puede actuar como tú — guárdala en un lugar seguro y privado.",
   "menu.loginTelegram": "Entrar con Telegram",
+  "menu.login": "Iniciar sesión",
 
   // Completion confirmation
   "complete.title": "¿Completar esta tarea?",

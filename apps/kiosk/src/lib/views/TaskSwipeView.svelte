@@ -7,7 +7,7 @@
   // A swipe never *undoes* anything — already-joined/liked cards no-op through.
   import Avatars from "$lib/components/Avatars.svelte";
   import Confetti from "$lib/components/Confetti.svelte";
-  import { telegramUser, loginOpen } from "$lib/auth";
+  import { currentUser, loginOpen } from "$lib/auth";
   import { swipeDismissed, showNotice, taskViewMode, scope } from "$lib/stores";
   import { setScope, setTaskView } from "$lib/config";
   import { sameId } from "$lib/personal";
@@ -37,7 +37,7 @@
   /** Revert a committed swipe (the Undo chip) — toggles the write back off. */
   export let onRevert: (t: BacklogTask, kind: "join" | "like") => Promise<void>;
 
-  $: uid = $telegramUser?.id;
+  $: uid = $currentUser?.id;
   function participating(t: BacklogTask): boolean {
     return t.people.some((p) => sameId(p.id, uid));
   }
@@ -185,7 +185,7 @@
     if (!task || leaving) return;
     // Joining and liking are writes — they need a logged-in user. Skipping is
     // local and always allowed.
-    if (dir !== "left" && !$telegramUser) {
+    if (dir !== "left" && !$currentUser) {
       springBack();
       loginOpen.set(true);
       return;
@@ -404,7 +404,7 @@
             <button class="primary" on:click={startOver}
               >{$t("swipe.startOver")}</button
             >
-            {#if $telegramUser}
+            {#if $currentUser}
               <button class="primary" on:click={seeMine}
                 >{$t("swipe.seeMine")}</button
               >

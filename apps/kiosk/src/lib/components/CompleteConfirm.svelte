@@ -11,7 +11,7 @@
   import Modal from "./Modal.svelte";
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
-  import { telegramUser } from "$lib/auth";
+  import { currentUser } from "$lib/auth";
   import { getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
   import type { Quest } from "@holons/core/tasks";
@@ -51,7 +51,7 @@
     // never means joining the task first. Pre-ticked only when nobody else is
     // on the task — with a team already listed, tapping ✓ for them shouldn't
     // quietly hand you a share of the credit.
-    const me = get(telegramUser);
+    const me = get(currentUser);
     if (
       me?.id != null &&
       !rows.some((r) => String(r.user?.id) === String(me.id))

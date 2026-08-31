@@ -20,7 +20,7 @@
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import type { TaskSort } from "$lib/data";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
@@ -93,7 +93,7 @@
   }
 
   // Does the logged-in user currently appreciate this task?
-  $: appreciatorId = $telegramUser?.id;
+  $: appreciatorId = $currentUser?.id;
   function amAppreciating(task: BacklogTask): boolean {
     return task.appreciatedBy.some((id) => sameId(id, appreciatorId));
   }
@@ -129,7 +129,7 @@
   // would remove them as a participant, confirm first; otherwise just do it.
   async function toggleAppr(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -143,7 +143,7 @@
 
   async function doAppreciate(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return;
     try {
       // A federated card's appreciation belongs to its owner holon (same
@@ -189,7 +189,7 @@
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
   // The personal slice: same order as the wall/list, narrowed to the user.
-  $: mine = personalTasks(orderedTasks, $telegramUser?.id);
+  $: mine = personalTasks(orderedTasks, $currentUser?.id);
   // What every layout renders, after the Show pill's scope. (all/networked
   // differ upstream in the derived stores; here they're both "everything".)
   $: shownTasks = $scope === "personal" ? mine : orderedTasks;
@@ -443,7 +443,7 @@
 
   function onComplete(task: BacklogTask) {
     if (completing[task.id]) return;
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -468,7 +468,11 @@
     });
   }
 
-  function startCompletion(id: string, adjusted: Quest, completerId: number) {
+  function startCompletion(
+    id: string,
+    adjusted: Quest,
+    completerId: number | string,
+  ) {
     // Burst + drop now; record REA after the animation. The card stays mounted
     // (still in the backlog) until the write lands and the quest drops out.
     completing = { ...completing, [id]: makeConfetti() };
@@ -493,7 +497,7 @@
   let deleting = false;
 
   function onDelete(task: BacklogTask) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -551,7 +555,7 @@
 
   async function linkDependency(task: BacklogTask, dep: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -599,7 +603,7 @@
    */
   async function detachTask(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -661,7 +665,7 @@
     task: BacklogTask,
   ): Promise<"joined" | "already" | "failed"> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return "failed";
     return joinOnly(hid, task.id, user, swipeRef(task.id));
   }
@@ -670,7 +674,7 @@
     task: BacklogTask,
   ): Promise<"liked" | "already" | "failed"> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return "failed";
     return appreciateOnly(hid, task.id, user, swipeRef(task.id));
   }
@@ -681,7 +685,7 @@
     kind: "join" | "like",
   ): Promise<void> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return;
     try {
       if (kind === "join") {
@@ -704,7 +708,7 @@
   }
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -714,7 +718,7 @@
 
   async function addTasks() {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -767,7 +771,7 @@
 <!-- The graph drawer's live size (0 in every other layout), so the floating
      buttons can ride clear of it — same contract as the calendar. -->
 <div class="board" style="--tray-h: {graphTrayH}px; --tray-w: {graphTrayW}px;">
-  {#if $scope === "personal" && !$telegramUser}
+  {#if $scope === "personal" && !$currentUser}
     <div class="tasks scroll">
       <p class="empty">{$t("tasks.loginPersonal")}</p>
     </div>

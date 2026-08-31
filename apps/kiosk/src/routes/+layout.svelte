@@ -82,7 +82,7 @@
   import DetailModal from "$lib/components/DetailModal.svelte";
   import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import TelegramLogin from "$lib/components/TelegramLogin.svelte";
+  import LoginCard from "$lib/components/LoginCard.svelte";
   import UserMenu from "$lib/components/UserMenu.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
@@ -615,7 +615,7 @@
   <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
   {#if $loginOpen}
     <Modal on:close={() => loginOpen.set(false)}>
-      <TelegramLogin />
+      <LoginCard />
     </Modal>
   {/if}
 

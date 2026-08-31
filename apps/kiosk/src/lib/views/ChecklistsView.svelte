@@ -17,7 +17,7 @@
     rotationHold,
     pillsSuppressed,
   } from "$lib/stores";
-  import { telegramUser, loginOpen } from "$lib/auth";
+  import { currentUser, loginOpen } from "$lib/auth";
   import { getChecklistStore } from "$lib/holosphere";
   import { t } from "$lib/i18n";
   import { personalChecklists } from "$lib/personal";
@@ -38,7 +38,7 @@
 
   $: shownLists =
     $scope === "personal"
-      ? personalChecklists($checklistCards, $telegramUser?.id)
+      ? personalChecklists($checklistCards, $currentUser?.id)
       : $checklistCards;
 
   // ── Open list ─────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@
   // Every mutation goes through core over the identity-aware store; a list
   // mirrored from a partner holon is written where it actually lives.
   function requireUser(): boolean {
-    if (get(telegramUser)) return true;
+    if (get(currentUser)) return true;
     loginOpen.set(true);
     return false;
   }
@@ -196,7 +196,7 @@
   }
 
   async function addList() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     const hid = get(holonId);
     if (!user || !hid) return;
     const name = addName.trim();
@@ -331,7 +331,7 @@
           <button type="submit" disabled={!addItemText.trim()}>＋</button>
         </form>
       </div>
-    {:else if $scope === "personal" && !$telegramUser}
+    {:else if $scope === "personal" && !$currentUser}
       <p class="empty">{$t("lists.loginPersonal")}</p>
     {:else if shownLists.length}
       <!-- The grid of list cards. -->

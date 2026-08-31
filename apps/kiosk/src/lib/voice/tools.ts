@@ -23,7 +23,7 @@ import {
   selectTab,
   type TabId,
 } from "$lib/stores";
-import { telegramUser, borrowActor } from "$lib/auth";
+import { currentUser, borrowActor } from "$lib/auth";
 import { getHolosphere, getWriter, getLibraryDb } from "$lib/holosphere";
 import { toggleJoin, person } from "$lib/membership";
 import { checkComplete, recordCompletion } from "$lib/complete";
@@ -259,7 +259,7 @@ export async function dispatchKioskTool(
       }
 
       case "task_create": {
-        const user = get(telegramUser);
+        const user = get(currentUser);
         if (!user) return fail(call.id, LOGIN_REQUIRED);
         const title = String(input.title ?? "").trim();
         if (!title) return fail(call.id, "A title is required.");
@@ -325,7 +325,7 @@ export async function dispatchKioskTool(
       }
 
       case "task_toggle_join": {
-        const user = get(telegramUser);
+        const user = get(currentUser);
         if (!user) return fail(call.id, LOGIN_REQUIRED);
         const local = findQuest(String(input.taskId ?? ""));
         if (!local) {
@@ -342,7 +342,7 @@ export async function dispatchKioskTool(
       }
 
       case "task_complete": {
-        const user = get(telegramUser);
+        const user = get(currentUser);
         if (!user) return fail(call.id, LOGIN_REQUIRED);
         const local = findQuest(String(input.taskId ?? ""));
         if (!local) {

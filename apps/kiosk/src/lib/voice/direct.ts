@@ -30,7 +30,7 @@ import {
 } from "@holons/ai-ui";
 import type { HistoryMessage, ToolAudit, ToolCall } from "@holons/ai-ui";
 import { holonId, holonName, rawQuests } from "$lib/stores";
-import { telegramUser } from "$lib/auth";
+import { currentUser } from "$lib/auth";
 import { resolveVoiceKey } from "$lib/config";
 import {
   affirmativeLang,
@@ -191,7 +191,7 @@ function contextLines(context: VoiceContext): string {
   if (context.views) parts.push(`Available views: ${context.views}.`);
   if (context.editing)
     parts.push(`The user has this open: ${context.editing}.`);
-  const user = get(telegramUser);
+  const user = get(currentUser);
   if (user) {
     const who = [user.first_name, user.last_name].filter(Boolean).join(" ");
     parts.push(

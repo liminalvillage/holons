@@ -4,7 +4,7 @@
   // dashboard link, and Settings — everything that used to clutter the
   // header, now in one menu. (Federated visibility lives in each view's Show
   // pill — see ScopePill.)
-  import { telegramUser, displayName, loginOpen, logout } from "$lib/auth";
+  import { currentUser, displayName, loginOpen, logout } from "$lib/auth";
   import {
     holonId,
     holonName,
@@ -51,16 +51,16 @@
 
 <div class="menu">
   <div class="id">
-    {#if $telegramUser}
-      {#if $telegramUser.photo_url}
-        <img class="avatar" src={$telegramUser.photo_url} alt="" />
+    {#if $currentUser}
+      {#if $currentUser.photo_url}
+        <img class="avatar" src={$currentUser.photo_url} alt="" />
       {:else}
         <span class="avatar initial"
-          >{$telegramUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
+          >{$currentUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
         >
       {/if}
       <div class="idtext">
-        <span class="name">{displayName($telegramUser)}</span>
+        <span class="name">{displayName($currentUser)}</span>
         {#if who}<span class="sub">{who}</span>{/if}
       </div>
     {:else}
@@ -92,7 +92,7 @@
     <span class="chev">›</span>
   </button>
 
-  {#if $telegramUser}
+  {#if $currentUser}
     {#if $sessionKeyPub}
       <button class="row" on:click={unlinkKey}>
         <span class="ico">🔑</span>
@@ -103,7 +103,7 @@
         >
         <span class="chev">✕</span>
       </button>
-    {:else if canLinkKey}
+    {:else if canLinkKey && $currentUser.provider === "telegram"}
       <button class="row" on:click={linkKey}>
         <span class="ico">🔑</span>
         <span class="label">{$t("menu.linkKey")}</span>
@@ -117,7 +117,7 @@
   {:else}
     <button class="row primary" on:click={login}>
       <span class="ico">✦</span>
-      <span class="label">{$t("menu.loginTelegram")}</span>
+      <span class="label">{$t("menu.login")}</span>
     </button>
   {/if}
 </div>
