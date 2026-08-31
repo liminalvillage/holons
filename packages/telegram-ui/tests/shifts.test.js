@@ -144,9 +144,9 @@ describe('Shifts', () => {
     expect(client.publishRsvp).toHaveBeenCalledTimes(1);
     const call = client.publishRsvp.mock.calls[0][0];
     expect(call.status).toBe('accepted');
-    expect(call.participantPrivateKey).toBe(
-      deriveTelegramNostrKey(2, SECRET).privateKey
-    );
+    // The identity context hands out signers, never keys.
+    expect(call.participantPrivateKey).toBeUndefined();
+    expect(call.signer.pubkey).toBe(deriveTelegramNostrKey(2, SECRET).publicKey);
     expect(call.occurrence.dTag).toBe(occurrence.dTag);
     expect(ctx.answerCbQuery.mock.calls[0][0]).toMatch(/You're on/);
     expect(ctx.editMessageText).toHaveBeenCalled();

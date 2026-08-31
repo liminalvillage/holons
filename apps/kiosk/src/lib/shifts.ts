@@ -20,6 +20,7 @@ import {
   type ShiftRsvp,
   type ShiftRsvpStatus,
 } from "@holons/core/shifts";
+import { signerFromSecretKey } from "@holons/core/holosphere";
 import { get, writable } from "svelte/store";
 import { currentUser } from "./auth";
 import { resolveShiftCoordinator, resolveShiftRelays } from "./config";
@@ -200,7 +201,7 @@ export async function setShiftRsvp(
     const { event, results } = await c.publishRsvp({
       occurrence,
       status,
-      participantPrivateKey: secret,
+      signer: signerFromSecretKey(secret),
     });
     if (!results.some((r) => r.status === "fulfilled")) {
       throw new Error("no relay accepted the signup");

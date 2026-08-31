@@ -22,6 +22,13 @@ export {
   type RelayBackupOptions,
 } from './relayBackup.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
+export {
+  createIdentityContext,
+  signerFromSecretKey,
+  type IdentityContext,
+  type NostrSigner,
+  type SignableTemplate,
+} from './signers.js';
 export { sourceHolonId, sourceRef, recordKey } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,

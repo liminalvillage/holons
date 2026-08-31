@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils';
+import { signerFromSecretKey } from '../holosphere/signers.js';
 import {
   SHIFT_OCCURRENCE_KIND,
   SHIFT_RSVP_KIND,
@@ -248,7 +249,7 @@ describe('createShiftRelayClient', () => {
     const { event, results } = await client.publishRsvp({
       occurrence: occurrences[0],
       status: 'declined',
-      participantPrivateKey: bytesToHex(sk),
+      signer: signerFromSecretKey(bytesToHex(sk)),
     });
     expect(results[0].status).toBe('fulfilled');
     expect(verifyEvent(event)).toBe(true);

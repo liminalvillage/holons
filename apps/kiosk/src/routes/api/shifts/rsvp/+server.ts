@@ -20,7 +20,7 @@
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { env } from "$env/dynamic/private";
-import { deriveTelegramNostrKey } from "@holons/core/auth";
+import { createIdentityContext } from "@holons/core/holosphere";
 import {
   createShiftRelayClient,
   parseShiftAddress,
@@ -75,7 +75,9 @@ export const GET: RequestHandler = async ({ cookies }) => {
   }
   const id = await telegramId(cookies.get(SESSION_COOKIE));
   if (!id) return json({ error: "Not a Telegram session" }, { status: 401 });
-  return json({ pubkey: deriveTelegramNostrKey(id, secret).publicKey });
+  const pubkey = createIdentityContext({ derivationSecret: secret }).memberPubkey(id);
+  if (!pubkey) return json({ error: "Key derivation failed" }, { status: 500 });
+  return json({ pubkey });
 };
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
@@ -117,7 +119,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     );
   }
 
-  const { privateKey, publicKey } = deriveTelegramNostrKey(id, secret);
+  const signer = createIdentityContext({ derivationSecret: secret }).memberSigner(id);
+  if (!signer) return json({ error: "Key derivation failed" }, { status: 500 });
   const client = createShiftRelayClient({
     relays: shiftRelays(),
     // Serverless budget: keep the previous-RSVP lookup snappy.
@@ -134,7 +137,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     const { event, results } = await client.publishRsvp({
       occurrence,
       status,
-      participantPrivateKey: privateKey,
+      signer,
     });
     const accepted = results.filter((r) => r.status === "fulfilled").length;
     if (!accepted) {
@@ -148,7 +151,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     }
     return json({
       ok: true,
-      pubkey: publicKey,
+      pubkey: signer.pubkey,
       status,
       id: event.id,
       createdAt: event.created_at,

@@ -22,7 +22,7 @@
  */
 
 import { Markup } from 'telegraf';
-import { deriveTelegramNostrKey } from '@holons/core/auth';
+import { createIdentityContext } from '@holons/core/holosphere';
 import {
   createShiftRelayClient,
   enrolledPubkeys,
@@ -67,8 +67,10 @@ export default class Shifts {
   constructor(bot, db, options = {}) {
     this.bot = bot;
     this.db = db;
-    this.derivationSecret =
-      options.derivationSecret ?? process.env.NOSTR_DERIVATION_SECRET ?? '';
+    this.identity = createIdentityContext({
+      derivationSecret:
+        options.derivationSecret ?? process.env.NOSTR_DERIVATION_SECRET ?? '',
+    });
     this.client =
       options.client ??
       createShiftRelayClient({
@@ -92,16 +94,9 @@ export default class Shifts {
   // Identity helpers
   // ---------------------------------------------------------------------
 
-  /** Derived keypair for a Telegram user, or null when signing is not configured. */
-  keyFor(telegramId) {
-    if (!this.derivationSecret) return null;
-    return deriveTelegramNostrKey(telegramId, this.derivationSecret);
-  }
-
   /** pubkey → display name for everyone known in this holon. */
   async nameMap(holonId) {
     const map = new Map();
-    if (!this.derivationSecret) return map;
     let users = [];
     try {
       users = (await this.db.getAll(String(holonId), 'users')) || [];
@@ -110,11 +105,8 @@ export default class Shifts {
     }
     for (const user of users) {
       if (!user?.id) continue;
-      try {
-        map.set(this.keyFor(user.id).publicKey, getDisplayName(user));
-      } catch {
-        /* skip unusable user record */
-      }
+      const pubkey = this.identity.memberPubkey(user.id);
+      if (pubkey) map.set(pubkey, getDisplayName(user));
     }
     return map;
   }
@@ -229,8 +221,8 @@ export default class Shifts {
 
   async mine(ctx) {
     const holonId = getholonId(ctx);
-    const key = this.keyFor(ctx.from.id);
-    if (!key)
+    const pubkey = this.identity.memberPubkey(ctx.from.id);
+    if (!pubkey)
       return ctx.reply(
         'Shift signup is not configured on this bot (NOSTR_DERIVATION_SECRET missing).'
       );
@@ -241,7 +233,7 @@ export default class Shifts {
         until: now + 14 * DAY_S,
       });
       const mineOcc = schedule.occurrences.filter(o =>
-        isEnrolled(o, key.publicKey, schedule.rsvps)
+        isEnrolled(o, pubkey, schedule.rsvps)
       );
       const names = await this.nameMap(holonId);
       const { text, keyboard } = this.render(
@@ -265,8 +257,8 @@ export default class Shifts {
   async rsvp(ctx, status) {
     const holonId = getholonId(ctx);
     const dTag = ctx.match[1];
-    const key = this.keyFor(ctx.from.id);
-    if (!key)
+    const signer = this.identity.memberSigner(ctx.from.id);
+    if (!signer)
       return ctx.answerCbQuery('Signup is not configured on this bot.', {
         show_alert: true,
       });
@@ -282,7 +274,7 @@ export default class Shifts {
       const occ = occurrences.find(o => o.dTag === dTag);
       if (!occ) return ctx.answerCbQuery('That shift is no longer published.');
       const rsvps = await this.client.fetchRsvps([occ]);
-      const previous = latestRsvpFor(occ, key.publicKey, rsvps);
+      const previous = latestRsvpFor(occ, signer.pubkey, rsvps);
       if (status === 'accepted') {
         if (previous?.status === 'accepted')
           return ctx.answerCbQuery('You are already on this shift.');
@@ -297,7 +289,7 @@ export default class Shifts {
         occurrence: occ,
         status,
         previous,
-        participantPrivateKey: key.privateKey,
+        signer,
       });
       const ok = results.some(r => r.status === 'fulfilled');
       if (!ok) {
@@ -317,7 +309,7 @@ export default class Shifts {
           ? `You're on ${occ.title} ${occ.date}`
           : `Dropped ${occ.title} ${occ.date}`
       );
-      await this.refresh(ctx, holonId, key.publicKey);
+      await this.refresh(ctx, holonId, signer.pubkey);
     } catch (err) {
       console.error('[Shifts] rsvp failed', err);
       await ctx.answerCbQuery('Something went wrong talking to the relay.', {

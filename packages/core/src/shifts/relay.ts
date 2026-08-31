@@ -3,11 +3,11 @@
 //
 // Relay I/O for the shift protocol. Thin: a `ShiftRelayClient` wraps any
 // pool with `querySync`/`publish` (nostr-tools `SimplePool` by default) and
-// returns parsed, resolved domain objects. Signing happens here only via the
-// caller-supplied private key — the key never leaves the process.
+// returns parsed, resolved domain objects. Signing happens only through a
+// caller-supplied `NostrSigner` — no private key ever reaches this module.
 
-import { finalizeEvent, type Event } from 'nostr-tools/pure';
-import { hexToBytes } from '@noble/hashes/utils';
+import type { Event } from 'nostr-tools/pure';
+import type { NostrSigner } from '../holosphere/signers.js';
 import {
   buildRsvpTemplate,
   latestRsvpFor,
@@ -56,12 +56,12 @@ export interface ShiftRelayClient {
   /** One participant's resolved RSVPs. */
   fetchParticipantRsvps(pubkey: string): Promise<ShiftRsvp[]>;
   /**
-   * Sign and publish a signup/cancellation under `participantPrivateKey`.
+   * Sign and publish a signup/cancellation as `signer` (the participant).
    * Looks up the participant's previous RSVP so `created_at` strictly
    * increases. Resolves with the signed event and per-relay outcomes.
    */
   publishRsvp(
-    opts: Omit<BuildRsvpOptions, 'previous'> & { participantPrivateKey: string; previous?: ShiftRsvp },
+    opts: Omit<BuildRsvpOptions, 'previous'> & { signer: NostrSigner; previous?: ShiftRsvp },
   ): Promise<{ event: Event; results: PromiseSettledResult<string>[] }>;
   close(): void;
 }
@@ -121,18 +121,13 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
       const parsed = events.map(parseShiftRsvp).filter((r): r is ShiftRsvp => r !== null);
       return [...resolveRsvps(parsed).values()];
     },
-    async publishRsvp({ participantPrivateKey, previous, ...build }) {
-      if (!/^[0-9a-f]{64}$/.test(participantPrivateKey)) {
-        throw new Error('publishRsvp: participantPrivateKey must be 64-char hex');
-      }
-      const sk = hexToBytes(participantPrivateKey);
+    async publishRsvp({ signer, previous, ...build }) {
       let prev = previous;
       if (!prev) {
-        const { getPublicKey } = await import('nostr-tools/pure');
         const mine = await fetchRsvps([build.occurrence as ShiftOccurrence]);
-        prev = latestRsvpFor(build.occurrence, getPublicKey(sk), mine);
+        prev = latestRsvpFor(build.occurrence, signer.pubkey, mine);
       }
-      const event = finalizeEvent(buildRsvpTemplate({ ...build, previous: prev }), sk);
+      const event = signer.sign(buildRsvpTemplate({ ...build, previous: prev }));
       const p = await pool();
       const results = await Promise.allSettled(p.publish(relays, event));
       return { event, results };
