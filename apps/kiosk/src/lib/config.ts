@@ -32,6 +32,7 @@ const FEDERATED_KEY = "kiosk_federated";
 const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
 const CHECKLISTS_KEY = "kiosk_checklists";
+const SHIFTS_KEY = "kiosk_shifts";
 const STATUS_KEY = "kiosk_status";
 const FLOWS_KEY = "kiosk_flows";
 const PINNED_KEY = "kiosk_pinned";
@@ -390,6 +391,46 @@ export function resolveChecklistsPref(): TabPref {
 /** Persist the Lists-tab preference (`auto` clears the stored choice). */
 export function setChecklistsPref(pref: TabPref): void {
   setTabPref(CHECKLISTS_KEY, pref);
+}
+
+/** The Shifts tab preference — same tri-state as Library/Roles/Lists. */
+export function resolveShiftsPref(): TabPref {
+  return resolveTabPref(SHIFTS_KEY);
+}
+
+/** Persist the Shifts-tab preference (`auto` clears the stored choice). */
+export function setShiftsPref(pref: TabPref): void {
+  setTabPref(SHIFTS_KEY, pref);
+}
+
+/**
+ * Relay(s) the Shifts board reads Elinor-format occurrences from
+ * (docs/shifts-elinor.md). Kiosk-scoped `VITE_KIOSK_SHIFT_RELAYS` wins;
+ * the default is the Commons Hub relay Elinor itself publishes to — the
+ * schedule only shows for holons that actually have shifts there, so a
+ * kiosk with no shifts costs one empty query per refresh.
+ */
+export function resolveShiftRelays(): string[] {
+  const env =
+    (import.meta.env.VITE_KIOSK_SHIFT_RELAYS as string | undefined) ||
+    "wss://relay.commonshub.dev";
+  return String(env)
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Coordinator pubkey (hex) whose kind-31923 occurrences are trusted. Unset →
+ * any author's occurrences are shown (fine for development; set it on a
+ * production deploy so a stranger can't inject shifts onto the screen).
+ */
+export function resolveShiftCoordinator(): string | null {
+  const env = import.meta.env.VITE_KIOSK_SHIFT_COORDINATOR as
+    | string
+    | undefined;
+  const v = (env && String(env).trim().toLowerCase()) || "";
+  return /^[0-9a-f]{64}$/.test(v) ? v : null;
 }
 
 /**

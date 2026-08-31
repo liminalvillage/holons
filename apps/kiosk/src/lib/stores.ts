@@ -9,6 +9,7 @@ import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import type { Checklist } from "@holons/core/checklists";
+import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
   toEvents,
   toBacklog,
@@ -89,6 +90,13 @@ export const rolesPref = writable<TabPref>("auto");
  * tri-state semantics as `libraryPref`.
  */
 export const checklistsPref = writable<TabPref>("auto");
+
+/**
+ * Caretaker preference for the optional Shifts tab (Elinor-format community
+ * shifts read from a Nostr relay — see $lib/shifts) — same tri-state
+ * semantics as `libraryPref`.
+ */
+export const shiftsPref = writable<TabPref>("auto");
 
 /**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
@@ -180,6 +188,24 @@ export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
 export const rawRoles = writable<Role[]>([]);
 export const rawChecklists = writable<Checklist[]>([]);
+
+/**
+ * The displayed holon's shift schedule — occurrences and resolved signups —
+ * as last fetched from the shift relay ($lib/shifts owns the feed). Already
+ * windowed to the upcoming horizon; NOT Holosphere data, so no federation,
+ * scope or watchdog machinery applies.
+ */
+export const rawShifts = writable<{
+  occurrences: ShiftOccurrence[];
+  rsvps: ShiftRsvp[];
+}>({ occurrences: [], rsvps: [] });
+
+/**
+ * False until the first schedule fetch for the current holon settles (with
+ * data or empty), so the Shifts view can show "reading…" instead of a
+ * misleading empty state during the initial relay round-trip.
+ */
+export const shiftsLoaded = writable<boolean>(false);
 
 /**
  * Wall-clock time of the last live emission per lens, stamped by the layout's
@@ -324,6 +350,7 @@ export function closeDetail(): void {
 export const TABS = [
   { id: "tasks", labelKey: "tabs.tasks", glyph: "✎" },
   { id: "calendar", labelKey: "tabs.calendar", glyph: "▦" },
+  { id: "shifts", labelKey: "tabs.shifts", glyph: "⧖" },
   { id: "library", labelKey: "tabs.library", glyph: "❖" },
   { id: "checklists", labelKey: "tabs.checklists", glyph: "☑" },
   { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
@@ -360,9 +387,14 @@ export const checklistsEnabled = derived(
   ([$pref, $items]) =>
     $pref === "on" || ($pref === "auto" && $items.length > 0),
 );
+export const shiftsEnabled = derived(
+  [shiftsPref, rawShifts],
+  ([$pref, $s]) =>
+    $pref === "on" || ($pref === "auto" && $s.occurrences.length > 0),
+);
 
 /**
- * Tabs actually shown: Library, Lists, and Roles per their (possibly
+ * Tabs actually shown: Library, Lists, Roles, and Shifts per their (possibly
  * content-driven) visibility above, Status only when the caretaker enabled it.
  */
 export const visibleTabs = derived(
@@ -370,15 +402,17 @@ export const visibleTabs = derived(
     libraryEnabled,
     checklistsEnabled,
     rolesEnabled,
+    shiftsEnabled,
     statusEnabled,
     flowsEnabled,
   ],
-  ([$library, $checklists, $roles, $status, $flows]) =>
+  ([$library, $checklists, $roles, $shifts, $status, $flows]) =>
     TABS.filter(
       (t) =>
         (t.id !== "library" || $library) &&
         (t.id !== "checklists" || $checklists) &&
         (t.id !== "roles" || $roles) &&
+        (t.id !== "shifts" || $shifts) &&
         (t.id !== "status" || $status) &&
         (t.id !== "flows" || $flows),
     ),

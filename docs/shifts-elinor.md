@@ -35,6 +35,21 @@ behalf, under *their* key) publish 31925.
 - **`packages/telegram-ui/src/Shifts.js`** — rendering + Telegraf wiring only:
   `/shifts [today|tomorrow|week|YYYY-MM-DD]`, `/myshifts`, and the inline
   `✋ Take` / `❌ Drop` buttons.
+- **`apps/kiosk/src/lib/views/ShiftsView.svelte`** — a Shifts tab on the
+  kiosk: the next two weeks as day rows of shift notes with capacity meters,
+  fed by `apps/kiosk/src/lib/shifts.ts` (periodic relay fetch). The tab
+  appears by itself when the displayed holon has upcoming occurrences
+  (tri-state caretaker pref, like Library/Roles). Relay + coordinator come
+  from `VITE_KIOSK_SHIFT_RELAYS` / `VITE_KIOSK_SHIFT_COORDINATOR`, defaulting
+  to `wss://relay.commonshub.dev` with any author trusted.
+- **`apps/kiosk/src/routes/api/shifts/rsvp/+server.ts`** — ✋ Take / ✕ Drop
+  from the kiosk, signed under the USER'S own key. Telegram logins are
+  signed server-side with `deriveTelegramNostrKey` (the key never reaches
+  the shared screen; same pubkey as the bot and web — needs
+  `NOSTR_DERIVATION_SECRET` on the kiosk deploy, else the board is
+  read-only); nsec/wallet logins sign client-side with their adopted
+  session key. Publish relays: `KIOSK_SHIFT_RELAYS` →
+  `VITE_KIOSK_SHIFT_RELAYS` → `SHIFTS_RELAYS` → the Commons Hub default.
 - **`@holons/core/auth` → `deriveTelegramNostrKey`** — the per-member signing
   key, shared with the web login so a member has one pubkey everywhere.
 

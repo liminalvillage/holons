@@ -20,9 +20,11 @@
     libraryEnabled,
     rolesEnabled,
     checklistsEnabled,
+    shiftsEnabled,
     libraryPref,
     rolesPref,
     checklistsPref,
+    shiftsPref,
     statusEnabled,
     flowsEnabled,
     settingsOpen,
@@ -37,6 +39,7 @@
     setLibraryPref,
     setRolesPref,
     setChecklistsPref,
+    setShiftsPref,
     setStatusEnabled,
     setFlowsEnabled,
     setThemeMode,
@@ -192,6 +195,11 @@
   function commitChecklists(on: boolean) {
     setChecklistsPref(on ? "on" : "off");
     checklistsPref.set(on ? "on" : "off");
+  }
+
+  function commitShifts(on: boolean) {
+    setShiftsPref(on ? "on" : "off");
+    shiftsPref.set(on ? "on" : "off");
   }
 
   // Turning the board ON is gated behind the framing modal below: a ranking
@@ -452,6 +460,24 @@
       aria-checked={$checklistsEnabled}
       aria-label={$t("settings.listsTabAria")}
       on:click={() => commitChecklists(!$checklistsEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.shiftsTab")}
+      <span class="sub">{$t("settings.shiftsTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$shiftsEnabled}
+      role="switch"
+      aria-checked={$shiftsEnabled}
+      aria-label={$t("settings.shiftsTabAria")}
+      on:click={() => commitShifts(!$shiftsEnabled)}
     >
       <span class="knob"></span>
     </button>

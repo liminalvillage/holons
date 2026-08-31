@@ -271,8 +271,9 @@
   $: hidden = $idle || $pillsSuppressed;
 </script>
 
-<!-- Status deliberately has no pills: the leaderboard is holon-only. -->
-{#if $activeTab !== "status"}
+<!-- Status deliberately has no pills: the leaderboard is holon-only. Shifts
+     has none either: the relay schedule knows nothing of scopes or layouts. -->
+{#if $activeTab !== "status" && $activeTab !== "shifts"}
   <div
     class="gpills"
     class:hidden

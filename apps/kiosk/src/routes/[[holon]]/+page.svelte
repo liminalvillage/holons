@@ -3,6 +3,7 @@
   import { activeTab, boardReady } from "$lib/stores";
   import GlobalPills from "$lib/components/GlobalPills.svelte";
   import CalendarView from "$lib/views/CalendarView.svelte";
+  import ShiftsView from "$lib/views/ShiftsView.svelte";
   import TasksView from "$lib/views/TasksView.svelte";
   import LibraryView from "$lib/views/LibraryView.svelte";
   import ChecklistsView from "$lib/views/ChecklistsView.svelte";
@@ -26,6 +27,8 @@
           <TasksView />
         {:else if $activeTab === "calendar"}
           <CalendarView />
+        {:else if $activeTab === "shifts"}
+          <ShiftsView />
         {:else if $activeTab === "library"}
           <LibraryView />
         {:else if $activeTab === "checklists"}

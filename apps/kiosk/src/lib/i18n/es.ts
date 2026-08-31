@@ -209,11 +209,34 @@ export const es: Record<MessageKey, Msg> = {
   // Tabs
   "tabs.tasks": "Tareas",
   "tabs.calendar": "Calendario",
+  "tabs.shifts": "Turnos",
   "tabs.library": "Biblioteca",
   "tabs.checklists": "Listas",
   "tabs.roles": "Roles",
   "tabs.status": "Estado",
   "tabs.flows": "Flujos",
+
+  // Tablón de turnos (turnos comunitarios en formato Elinor leídos de un relay)
+  "shifts.heading": "Turnos de la comunidad",
+  "shifts.subtitle": "Quién está y cuándo, en las próximas dos semanas",
+  "shifts.loading": "Leyendo el calendario de turnos…",
+  "shifts.empty": "Aún no hay turnos en el calendario.",
+  "shifts.noMatch": "Ningún turno coincide con la búsqueda.",
+  "shifts.now": "Ahora",
+  "shifts.full": "Completo",
+  "shifts.signedUp": { one: "{n} apuntado", other: "{n} apuntados" },
+  "shifts.spotsOpen": {
+    one: "{n} plaza libre",
+    other: "{n} plazas libres",
+  },
+  "shifts.signupHint":
+    "Apúntate desde el chat de Telegram del grupo — /shifts.",
+  "shifts.take": "Tomar",
+  "shifts.drop": "Dejar",
+  "shifts.youAreOn": "Estás dentro",
+  "shifts.rsvpFailed": "No se pudo actualizar tu inscripción — {reason}",
+  "shifts.noSigner":
+    "Esta pantalla aún no puede firmar por ti — usa /shifts en Telegram.",
 
   // Pill segments
   "pills.card": "Ficha",
@@ -375,6 +398,10 @@ export const es: Record<MessageKey, Msg> = {
   "settings.listsTabSub":
     "— aparece sola cuando existen listas; actívala para forzarla",
   "settings.listsTabAria": "Mostrar la pestaña Listas",
+  "settings.shiftsTab": "Pestaña Turnos",
+  "settings.shiftsTabSub":
+    "— turnos comunitarios del relay compartido (formato Elinor); aparece sola cuando existen turnos",
+  "settings.shiftsTabAria": "Mostrar la pestaña Turnos",
   "settings.statusTab": "Pestaña Estado",
   "settings.statusTabSub": "— una clasificación de contribuciones",
   "settings.statusTabAria": "Mostrar la pestaña Estado",

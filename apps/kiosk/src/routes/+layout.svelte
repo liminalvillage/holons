@@ -17,6 +17,7 @@
     resolveLibraryPref,
     resolveRolesPref,
     resolveChecklistsPref,
+    resolveShiftsPref,
     resolveStatusEnabled,
     resolveFlowsEnabled,
     resolveBrandName,
@@ -53,6 +54,7 @@
     libraryPref,
     rolesPref,
     checklistsPref,
+    shiftsPref,
     statusEnabled,
     flowsEnabled,
     taskViewMode,
@@ -71,6 +73,7 @@
     noteInteraction,
   } from "$lib/stores";
   import { initAuth, loginOpen } from "$lib/auth";
+  import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
@@ -479,6 +482,7 @@
     libraryPref.set(resolveLibraryPref());
     rolesPref.set(resolveRolesPref());
     checklistsPref.set(resolveChecklistsPref());
+    shiftsPref.set(resolveShiftsPref());
     statusEnabled.set(resolveStatusEnabled());
     flowsEnabled.set(resolveFlowsEnabled());
     taskViewMode.set(resolveTaskView());
@@ -502,6 +506,9 @@
       startTheme(),
       startI18n(),
       startSwAutoReload(),
+      // The Shifts feed follows the holonId store on its own; it reads a
+      // relay, not Holosphere, so it lives outside refresh().
+      startShifts(),
     ];
     return () => {
       window.removeEventListener("kiosk:write", onLocalWrite);

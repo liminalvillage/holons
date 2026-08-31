@@ -19,6 +19,17 @@ import type { HoloSphere } from "holosphere";
 /** Pubkey (hex) of the adopted session identity, or null when none. */
 export const sessionKeyPub = writable<string | null>(null);
 
+// The adopted secret itself, retained ONLY in module memory for signatures
+// HoloSphere doesn't make on our behalf (e.g. shift RSVPs, which are Nostr
+// events on a foreign relay, not lens writes). Same lifetime and posture as
+// the ambient identity: never persisted, dropped on logout/reload.
+let sessionSecret: string | null = null;
+
+/** The in-memory session secret (hex), or null when none is adopted. */
+export function getSessionSecret(): string | null {
+  return sessionSecret;
+}
+
 /** Whether the key-link pairing modal is open. */
 export const keyLinkOpen = writable<boolean>(false);
 
@@ -59,6 +70,7 @@ export async function adoptSessionKey(
   try {
     const hs = (await getHolosphere()) as HoloSphere & SigningIdentity;
     const { pubkey } = await hs.login(secretHex, { relays: signingRelays() });
+    sessionSecret = secretHex;
     sessionKeyPub.set(pubkey);
     return pubkey;
   } catch (err) {
@@ -74,5 +86,6 @@ export async function dropSessionKey(): Promise<void> {
   } catch {
     /* instance never came up — nothing to drop */
   }
+  sessionSecret = null;
   sessionKeyPub.set(null);
 }

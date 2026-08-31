@@ -206,11 +206,30 @@ export const en = {
   // Tabs
   "tabs.tasks": "Tasks",
   "tabs.calendar": "Calendar",
+  "tabs.shifts": "Shifts",
   "tabs.library": "Library",
   "tabs.checklists": "Lists",
   "tabs.roles": "Roles",
   "tabs.status": "Status",
   "tabs.flows": "Flows",
+
+  // Shifts board (Elinor-format community shifts read from a relay)
+  "shifts.heading": "Community shifts",
+  "shifts.subtitle": "Who's on when, over the next two weeks",
+  "shifts.loading": "Reading the shift schedule…",
+  "shifts.empty": "No shifts on the schedule yet.",
+  "shifts.noMatch": "No shifts match your search.",
+  "shifts.now": "Now",
+  "shifts.full": "Full",
+  "shifts.signedUp": { one: "{n} signed up", other: "{n} signed up" },
+  "shifts.spotsOpen": { one: "{n} spot open", other: "{n} spots open" },
+  "shifts.signupHint": "Sign up from the group's Telegram chat — /shifts.",
+  "shifts.take": "Take",
+  "shifts.drop": "Drop",
+  "shifts.youAreOn": "You're on it",
+  "shifts.rsvpFailed": "Couldn't update your signup — {reason}",
+  "shifts.noSigner":
+    "This screen can't sign for you yet — use /shifts in Telegram.",
 
   // Pill segments (shared layout/sort vocabulary)
   "pills.card": "Card",
@@ -368,6 +387,10 @@ export const en = {
   "settings.listsTabSub":
     "— shows by itself when checklists exist; flip to force",
   "settings.listsTabAria": "Show the Lists tab",
+  "settings.shiftsTab": "Shifts tab",
+  "settings.shiftsTabSub":
+    "— community shifts from the shared relay (Elinor format); shows by itself when shifts exist",
+  "settings.shiftsTabAria": "Show the Shifts tab",
   "settings.statusTab": "Status tab",
   "settings.statusTabSub": "— a ranked contribution leaderboard",
   "settings.statusTabAria": "Show the Status tab",
