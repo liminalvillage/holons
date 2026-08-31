@@ -75,7 +75,9 @@ export const GET: RequestHandler = async ({ cookies }) => {
   }
   const id = await telegramId(cookies.get(SESSION_COOKIE));
   if (!id) return json({ error: "Not a Telegram session" }, { status: 401 });
-  const pubkey = createIdentityContext({ derivationSecret: secret }).memberPubkey(id);
+  const pubkey = createIdentityContext({
+    derivationSecret: secret,
+  }).memberPubkey(id);
   if (!pubkey) return json({ error: "Key derivation failed" }, { status: 500 });
   return json({ pubkey });
 };
@@ -119,7 +121,9 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     );
   }
 
-  const signer = createIdentityContext({ derivationSecret: secret }).memberSigner(id);
+  const signer = createIdentityContext({
+    derivationSecret: secret,
+  }).memberSigner(id);
   if (!signer) return json({ error: "Key derivation failed" }, { status: 500 });
   const client = createShiftRelayClient({
     relays: shiftRelays(),

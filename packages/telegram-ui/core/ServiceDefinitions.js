@@ -151,9 +151,8 @@ export const serviceDefinitions = {
       // HOLOSPHERE_PROJECTIONS(+_SYNC) standard-kind projections + reverse
       // sync, HOLOSPHERE_SIGNING relay backup. The previous direct
       // `new HoloSphere(appname, false, null, { peers })` bypassed all of it.
-      const { default: createHoloSphere } = await import(
-        '../src/createHoloSphere.js'
-      );
+      const { default: createHoloSphere } =
+        await import('../src/createHoloSphere.js');
       const backend = (process.env.HOLOSPHERE_BACKEND || 'gun').toLowerCase();
       const holosphere = createHoloSphere(appname, {
         // Gun-wire mode keeps the HOLONS_PEER override; the nostr wire is peerless.

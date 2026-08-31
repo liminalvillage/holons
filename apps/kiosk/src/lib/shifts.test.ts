@@ -172,7 +172,10 @@ describe("participantNames", () => {
   });
 
   it("ignores declined signups and handles the empty shift", () => {
-    const withDecline = [...enrolled, rsvp(a.address, "4".repeat(64), "declined")];
+    const withDecline = [
+      ...enrolled,
+      rsvp(a.address, "4".repeat(64), "declined"),
+    ];
     expect(participantNames(a, withDecline, new Map()).shown).toHaveLength(3);
     expect(participantNames(a, [], new Map())).toEqual({ shown: [], more: 0 });
   });

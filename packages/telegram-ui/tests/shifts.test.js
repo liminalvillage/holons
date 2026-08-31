@@ -164,11 +164,33 @@ describe('Shifts', () => {
     }
     client.attestations.push(
       // Elinor's coordinator knows the stranger…
-      { provider: COORD, identifier: 'telegram:9', platform: 'telegram', platformId: '9', pubkeys: [stranger], name: 'Carol', createdAt: 10, id: 'a1' },
+      {
+        provider: COORD,
+        identifier: 'telegram:9',
+        platform: 'telegram',
+        platformId: '9',
+        pubkeys: [stranger],
+        name: 'Carol',
+        createdAt: 10,
+        id: 'a1',
+      },
       // …and claims a name for Alice too, but the local lens must win.
-      { provider: COORD, identifier: 'telegram:1', platform: 'telegram', platformId: '1', pubkeys: [alice], name: 'Not Alice', createdAt: 10, id: 'a2' }
+      {
+        provider: COORD,
+        identifier: 'telegram:1',
+        platform: 'telegram',
+        platformId: '1',
+        pubkeys: [alice],
+        name: 'Not Alice',
+        createdAt: 10,
+        id: 'a2',
+      }
     );
-    const shifts = new Shifts(null, db, { client, derivationSecret: SECRET, coordinatorPubkey: COORD });
+    const shifts = new Shifts(null, db, {
+      client,
+      derivationSecret: SECRET,
+      coordinatorPubkey: COORD,
+    });
     const ctx = ctxFor(2);
     await shifts.list(ctx);
     const [text] = ctx.reply.mock.calls[0];
@@ -177,7 +199,9 @@ describe('Shifts', () => {
     expect(text).not.toContain('Not Alice');
     expect(text).not.toContain(`${stranger.slice(0, 8)}…`);
     // Only the pubkeys the lens could not explain were looked up.
-    expect(client.fetchAttestations.mock.calls[0][0].participants).toEqual([stranger]);
+    expect(client.fetchAttestations.mock.calls[0][0].participants).toEqual([
+      stranger,
+    ]);
   });
 
   it('falls back to hex prefixes when the attestation fetch fails', async () => {
@@ -215,7 +239,9 @@ describe('Shifts', () => {
     expect(call.status).toBe('accepted');
     // The identity context hands out signers, never keys.
     expect(call.participantPrivateKey).toBeUndefined();
-    expect(call.signer.pubkey).toBe(deriveTelegramNostrKey(2, SECRET).publicKey);
+    expect(call.signer.pubkey).toBe(
+      deriveTelegramNostrKey(2, SECRET).publicKey
+    );
     expect(call.occurrence.dTag).toBe(occurrence.dTag);
     expect(ctx.answerCbQuery.mock.calls[0][0]).toMatch(/You're on/);
     expect(ctx.editMessageText).toHaveBeenCalled();
