@@ -30,15 +30,20 @@ const occurrence = parseShiftOccurrence({
 /** In-memory stand-in for the core relay client. */
 function fakeClient() {
   const rsvps = [];
+  const attestations = [];
   return {
     relays: ['wss://fake'],
     rsvps,
+    attestations,
     fetchOccurrences: vi.fn(async () => [occurrence]),
     fetchRsvps: vi.fn(async () => rsvps.slice()),
     fetchSchedule: vi.fn(async () => ({
       occurrences: [occurrence],
       rsvps: rsvps.slice(),
     })),
+    fetchAttestations: vi.fn(async ({ participants }) =>
+      attestations.filter(a => a.pubkeys.some(pk => participants.includes(pk)))
+    ),
     publishRsvp: vi.fn(async ({ occurrence: occ, status, previous }) => {
       // The real client signs; here we just record what a verified event would parse to.
       const created_at = previous ? previous.createdAt + 1 : 1000;
@@ -134,6 +139,70 @@ describe('Shifts', () => {
       `shift_take_${occurrence.dTag}`,
       `shift_drop_${occurrence.dTag}`,
     ]);
+  });
+
+  it('names Elinor-side participants from 31926 attestations, local lens winning', async () => {
+    const client = fakeClient();
+    const alice = deriveTelegramNostrKey(1, SECRET).publicKey;
+    const stranger = 'e'.repeat(64);
+    for (const pk of [alice, stranger]) {
+      client.rsvps.push(
+        parseShiftRsvp({
+          kind: 31925,
+          pubkey: pk,
+          created_at: 5,
+          id: `r-${pk.slice(0, 4)}`,
+          content: '',
+          tags: [
+            ['a', occurrence.address],
+            ['d', 'x'],
+            ['status', 'accepted'],
+            ['t', 'shift'],
+          ],
+        })
+      );
+    }
+    client.attestations.push(
+      // Elinor's coordinator knows the stranger…
+      { provider: COORD, identifier: 'telegram:9', platform: 'telegram', platformId: '9', pubkeys: [stranger], name: 'Carol', createdAt: 10, id: 'a1' },
+      // …and claims a name for Alice too, but the local lens must win.
+      { provider: COORD, identifier: 'telegram:1', platform: 'telegram', platformId: '1', pubkeys: [alice], name: 'Not Alice', createdAt: 10, id: 'a2' }
+    );
+    const shifts = new Shifts(null, db, { client, derivationSecret: SECRET, coordinatorPubkey: COORD });
+    const ctx = ctxFor(2);
+    await shifts.list(ctx);
+    const [text] = ctx.reply.mock.calls[0];
+    expect(text).toContain('Carol');
+    expect(text).toContain('Alice');
+    expect(text).not.toContain('Not Alice');
+    expect(text).not.toContain(`${stranger.slice(0, 8)}…`);
+    // Only the pubkeys the lens could not explain were looked up.
+    expect(client.fetchAttestations.mock.calls[0][0].participants).toEqual([stranger]);
+  });
+
+  it('falls back to hex prefixes when the attestation fetch fails', async () => {
+    const client = fakeClient();
+    const stranger = 'e'.repeat(64);
+    client.rsvps.push(
+      parseShiftRsvp({
+        kind: 31925,
+        pubkey: stranger,
+        created_at: 5,
+        id: 'r1',
+        content: '',
+        tags: [
+          ['a', occurrence.address],
+          ['d', 'x'],
+          ['status', 'accepted'],
+          ['t', 'shift'],
+        ],
+      })
+    );
+    client.fetchAttestations.mockRejectedValueOnce(new Error('relay down'));
+    const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
+    const ctx = ctxFor(2);
+    await shifts.list(ctx);
+    expect(ctx.reply.mock.calls[0][0]).toContain(`${stranger.slice(0, 8)}…`);
   });
 
   it("publishes an accepted RSVP with the tapping user's key and refreshes", async () => {

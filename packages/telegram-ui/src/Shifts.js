@@ -10,11 +10,19 @@
  * All protocol rules live in `@holons/core/shifts`; this module only renders
  * and wires Telegraf.
  *
+ * Participant names resolve in this order: the holon's own `users` lens
+ * (freshest for our members), then kind-31926 identity attestations from the
+ * relay — the coordinator's directory outranking other providers — and
+ * finally an 8-hex pubkey prefix.
+ *
  * Env:
  *   SHIFTS_RELAYS             comma-separated relay URLs (falls back to
  *                             HOLOSPHERE_RELAYS, then wss://relay.holons.io)
  *   SHIFTS_COORDINATOR_PUBKEY hex pubkey whose 31923 events are trusted
  *                             (unset → any author; set it in production)
+ *   SHIFTS_IDENTITY_BLACKLIST comma-separated provider pubkeys whose 31926
+ *                             attestations are ignored (spec's blacklist
+ *                             governance; default: honor everyone)
  *   NOSTR_DERIVATION_SECRET   per-user signing keys — same secret as the web
  *                             login so members keep one identity
  *
@@ -24,6 +32,7 @@
 import { Markup } from 'telegraf';
 import { createIdentityContext } from '@holons/core/holosphere';
 import {
+  attestationNameMap,
   createShiftRelayClient,
   enrolledPubkeys,
   formatShiftTime,
@@ -71,11 +80,18 @@ export default class Shifts {
       derivationSecret:
         options.derivationSecret ?? process.env.NOSTR_DERIVATION_SECRET ?? '',
     });
+    this.coordinatorPubkey =
+      options.coordinatorPubkey ??
+      (process.env.SHIFTS_COORDINATOR_PUBKEY || undefined);
+    this.blockedProviders = (process.env.SHIFTS_IDENTITY_BLACKLIST || '')
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean);
     this.client =
       options.client ??
       createShiftRelayClient({
         relays: shiftRelaysFromEnv(),
-        coordinatorPubkey: process.env.SHIFTS_COORDINATOR_PUBKEY || undefined,
+        coordinatorPubkey: this.coordinatorPubkey,
       });
 
     if (bot) {
@@ -94,19 +110,40 @@ export default class Shifts {
   // Identity helpers
   // ---------------------------------------------------------------------
 
-  /** pubkey → display name for everyone known in this holon. */
-  async nameMap(holonId) {
+  /**
+   * pubkey → display name: the holon's `users` lens first, then kind-31926
+   * attestations for whoever the lens cannot explain (Elinor-side members,
+   * external clients). A failed attestation fetch degrades to hex prefixes.
+   */
+  async nameMap(holonId, schedule) {
     const map = new Map();
     let users = [];
     try {
       users = (await this.db.getAll(String(holonId), 'users')) || [];
     } catch {
-      return map;
+      users = [];
     }
     for (const user of users) {
       if (!user?.id) continue;
       const pubkey = this.identity.memberPubkey(user.id);
       if (pubkey) map.set(pubkey, getDisplayName(user));
+    }
+    const unknown = [
+      ...new Set((schedule?.rsvps || []).map(r => r.pubkey)),
+    ].filter(pk => !map.has(pk));
+    if (unknown.length && typeof this.client.fetchAttestations === 'function') {
+      try {
+        const atts = await this.client.fetchAttestations({
+          participants: unknown,
+        });
+        const names = attestationNameMap(atts, {
+          coordinatorPubkey: this.coordinatorPubkey,
+          blockedProviders: this.blockedProviders,
+        });
+        for (const [pk, name] of names) if (!map.has(pk)) map.set(pk, name);
+      } catch (err) {
+        console.warn('[Shifts] attestation lookup failed', err?.message || err);
+      }
     }
     return map;
   }
@@ -200,7 +237,7 @@ export default class Shifts {
     }
     try {
       const schedule = await this.client.fetchSchedule(holonId, range);
-      const names = await this.nameMap(holonId);
+      const names = await this.nameMap(holonId, schedule);
       const title = range.dateOnly
         ? `Shifts on ${range.dateOnly}`
         : arg
@@ -235,7 +272,7 @@ export default class Shifts {
       const mineOcc = schedule.occurrences.filter(o =>
         isEnrolled(o, pubkey, schedule.rsvps)
       );
-      const names = await this.nameMap(holonId);
+      const names = await this.nameMap(holonId, schedule);
       const { text, keyboard } = this.render(
         { occurrences: mineOcc, rsvps: schedule.rsvps },
         names,
@@ -339,7 +376,7 @@ export default class Shifts {
           isEnrolled(o, viewerPubkey, schedule.rsvps)
         );
       }
-      const names = await this.nameMap(holonId);
+      const names = await this.nameMap(holonId, schedule);
       const { text, keyboard } = this.render(schedule, names, title);
       await ctx.editMessageText(text, {
         ...getParseModeHTML(),
