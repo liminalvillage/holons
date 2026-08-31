@@ -25,9 +25,12 @@ import { signEvent, getPublicKey } from './nostr-events.js';
  * @param {string|Uint8Array} opts.privateKey holon signing key
  * @param {(userId: string|number) => (string|Uint8Array|null|undefined)} [opts.signerFor]
  *        per-user key lookup; needed for kind 0 and RSVP companions
+ * @param {string|Uint8Array} [opts.providerKey]
+ *        service-level identity-provider key; signs companions hinted
+ *        `{ role: 'provider' }` (kind-31926 identity attestations)
  * @param {boolean} [opts.verbose]
  */
-export function createProjector({ projections = [], privateKey, signerFor = null, verbose = false } = {}) {
+export function createProjector({ projections = [], privateKey, signerFor = null, providerKey = null, verbose = false } = {}) {
   const hooks = new Map();
   const kinds = new Set();
   for (const h of projections || []) {
@@ -91,7 +94,8 @@ export function createProjector({ projections = [], privateKey, signerFor = null
       if (primarySk) events.push(sign(out.primary, primarySk));
       else vlog('no user key for', lens, item.id, '— primary dropped');
       for (const c of out.companions || []) {
-        const sk = c.authorHint ? userKey(c.authorHint.userId) : privateKey;
+        const sk = c.authorHint?.role === 'provider' ? providerKey
+          : c.authorHint ? userKey(c.authorHint.userId) : privateKey;
         if (!sk) continue;
         if (c.dedupe) {
           if (dedupeState.get(c.dedupe.key) === c.dedupe.state) continue;

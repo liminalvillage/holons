@@ -77,7 +77,7 @@ function buildTimeline(events, pinnedGenesis) {
 export async function createSigner({
   privateKey, relays = [], kind = HOLOSPHERE_KIND, verbose = false,
   shadow = false, enforce = false, storeEnvelope, perActorLenses = [],
-  projections = [], signerFor = null,
+  projections = [], signerFor = null, providerKey = null,
   reverseSync = true, trustedAuthors = null, reverseLookbackSec,
 }) {
   if (!privateKey) throw new Error('enableSigning: a privateKey is required');
@@ -115,7 +115,7 @@ export async function createSigner({
   const vlog = (...a) => { if (verbose) console.log('[signing]', ...a); };
   // Standard-kind projections published next to each envelope (relay-backup
   // mode). They never enter the `_events` sidecar.
-  const projector = createProjector({ projections, privateKey, signerFor, verbose });
+  const projector = createProjector({ projections, privateKey, signerFor, providerKey, verbose });
   const publishProjections = (events) => {
     if (!relayList.length) return;
     for (const e of events) Promise.allSettled(pool.publish(relayList, e)).catch(() => {});

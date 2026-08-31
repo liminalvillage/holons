@@ -78,6 +78,34 @@ describe('createProjector', () => {
     expect(tag(dels[0], 'a')).toContain('holons:events:');
   });
 
+  test('signs provider-hinted companions with the providerKey, or drops them without one', () => {
+    const providerSk = generateSecretKey();
+    const hook = {
+      lens: 'users',
+      kinds: [0, 31926],
+      project(holon, lens, item) {
+        return {
+          primary: { kind: 0, created_at: 0, content: '{"name":"a"}', tags: [] },
+          companions: [{
+            template: { kind: 31926, created_at: 0, content: '{"name":"a"}', tags: [['d', `telegram:${item.id}`], ['p', 'b'.repeat(64)]] },
+            authorHint: { role: 'provider' },
+            dedupe: { key: `attest|telegram:${item.id}`, state: 'b|a' },
+          }],
+        };
+      },
+      retract: () => [],
+    };
+    const p = createProjector({ projections: [hook], privateKey: sk, providerKey: providerSk });
+    const events = p.eventsForWrite(HOLON, 'users', { id: 42 });
+    expect(events.map((e) => e.kind)).toEqual([0, 31926]);
+    expect(events[1].pubkey).toBe(getPublicKey(providerSk));
+    // Unchanged record → the dedupe suppresses a re-publish of the attestation.
+    expect(p.eventsForWrite(HOLON, 'users', { id: 42 }).map((e) => e.kind)).toEqual([0]);
+    // No provider key configured → the companion is dropped, never holon-signed.
+    const bare = createProjector({ projections: [hook], privateKey: sk });
+    expect(bare.eventsForWrite(HOLON, 'users', { id: 42 }).map((e) => e.kind)).toEqual([0]);
+  });
+
   test('dedupe companions are re-emitted only when their state changes', () => {
     const hook = {
       lens: 'quests', kinds: [31923, 7],

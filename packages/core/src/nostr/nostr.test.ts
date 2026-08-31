@@ -143,6 +143,35 @@ describe('profile codec', () => {
     expect(codec.retract(HOLON, '42', ctx).map((t) => t.kind)).toEqual([9001]);
     expect(codec.retract(HOLON, '1', ctx)).toEqual([]);
   });
+
+  it('claims the telegram identity (NIP-39) and attests it as the provider', () => {
+    const codec = PROJECTION_CODECS.users;
+    const providerCtx: ProjectionCtx = { ...ctx, providerPubkey: 'f'.repeat(64) };
+    const out = codec.project(HOLON, { id: 42, username: 'ann', first_name: 'Ann', last_name: 'Lee' }, providerCtx)!;
+    expect(tag(out.primary.tags, 'i')).toEqual(['i', 'telegram:42']);
+    const att = out.companions!.find((c) => c.template.kind === 31926)!;
+    expect(att.authorHint).toEqual({ role: 'provider' });
+    expect(att.template.tags).toEqual([['d', 'telegram:42'], ['p', 'b'.repeat(64)]]);
+    expect(JSON.parse(att.template.content)).toEqual({ name: 'Ann Lee' });
+    expect(att.dedupe).toEqual({ key: 'attest|telegram:42', state: `${'b'.repeat(64)}|Ann Lee` });
+  });
+
+  it('emits no claim or attestation for non-telegram ids or without a provider', () => {
+    const codec = PROJECTION_CODECS.users;
+    // No providerPubkey in ctx → no attestation companion.
+    const plain = codec.project(HOLON, { id: 42, username: 'ann' }, ctx)!;
+    expect(plain.companions!.some((c) => c.template.kind === 31926)).toBe(false);
+    expect(tag(plain.primary.tags, 'i')).toEqual(['i', 'telegram:42']);
+    // Non-numeric id → neither the claim nor the attestation.
+    const providerCtx: ProjectionCtx = {
+      ...ctx,
+      providerPubkey: 'f'.repeat(64),
+      pubkeyFor: () => 'b'.repeat(64),
+    };
+    const keyUser = codec.project(HOLON, { id: 'abc123def', username: 'key-user' }, providerCtx)!;
+    expect(tag(keyUser.primary.tags, 'i')).toBeUndefined();
+    expect(keyUser.companions!.some((c) => c.template.kind === 31926)).toBe(false);
+  });
 });
 
 describe('set codec', () => {

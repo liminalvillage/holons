@@ -57,6 +57,7 @@ export function createRelayTransport(holo, {
   // Standard-kind projections (see projections.js / @holons/core/nostr).
   projections = [],
   signerFor = null,
+  providerKey = null,
   // Reverse sync of external standard-kind edits (see reverse-sync.js).
   reverseSync = true,
   trustedAuthors = null,
@@ -68,7 +69,7 @@ export function createRelayTransport(holo, {
   const pubkey = getPublicKey(privateKey);
   const app = holo.appname;
   const vlog = (...a) => { if (verbose) console.log('[nostr-transport]', ...a); };
-  const projector = createProjector({ projections, privateKey, signerFor, verbose });
+  const projector = createProjector({ projections, privateKey, signerFor, providerKey, verbose });
 
   let pool = null;
   let closed = false;

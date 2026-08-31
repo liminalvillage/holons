@@ -42,12 +42,22 @@ export interface ProjectionCtx {
   pubkeyFor?: (userId: string | number) => string | undefined;
   /** Reverse lookup for ingest: hex pubkey → the member it belongs to. */
   userIdFor?: (pubkey: string) => string | number | undefined;
+  /**
+   * Pubkey of the service-level identity provider (kind-31926 author).
+   * Unset → the host cannot sign as the provider, so codecs must not emit
+   * provider-hinted companions.
+   */
+  providerPubkey?: string;
 }
 
 export interface Companion {
   template: EventTemplate;
-  /** Who should sign this. The host signs only if it has that user's key. */
-  authorHint?: { userId: string | number };
+  /**
+   * Who should sign this: a member's derived key, or the service-level
+   * identity provider. Absent → the holon key. The host signs only if it
+   * holds that key.
+   */
+  authorHint?: { userId: string | number } | { role: 'provider' };
   /**
    * For non-replaceable kinds (reactions, badge awards): the host publishes
    * only when `state` differs from what it last published under `key`, so

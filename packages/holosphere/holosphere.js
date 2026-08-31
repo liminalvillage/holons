@@ -275,6 +275,7 @@ class HoloSphere {
             verbose: signing.verbose || cfg.nostr?.verbose,
             projections: cfg.nostr?.projections,
             signerFor: cfg.nostr?.signerFor,
+            providerKey: cfg.nostr?.providerKey,
             reverseSync: cfg.nostr?.reverseSync,
             trustedAuthors: cfg.nostr?.trustedAuthors,
             reverseLookbackSec: cfg.nostr?.reverseLookbackSec,
@@ -1221,6 +1222,7 @@ class HoloSphere {
             shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
             perActorLenses: opts.perActorLenses,
             projections: opts.projections, signerFor: opts.signerFor,
+            providerKey: opts.providerKey,
             reverseSync: opts.reverseSync, trustedAuthors: opts.trustedAuthors,
             reverseLookbackSec: opts.reverseLookbackSec,
         });

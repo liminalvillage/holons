@@ -22,7 +22,10 @@ import {
   groupStateHash,
   wrapDirectMessage,
 } from '@holons/core/nostr';
-import { deriveTelegramNostrKey } from '@holons/core/auth';
+import {
+  deriveIdentityProviderKey,
+  deriveTelegramNostrKey,
+} from '@holons/core/auth';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -182,6 +185,20 @@ function buildProjectionOptions(appName, privateKey, lenses) {
         }
       }
     : undefined;
+  // Service-level identity provider: signs kind-31926 attestation companions
+  // (Elinor's Telegram↔npub directory). Same secret → same provider key on
+  // every surface, so republishes replace instead of duplicating.
+  let providerKey = null;
+  let providerPubkey;
+  if (secret) {
+    try {
+      const provider = deriveIdentityProviderKey(secret);
+      providerKey = provider.privateKey;
+      providerPubkey = provider.publicKey;
+    } catch {
+      /* signing degrades to no attestations */
+    }
+  }
   const holonPubkey = getPublicKey(
     Uint8Array.from(Buffer.from(privateKey, 'hex'))
   );
@@ -208,13 +225,15 @@ function buildProjectionOptions(appName, privateKey, lenses) {
     timezoneFor,
     pubkeyFor,
     userIdFor: trust.userIdFor,
+    providerPubkey,
   });
   console.log(
-    `[holosphere] projections on → ${lenses.join(', ')}${signerFor ? ' (+ per-user signer)' : ''}`
+    `[holosphere] projections on → ${lenses.join(', ')}${signerFor ? ' (+ per-user signer)' : ''}${providerKey ? ' (+ identity provider)' : ''}`
   );
   return {
     projections,
     ...(signerFor ? { signerFor } : {}),
+    ...(providerKey ? { providerKey } : {}),
     trustedAuthors: trust.trustedAuthors,
   };
 }

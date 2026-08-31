@@ -12,6 +12,7 @@ import {
   GROUP_JOIN_REQUEST_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND,
   groupJoinRequestTemplate, groupPutUserTemplate, groupRemoveUserTemplate,
 } from '../groups.js';
+import { IDENTITY_ATTESTATION_KIND, buildAttestationTemplate, telegramIdentifier } from '../../shifts/attestation.js';
 
 export const PROFILE_KIND = 0;
 
@@ -41,6 +42,30 @@ export function profileContent(user: UserRecord): Record<string, string> {
   return out;
 }
 
+/** Telegram ids are numeric; only those may carry a `telegram:` identity. */
+const isTelegramId = (id: string | number) => /^\d+$/.test(String(id));
+
+/**
+ * Kind-31926 identity attestation (Elinor's Telegram↔npub directory), signed
+ * by the service-level identity provider. Replaceable per (provider, d):
+ * the `p` list must always be the member's COMPLETE current key set — a key
+ * omitted here is thereby UNLINKED. Today that set is the one derived key;
+ * a future multi-key linker must extend this list, never fork the event.
+ */
+function attestationCompanion(
+  ctx: ProjectionCtx, id: string | number, content: Record<string, string>,
+): Companion[] {
+  if (!ctx.providerPubkey || !isTelegramId(id)) return [];
+  const pk = ctx.pubkeyFor?.(id);
+  if (!pk) return [];
+  const name = content.display_name ?? content.name;
+  return [{
+    template: buildAttestationTemplate({ telegramId: id, pubkeys: [pk], name, now: nowOf(ctx) }),
+    authorHint: { role: 'provider' },
+    dedupe: { key: `attest|${telegramIdentifier(id)}`, state: `${pk}|${name ?? ''}` },
+  }];
+}
+
 /** NIP-29 membership companions: the holon admits the member (9000), the member asks to join (9021). */
 function membershipCompanions(ctx: ProjectionCtx, holon: string, id: string | number): Companion[] {
   const pk = ctx.pubkeyFor?.(id);
@@ -53,21 +78,28 @@ function membershipCompanions(ctx: ProjectionCtx, holon: string, id: string | nu
 
 export const profileCodec: LensCodec<UserRecord> = {
   lens: 'users',
-  kinds: [PROFILE_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND, GROUP_JOIN_REQUEST_KIND],
+  kinds: [PROFILE_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND, GROUP_JOIN_REQUEST_KIND, IDENTITY_ATTESTATION_KIND],
   requiresAuthor: 'user',
   primary: '30078',
   project(holon, item, ctx): Projected | null {
     if (item.id === undefined || item.id === null) return null;
     const content = profileContent(item);
     if (!content.name) return null;
+    const tags = commonTags(ctx, holon, 'users', item.id);
+    // NIP-39 external-identity claim. No proof element: Elinor verifies the
+    // link interactively (one-tap confirm with that Telegram member).
+    if (isTelegramId(item.id)) tags.push(['i', telegramIdentifier(item.id)]);
     return {
       primary: {
         kind: PROFILE_KIND,
         created_at: nowOf(ctx),
-        tags: commonTags(ctx, holon, 'users', item.id),
+        tags,
         content: JSON.stringify(content),
       },
-      companions: membershipCompanions(ctx, holon, item.id),
+      companions: [
+        ...membershipCompanions(ctx, holon, item.id),
+        ...attestationCompanion(ctx, item.id, content),
+      ],
     };
   },
   // A profile is never retracted — it belongs to the person, not the holon;
