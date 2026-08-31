@@ -22,6 +22,13 @@ import {
   type NostrFilterLike,
 } from './protocol.js';
 import type { ShiftOccurrence, ShiftRsvp } from './types.js';
+import {
+  attestationFilter,
+  parseIdentityAttestation,
+  resolveAttestations,
+  type AttestationFilterOptions,
+  type IdentityAttestation,
+} from './attestation.js';
 
 /** The subset of nostr-tools' `SimplePool` we rely on (injectable for tests). */
 export interface ShiftPoolLike {
@@ -55,6 +62,11 @@ export interface ShiftRelayClient {
   fetchSchedule(groupId: string, range?: { since?: number; until?: number }): Promise<ShiftSchedule>;
   /** One participant's resolved RSVPs. */
   fetchParticipantRsvps(pubkey: string): Promise<ShiftRsvp[]>;
+  /**
+   * Kind-31926 identity attestations, resolved newest-per-(provider, d).
+   * Read-only: publishing attestations is the projection layer's job.
+   */
+  fetchAttestations(opts: AttestationFilterOptions): Promise<IdentityAttestation[]>;
   /**
    * Sign and publish a signup/cancellation as `signer` (the participant).
    * Looks up the participant's previous RSVP so `created_at` strictly
@@ -120,6 +132,24 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
       const events = await query(participantRsvpFilter(pubkey));
       const parsed = events.map(parseShiftRsvp).filter((r): r is ShiftRsvp => r !== null);
       return [...resolveRsvps(parsed).values()];
+    },
+    async fetchAttestations(opts) {
+      const events = await query(attestationFilter(opts));
+      const wantAuthors = opts.authors?.map((a) => a.toLowerCase());
+      const wantIds = opts.identifiers;
+      const wantPks = opts.participants?.map((p) => p.toLowerCase());
+      const parsed = events
+        .map(parseIdentityAttestation)
+        // Re-apply the filter client-side — a relay that ignores `#d`/`#p`
+        // must degrade to extra bytes, never to wrong entries.
+        .filter((a): a is IdentityAttestation => {
+          if (!a) return false;
+          if (wantAuthors && !wantAuthors.includes(a.provider.toLowerCase())) return false;
+          if (wantIds && !wantIds.includes(a.identifier)) return false;
+          if (wantPks && !a.pubkeys.some((pk) => wantPks.includes(pk))) return false;
+          return true;
+        });
+      return [...resolveAttestations(parsed).values()];
     },
     async publishRsvp({ signer, previous, ...build }) {
       let prev = previous;
