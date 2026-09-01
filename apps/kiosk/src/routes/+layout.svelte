@@ -1,7 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import "../app.css";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { page } from "$app/stores";
   import { afterNavigate, replaceState } from "$app/navigation";
   import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
@@ -78,6 +78,13 @@
     type TabId,
   } from "$lib/stores";
   import { pathForTab, tabForPath } from "$lib/tabroute";
+  import {
+    dockState,
+    dockOpenTarget,
+    rememberBoard,
+    touchBoard,
+    segmentFor,
+  } from "$lib/dock";
   import { initAuth, loginOpen } from "$lib/auth";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
@@ -87,6 +94,7 @@
   import type { Checklist } from "@holons/core/checklists";
   import { keyLinkOpen } from "$lib/sessionKey";
   import HomeView from "$lib/views/HomeView.svelte";
+  import DockView from "$lib/components/DockView.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
   import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
@@ -579,6 +587,121 @@
       replaceState(path + location.search + location.hash, {});
   }
 
+  // ── Board window ↔ dock morph ───────────────────────────────────────────--
+  //
+  // The whole tab interface is a window: closing it shrinks it into its
+  // circle on the dock (DockView), and tapping a circle expands that board
+  // back out. The morph is a clip-path iris centred on the circle's spot,
+  // crossfading into the real circle beneath — pure paint work, no reflow of
+  // the board mid-animation. dock.ts owns the state; this layout owns the two
+  // transitional frames ("closing"/"opening"), where window AND dock are both
+  // mounted so one can be measured against the other. Anywhere the animation
+  // can't run (no WAAPI, no circle to aim at) the states still settle, so the
+  // interface never wedges mid-morph.
+  let windowEl: HTMLDivElement | null = null;
+  let morphBusy = false;
+  const MORPH_MS = 650;
+  const MORPH_EASE = "cubic-bezier(0.45, 0, 0.2, 1)";
+
+  function circleRect(id: string): DOMRect | null {
+    const el = document.querySelector(`[data-dock-circle="${CSS.escape(id)}"]`);
+    return el ? el.getBoundingClientRect() : null;
+  }
+
+  async function irisMorph(r: DOMRect, closing: boolean): Promise<void> {
+    if (!windowEl || typeof windowEl.animate !== "function") return;
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const disc = `circle(${r.width / 2}px at ${cx}px ${cy}px)`;
+    const full = `circle(150% at ${cx}px ${cy}px)`;
+    // Closing: iris down onto the circle's spot, then fade to reveal the real
+    // circle exactly beneath. Opening is the same path in reverse.
+    const frames = closing
+      ? [
+          { clipPath: full, opacity: 1 },
+          { clipPath: disc, opacity: 1, offset: 0.78 },
+          { clipPath: disc, opacity: 0 },
+        ]
+      : [
+          { clipPath: disc, opacity: 0 },
+          { clipPath: disc, opacity: 1, offset: 0.22 },
+          { clipPath: full, opacity: 1 },
+        ];
+    const anim = windowEl.animate(frames, {
+      duration: MORPH_MS,
+      easing: MORPH_EASE,
+      fill: "forwards",
+    });
+    try {
+      await anim.finished;
+    } finally {
+      anim.cancel(); // drop the forwards fill; the base style is the end state
+    }
+  }
+
+  async function morphToDock() {
+    if (morphBusy) return;
+    morphBusy = true;
+    try {
+      await tick(); // the dock is mounted underneath now
+      const id = get(holonIdStore);
+      const r = id ? circleRect(id) : null;
+      if (r) await irisMorph(r, true);
+    } catch {
+      /* reduced motion / no WAAPI → jump */
+    }
+    dockState.set("dock");
+    morphBusy = false;
+  }
+
+  async function morphToWindow() {
+    if (morphBusy) return;
+    morphBusy = true;
+    const id = get(dockOpenTarget);
+    dockOpenTarget.set(null);
+    // Measure the tapped circle BEFORE any of the switching below re-renders
+    // the dock, then point the board at it (refresh() rebinds the lenses live).
+    const r = id ? circleRect(id) : null;
+    if (id) {
+      touchBoard(id);
+      if (id !== get(holonIdStore)) {
+        holonIdStore.set(id);
+        syncHolonPath(id);
+      }
+    }
+    try {
+      await tick(); // the window is mounted again — animate it open
+      if (r) await irisMorph(r, false);
+    } catch {
+      /* jump */
+    }
+    dockState.set("window");
+    morphBusy = false;
+  }
+
+  $: if (mounted && $dockState === "closing") void morphToDock();
+  $: if (mounted && $dockState === "opening") void morphToWindow();
+
+  // A circle switched the shown holon — reflect it in the address bar the
+  // same shallow way tab switches are, so the URL stays shareable. A `?holon=`
+  // param would override the path on reload, so it is dropped.
+  function syncHolonPath(id: string) {
+    if (!routerReady) return;
+    const path = pathForTab(
+      "/" + encodeURIComponent(segmentFor(id)),
+      get(activeTab),
+    );
+    const params = new URLSearchParams(location.search);
+    params.delete("holon");
+    const q = params.toString();
+    replaceState(path + (q ? `?${q}` : "") + location.hash, {});
+  }
+
+  // Keep the shown board's circle fresh: created on first visit, its label
+  // upgraded to the holon's real name as soon as that streams in.
+  $: if (mounted && !isMiniApp && $holonIdStore)
+    rememberBoard($holonIdStore, $holonName.trim());
+
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
   $: if (mounted && !isMiniApp)
@@ -651,15 +774,28 @@
     <!-- Front door: what Holons is, and the button that starts one. -->
     <HomeView />
   {:else}
-    <div class="kiosk">
-      <TabBar />
-      <main class="stage">
-        <slot />
-      </main>
-    </div>
+    <!-- The dock sits beneath the board window during the morph frames and
+         alone once the window has fully closed into its circle. -->
+    {#if $dockState !== "window"}
+      <DockView />
+    {/if}
 
-    <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
-    <DetailModal />
+    {#if $dockState !== "dock"}
+      <div class="kiosk" bind:this={windowEl}>
+        <!-- The whole tab interface is one card floating in the space — the
+             same sky the dock shows — so closing it into a circle reads as
+             the card shrinking into its place among the others. -->
+        <div class="card">
+          <TabBar />
+          <main class="stage">
+            <slot />
+          </main>
+        </div>
+      </div>
+
+      <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
+      <DetailModal />
+    {/if}
   {/if}
 
   <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
@@ -709,17 +845,46 @@
 
 <style>
   .kiosk {
+    /* A fixed layer so the close morph can iris it over the dock beneath
+       (DockView is z-index 5). Its background is the SPACE — kept identical
+       to DockView's — and the board itself lives on the .card floating in it. */
+    position: fixed;
+    inset: 0;
+    z-index: 10;
     display: flex;
     flex-direction: column;
     height: 100dvh;
     width: 100vw;
+    background:
+      radial-gradient(
+        90% 70% at 72% 12%,
+        color-mix(in srgb, var(--teal) 8%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(120% 90% at 50% 115%, var(--paper) 0%, transparent 70%),
+      var(--paper-deep);
+    padding: calc(env(safe-area-inset-top) + 0.8rem)
+      calc(env(safe-area-inset-right) + 0.9rem)
+      calc(env(safe-area-inset-bottom) + 0.9rem)
+      calc(env(safe-area-inset-left) + 0.9rem);
+    overflow: hidden;
+  }
+
+  .card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px;
+    border: 1px solid var(--line);
     background: radial-gradient(
       120% 60% at 50% -10%,
       var(--paper) 40%,
       var(--paper-deep) 100%
     );
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-      env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-shadow:
+      0 22px 54px rgba(0, 0, 0, 0.3),
+      var(--shadow-soft);
     overflow: hidden;
   }
 

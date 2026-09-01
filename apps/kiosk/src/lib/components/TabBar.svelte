@@ -21,6 +21,7 @@
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { currentUser, displayName } from "$lib/auth";
+  import { requestClose } from "$lib/dock";
   import { t, locale } from "$lib/i18n";
 
   // Long-press a tab to (un)pin the kiosk to it. A press that crosses ~half a
@@ -228,6 +229,38 @@
         <span class="time">{timeLabel}</span>
         <span class="date">{dateLabel}</span>
       </div>
+      <!-- The window's close control: the whole board shrinks into its circle
+           on the dock (see DockView / the layout's morph). -->
+      <button
+        class="winclose"
+        on:click={requestClose}
+        aria-label={$t("dock.close")}
+        title={$t("dock.close")}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <line
+            x1="6"
+            y1="6"
+            x2="18"
+            y2="18"
+            stroke-width="2.4"
+            stroke-linecap="round"
+          />
+          <line
+            x1="18"
+            y1="6"
+            x2="6"
+            y2="18"
+            stroke-width="2.4"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -552,6 +585,31 @@
     text-overflow: ellipsis;
     max-width: 48vw;
   }
+  .winclose {
+    flex: 0 0 auto;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    background: var(--paper);
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
+  }
+  .winclose svg {
+    width: 1rem;
+    height: 1rem;
+  }
+  .winclose:hover {
+    color: var(--ink);
+    background: var(--line);
+  }
+  .winclose:active {
+    transform: scale(0.9);
+  }
+
   .clock {
     text-align: right;
     line-height: 1.1;

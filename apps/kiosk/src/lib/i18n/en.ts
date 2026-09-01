@@ -293,6 +293,16 @@ export const en = {
   "tabbar.unpinView": "Unpin this view",
   "tabbar.pinView": "Pin this view",
 
+  // Dock (the board's window closed into a circle per visited board)
+  "dock.close": "Close this board",
+  "dock.boards": "Your boards",
+  "dock.open": "Open {name}",
+  "dock.delete": "Remove {name}",
+  "dock.add": "Add a board",
+  "dock.addPlaceholder": "Holon id, label, or link",
+  "dock.addInvalid": "That doesn't name a holon.",
+  "dock.hint": "Tap a circle to open its board — hold one to remove it.",
+
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",
   "login.signedInAs":

@@ -301,6 +301,17 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Sblocca questa vista",
   "tabbar.pinView": "Fissa questa vista",
 
+  // Dock (the board's window closed into a circle per visited board)
+  "dock.close": "Chiudi questa bacheca",
+  "dock.boards": "Le tue bacheche",
+  "dock.open": "Apri {name}",
+  "dock.delete": "Rimuovi {name}",
+  "dock.add": "Aggiungi una bacheca",
+  "dock.addPlaceholder": "Id dell'holon, etichetta o link",
+  "dock.addInvalid": "Questo non identifica un holon.",
+  "dock.hint":
+    "Tocca un cerchio per aprire la sua bacheca — tienilo premuto per rimuoverlo.",
+
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Accesso effettuato",
   "login.signedInAs":

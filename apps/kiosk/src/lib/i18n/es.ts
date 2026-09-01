@@ -300,6 +300,17 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.unpinView": "Soltar esta vista",
   "tabbar.pinView": "Fijar esta vista",
 
+  // Dock (the board's window closed into a circle per visited board)
+  "dock.close": "Cerrar este tablón",
+  "dock.boards": "Tus tablones",
+  "dock.open": "Abrir {name}",
+  "dock.delete": "Quitar {name}",
+  "dock.add": "Añadir un tablón",
+  "dock.addPlaceholder": "Id del holon, etiqueta o enlace",
+  "dock.addInvalid": "Eso no identifica un holon.",
+  "dock.hint":
+    "Toca un círculo para abrir su tablón — manténlo pulsado para quitarlo.",
+
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",
   "login.signedInAs":
