@@ -34,10 +34,12 @@
     "ical.js": "^2.2.1",
     "@noble/curves": "^1.8.0",
     "@noble/hashes": "^1.8.0",
-    "nostr-tools": "^2.23.5"
+    "nostr-tools": "^2.23.5",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.35.0",
     "h3-js": "^4.4.0",
     "typescript": "^5.7.3",

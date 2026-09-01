@@ -16,8 +16,9 @@
   command = "cd ../.. && corepack enable && pnpm install --no-frozen-lockfile && pnpm -F @holons/core build && pnpm -F holons-web build"
 
 [build.environment]
-  # Node.js version for builds
-  NODE_VERSION = "20"
+  # Node.js version for builds AND the functions runtime — must stay ≥ 22 so
+  # the lambdas have a global WebSocket (nostr-tools relay publishes need it).
+  NODE_VERSION = "24"
   # Netlify runs its own dependency install BEFORE the build command, in the
   # base directory, choosing the package manager by lockfile detection. With
   # pnpm-lock.yaml deliberately untracked it falls back to npm, which cannot

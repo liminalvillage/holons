@@ -324,6 +324,25 @@ describe('createShiftRelayClient', () => {
     expect(isEnrolled(occurrences[0], me, after)).toBe(false);
   });
 
+  it('reports a fulfilled "connection failure" publish as rejected', async () => {
+    const sk = generateSecretKey();
+    const store: NostrEventLike[] = [occurrenceEvent];
+    const pool = fakePool(store);
+    // nostr-tools resolves (not rejects) a publish whose socket never opened.
+    pool.publish = () => [Promise.resolve('connection failure: ReferenceError: WebSocket is not defined')];
+    const client = createShiftRelayClient({ relays: ['wss://example'], coordinatorPubkey: COORD, pool });
+    const occurrences = await client.fetchOccurrences(GROUP);
+
+    const { results } = await client.publishRsvp({
+      occurrence: occurrences[0],
+      status: 'accepted',
+      signer: signerFromSecretKey(bytesToHex(sk)),
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('rejected');
+    expect((results[0] as PromiseRejectedResult).reason).toMatch(/^connection failure:/);
+  });
+
   it('bumps created_at past a sibling-key RSVP found via attestations', async () => {
     const sk = generateSecretKey();
     const me = getPublicKey(sk);

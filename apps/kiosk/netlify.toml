@@ -35,7 +35,9 @@
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../../packages/core ../../packages/holosphere ../../packages/ai-ui"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # Node 24: the functions runtime must have a global WebSocket (Node ≥ 22),
+  # or nostr-tools' relay publishes (/api/shifts/rsvp) die on the lambda.
+  NODE_VERSION = "24"
   # Netlify's own install step runs before the build command and detects the
   # package manager from lockfiles; with pnpm-lock.yaml untracked it falls
   # back to npm, which chokes on workspace:* deps — force pnpm.

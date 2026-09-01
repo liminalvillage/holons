@@ -153,10 +153,18 @@ export interface ShiftRelayClient {
 }
 
 async function defaultPool(): Promise<ShiftPoolLike> {
-  const { SimplePool } = await import('nostr-tools/pool');
+  const pool = await import('nostr-tools/pool');
+  // Node < 22 (e.g. a serverless runtime) has no global WebSocket, and
+  // nostr-tools then reports every publish as "connection failure" without
+  // ever reaching a relay — hand it the `ws` implementation instead. In the
+  // browser this branch is dead code (ws's browser build is an inert stub).
+  if ((globalThis as { WebSocket?: unknown }).WebSocket === undefined) {
+    const { default: WS } = await import('ws');
+    pool.useWebSocketImplementation(WS as never);
+  }
   // Reconnect keeps subscribeSchedule live across relay drops: nostr-tools
   // reopens the socket and re-fires the open subscriptions.
-  return new SimplePool({ enableReconnect: true }) as unknown as ShiftPoolLike;
+  return new pool.SimplePool({ enableReconnect: true }) as unknown as ShiftPoolLike;
 }
 
 export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftRelayClient {
@@ -453,7 +461,15 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
       }
       const event = signer.sign(buildRsvpTemplate({ ...build, previous: prev }));
       const p = await pool();
-      const results = await Promise.allSettled(p.publish(relays, event));
+      // nostr-tools FULFILLS a publish whose connection failed, with a
+      // "connection failure: …" string the relay never saw — normalize those
+      // to rejections so callers' accepted-relay counts stay honest.
+      const results = (await Promise.allSettled(p.publish(relays, event))).map(
+        (r): PromiseSettledResult<string> =>
+          r.status === 'fulfilled' && typeof r.value === 'string' && r.value.startsWith('connection failure:')
+            ? { status: 'rejected', reason: r.value }
+            : r,
+      );
       return { event, results };
     },
     close() {
