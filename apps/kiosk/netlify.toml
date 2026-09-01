@@ -51,6 +51,16 @@
   # local-dev fallback only.
   SECRETS_SCAN_OMIT_KEYS = "VITE_KIOSK_HOLON,VITE_KIOSK_APP,VITE_KIOSK_PEER,VITE_HOLONS_APP,VITE_TELEGRAM_BOT_USERNAME"
 
+# @sveltejs/adapter-netlify writes the render function to
+# .netlify/functions-internal/sveltekit-render.mjs (resolved from `base`,
+# i.e. apps/kiosk/.netlify/functions-internal/). Declaring it explicitly makes
+# function discovery deterministic — on the noble-new-builds image the implicit
+# discovery skipped it, deploying only the static assets, so every page route
+# (all SSR-off, served by the function via _redirects) returned Netlify's 404.
+# Same fix as the root netlify.toml (apps/web).
+[functions]
+  directory = ".netlify/functions-internal"
+
 # Long-cache the content-hashed build assets; never cache the HTML shell.
 [[headers]]
   for = "/_app/immutable/*"
