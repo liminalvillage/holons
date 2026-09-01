@@ -3,6 +3,7 @@
   import "../app.css";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
+  import { afterNavigate, replaceState } from "$app/navigation";
   import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
   import type { Subscription } from "$lib/holosphere";
   import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
@@ -71,7 +72,12 @@
     startClock,
     startRotation,
     noteInteraction,
+    activeTab,
+    requestedTab,
+    visibleTabs,
+    type TabId,
   } from "$lib/stores";
+  import { pathForTab, tabForPath } from "$lib/tabroute";
   import { initAuth, loginOpen } from "$lib/auth";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
@@ -478,6 +484,19 @@
   onMount(() => {
     holonLabel = labelFromUrl();
     holonIdStore.set(resolveHolonId());
+    // A deep-linked tab (`/tasks`, `/liminal/calendar`) opens that view. It
+    // only picks the starting tab — it is not a pin, so a wall display's
+    // rotation and idle snap-back behave exactly as configured. A
+    // content-driven tab (shifts, library…) may not be visible yet while its
+    // data is still streaming in: register the ask so the tab claims the
+    // screen the moment it appears instead of being reset to the fallback.
+    const urlTab = tabForPath(location.pathname);
+    if (urlTab) {
+      activeTab.set(urlTab);
+      if (!get(visibleTabs).some((t) => t.id === urlTab))
+        requestedTab.set(urlTab);
+    }
+    lastSyncedTab = get(activeTab);
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
     rolesPref.set(resolveRolesPref());
@@ -535,6 +554,30 @@
   // the front door: show the landing page (HomeView) instead of the kiosk
   // chrome, with the board-only overlays stood down.
   $: isHome = !isMiniApp && !booting && !$holonIdStore;
+
+  // Reflect tab switches in the address bar — shallow, no navigation, so the
+  // showing view is always shareable (`/tasks`, `/liminal/calendar`). Seeded
+  // with the boot-time tab in onMount so merely loading a bare URL doesn't
+  // rewrite it; every later switch (a tap, rotation, a pin snap-back) does.
+  // Gated on the router having finished the initial navigation: a tab reset
+  // can fire during the first flush (a deep-linked content-driven tab isn't
+  // visible yet), and replaceState before router init THROWS — an uncaught
+  // error there freezes the whole board's reactivity.
+  let lastSyncedTab: TabId | null = null;
+  let routerReady = false;
+  afterNavigate(() => (routerReady = true));
+  $: if (
+    routerReady &&
+    mounted &&
+    !isMiniApp &&
+    !isHome &&
+    $activeTab !== lastSyncedTab
+  ) {
+    lastSyncedTab = $activeTab;
+    const path = pathForTab(location.pathname, $activeTab);
+    if (path !== location.pathname)
+      replaceState(path + location.search + location.hash, {});
+  }
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).

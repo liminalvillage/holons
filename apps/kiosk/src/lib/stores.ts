@@ -444,6 +444,15 @@ const initialPin: TabId | null = TABS.some((t) => t.id === savedPin)
 export const activeTab = writable<TabId>(initialPin ?? "tasks");
 
 /**
+ * A deep-linked tab (URL path) whose view is content-driven and not visible
+ * yet — `/shifts` before the relay fetch lands, `/library` before the lens
+ * streams in. Held until the tab appears in `visibleTabs`, which then
+ * activates it and spends the request; a human tap clears it instead (their
+ * choice wins over the URL's ask).
+ */
+export const requestedTab = writable<TabId | null>(null);
+
+/**
  * The tab the kiosk is pinned to, or null to auto-rotate. While pinned the
  * screen rests on this view: rotation is suspended and, once everyone walks
  * away, the board snaps back to it. Long-press a tab to (un)pin; persisted via
@@ -600,6 +609,7 @@ export function noteInteraction() {
 
 /** Manually select a tab by id (also counts as an interaction). */
 export function selectTab(id: TabId) {
+  requestedTab.set(null); // a tap outranks a pending deep-link ask
   activeTab.set(id);
   noteInteraction();
 }
@@ -639,6 +649,14 @@ export const flipProgress: Readable<number> = derived(
 // synchronously on subscribe and reads stores defined above.)
 visibleTabs.subscribe((tabs) => {
   const has = (id: TabId | null) => tabs.some((t) => t.id === id);
+  // A deep-linked tab that just appeared (its data arrived) claims the
+  // screen — fulfilling the URL's explicit ask — and the request is spent.
+  const req = get(requestedTab);
+  if (req && has(req)) {
+    requestedTab.set(null);
+    if (get(activeTab) !== req) activeTab.set(req);
+    return;
+  }
   const pin = get(pinnedTab);
   const cur = get(activeTab);
   if (pin && has(pin) && cur !== pin && get(rotating)) {

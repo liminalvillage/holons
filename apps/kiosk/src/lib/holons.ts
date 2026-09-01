@@ -106,7 +106,8 @@ function holonIdFromLabel(label: string): string | null {
  * The holon selected by the URL path, or null when the path doesn't name one.
  * `site.com/-1001234567890` shows that holon directly; `site.com/liminal`
  * resolves a registered label from SUBDOMAIN_HOLONS. Only the first segment is
- * considered (matching the `[[holon]]` route), and `/api/...` is never a holon.
+ * considered (the first half of the `[[holon]]/[[tab]]` route — the tab half
+ * is tabroute.ts), and `/api/...` is never a holon.
  */
 export function holonForPath(pathname: string): string | null {
   const seg = decodeURIComponent(
