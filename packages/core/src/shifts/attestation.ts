@@ -174,6 +174,42 @@ export function attestationNameMap(
   return new Map([...best].map(([pk, v]) => [pk, v.name]));
 }
 
+/**
+ * pubkey → person identifier (`telegram:<id>`) — the collapse map for
+ * person-level RSVP resolution: Elinor's canonical rule is that a person's
+ * status on a shift is decided by the newest RSVP across ALL of their linked
+ * keys, so every consumer that resolves RSVPs needs this map.
+ *
+ * Guardrails (mirroring Elinor's write-side enforcement, applied here on the
+ * read side since arbitrary providers publish 31926s):
+ *  - the coordinator's own key is never claimable as a person key;
+ *  - a key already linked to one person is never remapped to another — the
+ *    coordinator's directory outranks other providers, then the EARLIEST
+ *    link wins (ties to the smallest event id);
+ *  - blacklisted providers are ignored entirely.
+ */
+export function attestationIdentityMap(
+  atts: Iterable<IdentityAttestation>,
+  opts: AttestationNameMapOptions = {},
+): Map<string, string> {
+  const coordinator = opts.coordinatorPubkey?.toLowerCase();
+  const blocked = new Set([...(opts.blockedProviders ?? [])].map((p) => p.toLowerCase()));
+  const ranked = [...resolveAttestations(atts).values()]
+    .filter((a) => !blocked.has(a.provider.toLowerCase()))
+    .sort((a, b) => {
+      const rank = (x: IdentityAttestation) => (coordinator && x.provider.toLowerCase() === coordinator ? 1 : 0);
+      return rank(b) - rank(a) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+    });
+  const identity = new Map<string, string>();
+  for (const a of ranked) {
+    for (const pk of a.pubkeys) {
+      if (pk === coordinator) continue;
+      if (!identity.has(pk)) identity.set(pk, a.identifier);
+    }
+  }
+  return identity;
+}
+
 // ---------------------------------------------------------------------------
 // Filters (NIP-01 REQ shapes)
 // ---------------------------------------------------------------------------

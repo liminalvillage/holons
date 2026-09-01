@@ -208,6 +208,15 @@ export const rawShifts = writable<{
 export const shiftNames = writable<Map<string, string>>(new Map());
 
 /**
+ * pubkey → person identifier from the same kind-31926 attestations — the
+ * identity collapse for RSVP resolution: one person may hold several keys
+ * (Elinor's plus the Holons-derived one), and their status on a shift is
+ * the newest RSVP across ALL of them. Without this map a cancel made under
+ * a sibling key would leave the board showing the person enrolled.
+ */
+export const shiftIdentity = writable<Map<string, string>>(new Map());
+
+/**
  * False until the first schedule fetch for the current holon settles (with
  * data or empty), so the Shifts view can show "reading…" instead of a
  * misleading empty state during the initial relay round-trip.

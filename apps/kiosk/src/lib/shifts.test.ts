@@ -166,7 +166,13 @@ describe("participantNames", () => {
   });
 
   it("caps the list and counts the rest", () => {
-    const { shown, more } = participantNames(a, enrolled, new Map(), 2);
+    const { shown, more } = participantNames(
+      a,
+      enrolled,
+      new Map(),
+      undefined,
+      2,
+    );
     expect(shown).toHaveLength(2);
     expect(more).toBe(1);
   });
@@ -178,6 +184,53 @@ describe("participantNames", () => {
     ];
     expect(participantNames(a, withDecline, new Map()).shown).toHaveLength(3);
     expect(participantNames(a, [], new Map())).toEqual({ shown: [], more: 0 });
+  });
+});
+
+describe("person-identity collapse", () => {
+  // One person, two keys — Elinor's and the Holons-derived one — bridged by
+  // a kind-31926 attestation ($lib/shifts builds this map from the relay).
+  const elinorKey = "e".repeat(64);
+  const holonsKey = "f".repeat(64);
+  const identity = new Map([
+    [elinorKey, "telegram:1"],
+    [holonsKey, "telegram:1"],
+  ]);
+
+  it("a cancel under a sibling key frees the person's spot", () => {
+    const o = occ({ capacity: 2 });
+    const rsvps = [
+      { ...rsvp(o.address, holonsKey, "accepted"), createdAt: 10 },
+      { ...rsvp(o.address, elinorKey, "declined"), createdAt: 11 },
+    ];
+    expect(spotsLeft(o, rsvps)).toBe(1); // per-key view still holds the spot
+    expect(spotsLeft(o, rsvps, identity)).toBe(2);
+    expect(participantNames(o, rsvps, new Map(), identity).shown).toEqual([]);
+  });
+
+  it("counts a two-keyed person once and shows them once", () => {
+    const o = occ({ capacity: 3 });
+    const rsvps = [
+      { ...rsvp(o.address, holonsKey, "accepted"), createdAt: 10 },
+      { ...rsvp(o.address, elinorKey, "accepted"), createdAt: 11 },
+    ];
+    expect(spotsLeft(o, rsvps, identity)).toBe(2);
+    const names = new Map([[elinorKey, "Roberto"]]);
+    expect(participantNames(o, rsvps, names, identity).shown).toEqual([
+      "Roberto",
+    ]);
+  });
+
+  it("the optimistic merge collapses across the person's keys too", () => {
+    const o = occ({});
+    const prev = { ...rsvp(o.address, elinorKey, "accepted"), createdAt: 10 };
+    const merged = mergeRsvps(
+      [prev],
+      { ...rsvp(o.address, holonsKey, "declined"), createdAt: 11 },
+      identity,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].status).toBe("declined");
   });
 });
 

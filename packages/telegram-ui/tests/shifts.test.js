@@ -198,8 +198,10 @@ describe('Shifts', () => {
     expect(text).toContain('Alice');
     expect(text).not.toContain('Not Alice');
     expect(text).not.toContain(`${stranger.slice(0, 8)}…`);
-    // Only the pubkeys the lens could not explain were looked up.
+    // Every signup author is looked up — even lens-named members need their
+    // sibling keys linked for the person-identity collapse.
     expect(client.fetchAttestations.mock.calls[0][0].participants).toEqual([
+      alice,
       stranger,
     ]);
   });
@@ -271,6 +273,60 @@ describe('Shifts', () => {
     await shifts.rsvp(ctx, 'accepted');
     expect(client.publishRsvp).not.toHaveBeenCalled();
     expect(ctx.answerCbQuery.mock.calls[0][0]).toMatch(/full/);
+  });
+
+  it('lets a member drop a shift they took under an attestation-linked sibling key', async () => {
+    // The live cross-app case: signed up via Elinor (Elinor-side key), then
+    // taps ❌ Drop here — the bot signs with the member's DERIVED key, and
+    // the 31926 attestation is what makes them the same person.
+    const client = fakeClient();
+    const elinorKey = 'e'.repeat(64);
+    const derived = deriveTelegramNostrKey(2, SECRET).publicKey;
+    client.rsvps.push(
+      parseShiftRsvp({
+        kind: 31925,
+        pubkey: elinorKey,
+        created_at: 5,
+        id: 'r-elinor',
+        content: '',
+        tags: [
+          ['a', occurrence.address],
+          ['d', 'x'],
+          ['status', 'accepted'],
+          ['t', 'shift'],
+        ],
+      })
+    );
+    client.attestations.push({
+      provider: COORD,
+      identifier: 'telegram:2',
+      platform: 'telegram',
+      platformId: '2',
+      pubkeys: [elinorKey, derived],
+      name: 'Bob',
+      createdAt: 10,
+      id: 'a1',
+    });
+    const shifts = new Shifts(null, db, {
+      client,
+      derivationSecret: SECRET,
+      coordinatorPubkey: COORD,
+    });
+
+    // Take is refused — the person is already on via the sibling key.
+    const takeCtx = ctxFor(2, `shift_take_${occurrence.dTag}`);
+    await shifts.rsvp(takeCtx, 'accepted');
+    expect(client.publishRsvp).not.toHaveBeenCalled();
+    expect(takeCtx.answerCbQuery.mock.calls[0][0]).toMatch(/already on/);
+
+    // Drop goes through, out-timestamping the sibling key's signup.
+    const dropCtx = ctxFor(2, `shift_drop_${occurrence.dTag}`);
+    await shifts.rsvp(dropCtx, 'declined');
+    expect(client.publishRsvp).toHaveBeenCalledTimes(1);
+    const call = client.publishRsvp.mock.calls[0][0];
+    expect(call.status).toBe('declined');
+    expect(call.previous.pubkey).toBe(elinorKey);
+    expect(dropCtx.answerCbQuery.mock.calls[0][0]).toMatch(/Dropped/);
   });
 
   it('ignores callbacks for another group and refuses without a derivation secret', async () => {

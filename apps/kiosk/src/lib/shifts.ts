@@ -11,11 +11,13 @@
 // so the feed simply follows the displayed holon.
 
 import {
+  attestationIdentityMap,
   attestationNameMap,
   createShiftRelayClient,
   enrolledPubkeys,
   resolveRsvps,
   sortOccurrences,
+  type ShiftIdentityMap,
   type ShiftOccurrence,
   type ShiftRelayClient,
   type ShiftRsvp,
@@ -29,6 +31,7 @@ import { getSessionSecret } from "./sessionKey";
 import {
   holonId,
   rawShifts,
+  shiftIdentity,
   shiftNames,
   shiftsLoaded,
   shiftsPref,
@@ -95,19 +98,22 @@ export function startShifts(): () => void {
       if (my !== seq || get(holonId) !== id) return;
       rawShifts.set(schedule);
       shiftsLoaded.set(true);
-      // Participant names, from kind-31926 identity attestations (Elinor's
-      // coordinator directory + any provider). Best-effort: a failed lookup
-      // keeps the previous map and the view falls back to hex prefixes.
+      // Participant names AND the person-identity collapse, both from the
+      // kind-31926 attestations (Elinor's coordinator directory + any
+      // provider): names for the wall, identity so one person's keys resolve
+      // as one signup — a cancel under the Elinor key must clear an accept
+      // under the Holons key. Best-effort: a failed lookup keeps the
+      // previous maps and the view falls back to per-key resolution.
       const participants = [...new Set(schedule.rsvps.map((r) => r.pubkey))];
       if (participants.length) {
         try {
           const atts = await c.fetchAttestations({ participants });
           if (my !== seq) return;
-          shiftNames.set(
-            attestationNameMap(atts, {
-              coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
-            }),
-          );
+          const opts = {
+            coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
+          };
+          shiftNames.set(attestationNameMap(atts, opts));
+          shiftIdentity.set(attestationIdentityMap(atts, opts));
         } catch (err) {
           console.warn("[kiosk] shift attestation fetch failed", err);
         }
@@ -161,6 +167,7 @@ export function startShifts(): () => void {
     seq++; // invalidate any in-flight load for the previous holon
     rawShifts.set({ occurrences: [], rsvps: [] });
     shiftNames.set(new Map());
+    shiftIdentity.set(new Map());
     shiftsLoaded.set(false);
     if (id && get(shiftsPref) !== "off") void load(id);
   });
@@ -171,6 +178,7 @@ export function startShifts(): () => void {
       seq++;
       rawShifts.set({ occurrences: [], rsvps: [] });
       shiftNames.set(new Map());
+      shiftIdentity.set(new Map());
       shiftsLoaded.set(false);
     } else if (!get(shiftsLoaded)) {
       refetch();
@@ -238,14 +246,18 @@ export async function setShiftRsvp(
 
   rawShifts.update((s) => ({
     ...s,
-    rsvps: mergeRsvps(s.rsvps, {
-      pubkey,
-      address: occurrence.address,
-      dTag: occurrence.dTag.replace(/^shift-/, "rsvp-"),
-      status,
-      createdAt,
-      id,
-    }),
+    rsvps: mergeRsvps(
+      s.rsvps,
+      {
+        pubkey,
+        address: occurrence.address,
+        dTag: occurrence.dTag.replace(/^shift-/, "rsvp-"),
+        status,
+        createdAt,
+        id,
+      },
+      get(shiftIdentity),
+    ),
   }));
   refetchNow?.();
 }
@@ -288,23 +300,28 @@ export function groupShiftsByDay(occurrences: ShiftOccurrence[]): ShiftDay[] {
 }
 
 /**
- * Fold one fresh RSVP into a resolved set, newest-wins per (author,
- * address) — the same resolution the protocol applies, so the optimistic
- * update can never disagree with the next relay fetch.
+ * Fold one fresh RSVP into a resolved set, newest-wins per person (per
+ * author for unattested keys) — the same resolution the protocol applies,
+ * so the optimistic update can never disagree with the next relay fetch.
  */
-export function mergeRsvps(rsvps: ShiftRsvp[], next: ShiftRsvp): ShiftRsvp[] {
-  return [...resolveRsvps([...rsvps, next]).values()];
+export function mergeRsvps(
+  rsvps: ShiftRsvp[],
+  next: ShiftRsvp,
+  identity?: ShiftIdentityMap,
+): ShiftRsvp[] {
+  return [...resolveRsvps([...rsvps, next], identity).values()];
 }
 
 /** Free spots on a shift, or null when it has no declared capacity. */
 export function spotsLeft(
   occurrence: ShiftOccurrence,
   rsvps: Iterable<ShiftRsvp>,
+  identity?: ShiftIdentityMap,
 ): number | null {
   if (occurrence.capacity === undefined) return null;
   return Math.max(
     0,
-    occurrence.capacity - enrolledPubkeys(occurrence, rsvps).length,
+    occurrence.capacity - enrolledPubkeys(occurrence, rsvps, identity).length,
   );
 }
 
@@ -317,9 +334,10 @@ export function participantNames(
   occurrence: Pick<ShiftOccurrence, "address">,
   rsvps: Iterable<ShiftRsvp>,
   names: Map<string, string>,
+  identity?: ShiftIdentityMap,
   max = 4,
 ): { shown: string[]; more: number } {
-  const enrolled = enrolledPubkeys(occurrence, rsvps);
+  const enrolled = enrolledPubkeys(occurrence, rsvps, identity);
   const shown = enrolled
     .slice(0, max)
     .map((pk) => names.get(pk) ?? `${pk.slice(0, 8)}…`);

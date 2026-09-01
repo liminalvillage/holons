@@ -20,10 +20,12 @@ import {
   sortOccurrences,
   type BuildRsvpOptions,
   type NostrFilterLike,
+  type ShiftIdentityMap,
 } from './protocol.js';
 import type { ShiftOccurrence, ShiftRsvp } from './types.js';
 import {
   attestationFilter,
+  attestationIdentityMap,
   parseIdentityAttestation,
   resolveAttestations,
   type AttestationFilterOptions,
@@ -69,11 +71,19 @@ export interface ShiftRelayClient {
   fetchAttestations(opts: AttestationFilterOptions): Promise<IdentityAttestation[]>;
   /**
    * Sign and publish a signup/cancellation as `signer` (the participant).
-   * Looks up the participant's previous RSVP so `created_at` strictly
-   * increases. Resolves with the signed event and per-relay outcomes.
+   * Looks up the PERSON's previous RSVP — the signer's own plus any
+   * attestation-linked sibling key's (kind 31926) — so `created_at` strictly
+   * increases past all of them and the event wins the person-level
+   * resolution. Pass `identity` to skip the attestation lookup, or
+   * `previous` to skip both. Resolves with the signed event and per-relay
+   * outcomes.
    */
   publishRsvp(
-    opts: Omit<BuildRsvpOptions, 'previous'> & { signer: NostrSigner; previous?: ShiftRsvp },
+    opts: Omit<BuildRsvpOptions, 'previous'> & {
+      signer: NostrSigner;
+      previous?: ShiftRsvp;
+      identity?: ShiftIdentityMap;
+    },
   ): Promise<{ event: Event; results: PromiseSettledResult<string>[] }>;
   close(): void;
 }
@@ -119,6 +129,25 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
     return [...resolveRsvps(parsed).values()];
   }
 
+  async function fetchAttestations(opts: AttestationFilterOptions) {
+    const events = await query(attestationFilter(opts));
+    const wantAuthors = opts.authors?.map((a) => a.toLowerCase());
+    const wantIds = opts.identifiers;
+    const wantPks = opts.participants?.map((p) => p.toLowerCase());
+    const parsed = events
+      .map(parseIdentityAttestation)
+      // Re-apply the filter client-side — a relay that ignores `#d`/`#p`
+      // must degrade to extra bytes, never to wrong entries.
+      .filter((a): a is IdentityAttestation => {
+        if (!a) return false;
+        if (wantAuthors && !wantAuthors.includes(a.provider.toLowerCase())) return false;
+        if (wantIds && !wantIds.includes(a.identifier)) return false;
+        if (wantPks && !a.pubkeys.some((pk) => wantPks.includes(pk))) return false;
+        return true;
+      });
+    return [...resolveAttestations(parsed).values()];
+  }
+
   return {
     relays,
     fetchOccurrences,
@@ -133,29 +162,24 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
       const parsed = events.map(parseShiftRsvp).filter((r): r is ShiftRsvp => r !== null);
       return [...resolveRsvps(parsed).values()];
     },
-    async fetchAttestations(opts) {
-      const events = await query(attestationFilter(opts));
-      const wantAuthors = opts.authors?.map((a) => a.toLowerCase());
-      const wantIds = opts.identifiers;
-      const wantPks = opts.participants?.map((p) => p.toLowerCase());
-      const parsed = events
-        .map(parseIdentityAttestation)
-        // Re-apply the filter client-side — a relay that ignores `#d`/`#p`
-        // must degrade to extra bytes, never to wrong entries.
-        .filter((a): a is IdentityAttestation => {
-          if (!a) return false;
-          if (wantAuthors && !wantAuthors.includes(a.provider.toLowerCase())) return false;
-          if (wantIds && !wantIds.includes(a.identifier)) return false;
-          if (wantPks && !a.pubkeys.some((pk) => wantPks.includes(pk))) return false;
-          return true;
-        });
-      return [...resolveAttestations(parsed).values()];
-    },
-    async publishRsvp({ signer, previous, ...build }) {
+    fetchAttestations,
+    async publishRsvp({ signer, previous, identity, ...build }) {
       let prev = previous;
       if (!prev) {
-        const mine = await fetchRsvps([build.occurrence as ShiftOccurrence]);
-        prev = latestRsvpFor(build.occurrence, signer.pubkey, mine);
+        const others = await fetchRsvps([build.occurrence as ShiftOccurrence]);
+        let ident = identity;
+        if (!ident) {
+          // Best-effort: link the signer to their attested sibling keys so
+          // the person-level previous is found — a cancel must out-timestamp
+          // a signup made under the person's OTHER key (e.g. via Elinor).
+          try {
+            const atts = await fetchAttestations({ participants: [signer.pubkey.toLowerCase()] });
+            ident = attestationIdentityMap(atts, { coordinatorPubkey: options.coordinatorPubkey });
+          } catch {
+            ident = undefined;
+          }
+        }
+        prev = latestRsvpFor(build.occurrence, signer.pubkey, others, ident);
       }
       const event = signer.sign(buildRsvpTemplate({ ...build, previous: prev }));
       const p = await pool();

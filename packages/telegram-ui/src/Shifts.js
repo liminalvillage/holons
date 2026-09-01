@@ -32,6 +32,7 @@
 import { Markup } from 'telegraf';
 import { createIdentityContext } from '@holons/core/holosphere';
 import {
+  attestationIdentityMap,
   attestationNameMap,
   createShiftRelayClient,
   enrolledPubkeys,
@@ -111,12 +112,21 @@ export default class Shifts {
   // ---------------------------------------------------------------------
 
   /**
-   * pubkey → display name: the holon's `users` lens first, then kind-31926
-   * attestations for whoever the lens cannot explain (Elinor-side members,
-   * external clients). A failed attestation fetch degrades to hex prefixes.
+   * The shift directory for a schedule:
+   *  - `names`: pubkey → display name — the holon's `users` lens first
+   *    (freshest for our members), then kind-31926 attestations; a failed
+   *    fetch degrades to hex prefixes.
+   *  - `identity`: pubkey → person identifier from the same attestations —
+   *    the collapse map for person-level RSVP resolution (one person may
+   *    hold an Elinor key AND the Holons-derived key; their status is the
+   *    newest RSVP across all of them, so a cancel in Elinor clears a
+   *    signup made here and vice versa).
+   *
+   * @returns {Promise<{names: Map<string,string>, identity: Map<string,string>}>}
    */
-  async nameMap(holonId, schedule) {
-    const map = new Map();
+  async directory(holonId, schedule) {
+    const names = new Map();
+    let identity = new Map();
     let users = [];
     try {
       users = (await this.db.getAll(String(holonId), 'users')) || [];
@@ -126,26 +136,29 @@ export default class Shifts {
     for (const user of users) {
       if (!user?.id) continue;
       const pubkey = this.identity.memberPubkey(user.id);
-      if (pubkey) map.set(pubkey, getDisplayName(user));
+      if (pubkey) names.set(pubkey, getDisplayName(user));
     }
-    const unknown = [
-      ...new Set((schedule?.rsvps || []).map(r => r.pubkey)),
-    ].filter(pk => !map.has(pk));
-    if (unknown.length && typeof this.client.fetchAttestations === 'function') {
+    // Attestations for EVERY signup author — even a lens-named member needs
+    // their sibling keys linked for the identity collapse to work.
+    const authors = [...new Set((schedule?.rsvps || []).map(r => r.pubkey))];
+    if (authors.length && typeof this.client.fetchAttestations === 'function') {
       try {
         const atts = await this.client.fetchAttestations({
-          participants: unknown,
+          participants: authors,
         });
-        const names = attestationNameMap(atts, {
+        const opts = {
           coordinatorPubkey: this.coordinatorPubkey,
           blockedProviders: this.blockedProviders,
-        });
-        for (const [pk, name] of names) if (!map.has(pk)) map.set(pk, name);
+        };
+        for (const [pk, name] of attestationNameMap(atts, opts)) {
+          if (!names.has(pk)) names.set(pk, name);
+        }
+        identity = attestationIdentityMap(atts, opts);
       } catch (err) {
         console.warn('[Shifts] attestation lookup failed', err?.message || err);
       }
     }
-    return map;
+    return { names, identity };
   }
 
   // ---------------------------------------------------------------------
@@ -180,8 +193,13 @@ export default class Shifts {
     }
   }
 
-  /** Text + keyboard for a schedule. */
-  render({ occurrences, rsvps }, names, title = 'Shifts') {
+  /** Text + keyboard for a schedule; `identity` collapses a person's keys. */
+  render(
+    { occurrences, rsvps },
+    names,
+    title = 'Shifts',
+    identity = undefined
+  ) {
     if (!occurrences.length) {
       return {
         text: `📅 <b>${escapeHtml(title)}</b>\n\nNo shifts published for this period.`,
@@ -196,7 +214,7 @@ export default class Shifts {
         currentDate = occ.date;
         lines.push('', `<b>${escapeHtml(occ.date)}</b>`);
       }
-      const enrolled = enrolledPubkeys(occ, rsvps);
+      const enrolled = enrolledPubkeys(occ, rsvps, identity);
       const who = enrolled.map(pk =>
         escapeHtml(names.get(pk) || `${pk.slice(0, 8)}…`)
       );
@@ -205,7 +223,7 @@ export default class Shifts {
           ? `${enrolled.length}/${occ.capacity}`
           : `${enrolled.length}`;
       const time = `${formatShiftTime(occ.start, occ.startTzid)}–${formatShiftTime(occ.end, occ.startTzid)}`;
-      const full = !hasCapacity(occ, rsvps);
+      const full = !hasCapacity(occ, rsvps, identity);
       lines.push(
         `${full ? '🔒' : '☑️'} ${time} <b>${escapeHtml(occ.title)}</b> (${cap})${who.length ? ': ' + who.join(', ') : ''}`
       );
@@ -237,13 +255,13 @@ export default class Shifts {
     }
     try {
       const schedule = await this.client.fetchSchedule(holonId, range);
-      const names = await this.nameMap(holonId, schedule);
+      const { names, identity } = await this.directory(holonId, schedule);
       const title = range.dateOnly
         ? `Shifts on ${range.dateOnly}`
         : arg
           ? `Shifts ${arg}`
           : 'Shifts this week';
-      const { text, keyboard } = this.render(schedule, names, title);
+      const { text, keyboard } = this.render(schedule, names, title, identity);
       await ctx.reply(text, {
         ...getParseModeHTML(),
         ...Markup.inlineKeyboard(keyboard),
@@ -269,14 +287,15 @@ export default class Shifts {
         since: now - 3600,
         until: now + 14 * DAY_S,
       });
+      const { names, identity } = await this.directory(holonId, schedule);
       const mineOcc = schedule.occurrences.filter(o =>
-        isEnrolled(o, pubkey, schedule.rsvps)
+        isEnrolled(o, pubkey, schedule.rsvps, identity)
       );
-      const names = await this.nameMap(holonId, schedule);
       const { text, keyboard } = this.render(
         { occurrences: mineOcc, rsvps: schedule.rsvps },
         names,
-        'My shifts'
+        'My shifts',
+        identity
       );
       await ctx.reply(text, {
         ...getParseModeHTML(),
@@ -311,11 +330,15 @@ export default class Shifts {
       const occ = occurrences.find(o => o.dTag === dTag);
       if (!occ) return ctx.answerCbQuery('That shift is no longer published.');
       const rsvps = await this.client.fetchRsvps([occ]);
-      const previous = latestRsvpFor(occ, signer.pubkey, rsvps);
+      // Person-level view: the member may have signed up (or cancelled)
+      // under an attestation-linked sibling key — via Elinor, say — and the
+      // gates below must judge the PERSON, not this bot's derived key.
+      const { identity } = await this.directory(holonId, { rsvps });
+      const previous = latestRsvpFor(occ, signer.pubkey, rsvps, identity);
       if (status === 'accepted') {
         if (previous?.status === 'accepted')
           return ctx.answerCbQuery('You are already on this shift.');
-        if (!hasCapacity(occ, rsvps))
+        if (!hasCapacity(occ, rsvps, identity))
           return ctx.answerCbQuery('This shift is already full.', {
             show_alert: true,
           });
@@ -371,13 +394,13 @@ export default class Shifts {
     else if (/tomorrow$/i.test(title)) range = Shifts.rangeFor('tomorrow');
     try {
       const schedule = await this.client.fetchSchedule(holonId, range);
+      const { names, identity } = await this.directory(holonId, schedule);
       if (/^My shifts/.test(title)) {
         schedule.occurrences = schedule.occurrences.filter(o =>
-          isEnrolled(o, viewerPubkey, schedule.rsvps)
+          isEnrolled(o, viewerPubkey, schedule.rsvps, identity)
         );
       }
-      const names = await this.nameMap(holonId, schedule);
-      const { text, keyboard } = this.render(schedule, names, title);
+      const { text, keyboard } = this.render(schedule, names, title, identity);
       await ctx.editMessageText(text, {
         ...getParseModeHTML(),
         ...Markup.inlineKeyboard(keyboard),

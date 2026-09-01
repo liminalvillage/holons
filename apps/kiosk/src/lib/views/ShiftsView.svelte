@@ -14,6 +14,7 @@
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     rawShifts,
+    shiftIdentity,
     shiftNames,
     shiftsLoaded,
     now,
@@ -46,6 +47,9 @@
   );
   $: days = groupShiftsByDay(shown);
   $: rsvps = $rawShifts.rsvps;
+  // Person-identity collapse (kind 31926): one signup per person, however
+  // many keys they hold — a cancel under one key clears the person's spot.
+  $: identity = $shiftIdentity;
 
   function pad2(n: number): string {
     return String(n).padStart(2, "0");
@@ -152,11 +156,12 @@
             </div>
             <div class="row-notes">
               {#each day.occurrences as occ (occ.address)}
-                {@const taken = enrolledPubkeys(occ, rsvps).length}
-                {@const open = spotsLeft(occ, rsvps)}
+                {@const taken = enrolledPubkeys(occ, rsvps, identity).length}
+                {@const open = spotsLeft(occ, rsvps, identity)}
                 {@const running = isRunningNow(occ, nowSec)}
                 {@const mine =
-                  !!$shiftSigner && isEnrolled(occ, $shiftSigner.pubkey, rsvps)}
+                  !!$shiftSigner &&
+                  isEnrolled(occ, $shiftSigner.pubkey, rsvps, identity)}
                 {@const busy = pending.has(occ.address)}
                 <article
                   class="shift tilt"
@@ -179,7 +184,12 @@
                   {#if occ.location}<span class="where">⌖ {occ.location}</span
                     >{/if}
                   {#if taken > 0}
-                    {@const who = participantNames(occ, rsvps, $shiftNames)}
+                    {@const who = participantNames(
+                      occ,
+                      rsvps,
+                      $shiftNames,
+                      identity,
+                    )}
                     <span class="who"
                       >{who.shown.join(", ")}{#if who.more > 0}
                         {$t("shifts.more", { n: who.more })}{/if}</span

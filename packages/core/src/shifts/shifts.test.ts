@@ -10,6 +10,7 @@ import {
   enrolledPubkeys,
   hasCapacity,
   isEnrolled,
+  latestRsvpFor,
   occurrenceFilter,
   parseShiftAddress,
   parseShiftDTag,
@@ -157,6 +158,62 @@ describe('RSVP resolution', () => {
   });
 });
 
+describe('person-level resolution (identity collapse)', () => {
+  const occ = parseShiftOccurrence(occurrenceEvent)!;
+  // One person, two keys — the Elinor-side key and the Holons-derived one,
+  // bridged by a kind-31926 attestation (docs/shifts-elinor.md).
+  const elinorKey = 'e'.repeat(64);
+  const holonsKey = 'f'.repeat(64);
+  const stranger = '9'.repeat(64);
+  const identity = new Map([
+    [elinorKey, 'telegram:123'],
+    [holonsKey, 'telegram:123'],
+  ]);
+  const parse = (e: NostrEventLike) => parseShiftRsvp(e)!;
+
+  it('a cancel under one key supersedes a signup under a sibling key', () => {
+    // The live bug: accepted on the kiosk (Holons key), then cancelled in
+    // Elinor (Elinor key). Per-key resolution leaves the person enrolled.
+    const rsvps = [
+      parse(rsvpEvent(holonsKey, 'accepted', 100, '01')),
+      parse(rsvpEvent(elinorKey, 'declined', 101, '02')),
+    ];
+    expect(isEnrolled(occ, holonsKey, rsvps)).toBe(true); // legacy per-key view
+    expect(isEnrolled(occ, holonsKey, rsvps, identity)).toBe(false);
+    expect(isEnrolled(occ, elinorKey, rsvps, identity)).toBe(false);
+    expect(enrolledPubkeys(occ, rsvps, identity)).toEqual([]);
+    // Asked under either key, the person's latest RSVP is the sibling cancel.
+    expect(latestRsvpFor(occ, holonsKey, rsvps, identity)?.id).toBe('02');
+  });
+
+  it('resolves to one RSVP per person, newest across all keys, ties to smallest id', () => {
+    const rsvps = [
+      parse(rsvpEvent(holonsKey, 'accepted', 100, 'ff')),
+      parse(rsvpEvent(elinorKey, 'declined', 100, '0a')),
+    ];
+    const winners = resolveRsvps(rsvps, identity);
+    expect(winners.size).toBe(1);
+    expect([...winners.values()][0].status).toBe('declined');
+  });
+
+  it('counts a two-keyed person once against capacity', () => {
+    const rsvps = [
+      parse(rsvpEvent(holonsKey, 'accepted', 100, '01')),
+      parse(rsvpEvent(elinorKey, 'accepted', 101, '02')),
+    ];
+    expect(enrolledPubkeys(occ, rsvps, identity)).toHaveLength(1);
+    expect(hasCapacity(occ, rsvps, identity)).toBe(true); // capacity 2, one person on
+  });
+
+  it('leaves unattested keys resolving per-key as before', () => {
+    const rsvps = [
+      parse(rsvpEvent(stranger, 'accepted', 100, '01')),
+      parse(rsvpEvent(holonsKey, 'accepted', 101, '02')),
+    ];
+    expect(enrolledPubkeys(occ, rsvps, identity).sort()).toEqual([stranger, holonsKey].sort());
+  });
+});
+
 describe('buildRsvpTemplate', () => {
   const occ = parseShiftOccurrence(occurrenceEvent)!;
 
@@ -258,6 +315,34 @@ describe('createShiftRelayClient', () => {
 
     const after = await client.fetchRsvps(occurrences);
     expect(isEnrolled(occurrences[0], me, after)).toBe(false);
+  });
+
+  it('bumps created_at past a sibling-key RSVP found via attestations', async () => {
+    const sk = generateSecretKey();
+    const me = getPublicKey(sk);
+    const sibling = '5'.repeat(64);
+    // The sibling key's signup carries a created_at ahead of the wall clock;
+    // without the identity collapse the cancel below would lose to it.
+    const ahead = Math.floor(Date.now() / 1000) + 900;
+    const store: NostrEventLike[] = [
+      occurrenceEvent,
+      rsvpEvent(sibling, 'accepted', ahead, '01'),
+      {
+        kind: 31926,
+        pubkey: COORD,
+        created_at: 1,
+        id: 'att',
+        content: '{"name":"Same person"}',
+        tags: [['d', 'telegram:123'], ['p', me], ['p', sibling]],
+      },
+    ];
+    const client = createShiftRelayClient({ relays: ['wss://example'], coordinatorPubkey: COORD, pool: fakePool(store) });
+    const [occ] = await client.fetchOccurrences(GROUP);
+    const { event } = await client.publishRsvp({ occurrence: occ, status: 'declined', signer: signerFromSecretKey(bytesToHex(sk)) });
+    expect(event.created_at).toBe(ahead + 1);
+    const after = await client.fetchRsvps([occ]);
+    const identity = new Map([[me, 'telegram:123'], [sibling, 'telegram:123']]);
+    expect(isEnrolled(occ, sibling, after, identity)).toBe(false);
   });
 
   it('filters occurrences by start range and untrusted authors', async () => {

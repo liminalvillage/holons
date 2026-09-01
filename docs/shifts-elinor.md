@@ -17,11 +17,19 @@ Telegram chat id — i.e. the holon id.
 | 31926 | identity   | `telegram:<telegram_user_id>`    | one `p` per key currently linked to that user; `content = {"name":"…"}` |
 
 Resolution: for each `(author, a)` the RSVP with the highest `created_at`
-wins; ties go to the lexically smallest `id`. A person is enrolled iff their
-latest RSVP is `accepted`. Cancelling republishes with `declined` (history is
-kept). Capacity is cooperative — the relay does not enforce it. The relay
-rejects an RSVP whose `created_at` does not strictly exceed the author's
-previous one for the same `d`.
+wins; ties go to the lexically smallest `id`. One person may act through
+several keys (Elinor's coordinator-derived key plus any linked app keys, per
+the 31926 attestations), and **the canonical status of a person is the
+newest RSVP across all of their keys** — resolving per key instead leaves a
+person enrolled after they cancel under a sibling key. In core, pass the
+`ShiftIdentityMap` from `attestationIdentityMap` to `resolveRsvps` /
+`enrolledPubkeys` / `isEnrolled` / `latestRsvpFor` / `hasCapacity`.
+Cancelling republishes with `declined` (history is kept). Capacity is
+cooperative — the relay does not enforce it. The relay rejects an RSVP whose
+`created_at` does not strictly exceed the author's previous one for the same
+`d` — and to win the person-level comparison it must exceed the person's
+newest RSVP across all keys (`publishRsvp` looks that up via attestations
+when no `previous` is given).
 
 Only the coordinator publishes 31923; participants (or the bot on their
 behalf, under *their* key) publish 31925.
@@ -104,7 +112,11 @@ How Holons plays both sides:
   (`fetchAttestations` + `attestationNameMap`). Precedence: local lens name →
   coordinator directory → other providers (newest wins) → `<8 hex>…`.
   `SHIFTS_IDENTITY_BLACKLIST` (comma-separated provider pubkeys) mutes
-  misbehaving providers.
+  misbehaving providers. The same attestations feed
+  `attestationIdentityMap` — pubkey → person, guarded read-side (the
+  coordinator key is never claimable, a key linked to one person is never
+  remapped: coordinator outranks, then earliest link wins) — which both
+  boards pass into RSVP resolution so one person's keys count as one signup.
 
 **Relay overlap matters**: attestations and kind-0 claims ride the projection
 publishers, i.e. `HOLOSPHERE_RELAYS` — that list must include the shifts

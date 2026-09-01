@@ -6,6 +6,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nos
 import {
   IDENTITY_ATTESTATION_KIND,
   attestationFilter,
+  attestationIdentityMap,
   attestationNameMap,
   buildAttestationTemplate,
   coordinatorDirectoryFilter,
@@ -157,6 +158,70 @@ describe('resolveAttestations', () => {
       { blockedProviders: [PROVIDER] },
     );
     expect(names.size).toBe(0);
+  });
+});
+
+describe('attestationIdentityMap', () => {
+  const att = (over: Partial<IdentityAttestation>): IdentityAttestation => ({
+    provider: PROVIDER,
+    identifier: 'telegram:123',
+    platform: 'telegram',
+    platformId: '123',
+    pubkeys: [PK_A],
+    createdAt: 100,
+    id: 'x',
+    ...over,
+  });
+
+  it('maps every attested key to its person identifier, across providers', () => {
+    const identity = attestationIdentityMap([
+      // Elinor's coordinator links both of the user's keys …
+      att({ provider: COORD, pubkeys: [PK_A, PK_B] }),
+      // … and Holons attests only the derived one. Same person either way.
+      att({ provider: PROVIDER, pubkeys: [PK_B] }),
+    ]);
+    expect(identity.get(PK_A)).toBe('telegram:123');
+    expect(identity.get(PK_B)).toBe('telegram:123');
+    expect(identity.size).toBe(2);
+  });
+
+  it('honors replaceable semantics — an unlinked key drops out', () => {
+    const identity = attestationIdentityMap([
+      att({ createdAt: 10, id: 'old', pubkeys: [PK_A, PK_B] }),
+      att({ createdAt: 20, id: 'new', pubkeys: [PK_A] }),
+    ]);
+    expect(identity.get(PK_A)).toBe('telegram:123');
+    expect(identity.has(PK_B)).toBe(false);
+  });
+
+  it('never lets an attestation claim the coordinator key', () => {
+    const identity = attestationIdentityMap([att({ pubkeys: [COORD, PK_A] })], { coordinatorPubkey: COORD });
+    expect(identity.has(COORD)).toBe(false);
+    expect(identity.get(PK_A)).toBe('telegram:123');
+  });
+
+  it('refuses to remap a key already linked to another person — earliest link wins', () => {
+    const identity = attestationIdentityMap([
+      att({ identifier: 'telegram:123', createdAt: 10, id: 'first' }),
+      att({ provider: 'e'.repeat(64), identifier: 'telegram:999', platformId: '999', createdAt: 20, id: 'hijack' }),
+    ]);
+    expect(identity.get(PK_A)).toBe('telegram:123');
+  });
+
+  it('ranks the coordinator directory over other providers on conflicts', () => {
+    const identity = attestationIdentityMap(
+      [
+        att({ provider: PROVIDER, identifier: 'telegram:999', platformId: '999', createdAt: 1, id: 'early' }),
+        att({ provider: COORD, identifier: 'telegram:123', createdAt: 50, id: 'coord' }),
+      ],
+      { coordinatorPubkey: COORD },
+    );
+    expect(identity.get(PK_A)).toBe('telegram:123');
+  });
+
+  it('ignores blacklisted providers entirely', () => {
+    const identity = attestationIdentityMap([att({})], { blockedProviders: [PROVIDER] });
+    expect(identity.size).toBe(0);
   });
 });
 
