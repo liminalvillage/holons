@@ -53,8 +53,11 @@ behalf, under *their* key) publish 31925.
   attestation companion the projection host signs as the identity provider.
 - **`apps/kiosk/src/lib/views/ShiftsView.svelte`** — a Shifts tab on the
   kiosk: the next two weeks as day rows of shift notes with capacity meters
-  and participant names, fed by `apps/kiosk/src/lib/shifts.ts` (periodic
-  relay fetch). The tab
+  and participant names, fed by `apps/kiosk/src/lib/shifts.ts` (a live relay
+  subscription via `subscribeSchedule` — occurrences, RSVPs AND the 31926
+  attestations for names/identity all ride the one subscription, so an RSVP
+  made in Elinor lands as the relay pushes it, with an hourly re-subscribe
+  as healing). The tab
   appears by itself when the displayed holon has upcoming occurrences
   (tri-state caretaker pref, like Library/Roles). Relay + coordinator come
   from `VITE_KIOSK_SHIFT_RELAYS` / `VITE_KIOSK_SHIFT_COORDINATOR`, defaulting
@@ -109,7 +112,9 @@ How Holons plays both sides:
   it and asks that Telegram member to confirm the link with one tap.
 - **Consuming** — the bot's `/shifts` board and the kiosk resolve signup
   pubkeys the local `users` lens cannot explain through 31926 attestations
-  (`fetchAttestations` + `attestationNameMap`). Precedence: local lens name →
+  (the bot via `fetchAttestations`; the kiosk gets them pushed on the same
+  `subscribeSchedule` feed as the schedule, then `attestationNameMap`).
+  Precedence: local lens name →
   coordinator directory → other providers (newest wins) → `<8 hex>…`.
   `SHIFTS_IDENTITY_BLACKLIST` (comma-separated provider pubkeys) mutes
   misbehaving providers. The same attestations feed

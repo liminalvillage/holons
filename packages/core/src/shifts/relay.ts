@@ -17,6 +17,7 @@ import {
   participantRsvpFilter,
   resolveRsvps,
   rsvpFilter,
+  rsvpSupersedes,
   sortOccurrences,
   type BuildRsvpOptions,
   type NostrFilterLike,
@@ -32,10 +33,25 @@ import {
   type IdentityAttestation,
 } from './attestation.js';
 
+/** Parameters our live subscriptions hand to the pool (nostr-tools shape). */
+export interface ShiftPoolSubscribeParams {
+  onevent?: (event: Event) => void;
+  /** Fired once when every relay has sent EOSE (or `maxWait` elapsed). */
+  oneose?: () => void;
+  onclose?: (reasons: string[]) => void;
+  maxWait?: number;
+}
+
+export interface ShiftPoolSubscription {
+  close(reason?: string): void;
+}
+
 /** The subset of nostr-tools' `SimplePool` we rely on (injectable for tests). */
 export interface ShiftPoolLike {
   querySync(relays: string[], filter: NostrFilterLike, params?: { maxWait?: number }): Promise<Event[]>;
   publish(relays: string[], event: Event): Promise<string>[];
+  /** Live REQ subscription — required only by `subscribeSchedule`. */
+  subscribe?(relays: string[], filter: NostrFilterLike, params: ShiftPoolSubscribeParams): ShiftPoolSubscription;
   close?(relays: string[]): void;
 }
 
@@ -54,6 +70,45 @@ export interface ShiftSchedule {
   rsvps: ShiftRsvp[];
 }
 
+export interface ShiftScheduleRange {
+  since?: number;
+  until?: number;
+}
+
+/**
+ * One live emission: the schedule plus the kind-31926 attestations for its
+ * participants, so a single subscription feeds occurrences, RSVPs, display
+ * names AND the person-identity collapse (via `attestationNameMap` /
+ * `attestationIdentityMap`).
+ */
+export interface ShiftScheduleUpdate extends ShiftSchedule {
+  /** Resolved attestations (winner per provider × identifier). */
+  attestations: IdentityAttestation[];
+}
+
+export interface SubscribeScheduleOptions {
+  /**
+   * Occurrence window by shift start/end (same semantics as
+   * `fetchOccurrences`). Pass a function for a sliding window — it is
+   * re-evaluated at every emission, so old shifts fall out and stored
+   * future ones slide in without re-subscribing.
+   */
+  range?: ShiftScheduleRange | (() => ShiftScheduleRange);
+  /**
+   * The resolved schedule + attestations: once after the stored backlog
+   * has drained (EOSE on all subscriptions), then again on every relevant
+   * event the relays push.
+   */
+  onSchedule: (schedule: ShiftScheduleUpdate) => void;
+  onError?: (err: unknown) => void;
+  /** Debounce for bursts of pushed events, ms (default 250). */
+  debounceMs?: number;
+}
+
+export interface ShiftScheduleSubscription {
+  close(): void;
+}
+
 export interface ShiftRelayClient {
   readonly relays: string[];
   /** Occurrences for a group in `[since, until]` (unix seconds, by shift start). */
@@ -62,6 +117,15 @@ export interface ShiftRelayClient {
   fetchRsvps(occurrences: ShiftOccurrence[]): Promise<ShiftRsvp[]>;
   /** Occurrences + resolved RSVPs in one call. */
   fetchSchedule(groupId: string, range?: { since?: number; until?: number }): Promise<ShiftSchedule>;
+  /**
+   * Live view of a group's schedule: relay subscriptions for the
+   * occurrences, their RSVPs and the participants' kind-31926
+   * attestations, resolved together and pushed to `onSchedule` as events
+   * arrive — the ONE feed for everything a shift board shows. Needs a
+   * pool with `subscribe` (the default `SimplePool` qualifies, with
+   * auto-reconnect on). `close()` tears every subscription down.
+   */
+  subscribeSchedule(groupId: string, opts: SubscribeScheduleOptions): ShiftScheduleSubscription;
   /** One participant's resolved RSVPs. */
   fetchParticipantRsvps(pubkey: string): Promise<ShiftRsvp[]>;
   /**
@@ -90,7 +154,9 @@ export interface ShiftRelayClient {
 
 async function defaultPool(): Promise<ShiftPoolLike> {
   const { SimplePool } = await import('nostr-tools/pool');
-  return new SimplePool() as unknown as ShiftPoolLike;
+  // Reconnect keeps subscribeSchedule live across relay drops: nostr-tools
+  // reopens the socket and re-fires the open subscriptions.
+  return new SimplePool({ enableReconnect: true }) as unknown as ShiftPoolLike;
 }
 
 export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftRelayClient {
@@ -148,6 +214,209 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
     return [...resolveAttestations(parsed).values()];
   }
 
+  function subscribeSchedule(groupId: string, opts: SubscribeScheduleOptions): ShiftScheduleSubscription {
+    const rangeOf =
+      typeof opts.range === 'function' ? opts.range : () => (opts.range as ShiftScheduleRange | undefined) ?? {};
+    const debounceMs = opts.debounceMs ?? 250;
+
+    const occs = new Map<string, ShiftOccurrence>(); // address → newest occurrence
+    const winners = new Map<string, ShiftRsvp>(); // `${pubkey}\0${address}` → winning RSVP
+    const atts = new Map<string, IdentityAttestation>(); // `${provider}\0${identifier}` → winner
+    let occSub: ShiftPoolSubscription | null = null;
+    let rsvpSub: ShiftPoolSubscription | null = null;
+    let attSub: ShiftPoolSubscription | null = null;
+    let rsvpSeq = 0; // guards against an older in-flight RSVP sub landing late
+    let attSeq = 0; // ditto for the attestation subscription
+    let rsvpKey = ''; // address-set signature the current RSVP subscription covers
+    let attKey = ''; // participant-set signature the attestation subscription covers
+    let attParticipants = new Set<string>(); // and as a set, for the client-side re-filter
+    let synced = false; // occurrence backlog drained (EOSE seen)
+    let ready = false; // first full emission done — live events emit from here on
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
+    const inRange = (o: ShiftOccurrence, r: ShiftScheduleRange) =>
+      (r.since === undefined || o.end >= r.since) && (r.until === undefined || o.start <= r.until);
+
+    function snapshot(): ShiftScheduleUpdate {
+      const r = rangeOf();
+      const occurrences = sortOccurrences([...occs.values()].filter((o) => inRange(o, r)));
+      const visible = new Set(occurrences.map((o) => o.address));
+      return {
+        occurrences,
+        rsvps: [...winners.values()].filter((rv) => visible.has(rv.address)),
+        attestations: [...atts.values()],
+      };
+    }
+
+    function emit(now = false) {
+      if (closed) return;
+      if (timer) clearTimeout(timer);
+      if (now) {
+        timer = null;
+        opts.onSchedule(snapshot());
+        return;
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        opts.onSchedule(snapshot());
+      }, debounceMs);
+    }
+
+    async function open(filter: NostrFilterLike, params: ShiftPoolSubscribeParams): Promise<ShiftPoolSubscription> {
+      const p = await pool();
+      if (!p.subscribe) throw new Error('subscribeSchedule: the pool does not support live subscriptions');
+      return p.subscribe(relays, filter, { ...params, maxWait });
+    }
+
+    /**
+     * (Re)aim the RSVP subscription at the current occurrence addresses.
+     * Only the past side is trimmed — the future side stays open so an
+     * occurrence sliding into a moving range needs no re-subscription
+     * (occurrences are only published days ahead, the set stays small).
+     */
+    function syncRsvpSub(onSynced?: () => void) {
+      const { since } = rangeOf();
+      const addrs = [...occs.values()]
+        .filter((o) => since === undefined || o.end >= since)
+        .map((o) => o.address)
+        .sort();
+      const key = addrs.join('\n');
+      if (key === rsvpKey) {
+        onSynced?.();
+        return;
+      }
+      rsvpKey = key;
+      const my = ++rsvpSeq;
+      rsvpSub?.close();
+      rsvpSub = null;
+      if (!addrs.length) {
+        onSynced?.();
+        return;
+      }
+      open(rsvpFilter(addrs), {
+        onevent(ev) {
+          const r = parseShiftRsvp(ev);
+          if (!r) return;
+          const k = `${r.pubkey}\0${r.address}`;
+          if (!rsvpSupersedes(r, winners.get(k))) return;
+          winners.set(k, r);
+          // A signer we have not seen yet may carry attestations — re-aim.
+          // During the initial backlog the single sync in the EOSE chain
+          // covers everyone at once.
+          if (ready) {
+            syncAttSub();
+            emit();
+          }
+        },
+        oneose() {
+          if (my === rsvpSeq) onSynced?.();
+        },
+      }).then(
+        (s) => {
+          if (closed || my !== rsvpSeq) s.close();
+          else rsvpSub = s;
+        },
+        (err) => opts.onError?.(err),
+      );
+    }
+
+    /**
+     * (Re)aim the attestation subscription at every RSVP author seen so
+     * far, so names and the person-identity collapse ride the same live
+     * feed as the schedule itself.
+     */
+    function syncAttSub(onSynced?: () => void) {
+      const participants = [...new Set([...winners.values()].map((r) => r.pubkey.toLowerCase()))].sort();
+      const key = participants.join('\n');
+      if (key === attKey) {
+        onSynced?.();
+        return;
+      }
+      attKey = key;
+      attParticipants = new Set(participants);
+      const my = ++attSeq;
+      attSub?.close();
+      attSub = null;
+      if (!participants.length) {
+        onSynced?.();
+        return;
+      }
+      open(attestationFilter({ participants }), {
+        onevent(ev) {
+          const a = parseIdentityAttestation(ev);
+          // Re-apply the filter client-side — a relay that ignores `#p`
+          // must degrade to extra bytes, never to foreign entries.
+          if (!a || !a.pubkeys.some((pk) => attParticipants.has(pk))) return;
+          const k = `${a.provider}\0${a.identifier}`;
+          const prev = atts.get(k);
+          if (prev && (prev.createdAt > a.createdAt || (prev.createdAt === a.createdAt && prev.id <= a.id))) return;
+          atts.set(k, a);
+          if (ready) emit();
+        },
+        oneose() {
+          if (my === attSeq) onSynced?.();
+        },
+      }).then(
+        (s) => {
+          if (closed || my !== attSeq) s.close();
+          else attSub = s;
+        },
+        (err) => opts.onError?.(err),
+      );
+    }
+
+    open(occurrenceFilter({ groupId, coordinatorPubkey: options.coordinatorPubkey }), {
+      onevent(ev) {
+        const occ = parseShiftOccurrence(ev);
+        if (!occ || occ.groupId !== groupId) return;
+        const prev = occs.get(occ.address);
+        if (prev && prev.createdAt >= occ.createdAt) return;
+        occs.set(occ.address, occ);
+        if (!synced) return; // the initial flood resolves in one go at EOSE
+        syncRsvpSub();
+        if (ready) emit();
+      },
+      oneose() {
+        if (synced) return;
+        synced = true;
+        // Hold the first emission until the RSVP and attestation backlogs
+        // have drained too: without the identity collapse a person who
+        // cancelled under a sibling key would flash as enrolled.
+        syncRsvpSub(() =>
+          syncAttSub(() => {
+            ready = true;
+            emit(true);
+          }),
+        );
+      },
+    }).then(
+      (s) => {
+        if (closed) s.close();
+        else occSub = s;
+      },
+      (err) => opts.onError?.(err),
+    );
+
+    return {
+      close() {
+        closed = true;
+        rsvpSeq++;
+        attSeq++;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        occSub?.close();
+        occSub = null;
+        rsvpSub?.close();
+        rsvpSub = null;
+        attSub?.close();
+        attSub = null;
+      },
+    };
+  }
+
   return {
     relays,
     fetchOccurrences,
@@ -157,6 +426,7 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
       const rsvps = await fetchRsvps(occurrences);
       return { occurrences, rsvps };
     },
+    subscribeSchedule,
     async fetchParticipantRsvps(pubkey) {
       const events = await query(participantRsvpFilter(pubkey));
       const parsed = events.map(parseShiftRsvp).filter((r): r is ShiftRsvp => r !== null);

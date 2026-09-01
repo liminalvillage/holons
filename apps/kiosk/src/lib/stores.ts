@@ -191,9 +191,9 @@ export const rawChecklists = writable<Checklist[]>([]);
 
 /**
  * The displayed holon's shift schedule — occurrences and resolved signups —
- * as last fetched from the shift relay ($lib/shifts owns the feed). Already
- * windowed to the upcoming horizon; NOT Holosphere data, so no federation,
- * scope or watchdog machinery applies.
+ * as last pushed by the live relay subscription ($lib/shifts owns the
+ * feed). Already windowed to the upcoming horizon; NOT Holosphere data, so
+ * no federation, scope or watchdog machinery applies.
  */
 export const rawShifts = writable<{
   occurrences: ShiftOccurrence[];

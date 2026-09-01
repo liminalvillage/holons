@@ -5,6 +5,8 @@ import { signerFromSecretKey } from '../holosphere/signers.js';
 import {
   SHIFT_OCCURRENCE_KIND,
   SHIFT_RSVP_KIND,
+  attestationIdentityMap,
+  attestationNameMap,
   buildRsvpTemplate,
   createShiftRelayClient,
   enrolledPubkeys,
@@ -22,7 +24,9 @@ import {
   rsvpFilter,
   shiftAddress,
   shiftDTag,
+  type IdentityAttestation,
   type NostrEventLike,
+  type ShiftOccurrence,
   type ShiftPoolLike,
   type ShiftRsvp,
 } from './index.js';
@@ -260,22 +264,25 @@ describe('filters', () => {
   });
 });
 
+function eventMatches(filter: Record<string, unknown>, e: NostrEventLike): boolean {
+  const f = filter as { kinds?: number[]; authors?: string[] };
+  if (f.kinds && !f.kinds.includes(e.kind)) return false;
+  if (f.authors && !f.authors.includes(e.pubkey)) return false;
+  for (const [k, vals] of Object.entries(filter)) {
+    if (!k.startsWith('#') || !vals) continue;
+    const name = k.slice(1);
+    if (!e.tags.some((t) => t[0] === name && (vals as string[]).includes(t[1]))) return false;
+  }
+  return true;
+}
+
 describe('createShiftRelayClient', () => {
   function fakePool(store: NostrEventLike[]): ShiftPoolLike & { published: NostrEventLike[] } {
     const published: NostrEventLike[] = [];
     return {
       published,
       async querySync(_relays, filter) {
-        return store.filter((e) => {
-          if (filter.kinds && !filter.kinds.includes(e.kind)) return false;
-          if (filter.authors && !filter.authors.includes(e.pubkey)) return false;
-          for (const [k, vals] of Object.entries(filter)) {
-            if (!k.startsWith('#') || !vals) continue;
-            const name = k.slice(1);
-            if (!e.tags.some((t) => t[0] === name && (vals as string[]).includes(t[1]))) return false;
-          }
-          return true;
-        }) as never;
+        return store.filter((e) => eventMatches(filter, e)) as never;
       },
       publish(_relays, event) {
         published.push(event);
@@ -356,5 +363,199 @@ describe('createShiftRelayClient', () => {
 
   it('requires a relay', () => {
     expect(() => createShiftRelayClient({ relays: [] })).toThrow();
+  });
+});
+
+describe('subscribeSchedule', () => {
+  /** A pool with live REQ semantics: backlog + EOSE, then pushed events. */
+  function livePool(store: NostrEventLike[]) {
+    const subs: { filter: Record<string, unknown>; onevent?: (e: never) => void; oneose?: () => void; closed: boolean }[] = [];
+    return {
+      subs,
+      async querySync(_relays: string[], filter: Record<string, unknown>) {
+        return store.filter((e) => eventMatches(filter, e)) as never[];
+      },
+      publish(_relays: string[], event: NostrEventLike) {
+        store.push(event);
+        return [Promise.resolve('ok')];
+      },
+      subscribe(_relays: string[], filter: Record<string, unknown>, params: { onevent?: (e: never) => void; oneose?: () => void }) {
+        const sub = { filter, onevent: params.onevent, oneose: params.oneose, closed: false };
+        subs.push(sub);
+        queueMicrotask(() => {
+          if (sub.closed) return;
+          for (const e of store) if (eventMatches(filter, e)) sub.onevent?.(e as never);
+          sub.oneose?.();
+        });
+        return {
+          close() {
+            sub.closed = true;
+          },
+        };
+      },
+      push(event: NostrEventLike) {
+        store.push(event);
+        for (const s of subs) {
+          if (!s.closed && eventMatches(s.filter, event)) s.onevent?.(event as never);
+        }
+      },
+    };
+  }
+
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+
+  function subscribe(pool: ReturnType<typeof livePool>, range?: { since?: number; until?: number }) {
+    const emitted: { occurrences: { address: string }[]; rsvps: ShiftRsvp[] }[] = [];
+    const client = createShiftRelayClient({
+      relays: ['wss://example'],
+      coordinatorPubkey: COORD,
+      pool: pool as unknown as ShiftPoolLike,
+    });
+    const sub = client.subscribeSchedule(GROUP, {
+      range,
+      debounceMs: 0,
+      onSchedule: (s) => emitted.push(s),
+    });
+    return { emitted, sub, last: () => emitted[emitted.length - 1] };
+  }
+
+  it('emits the backlog once, then pushes live RSVP and occurrence changes', async () => {
+    const me = 'a'.repeat(64);
+    const pool = livePool([occurrenceEvent, rsvpEvent(me, 'accepted', 1000, '01')]);
+    const { emitted, sub, last } = subscribe(pool);
+
+    await tick();
+    // One emission for the whole backlog: occurrence + its resolved RSVP.
+    expect(emitted).toHaveLength(1);
+    expect(last().occurrences).toHaveLength(1);
+    expect(isEnrolled(last().occurrences[0], me, last().rsvps)).toBe(true);
+
+    // An external cancel (e.g. from Elinor) lands without any re-fetch.
+    pool.push(rsvpEvent(me, 'declined', 2000, '02'));
+    await tick();
+    expect(isEnrolled(last().occurrences[0], me, last().rsvps)).toBe(false);
+
+    // A newly published occurrence appears, and its RSVPs are picked up
+    // by the re-aimed RSVP subscription.
+    const other = {
+      ...occurrenceEvent,
+      id: 'occ2',
+      tags: occurrenceEvent.tags.map((t) => (t[0] === 'd' ? ['d', 'shift--5459621960-2026-08-31-mc'] : t)),
+    };
+    pool.push(other);
+    await tick();
+    expect(last().occurrences).toHaveLength(2);
+    const addr2 = shiftAddress(COORD, 'shift--5459621960-2026-08-31-mc');
+    pool.push({ ...rsvpEvent(me, 'accepted', 3000, '03'), tags: [['a', addr2], ['d', 'rsvp--5459621960-2026-08-31-mc'], ['status', 'accepted'], ['t', 'shift']] });
+    await tick();
+    expect(last().rsvps.some((r) => r.address === addr2 && r.status === 'accepted')).toBe(true);
+    sub.close();
+  });
+
+  it('applies the range window and ignores stale occurrence republishes', async () => {
+    const pool = livePool([occurrenceEvent]);
+    // occurrenceEvent runs 1788100200–1788107400; window it out entirely.
+    const { sub, last, emitted } = subscribe(pool, { since: 1788107401 });
+    await tick();
+    expect(emitted).toHaveLength(1);
+    expect(last().occurrences).toHaveLength(0);
+    // A stale republish (older created_at) must not resurrect anything.
+    pool.push({ ...occurrenceEvent, created_at: occurrenceEvent.created_at - 1, id: 'stale' });
+    await tick();
+    expect(emitted).toHaveLength(1);
+    sub.close();
+  });
+
+  it('feeds attestations through the same subscription (names + person collapse)', async () => {
+    const me = 'a'.repeat(64);
+    const sibling = 'b'.repeat(64);
+    const attestation = (created_at: number, name: string, id: string): NostrEventLike => ({
+      kind: 31926,
+      pubkey: COORD,
+      created_at,
+      id,
+      content: JSON.stringify({ name }),
+      tags: [['d', 'telegram:123'], ['p', me], ['p', sibling]],
+    });
+    const pool = livePool([occurrenceEvent, rsvpEvent(sibling, 'accepted', 1000, '01'), attestation(1, 'Roberto', 'att1')]);
+    const { emitted, sub, last } = subscribe(pool);
+
+    await tick();
+    // One emission carries schedule AND attestations — no separate pull.
+    expect(emitted).toHaveLength(1);
+    const first = last() as { attestations: IdentityAttestation[]; occurrences: ShiftOccurrence[]; rsvps: ShiftRsvp[] };
+    expect(first.attestations).toHaveLength(1);
+    const identity = attestationIdentityMap(first.attestations, { coordinatorPubkey: COORD });
+    expect(identity.get(sibling)).toBe('telegram:123');
+    expect(attestationNameMap(first.attestations, { coordinatorPubkey: COORD }).get(me)).toBe('Roberto');
+    expect(isEnrolled(first.occurrences[0], sibling, first.rsvps, identity)).toBe(true);
+
+    // A cancel under the person's OTHER key clears them via the collapse.
+    pool.push(rsvpEvent(me, 'declined', 2000, '02'));
+    await tick();
+    const next = last() as { attestations: IdentityAttestation[]; occurrences: ShiftOccurrence[]; rsvps: ShiftRsvp[] };
+    const id2 = attestationIdentityMap(next.attestations, { coordinatorPubkey: COORD });
+    expect(isEnrolled(next.occurrences[0], sibling, next.rsvps, id2)).toBe(false);
+
+    // A re-published attestation (rename) lands live too.
+    pool.push(attestation(2, 'Rob', 'att2'));
+    await tick();
+    const renamed = last() as { attestations: IdentityAttestation[] };
+    expect(attestationNameMap(renamed.attestations, { coordinatorPubkey: COORD }).get(me)).toBe('Rob');
+    sub.close();
+  });
+
+  it('re-aims the attestation subscription when a new signer appears', async () => {
+    const me = 'a'.repeat(64);
+    const stranger = 'c'.repeat(64);
+    const pool = livePool([
+      occurrenceEvent,
+      rsvpEvent(me, 'accepted', 1000, '01'),
+      // Already stored on the relay, but for a pubkey with no RSVP yet —
+      // the initial attestation sub does not cover it.
+      {
+        kind: 31926,
+        pubkey: COORD,
+        created_at: 1,
+        id: 'att-stranger',
+        content: '{"name":"Stranger"}',
+        tags: [['d', 'telegram:456'], ['p', stranger]],
+      } satisfies NostrEventLike,
+    ]);
+    const { sub, last } = subscribe(pool);
+    await tick();
+    expect((last() as { attestations: IdentityAttestation[] }).attestations).toHaveLength(0);
+
+    // Their signup arrives → the sub re-aims → their attestation is found.
+    pool.push({ ...rsvpEvent(stranger, 'accepted', 2000, '02'), id: '02' });
+    await tick();
+    const attsSeen = (last() as { attestations: IdentityAttestation[] }).attestations;
+    expect(attsSeen.map((a) => a.identifier)).toEqual(['telegram:456']);
+    sub.close();
+  });
+
+  it('stops emitting after close()', async () => {
+    const me = 'a'.repeat(64);
+    const pool = livePool([occurrenceEvent]);
+    const { emitted, sub } = subscribe(pool);
+    await tick();
+    expect(emitted).toHaveLength(1);
+    sub.close();
+    pool.push(rsvpEvent(me, 'accepted', 1000, '01'));
+    await tick();
+    expect(emitted).toHaveLength(1);
+    expect(pool.subs.every((s) => s.closed)).toBe(true);
+  });
+
+  it('reports a pool without live subscriptions through onError', async () => {
+    const client = createShiftRelayClient({
+      relays: ['wss://example'],
+      coordinatorPubkey: COORD,
+      pool: { async querySync() { return []; }, publish: () => [Promise.resolve('ok')] } as unknown as ShiftPoolLike,
+    });
+    const errors: unknown[] = [];
+    client.subscribeSchedule(GROUP, { onSchedule: () => {}, onError: (e) => errors.push(e) });
+    await tick();
+    expect(errors).toHaveLength(1);
   });
 });

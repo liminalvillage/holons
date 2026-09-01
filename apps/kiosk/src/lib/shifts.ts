@@ -4,8 +4,12 @@
 // kind-31923 occurrences + kind-31925 signups, see docs/shifts-elinor.md)
 // read from a Nostr relay via `@holons/core/shifts`. Unlike the lens boards
 // this data does not live in Holosphere — the relay is the source of truth
-// shared with the Elinor bot — so the feed is a periodic fetch, not a live
-// subscription: the schedule changes on the scale of hours, not seconds.
+// shared with the Elinor bot — but it is still a LIVE feed: the board holds
+// a relay subscription (`subscribeSchedule`), so a signup or cancel made in
+// Elinor lands here the moment the relay pushes it. EVERYTHING the board
+// shows rides that one subscription — occurrences, RSVPs, and the kind-31926
+// attestations that yield participant names and the person-identity
+// collapse. A slow re-subscribe heals anything a flaky connection missed.
 //
 // The `groupId` of a shift IS the holon id (both are the Telegram chat id),
 // so the feed simply follows the displayed holon.
@@ -15,6 +19,7 @@ import {
   attestationNameMap,
   createShiftRelayClient,
   enrolledPubkeys,
+  latestRsvpFor,
   resolveRsvps,
   sortOccurrences,
   type ShiftIdentityMap,
@@ -40,8 +45,12 @@ import {
 /** How far ahead the board looks. Two weeks reads as "the schedule". */
 export const SHIFT_HORIZON_DAYS = 14;
 
-/** Re-fetch cadence — shifts are published days ahead, minutes is plenty. */
-const REFRESH_MS = 5 * 60_000;
+/**
+ * Belt-and-braces re-subscribe cadence. Updates arrive live over the relay
+ * subscription; this only replays the backlog to heal anything a dropped
+ * connection missed.
+ */
+const RESYNC_MS = 60 * 60_000;
 
 /**
  * Who this session can sign shift RSVPs as, or null (read-only board):
@@ -67,68 +76,70 @@ function getClient(): ShiftRelayClient | null {
   }));
 }
 
-// The feed's reload hook, bound while startShifts is live — lets an RSVP
-// trigger a re-fetch so the board converges on the relay's resolved truth.
+// The feed's re-sync hook, bound while startShifts is live — lets an RSVP
+// replay the backlog so the board converges on the relay's resolved truth
+// even if the live push for it was missed.
 let refetchNow: (() => void) | null = null;
 
 /**
- * Start following the displayed holon's shift schedule. Fetches on every
- * holon change and every REFRESH_MS; an explicit caretaker "off" for the tab
- * stands the feed down entirely (the default `auto` keeps it running so the
- * tab's visibility can follow the content, like the Library lens). Also
- * resolves who the logged-in user can sign RSVPs as (see `shiftSigner`).
- * Returns a teardown function.
+ * Start following the displayed holon's shift schedule LIVE: one relay
+ * subscription per holon (see `subscribeSchedule` in @holons/core/shifts),
+ * re-established on holon change and every RESYNC_MS. An explicit caretaker
+ * "off" for the tab stands the feed down entirely (the default `auto` keeps
+ * it running so the tab's visibility can follow the content, like the
+ * Library lens). Also resolves who the logged-in user can sign RSVPs as
+ * (see `shiftSigner`). Returns a teardown function.
  */
 export function startShifts(): () => void {
   if (!resolveShiftRelays().length) return () => {};
 
-  let seq = 0;
+  let seq = 0; // invalidates a replaced subscription's late callbacks
+  let sub: { close(): void } | null = null;
 
-  async function load(id: string) {
+  function stop() {
+    sub?.close();
+    sub = null;
+  }
+
+  function subscribe(id: string) {
+    stop();
     const my = ++seq;
-    try {
-      const c = getClient();
-      if (!c) return;
-      const nowSec = Math.floor(Date.now() / 1000);
-      const schedule = await c.fetchSchedule(id, {
-        since: nowSec,
-        until: nowSec + SHIFT_HORIZON_DAYS * 86_400,
-      });
-      // A newer load (holon switch, next tick) owns the store now.
-      if (my !== seq || get(holonId) !== id) return;
-      rawShifts.set(schedule);
-      shiftsLoaded.set(true);
-      // Participant names AND the person-identity collapse, both from the
-      // kind-31926 attestations (Elinor's coordinator directory + any
-      // provider): names for the wall, identity so one person's keys resolve
-      // as one signup — a cancel under the Elinor key must clear an accept
-      // under the Holons key. Best-effort: a failed lookup keeps the
-      // previous maps and the view falls back to per-key resolution.
-      const participants = [...new Set(schedule.rsvps.map((r) => r.pubkey))];
-      if (participants.length) {
-        try {
-          const atts = await c.fetchAttestations({ participants });
-          if (my !== seq) return;
-          const opts = {
-            coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
-          };
-          shiftNames.set(attestationNameMap(atts, opts));
-          shiftIdentity.set(attestationIdentityMap(atts, opts));
-        } catch (err) {
-          console.warn("[kiosk] shift attestation fetch failed", err);
-        }
-      }
-    } catch (err) {
-      // A dead relay must not take the board down — the tab simply stays
-      // hidden (auto) or shows its empty state (forced on).
-      console.warn("[kiosk] shift schedule fetch failed", err);
-      if (my === seq) shiftsLoaded.set(true);
-    }
+    const c = getClient();
+    if (!c) return;
+    sub = c.subscribeSchedule(id, {
+      // Sliding window, re-evaluated at every emission: past shifts drop
+      // off and newly published days slide in without re-subscribing.
+      range: () => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        return { since: nowSec, until: nowSec + SHIFT_HORIZON_DAYS * 86_400 };
+      },
+      onSchedule(schedule) {
+        if (my !== seq) return;
+        // Every store the board reads comes from this one emission:
+        // occurrences and RSVPs, plus — from the kind-31926 attestations
+        // riding the same subscription — participant names for the wall
+        // and the person-identity collapse, so a cancel under the Elinor
+        // key clears an accept under the Holons key the moment it lands.
+        const opts = {
+          coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
+        };
+        rawShifts.set(schedule);
+        shiftNames.set(attestationNameMap(schedule.attestations, opts));
+        shiftIdentity.set(attestationIdentityMap(schedule.attestations, opts));
+        shiftsLoaded.set(true);
+      },
+      onError(err) {
+        // A dead relay must not take the board down — the tab simply stays
+        // hidden (auto) or shows its empty state (forced on).
+        console.warn("[kiosk] shift subscription failed", err);
+        if (my === seq) shiftsLoaded.set(true);
+      },
+    });
   }
 
   function refetch() {
     const id = get(holonId);
-    if (id && get(shiftsPref) !== "off") void load(id);
+    if (id && get(shiftsPref) !== "off") subscribe(id);
   }
   refetchNow = refetch;
 
@@ -163,35 +174,37 @@ export function startShifts(): () => void {
     }
   }
 
-  const unsubHolon = holonId.subscribe((id) => {
-    seq++; // invalidate any in-flight load for the previous holon
+  function clear() {
+    seq++; // orphan the previous subscription's late callbacks
+    stop();
     rawShifts.set({ occurrences: [], rsvps: [] });
     shiftNames.set(new Map());
     shiftIdentity.set(new Map());
     shiftsLoaded.set(false);
-    if (id && get(shiftsPref) !== "off") void load(id);
+  }
+
+  const unsubHolon = holonId.subscribe((id) => {
+    clear();
+    if (id && get(shiftsPref) !== "off") subscribe(id);
   });
-  // Flipping the tab off clears the data (mirroring the lens subscriptions);
-  // flipping it back on re-fetches.
+  // Flipping the tab off tears the subscription down and clears the data
+  // (mirroring the lens subscriptions); flipping it back on re-subscribes.
   const unsubPref = shiftsPref.subscribe((pref) => {
     if (pref === "off") {
-      seq++;
-      rawShifts.set({ occurrences: [], rsvps: [] });
-      shiftNames.set(new Map());
-      shiftIdentity.set(new Map());
-      shiftsLoaded.set(false);
+      clear();
     } else if (!get(shiftsLoaded)) {
       refetch();
     }
   });
   const unsubUser = currentUser.subscribe((u) => void resolveSigner(u));
-  const timer = setInterval(refetch, REFRESH_MS);
+  const timer = setInterval(refetch, RESYNC_MS);
 
   return () => {
     unsubHolon();
     unsubPref();
     unsubUser();
     clearInterval(timer);
+    stop();
     refetchNow = null;
     client?.close();
     client = null;
@@ -200,9 +213,10 @@ export function startShifts(): () => void {
 
 /**
  * Sign and publish a signup/cancellation for the logged-in user, per the
- * resolved `shiftSigner`. The relay's resolved view lands with the next
- * fetch; meanwhile the new RSVP is folded into `rawShifts` optimistically so
- * the tap answers instantly. Throws with a human-readable message.
+ * resolved `shiftSigner`. The live subscription will receive the event
+ * back from the relay; meanwhile the new RSVP is folded into `rawShifts`
+ * optimistically so the tap answers instantly, and a re-sync is kicked off
+ * in case the push is missed. Throws with a human-readable message.
  */
 export async function setShiftRsvp(
   occurrence: ShiftOccurrence,
@@ -232,10 +246,22 @@ export async function setShiftRsvp(
     const secret = getSessionSecret();
     const c = getClient();
     if (!secret || !c) throw new Error("no signing identity for shifts");
+    // The subscription already holds the resolved truth — hand publishRsvp
+    // the person's previous RSVP and the identity collapse from it, so no
+    // extra relay round-trips are needed to out-timestamp a sibling key.
+    const identity = get(shiftIdentity);
+    const localSigner = signerFromSecretKey(secret);
     const { event, results } = await c.publishRsvp({
       occurrence,
       status,
-      signer: signerFromSecretKey(secret),
+      signer: localSigner,
+      identity,
+      previous: latestRsvpFor(
+        occurrence,
+        localSigner.pubkey,
+        get(rawShifts).rsvps,
+        identity,
+      ),
     });
     if (!results.some((r) => r.status === "fulfilled")) {
       throw new Error("no relay accepted the signup");
