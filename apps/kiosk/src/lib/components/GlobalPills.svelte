@@ -93,6 +93,7 @@
       { id: "day", glyph: "▣", labelKey: "pills.day" },
       { id: "week", glyph: "▤", labelKey: "pills.week" },
       { id: "month", glyph: "▦", labelKey: "pills.month" },
+      { id: "year", glyph: "☾", labelKey: "pills.year" },
     ];
 
   /** Resolve a keyed segment list into PillSwitch options. */

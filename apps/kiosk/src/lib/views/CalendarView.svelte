@@ -18,7 +18,7 @@
     calendarMode,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
-  import type { CalendarMode } from "$lib/config";
+  import { setCalendarView, type CalendarMode } from "$lib/config";
   import { getWriter } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
   import {
@@ -39,6 +39,7 @@
   import { personalEvents, personalTasks } from "$lib/personal";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
+  import YearTimeline from "./YearTimeline.svelte";
 
   // ── What this board shows ──────────────────────────────────────────────---
   // The Calendar tab passes nothing and gets the holon's dated quests; the
@@ -58,6 +59,14 @@
    * two boards remember their windows separately.
    */
   export let mode: CalendarMode | null = null;
+  /**
+   * How the year timeline's tap-to-jump switches this board to the day
+   * window. The Calendar tab's default writes the shared `calendarMode`
+   * store; a caller that drives `mode` from its own store (the Library's
+   * booking calendar) passes its own setter so the jump lands on the right
+   * board.
+   */
+  export let onModeChange: ((m: CalendarMode) => void) | null = null;
   $: view = mode ?? $calendarMode;
 
   // The Show pill narrows the calendar too: under Mine only events the user
@@ -404,6 +413,12 @@
       return isoDay(
         weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
       );
+    if (view === "year")
+      return isoDay(
+        today.getFullYear() === displayYear
+          ? today
+          : new Date(displayYear, 0, 1),
+      );
     return isoDay(
       today.getMonth() === monthAnchor.getMonth() &&
         today.getFullYear() === monthAnchor.getFullYear()
@@ -500,6 +515,23 @@
     if (view === "day") void focusDay();
   }
 
+  // Year timeline tap-to-jump: land the day window on the tapped date. The
+  // day offset is written BEFORE the mode flips (with `lastMode` pre-set so
+  // the mode-change reaction above doesn't reset it back to today).
+  function gotoDay(date: Date) {
+    const days = Math.round(
+      (startOfDay(date).getTime() - startOfDay(get(now)).getTime()) / 86400000,
+    );
+    lastMode = "day";
+    offset = days;
+    if (onModeChange) onModeChange("day");
+    else {
+      calendarMode.set("day");
+      setCalendarView("day");
+    }
+    void focusDay();
+  }
+
   const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
   function sameDay(a: Date, b: Date): boolean {
@@ -555,6 +587,8 @@
   })();
 
   $: monthAnchor = new Date($now.getFullYear(), $now.getMonth() + offset, 1);
+  // Year window: offset counts whole years.
+  $: displayYear = $now.getFullYear() + (view === "year" ? offset : 0);
   $: monthGrid = (() => {
     const start = new Date(monthAnchor);
     start.setDate(1 - monthAnchor.getDay());
@@ -801,10 +835,12 @@
         })
       : view === "week"
         ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
-        : monthAnchor.toLocaleDateString($locale, {
-            month: "long",
-            year: "numeric",
-          });
+        : view === "year"
+          ? String(displayYear)
+          : monthAnchor.toLocaleDateString($locale, {
+              month: "long",
+              year: "numeric",
+            });
 
   // What a card says about its own timing on `day`. A span says which of its
   // days this is; only its FIRST day also carries the start time (the later
@@ -1010,6 +1046,16 @@
           </div>
         {/each}
       </div>
+    {:else if view === "year"}
+      <!-- the whole year as a lunar timeline (moons, solstices, cards) -->
+      <YearTimeline
+        events={shownEvents}
+        year={displayYear}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onSelectDay={gotoDay}
+      />
     {:else}
       <!-- day timeline — one column, or two (with the next day) when wide -->
       <div class="day-cols" class:twin={dayCols.length > 1}>

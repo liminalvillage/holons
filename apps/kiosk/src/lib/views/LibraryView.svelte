@@ -14,7 +14,11 @@
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
-  import { type Scope } from "$lib/config";
+  import {
+    setLibraryCalendarView,
+    type CalendarMode,
+    type Scope,
+  } from "$lib/config";
   import { personalThings } from "$lib/personal";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
@@ -188,6 +192,10 @@
         mode={$libraryCalendarMode}
         readonly
         onOpen={openSpan}
+        onModeChange={(m: CalendarMode) => {
+          libraryCalendarMode.set(m);
+          setLibraryCalendarView(m);
+        }}
       />
     {/if}
   {:else}

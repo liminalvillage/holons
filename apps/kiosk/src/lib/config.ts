@@ -684,15 +684,16 @@ export function setRolesView(mode: RolesViewMode): void {
 }
 
 /**
- * The Calendar's time window (its Layout pill): one day, the week, or the
- * month grid. Same per-device stickiness as the other views' layout choices.
+ * The Calendar's time window (its Layout pill): one day, the week, the
+ * month grid, or the whole year as a lunar timeline. Same per-device
+ * stickiness as the other views' layout choices.
  */
-export type CalendarMode = "day" | "week" | "month";
+export type CalendarMode = "day" | "week" | "month" | "year";
 
 /** Resolve the Calendar mode; the single day is the default. */
 export function resolveCalendarView(): CalendarMode {
   const v = persisted(CAL_VIEW_KEY);
-  return v === "week" || v === "month" ? v : "day";
+  return v === "week" || v === "month" || v === "year" ? v : "day";
 }
 
 /** Persist the Calendar mode. */
@@ -709,7 +710,7 @@ export function setCalendarView(mode: CalendarMode): void {
  */
 export function resolveLibraryCalendarView(): CalendarMode {
   const v = persisted(LIBRARY_CAL_VIEW_KEY);
-  return v === "day" || v === "week" ? v : "month";
+  return v === "day" || v === "week" || v === "year" ? v : "month";
 }
 
 /** Persist the Library booking calendar's window. */
