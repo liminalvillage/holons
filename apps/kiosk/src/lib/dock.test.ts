@@ -8,9 +8,13 @@ import {
   linksAmong,
   orbClusters,
   orbLayout,
+  orbPositions,
   parseDock,
   removeEntry,
+  seedOrbs,
   segmentFor,
+  stepOrbs,
+  syncOrbs,
   upsertEntry,
   type DockEntry,
 } from "./dock";
@@ -161,6 +165,51 @@ describe("orbLayout", () => {
     const single = orbLayout(["-1"], [], 400, 300, 50).get("-1")!;
     expect(single.x).toBeCloseTo(200);
     expect(single.y).toBeCloseTo(150);
+  });
+});
+
+describe("stepOrbs / syncOrbs (the live sky)", () => {
+  const ids = ["-1", "-2", "-3"];
+  const links: Array<[string, string]> = [["-1", "-2"]];
+
+  it("keeps drifting after settling when the wander is on", () => {
+    const sim = seedOrbs(ids, 800, 500);
+    for (let i = 0; i < 300; i++) stepOrbs(sim, links, 800, 500, 50);
+    const settled = orbPositions(sim);
+    for (let i = 0; i < 60; i++)
+      stepOrbs(sim, links, 800, 500, 50, 4000 + i * 16);
+    const later = orbPositions(sim);
+    const moved = ids.some(
+      (id) =>
+        Math.hypot(
+          settled.get(id)!.x - later.get(id)!.x,
+          settled.get(id)!.y - later.get(id)!.y,
+        ) > 0.5,
+    );
+    expect(moved).toBe(true);
+  });
+
+  it("wander never pushes an orb out of the field", () => {
+    const sim = seedOrbs(ids, 800, 500);
+    for (let i = 0; i < 900; i++) stepOrbs(sim, links, 800, 500, 50, i * 16);
+    for (const p of orbPositions(sim).values()) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(800);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(500);
+    }
+  });
+
+  it("syncOrbs keeps a retained orb's position and momentum, seeds newcomers", () => {
+    const sim = seedOrbs(ids, 800, 500);
+    for (let i = 0; i < 50; i++) stepOrbs(sim, links, 800, 500, 50);
+    const before = orbPositions(sim);
+    const next = syncOrbs(sim, ["-2", "-4"], 800, 500);
+    const kept = orbPositions(next).get("-2")!;
+    expect(kept.x).toBeCloseTo(before.get("-2")!.x);
+    expect(kept.y).toBeCloseTo(before.get("-2")!.y);
+    expect(next.ids).toEqual(["-2", "-4"]);
+    expect(orbPositions(next).get("-4")).toBeDefined();
   });
 });
 

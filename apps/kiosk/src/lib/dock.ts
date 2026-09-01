@@ -177,9 +177,153 @@ export function orbClusters(
   return out;
 }
 
+/** A running gravity simulation — positions, momentum, and wander phases. */
+export type OrbSim = {
+  ids: string[];
+  px: Float64Array;
+  py: Float64Array;
+  vx: Float64Array;
+  vy: Float64Array;
+  /** Per-orb wander phase (from the id hash) so no two orbs drift in step. */
+  phase: Float64Array;
+};
+
+const GOLDEN_ANGLE = 2.399963229728653; // spreads any orb count evenly
+
+/** A fresh sim with `ids` seeded on a golden-angle ring around the centre. */
+export function seedOrbs(
+  ids: readonly string[],
+  width: number,
+  height: number,
+): OrbSim {
+  const n = ids.length;
+  const sim: OrbSim = {
+    ids: [...ids],
+    px: new Float64Array(n),
+    py: new Float64Array(n),
+    vx: new Float64Array(n),
+    vy: new Float64Array(n),
+    phase: new Float64Array(n),
+  };
+  const ring = n > 1 ? Math.min(width, height) / 3.2 : 0;
+  for (let i = 0; i < n; i++) {
+    const a = i * GOLDEN_ANGLE;
+    sim.px[i] = width / 2 + Math.cos(a) * ring;
+    sim.py[i] = height / 2 + Math.sin(a) * ring * 0.8;
+    sim.phase[i] = (hueFor(ids[i]) / 360) * Math.PI * 2;
+  }
+  return sim;
+}
+
 /**
- * Settle the orbs in the field. Deterministic — seeded on a golden-angle ring
- * with no randomness — so the same dock always settles into the same sky.
+ * Carry a running sim over to a new id list (or field size): retained orbs
+ * keep their position and momentum, newcomers enter on the seed ring and
+ * glide in, removed ones vanish. Returns a new sim; the old one is untouched.
+ */
+export function syncOrbs(
+  sim: OrbSim | null,
+  ids: readonly string[],
+  width: number,
+  height: number,
+): OrbSim {
+  const fresh = seedOrbs(ids, width, height);
+  if (!sim) return fresh;
+  const old = new Map(sim.ids.map((id, i) => [id, i]));
+  ids.forEach((id, i) => {
+    const j = old.get(id);
+    if (j == null) return;
+    fresh.px[i] = sim.px[j];
+    fresh.py[i] = sim.py[j];
+    fresh.vx[i] = sim.vx[j];
+    fresh.vy[i] = sim.vy[j];
+  });
+  return fresh;
+}
+
+/**
+ * One physics tick: central gravity, pairwise repulsion, link springs, then
+ * damped integration clamped to the field. `wobbleT` (ms, e.g. a rAF
+ * timestamp) adds the gentle perpetual wander that keeps the sky alive; omit
+ * it for a deterministic settle (that's what the tests and orbLayout do).
+ */
+export function stepOrbs(
+  sim: OrbSim,
+  links: readonly OrbLink[],
+  width: number,
+  height: number,
+  radius: number,
+  wobbleT?: number,
+): void {
+  const n = sim.ids.length;
+  if (!n || width <= 0 || height <= 0) return;
+  const { px, py, vx, vy, phase } = sim;
+  const cx = width / 2;
+  const cy = height / 2;
+  const idx = new Map(sim.ids.map((id, i) => [id, i]));
+  const rest = radius * 2.3; // linked orbs settle about this far apart
+  const repel = radius * radius * 20; // unlinked orbs drift much farther out
+  const padX = Math.min(radius * 1.3, width / 2);
+  const padY = Math.min(radius * 1.3, height / 2);
+  for (let i = 0; i < n; i++) {
+    vx[i] += (cx - px[i]) * 0.004;
+    vy[i] += (cy - py[i]) * 0.004;
+    for (let j = i + 1; j < n; j++) {
+      let dx = px[i] - px[j];
+      let dy = py[i] - py[j];
+      const d2 = dx * dx + dy * dy || 1;
+      const d = Math.sqrt(d2);
+      const f = repel / d2;
+      dx /= d;
+      dy /= d;
+      vx[i] += dx * f;
+      vy[i] += dy * f;
+      vx[j] -= dx * f;
+      vy[j] -= dy * f;
+    }
+  }
+  for (const [a, b] of links) {
+    const i = idx.get(a);
+    const j = idx.get(b);
+    if (i == null || j == null || i === j) continue;
+    let dx = px[j] - px[i];
+    let dy = py[j] - py[i];
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const f = (d - rest) * 0.06;
+    dx /= d;
+    dy /= d;
+    vx[i] += dx * f;
+    vy[i] += dy * f;
+    vx[j] -= dx * f;
+    vy[j] -= dy * f;
+  }
+  if (wobbleT !== undefined) {
+    // A slow orbital breeze, phased per orb: strong enough to see the sky
+    // breathe, far too weak to break a constellation apart.
+    const t = wobbleT * 0.001;
+    for (let i = 0; i < n; i++) {
+      vx[i] += Math.cos(t * 0.6 + phase[i]) * 0.05;
+      vy[i] += Math.sin(t * 0.45 + phase[i] * 1.7) * 0.05;
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    vx[i] *= 0.8;
+    vy[i] *= 0.8;
+    px[i] = Math.min(width - padX, Math.max(padX, px[i] + vx[i]));
+    py[i] = Math.min(height - padY, Math.max(padY, py[i] + vy[i]));
+  }
+}
+
+/** The sim's positions as a map, for the template and the bounds. */
+export function orbPositions(sim: OrbSim): Map<string, Vec> {
+  const out = new Map<string, Vec>();
+  sim.ids.forEach((id, i) => out.set(id, { x: sim.px[i], y: sim.py[i] }));
+  return out;
+}
+
+/**
+ * Settle the orbs in one go (300 ticks, no wander). Deterministic — the same
+ * dock always settles into the same sky. The reduced-motion path and the
+ * tests use this; the live dock steps the same physics frame by frame.
  */
 export function orbLayout(
   ids: readonly string[],
@@ -188,71 +332,10 @@ export function orbLayout(
   height: number,
   radius: number,
 ): Map<string, Vec> {
-  const n = ids.length;
-  const out = new Map<string, Vec>();
-  if (!n || width <= 0 || height <= 0) return out;
-  const cx = width / 2;
-  const cy = height / 2;
-  const ring = n > 1 ? Math.min(width, height) / 3.2 : 0;
-  const idx = new Map(ids.map((id, i) => [id, i]));
-  const px = new Float64Array(n);
-  const py = new Float64Array(n);
-  const vx = new Float64Array(n);
-  const vy = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = i * 2.399963229728653; // golden angle — spreads any count evenly
-    px[i] = cx + Math.cos(a) * ring;
-    py[i] = cy + Math.sin(a) * ring * 0.8;
-  }
-  const springs: Array<[number, number]> = [];
-  for (const [a, b] of links) {
-    const i = idx.get(a);
-    const j = idx.get(b);
-    if (i != null && j != null && i !== j) springs.push([i, j]);
-  }
-  const rest = radius * 2.3; // linked orbs settle about this far apart
-  const repel = radius * radius * 20; // unlinked orbs drift much farther out
-  const padX = Math.min(radius * 1.3, width / 2);
-  const padY = Math.min(radius * 1.3, height / 2);
-  for (let it = 0; it < 300; it++) {
-    for (let i = 0; i < n; i++) {
-      vx[i] += (cx - px[i]) * 0.004;
-      vy[i] += (cy - py[i]) * 0.004;
-      for (let j = i + 1; j < n; j++) {
-        let dx = px[i] - px[j];
-        let dy = py[i] - py[j];
-        const d2 = dx * dx + dy * dy || 1;
-        const d = Math.sqrt(d2);
-        const f = repel / d2;
-        dx /= d;
-        dy /= d;
-        vx[i] += dx * f;
-        vy[i] += dy * f;
-        vx[j] -= dx * f;
-        vy[j] -= dy * f;
-      }
-    }
-    for (const [i, j] of springs) {
-      let dx = px[j] - px[i];
-      let dy = py[j] - py[i];
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const f = (d - rest) * 0.06;
-      dx /= d;
-      dy /= d;
-      vx[i] += dx * f;
-      vy[i] += dy * f;
-      vx[j] -= dx * f;
-      vy[j] -= dy * f;
-    }
-    for (let i = 0; i < n; i++) {
-      vx[i] *= 0.8;
-      vy[i] *= 0.8;
-      px[i] = Math.min(width - padX, Math.max(padX, px[i] + vx[i]));
-      py[i] = Math.min(height - padY, Math.max(padY, py[i] + vy[i]));
-    }
-  }
-  ids.forEach((id, i) => out.set(id, { x: px[i], y: py[i] }));
-  return out;
+  if (!ids.length || width <= 0 || height <= 0) return new Map();
+  const sim = seedOrbs(ids, width, height);
+  for (let it = 0; it < 300; it++) stepOrbs(sim, links, width, height, radius);
+  return orbPositions(sim);
 }
 
 /** Convex hull (monotone chain), counter-clockwise, no repeated endpoint. */

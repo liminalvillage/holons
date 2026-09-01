@@ -9,7 +9,7 @@
   // window, long-press for edit mode (every circle grows a ✕), and the "+"
   // in the tray adds a board from an id, a registered label, or a pasted
   // link (parseHolonPaste accepts anything people actually copy).
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     boundsPath,
     dockEntries,
@@ -19,8 +19,12 @@
     linksAmong,
     orbClusters,
     orbLayout,
+    orbPositions,
     rememberBoard,
     requestOpen,
+    stepOrbs,
+    syncOrbs,
+    type OrbSim,
     type Vec,
   } from "$lib/dock";
   import { getHolosphere } from "$lib/holosphere";
@@ -99,10 +103,43 @@
   }
 
   // ── The gravity field ───────────────────────────────────────────────────--
+  //
+  // The physics runs LIVE: a rAF loop steps the simulation every frame, so
+  // the orbs visibly glide from the seed ring into their constellations and
+  // keep a gentle wander afterwards — the sky breathes. Someone who prefers
+  // reduced motion gets the same layout settled in one deterministic go.
   let fieldW = 0;
   let fieldH = 0;
+  let positions: ReadonlyMap<string, Vec> = new Map();
+  let sim: OrbSim | null = null;
+  let simKey = "";
+
+  const reducedMotion =
+    typeof matchMedia !== "undefined" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   $: links = linksAmong(ids, partnerMap);
-  $: positions = orbLayout(ids, links, fieldW, fieldH, ORB / 2);
+  $: if (reducedMotion)
+    positions = orbLayout(ids, links, fieldW, fieldH, ORB / 2);
+
+  onMount(() => {
+    if (reducedMotion) return;
+    let raf = requestAnimationFrame(function frame(t) {
+      if (fieldW && fieldH && ids.length) {
+        // Re-seat the sim when the cast or the field changes; retained orbs
+        // keep their place and momentum, newcomers glide in from the ring.
+        const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
+        if (!sim || key !== simKey) {
+          sim = syncOrbs(sim, ids, fieldW, fieldH);
+          simKey = key;
+        }
+        stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t);
+        positions = orbPositions(sim);
+      }
+      raf = requestAnimationFrame(frame);
+    });
+    return () => cancelAnimationFrame(raf);
+  });
   $: bounds = orbClusters(ids, links)
     .filter((c) => c.length > 1)
     .map((c) => ({
@@ -315,11 +352,8 @@
     align-items: center;
     gap: 0.5rem;
     width: 8rem;
-    /* Orbs glide, not jump, when the gravity field resettles (a tie arrives,
-       a circle is added or removed). */
-    transition:
-      left 0.9s cubic-bezier(0.3, 0, 0.2, 1),
-      top 0.9s cubic-bezier(0.3, 0, 0.2, 1);
+    /* No left/top transition: the live simulation moves the orbs itself,
+       frame by frame — easing on top would just smear it. */
   }
 
   .orb {
