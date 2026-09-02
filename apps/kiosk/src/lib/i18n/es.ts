@@ -309,7 +309,8 @@ export const es: Record<MessageKey, Msg> = {
   "dock.addPlaceholder": "Id del holon, etiqueta o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
   "dock.hint":
-    "Toca un círculo para abrir su tablón — manténlo pulsado para quitarlo.",
+    "Toca un círculo para abrir su tablón, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
+  "dock.federateTitle": "Federar {a} con {b}",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",

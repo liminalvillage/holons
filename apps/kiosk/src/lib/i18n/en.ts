@@ -301,7 +301,9 @@ export const en = {
   "dock.add": "Add a board",
   "dock.addPlaceholder": "Holon id, label, or link",
   "dock.addInvalid": "That doesn't name a holon.",
-  "dock.hint": "Tap a circle to open its board — hold one to remove it.",
+  "dock.hint":
+    "Tap a circle to open its board, hold one to remove it — drag one onto another to federate them.",
+  "dock.federateTitle": "Federate {a} with {b}",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",

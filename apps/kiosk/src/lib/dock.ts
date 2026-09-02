@@ -245,6 +245,11 @@ export function syncOrbs(
  * damped integration clamped to the field. `wobbleT` (ms, e.g. a rAF
  * timestamp) adds the gentle perpetual wander that keeps the sky alive; omit
  * it for a deterministic settle (that's what the tests and orbLayout do).
+ *
+ * `liftedId` names an orb carried by a finger: it is lifted OUT of the
+ * physics — it exerts and feels no forces and is not integrated (the caller
+ * pins it to the pointer). Without this, its repulsion would shove the drop
+ * target away and dropping would become a chase.
  */
 export function stepOrbs(
   sim: OrbSim,
@@ -253,6 +258,7 @@ export function stepOrbs(
   height: number,
   radius: number,
   wobbleT?: number,
+  liftedId?: string,
 ): void {
   const n = sim.ids.length;
   if (!n || width <= 0 || height <= 0) return;
@@ -260,14 +266,18 @@ export function stepOrbs(
   const cx = width / 2;
   const cy = height / 2;
   const idx = new Map(sim.ids.map((id, i) => [id, i]));
+  const lifted = liftedId != null ? (idx.get(liftedId) ?? -1) : -1;
   const rest = radius * 2.3; // linked orbs settle about this far apart
   const repel = radius * radius * 20; // unlinked orbs drift much farther out
   const padX = Math.min(radius * 1.3, width / 2);
   const padY = Math.min(radius * 1.3, height / 2);
   for (let i = 0; i < n; i++) {
-    vx[i] += (cx - px[i]) * 0.004;
-    vy[i] += (cy - py[i]) * 0.004;
+    if (i !== lifted) {
+      vx[i] += (cx - px[i]) * 0.004;
+      vy[i] += (cy - py[i]) * 0.004;
+    }
     for (let j = i + 1; j < n; j++) {
+      if (i === lifted || j === lifted) continue;
       let dx = px[i] - px[j];
       let dy = py[i] - py[j];
       const d2 = dx * dx + dy * dy || 1;
@@ -284,7 +294,8 @@ export function stepOrbs(
   for (const [a, b] of links) {
     const i = idx.get(a);
     const j = idx.get(b);
-    if (i == null || j == null || i === j) continue;
+    if (i == null || j == null || i === j || i === lifted || j === lifted)
+      continue;
     let dx = px[j] - px[i];
     let dy = py[j] - py[i];
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -301,11 +312,13 @@ export function stepOrbs(
     // breathe, far too weak to break a constellation apart.
     const t = wobbleT * 0.001;
     for (let i = 0; i < n; i++) {
+      if (i === lifted) continue;
       vx[i] += Math.cos(t * 0.6 + phase[i]) * 0.05;
       vy[i] += Math.sin(t * 0.45 + phase[i] * 1.7) * 0.05;
     }
   }
   for (let i = 0; i < n; i++) {
+    if (i === lifted) continue;
     vx[i] *= 0.8;
     vy[i] *= 0.8;
     px[i] = Math.min(width - padX, Math.max(padX, px[i] + vx[i]));

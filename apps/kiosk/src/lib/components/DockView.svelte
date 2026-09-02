@@ -31,21 +31,49 @@
   import { getFederationSnapshot } from "@holons/core/federation";
   import { parseHolonPaste } from "$lib/holons";
   import { t } from "$lib/i18n";
+  import Modal from "./Modal.svelte";
+  import FederationSettings from "./FederationSettings.svelte";
 
   const ORB = 104; // px diameter — keep in sync with the 6.5rem circle below
   const BOUND_PAD = 30; // air between an orb and its holographic bound
 
-  // Long-press toggles edit mode, mirroring the tab-pin gesture: a press that
-  // crosses the threshold arms the ✕ badges and swallows the click after it.
+  // One pointer, three gestures: a TAP opens the board, a stationary
+  // LONG-PRESS toggles edit mode (mirroring the tab-pin gesture), and a DRAG
+  // lifts the orb — carried by the finger through the gravity field — so
+  // dropping it onto another orb federates the two boards. Long-press and
+  // drag both swallow the click that follows them.
   const LONG_PRESS_MS = 480;
+  const DRAG_START_PX = 10; // movement past this turns the press into a drag
   let editing = false;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let longPressed = false;
 
-  function onOrbDown(e: PointerEvent) {
+  let dragId: string | null = null; // orb under the finger (pressed)
+  let dragging = false; // moved past the threshold
+  let dragMoved = false; // swallow the click after a drag
+  let dragPos: Vec | null = null; // pointer in field coordinates
+  let dropTarget: string | null = null;
+  let pressAt: Vec = { x: 0, y: 0 };
+  let fieldEl: HTMLDivElement;
+
+  /** The two boards being federated by a drop — drives the config popup. */
+  let fedPair: { home: string; partner: string } | null = null;
+
+  function fieldPoint(e: PointerEvent): Vec {
+    const r = fieldEl.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function onOrbDown(e: PointerEvent, id: string) {
     if (e.button != null && e.button !== 0) return;
     longPressed = false;
+    dragMoved = false;
     cancelPress();
+    dragId = id;
+    dragging = false;
+    pressAt = fieldPoint(e);
+    // Capture so the whole drag reaches this orb, even off its own pixels.
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     pressTimer = setTimeout(() => {
       longPressed = true;
       editing = !editing;
@@ -56,18 +84,63 @@
       }
     }, LONG_PRESS_MS);
   }
+  function onOrbMove(e: PointerEvent) {
+    if (!dragId || longPressed) return;
+    const p = fieldPoint(e);
+    if (!dragging) {
+      if (Math.hypot(p.x - pressAt.x, p.y - pressAt.y) < DRAG_START_PX) return;
+      dragging = true;
+      cancelPress(); // a drag is not a long-press
+    }
+    dragPos = p;
+    dropTarget = findDropTarget(p, dragId);
+  }
+  function onOrbUp() {
+    cancelPress();
+    if (dragging && dragId) {
+      dragMoved = true; // the click that follows must not open the board
+      if (dropTarget && dropTarget !== dragId)
+        fedPair = { home: dragId, partner: dropTarget };
+    }
+    dragId = null;
+    dragging = false;
+    dragPos = null;
+    dropTarget = null;
+  }
+  function onOrbLeave() {
+    if (!dragging) cancelPress(); // capture keeps a real drag alive
+  }
   function cancelPress() {
     if (pressTimer) clearTimeout(pressTimer);
     pressTimer = null;
   }
   function onOrbClick(id: string) {
-    if (longPressed) {
-      longPressed = false; // this click closes out the long-press
+    if (longPressed || dragMoved) {
+      longPressed = false; // this click closes out the long-press or drag
+      dragMoved = false;
       return;
     }
     if (editing) return; // in edit mode a tap is not an open
     requestOpen(id);
   }
+
+  /** The orb the pointer is over — centres closer than one diameter touch. */
+  function findDropTarget(p: Vec, self: string): string | null {
+    let best: string | null = null;
+    let bestD = ORB;
+    for (const [id, q] of positions) {
+      if (id === self) continue;
+      const d = Math.hypot(p.x - q.x, p.y - q.y);
+      if (d < bestD) {
+        bestD = d;
+        best = id;
+      }
+    }
+    return best;
+  }
+
+  const nameOf = (id: string) =>
+    $dockEntries.find((e) => e.id === id)?.name ?? id;
 
   // ── Federation ties ─────────────────────────────────────────────────────--
   // Each docked board's partner list, fetched once and cached for the dock's
@@ -119,26 +192,55 @@
     matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   $: links = linksAmong(ids, partnerMap);
-  $: if (reducedMotion)
-    positions = orbLayout(ids, links, fieldW, fieldH, ORB / 2);
+  $: if (reducedMotion) {
+    const settled = orbLayout(ids, links, fieldW, fieldH, ORB / 2);
+    // Even a parked sky lets a dragged orb follow the finger.
+    if (dragging && dragId && dragPos) settled.set(dragId, dragPos);
+    positions = settled;
+  }
 
   onMount(() => {
-    if (reducedMotion) return;
-    let raf = requestAnimationFrame(function frame(t) {
-      if (fieldW && fieldH && ids.length) {
-        // Re-seat the sim when the cast or the field changes; retained orbs
-        // keep their place and momentum, newcomers glide in from the ring.
-        const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
-        if (!sim || key !== simKey) {
-          sim = syncOrbs(sim, ids, fieldW, fieldH);
-          simKey = key;
+    // A federation change (this popup's writes included) redraws the ties:
+    // flush the partner cache and refetch, and the orbs pull together live.
+    const onFedChanged = () => {
+      partnerMap = new Map();
+      fetching.clear();
+      void loadPartners(ids);
+    };
+    window.addEventListener("kiosk:federation-changed", onFedChanged);
+
+    let raf = 0;
+    if (!reducedMotion)
+      raf = requestAnimationFrame(function frame(t) {
+        if (fieldW && fieldH && ids.length) {
+          // Re-seat the sim when the cast or the field changes; retained orbs
+          // keep their place and momentum, newcomers glide in from the ring.
+          const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
+          if (!sim || key !== simKey) {
+            sim = syncOrbs(sim, ids, fieldW, fieldH);
+            simKey = key;
+          }
+          const lifted = dragging && dragId ? dragId : undefined;
+          stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t, lifted);
+          // A dragged orb is kinematic: lifted out of the physics (see
+          // stepOrbs) and pinned under the finger.
+          if (dragging && dragId && dragPos) {
+            const i = sim.ids.indexOf(dragId);
+            if (i >= 0) {
+              sim.px[i] = Math.min(fieldW, Math.max(0, dragPos.x));
+              sim.py[i] = Math.min(fieldH, Math.max(0, dragPos.y));
+              sim.vx[i] = 0;
+              sim.vy[i] = 0;
+            }
+          }
+          positions = orbPositions(sim);
         }
-        stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t);
-        positions = orbPositions(sim);
-      }
-      raf = requestAnimationFrame(frame);
-    });
-    return () => cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(frame);
+      });
+    return () => {
+      window.removeEventListener("kiosk:federation-changed", onFedChanged);
+      if (raf) cancelAnimationFrame(raf);
+    };
   });
   $: bounds = orbClusters(ids, links)
     .filter((c) => c.length > 1)
@@ -203,6 +305,7 @@
     class="field"
     role="list"
     aria-label={$t("dock.boards")}
+    bind:this={fieldEl}
     bind:clientWidth={fieldW}
     bind:clientHeight={fieldH}
     on:click={onBackdrop}
@@ -229,18 +332,22 @@
         {#if p}
           <div
             class="slot"
+            class:front={dragId === e.id}
             role="listitem"
             style="--h: {hueFor(e.id)}; --i: {i}; left: {p.x}px; top: {p.y}px"
           >
             <button
               class="orb"
+              class:lifted={dragging && dragId === e.id}
+              class:target={dropTarget === e.id}
               data-dock-circle={e.id}
               aria-label={$t("dock.open", { name: e.name })}
               on:click={() => onOrbClick(e.id)}
-              on:pointerdown={onOrbDown}
-              on:pointerup={cancelPress}
-              on:pointerleave={cancelPress}
-              on:pointercancel={cancelPress}
+              on:pointerdown={(ev) => onOrbDown(ev, e.id)}
+              on:pointermove={onOrbMove}
+              on:pointerup={onOrbUp}
+              on:pointerleave={onOrbLeave}
+              on:pointercancel={onOrbUp}
             >
               <span class="initial">{initialOf(e.name)}</span>
             </button>
@@ -288,6 +395,21 @@
     <p class="hint">{$t("dock.hint")}</p>
   </div>
 </div>
+
+<!-- Dropping one circle onto another federates the two boards: the shared
+     federation editor opens on the dragged board with the drop target linked
+     (kiosk default, receive-only) and expanded for tuning. -->
+{#if fedPair}
+  <Modal on:close={() => (fedPair = null)}>
+    <h3 class="fed-title">
+      {$t("dock.federateTitle", {
+        a: nameOf(fedPair.home),
+        b: nameOf(fedPair.partner),
+      })}
+    </h3>
+    <FederationSettings holon={fedPair.home} focusPartner={fedPair.partner} />
+  </Modal>
+{/if}
 
 <style>
   .dock {
@@ -355,6 +477,9 @@
     /* No left/top transition: the live simulation moves the orbs itself,
        frame by frame — easing on top would just smear it. */
   }
+  .slot.front {
+    z-index: 3; /* the carried orb rides above the rest of the sky */
+  }
 
   .orb {
     width: 6.5rem;
@@ -369,9 +494,22 @@
     animation: dock-pop 0.35s ease both;
     animation-delay: calc(var(--i, 0) * 40ms);
     transition: transform 0.15s ease;
+    /* The browser must not turn a touch-drag into a scroll/zoom gesture. */
+    touch-action: none;
   }
   .orb:active {
     transform: scale(0.93);
+  }
+  /* Carried by the finger: bigger, floating shadow (wins over :active). */
+  .orb.lifted {
+    transform: scale(1.08);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  }
+  /* The orb the carried one hovers: a halo says "drop here to federate". */
+  .orb.target {
+    border-style: dashed;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--teal) 22%, transparent);
   }
   @keyframes dock-pop {
     from {
@@ -508,5 +646,12 @@
     font-size: 0.85rem;
     color: var(--muted);
     text-align: center;
+  }
+
+  .fed-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--ink);
   }
 </style>

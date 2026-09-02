@@ -22,6 +22,22 @@
   import { holonId, partnerNames } from "$lib/stores";
   import { t, type MessageKey, type Translator } from "$lib/i18n";
 
+  /**
+   * The holon whose federation record is edited. Defaults to the displayed
+   * holon ($holonId) — the Settings panel's case; the dock passes the dragged
+   * circle's board explicitly.
+   */
+  export let holon: string | null = null;
+  /**
+   * A partner to put front and centre on mount: expanded if already linked,
+   * otherwise linked right away with the kiosk default (receive-only) and
+   * then expanded for tuning. This is how a circle dropped onto another one
+   * federates.
+   */
+  export let focusPartner: string | null = null;
+
+  $: home = holon ?? $holonId;
+
   type PartnerRow = {
     id: string;
     name: string;
@@ -86,7 +102,7 @@
   }
 
   async function load() {
-    const holon = $holonId;
+    const holon = home;
     if (!holon) {
       loading = false;
       return;
@@ -120,6 +136,15 @@
     } finally {
       if (alive) loading = false;
     }
+
+    // A dropped-on partner: expand it, linking it first when it isn't linked
+    // yet. One-shot — cleared before linking, because linkPartner reloads.
+    const focus = focusPartner;
+    focusPartner = null;
+    if (alive && focus && focus !== holon && !loadError) {
+      if (rows.some((r) => r.id === focus)) expanded = focus;
+      else await linkPartner(focus);
+    }
   }
 
   function announceChanged() {
@@ -131,7 +156,7 @@
     lens: string,
     mode: FederationLensMode,
   ) {
-    const holon = $holonId;
+    const holon = home;
     if (!hs || !holon || busy[row.id]) return;
     if (lensMode(row, lens) === mode) return;
     const prev = { inbound: row.inbound, outbound: row.outbound };
@@ -167,7 +192,7 @@
   }
 
   async function unlink(row: PartnerRow) {
-    const holon = $holonId;
+    const holon = home;
     if (!hs || !holon || busy[row.id]) return;
     confirmRemove = null;
     busy = { ...busy, [row.id]: true };
@@ -190,12 +215,10 @@
   }
 
   async function addPartner() {
-    const holon = $holonId;
     const target = addId.trim();
     addError = "";
-    if (!hs || !holon || addBusy) return;
-    if (!target) return;
-    if (target === holon) {
+    if (!target || addBusy) return;
+    if (target === home) {
       addError = $t("fed.selfLink");
       return;
     }
@@ -205,6 +228,14 @@
       addId = "";
       return;
     }
+    await linkPartner(target);
+    if (!addError) addId = "";
+  }
+
+  /** Link `target` with the kiosk default and expand it for tuning. */
+  async function linkPartner(target: string) {
+    const holon = home;
+    if (!hs || !holon || addBusy) return;
     addBusy = true;
     try {
       // New partners start receive-only on the kiosk lenses: a display screen's
@@ -213,7 +244,6 @@
         inbound: [...KIOSK_LENSES],
         outbound: [],
       });
-      addId = "";
       await load();
       expanded = target;
       announceChanged();

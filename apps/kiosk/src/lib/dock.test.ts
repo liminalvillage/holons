@@ -200,6 +200,20 @@ describe("stepOrbs / syncOrbs (the live sky)", () => {
     }
   });
 
+  it("a lifted orb exerts and feels no forces", () => {
+    const sim = seedOrbs(["a", "b"], 800, 500);
+    // b parked at the field centre (zero gravity), a right beside it.
+    sim.px[0] = 390;
+    sim.py[0] = 250;
+    sim.px[1] = 400;
+    sim.py[1] = 250;
+    stepOrbs(sim, [], 800, 500, 50, undefined, "a");
+    expect(sim.px[1]).toBeCloseTo(400); // untouched: no shove from "a"
+    expect(sim.px[0]).toBeCloseTo(390); // not integrated: the caller pins it
+    stepOrbs(sim, [], 800, 500, 50);
+    expect(sim.px[1]).toBeGreaterThan(400); // grounded again → repulsion is back
+  });
+
   it("syncOrbs keeps a retained orb's position and momentum, seeds newcomers", () => {
     const sim = seedOrbs(ids, 800, 500);
     for (let i = 0; i < 50; i++) stepOrbs(sim, links, 800, 500, 50);
