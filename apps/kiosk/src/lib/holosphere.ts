@@ -28,6 +28,7 @@ import {
 } from "./config";
 import { actingAs } from "./auth";
 import { lookupHolonName } from "./hns";
+import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
 
 // Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
 // before the library loads.
@@ -172,7 +173,7 @@ export interface Subscription {
 }
 
 /** Normalise a `holosphere.subscribe` return so teardown never throws. */
-function normalizeSub(raw: unknown): Subscription {
+export function normalizeSub(raw: unknown): Subscription {
   if (raw && typeof (raw as any).unsubscribe === "function") {
     return raw as Subscription;
   }
@@ -224,6 +225,50 @@ export function subscribeLens<T extends { id?: string | number }>(
     emit();
   });
 
+  return normalizeSub(raw);
+}
+
+/**
+ * Live "does this cell contain anything for this lens" — the dock map's
+ * presence channel, one per visible (lens, hex) cell, mirroring the dashboard
+ * map's rule set (see maplens.countsAsPresent). Gun nulls are ignored —
+ * they're reconnect/replay noise, not deletions (deletes arrive as `_deleted`
+ * tombstones) — so presence only flips when a real record says so. `onChange`
+ * fires only when the boolean actually changes.
+ *
+ * `onItem` taps every non-null emission (tombstones included, so a caller's
+ * accumulator can drop them). This matters more than it looks: Gun replays a
+ * lens's existing records to the FIRST subscriber only — a later subscription
+ * on the same cell hears nothing until a fresh write — so whoever holds the
+ * presence subscription is the only one who ever sees the data. The dock
+ * map's cell panel is fed from this tap.
+ */
+export function subscribeLensPresence(
+  holosphere: HoloSphere,
+  holonId: string,
+  lens: LensId,
+  onChange: (has: boolean) => void,
+  onItem?: (item: Record<string, unknown>, key: string) => void,
+): Subscription {
+  const present = new Set<string>();
+  let last: boolean | null = null;
+  const raw = holosphere.subscribe(holonId, lens, (item: any, key?: string) => {
+    if (!key || key === "_" || key === "#" || key === ">" || item == null)
+      return;
+    // Gun leaks graph metadata through subscribe on some cells (HAM state
+    // fragments, soul refs) — junk must neither light a cell nor reach the
+    // panel. Real records — tombstones and completed quests included, which
+    // the counting below must still see to UN-light — always pass.
+    if (!looksLikeRecord(item)) return;
+    onItem?.(item, key);
+    if (countsAsPresent(lens, item)) present.add(key);
+    else present.delete(key);
+    const has = present.size > 0;
+    if (has !== last) {
+      last = has;
+      onChange(has);
+    }
+  });
   return normalizeSub(raw);
 }
 

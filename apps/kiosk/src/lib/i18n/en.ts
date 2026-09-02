@@ -307,8 +307,34 @@ export const en = {
   "dock.map": "Map",
   "dock.mapHint":
     "Tap a hexagon to open its board — a board claims its place in Settings → Set location.",
-  "dock.mapEmpty":
-    "No board has claimed a place on the map yet — set one in Settings → Set location.",
+  "dock.mapUnavailable":
+    "The map needs a Mapbox token — set VITE_MAPBOX_TOKEN to show it.",
+
+  // Map lens layer (dashboard-aligned: same lenses, same colours)
+  "map.lensAria": "Choose a lens",
+  "map.cellPickLens": "Pick a lens below to see what lives in this cell.",
+  "map.cellLoading": "Loading…",
+  "map.cellEmpty": "Nothing here for this lens yet.",
+  "map.cellItems": { one: "{n} item", other: "{n} items" },
+  "map.closePanel": "Close",
+  "lens.quests": "Tasks",
+  "lens.needs": "Local Needs",
+  "lens.offers": "Offers",
+  "lens.communities": "Communities",
+  "lens.organizations": "Organizations",
+  "lens.projects": "Projects",
+  "lens.currencies": "Currencies",
+  "lens.people": "People",
+  "lens.holons": "Holons",
+  "lens.events": "Events",
+  "lens.library": "Library",
+  "lens.roles": "Roles",
+  "lens.announcements": "Announcements",
+  "lens.expenses": "Expenses",
+  "lens.checklists": "Lists",
+  "lens.appreciations": "Appreciations",
+  "lens.rea_events": "REA Events",
+  "lens.canvases": "Canvases",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",

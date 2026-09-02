@@ -314,8 +314,34 @@ export const es: Record<MessageKey, Msg> = {
   "dock.map": "Mapa",
   "dock.mapHint":
     "Toca un hexágono para abrir su tablón — un tablón elige su lugar en Ajustes → Fijar la ubicación.",
-  "dock.mapEmpty":
-    "Ningún tablón tiene todavía un lugar en el mapa — fíjalo en Ajustes → Fijar la ubicación.",
+  "dock.mapUnavailable":
+    "El mapa necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para mostrarlo.",
+
+  // Map lens layer (dashboard-aligned: same lenses, same colours)
+  "map.lensAria": "Elige una lente",
+  "map.cellPickLens": "Elige una lente abajo para ver qué vive en esta celda.",
+  "map.cellLoading": "Cargando…",
+  "map.cellEmpty": "Aquí todavía no hay nada para esta lente.",
+  "map.cellItems": { one: "{n} elemento", other: "{n} elementos" },
+  "map.closePanel": "Cerrar",
+  "lens.quests": "Tareas",
+  "lens.needs": "Necesidades locales",
+  "lens.offers": "Ofertas",
+  "lens.communities": "Comunidades",
+  "lens.organizations": "Organizaciones",
+  "lens.projects": "Proyectos",
+  "lens.currencies": "Monedas",
+  "lens.people": "Personas",
+  "lens.holons": "Holones",
+  "lens.events": "Eventos",
+  "lens.library": "Biblioteca",
+  "lens.roles": "Roles",
+  "lens.announcements": "Anuncios",
+  "lens.expenses": "Gastos",
+  "lens.checklists": "Listas",
+  "lens.appreciations": "Apreciaciones",
+  "lens.rea_events": "Eventos REA",
+  "lens.canvases": "Lienzos",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",

@@ -37,8 +37,26 @@
   import Modal from "./Modal.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
+  import PlaceSearch from "./PlaceSearch.svelte";
 
-  const ORB = 104; // px diameter — keep in sync with the 6.5rem circle below
+  // The map, when it's showing — the top bar's place search flies it.
+  let dockMap: DockMap | undefined;
+
+  // The orb is sized in rem so it scales with the kiosk's fluid root font
+  // (app.css clamps it 14–22px by viewport width). The physics, the vesica,
+  // the hit math, and the bounds all run in px, so measure the diameter
+  // from the live root size rather than assuming 16px — a fixed 104 drew
+  // the lens for a circle the screen never showed. Re-read on every field
+  // resize: the root size is viewport-driven, so it moves with the window.
+  const ORB_REM = 6.5;
+  let ORB = ORB_REM * 16; // px diameter — remeasured below once the field mounts
+  function orbPx(): number {
+    if (typeof document === "undefined") return ORB_REM * 16;
+    const root = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+    return ORB_REM * (Number.isFinite(root) && root > 0 ? root : 16);
+  }
   const BOUND_PAD = 30; // air between an orb and its holographic bound
 
   // One pointer, three gestures: a TAP opens the board, a stationary
@@ -205,6 +223,7 @@
   // reduced motion gets the same layout settled in one deterministic go.
   let fieldW = 0;
   let fieldH = 0;
+  $: ORB = fieldW ? orbPx() : ORB; // the root size is viewport-driven
   let positions: ReadonlyMap<string, Vec> = new Map();
   let sim: OrbSim | null = null;
   let simKey = "";
@@ -326,7 +345,7 @@
   {#if $dockView === "map"}
     <!-- The same boards, placed where they live: each claimed cell is a
          hexagon, and its badge opens the board through the same morph. -->
-    <DockMap />
+    <DockMap bind:this={dockMap} />
   {:else}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
@@ -336,6 +355,7 @@
       bind:this={fieldEl}
       bind:clientWidth={fieldW}
       bind:clientHeight={fieldH}
+      style="--orb: {ORB_REM}rem"
       on:click={onBackdrop}
     >
       {#if fieldW && fieldH}
@@ -422,7 +442,8 @@
     </div>
   {/if}
 
-  <!-- The view switch hovers over whichever surface is showing. -->
+  <!-- The view switch hovers over whichever surface is showing; on the map
+       the place search sits beside it and takes whatever width is left. -->
   <div class="topbar">
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
       <button
@@ -446,6 +467,9 @@
         <span aria-hidden="true">⬡</span>{$t("dock.map")}
       </button>
     </div>
+    {#if $dockView === "map"}
+      <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
+    {/if}
   </div>
 
   <div class="tray">
@@ -578,7 +602,7 @@
     /* Anchor the ORB's centre (not the column's) on the physics position:
        shift up by half the orb so the vesica, ties, and hit math all line up
        with the visible circle; the name simply hangs below. */
-    transform: translate(-50%, -3.25rem);
+    transform: translate(-50%, calc(var(--orb) / -2));
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -592,8 +616,8 @@
   }
 
   .orb {
-    width: 6.5rem;
-    height: 6.5rem;
+    width: var(--orb);
+    height: var(--orb);
     border-radius: 50%;
     display: grid;
     place-items: center;
@@ -682,15 +706,29 @@
     padding: 0.4rem 1.4rem 1.2rem;
   }
 
-  /* Floating view switch: hovers over the field / the map, never in-flow. */
+  /* Floating top bar: the view switch (and, on the map, the place search)
+     hover over the field / the map, never in-flow. The bar itself lets taps
+     through to whatever is beneath; only its children catch them. */
   .topbar {
     position: absolute;
     top: calc(env(safe-area-inset-top) + 0.8rem);
-    left: 50%;
-    transform: translateX(-50%);
+    left: calc(env(safe-area-inset-left) + 0.8rem);
+    right: calc(env(safe-area-inset-right) + 0.8rem);
     z-index: 6; /* above the map (and its overlays) and the gravity field */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  .topbar > :global(*) {
+    pointer-events: auto;
+  }
+  .topbar :global(.placesearch) {
+    flex: 0 1 24rem;
   }
   .viewtoggle {
+    flex: 0 0 auto;
     display: inline-flex;
     padding: 0.2rem;
     border-radius: 999px;

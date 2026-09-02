@@ -608,6 +608,25 @@
     return el ? el.getBoundingClientRect() : null;
   }
 
+  /**
+   * The morph target, waiting briefly for it to exist: the dock's MAP view
+   * places its hexagon badges only after the basemap and the boards' claimed
+   * cells load, so the target can lag the mount by a beat. Past the timeout
+   * the morph just jumps — the interface never wedges on a missing target.
+   */
+  async function circleRectSoon(
+    id: string,
+    timeoutMs = 800,
+  ): Promise<DOMRect | null> {
+    const t0 = performance.now();
+    for (;;) {
+      const r = circleRect(id);
+      if (r) return r;
+      if (performance.now() - t0 > timeoutMs) return null;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+  }
+
   async function irisMorph(r: DOMRect, closing: boolean): Promise<void> {
     if (!windowEl || typeof windowEl.animate !== "function") return;
     const cx = r.left + r.width / 2;
@@ -645,7 +664,7 @@
     try {
       await tick(); // the dock is mounted underneath now
       const id = get(holonIdStore);
-      const r = id ? circleRect(id) : null;
+      const r = id ? await circleRectSoon(id) : null;
       if (r) await irisMorph(r, true);
     } catch {
       /* reduced motion / no WAAPI → jump */
