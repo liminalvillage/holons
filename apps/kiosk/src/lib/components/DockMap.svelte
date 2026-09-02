@@ -1,0 +1,427 @@
+<script lang="ts">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  //
+  // The dock's MAP view: the same closed boards, but placed where they live.
+  // Each docked holon that has claimed a cell (`settings.hex`, the field the
+  // HexPicker writes) appears as its H3 hexagon on the Mapbox basemap, with a
+  // tappable hexagon badge at its centre. The badge carries the same
+  // `data-dock-circle` handle the deck's orbs do, so tapping it opens the
+  // board through the exact same morph — and closing a board irises back
+  // down onto its hexagon. Boards with no claimed cell simply aren't here;
+  // the deck view always shows everything.
+  import { onDestroy, onMount } from "svelte";
+  import {
+    cellToBoundary,
+    cellToLatLng,
+    cellToParent,
+    getResolution,
+  } from "h3-js";
+  import { readSettingsHex } from "@holons/core/federation";
+  import { getHolosphere } from "$lib/holosphere";
+  import { setGeo } from "$lib/config";
+  import { showNotice } from "$lib/stores";
+  import { dockEntries, hueFor, requestOpen, type DockEntry } from "$lib/dock";
+  import { t, tr } from "$lib/i18n";
+
+  const MAPBOX_TOKEN: string = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
+
+  // The dashboard map's zoom ↔ resolution bands, so "go to a cell" lands at
+  // the zoom where that cell reads naturally.
+  const RES_ZOOM: Record<number, number> = {
+    0: 2.5,
+    1: 4,
+    2: 5.2,
+    3: 6.5,
+    4: 7.8,
+    5: 9,
+    6: 10.5,
+    7: 12,
+    8: 13.5,
+    9: 15,
+    10: 16,
+    11: 17,
+    12: 18,
+  };
+  // How much coarser a board's PARENT hexagon is drawn than its exact cell:
+  // a res-9 "block" gets a res-4 neighbourhood — the two-layer display the
+  // dashboard map uses, so a board is findable even from country zoom.
+  const PARENT_COARSER = 5;
+
+  let mapContainer: HTMLDivElement | null = null;
+  let map: any = null;
+  let mapboxglMod: any = null;
+  let markers: any[] = [];
+  let alive = true;
+  let loadingHexes = true;
+  let located: Array<DockEntry & { hex: string }> = [];
+
+  // A board's claimed cell rarely changes — cache across mounts so flipping
+  // deck ⇄ map (and the close morph that needs the badge in place) is instant
+  // after the first look-up. `null` = looked up, none claimed.
+  const hexCache: Map<string, string | null> = ((
+    globalThis as any
+  ).__kioskDockHexes ??= new Map());
+
+  async function loadHexes(entries: DockEntry[]) {
+    const missing = entries.filter((e) => !hexCache.has(e.id));
+    if (missing.length) {
+      try {
+        const hs = await getHolosphere();
+        await Promise.all(
+          missing.map(async (e) => {
+            hexCache.set(e.id, await readSettingsHex(hs, e.id));
+          }),
+        );
+      } catch {
+        /* unreachable — those boards stay off the map this time */
+      }
+    }
+    if (!alive) return;
+    located = entries.flatMap((e) => {
+      const hex = hexCache.get(e.id);
+      return hex ? [{ ...e, hex }] : [];
+    });
+    loadingHexes = false;
+    placeBoards();
+  }
+
+  function ring(cell: string): number[][] {
+    const r = (cellToBoundary(cell, true) as Array<[number, number]>).map(
+      ([lng, lat]) => [lng, lat],
+    );
+    r.push(r[0]);
+    return r;
+  }
+
+  async function initMap() {
+    try {
+      const [{ default: mapboxgl }] = await Promise.all([
+        import("mapbox-gl"),
+        import("mapbox-gl/dist/mapbox-gl.css"),
+      ]);
+      if (!alive || !mapContainer) return;
+      mapboxglMod = mapboxgl;
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      map = new mapboxgl.Map({
+        container: mapContainer,
+        style: "mapbox://styles/mapbox/satellite-streets-v12",
+        center: [11.3426, 44.4949], // Bologna fallback until boards place it
+        zoom: 4,
+        attributionControl: false,
+      });
+      // Dev/test hook, like window.__kiosk: lets a headless run assert the
+      // goto-fly and zoom without reaching into Mapbox internals. DEV only.
+      if (import.meta.env.DEV) (window as any).__dockMap = map;
+      map.on("load", () => {
+        if (!map) return;
+        // Two hexagon layers, like the dashboard map's upper/lower grids:
+        // the faint PARENT neighbourhood underneath, the exact cell on top.
+        map.addSource("dock-parents", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "dock-parents-fill",
+          type: "fill",
+          source: "dock-parents",
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 },
+        });
+        map.addLayer({
+          id: "dock-parents-line",
+          type: "line",
+          source: "dock-parents",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1.5,
+            "line-opacity": 0.55,
+            "line-dasharray": [2, 2],
+          },
+        });
+        map.addSource("dock-cells", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "dock-cells-fill",
+          type: "fill",
+          source: "dock-cells",
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.35 },
+        });
+        map.addLayer({
+          id: "dock-cells-line",
+          type: "line",
+          source: "dock-cells",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 2.5,
+            "line-opacity": 0.9,
+          },
+        });
+        // Tapping a parent hexagon GOES TO its board's exact cell (the
+        // dashboard's goToHex move) — the badge there is what opens the board.
+        map.on("click", "dock-parents-fill", (e: any) => {
+          const hex = e.features?.[0]?.properties?.hex;
+          if (typeof hex === "string" && hex) flyToCell(hex);
+        });
+        placeBoards();
+      });
+    } catch (err) {
+      console.warn("[kiosk] dock map unavailable", err);
+    }
+  }
+
+  /** Fly to a cell at the zoom its resolution reads best (goToHex-style). */
+  function flyToCell(hex: string) {
+    if (!map) return;
+    const [lat, lng] = cellToLatLng(hex);
+    map.flyTo({
+      center: [lng, lat],
+      zoom: RES_ZOOM[getResolution(hex)] ?? 15,
+      essential: true,
+    });
+  }
+
+  /** Draw every located board: parent + cell polygons, and the hex badge. */
+  function placeBoards() {
+    if (!map || !mapboxglMod) return;
+    const src = map.getSource("dock-cells");
+    if (src)
+      src.setData({
+        type: "FeatureCollection",
+        features: located.map((e) => ({
+          type: "Feature",
+          properties: { color: `hsl(${hueFor(e.id)} 60% 50%)` },
+          geometry: { type: "Polygon", coordinates: [ring(e.hex)] },
+        })),
+      });
+    const parents = map.getSource("dock-parents");
+    if (parents)
+      parents.setData({
+        type: "FeatureCollection",
+        features: located.map((e) => {
+          const res = Math.max(getResolution(e.hex) - PARENT_COARSER, 0);
+          return {
+            type: "Feature",
+            properties: {
+              color: `hsl(${hueFor(e.id)} 60% 50%)`,
+              hex: e.hex, // the tap-to-go-to target, not the parent itself
+            },
+            geometry: {
+              type: "Polygon",
+              coordinates: [ring(cellToParent(e.hex, res))],
+            },
+          };
+        }),
+      });
+
+    for (const m of markers) m.remove();
+    markers = [];
+    for (const e of located) {
+      const [lat, lng] = cellToLatLng(e.hex);
+      const el = document.createElement("button");
+      el.className = "hexmark";
+      el.style.setProperty("--h", String(hueFor(e.id)));
+      el.setAttribute("data-dock-circle", e.id);
+      el.setAttribute("aria-label", e.name);
+      const glyph = /[\p{L}\p{N}]/u.exec(e.name)?.[0]?.toUpperCase() ?? "·";
+      el.innerHTML =
+        `<span class="hexmark__face">${glyph}</span>` +
+        `<span class="hexmark__name"></span>`;
+      // Name via textContent — entry names are data, never markup.
+      el.querySelector(".hexmark__name")!.textContent = e.name;
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        requestOpen(e.id);
+      });
+      markers.push(
+        new mapboxglMod.Marker({ element: el, anchor: "center" })
+          .setLngLat([lng, lat])
+          .addTo(map),
+      );
+    }
+
+    if (located.length === 1) {
+      const [lat, lng] = cellToLatLng(located[0].hex);
+      const res = getResolution(located[0].hex);
+      map.jumpTo({ center: [lng, lat], zoom: Math.max(3, res + 3) });
+    } else if (located.length > 1) {
+      const bounds = new mapboxglMod.LngLatBounds();
+      for (const e of located) {
+        const [lat, lng] = cellToLatLng(e.hex);
+        bounds.extend([lng, lat]);
+      }
+      map.fitBounds(bounds, { padding: 120, maxZoom: 12, duration: 0 });
+    }
+  }
+
+  $: if (alive) void loadHexes($dockEntries);
+
+  // The ONLY place this view asks for coordinates — an explicit tap on the
+  // My-location button. The fix is cached (setGeo) so the sunset theme can
+  // track the real horizon without ever prompting on its own.
+  let locating = false;
+  function locate() {
+    if (!navigator.geolocation) {
+      showNotice(tr("hex.noGeo"));
+      return;
+    }
+    locating = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        locating = false;
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setGeo({ lat, lng });
+        map?.flyTo({ center: [lng, lat], zoom: 13, essential: true });
+      },
+      () => {
+        locating = false;
+        showNotice(tr("hex.denied"));
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  onMount(() => {
+    if (MAPBOX_TOKEN) void initMap();
+  });
+  onDestroy(() => {
+    alive = false;
+    for (const m of markers) m.remove();
+    markers = [];
+    try {
+      map?.remove();
+    } catch {}
+    map = null;
+  });
+</script>
+
+<div class="mapwrap">
+  {#if MAPBOX_TOKEN}
+    <div class="map" bind:this={mapContainer}></div>
+    <button
+      type="button"
+      class="locate"
+      on:click={locate}
+      disabled={locating}
+      aria-label={$t("hex.myLocation")}
+      title={$t("hex.myLocation")}
+    >
+      ◎
+    </button>
+    {#if !loadingHexes && located.length === 0}
+      <p class="empty">{$t("dock.mapEmpty")}</p>
+    {/if}
+  {:else}
+    <p class="empty">{$t("dock.mapEmpty")}</p>
+  {/if}
+</div>
+
+<style>
+  .mapwrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    margin: 0.4rem 1.2rem 0;
+  }
+  .map {
+    position: absolute;
+    inset: 0;
+    /* The wequest-style edge fade: the basemap dissolves into the space
+       around it instead of ending at a hard frame. */
+    -webkit-mask-image: radial-gradient(
+      130% 130% at 50% 50%,
+      #000 60%,
+      transparent 99%
+    );
+    mask-image: radial-gradient(
+      130% 130% at 50% 50%,
+      #000 60%,
+      transparent 99%
+    );
+  }
+
+  .locate {
+    position: absolute;
+    right: 0.9rem;
+    bottom: 0.9rem;
+    z-index: 3;
+    width: 2.9rem;
+    height: 2.9rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.35rem;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--ink-soft);
+    box-shadow: var(--shadow-soft);
+  }
+  .locate:active {
+    transform: scale(0.92);
+  }
+  .locate:disabled {
+    opacity: 0.6;
+  }
+  .empty {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    margin: 0;
+    max-width: 26rem;
+    padding: 0.8rem 1.2rem;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-align: center;
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* The tappable board badge on its cell: a hexagon in the board's hue,
+     translucent fill + firm rim like the deck's orbs, name beneath. Global —
+     the elements are created imperatively as Mapbox markers. */
+  :global(.hexmark) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  :global(.hexmark .hexmark__face) {
+    width: 3.4rem;
+    height: 3.4rem;
+    display: grid;
+    place-items: center;
+    clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
+    background: hsl(var(--h, 200) 60% 50% / 0.55);
+    /* clip-path eats a real border — fake the rim with an inset shadow. */
+    box-shadow: inset 0 0 0 3px hsl(var(--h, 200) 65% 62%);
+    color: #fff;
+    font-size: 1.3rem;
+    font-weight: 800;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+  :global(.hexmark:active .hexmark__face) {
+    transform: scale(0.93);
+  }
+  :global(.hexmark .hexmark__name) {
+    max-width: 8.5rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>

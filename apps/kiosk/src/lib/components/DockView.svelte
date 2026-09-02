@@ -13,6 +13,7 @@
   import {
     boundsPath,
     dockEntries,
+    dockView,
     forgetBoard,
     hueFor,
     labelFor,
@@ -23,6 +24,7 @@
     orbPositions,
     rememberBoard,
     requestOpen,
+    setDockView,
     stepOrbs,
     syncOrbs,
     type OrbSim,
@@ -34,6 +36,7 @@
   import { t } from "$lib/i18n";
   import Modal from "./Modal.svelte";
   import FederationLens from "./FederationLens.svelte";
+  import DockMap from "./DockMap.svelte";
 
   const ORB = 104; // px diameter — keep in sync with the 6.5rem circle below
   const BOUND_PAD = 30; // air between an orb and its holographic bound
@@ -231,7 +234,8 @@
     let raf = 0;
     if (!reducedMotion)
       raf = requestAnimationFrame(function frame(t) {
-        if (fieldW && fieldH && ids.length) {
+        // fieldEl is null while the map view is showing — the physics idles.
+        if (fieldEl && fieldW && fieldH && ids.length) {
           // Re-seat the sim when the cast or the field changes; retained orbs
           // keep their place and momentum, newcomers glide in from the ring.
           const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
@@ -319,121 +323,159 @@
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 <div class="dock" on:click={onBackdrop}>
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <div
-    class="field"
-    role="list"
-    aria-label={$t("dock.boards")}
-    bind:this={fieldEl}
-    bind:clientWidth={fieldW}
-    bind:clientHeight={fieldH}
-    on:click={onBackdrop}
-  >
-    {#if fieldW && fieldH}
-      <!-- Ties + holographic bounds, drawn beneath the orbs. -->
-      <svg class="web" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
-        {#each bounds as b (b.key)}
-          <path class="bound" d={b.d} />
-        {/each}
-        {#each links as l (l[0] + "|" + l[1])}
-          <!-- Read `positions` directly: a helper closure would hide the
+  {#if $dockView === "map"}
+    <!-- The same boards, placed where they live: each claimed cell is a
+         hexagon, and its badge opens the board through the same morph. -->
+    <DockMap />
+  {:else}
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="field"
+      role="list"
+      aria-label={$t("dock.boards")}
+      bind:this={fieldEl}
+      bind:clientWidth={fieldW}
+      bind:clientHeight={fieldH}
+      on:click={onBackdrop}
+    >
+      {#if fieldW && fieldH}
+        <!-- Ties + holographic bounds, drawn beneath the orbs. -->
+        <svg class="web" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
+          {#each bounds as b (b.key)}
+            <path class="bound" d={b.d} />
+          {/each}
+          {#each links as l (l[0] + "|" + l[1])}
+            <!-- Read `positions` directly: a helper closure would hide the
                dependency from the compiler and freeze the orbs in place. -->
-          {@const pa = positions.get(l[0])}
-          {@const pb = positions.get(l[1])}
-          {#if pa && pb}
-            <line class="tie" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} />
-          {/if}
-        {/each}
-      </svg>
+            {@const pa = positions.get(l[0])}
+            {@const pb = positions.get(l[1])}
+            {#if pa && pb}
+              <line class="tie" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} />
+            {/if}
+          {/each}
+        </svg>
 
-      <!-- The intersection lenses, drawn ABOVE the orbs (they are opaque):
+        <!-- The intersection lenses, drawn ABOVE the orbs (they are opaque):
            each federated pair's vesica, tinted and marked ⇅ — tap it to
            configure the pair's flow. Hit detection lives in onOrbClick. -->
-      <svg class="overlaps" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
-        {#each links as l (l[0] + "|" + l[1])}
-          {@const pa = positions.get(l[0])}
-          {@const pb = positions.get(l[1])}
-          {#if pa && pb}
-            {@const vesica = lensPath(pa, pb, ORB / 2)}
-            {#if vesica}
-              <path class="vesica" d={vesica} />
-              <text
-                class="vesica-glyph"
-                x={(pa.x + pb.x) / 2}
-                y={(pa.y + pb.y) / 2}
-                dominant-baseline="central">⇅</text
-              >
+        <svg
+          class="overlaps"
+          viewBox="0 0 {fieldW} {fieldH}"
+          aria-hidden="true"
+        >
+          {#each links as l (l[0] + "|" + l[1])}
+            {@const pa = positions.get(l[0])}
+            {@const pb = positions.get(l[1])}
+            {#if pa && pb}
+              {@const vesica = lensPath(pa, pb, ORB / 2)}
+              {#if vesica}
+                <path class="vesica" d={vesica} />
+                <text
+                  class="vesica-glyph"
+                  x={(pa.x + pb.x) / 2}
+                  y={(pa.y + pb.y) / 2}
+                  dominant-baseline="central">⇅</text
+                >
+              {/if}
             {/if}
+          {/each}
+        </svg>
+
+        {#each $dockEntries as e, i (e.id)}
+          {@const p = positions.get(e.id)}
+          {#if p}
+            <div
+              class="slot"
+              class:front={dragId === e.id}
+              role="listitem"
+              style="--h: {hueFor(e.id)}; --i: {i}; left: {p.x}px; top: {p.y}px"
+            >
+              <button
+                class="orb"
+                class:lifted={dragging && dragId === e.id}
+                class:target={dropTarget === e.id}
+                data-dock-circle={e.id}
+                aria-label={$t("dock.open", { name: e.name })}
+                on:click={(ev) => onOrbClick(ev, e.id)}
+                on:pointerdown={(ev) => onOrbDown(ev, e.id)}
+                on:pointermove={onOrbMove}
+                on:pointerup={onOrbUp}
+                on:pointerleave={onOrbLeave}
+                on:pointercancel={onOrbUp}
+              >
+                <span class="initial">{initialOf(e.name)}</span>
+              </button>
+              {#if editing}
+                <button
+                  class="forget"
+                  aria-label={$t("dock.delete", { name: e.name })}
+                  title={$t("dock.delete", { name: e.name })}
+                  on:click|stopPropagation={() => forgetBoard(e.id)}
+                  >&times;</button
+                >
+              {/if}
+              <span class="name">{e.name}</span>
+            </div>
           {/if}
         {/each}
-      </svg>
-
-      {#each $dockEntries as e, i (e.id)}
-        {@const p = positions.get(e.id)}
-        {#if p}
-          <div
-            class="slot"
-            class:front={dragId === e.id}
-            role="listitem"
-            style="--h: {hueFor(e.id)}; --i: {i}; left: {p.x}px; top: {p.y}px"
-          >
-            <button
-              class="orb"
-              class:lifted={dragging && dragId === e.id}
-              class:target={dropTarget === e.id}
-              data-dock-circle={e.id}
-              aria-label={$t("dock.open", { name: e.name })}
-              on:click={(ev) => onOrbClick(ev, e.id)}
-              on:pointerdown={(ev) => onOrbDown(ev, e.id)}
-              on:pointermove={onOrbMove}
-              on:pointerup={onOrbUp}
-              on:pointerleave={onOrbLeave}
-              on:pointercancel={onOrbUp}
-            >
-              <span class="initial">{initialOf(e.name)}</span>
-            </button>
-            {#if editing}
-              <button
-                class="forget"
-                aria-label={$t("dock.delete", { name: e.name })}
-                title={$t("dock.delete", { name: e.name })}
-                on:click|stopPropagation={() => forgetBoard(e.id)}
-                >&times;</button
-              >
-            {/if}
-            <span class="name">{e.name}</span>
-          </div>
-        {/if}
-      {/each}
-    {/if}
-  </div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="tray">
-    {#if adding}
-      <form class="add" on:submit|preventDefault={submitAdd}>
-        <input
-          type="text"
-          bind:value={draft}
-          bind:this={addInput}
-          placeholder={$t("dock.addPlaceholder")}
-          aria-label={$t("dock.add")}
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-          on:keydown={(e) => e.key === "Escape" && cancelAdd()}
-        />
-        <button type="submit" class="go" aria-label={$t("dock.add")}>→</button>
-        {#if addError}
-          <span class="err" role="alert">{addError}</span>
-        {/if}
-      </form>
-    {:else}
-      <button class="plus" on:click={startAdd}>
-        <span class="plus__sign">+</span>{$t("dock.add")}
+    <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "deck"}
+        role="radio"
+        aria-checked={$dockView === "deck"}
+        on:click={() => setDockView("deck")}
+      >
+        <span aria-hidden="true">◉</span>{$t("dock.deck")}
       </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "map"}
+        role="radio"
+        aria-checked={$dockView === "map"}
+        on:click={() => setDockView("map")}
+      >
+        <span aria-hidden="true">⬡</span>{$t("dock.map")}
+      </button>
+    </div>
+
+    {#if $dockView === "deck"}
+      {#if adding}
+        <form class="add" on:submit|preventDefault={submitAdd}>
+          <input
+            type="text"
+            bind:value={draft}
+            bind:this={addInput}
+            placeholder={$t("dock.addPlaceholder")}
+            aria-label={$t("dock.add")}
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            on:keydown={(e) => e.key === "Escape" && cancelAdd()}
+          />
+          <button type="submit" class="go" aria-label={$t("dock.add")}>→</button
+          >
+          {#if addError}
+            <span class="err" role="alert">{addError}</span>
+          {/if}
+        </form>
+      {:else}
+        <button class="plus" on:click={startAdd}>
+          <span class="plus__sign">+</span>{$t("dock.add")}
+        </button>
+      {/if}
+      <p class="hint">{$t("dock.hint")}</p>
+    {:else}
+      <p class="hint">{$t("dock.mapHint")}</p>
     {/if}
-    <p class="hint">{$t("dock.hint")}</p>
   </div>
 </div>
 
@@ -630,7 +672,7 @@
     transform: scale(0.9);
   }
 
-  /* Bottom tray: add a board + the one-line hint, out of the gravity field. */
+  /* Bottom tray: view toggle, add a board, and the one-line hint. */
   .tray {
     flex: 0 0 auto;
     display: flex;
@@ -638,6 +680,35 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.4rem 1.4rem 1.2rem;
+  }
+
+  .viewtoggle {
+    display: inline-flex;
+    padding: 0.2rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: color-mix(in srgb, var(--card) 60%, transparent);
+  }
+  .viewopt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 700;
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
+  }
+  .viewopt.on {
+    background: var(--card);
+    color: var(--teal-deep);
+    box-shadow: var(--shadow-soft);
+  }
+  .viewopt:active {
+    transform: scale(0.96);
   }
   .plus {
     display: inline-flex;

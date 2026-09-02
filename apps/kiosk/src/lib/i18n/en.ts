@@ -303,6 +303,12 @@ export const en = {
   "dock.addInvalid": "That doesn't name a holon.",
   "dock.hint":
     "Tap a circle to open its board, hold one to remove it — drag one onto another to federate them.",
+  "dock.deck": "Deck",
+  "dock.map": "Map",
+  "dock.mapHint":
+    "Tap a hexagon to open its board — a board claims its place in Settings → Set location.",
+  "dock.mapEmpty":
+    "No board has claimed a place on the map yet — set one in Settings → Set location.",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",

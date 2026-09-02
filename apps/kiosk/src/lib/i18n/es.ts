@@ -310,6 +310,12 @@ export const es: Record<MessageKey, Msg> = {
   "dock.addInvalid": "Eso no identifica un holon.",
   "dock.hint":
     "Toca un círculo para abrir su tablón, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
+  "dock.deck": "Círculos",
+  "dock.map": "Mapa",
+  "dock.mapHint":
+    "Toca un hexágono para abrir su tablón — un tablón elige su lugar en Ajustes → Fijar la ubicación.",
+  "dock.mapEmpty":
+    "Ningún tablón tiene todavía un lugar en el mapa — fíjalo en Ajustes → Fijar la ubicación.",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",

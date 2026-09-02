@@ -12,7 +12,6 @@ import { writable, get } from "svelte/store";
 import {
   type ThemeMode,
   resolveGeo,
-  setGeo,
   setResolvedTheme,
   DARK_FALLBACK_START_HOUR,
   DARK_FALLBACK_END_HOUR,
@@ -106,38 +105,22 @@ function apply(theme: "light" | "dark"): void {
 /**
  * Start the day/night controller. Applies the right palette now, re-checks every
  * minute (sunset drifts only minutes per day, so a coarse tick is ample) and
- * immediately whenever the caretaker changes the mode. In `auto` it asks the
- * browser for coordinates once, caching the fix so a later power-cycle still
- * tracks the real horizon even offline. Returns a teardown fn.
+ * immediately whenever the caretaker changes the mode.
+ *
+ * It NEVER asks the browser for coordinates itself — a permission prompt at
+ * boot is hostile on a wall display. It reads only the cached fix, which the
+ * map surfaces write (via `setGeo`) when someone explicitly taps a My-location
+ * button; each minute-tick re-resolves the cache, so a fresh fix refines the
+ * horizon without any wiring. No fix → the fixed-evening-hours fallback.
+ * Returns a teardown fn.
  */
 export function startTheme(): () => void {
-  let geo = resolveGeo();
-
   const evaluate = () =>
-    apply(isNight(new Date(), get(themeMode), geo) ? "dark" : "light");
+    apply(isNight(new Date(), get(themeMode), resolveGeo()) ? "dark" : "light");
 
   // Fires immediately on subscribe (initial paint) and on every Settings change.
   const unsub = themeMode.subscribe(() => evaluate());
   const timer = setInterval(evaluate, 60_000);
-
-  // One geolocation fix in auto mode; refine the palette once it lands.
-  if (
-    get(themeMode) === "auto" &&
-    typeof navigator !== "undefined" &&
-    navigator.geolocation
-  ) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setGeo(geo);
-        evaluate();
-      },
-      () => {
-        /* denied / unavailable — the fixed-hour fallback is already applied */
-      },
-      { timeout: 10_000, maximumAge: 6 * 3_600_000 },
-    );
-  }
 
   return () => {
     unsub();

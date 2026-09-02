@@ -311,6 +311,12 @@ export const it: Record<MessageKey, Msg> = {
   "dock.addInvalid": "Questo non identifica un holon.",
   "dock.hint":
     "Tocca un cerchio per aprire la sua bacheca, tienilo premuto per rimuoverlo — trascinane uno su un altro per federarli.",
+  "dock.deck": "Cerchi",
+  "dock.map": "Mappa",
+  "dock.mapHint":
+    "Tocca un esagono per aprire la sua bacheca — una bacheca sceglie il suo posto in Impostazioni → Imposta la posizione.",
+  "dock.mapEmpty":
+    "Nessuna bacheca ha ancora un posto sulla mappa — impostalo in Impostazioni → Imposta la posizione.",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Accesso effettuato",

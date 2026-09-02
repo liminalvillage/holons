@@ -455,6 +455,32 @@ function save(list: DockEntry[]): void {
 /** Every board this device has opened, in first-opened order. */
 export const dockEntries = writable<DockEntry[]>(load());
 
+// ── Deck ⇄ map ───────────────────────────────────────────────────────────--
+
+/** How the closed boards are shown: the gravity deck, or the real map. */
+export type DockViewMode = "deck" | "map";
+
+const VIEW_KEY = "kiosk_dock_view";
+
+function loadView(): DockViewMode {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "map" ? "map" : "deck";
+  } catch {
+    return "deck";
+  }
+}
+
+export const dockView = writable<DockViewMode>(loadView());
+
+export function setDockView(mode: DockViewMode): void {
+  dockView.set(mode);
+  try {
+    localStorage.setItem(VIEW_KEY, mode);
+  } catch {
+    /* private mode — the choice just won't survive a reload */
+  }
+}
+
 /** Where the interface is between full window and dock of circles. */
 export const dockState = writable<DockState>("window");
 

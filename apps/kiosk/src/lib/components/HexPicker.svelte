@@ -16,6 +16,7 @@
   } from "h3-js";
   import { showNotice } from "$lib/stores";
   import { getHolosphere, getWriter } from "$lib/holosphere";
+  import { setGeo } from "$lib/config";
   import { t, tr } from "$lib/i18n";
 
   /** The holon whose `settings.hex` is being claimed. */
@@ -82,7 +83,8 @@
   onMount(() => {
     selected = current && isValidCell(current) ? current : null;
     if (selected) resolution = getResolution(selected);
-    else locate();
+    // No auto-locate: the geolocation permission prompt fires only when the
+    // "My location" button below is tapped, never on merely opening the map.
     if (MAPBOX_TOKEN) void initMap();
   });
 
@@ -321,6 +323,7 @@
       (pos) => {
         locating = false;
         const { latitude: lat, longitude: lng } = pos.coords;
+        setGeo({ lat, lng }); // the sunset theme reads this cache — see theme.ts
         selected = latLngToCell(lat, lng, resolution);
         if (map) {
           map.flyTo({
