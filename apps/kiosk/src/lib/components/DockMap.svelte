@@ -15,60 +15,43 @@
     cellToLatLng,
     cellToParent,
     getResolution,
-    polygonToCells,
+    latLngToCell,
   } from "h3-js";
   import { readSettingsHex } from "@holons/core/federation";
-  import { getHolosphere } from "$lib/holosphere";
-  import { setGeo } from "$lib/config";
+  import type { HoloSphere } from "holosphere";
+  import {
+    getHolosphere,
+    normalizeSub,
+    subscribeLensPresence,
+    type Subscription,
+  } from "$lib/holosphere";
+  import { resolveAppName, setGeo } from "$lib/config";
   import { showNotice } from "$lib/stores";
   import { dockEntries, hueFor, requestOpen, type DockEntry } from "$lib/dock";
-  import { t, tr } from "$lib/i18n";
+  import {
+    countsAsPresent,
+    edgeFade,
+    isLensId,
+    itemLabel,
+    lensColor,
+    LENSES,
+    parsePresence,
+    resolutionToZoom,
+    serializePresence,
+    viewportCells,
+    zoomToResolution,
+    type LensId,
+    type PresenceEntry,
+    type ViewBox,
+  } from "$lib/maplens";
+  import { t, tr, type MessageKey } from "$lib/i18n";
 
   const MAPBOX_TOKEN: string = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 
-  // The dashboard map's zoom ↔ resolution bands, so "go to a cell" lands at
-  // the zoom where that cell reads naturally.
-  const RES_ZOOM: Record<number, number> = {
-    0: 2.5,
-    1: 4,
-    2: 5.2,
-    3: 6.5,
-    4: 7.8,
-    5: 9,
-    6: 10.5,
-    7: 12,
-    8: 13.5,
-    9: 15,
-    10: 16,
-    11: 17,
-    12: 18,
-  };
   // How much coarser a board's PARENT hexagon is drawn than its exact cell:
   // a res-9 "block" gets a res-4 neighbourhood — the two-layer display the
   // dashboard map uses, so a board is findable even from country zoom.
   const PARENT_COARSER = 5;
-
-  // Zoom → grid resolution bands, mirroring the HexPicker / dashboard so the
-  // grid lines up cell-for-cell across every surface.
-  function zoomToResolution(zoom: number): number {
-    const bands: Array<[number, number]> = [
-      [3.0, 0],
-      [4.4, 1],
-      [5.7, 2],
-      [7.1, 3],
-      [8.4, 4],
-      [9.8, 5],
-      [11.4, 6],
-      [12.7, 7],
-      [14.1, 8],
-      [15.5, 9],
-      [16.8, 10],
-      [18.2, 11],
-      [19.5, 12],
-    ];
-    for (const [z, r] of bands) if (zoom <= z) return r;
-    return 12;
-  }
 
   let mapContainer: HTMLDivElement | null = null;
   let map: any = null;
@@ -156,7 +139,7 @@
           paint: {
             "line-color": "#ffffff",
             "line-width": 1.2,
-            "line-opacity": 0.18,
+            "line-opacity": ["*", 0.18, ["get", "fade"]],
           },
         });
         map.addLayer({
@@ -167,11 +150,33 @@
           paint: {
             "line-color": "#ffffff",
             "line-width": 2,
-            "line-opacity": 0.45,
+            "line-opacity": ["*", 0.45, ["get", "fade"]],
           },
         });
-        map.on("moveend", rebuildGrid);
-        map.on("zoomend", rebuildGrid);
+        map.on("moveend", onViewChange);
+        map.on("zoomend", onViewChange);
+        // Cells lit by the selected lens — the dashboard map's highlighted
+        // hexagons, in the same per-lens colour.
+        map.addSource("lens-cells", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "lens-cells-fill",
+          type: "fill",
+          source: "lens-cells",
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.45 },
+        });
+        map.addLayer({
+          id: "lens-cells-line",
+          type: "line",
+          source: "lens-cells",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 2,
+            "line-opacity": 0.8,
+          },
+        });
         // Two hexagon layers, like the dashboard map's upper/lower grids:
         // the faint PARENT neighbourhood underneath, the exact cell on top.
         map.addSource("dock-parents", {
@@ -215,18 +220,95 @@
             "line-opacity": 0.9,
           },
         });
-        // Tapping a parent hexagon GOES TO its board's exact cell (the
-        // dashboard's goToHex move) — the badge there is what opens the board.
-        map.on("click", "dock-parents-fill", (e: any) => {
-          const hex = e.features?.[0]?.properties?.hex;
-          if (typeof hex === "string" && hex) flyToCell(hex);
+        // The click-selected cell, in the dashboard's selected-hexagon teal.
+        map.addSource("sel-cell", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "sel-cell-fill",
+          type: "fill",
+          source: "sel-cell",
+          paint: { "fill-color": "#088", "fill-opacity": 0.6 },
+        });
+        map.addLayer({
+          id: "sel-cell-line",
+          type: "line",
+          source: "sel-cell",
+          paint: {
+            "line-color": "#088",
+            "line-width": 2,
+            "line-opacity": 0.8,
+          },
+        });
+        // A tap: on a board's parent hexagon while zoomed at/above the
+        // parent's own scale it means "take me there" (the dashboard's
+        // goToHex move); anywhere else it selects the tapped cell at the
+        // current resolution, exactly like clicking the dashboard map.
+        map.on("click", (e: any) => {
+          const hits = map.queryRenderedFeatures(e.point, {
+            layers: ["dock-parents-fill"],
+          });
+          const target = hits?.[0]?.properties?.hex;
+          if (typeof target === "string" && target) {
+            const parentRes = Math.max(
+              getResolution(target) - PARENT_COARSER,
+              0,
+            );
+            if (zoomToResolution(map.getZoom()) <= parentRes) {
+              flyToCell(target);
+              return;
+            }
+          }
+          selectCell(
+            latLngToCell(
+              e.lngLat.lat,
+              e.lngLat.lng,
+              zoomToResolution(map.getZoom()),
+            ),
+          );
         });
         rebuildGrid();
+        renderLens();
+        reconcileLens();
         placeBoards();
       });
     } catch (err) {
       console.warn("[kiosk] dock map unavailable", err);
     }
+  }
+
+  /** The viewport as a lat/lng polygon (h3's vertex order), or null. */
+  /** The viewport as Mapbox reports it (longitudes may run past ±180). */
+  function viewBox(): ViewBox | null {
+    const bounds = map?.getBounds();
+    if (!bounds) return null;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    return { west: sw.lng, south: sw.lat, east: ne.lng, north: ne.lat };
+  }
+
+  /**
+   * How strongly a cell is drawn: 1 in the middle of the map, dissolving to
+   * 0 at the corners — the grid fades into the card's edge instead of being
+   * cut off by it. Data-driven per cell, so it survives pans between
+   * rebuilds well enough and never touches the lit lens cells.
+   */
+  function cellFade(cell: string): number {
+    if (!map) return 1;
+    const el = map.getContainer() as HTMLElement;
+    const w = el.clientWidth || 1;
+    const h = el.clientHeight || 1;
+    const [lat, lng] = cellToLatLng(cell);
+    const p = map.project([lng, lat]);
+    return edgeFade((p.x - w / 2) / (w / 2), (p.y - h / 2) / (h / 2));
+  }
+
+  /** Every move/zoom settles into: grid, lens highlights, subscriptions. */
+  function onViewChange() {
+    rebuildGrid();
+    renderLens();
+    reconcileLens();
   }
 
   /**
@@ -237,36 +319,25 @@
   function rebuildGrid() {
     if (!map) return;
     const src = map.getSource("dock-grid");
-    const bounds = map.getBounds();
-    if (!src || !bounds) return;
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    const view: Array<[number, number]> = [
-      [ne.lat, sw.lng],
-      [ne.lat, ne.lng],
-      [sw.lat, ne.lng],
-      [sw.lat, sw.lng],
-      [ne.lat, sw.lng],
-    ];
+    const view = viewBox();
+    if (!src || !view) return;
     const res = zoomToResolution(map.getZoom());
     const features: any[] = [];
     for (const [kind, r, cap] of [
       ["grid", res, 3000],
       ["fine", res + 1, 6000],
     ] as const) {
-      let cells: string[] = [];
-      try {
-        cells = polygonToCells(view, r);
-      } catch {
-        cells = [];
-      }
+      const cells = viewportCells(view, r);
       if (cells.length > cap) continue;
-      for (const c of cells)
+      for (const c of cells) {
+        const fade = cellFade(c);
+        if (fade <= 0) continue;
         features.push({
           type: "Feature",
-          properties: { kind },
+          properties: { kind, fade },
           geometry: { type: "Polygon", coordinates: [ring(c)] },
         });
+      }
     }
     src.setData({ type: "FeatureCollection", features });
   }
@@ -277,8 +348,271 @@
     const [lat, lng] = cellToLatLng(hex);
     map.flyTo({
       center: [lng, lat],
-      zoom: RES_ZOOM[getResolution(hex)] ?? 15,
+      zoom: resolutionToZoom(getResolution(hex)),
       essential: true,
+    });
+  }
+
+  // ── Lens layer (dashboard-aligned) ───────────────────────────────────────--
+  //
+  // One live presence subscription per visible (lens, hex) cell, exactly the
+  // dashboard map's model: a lit set per lens (monotonic within a session —
+  // a cell stays known once seen; only a real "nothing left" emission unlights
+  // it), seeded from the persisted presence cache so a cold map paints its
+  // last-known highlights instantly.
+
+  const appName = resolveAppName();
+  const LENS_CHOICE_KEY = `kiosk.mapLens.${appName}`;
+  const presenceKey = (lens: LensId) => `kiosk.presence.${appName}.${lens}`;
+  const lensKey = (id: LensId) => `lens.${id}` as MessageKey;
+
+  function loadLensChoice(): LensId | null {
+    try {
+      const raw = localStorage.getItem(LENS_CHOICE_KEY);
+      if (raw === "") return null; // an explicit "no lens" choice
+      return isLensId(raw) ? raw : "quests";
+    } catch {
+      return "quests";
+    }
+  }
+
+  let selectedLens: LensId | null = loadLensChoice();
+  let hs: HoloSphere | null = null;
+
+  const presence = new Map<LensId, Map<string, PresenceEntry>>();
+  const lit = new Map<LensId, Set<string>>();
+  let lensSubs = new Map<string, Subscription>(); // active lens only
+  const persistTimers = new Map<LensId, ReturnType<typeof setTimeout>>();
+  const LENS_CELL_CAP = 3000;
+
+  /** The lens's lit-cell set, hydrating rows from the persisted cache once. */
+  function litSet(lens: LensId): Set<string> {
+    let s = lit.get(lens);
+    if (!s) {
+      let rows: Map<string, PresenceEntry>;
+      try {
+        rows = parsePresence(localStorage.getItem(presenceKey(lens)));
+      } catch {
+        rows = new Map();
+      }
+      presence.set(lens, rows);
+      s = new Set([...rows].filter(([, e]) => e.has).map(([cell]) => cell));
+      lit.set(lens, s);
+    }
+    return s;
+  }
+
+  function schedulePersist(lens: LensId) {
+    clearTimeout(persistTimers.get(lens));
+    persistTimers.set(
+      lens,
+      setTimeout(() => {
+        const rows = presence.get(lens);
+        if (!rows) return;
+        try {
+          localStorage.setItem(presenceKey(lens), serializePresence(rows));
+        } catch {
+          /* private mode / quota — highlights just won't survive a reload */
+        }
+      }, 400),
+    );
+  }
+
+  /** Paint the lit cells (at-or-finer than the view's resolution, like the
+   *  dashboard) in the lens's colour. */
+  function renderLens() {
+    const src = map?.getSource("lens-cells");
+    if (!src) return;
+    const lens = selectedLens;
+    if (!lens) {
+      src.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const res = zoomToResolution(map.getZoom());
+    const color = lensColor(lens);
+    src.setData({
+      type: "FeatureCollection",
+      features: [...litSet(lens)]
+        .filter((cell) => res <= getResolution(cell))
+        .map((cell) => ({
+          type: "Feature",
+          properties: { color },
+          geometry: { type: "Polygon", coordinates: [ring(cell)] },
+        })),
+    });
+  }
+
+  /**
+   * Reconcile live presence subscriptions against the viewport: every visible
+   * cell at the zoom-matched resolution gets one, cells that scrolled away
+   * are released (their cache row survives, so panning back paints
+   * instantly). Auto-propagation writes hologram pointers up the parent
+   * chain, so presence resolves at the visible cell at any zoom.
+   */
+  function reconcileLens() {
+    if (!map || !hs) return;
+    const lens = selectedLens;
+    if (!lens) return;
+    const view = viewBox();
+    if (!view) return;
+    const cells = viewportCells(view, zoomToResolution(map.getZoom()));
+    if (cells.length > LENS_CELL_CAP) return;
+    const wanted = new Set(cells);
+    litSet(lens); // ensure the lens's cache rows are hydrated
+    const rows = presence.get(lens)!;
+    for (const cell of wanted) {
+      if (lensSubs.has(cell)) continue;
+      lensSubs.set(
+        cell,
+        subscribeLensPresence(
+          hs,
+          cell,
+          lens,
+          (has) => {
+            if (!alive || selectedLens !== lens) return;
+            rows.set(cell, { has, ts: Date.now() });
+            schedulePersist(lens);
+            const s = litSet(lens);
+            const changed = has ? !s.has(cell) : s.delete(cell);
+            if (has) s.add(cell);
+            if (changed) renderLens();
+          },
+          (item, key) => {
+            // Keep the records themselves: Gun replays a cell's data to the
+            // FIRST subscriber only, and that's this one — the panel can't
+            // re-read what already replayed, so it seeds from here.
+            if (!alive || selectedLens !== lens) return;
+            const id = String(item.id ?? key);
+            let held = liveItems.get(cell);
+            if (!held) liveItems.set(cell, (held = new Map()));
+            if (item._deleted === true) held.delete(id);
+            else held.set(id, item);
+            if (selectedCell === cell) panelIngest?.(item, key);
+          },
+        ),
+      );
+    }
+    for (const [cell, sub] of lensSubs) {
+      if (!wanted.has(cell)) {
+        sub.unsubscribe();
+        lensSubs.delete(cell);
+      }
+    }
+  }
+
+  function teardownLensSubs() {
+    for (const sub of lensSubs.values()) sub.unsubscribe();
+    lensSubs = new Map();
+    liveItems.clear(); // the held records belong to the outgoing lens
+  }
+
+  /** Pick a lens chip; tapping the active one stands the lens layer down. */
+  function setLens(id: LensId) {
+    teardownLensSubs();
+    selectedLens = selectedLens === id ? null : id;
+    try {
+      localStorage.setItem(LENS_CHOICE_KEY, selectedLens ?? "");
+    } catch {
+      /* private mode — the choice just won't survive a reload */
+    }
+    renderLens();
+    reconcileLens();
+    refreshPanel();
+  }
+
+  // ── Cell selection (the dashboard's click-to-select) ─────────────────────--
+
+  let selectedCell: string | null = null;
+  let panelItems: Array<Record<string, unknown>> | null = null;
+  let panelSub: Subscription | null = null;
+  /** Records the presence channel has heard, per cell — the panel's seed. */
+  const liveItems = new Map<string, Map<string, Record<string, unknown>>>();
+  /** Open panel's intake, so the presence channel can feed it live. */
+  let panelIngest:
+    | ((item: Record<string, unknown>, key: string) => void)
+    | null = null;
+
+  function selectCell(cell: string) {
+    selectedCell = cell;
+    map?.getSource("sel-cell")?.setData({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "Polygon", coordinates: [ring(cell)] },
+    });
+    refreshPanel();
+  }
+
+  /**
+   * (Re)load the selected (cell, lens) pair into one accumulator with three
+   * feeds, ordered by trust in what Gun actually delivers here:
+   *
+   *  1. `liveItems` — the records the presence channel already heard. Gun
+   *     replays a cell's data to the FIRST subscriber only, and the presence
+   *     subscription that lit the cell was it; nothing subscribed later ever
+   *     hears that replay, so this seed is usually the whole answer.
+   *  2. A fresh live subscription, for writes landing while the panel is
+   *     open (and for a selected cell that scrolled out of the reconciled
+   *     viewport, whose presence channel was released).
+   *  3. A cold `getAll`, raced against a timeout — it can hang forever on
+   *     cells whose content is propagated holograms — folding in anything
+   *     the replay didn't cover, and settling "Loading…" into a truthful
+   *     empty state when there's really nothing.
+   */
+  function refreshPanel() {
+    panelSub?.unsubscribe();
+    panelSub = null;
+    panelIngest = null;
+    panelItems = null;
+    const cell = selectedCell;
+    const lens = selectedLens;
+    if (!cell || !lens || !hs) return;
+    const acc = new Map<string, Record<string, unknown>>(
+      liveItems.get(cell) ?? [],
+    );
+    const stale = () =>
+      !alive || selectedCell !== cell || selectedLens !== lens;
+    const emit = () => {
+      panelItems = [...acc.values()].filter((it) => countsAsPresent(lens, it));
+    };
+    const ingest = (item: any, key?: string) => {
+      if (stale()) return;
+      const id = String((item && (item.id ?? key)) ?? key ?? "");
+      if (!id || id === "_" || id === "#") return;
+      if (item == null || item._deleted) acc.delete(id);
+      else acc.set(id, item);
+      emit();
+    };
+    panelIngest = ingest;
+    panelSub = normalizeSub(hs.subscribe(cell, lens, ingest));
+    void Promise.race([
+      hs.getAll(cell, lens),
+      new Promise<null>((res) => setTimeout(() => res(null), 5000)),
+    ])
+      .then((items) => {
+        if (stale()) return;
+        if (Array.isArray(items)) {
+          for (const it of items as Array<Record<string, unknown>>) {
+            const id = String(it?.id ?? "");
+            if (id && !acc.has(id)) acc.set(id, it);
+          }
+        }
+        emit();
+      })
+      .catch(() => {
+        if (!stale()) emit();
+      });
+    if (acc.size) emit(); // the seed paints immediately
+  }
+
+  function closeSelection() {
+    selectedCell = null;
+    panelSub?.unsubscribe();
+    panelSub = null;
+    panelIngest = null;
+    panelItems = null;
+    map?.getSource("sel-cell")?.setData({
+      type: "FeatureCollection",
+      features: [],
     });
   }
 
@@ -357,53 +691,10 @@
 
   $: if (alive) void loadHexes($dockEntries);
 
-  // ── Location search (Mapbox Geocoding, same token as the basemap) ───────--
-  interface PlaceHit {
-    label: string;
-    lat: number;
-    lng: number;
-  }
-  let searchQuery = "";
-  let searchHits: PlaceHit[] = [];
-  let searching = false;
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function onSearchInput() {
-    clearTimeout(searchTimer);
-    const q = searchQuery.trim();
-    if (q.length < 3) {
-      searchHits = [];
-      return;
-    }
-    searchTimer = setTimeout(() => void searchPlaces(q), 300);
-  }
-
-  async function searchPlaces(q: string) {
-    if (!MAPBOX_TOKEN) return;
-    searching = true;
-    try {
-      const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=address,poi,place,locality,neighborhood`,
-      );
-      const data = await res.json();
-      if (searchQuery.trim() !== q) return; // stale response
-      searchHits = (data?.features ?? []).map((f: any) => ({
-        label: f.place_name as string,
-        lng: f.center?.[0],
-        lat: f.center?.[1],
-      }));
-    } catch {
-      searchHits = [];
-    } finally {
-      searching = false;
-    }
-  }
-
-  function pickPlace(hit: PlaceHit) {
-    searchHits = [];
-    searchQuery = hit.label;
+  // The top bar's place search lands here: glide the map to the pick.
+  export function flyTo(lng: number, lat: number) {
     map?.flyTo({
-      center: [hit.lng, hit.lat],
+      center: [lng, lat],
       zoom: Math.max(map.getZoom(), 12),
       essential: true,
     });
@@ -436,10 +727,21 @@
 
   onMount(() => {
     if (MAPBOX_TOKEN) void initMap();
+    // The lens layer needs the shared holosphere; once it's up, reconcile
+    // whatever the map is already showing (and any pre-selected cell).
+    void getHolosphere().then((h) => {
+      if (!alive) return;
+      hs = h;
+      reconcileLens();
+      if (selectedCell) refreshPanel();
+    });
   });
   onDestroy(() => {
     alive = false;
-    clearTimeout(searchTimer);
+    teardownLensSubs();
+    panelSub?.unsubscribe();
+    panelSub = null;
+    for (const timer of persistTimers.values()) clearTimeout(timer);
     for (const m of markers) m.remove();
     markers = [];
     try {
@@ -452,28 +754,6 @@
 <div class="mapwrap">
   {#if MAPBOX_TOKEN}
     <div class="map" bind:this={mapContainer}></div>
-    <!-- Find a place: floats below the hovering Deck/Map switch. -->
-    <div class="search">
-      <input
-        type="text"
-        bind:value={searchQuery}
-        on:input={onSearchInput}
-        placeholder={$t("hex.searchPlaceholder")}
-        aria-label={$t("hex.searchPlaceholder")}
-      />
-      {#if searching}
-        <span class="searching">{$t("hex.searching")}</span>
-      {/if}
-      {#if searchHits.length}
-        <div class="hits">
-          {#each searchHits as hit (hit.label)}
-            <button type="button" on:click={() => pickPlace(hit)}>
-              {hit.label}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
     <button
       type="button"
       class="locate"
@@ -484,94 +764,98 @@
     >
       ◎
     </button>
-    {#if !loadingHexes && located.length === 0}
-      <p class="empty">{$t("dock.mapEmpty")}</p>
+
+    <!-- The dashboard's lens picker, as touch chips: light the cells that
+         hold this kind of thing. Tapping the active chip stands it down. -->
+    <div class="lensbar" role="group" aria-label={$t("map.lensAria")}>
+      {#each LENSES as l (l.id)}
+        <button
+          type="button"
+          class="chip"
+          class:active={selectedLens === l.id}
+          style:--c={l.color}
+          aria-pressed={selectedLens === l.id}
+          on:click={() => setLens(l.id)}
+        >
+          <span class="cdot" aria-hidden="true"></span>{$t(lensKey(l.id))}
+        </button>
+      {/each}
+    </div>
+
+    <!-- What lives in the tapped cell, for the selected lens — the
+         dashboard sidebar's job, sized for a kiosk. -->
+    {#if selectedCell}
+      <aside class="cellpanel">
+        <header>
+          {#if selectedLens}
+            <span
+              class="cdot"
+              style:--c={lensColor(selectedLens)}
+              aria-hidden="true"
+            ></span>
+            <strong>{$t(lensKey(selectedLens))}</strong>
+          {/if}
+          <code>{selectedCell}</code>
+          <button
+            type="button"
+            class="closep"
+            on:click={closeSelection}
+            aria-label={$t("map.closePanel")}
+          >
+            ×
+          </button>
+        </header>
+        {#if !selectedLens}
+          <p class="hint">{$t("map.cellPickLens")}</p>
+        {:else if panelItems == null}
+          <p class="hint">{$t("map.cellLoading")}</p>
+        {:else if panelItems.length === 0}
+          <p class="hint">{$t("map.cellEmpty")}</p>
+        {:else}
+          <p class="count">{$t("map.cellItems", { n: panelItems.length })}</p>
+          <ul>
+            {#each panelItems.slice(0, 40) as item, i (item.id ?? i)}
+              <li>{itemLabel(item)}</li>
+            {/each}
+          </ul>
+        {/if}
+      </aside>
     {/if}
   {:else}
-    <p class="empty">{$t("dock.mapEmpty")}</p>
+    <p class="empty">{$t("dock.mapUnavailable")}</p>
   {/if}
 </div>
 
 <style>
+  /* The wequest map card: a rounded, dark-grounded frame the basemap fills
+     edge to edge, with the hex grid dissolving before it reaches the rim
+     (see cellFade) and a soft vignette settling the satellite imagery into
+     the frame. */
   .mapwrap {
     position: relative;
     flex: 1;
     min-height: 0;
-    margin: 0.4rem 1.2rem 0;
+    margin: 0.4rem 1.2rem 0.6rem;
+    border-radius: calc(var(--radius) * 1.5);
+    overflow: hidden;
+    background: #1a2426;
+    box-shadow: var(--shadow-soft);
+    isolation: isolate;
   }
   .map {
     position: absolute;
     inset: 0;
-    /* The wequest-style edge fade: the basemap dissolves into the space
-       around it instead of ending at a hard frame. */
-    -webkit-mask-image: radial-gradient(
-      130% 130% at 50% 50%,
-      #000 60%,
-      transparent 99%
-    );
-    mask-image: radial-gradient(
-      130% 130% at 50% 50%,
-      #000 60%,
-      transparent 99%
-    );
   }
-
-  .search {
+  .mapwrap::after {
+    content: "";
     position: absolute;
-    top: 3.6rem; /* clears the hovering Deck/Map switch */
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 3;
-    width: min(24rem, calc(100% - 2rem));
-  }
-  .search input {
-    width: 100%;
-    height: 2.6rem;
-    padding: 0 1rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    background: color-mix(in srgb, var(--card) 88%, transparent);
-    color: var(--ink);
-    font-size: 0.92rem;
-    font-family: inherit;
-    box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(6px);
-  }
-  .search input:focus {
-    outline: none;
-    border-color: var(--teal);
-  }
-  .searching {
-    position: absolute;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-  .hits {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 5;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    border-radius: 12px;
-    box-shadow: var(--shadow-soft);
-    overflow: hidden;
-  }
-  .hits button {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 0.65rem 0.9rem;
-    font-size: 0.85rem;
-    color: var(--ink);
-    border-bottom: 1px solid var(--line);
-  }
-  .hits button:last-child {
-    border-bottom: none;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+      inset 0 0 48px rgba(10, 18, 20, 0.45);
   }
 
   .locate {
@@ -595,6 +879,122 @@
   }
   .locate:disabled {
     opacity: 0.6;
+  }
+
+  /* The lens chips: one horizontal, swipeable row along the bottom edge,
+     leaving the corner to the My-location button. */
+  .lensbar {
+    position: absolute;
+    left: 0.9rem;
+    right: 4.4rem;
+    bottom: 0.9rem;
+    z-index: 3;
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding: 0.15rem 0.1rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .lensbar::-webkit-scrollbar {
+    display: none;
+  }
+  .chip {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 2.2rem;
+    padding: 0 0.85rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-family: inherit;
+    white-space: nowrap;
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+  }
+  .chip.active {
+    border-color: var(--c);
+    background: color-mix(in srgb, var(--c) 22%, var(--card));
+    color: var(--ink);
+  }
+  .cdot {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--c);
+    flex: none;
+  }
+
+  /* The tapped cell's contents — a floating card above the lens bar. */
+  .cellpanel {
+    position: absolute;
+    left: 0.9rem;
+    bottom: 4.2rem;
+    z-index: 4;
+    width: min(19rem, calc(100% - 6rem));
+    max-height: 44%;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow-soft);
+    padding: 0.7rem 0.9rem;
+  }
+  .cellpanel header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+  .cellpanel strong {
+    color: var(--ink);
+    font-size: 0.9rem;
+  }
+  .cellpanel code {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .closep {
+    flex: none;
+    width: 1.8rem;
+    height: 1.8rem;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+  .cellpanel .hint,
+  .cellpanel .count {
+    margin: 0.55rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .cellpanel ul {
+    margin: 0.35rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cellpanel li {
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.86rem;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .empty {
     position: absolute;
