@@ -10,6 +10,8 @@ import {
   LENSES,
   countsAsPresent,
   edgeFade,
+  formatDetailValue,
+  itemDetails,
   globalCells,
   isLensId,
   itemLabel,
@@ -192,5 +194,132 @@ describe("itemLabel", () => {
     expect(itemLabel({ description: "x".repeat(120) })).toHaveLength(80);
     expect(itemLabel({ id: 42 })).toBe("42");
     expect(itemLabel(null)).toBe("");
+  });
+});
+
+describe("itemDetails", () => {
+  const iso = (d: Date) => d.toISOString();
+
+  it("orders the well-known fields first and formats them for people", () => {
+    const rows = itemDetails(
+      {
+        id: "q1",
+        title: "Fix the pump",
+        description: "The well pump\n\nneeds a new seal.",
+        status: "ongoing",
+        when: "2026-09-02T10:00:00.000Z",
+        location: "Barn",
+        participants: [{ id: 1, name: "Ada" }, { username: "bob" }],
+        initiator: { first_name: "Cy" },
+        created: "2026-08-01T00:00:00.000Z",
+        picture: "http://x/y.png",
+        _deleted: false,
+        _meta: { anything: 1 },
+      },
+      { formatDate: iso },
+    );
+    expect(rows.map((r) => r.key)).toEqual([
+      "status",
+      "description",
+      "when",
+      "location",
+      "participants",
+      "initiator",
+      "created",
+    ]);
+    expect(rows.find((r) => r.key === "description")?.value).toBe(
+      "The well pump needs a new seal.",
+    );
+    expect(rows.find((r) => r.key === "when")?.value).toBe(
+      "2026-09-02T10:00:00.000Z",
+    );
+    expect(rows.find((r) => r.key === "participants")?.value).toBe(
+      "2 · Ada, bob",
+    );
+    expect(rows.find((r) => r.key === "initiator")?.value).toBe("Cy");
+  });
+
+  it("never repeats the headline field as a row", () => {
+    // An announcement's headline IS its text — no `title`.
+    const rows = itemDetails({ id: 1, text: "Market on Sunday", chat: "c" });
+    expect(itemLabel({ text: "Market on Sunday" })).toBe("Market on Sunday");
+    expect(rows.find((r) => r.key === "description")).toBeUndefined();
+    expect(rows).toEqual([]);
+  });
+
+  it("folds amount + currency, and names the origin holon", () => {
+    const rows = itemDetails({
+      id: "e1",
+      description: "Seeds",
+      amount: 12.5,
+      currency: "EUR",
+      paidBy: "ada",
+      splitWith: ["ada", "bob"],
+      _holon: "-100123",
+    });
+    expect(rows).toEqual([
+      { key: "amount", value: "12.5 EUR" },
+      { key: "paidBy", value: "ada" },
+      { key: "splitWith", value: "2 · ada, bob" },
+      { key: "origin", value: "-100123" },
+    ]);
+  });
+
+  it("appends leftover scalar fields alphabetically, skipping graph plumbing", () => {
+    const rows = itemDetails({
+      id: "x",
+      name: "Thing",
+      zeta: "last",
+      alpha: 3,
+      ok: true,
+      nested: { deep: 1 }, // unknown objects are not rows
+      "#": "soul",
+      ">": { name: 1 },
+      _: { ">": {} },
+      _hidden: "no",
+    });
+    expect(rows).toEqual([
+      { key: "alpha", value: "3" },
+      { key: "ok", value: "✓" },
+      { key: "zeta", value: "last" },
+    ]);
+  });
+
+  it("drops fields that merely echo the headline, and reads primaryUrl as the link", () => {
+    const rows = itemDetails({
+      id: "p1",
+      title: "Italy: Casa Selva",
+      url: "", // an empty alias must not claim the row
+      name: "Italy: Casa Selva",
+      description: "Italy: Casa Selva",
+      primary_url: "https://casaselva.earth",
+      geolocation: { lat: 42.85123, lon: 13.5789 },
+      region: "Italy",
+    });
+    expect(rows).toEqual([
+      { key: "location", value: "42.8512, 13.5789" },
+      { key: "link", value: "https://casaselva.earth" },
+      { key: "region", value: "Italy" },
+    ]);
+  });
+
+  it("caps long values", () => {
+    const long = "x".repeat(1000);
+    const rows = itemDetails(
+      { title: "t", description: long, category: long },
+      { maxLength: 100 },
+    );
+    expect(rows.find((r) => r.key === "description")?.value).toHaveLength(100);
+    expect(rows.find((r) => r.key === "category")?.value).toHaveLength(25);
+  });
+
+  it("handles junk gracefully", () => {
+    expect(itemDetails(null)).toEqual([]);
+    expect(itemDetails("str")).toEqual([]);
+    expect(itemDetails([1, 2])).toEqual([]);
+    expect(formatDetailValue({ "#": "soul" })).toBe("");
+    expect(formatDetailValue(1725270000000, { formatDate: iso })).toBe(
+      "2024-09-02T09:40:00.000Z",
+    );
   });
 });

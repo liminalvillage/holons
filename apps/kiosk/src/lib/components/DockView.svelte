@@ -39,8 +39,10 @@
   import DockMap from "./DockMap.svelte";
   import PlaceSearch from "./PlaceSearch.svelte";
 
-  // The map, when it's showing — the top bar's place search flies it.
+  // The map, when it's showing — the top bar's place search flies it, and
+  // its My-location button asks it to locate.
   let dockMap: DockMap | undefined;
+  let locating = false;
 
   // The orb is sized in rem so it scales with the kiosk's fluid root font
   // (app.css clamps it 14–22px by viewport width). The physics, the vesica,
@@ -358,7 +360,7 @@
   {#if $dockView === "map"}
     <!-- The same boards, placed where they live: each claimed cell is a
          hexagon, and its badge opens the board through the same morph. -->
-    <DockMap bind:this={dockMap} />
+    <DockMap bind:this={dockMap} bind:locating />
   {:else}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
@@ -458,9 +460,15 @@
     </div>
   {/if}
 
-  <!-- The view switch hovers over whichever surface is showing; on the map
-       the place search sits beside it and takes whatever width is left. -->
+  <!-- The top bar hovers over whichever surface is showing, in three slots:
+       the view switch always in the middle; on the map, the place search to
+       its left and the My-location button at the right edge. -->
   <div class="topbar">
+    <div class="topbar__left">
+      {#if $dockView === "map"}
+        <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
+      {/if}
+    </div>
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
       <button
         type="button"
@@ -483,9 +491,20 @@
         <span aria-hidden="true">⬡</span>{$t("dock.map")}
       </button>
     </div>
-    {#if $dockView === "map"}
-      <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
-    {/if}
+    <div class="topbar__right">
+      {#if $dockView === "map"}
+        <button
+          type="button"
+          class="locate"
+          on:click={() => dockMap?.locate()}
+          disabled={locating}
+          aria-label={$t("hex.myLocation")}
+          title={$t("hex.myLocation")}
+        >
+          ◎
+        </button>
+      {/if}
+    </div>
   </div>
 
   <div class="tray">
@@ -724,26 +743,58 @@
     padding: 0.4rem 1.4rem 1.2rem;
   }
 
-  /* Floating top bar: the view switch (and, on the map, the place search)
-     hover over the field / the map, never in-flow. The bar itself lets taps
-     through to whatever is beneath; only its children catch them. */
+  /* Floating top bar: three slots — search | view switch | my-location —
+     hovering over the field / the map, never in-flow. The switch stays
+     centred whatever the side slots hold. The bar (and its empty slots) let
+     taps through to whatever is beneath; only the controls catch them. */
   .topbar {
     position: absolute;
     top: calc(env(safe-area-inset-top) + 0.8rem);
     left: calc(env(safe-area-inset-left) + 0.8rem);
     right: calc(env(safe-area-inset-right) + 0.8rem);
     z-index: 6; /* above the map (and its overlays) and the gravity field */
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 0.5rem;
     pointer-events: none;
   }
-  .topbar > :global(*) {
+  .topbar__left,
+  .topbar__right {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .topbar__right {
+    justify-content: flex-end;
+  }
+  .topbar :global(.viewtoggle),
+  .topbar :global(.placesearch),
+  .topbar :global(.locate) {
     pointer-events: auto;
   }
   .topbar :global(.placesearch) {
     flex: 0 1 24rem;
+  }
+  .locate {
+    flex: none;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.3rem;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    border: 1.5px solid var(--line);
+    color: var(--ink-soft);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+  }
+  .locate:active {
+    transform: scale(0.92);
+  }
+  .locate:disabled {
+    opacity: 0.6;
   }
   .viewtoggle {
     flex: 0 0 auto;

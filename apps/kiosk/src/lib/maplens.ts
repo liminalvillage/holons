@@ -247,3 +247,224 @@ export function itemLabel(item: unknown): string {
   }
   return String(it.id ?? "");
 }
+
+// ── Item details (the cell panel's tap-through) ─────────────────────────--
+//
+// A lens record is whatever shape its lens writes — a quest carries
+// `status`/`when`/`participants`, a library thing `borrower`/`value`, an
+// expense `amount`/`currency`… The panel doesn't know the lens's schema, so
+// this reads the JSON generically: the well-known fields first, in a fixed
+// order and formatted for people (dates localised, people by name, lists
+// joined), then whatever other scalar fields the record carries, and never
+// the graph's own bookkeeping.
+
+export type DetailRow = { key: string; value: string };
+
+export type DetailOptions = {
+  /** How a date is rendered; defaults to the `en` medium date + short time. */
+  formatDate?: (d: Date) => string;
+  /** Long-text cap (descriptions); other values are capped at a fourth. */
+  maxLength?: number;
+};
+
+/** Fields shown first, in this order, under a stable row key. */
+const DETAIL_ORDER: ReadonlyArray<readonly [key: string, ...fields: string[]]> =
+  [
+    ["status", "status"],
+    ["type", "type"],
+    ["category", "category"],
+    ["description", "description", "content", "text", "body", "notes"],
+    ["when", "when", "date", "start", "startDate", "starts"],
+    ["ends", "ends", "end", "endDate", "until"],
+    ["location", "location", "address", "place", "geolocation", "geo"],
+    ["amount", "amount"],
+    ["value", "value", "price"],
+    ["participants", "participants", "members", "attendees"],
+    ["initiator", "initiator", "author", "creator", "createdByUsername"],
+    ["paidBy", "paidBy"],
+    ["splitWith", "splitWith"],
+    ["borrower", "borrower"],
+    ["tags", "tags"],
+    ["link", "url", "link", "website", "primaryUrl", "primary_url", "href"],
+    ["origin", "_holon"],
+    ["created", "created", "createdAt", "timestamp"],
+  ];
+
+/** Never rows: the record's identity, its picture, and graph bookkeeping. */
+const DETAIL_SKIP = new Set([
+  "id",
+  "picture",
+  "image",
+  "images",
+  "avatar",
+  "currency", // folded into `amount`
+  "canvasId",
+  "orderIndex",
+  "chat",
+  "user",
+  "bookings",
+  "borrowed",
+  "borrowerId",
+  "borrowerInitials",
+  "dependencies",
+  "subtasks",
+  "appreciation",
+  "stoppers",
+  "ratings",
+  "issues",
+  "#",
+  ">",
+  "_",
+]);
+
+const ISO_DATE =
+  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function defaultFormatDate(d: Date): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(d);
+}
+
+/** A date from an ISO string or an epoch-millis number, else null. */
+function asDate(v: unknown): Date | null {
+  if (typeof v === "number" && v > 1e11 && v < 1e14) return new Date(v);
+  if (typeof v === "string" && ISO_DATE.test(v.trim())) {
+    const d = new Date(v.trim());
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+/** A `{ lat, lng|lon|long }` object as "lat, lng", else null. */
+function latLngOf(o: Record<string, unknown>): string | null {
+  const lat = o.lat ?? o.latitude;
+  const lng = o.lng ?? o.lon ?? o.long ?? o.longitude;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
+/** A person-ish object by its most human handle. */
+function personName(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v !== "object") return String(v);
+  const p = v as Record<string, unknown>;
+  for (const f of ["name", "username", "first_name", "title", "label", "id"]) {
+    const s = p[f];
+    if (typeof s === "string" && s.trim()) return s.trim();
+    if (typeof s === "number") return String(s);
+  }
+  return "";
+}
+
+function clip(s: string, max: number): string {
+  const one = s.replace(/\s+/g, " ").trim();
+  return one.length > max ? `${one.slice(0, max - 1)}…` : one;
+}
+
+/** Render one field's value for the panel; "" means "leave this row out". */
+export function formatDetailValue(
+  v: unknown,
+  opts: DetailOptions = {},
+): string {
+  const fmt = opts.formatDate ?? defaultFormatDate;
+  const max = opts.maxLength ?? 600;
+  if (v == null || v === "") return "";
+  const d = asDate(v);
+  if (d) return fmt(d);
+  if (typeof v === "boolean") return v ? "✓" : "✗";
+  if (typeof v === "number") return String(v);
+  if (typeof v === "string") return clip(v, max);
+  if (Array.isArray(v)) {
+    const names = v.map(personName).filter(Boolean);
+    if (!names.length) return "";
+    return clip(`${names.length} · ${names.join(", ")}`, max);
+  }
+  if (typeof v === "object") {
+    // A Gun link ({ "#": soul }) is graph plumbing, not content.
+    if ("#" in (v as object)) return "";
+    const coords = latLngOf(v as Record<string, unknown>);
+    if (coords) return coords;
+    const name = personName(v);
+    if (name) return clip(name, max);
+    // An id-keyed set (participants as {id: {…}}) — count and name them.
+    const members = Object.values(v as Record<string, unknown>).filter(
+      (m) => m != null && m !== false && m !== 0 && m !== "",
+    );
+    if (!members.length) return "";
+    const names = members.map(personName).filter(Boolean);
+    return clip(
+      names.length
+        ? `${names.length} · ${names.join(", ")}`
+        : String(members.length),
+      max,
+    );
+  }
+  return "";
+}
+
+/**
+ * The rows the panel shows for one tapped record: well-known fields first
+ * (see DETAIL_ORDER), then the record's remaining scalar fields, minus the
+ * field already used as its headline (see itemLabel) and the skip list.
+ */
+export function itemDetails(
+  item: unknown,
+  opts: DetailOptions = {},
+): DetailRow[] {
+  const it = item as Record<string, unknown> | null;
+  if (it == null || typeof it !== "object" || Array.isArray(it)) return [];
+  const short = { ...opts, maxLength: Math.ceil((opts.maxLength ?? 600) / 4) };
+  const rows: DetailRow[] = [];
+  const used = new Set<string>();
+
+  // The headline field is the panel's title — don't repeat it as a row,
+  // nor any other field that merely says the same thing (`name` = `title`).
+  let headline = "";
+  for (const f of ["title", "name", "label", "text", "description"]) {
+    const v = it[f];
+    if (typeof v === "string" && v.trim()) {
+      used.add(f);
+      headline = v.trim();
+      break;
+    }
+  }
+  const echoesHeadline = (v: unknown) =>
+    typeof v === "string" && v.trim() === headline;
+
+  for (const [key, ...fields] of DETAIL_ORDER) {
+    for (const f of fields) {
+      if (used.has(f) || !formatDetailValue(it[f], short)) continue; // absent
+      used.add(f);
+      if (echoesHeadline(it[f])) break;
+      let value: string;
+      if (key === "amount" && typeof it.amount === "number") {
+        const cur = typeof it.currency === "string" ? it.currency : "";
+        value = cur ? `${it.amount} ${cur}` : String(it.amount);
+      } else {
+        value = formatDetailValue(it[f], key === "description" ? opts : short);
+      }
+      if (value) rows.push({ key, value });
+      break; // the first present alias wins the row
+    }
+  }
+
+  const rest = Object.keys(it)
+    .filter(
+      (k) =>
+        !used.has(k) &&
+        !DETAIL_SKIP.has(k) &&
+        !k.startsWith("_") &&
+        !echoesHeadline(it[k]) &&
+        (typeof it[k] === "string" ||
+          typeof it[k] === "number" ||
+          typeof it[k] === "boolean"),
+    )
+    .sort();
+  for (const k of rest) {
+    const value = formatDetailValue(it[k], short);
+    if (value) rows.push({ key: k, value });
+  }
+  return rows;
+}

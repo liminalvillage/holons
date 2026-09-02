@@ -34,6 +34,7 @@
     countsAsPresent,
     edgeFade,
     isLensId,
+    itemDetails,
     itemLabel,
     lensColor,
     LENSES,
@@ -46,7 +47,8 @@
     type PresenceEntry,
     type ViewBox,
   } from "$lib/maplens";
-  import { t, tr, type MessageKey } from "$lib/i18n";
+  import { locale, t, tr, type MessageKey } from "$lib/i18n";
+  import { en } from "$lib/i18n/en";
 
   const MAPBOX_TOKEN: string = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 
@@ -526,6 +528,33 @@
 
   let selectedCell: string | null = null;
   let panelItems: Array<Record<string, unknown>> | null = null;
+  /** The list row tapped through to its details (by record id). */
+  let detailId: string | null = null;
+  $: detailItem =
+    detailId != null
+      ? (panelItems?.find((it) => String(it.id ?? "") === detailId) ?? null)
+      : null;
+  // The record's own fields, formatted for people (lib/maplens); dates in
+  // the kiosk's language.
+  $: detailRows = detailItem
+    ? itemDetails(detailItem, {
+        formatDate: (d) =>
+          new Intl.DateTimeFormat($locale, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(d),
+      })
+    : [];
+  /** A row's label: the catalog's, else the field name spaced out. */
+  function fieldLabel(key: string): string {
+    const k = `map.field.${key}`;
+    if (k in en) return $t(k as MessageKey);
+    return key
+      .replace(/[_-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/^./, (c) => c.toUpperCase());
+  }
+  const idOf = (it: Record<string, unknown>) => String(it.id ?? "");
   let panelSub: Subscription | null = null;
   /** Records the presence channel has heard, per cell — the panel's seed. */
   const liveItems = new Map<string, Map<string, Record<string, unknown>>>();
@@ -536,6 +565,7 @@
 
   function selectCell(cell: string) {
     selectedCell = cell;
+    detailId = null;
     map?.getSource("sel-cell")?.setData({
       type: "Feature",
       properties: {},
@@ -565,6 +595,7 @@
     panelSub = null;
     panelIngest = null;
     panelItems = null;
+    detailId = null;
     const cell = selectedCell;
     const lens = selectedLens;
     if (!cell || !lens || !hs) return;
@@ -608,6 +639,7 @@
 
   function closeSelection() {
     selectedCell = null;
+    detailId = null;
     panelSub?.unsubscribe();
     panelSub = null;
     panelIngest = null;
@@ -714,10 +746,11 @@
   }
 
   // The ONLY place this view asks for coordinates — an explicit tap on the
-  // My-location button. The fix is cached (setGeo) so the sunset theme can
-  // track the real horizon without ever prompting on its own.
-  let locating = false;
-  function locate() {
+  // top bar's My-location button (DockView). The fix is cached (setGeo) so
+  // the sunset theme can track the real horizon without ever prompting on
+  // its own.
+  export let locating = false;
+  export function locate() {
     if (!navigator.geolocation) {
       showNotice(tr("hex.noGeo"));
       return;
@@ -767,16 +800,6 @@
 <div class="mapwrap">
   {#if MAPBOX_TOKEN}
     <div class="map" bind:this={mapContainer}></div>
-    <button
-      type="button"
-      class="locate"
-      on:click={locate}
-      disabled={locating}
-      aria-label={$t("hex.myLocation")}
-      title={$t("hex.myLocation")}
-    >
-      ◎
-    </button>
 
     <!-- The dashboard's lens picker, as touch chips: light the cells that
          hold this kind of thing. Tapping the active chip stands it down. -->
@@ -800,6 +823,17 @@
     {#if selectedCell}
       <aside class="cellpanel">
         <header>
+          {#if detailItem}
+            <button
+              type="button"
+              class="backp"
+              on:click={() => (detailId = null)}
+              aria-label={$t("map.back")}
+              title={$t("map.back")}
+            >
+              ‹
+            </button>
+          {/if}
           {#if selectedLens}
             <span
               class="cdot"
@@ -824,11 +858,46 @@
           <p class="hint">{$t("map.cellLoading")}</p>
         {:else if panelItems.length === 0}
           <p class="hint">{$t("map.cellEmpty")}</p>
+        {:else if detailItem}
+          <!-- One record, read straight off its JSON: headline, then the
+               well-known fields formatted for people, then the rest. -->
+          <article class="detail">
+            <h3>{itemLabel(detailItem)}</h3>
+            {#if detailRows.length === 0}
+              <p class="hint">{$t("map.detailEmpty")}</p>
+            {:else}
+              <dl>
+                {#each detailRows as row (row.key)}
+                  <div class="row" class:long={row.key === "description"}>
+                    <dt>{fieldLabel(row.key)}</dt>
+                    <dd>
+                      {#if row.key === "link" && /^https?:\/\//.test(row.value)}
+                        <a href={row.value} target="_blank" rel="noopener"
+                          >{row.value}</a
+                        >
+                      {:else}
+                        {row.value}
+                      {/if}
+                    </dd>
+                  </div>
+                {/each}
+              </dl>
+            {/if}
+          </article>
         {:else}
           <p class="count">{$t("map.cellItems", { n: panelItems.length })}</p>
           <ul>
             {#each panelItems.slice(0, 40) as item, i (item.id ?? i)}
-              <li>{itemLabel(item)}</li>
+              <li>
+                <button
+                  type="button"
+                  class="rowbtn"
+                  on:click={() => (detailId = idOf(item))}
+                >
+                  <span class="rowlabel">{itemLabel(item)}</span>
+                  <span class="chev" aria-hidden="true">›</span>
+                </button>
+              </li>
             {/each}
           </ul>
         {/if}
@@ -871,35 +940,11 @@
       inset 0 0 48px rgba(10, 18, 20, 0.45);
   }
 
-  .locate {
-    position: absolute;
-    right: 0.9rem;
-    bottom: 0.9rem;
-    z-index: 3;
-    width: 2.9rem;
-    height: 2.9rem;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 1.35rem;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    color: var(--ink-soft);
-    box-shadow: var(--shadow-soft);
-  }
-  .locate:active {
-    transform: scale(0.92);
-  }
-  .locate:disabled {
-    opacity: 0.6;
-  }
-
-  /* The lens chips: one horizontal, swipeable row along the bottom edge,
-     leaving the corner to the My-location button. */
+  /* The lens chips: one horizontal, swipeable row along the bottom edge. */
   .lensbar {
     position: absolute;
     left: 0.9rem;
-    right: 4.4rem;
+    right: 0.9rem;
     bottom: 0.9rem;
     z-index: 3;
     display: flex;
@@ -949,8 +994,8 @@
     left: 0.9rem;
     bottom: 4.2rem;
     z-index: 4;
-    width: min(19rem, calc(100% - 6rem));
-    max-height: 44%;
+    width: min(21rem, calc(100% - 6rem));
+    max-height: 60%;
     overflow-y: auto;
     background: var(--card);
     border: 1.5px solid var(--line);
@@ -976,7 +1021,8 @@
     font-size: 0.68rem;
     color: var(--muted);
   }
-  .closep {
+  .closep,
+  .backp {
     flex: none;
     width: 1.8rem;
     height: 1.8rem;
@@ -988,6 +1034,11 @@
     color: var(--muted);
     font-size: 1.2rem;
     line-height: 1;
+  }
+  .backp {
+    margin-left: -0.35rem;
+    font-size: 1.5rem;
+    color: var(--ink-soft);
   }
   .cellpanel .hint,
   .cellpanel .count {
@@ -1001,13 +1052,80 @@
     list-style: none;
   }
   .cellpanel li {
-    padding: 0.4rem 0;
     border-top: 1px solid var(--line);
+  }
+  /* Each row is a tap-through to the record's details. */
+  .rowbtn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0;
+    background: none;
+    border: none;
+    text-align: left;
+    font-family: inherit;
     font-size: 0.86rem;
     color: var(--ink);
+  }
+  .rowbtn:active {
+    opacity: 0.7;
+  }
+  .rowlabel {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .chev {
+    flex: none;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  /* The record's details: headline, then label/value pairs off its JSON. */
+  .detail h3 {
+    margin: 0.55rem 0 0.3rem;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .detail dl {
+    margin: 0;
+  }
+  .detail .row {
+    display: grid;
+    grid-template-columns: 6.2rem 1fr;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.84rem;
+  }
+  .detail .row.long {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+  .detail dt {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding-top: 0.1rem;
+  }
+  .detail dd {
+    margin: 0;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+  .detail a {
+    color: var(--teal-deep);
+    text-decoration: underline;
   }
   .empty {
     position: absolute;
