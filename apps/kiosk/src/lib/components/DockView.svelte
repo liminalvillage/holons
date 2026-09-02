@@ -32,7 +32,7 @@
   } from "$lib/dock";
   import { getHolosphere } from "$lib/holosphere";
   import { getFederationSnapshot } from "@holons/core/federation";
-  import { parseHolonPaste } from "$lib/holons";
+  import { parseHolonAdd } from "$lib/holons";
   import { t } from "$lib/i18n";
   import Modal from "./Modal.svelte";
   import FederationLens from "./FederationLens.svelte";
@@ -463,7 +463,7 @@
   <!-- The top bar hovers over whichever surface is showing, in three slots:
        the view switch always in the middle; on the map, the place search to
        its left and the My-location button at the right edge. -->
-  <div class="topbar">
+  <div class="topbar" class:onmap={$dockView === "map"}>
     <div class="topbar__left">
       {#if $dockView === "map"}
         <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
@@ -759,6 +759,14 @@
     gap: 0.5rem;
     pointer-events: none;
   }
+  /* On the map the bar lives INSIDE the map card: inset to the card's
+     margin (DockMap .mapwrap) plus the same breathing room its lens chips
+     keep, so neither the search nor the locate button ever hangs past the
+     rounded frame. */
+  .topbar.onmap {
+    left: calc(env(safe-area-inset-left) + 1.2rem + 0.9rem);
+    right: calc(env(safe-area-inset-right) + 1.2rem + 0.9rem);
+  }
   .topbar__left,
   .topbar__right {
     display: flex;
@@ -767,6 +775,31 @@
   }
   .topbar__right {
     justify-content: flex-end;
+  }
+  /* Too narrow for three abreast: the switch keeps the top line, and the
+     search + locate share a second line beneath it, the search taking the
+     width the button leaves. */
+  @media (max-width: 40rem) {
+    .topbar.onmap {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "toggle toggle"
+        "left right";
+      row-gap: 0.45rem;
+    }
+    .topbar.onmap .viewtoggle {
+      grid-area: toggle;
+      justify-self: center;
+    }
+    .topbar.onmap .topbar__left {
+      grid-area: left;
+    }
+    .topbar.onmap .topbar__right {
+      grid-area: right;
+    }
+    .topbar.onmap :global(.placesearch) {
+      flex: 1 1 auto;
+    }
   }
   .topbar :global(.viewtoggle),
   .topbar :global(.placesearch),
