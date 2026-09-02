@@ -12,9 +12,6 @@
  *    lens can't be resurrected from leftover envelopes by an enforce reader.
  *  - `includeDeleted: true` surfaces signed tombstones through the enforced view.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import { jest } from '@jest/globals';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey } from '../nostr-events.js';
@@ -28,26 +25,19 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const ids = (a) => a.map((i) => i.id).sort();
 
 describe('signing hygiene', () => {
-  let sphere, dir;
+  let sphere;
 
-  const envelopesOf = (lens, id) => new Promise((resolve) => {
-    let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-    setTimeout(() => done(null), 2000);
-    sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(lens).get(id).once((node) => done(node ?? null));
-  });
+  const envelopesOf = (lens, id) => sphere.store.getEvents(HOLON, lens, id);
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-hygiene-'));
     sphere = new HoloSphere({ appName: 'hygiene-test', privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+      store: { adapter: 'memory' } });
     await sphere.enableSigning({ relays: [], enforce: true });
   }, 30000);
 
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch { /* no signer */ }
     try { await sphere?.close?.(); } catch { /* already closed */ }
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* tmp reaper's problem */ }
   }, 15000);
 
   test('the envelope attests the stored payload — stripped fields do not resurrect', async () => {
@@ -65,8 +55,8 @@ describe('signing hygiene', () => {
     const password = 'hygiene-secret-1234';
     await sphere.put(HOLON, 'secrets', { id: 's1', value: 'the plaintext' }, password);
     await wait(300);
-    // no envelope in the public _events namespace
-    expect(await envelopesOf('secrets', 's1')).toBeNull();
+    // no signed claim in the events table
+    expect(envelopesOf('secrets', 's1')).toEqual([]);
     // enforce-mode public read must not serve the private item
     expect(await sphere.get(HOLON, 'secrets', 's1')).toBeNull();
     // a wrong password must not fall through to any envelope either

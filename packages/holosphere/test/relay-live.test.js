@@ -48,7 +48,7 @@ describeWithRelay(`live relay round-trip (${RELAYS.join(', ') || 'skipped'})`, (
     }, 20000);
 
     test('a signed put reaches the relay and rehydrates into a fresh empty node', async () => {
-        writer = new HoloSphere({ appName: 'relay-live-test', privateKey: generateSecretKey(), gunOptions: tmpGun(dirs) });
+        writer = new HoloSphere({ appName: 'relay-live-test', privateKey: generateSecretKey(), store: { adapter: 'memory' } });
         await writer.enableSigning({ relays: RELAYS });
         expect(writer.signingEnabled).toBe(true);
 
@@ -56,7 +56,7 @@ describeWithRelay(`live relay round-trip (${RELAYS.join(', ') || 'skipped'})`, (
 
         // The reader shares nothing with the writer but the relay: fresh key,
         // fresh empty Gun graph. Only the relay can deliver the item.
-        reader = new HoloSphere({ appName: 'relay-live-test', privateKey: generateSecretKey(), gunOptions: tmpGun(dirs) });
+        reader = new HoloSphere({ appName: 'relay-live-test', privateKey: generateSecretKey(), store: { adapter: 'memory' } });
         await reader.enableSigning({ relays: RELAYS });
 
         const before = await reader.getAll(HOLON, LENS, null, { _skipAuthorize: true });

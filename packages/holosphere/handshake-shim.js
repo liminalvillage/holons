@@ -2,13 +2,11 @@
  * Federation handshake protocol for HoloSphere.
  *
  * Payloads are JSON with `type: federation_request | federation_response |
- * federation_update | federation_update_response`. Transport:
- *   - NIP-17 private DMs (nostr-dm.js) whenever the sphere has relays and the
- *     caller passes its private key — encrypted, sender-hidden, readable by
- *     any Nostr client holding the recipient key;
- *   - the legacy plaintext GunDB `_dm/<pubkey>` channel, still written and
- *     read so peers that have not upgraded keep working. Messages carry an
- *     `id`, so a message that arrives on both paths is handled once.
+ * federation_update | federation_update_response`, carried as NIP-17 private
+ * DMs (nostr-dm.js): encrypted, sender-hidden, readable by any Nostr client
+ * holding the recipient key. The sphere must have relays and the caller must
+ * pass its private key; without either, sends fail and subscriptions are
+ * inert (with a warning).
  */
 import { sendDirectMessage, subscribeDirectMessages } from './nostr-dm.js';
 
@@ -20,14 +18,7 @@ function generateMessageId() {
 }
 
 /**
- * Get the DM path for a recipient in GunDB
- */
-function getDMPath(holosphere, recipientPubKey) {
-    return holosphere.gun.get(holosphere.appname).get('_dm').get(recipientPubKey);
-}
-
-/**
- * Write a DM to a recipient's channel
+ * Send a handshake message to a recipient over NIP-17.
  */
 async function sendDM(holosphere, recipientPubKey, message, privateKey = null) {
     const msgId = generateMessageId();
@@ -37,21 +28,21 @@ async function sendDM(holosphere, recipientPubKey, message, privateKey = null) {
         timestamp: Date.now()
     });
 
-    if (privateKey && holosphere?.nostrRelays?.().length) {
-        sendDirectMessage(holosphere, { privateKey, recipientPubkey: recipientPubKey, content: payload, subject: message.type })
-            .catch((e) => console.warn('[handshake] NIP-17 send failed:', e?.message));
+    if (!privateKey) {
+        console.warn('[handshake] cannot send: no private key');
+        return { success: false, error: 'no private key' };
     }
-
-    return new Promise((resolve) => {
-        getDMPath(holosphere, recipientPubKey).get(msgId).put(payload, (ack) => {
-            if (ack.err) {
-                console.warn('[handshake] Failed to send DM:', ack.err);
-                resolve({ success: false, error: ack.err });
-            } else {
-                resolve({ success: true, id: msgId });
-            }
-        });
-    });
+    if (!holosphere?.nostrRelays?.().length) {
+        console.warn('[handshake] cannot send: no relays configured');
+        return { success: false, error: 'no relays' };
+    }
+    try {
+        await sendDirectMessage(holosphere, { privateKey, recipientPubkey: recipientPubKey, content: payload, subject: message.type });
+        return { success: true, id: msgId };
+    } catch (e) {
+        console.warn('[handshake] NIP-17 send failed:', e?.message);
+        return { success: false, error: e?.message || 'send failed' };
+    }
 }
 
 /**
@@ -69,7 +60,6 @@ async function sendDM(holosphere, recipientPubKey, message, privateKey = null) {
  * @returns {function} Unsubscribe function
  */
 export function subscribeToFederationDMs(holosphere, privateKey, publicKey, handlers) {
-    const dmPath = getDMPath(holosphere, publicKey);
     let active = true;
     const processedMessages = new Set();
 
@@ -92,9 +82,11 @@ export function subscribeToFederationDMs(holosphere, privateKey, publicKey, hand
         }
     };
 
-    // NIP-17 path: the SEALED sender is authoritative, not the payload's claim.
+    // The SEALED sender is authoritative, not the payload's claim.
     let closeNostr = () => {};
-    if (privateKey) {
+    if (!privateKey) {
+        console.warn('[handshake] subscribeToFederationDMs: no private key — nothing to listen with');
+    } else {
         try {
             closeNostr = subscribeDirectMessages(holosphere, privateKey, ({ content, sender }) => {
                 if (!active) return;
@@ -111,28 +103,9 @@ export function subscribeToFederationDMs(holosphere, privateKey, publicKey, hand
         }
     }
 
-    dmPath.map().on((data, key) => {
-        if (!active || !data || key === '_') return;
-
-        // Avoid processing the same message twice
-        if (processedMessages.has(key)) return;
-        processedMessages.add(key);
-
-        try {
-            const message = typeof data === 'string' ? JSON.parse(data) : data;
-            const senderPubKey = message.senderPubKey || message.sender || '';
-
-            dispatch(message, senderPubKey);
-        } catch (e) {
-            // Skip unparseable messages
-        }
-    });
-
-    // Return unsubscribe function
     return () => {
         active = false;
         closeNostr();
-        dmPath.off();
     };
 }
 

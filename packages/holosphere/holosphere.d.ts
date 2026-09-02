@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Type declarations for holosphere 2.x — signed Nostr events on relays,
+// mirrored into a local event-sourced store (see STORE.md).
+
+import type { Store, StoreAdapter, NostrEvent } from './store/index.js';
+
+export type { Store, StoreAdapter, NostrEvent, StoreRecord, StoreSnapshot, StoreOp, WatchMeta, Cursor } from './store/index.js';
+
 /**
  * Federation propagation options interface
  */
@@ -35,6 +44,8 @@ interface DeleteOptions {
   /** Await the retraction instead of running it in the background. */
   awaitPropagation?: boolean;
   propagationOptions?: DeletionPropagationOptions;
+  /** Store only — never sign or publish (reserved namespaces). */
+  local?: boolean;
 }
 
 interface PutOptions {
@@ -50,58 +61,48 @@ interface PutOptions {
   preserveFederationMeta?: boolean;
   actingAs?: string;
   password?: string | null;
-  /**
-   * Per-put deadline (ms) for Gun's ack callback. When the deadline fires,
-   * the returned promise resolves with `{ success: true, queued: true, ... }`
-   * so an offline/partitioned mesh can't hang the caller — Gun keeps the
-   * write locally and replays it on reconnect. Default 5000. Pass `0` to
-   * disable and wait for ack indefinitely.
-   */
-  timeout?: number;
+  /** Await federation propagation instead of running it in the background. */
+  awaitPropagation?: boolean;
+  /** Store only — never sign or publish (reserved namespaces). */
+  local?: boolean;
 }
 
 interface PutGlobalOptions {
-  /**
-   * Per-put deadline (ms) for Gun's ack callback. The promise still
-   * resolves to `undefined` (its public contract); on timeout a warning
-   * is logged. Default 5000. Pass `0` to disable.
-   */
-  timeout?: number;
+  local?: boolean;
 }
 
 interface GetOptions {
   resolveHolograms?: boolean;
   validationOptions?: object;
-  /** Per-`.once()` deadline in ms; cold paths resolve `null` after this. Default 8000. Pass `0` to disable. */
-  timeout?: number;
   /** Return `_deleted: true` soft-tombstoned records instead of treating them as not-found. Default false. */
   includeDeleted?: boolean;
 }
 
 interface GetAllOptions {
-  /** Per-`.once()` deadline in ms; cold paths resolve `[]` after this. Default 8000. Pass `0` to disable. */
-  timeout?: number;
   /** Include `_deleted: true` soft-tombstoned records in the response. Default false. */
   includeDeleted?: boolean;
+  /** Return hologram pointers as stored instead of resolving them. Default true (resolve). */
+  resolveHolograms?: boolean;
   /**
-   * Provenance-annotated dual-source read: signed/authorized items tagged
-   * `_verified: true`, unsigned/legacy/untrusted items tagged
-   * `_verified: false, _unverified: true`. For display/migration only — never
-   * trust `_unverified` items. Requires signing enabled. Default false.
+   * Provenance-annotated read: signed/authorized items tagged `_verified: true`,
+   * unsigned/untrusted items tagged `_verified: false, _unverified: true`. For
+   * display only — never trust `_unverified` items. Default false.
    */
   includeUnverified?: boolean;
 }
 
 interface SubscribeOptions {
-  /** Also notify on deletes (tombstones) instead of only live values. */
+  /** Also notify on deletes (`callback(null, key)`) instead of only live values. Default true. */
   includeDeletes?: boolean;
-  /** Surface unsigned/legacy/untrusted updates tagged `_unverified` instead of dropping them under enforce. Display-only — never trust. Default false. */
+  /** Surface unsigned/untrusted updates tagged `_unverified` instead of dropping them under enforce. Display-only. Default false. */
   includeUnverified?: boolean;
 }
 
 interface ResolveHologramOptions {
   followHolograms?: boolean;
   visited?: Set<string>;
+  maxDepth?: number;
+  currentDepth?: number;
 }
 
 interface Hologram {
@@ -112,13 +113,6 @@ interface Hologram {
 
 /**
  * Canonical envelope attached to data resolved from a hologram reference.
- *
- * Single source of truth for resolved-hologram metadata. Every read path that
- * returns data resolved from a hologram (get, getAll, subscribe, getFederated,
- * getGlobal, getAllGlobal) attaches this field via `attachHologramMeta`.
- *
- * On success: `isHologram === true` and source* fields point at the origin.
- * On failure: `isHologram === false` and `error` describes why resolution failed.
  *
  * **Exported.** Domain types in consumers should declare
  * `_hologram?: ResolvedHologramMeta` instead of inlining the shape.
@@ -133,6 +127,7 @@ export interface ResolvedHologramMeta {
   sourceHolonName?: string;
   resolvedAt: number;
   error?: string;
+  deleted?: boolean;
 }
 
 export interface ResolvedHologramData {
@@ -142,11 +137,9 @@ export interface ResolvedHologramData {
 
 /**
  * Federation provenance envelope stamped on records that arrived via a
- * federated partner. Set by `getFederated` and by `propagate` when writing
- * to outbound partners.
+ * federated partner.
  *
- * **Exported.** Domain types should declare `_federation?: FederationMeta`
- * instead of inlining the shape.
+ * **Exported.** Domain types should declare `_federation?: FederationMeta`.
  */
 export interface FederationMeta {
   /** The holon the record was propagated FROM. */
@@ -159,34 +152,21 @@ export interface FederationMeta {
   originalId?: string;
   /** Wall-clock ms when the propagation was emitted. */
   propagatedAt?: number;
+  propagationType?: string;
+  parentLevel?: number;
 }
 
 /**
- * Soft-tombstone marker recognised by `get`/`getAll`. A record with
- * `_deleted: true` is treated as not-found in the default response and
- * surfaced only when `{ includeDeleted: true }` is passed.
- *
- * **Exported.** Domain types that want to allow tombstoned records on the
- * wire should declare `_deleted?: boolean`.
+ * Soft-tombstone marker recognised by `get`/`getAll`.
  */
 export type DeletedMarker = boolean;
 
-/**
- * Convenience mixin: the three envelope fields the library stamps onto
- * records. Domain types can extend or intersect with this to avoid
- * redeclaring the shapes.
- */
 export interface HolosphereEnvelope {
   _hologram?: ResolvedHologramMeta;
   _federation?: FederationMeta;
   _deleted?: DeletedMarker;
 }
 
-/**
- * Per-partner directional lens config. Directions are from the holding
- * space's perspective: `inbound` lenses are received from the partner,
- * `outbound` lenses are sent to the partner.
- */
 interface FederationLensConfig {
   inbound: string[];
   outbound: string[];
@@ -196,15 +176,10 @@ interface FederationLensConfig {
 interface FederationInfo {
   id: string;
   name: string;
-  /** Canonical list of all federation partners (any direction, including no lens flow yet). */
   federated: string[];
-  /** Partners we receive data FROM (subset of `federated` with non-empty inbound lenses). */
   inbound: string[];
-  /** Partners we send data TO (subset of `federated` with non-empty outbound lenses). */
   outbound: string[];
-  /** Per-partner directional lens config. */
   lensConfig: Record<string, FederationLensConfig>;
-  /** Optional display names for partners. */
   partnerNames: Record<string, string>;
   timestamp: number;
 }
@@ -243,20 +218,14 @@ interface PropagationResult {
 interface PutResult {
   success: boolean;
   isHologramAtPath?: boolean;
-  pathHolon: string;
+  pathHolon: string | null;
   pathLens: string;
   pathKey: string;
   propagationResult?: PropagationResult | null;
   error?: string;
-  /**
-   * `true` when the ack deadline fired before Gun confirmed the write
-   * (offline/partitioned mesh). The write is still committed locally
-   * via radisk and Gun replays it whenever a peer reappears; subscriber
-   * notification, hologram cascade, and federation propagation run at
-   * that point. Absent or `false` when the put was acknowledged.
-   */
-  queued?: boolean;
-  /** Holograms whose `updated` timestamp was bumped by this put (empty when the put timed out). */
+  /** True for a password-lens write (never signed or published). */
+  private?: boolean;
+  /** Holograms whose `updated` timestamp was bumped by this put. */
   updatedHolograms?: Array<{ soul: string; holon: string; lens: string; key: string }>;
 }
 
@@ -264,49 +233,6 @@ interface CanWriteResult {
   canWrite: boolean;
   reason: string;
   accessType: string;
-}
-
-interface HoloSphereConfig {
-  appName?: string;
-  appname?: string;
-  privateKey?: Uint8Array | string | null;
-  strict?: boolean;
-  /** 'gun' (default) or 'nostr' — with 'nostr' the relay(s) are the wire and
-   *  Gun runs peerless as the local-first cache (see relay-transport.js). */
-  backend?: string;
-  openaiKey?: string | null;
-  gunOptions?: Record<string, any>;
-  nostr?: {
-    peers?: string[];
-    relays?: string[];
-    persistence?: boolean;
-    /** Cold-read catch-up deadline for backend 'nostr' (ms, default 5000). */
-    syncTimeoutMs?: number;
-    verbose?: boolean;
-    /** Standard-kind projection hooks (build with `buildProjections` from
-     *  `@holons/core/nostr`). Published next to every 30078 event. */
-    projections?: ProjectionHook[];
-    /** Per-user signing key lookup for kind-0 / RSVP projections. */
-    signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
-    /** Fold external edits of projected kinds back into records (default true when projections are set). */
-    reverseSync?: boolean;
-    /** Pubkeys allowed to edit a holon's records over Nostr (default: own key ∪ read-list). */
-    trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
-    /** Cold-start catch-up window for reverse sync, seconds (default 7 days). */
-    reverseLookbackSec?: number;
-    /** Legacy Gun relay(s) for `getAllLegacy` reads (default
-     *  `['https://gun.holons.io/gun']`; `[]` disables legacy reads). */
-    legacyGunPeers?: string[];
-  };
-  /** Signing-layer options applied by backend 'nostr' init (shadow/enforce/
-   *  perActorLenses/verbose — relays are always [] there; the transport
-   *  publishes). */
-  signing?: {
-    shadow?: boolean;
-    enforce?: boolean | 'membership';
-    perActorLenses?: string[];
-    verbose?: boolean;
-  };
 }
 
 /** Hook shape consumed by projections.js (see @holons/core/nostr). */
@@ -320,69 +246,155 @@ export interface ProjectionHook {
   merge?(current: unknown, reversed: any): unknown | null;
 }
 
+export interface SigningOptions {
+  /** Measure what enforce would drop, without changing output. */
+  shadow?: boolean;
+  /** Authorized reads: `true` = federation read-list, `'membership'` = the holon's signed `_members` log. */
+  enforce?: boolean | 'membership';
+  /** Lenses read as per-author aggregates (participation, reactions, …). */
+  perActorLenses?: string[];
+  verbose?: boolean;
+}
+
+export interface StoreOptions {
+  /** `'memory'` (default outside a browser), `'indexeddb'` (default in a browser), `'file'` (Node), `'auto'`, or an adapter instance. */
+  adapter?: 'memory' | 'indexeddb' | 'file' | 'auto' | StoreAdapter;
+  /** Directory for the file adapter (default `./holosphere-store`). */
+  dir?: string;
+  /** Persisted ops before the log is compacted (default 50000). */
+  compactAfter?: number;
+}
+
+interface HoloSphereConfig {
+  appName?: string;
+  appname?: string;
+  /** Signing identity. With relays but no key an ephemeral key is generated. */
+  privateKey?: Uint8Array | string | null;
+  strict?: boolean;
+  /** Relay URLs — the wire. Without relays the instance is local-only. */
+  relays?: string[];
+  openaiKey?: string | null;
+  /** Local store configuration (see STORE.md). */
+  store?: StoreOptions;
+  /** Read-side signing modes. */
+  signing?: SigningOptions;
+  nostr?: {
+    /** Alias of top-level `relays`. */
+    relays?: string[];
+    /** @deprecated alias of `relays`. */
+    peers?: string[];
+    /** Cold-read catch-up deadline (ms, default 5000). */
+    syncTimeoutMs?: number;
+    /** Backfill page size (default 500 — strfry's `maxFilterLimit`). */
+    pageSize?: number;
+    verbose?: boolean;
+    /** Standard-kind projection hooks (build with `buildProjections` from `@holons/core/nostr`). */
+    projections?: ProjectionHook[];
+    /** Per-user signing key lookup for kind-0 / RSVP projections. */
+    signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+    providerKey?: string | Uint8Array | null;
+    /** Fold external edits of projected kinds back into records (default true when projections are set). */
+    reverseSync?: boolean;
+    /** Pubkeys allowed to edit a holon's records over Nostr (default: own key ∪ read-list). */
+    trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+    /** Cold-start catch-up window for reverse sync, seconds (default 7 days). */
+    reverseLookbackSec?: number;
+  };
+  /** @deprecated ignored — the relay is the wire. */
+  backend?: string;
+}
+
+export interface EnableSigningOptions extends SigningOptions {
+  privateKey?: Uint8Array | string;
+  /** Bring the relay transport up on an instance created without relays. */
+  relays?: string[];
+  /** Keys (npub or hex) to add to the read-list. */
+  readKeys?: string[];
+  federationSpace?: string;
+  projections?: ProjectionHook[];
+  signerFor?: HoloSphereConfig['nostr'] extends infer N ? (N extends { signerFor?: infer S } ? S : never) : never;
+  providerKey?: string | Uint8Array | null;
+  reverseSync?: boolean;
+  trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+  reverseLookbackSec?: number;
+}
+
+export interface Signer {
+  pubkey: string;
+  shadow: boolean;
+  enforce: false | 'federation' | 'membership';
+  getReport(): Record<string, any>;
+  resetReport(): void;
+  isPerActor(lens: string): boolean;
+  addPerActorLens(lens: string): void;
+  getPerActorLenses(): string[];
+  aggregate(holo: HoloSphere, holon: string, lens: string, subject?: string | null): Promise<any[]>;
+  authorizedView(holo: HoloSphere, holon: string, lens: string, rawItems: any[], opts?: { includeDeleted?: boolean }): Promise<{ items: any[]; pending: any[] }>;
+  resolveItem(holo: HoloSphere, holon: string, lens: string, key: string, opts?: { includeDeleted?: boolean }): Promise<any | null>;
+}
+
 declare class HoloSphere {
     appname: string;
     config: HoloSphereConfig;
     client: { publicKey: string };
-    gun: any;
+    /** The local store (see STORE.md). */
+    readonly store: Store;
     subscriptions: Record<string, any>;
 
     constructor(config: HoloSphereConfig);
-    /** Publish already-signed Nostr events (any kind) on the active relay set. */
-    publishNostrEvents(events: any | any[]): void;
-    /** Raw live REQ on the active relay set; returns a close function. */
-    subscribeNostr(filter: Record<string, unknown>, onevent: (event: any) => void): () => void;
-    nostrRelays(): string[];
-    constructor(appname: string, strict?: boolean, openaikey?: string | null, gunOptions?: any);
+    constructor(appname: string, strict?: boolean);
 
+    /** Resolves once the store is open and the relay transport (if any) is up. */
     ready(): Promise<HoloSphere>;
-    getGun(): any;
 
     // Schema
     setSchema(lens: string, schema: object): Promise<boolean>;
     getSchema(lens: string, options?: { useCache?: boolean; maxCacheAge?: number }): Promise<object | null>;
     clearSchemaCache(lens?: string | null): boolean;
 
-    // Content - v2-compatible signatures
-    put(holon: string, lens: string, data: object, options?: PutOptions): Promise<PutResult>;
-    put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
-    get(holon: string, lens: string): Promise<any | null>;
-    get(holon: string, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
-    getAll(holon: string, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
-    /**
-     * Nostr backend only: read a lens from the legacy Gun relay(s) through an
-     * in-memory read-only mirror (`config.nostr.legacyGunPeers`, default
-     * `['https://gun.holons.io/gun']`). Items are tagged `_verified: false,
-     * _unverified: true, _legacy: true` — display-only, never trust for auth.
-     * Returns `[]` on the gun backend.
-     */
-    getAllLegacy(holon: string, lens: string, options?: GetAllOptions): Promise<Array<any>>;
+    // Content
+    put(holon: string | null, lens: string, data: object, options?: PutOptions): Promise<PutResult>;
+    put(holon: string | null, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
+    get(holon: string | null, lens: string): Promise<any | null>;
+    get(holon: string | null, lens: string, key: string, password?: string | null, options?: GetOptions): Promise<any | null>;
+    getAll(holon: string | null, lens: string, password?: string | null, options?: GetAllOptions): Promise<Array<any>>;
     parse(rawData: any): Promise<object | null>;
-    delete(holon: string, lens: string, key: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
-    deleteAll(holon: string, lens: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
+    delete(holon: string | null, lens: string, key: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
+    deleteAll(holon: string | null, lens: string, password?: string | null, options?: DeleteOptions): Promise<boolean>;
+
+    // Store views
+    /** Holons this instance holds records for, unioned with the `holons_registry` global. */
+    listHolons(): Promise<string[]>;
+    listLenses(holon: string | null): string[];
+    listKeys(holon: string | null, lens: string, options?: { includeDeleted?: boolean }): string[];
+    /** Souls of the hologram pointers that reference a record. */
+    getBacklinks(holon: string | null, lens: string, key: string): string[];
+    /** Signed events held locally (oldest first). */
+    exportEvents(filter?: { holon?: string | null; lens?: string; authors?: string[] }): NostrEvent[];
+    /** Apply signed events (verified); with `publish` also republish them to the relays. */
+    importEvents(events: NostrEvent[], options?: { publish?: boolean }): Promise<{ received: number; applied: number; rejected: number }>;
 
     // Node
-    putNode(holon: string, lens: string, data: object): Promise<boolean>;
     getNode(holon: string, lens: string, key: string): Promise<any | null>;
-    getNodeRef(soul: string): any;
-    getNodeBySoul(soul: string): Promise<any>;
+    getNodeBySoul(soul: string): Promise<any | null>;
     deleteNode(holon: string, lens: string, key: string): Promise<boolean>;
 
     // Global
-    putGlobal(tableName: string, data: object, password?: string | null, options?: PutGlobalOptions): Promise<void>;
-    writeGlobal(tableName: string, data: object, options?: PutGlobalOptions): Promise<void>;
+    putGlobal(tableName: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
+    writeGlobal(tableName: string, data: object, options?: PutOptions): Promise<void>;
     getGlobal(tableName: string, key: string, password?: string | null): Promise<any | null>;
     getAllGlobal(tableName: string, password?: string | null): Promise<Array<any>>;
     deleteGlobal(tableName: string, key: string, password?: string | null): Promise<boolean>;
     deleteAllGlobal(tableName: string, password?: string | null): Promise<boolean>;
-    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void };
-    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void };
+    subscribeGlobal(lens: string, key: string | null, callback: (data: any, key?: string) => void, options?: { realtimeOnly?: boolean }): { unsubscribe: () => void; stop: () => void };
+    subscribeGlobal(lens: string, callback: (data: any, key?: string) => void): { unsubscribe: () => void; stop: () => void };
 
     // Hologram
     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
     isHologram(data: any): data is Hologram;
     parseSoulPath(soul: string): { appname: string, holon: string, lens: string, key: string } | null;
     resolveHologram(hologram: Hologram, options?: ResolveHologramOptions): Promise<ResolvedHologramData | null>;
+    resolveHologramDetailed(hologram: Hologram, options?: ResolveHologramOptions): Promise<{ status: 'resolved' | 'deleted' | 'unresolved' | 'circular' | 'depth' | 'invalid' | 'error'; data: ResolvedHologramData | null; soul: string | null; reason: string }>;
     attachHologramMeta<T extends object>(originalData: T, hologramSoul: string): T & ResolvedHologramData;
 
     // Compute
@@ -392,12 +404,6 @@ declare class HoloSphere {
     upcast(holon: string, lens: string, content: object, maxLevels?: number): Promise<object>;
     updateParent(id: string, report: string): Promise<object>;
     propagate(holon: string, lens: string, data: object, options?: PropagationOptions): Promise<PropagationResult>;
-    /**
-     * Retract a record from the parent hexagons `propagate` copied it to.
-     * `key: null` retracts every copy this holon propagated into `lens`.
-     * Called automatically by `delete`/`deleteAll`; exposed for repairing
-     * records deleted before deletion propagation existed.
-     */
     propagateDeletion(holon: string, lens: string, key?: string | null, options?: DeletionPropagationOptions): Promise<DeletionPropagationResult>;
 
     // Location
@@ -405,18 +411,18 @@ declare class HoloSphere {
     getScalespace(lat: number, lng: number): string[];
     getHolonScalespace(holon: string): string[];
 
-    // Subscription. Returns synchronously — `await` on the return value
-    // still works (await on a non-Promise resolves to the value), so both
-    // call styles produce the same `{ unsubscribe }` shape.
-    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void, options?: SubscribeOptions): { unsubscribe: () => void };
-
     /**
-     * Re-reads every (holon, lens) path with a live `subscribe()` so relay
-     * state written while the wire was down flows through the existing
-     * listeners. Runs automatically (debounced) after a websocket reconnect;
-     * safe to call manually, e.g. from a browser `online` handler.
+     * Subscribe to real-time changes for a holon/lens. Returns synchronously.
+     * Every subscriber gets the current snapshot replayed, then one callback
+     * per change: `callback(object, key)` for values, `callback(null, key)`
+     * for deletions.
      */
+    subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void, options?: SubscribeOptions): { unsubscribe: () => void };
+    /** @deprecated no-op: the store's change feed notifies subscribers. */
+    notifySubscribers(data: any): void;
+    /** Re-fetch every synced lens from the relays (e.g. from an `online` handler). */
     resyncSubscriptions(): Promise<void>;
+    getHolonName(holonId: string): Promise<string | null>;
 
     // Federation - v1 style
     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
@@ -431,25 +437,15 @@ declare class HoloSphere {
     getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ inbound: string[], outbound: string[] } | null>;
     removeNotify(holonId1: string, holonId2: string, password1?: string | null): Promise<boolean>;
     getFederated(holon: string, lens: string, options?: GetFederatedOptions): Promise<Array<any>>;
-    /**
-     * Live federation-aware read — the streaming equivalent of `getFederated`.
-     * Subscribes to `lens` on `holon` plus every partner it receives `lens` from,
-     * merging into one id-deduped stream (local wins) with partner items tagged
-     * `_federation`. The returned handle can toggle partners live via
-     * `setFederated(on)` without disturbing the local subscription.
-     */
     subscribeFederated(holon: string, lens: string, callback: (items: any[]) => void, options?: {
         includeLocal?: boolean;
         includeFederated?: boolean;
-        /** Fold in legacy Gun-relay records (tagged `_unverified`/`_legacy`,
-         *  live copies win; no-op off the nostr backend). Default false. */
-        includeLegacy?: boolean;
         dedupe?: boolean;
         /** False when the lens's ids are only holon-unique (e.g. `checklists`). */
         dedupeAcrossSpaces?: boolean;
         idField?: string;
         maxFederatedSpaces?: number;
-    }): { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void };
+    }): { unsubscribe: () => void; setFederated: (on: boolean) => void };
     federateMessage(originalChatId: string, messageId: string, federatedChatId: string, federatedMessageId: string, type?: string): Promise<void>;
     getFederatedMessages(originalChatId: string, messageId: string): Promise<object | null>;
     updateFederatedMessages(originalChatId: string, messageId: string, updateCallback: (chatId: string, messageId: string) => Promise<void>): Promise<void>;
@@ -461,13 +457,41 @@ declare class HoloSphere {
     removeAllowedAuthor(pubkey: string): void;
     listAllowedAuthors(): string[];
 
+    // Signing (see SIGNING.md)
+    enableSigning(opts?: EnableSigningOptions): Promise<Signer>;
+    disableSigning(): void;
+    login(privateKey: Uint8Array | string, opts?: EnableSigningOptions): Promise<{ pubkey: string; signer: Signer }>;
+    logout(): void;
+    readonly currentPubkey: string;
+    readonly loggedIn: boolean;
+    readonly signingEnabled: boolean;
+    readonly enforceActive: boolean;
+    /** Publish already-signed Nostr events (any kind) on the relay set. */
+    publishNostrEvents(events: any | any[]): void;
+    /** Raw live REQ on the relay set; returns a close function. */
+    subscribeNostr(filter: Record<string, unknown>, onevent: (event: any) => void): () => void;
+    /** Relay URLs of the wire ([] when local-only). */
+    nostrRelays(): string[];
+    auditLens(holon: string, lens: string): Promise<{ items: number; accounted: number; wouldDrop: number; unsigned: number; invalidSig: number; mismatch: number }>;
+    getShadowReport(): Record<string, any> | null;
+    resetShadowReport(): void;
+    aggregate(holon: string, lens: string, subject?: string | null): Promise<any[]>;
+    setPerActorLens(lens: string): void;
+    addReadKey(key: string): Promise<string>;
+    removeReadKey(key: string): Promise<void>;
+    refreshReadKeys(): Promise<string[]>;
+    getReadKeys(): string[];
+    setGenesis(holon: string, pubkey: string): void;
+    foundHolon(holon: string, opts?: { at?: number }): Promise<string>;
+    addMember(holon: string, pubkey: string, role?: 'member' | 'admin', opts?: { at?: number }): Promise<void>;
+    removeMember(holon: string, pubkey: string, opts?: { at?: number }): Promise<void>;
+    getMembers(holon: string): Promise<Map<string, string>>;
+    getPending(holon: string, lens: string): Promise<any[]>;
+
     // Utility
     generateId(): string;
     close(): Promise<void>;
     getVersion(): string;
-    userName(holonId: string): string;
-    configureRadisk(options?: { file?: string; radisk?: boolean; until?: number | null; retry?: number; timeout?: number }): void;
-    getRadiskStats(): { enabled: boolean; filePath: string; retry: number; timeout: number; until: number | null; peers: any[]; localStorage: boolean } | { error: string };
 }
 
 // Named exports

@@ -148,7 +148,7 @@ describe('projections on the wire', () => {
     const sphere = new HoloSphere({
       appName: APP, privateKey: generateSecretKey(), backend: 'nostr',
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: [eventsHook()] },
-      gunOptions: gunOptions(dirs),
+      store: { adapter: 'memory' },
     });
     spheres.push(sphere);
     await sphere.put(HOLON, 'events', { id: 'ev1', title: 'Dinner', when: '2026-09-01T18:00:00Z', description: 'Bring food' });
@@ -164,7 +164,7 @@ describe('projections on the wire', () => {
     // A second sphere reading the same relay must see the record once and no projected junk.
     const reader = new HoloSphere({
       appName: APP, privateKey: generateSecretKey(), backend: 'nostr',
-      nostr: { relays: [relay.url], syncTimeoutMs: 2000 }, gunOptions: gunOptions(dirs),
+      nostr: { relays: [relay.url], syncTimeoutMs: 2000 }, store: { adapter: 'memory' },
     });
     spheres.push(reader);
     const seen = await eventually(async () => {
@@ -179,7 +179,7 @@ describe('projections on the wire', () => {
   });
 
   test('gun backend + relay backup: signer publishes projections too', async () => {
-    const sphere = new HoloSphere({ appName: APP, privateKey: generateSecretKey(), gunOptions: gunOptions(dirs) });
+    const sphere = new HoloSphere({ appName: APP, privateKey: generateSecretKey(), store: { adapter: 'memory' } });
     spheres.push(sphere);
     await sphere.enableSigning({ relays: [relay.url], shadow: true, projections: [eventsHook()] });
     await sphere.put(HOLON, 'events', { id: 'ev2', title: 'Lunch', when: '2026-09-02T12:00:00Z' });

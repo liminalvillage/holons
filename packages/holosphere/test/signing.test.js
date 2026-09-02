@@ -1,22 +1,17 @@
 /**
- * Phase 1 signing integration: sign-on-write + dual-publish, relay-backed
- * rehydrate, and relay migration — exercised through the real HoloSphere
- * put path against an embedded (Docker-free) relay.
+ * Signing integration: every write is a signed event on the wire, a fresh
+ * instance rebuilds from the relay, and signed data moves between relays
+ * verbatim — exercised through the real HoloSphere put path against an
+ * embedded (Docker-free) relay.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { startRelay } from '../spike/mini-relay.js';
 import { generateSecretKey, verifyEvent, eventToItem, tag } from '../nostr-events.js';
 
 const HOLON = '89283082803ffff';
 const LENS = 'tasks';
+const APP = 'sign-test';
 
-function tmpGun() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-sign-'));
-  return { dir, opts: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } };
-}
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(pred, timeout = 12000, step = 50) {
   const end = Date.now() + timeout;
@@ -24,8 +19,10 @@ async function waitFor(pred, timeout = 12000, step = 50) {
   return false;
 }
 
-describe('signing (Phase 1) integration', () => {
-  let relayA, relayB, sphere, gunDirs = [];
+describe('signing integration', () => {
+  let relayA, relayB, sphere;
+  const spheres = [];
+  const make = (opts) => { const s = new HoloSphere({ appName: APP, store: { adapter: 'memory' }, ...opts }); spheres.push(s); return s; };
 
   beforeAll(async () => {
     relayA = await startRelay();
@@ -33,73 +30,62 @@ describe('signing (Phase 1) integration', () => {
   });
 
   afterAll(async () => {
-    try { sphere?.disableSigning(); } catch {}
-    try { await sphere?.close?.(); } catch {}
+    for (const s of spheres) { try { await s.close(); } catch { /* ignore */ } }
     await relayA?.close();
     await relayB?.close();
-    for (const d of gunDirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
   }, 30000);
 
-  test('put with signing enabled publishes a verifiable event to the relay', async () => {
-    const g = tmpGun(); gunDirs.push(g.dir);
-    sphere = new HoloSphere({ appName: 'sign-test', privateKey: generateSecretKey(), gunOptions: g.opts });
-    await sphere.enableSigning({ relays: [relayA.url] });
+  test('put publishes a verifiable signed event to the relay', async () => {
+    sphere = make({ privateKey: generateSecretKey(), relays: [relayA.url] });
+    await sphere.ready();
     expect(sphere.signingEnabled).toBe(true);
 
     await sphere.put(HOLON, LENS, { id: 'task-1', title: 'Repair the well' });
 
-    const got = await waitFor(() => relayA.count() >= 1);
-    expect(got).toBe(true);
+    expect(await waitFor(() => relayA.count() >= 1)).toBe(true);
 
     const evt = relayA.events().find((e) => tag(e, 'd') === `${HOLON}/${LENS}/task-1`);
     expect(evt).toBeTruthy();
     expect(verifyEvent(evt)).toBe(true);
     expect(tag(evt, 'h')).toBe(HOLON);
     expect(tag(evt, 'l')).toBe(LENS);
-    expect(evt.pubkey).toBe(sphere._signer.pubkey);
+    expect(tag(evt, 'n')).toBe(APP);
+    expect(evt.pubkey).toBe(sphere.currentPubkey);
     expect(eventToItem(evt).title).toBe('Repair the well');
+    // the store holds exactly the event the wire carries
+    expect(sphere.store.getEvents(HOLON, LENS, 'task-1')[0].id).toBe(evt.id);
   });
 
-  test('default (no signing) does NOT publish — opt-in only', async () => {
-    const g = tmpGun(); gunDirs.push(g.dir);
-    const plain = new HoloSphere({ appName: 'sign-test', privateKey: generateSecretKey(), gunOptions: g.opts });
+  test('a local-only instance (no relays) never publishes', async () => {
+    const plain = make({ privateKey: generateSecretKey() });
     await plain.put(HOLON, LENS, { id: 'task-unsigned', title: 'no relay' });
     await wait(400);
-    // The unsigned item must never reach the relay. (A raw count delta is
-    // racy here: the SIGNED sphere's fire-and-forget parent-propagation from
-    // the previous test keeps publishing legitimate parent-cell events in
-    // the background.)
-    const unsigned = relayA.events().find((e) => tag(e, 'd')?.endsWith('/task-unsigned'));
-    expect(unsigned).toBeUndefined();
-    await plain.close?.();
+    expect(plain.nostrRelays()).toEqual([]);
+    const leaked = relayA.events().find((e) => tag(e, 'd')?.endsWith('/task-unsigned'));
+    expect(leaked).toBeUndefined();
   });
 
-  test('rehydrate restores a holon/lens from the relay into a fresh node', async () => {
-    // fresh instance, empty gun, same relay — data exists only on the relay
-    const g = tmpGun(); gunDirs.push(g.dir);
-    const fresh = new HoloSphere({ appName: 'sign-test', privateKey: generateSecretKey(), gunOptions: g.opts });
-    await fresh.enableSigning({ relays: [relayA.url] });
-
-    const before = await fresh.getAll(HOLON, LENS);
-    expect(before.find((i) => i.id === 'task-1')).toBeFalsy(); // not local yet
-
-    const res = await fresh.rehydrate(HOLON, LENS);
-    expect(res.restored).toBeGreaterThanOrEqual(1);
+  test('a fresh instance on the same relay rebuilds the lens (cold sync) and records a cursor', async () => {
+    const fresh = make({ privateKey: generateSecretKey(), relays: [relayA.url] });
+    await fresh.ready();
+    expect(fresh.store.listKeys(HOLON, LENS)).toEqual([]); // nothing local yet
 
     const after = await fresh.getAll(HOLON, LENS);
     expect(after.find((i) => i.id === 'task-1')?.title).toBe('Repair the well');
-
-    fresh.disableSigning();
-    await fresh.close?.();
+    expect(await waitFor(() => fresh._relayTransport.isSynced(HOLON, LENS))).toBe(true);
+    expect(fresh.store.getCursor(HOLON, LENS)?.since).toBeGreaterThan(0);
   });
 
-  test('migrateRelays moves signed data to a new relay (take it with you)', async () => {
+  test('exportEvents + importEvents({ publish }) moves signed data to a new relay verbatim', async () => {
     expect(relayB.count()).toBe(0);
-    const res = await sphere.migrateRelays({ to: [relayB.url] });
-    expect(res.moved).toBeGreaterThanOrEqual(1);
+    const events = sphere.exportEvents({ holon: HOLON, lens: LENS });
+    expect(events.length).toBeGreaterThanOrEqual(1);
 
-    const moved = await waitFor(() => relayB.count() >= 1);
-    expect(moved).toBe(true);
+    const mover = make({ privateKey: generateSecretKey(), relays: [relayB.url] });
+    await mover.ready();
+    const res = await mover.importEvents(events, { publish: true });
+    expect(res.applied).toBeGreaterThanOrEqual(1);
+    expect(await waitFor(() => relayB.count() >= 1)).toBe(true);
 
     // same signed event id on the destination — republished verbatim, still valid
     const onA = relayA.events().find((e) => tag(e, 'd') === `${HOLON}/${LENS}/task-1`);

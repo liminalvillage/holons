@@ -47,10 +47,7 @@ describe('personal-holon mirror survives a participation removal', () => {
       privateKey,
       backend: 'nostr',
       nostr: { relays: [relay.url], syncTimeoutMs: 3000 },
-      gunOptions: {
-        peers: [], axe: false, multicast: false, stats: false,
-        radisk: true, file: path.join(dir, 'radata'), localStorage: false,
-      },
+      store: { adapter: 'memory' },
     });
     spheres.push(sphere);
     return sphere;

@@ -57,25 +57,12 @@ describe('HoloSphere Deletion Tests', () => {
             expect(deletedData).toBeNull();
         });
 
-        test('should delete a node properly', async () => {
-            // Create test node data
-            const nodeData = { value: 'node-to-delete' };
-            const nodeKey = 'test-node-key';
-            
-            // Store node
-            await holoSphere.putNode(testHolon, testLens, { id: nodeKey, value: nodeData });
-            
-            // Verify node exists
-            const storedNode = await holoSphere.getNode(testHolon, testLens, 'value');
-            expect(storedNode).toBeDefined();
-            
-            // Delete node
-            const deleteResult = await holoSphere.deleteNode(testHolon, testLens, 'value');
-            expect(deleteResult).toBe(true);
-            
-            // Verify node is deleted
-            const deletedNode = await holoSphere.getNode(testHolon, testLens, 'value');
-            expect(deletedNode).toBeNull();
+        test('getNode/deleteNode operate on the stored record', async () => {
+            await holoSphere.put(testHolon, testLens, { id: 'node-key', value: 'node-to-delete' });
+            expect((await holoSphere.getNode(testHolon, testLens, 'node-key')).value).toBe('node-to-delete');
+            expect(await holoSphere.deleteNode(testHolon, testLens, 'node-key')).toBe(true);
+            expect(await holoSphere.get(testHolon, testLens, 'node-key')).toBeNull();
+            expect((await holoSphere.getNode(testHolon, testLens, 'node-key'))._deleted).toBe(true);
         });
     });
 

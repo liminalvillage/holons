@@ -11,9 +11,6 @@
  *   TS+7  A removes B
  *   TS+9  B writes t5            -> pending (B removed as of TS+9)
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, getPublicKey, buildEvent } from '../nostr-events.js';
 
@@ -24,29 +21,22 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const ids = (arr) => arr.map((i) => i.id).sort();
 
 describe('authorized read — membership mode (holon authority)', () => {
-  let sphere, dir, Ask, Bsk, Bpub;
+  let sphere, Ask, Bsk, Bpub;
 
   // simulate any key writing into the open graph: signed envelope + raw item
   async function writeAs(sk, item, at) {
     const evt = buildEvent({ holon: HOLON, lens: LENS, item, sk, created_at: at });
-    await new Promise((r) => {
-      let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(LENS).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d());
-    });
-    await sphere.put(HOLON, LENS, item, null, { _skipSign: true, autoPropagate: false });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-authz-'));
     Ask = generateSecretKey();
     Bsk = generateSecretKey();
     Bpub = getPublicKey(Bsk);
     sphere = new HoloSphere({
       appName: 'authz-test',
       privateKey: Ask,
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     await sphere.enableSigning({ relays: [], enforce: 'membership' });
 
@@ -65,7 +55,6 @@ describe('authorized read — membership mode (holon authority)', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('enforce read returns only authorized items (as-of-time)', async () => {

@@ -1,23 +1,17 @@
 /**
  * @module holosphere
- * @version 1.3.0
+ * @version 2.0.0
  * @description Holonic Geospatial Communication Infrastructure
  * @author Roberto Valenti
- * @license GPL-3.0-or-later
+ * @license AGPL-3.0-or-later
+ *
+ * Holosphere keeps every record as a signed Nostr event: the relays are the
+ * wire and the durable copy, a local event-sourced store (store/) is the
+ * cache that makes reads instant and subscriptions fire. See STORE.md and
+ * NOSTR-BACKEND.md.
  */
 
-import * as h3 from 'h3-js';
-import Gun from 'gun'
-// SEA (gun's crypto layer) is what defines `gun.user()`, which every private
-// (password-protected) lens goes through. Node picks it up for free — gun's
-// `main` is lib/server.js, which requires ../sea — but a bundler resolves the
-// package's `browser` field to gun.js, the core graph ALONE. Without this
-// import `gun.user` is simply undefined in every browser build, and the first
-// password read or write dies with "gun.user is not a function". Importing it
-// here (the one module that owns the Gun instance) keeps the two environments
-// on the same API; it self-registers on Gun and is a no-op where already loaded.
-import 'gun/sea.js'
-import Ajv2019 from 'ajv/dist/2019.js'
+import Ajv2019 from 'ajv/dist/2019.js';
 import * as Federation from './federation.js';
 import * as SchemaOps from './schema.js';
 import * as ContentOps from './content.js';
@@ -26,6 +20,10 @@ import * as GlobalOps from './global.js';
 import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
+import { createStore, CAPABILITIES_HOLON } from './store/index.js';
+import { createSigner } from './signing.js';
+import { createRelayTransport } from './relay-transport.js';
+import { generateSecretKey } from './nostr-events.js';
 
 // Named exports (v2-compatible)
 import { nostrUtils } from './nostr-utils-shim.js';
@@ -33,119 +31,53 @@ import { subscriptions, buildLensPath } from './subscriptions-shim.js';
 import { registry } from './registry-shim.js';
 import * as handshake from './handshake-shim.js';
 
-// Define the version constant
-const HOLOSPHERE_VERSION = '1.3.0';
+const HOLOSPHERE_VERSION = '2.0.0';
 const version = HOLOSPHERE_VERSION;
 
-// Connection resilience tuning (see _setupConnectionResilience).
-// Resync debounce: long enough for a reconnect flap to settle, short enough
-// that a kiosk catches up within a couple of seconds of the wire returning.
-const RECONNECT_RESYNC_DEBOUNCE_MS = 2000;
-// Zombie-socket heartbeat: a peer silent for two intervals (once pinged) is
-// force-closed so Gun's reconnect machinery takes over. Also serves as a
-// NAT/proxy keepalive, so keep it comfortably under common 60s idle timeouts.
-const HEARTBEAT_INTERVAL_MS = 25000;
+const HOLONS_REGISTRY_TABLE = 'holons_registry';
 
 class HoloSphere {
     /**
-     * Initializes a new instance of the HoloSphere class.
-     * Supports both v1 positional args and v2 config object.
+     * v2: new HoloSphere({ appName, privateKey, relays, nostr: {…}, store: {…}, signing: {…}, strict })
+     * v1: new HoloSphere(appname, strict)
      *
-     * v1: new HoloSphere(appname, strict, openaikey, gunOptions)
-     * v2: new HoloSphere({ appName, privateKey, backend, nostr: { peers, relays } })
-     *
-     * @param {string|object} appnameOrConfig - App name string (v1) or config object (v2).
-     * @param {boolean} [strict=false] - Whether to enforce strict schema validation (v1 only).
-     * @param {string|null} [openaikey=null] - The OpenAI API key (v1 only).
-     * @param {object} [gunOptions={}] - Optional Gun constructor options (v1 only).
+     * With `relays` the relay set is the wire; without, the instance is
+     * local-only (offline, tests). With a `privateKey` every write is signed;
+     * with relays but no key an ephemeral key is generated (identity does not
+     * survive a restart).
      */
-    constructor(appnameOrConfig, strict = false, openaikey = null, gunOptions = {}) {
-        // Detect v2-style config object
+    constructor(appnameOrConfig, strict = false, openaikey = null, legacyOptions = undefined) {
         if (typeof appnameOrConfig === 'object' && appnameOrConfig !== null) {
             const config = appnameOrConfig;
             this.config = config;
             this.appname = config.appName || config.appname || 'holosphere';
             this.strict = config.strict || false;
             this._privateKey = config.privateKey || null;
-
-            // Derive public key from private key
-            if (this._privateKey) {
-                try {
-                    const pubHex = nostrUtils.getPublicKeyFromBytes
-                        ? nostrUtils.getPublicKeyFromBytes(this._privateKey)
-                        : nostrUtils.getPublicKey(
-                            typeof this._privateKey === 'string'
-                                ? this._privateKey
-                                : nostrUtils.bytesToHex(this._privateKey)
-                          );
-                    this.client = { publicKey: pubHex };
-                } catch (e) {
-                    console.warn('Failed to derive public key from private key:', e.message);
-                    this.client = { publicKey: '' };
-                }
-            } else {
-                this.client = { publicKey: '' };
+            if (config.backend && config.backend !== 'nostr') {
+                console.warn(`[holosphere] backend '${config.backend}' is no longer supported — the relay is the wire (or the instance is local-only without relays)`);
             }
-
-            // `backend: 'nostr'` promotes the relay(s) to the wire — but only
-            // when relays are actually configured. Callers have passed
-            // `backend: 'nostr'` aspirationally since before the transport
-            // existed (bot, discord) while running on Gun's default peer;
-            // without relays we keep that behavior instead of stranding them
-            // on a peerless local cache.
-            const relays = config.nostr?.relays || config.nostr?.peers || [];
-            this._backend = config.backend === 'nostr' && relays.length > 0 ? 'nostr' : 'gun';
-            if (config.backend === 'nostr' && this._backend !== 'nostr') {
-                console.warn("[holosphere] backend 'nostr' requested without config.nostr.relays — falling back to the gun backend");
-            }
-
-            // Map nostr relay/peer config to GunDB peers (gun backend only).
-            // In the nostr backend the relays ARE the wire: Gun stays a
-            // peerless local-first cache and all networking goes through
-            // relay-transport.js.
-            if (this._backend !== 'nostr' && relays.length > 0) {
-                const gunPeers = relays.map(r =>
-                    r.replace('wss://', 'https://').replace('ws://', 'http://') + '/gun'
-                );
-                gunOptions = { peers: gunPeers, ...gunOptions };
-            }
-            if (this._backend === 'nostr' && gunOptions.peers === undefined && !config.gunOptions?.peers) {
-                // Peerless local cache: no gun peers, and no gun stats timer
-                // (it re-arms forever and would pin a finished Node process).
-                gunOptions = { peers: [], stats: false, ...gunOptions };
-            }
-
-            // Allow explicit Gun options (peers, file, radisk, …) in v2 config.
             if (config.gunOptions) {
-                gunOptions = { ...gunOptions, ...config.gunOptions };
+                console.warn('[holosphere] gunOptions are ignored: Gun has been removed (see STORE.md for store options)');
             }
-
-            // Browser + nostr backend: give the local cache a storage adapter
-            // that actually exists. Gun's radisk has none in a browser (the
-            // IndexedDB adapter, gun/lib/rindexed, is never loaded here), and
-            // the default pair below sets radisk:true + localStorage:false —
-            // so the graph stores NOTHING. That is survivable on the gun
-            // backend, where the remote peer answers every read, but fatal
-            // once the relay is the wire: with no gun peer the cache is the
-            // only reader, so every get/getAll/subscribe resolves empty even
-            // for data this very tab just wrote. localStorage is the adapter
-            // Gun does wire up in a browser. Callers can still override.
-            if (this._backend === 'nostr' && typeof window !== 'undefined'
-                && config.gunOptions?.radisk === undefined
-                && config.gunOptions?.localStorage === undefined) {
-                gunOptions = { ...gunOptions, radisk: false, localStorage: true };
-            }
-
             openaikey = config.openaiKey || config.openaikey || null;
         } else {
-            // v1-style positional args
             this.appname = appnameOrConfig;
             this.config = { appName: appnameOrConfig };
-            this.client = { publicKey: '' };
             this.strict = strict;
             this._privateKey = null;
-            this._backend = 'gun';
+            if (legacyOptions && typeof legacyOptions === 'object' && Object.keys(legacyOptions).length) {
+                console.warn('[holosphere] the 4th constructor argument (gun options) is ignored: Gun has been removed');
+            }
         }
+        const cfg = this.config;
+        this._relays = [...(cfg.relays || cfg.nostr?.relays || cfg.nostr?.peers || [])]
+            .map((r) => String(r).trim()).filter(Boolean);
+
+        if (!this._privateKey && this._relays.length) {
+            this._privateKey = generateSecretKey();
+            console.warn('[holosphere] no privateKey configured — generated an ephemeral device key (identity will not survive a restart)');
+        }
+        this.client = { publicKey: this._privateKey ? this._derivePubKey(this._privateKey) : '' };
 
         console.log('HoloSphere v' + HOLOSPHERE_VERSION);
 
@@ -155,123 +87,62 @@ class HoloSphere {
             validateSchema: true
         });
 
-        // Define default Gun options with radisk enabled
-        const defaultGunOptions = {
-            peers: ['https://gun.holons.io/gun'],
-            axe: false,
-            radisk: true,
-            file: './holosphere',
-            // Gun's websocket layer spends a per-peer reconnect budget
-            // (`peer.retry`, stock default 60) that is decremented on every
-            // rapid retry and NEVER replenished by a successful reconnect —
-            // one ~2-minute relay outage (or short blips accumulated over
-            // days of uptime) exhausts it, after which the page silently
-            // never reconnects. Long-lived surfaces (kiosk screens,
-            // dashboards, bots) must retry forever; callers can still
-            // override via gunOptions.
-            retry: Infinity
-        };
+        // The local store (see STORE.md). Adapter defaults to IndexedDB in a
+        // browser and memory elsewhere; Node hosts pass `store: { adapter:
+        // 'file', dir }` for durability.
+        const storeCfg = cfg.store || {};
+        this.store = createStore({
+            appName: this.appname,
+            adapter: storeCfg.adapter,
+            dir: storeCfg.dir,
+            compactAfter: storeCfg.compactAfter,
+        });
 
-        // In browser environment, disable localStorage when radisk is enabled
-        if (typeof window !== 'undefined' && (gunOptions.radisk !== false)) {
-            defaultGunOptions.localStorage = false;
-        }
-
-        // Merge provided options with defaults
-        const finalGunOptions = { ...defaultGunOptions, ...gunOptions };
-        console.log("Initializing Gun with options:", finalGunOptions);
-
-        // Use provided Gun instance or create new one with final options
-        this.gun = Gun(finalGunOptions);
-
-        // OpenAI is optional - callers can set this.openai directly if needed
         this.openai = null;
-
-        // Initialize subscriptions
         this.subscriptions = {};
-
-        // Initialize schema cache
         this.schemaCache = new Map();
-
         // Holon-name cache so resolveHologram + getFederated don't refetch
         // `settings/<holon>` for every hologram from the same source.
         this._holonNameCache = new Map();
-
-        // Initialize allowed authors set (for canWrite)
+        // Allowed authors (canWrite + the default enforce read-list)
         this._allowedAuthors = new Set();
-
-        // Phase 1 signing layer (null until enableSigning() is called)
-        this._signer = null;
-
-        // Connection resilience (see _setupConnectionResilience): keep the
-        // websocket reconnect loop alive forever and resync live
-        // subscriptions after every reconnect, so long-lived pages never go
-        // silently stale.
         this._closed = false;
-        this._sawBye = false;
-        this._resyncTimer = null;
-        this._heartbeatTimer = null;
-        this._lastHeard = 0;
-        // The peers configured at construction (Gun keys opt.peers by url).
-        // Only these are ever auto-restored after a drop.
-        this._resilientPeers = new Set(Object.keys(this.gun?._?.opt?.peers || {}));
-        this._setupConnectionResilience();
 
-        // Nostr backend: the relay is the wire (see relay-transport.js). Init
-        // is async (dynamic nostr-tools import + enableSigning), so kick it
-        // off here and have every read/write path await it via _awaitBackend.
-        this._relayTransport = null;
-        this._backendReady = null;
-        // Lazy in-memory mirror for legacy Gun relay reads (see getAllLegacy).
-        this._legacyMirror = null;
-        if (this._backend === 'nostr') {
-            this._backendReady = this._initNostrBackend()
-                .catch((e) => { console.warn('[holosphere] nostr backend init failed:', e?.message); });
+        // Signing: every write is a signed event when a key is present.
+        this._signer = null;
+        this._readSpace = null;
+        const signing = cfg.signing || {};
+        if (this._privateKey) {
+            this._readSpace = this.client.publicKey || this.appname;
+            this._signer = createSigner({
+                privateKey: this._privateKey,
+                shadow: signing.shadow,
+                enforce: signing.enforce,
+                perActorLenses: signing.perActorLenses,
+                verbose: signing.verbose,
+            });
         }
+
+        // Open the store, then (with relays) bring the transport up. Every
+        // read/write path awaits this.
+        this._relayTransport = null;
+        this._ready = this.store.open()
+            .then(() => {
+                if (this._relays.length) this._startTransport(this._relays);
+            })
+            .catch((e) => { console.warn('[holosphere] init failed:', e?.message); });
     }
 
-    // ============================ NOSTR BACKEND ============================
-    //
-    // `backend: 'nostr'` promotes the Nostr relay(s) to the system's wire:
-    // Gun runs peerless as the local-first cache, every non-private write is
-    // published as a signed NIP-01 event, and reads/subscriptions live-sync
-    // each (holon, lens) from the relay. The signing layer runs envelope-only
-    // (relays: []) so verification/enforce works exactly as before while the
-    // transport is the single publisher.
-
-    async _initNostrBackend() {
+    _startTransport(relays) {
+        if (this._relayTransport || this._closed || !relays.length) return;
         const cfg = this.config || {};
-        const relays = cfg.nostr?.relays || cfg.nostr?.peers || [];
-        if (!relays.length) throw new Error("backend 'nostr' requires config.nostr.relays");
-        if (!this._privateKey) {
-            const { generateSecretKey } = await import('./nostr-events.js');
-            this._privateKey = generateSecretKey();
-            this.client = { publicKey: this._derivePubKey(this._privateKey) };
-            console.warn('[holosphere] nostr backend: no privateKey configured — generated an ephemeral device key', this.client.publicKey);
-        }
-        // Envelope-only signing: local `_events` attestation + shadow/enforce
-        // still work, but the signer never publishes (the transport does, so
-        // nothing goes out twice). The signer is created DIRECTLY (not via
-        // enableSigning) because enableSigning hydrates the federation
-        // read-list with data reads, and every data read awaits this very
-        // init — hydration runs in the background right after instead.
         const signing = cfg.signing || {};
-        const { createSigner } = await import('./signing.js');
-        this._readSpace = this.client?.publicKey || this.appname;
-        this._signer = await createSigner({
-            privateKey: this._privateKey,
-            relays: [],
-            storeEnvelope: true,
-            shadow: signing.shadow,
-            enforce: signing.enforce,
-            perActorLenses: signing.perActorLenses,
-            verbose: signing.verbose,
-        });
-        const { createRelayTransport } = await import('./relay-transport.js');
+        this._relays = [...relays];
         this._relayTransport = createRelayTransport(this, {
             relays,
             privateKey: this._privateKey,
             syncTimeoutMs: cfg.nostr?.syncTimeoutMs,
+            pageSize: cfg.nostr?.pageSize,
             verbose: signing.verbose || cfg.nostr?.verbose,
             projections: cfg.nostr?.projections,
             signerFor: cfg.nostr?.signerFor,
@@ -280,176 +151,32 @@ class HoloSphere {
             trustedAuthors: cfg.nostr?.trustedAuthors,
             reverseLookbackSec: cfg.nostr?.reverseLookbackSec,
         });
-        // Read-list hydration AFTER init settles: goes through the normal
-        // (backend-awaiting) read path, so it can even pull the saved
-        // federation list over the relay.
+        // Read-list hydration after init settles: goes through the normal read
+        // path, so it can pull the saved federation list over the relay.
         Promise.resolve().then(() => this._hydrateReadKeys()).catch(() => { /* nothing saved yet */ });
     }
 
-    /** Await nostr-backend init before touching data (no-op on gun backend). */
+    /** Await store + transport init before touching data. */
     async _awaitBackend() {
-        if (this._backendReady) {
-            await this._backendReady; // never rejects (constructor attaches catch)
-        }
+        await this._ready;
     }
 
-    /** Live-sync a (holon, lens) from the relay before/alongside a read. */
+    /** Catch a (holon, lens) up from the relays; live afterwards. */
     _relaySync(holon, lens, { await: awaited = false } = {}) {
-        // Relay-backup mode: the signer owns the reverse sync (external edits
-        // of projected standard kinds → records). Cheap, memoized per holon.
-        if (!this._relayTransport && this._signer?.ensureReverse && lens && String(lens) !== '_events') {
-            try { this._signer.ensureReverse(this, holon); } catch { /* best-effort */ }
-        }
         const t = this._relayTransport;
-        if (!t) return awaited ? Promise.resolve() : undefined;
+        if (!t || !lens || holon === CAPABILITIES_HOLON) return awaited ? Promise.resolve() : undefined;
         const p = t.ensureSync(holon, lens);
         if (awaited) return p.catch(() => { /* relay unreachable — read local */ });
         p.catch(() => { /* fire-and-forget */ });
     }
 
     /**
-     * Waits for the HoloSphere instance to be ready.
-     * GunDB connects eagerly, so this resolves immediately on the gun
-     * backend; the nostr backend resolves once the relay transport is up.
-     * @returns {Promise<HoloSphere>} - The ready instance
+     * Resolves once the store is open and the relay transport (if any) is up.
+     * @returns {Promise<HoloSphere>}
      */
     async ready() {
         await this._awaitBackend();
         return this;
-    }
-
-    getGun() {
-        return this.gun;
-    }
-
-    // ============================ CONNECTION RESILIENCE ============================
-    //
-    // Gun's stock websocket layer has three gaps that make a long-lived page
-    // (kiosk screen, dashboard, bot) go silently stale after a disconnect:
-    //
-    //   1. Its `bye` handler deletes the peer from `opt.peers`, and its
-    //      reconnect loop refuses to retry a peer missing from `opt.peers` —
-    //      so if the single automatic retry ~2s after a drop fails (any
-    //      outage longer than a blip), the peer is orphaned forever.
-    //   2. The reconnect budget (`peer.retry`) is never replenished on
-    //      success (mitigated by the `retry: Infinity` default above).
-    //   3. A half-open TCP connection (NAT/proxy idle timeout, silent wifi
-    //      drop) never fires `close`, so the reconnect machinery never even
-    //      starts: the socket looks OPEN but hears nothing.
-    //
-    // This layer (a) re-registers dropped peers so the retry loop keeps
-    // going, (b) resyncs every live-subscribed lens after a reconnect —
-    // Gun re-asks for live souls on `hi`, but its `ask` bookkeeping doesn't
-    // reliably cover `map().on()` children, so we re-read through `getAll`,
-    // whose wire replies merge into the graph and fire the already-attached
-    // listeners — and (c) sends a periodic DAM ping and force-closes a peer
-    // that stays silent across two intervals, which kicks (a)+(b) in.
-
-    _setupConnectionResilience() {
-        const root = this.gun && this.gun._;
-        if (!root || typeof root.on !== 'function') return;
-        const self = this;
-
-        // Gun's onto emitter chains listeners — propagate with
-        // `this.to.next(peer)` first, exactly like Gun's own hooks, so a
-        // later listener is never starved.
-        root.on('bye', function (peer) {
-            this.to.next(peer);
-            self._sawBye = true;
-            // Gun's mesh `bye` handler deletes `opt.peers[id]` AFTER this
-            // chain runs; restore the entry a tick later so the websocket
-            // reconnect loop (which bails on a missing entry) keeps retrying.
-            const url = peer && (peer.url || peer.id);
-            if (!url || !self._resilientPeers.has(url)) return;
-            setTimeout(() => {
-                const peers = self.gun?._?.opt?.peers;
-                if (self._closed || !peers || peers[url]) return;
-                peers[url] = peer;
-            }, 0);
-        });
-
-        root.on('hi', function (peer) {
-            this.to.next(peer);
-            if (self._closed || !self._sawBye) return; // first connect — nothing missed
-            self._sawBye = false;
-            self._scheduleResync();
-        });
-
-        this._heartbeatTimer = setInterval(
-            () => this._heartbeatTick(),
-            HEARTBEAT_INTERVAL_MS,
-        );
-        // Don't hold a short-lived Node process open for the heartbeat.
-        if (typeof this._heartbeatTimer.unref === 'function') {
-            this._heartbeatTimer.unref();
-        }
-    }
-
-    // Debounced so a flapping connection (or several peers reconnecting at
-    // once) coalesces into one resync pass after the wire settles.
-    _scheduleResync() {
-        if (this._closed || this._resyncTimer) return;
-        this._resyncTimer = setTimeout(() => {
-            this._resyncTimer = null;
-            this.resyncSubscriptions().catch(() => { /* best-effort */ });
-        }, RECONNECT_RESYNC_DEBOUNCE_MS);
-        if (typeof this._resyncTimer.unref === 'function') {
-            this._resyncTimer.unref();
-        }
-    }
-
-    /**
-     * Re-reads every (holon, lens) path that has a live `subscribe()` so the
-     * relay's current state flows through the existing `map().on()`
-     * listeners — catching up on anything written while the wire was down.
-     * Runs automatically (debounced) after a reconnect; safe to call
-     * manually, e.g. from a browser `online` handler.
-     */
-    async resyncSubscriptions() {
-        if (this._closed) return;
-        const groups = this._subscriptionGroups;
-        if (!groups || groups.size === 0) return;
-        const paths = [...groups.values()].map((g) => ({ holon: g.holon, lens: g.lens }));
-        await Promise.allSettled(
-            paths.map(({ holon, lens }) => this.getAll(holon, lens)),
-        );
-    }
-
-    // Half-open (zombie) socket detection. `mesh.hear.c` counts every raw
-    // message received across all peers; if a whole interval passes with no
-    // traffic, ping each OPEN peer (a DAM `?`, which the relay acks) and, if
-    // the next interval is still silent, force-close the wire — Gun's
-    // `onclose` then drives the normal reconnect + resync path. The counter
-    // is instance-wide, so with several peers a chatty one can mask a zombie;
-    // every production surface here runs a single relay, and the ping doubles
-    // as a NAT keepalive either way.
-    _heartbeatTick() {
-        if (this._closed) return;
-        const opt = this.gun?._?.opt;
-        const mesh = opt && opt.mesh;
-        if (!mesh || typeof mesh.say !== 'function') return;
-        const heard = (mesh.hear && mesh.hear.c) || 0;
-        const quiet = heard <= this._lastHeard;
-        this._lastHeard = heard;
-        for (const url of this._resilientPeers) {
-            const peer = opt.peers && opt.peers[url];
-            const wire = peer && peer.wire;
-            if (!wire || wire.readyState !== 1 /* OPEN */) {
-                if (peer) peer.__hbPinged = false; // reconnect loop owns it
-                continue;
-            }
-            if (!quiet) {
-                peer.__hbPinged = false;
-                continue;
-            }
-            if (peer.__hbPinged) {
-                peer.__hbPinged = false;
-                try { wire.close(); } catch { /* already dead */ }
-            } else {
-                peer.__hbPinged = true;
-                try { mesh.say({ dam: '?', pid: opt.pid }, peer); } catch { /* ignore */ }
-            }
-        }
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -470,58 +197,63 @@ class HoloSphere {
 
     /**
      * Stores content in the specified holon and lens.
-     * Supports both v1 and v2 calling conventions:
      *   v1: put(holon, lens, data, password, options)
-     *   v2: put(holon, lens, data, { actingAs }) or put(holon, lens, data)
+     *   v2: put(holon, lens, data, { actingAs, … }) or put(holon, lens, data)
      */
     async put(holon, lens, data, passwordOrOptions = null, options = {}) {
         let password = null;
         if (typeof passwordOrOptions === 'object' && passwordOrOptions !== null) {
-            // v2-style: 4th arg is options object (e.g., { actingAs })
             options = passwordOrOptions;
             password = options.password || null;
         } else {
-            // v1-style: 4th arg is password string
             password = passwordOrOptions;
         }
         await this._awaitBackend();
-        // Writing implies interest — open the live relay sync for this lens
-        // (fire-and-forget; the put itself publishes via content.js).
-        if (!password) this._relaySync(holon, lens);
+        // Writing implies interest — open the live relay sync for this lens.
+        if (!password && !options.local) this._relaySync(holon, lens);
         return ContentOps.put(this, holon, lens, data, password, options);
     }
 
     /**
      * Retrieves content from the specified holon and lens.
-     * Supports both v1 and v2 calling conventions:
      *   v1: get(holon, lens, key, password, options)
      *   v2: get(holon, lens) or get(holon, lens, key)
      */
     async get(holon, lens, key = null, password = null, options = {}) {
         await this._awaitBackend();
-        // Nostr backend: catch up this lens from the relay before reading, so
-        // a cold read sees the wire's current state (bounded by the sync
-        // timeout — an unreachable relay degrades to a local read).
+        // Catch this lens up from the relay before reading, so a cold read
+        // sees the wire's current state (bounded by the sync timeout).
         if (!password) await this._relaySync(holon, lens, { await: true });
         if (key === null || key === undefined) {
             // v2-style 2-arg call: get entire lens (return first/only item).
-            // Route through this.getAll so the signing layer resolves it.
             const items = await this.getAll(holon, lens, password, options);
             return items && items.length > 0 ? items[0] : null;
         }
         const raw = await ContentOps.get(this, holon, lens, key, password, options);
-        // Resolve a single item through the signing layer — every get resolves.
-        // Private (password) reads bypass it: the SEA-encrypted space is
-        // access-controlled by the password itself and never signed, so the
-        // envelope store has nothing to say about it.
+        // Private (password) reads bypass the signing layer: the encrypted
+        // space is access-controlled by the password itself and never signed.
         const signer = this._signer;
-        if (signer && signer.enforce && !password && lens !== '_members' && !options._skipAuthorize) {
+        if (signer && signer.enforce && !password && holon && lens && key && lens !== '_members' && !options._skipAuthorize) {
             if (signer.isPerActor(lens)) {
-                // per-author lens: return the subject's aggregated records
                 return signer.aggregate(this, holon, lens, key);
             }
-            // resolve the single item from its signed envelopes (raw-tamper-proof)
-            return signer.resolveItem(this, holon, lens, key, { includeDeleted: !!options.includeDeleted });
+            const claim = await signer.resolveItem(this, holon, lens, key, { includeDeleted: !!options.includeDeleted });
+            if (claim && options.resolveHolograms !== false && this.isHologram(claim) && !claim._deleted) {
+                // The authorized claim is a pointer: resolve it like the plain
+                // read does, threading the cycle guard.
+                const res = await this.resolveHologramDetailed(claim, {
+                    followHolograms: true,
+                    visited: options.visited,
+                    maxDepth: options.maxDepth || 10,
+                    currentDepth: options.currentDepth || 0,
+                });
+                if (res.status === 'resolved') return res.data;
+                if (res.status === 'deleted' && options.includeDeleted) {
+                    return { id: claim.id, _deleted: true, _hologram: { isHologram: true, soul: res.soul, deleted: true } };
+                }
+                return null;
+            }
+            return claim;
         }
         return raw;
     }
@@ -529,23 +261,17 @@ class HoloSphere {
     /**
      * Read a whole lens.
      *
-     * `options.includeUnverified` returns a **provenance-annotated dual-source
-     * view**: signed/authorized items tagged `_verified: true`, and legacy or
-     * unsigned/untrusted items tagged `_verified: false, _unverified: true`. This
-     * is the safe, public way to "show everything" during a signing migration —
-     * the UI can render grandfathered data while badging it. Requires signing to
-     * be enabled (shadow or enforce); with signing off there's nothing to verify
-     * against, so the raw list is returned untagged. NEVER trust `_unverified`
-     * items for auth/ownership — they're for display only.
+     * `options.includeUnverified` returns a provenance-annotated view:
+     * signed/authorized items tagged `_verified: true`, unsigned/untrusted
+     * items tagged `_verified: false, _unverified: true` (display only —
+     * never trust `_unverified` items for auth/ownership).
      */
     async getAll(holon, lens, password = null, options = {}) {
         await this._awaitBackend();
         if (!password) await this._relaySync(holon, lens, { await: true });
         const items = await ContentOps.getAll(this, holon, lens, password, options);
-        // Private (password) reads bypass the signing layer entirely — see get().
         const signer = this._signer;
-        if (signer && !password && lens !== '_members' && !options._skipAuthorize) {
-            // Provenance-annotated dual-source read (signed + grandfathered legacy).
+        if (signer && !password && holon && lens && lens !== '_members' && !options._skipAuthorize) {
             if (options.includeUnverified) {
                 if (signer.isPerActor(lens)) {
                     const recs = await signer.aggregate(this, holon, lens);
@@ -557,10 +283,7 @@ class HoloSphere {
                     ...pending.map((i) => ({ ...i, _verified: false, _unverified: true })),
                 ];
             }
-            // Phase 2 enforce: collapse to the authorized view (changes output).
             if (signer.enforce) {
-                // Per-author lenses (participation, reactions, …) aggregate one
-                // record per trusted author instead of collapsing to a single winner.
                 if (signer.isPerActor(lens)) {
                     return signer.aggregate(this, holon, lens);
                 }
@@ -569,8 +292,6 @@ class HoloSphere {
                 });
                 return view;
             }
-            // Phase 1 shadow: measure the forgery surface without changing output
-            // (fire-and-forget so reads are never delayed or altered).
             if (signer.shadow && !options._skipShadow) {
                 Promise.resolve()
                     .then(() => signer.shadowCheck(this, holon, lens, items))
@@ -580,152 +301,97 @@ class HoloSphere {
         return items;
     }
 
-    // ============================ LEGACY GUN READS ============================
-    //
-    // On the nostr backend Gun runs peerless, so records that only exist on
-    // the legacy Gun relay(s) — written before the Nostr relay became the
-    // wire — are invisible to get/getAll/subscribe. `getAllLegacy` reads them
-    // through a lazily-created, in-memory mirror instance peered with the
-    // legacy relay(s): a read-only side channel whose graph never touches
-    // this instance's local cache, and through which nothing is ever written.
-    // Every item comes back tagged `_verified: false, _unverified: true,
-    // _legacy: true` so UIs can gate it behind a "show all data" affordance.
-    // Display-only — NEVER trust legacy items for auth/ownership.
-
-    /** Legacy Gun relay URLs (nostr backend). Configurable via
-     *  `config.nostr.legacyGunPeers`; `[]` disables legacy reads. */
-    _legacyGunPeers() {
-        const cfg = this.config?.nostr?.legacyGunPeers;
-        if (Array.isArray(cfg)) return cfg.filter(Boolean);
-        return ['https://gun.holons.io/gun'];
-    }
-
-    /** Lazily build the in-memory mirror peered with the legacy Gun relay(s). */
-    _legacyMirrorInstance() {
-        if (this._legacyMirror) return this._legacyMirror;
-        const peers = this._legacyGunPeers();
-        if (!peers.length) return null;
-        this._legacyMirror = new HoloSphere({
-            appName: this.appname,
-            gunOptions: {
-                peers,
-                axe: false,
-                multicast: false,
-                stats: false,
-                // In-memory only: the mirror must never persist, or shadow the
-                // primary instance's local cache (same appname, same souls).
-                radisk: false,
-                localStorage: false,
-            },
-        });
-        return this._legacyMirror;
-    }
-
-    /**
-     * Read a whole lens from the legacy Gun relay(s) (nostr backend only —
-     * `[]` on the gun backend, where the relay data is already the wire).
-     * Items are tagged `_verified: false, _unverified: true, _legacy: true`.
-     */
-    async getAllLegacy(holon, lens, options = {}) {
-        if (this._backend !== 'nostr') return [];
-        const mirror = this._legacyMirrorInstance();
-        if (!mirror) return [];
-        const items = await mirror.getAll(holon, lens, null, options);
-        return (items || []).map((i) => ({
-            ...i, _verified: false, _unverified: true, _legacy: true,
-        }));
-    }
-
     async parse(rawData) {
         return ContentOps.parse(this, rawData);
     }
 
     async delete(holon, lens, key, password = null, options = {}) {
         await this._awaitBackend();
-        // Signed delete: authenticate the removal with a signed tombstone so an
-        // unauthorized key can't drop your data from the resolved view, and so a
-        // per-actor record (participation, …) can be retracted by its owner.
-        let tombstone = null;
-        if (this._signer && holon && !options._skipSign) {
-            try { tombstone = await this._signer.onDelete(this, holon, lens, key); } catch { /* best-effort */ }
-        }
-        // Nostr backend: the delete travels the wire as a signed tombstone
-        // event (globals included — the signer above only covers holon paths).
-        if (this._relayTransport && !password && !options._skipPublish) {
-            try { this._relayTransport.publishDelete(holon, lens, key, tombstone); } catch { /* best-effort */ }
-        }
         return ContentOps.deleteFunc(this, holon, lens, key, password, options);
     }
 
     async deleteAll(holon, lens, password = null, options = {}) {
         await this._awaitBackend();
-        // Signed bulk delete: tombstone every id first (mirrors delete()) so an
-        // enforce-mode reader can't resurrect the lens from leftover envelopes.
-        // Private (password) lenses are never signed, so there's nothing to
-        // tombstone there.
-        if (this._signer && holon && !password && !options._skipSign) {
-            try {
-                const raw = await ContentOps.getAll(this, holon, lens, null, {
-                    _skipAuthorize: true, _skipShadow: true, resolveHolograms: false, includeDeleted: true,
-                });
-                const ids = new Set((raw || []).filter((it) => it && it.id != null).map((it) => String(it.id)));
-                if (this._signer.enforce) {
-                    // Union with the enforced view so ids living only in the
-                    // envelope store (raw slot already gone) get tombstoned too.
-                    try {
-                        const view = await this.getAll(holon, lens);
-                        for (const it of view || []) if (it && it.id != null) ids.add(String(it.id));
-                    } catch { /* best-effort */ }
-                }
-                await Promise.all([...ids].map(async (id) => {
-                    try {
-                        const tombstone = await this._signer.onDelete(this, holon, lens, id);
-                        if (this._relayTransport && !options._skipPublish) {
-                            this._relayTransport.publishDelete(holon, lens, id, tombstone);
-                        }
-                    } catch { /* best-effort */ }
-                }));
-            } catch { /* best-effort, mirror delete() */ }
-        }
         return ContentOps.deleteAll(this, holon, lens, password, options);
+    }
+
+    // ================================ STORE VIEWS ================================
+
+    /**
+     * Every holon this instance holds records for, unioned with the global
+     * holons registry (`holons_registry`), so a cold client can list holons
+     * it has never opened.
+     */
+    async listHolons() {
+        await this._awaitBackend();
+        const out = new Set(this.store.listHolons());
+        try {
+            const entries = await this.getAllGlobal(HOLONS_REGISTRY_TABLE);
+            for (const e of entries || []) if (e && e.id != null) out.add(String(e.id));
+        } catch { /* no registry */ }
+        return Array.from(out);
+    }
+
+    /** Lenses this instance holds records for in a holon. */
+    listLenses(holon) {
+        return this.store.listLenses(holon);
+    }
+
+    /** Ids of the live records in a lens (no relay round-trip). */
+    listKeys(holon, lens, options = {}) {
+        return this.store.listKeys(holon, lens, options);
+    }
+
+    /** Souls of the hologram pointers that reference a record. */
+    getBacklinks(holon, lens, key) {
+        return this.store.getBacklinks(this.store.soulOf(holon, lens, key));
+    }
+
+    /** Signed events held locally (oldest first), optionally narrowed. */
+    exportEvents(filter = {}) {
+        return this.store.exportEvents(filter);
+    }
+
+    /**
+     * Apply a batch of signed events (signatures verified). With `publish`
+     * they are also republished to the relay set — a verbatim migration.
+     */
+    async importEvents(events, { publish = false } = {}) {
+        await this._awaitBackend();
+        const result = this.store.importEvents(events);
+        if (publish && this._relayTransport) this._relayTransport.publishEvents(events);
+        return result;
     }
 
     // ================================ NODE FUNCTIONS ================================
 
-    async putNode(holon, lens, data) {
-        return NodeOps.putNode(this, holon, lens, data);
-    }
-
     async getNode(holon, lens, key) {
+        await this._awaitBackend();
         return NodeOps.getNode(this, holon, lens, key);
     }
 
-    getNodeRef(soul) {
-        return NodeOps.getNodeRef(this, soul);
-    }
-
     async getNodeBySoul(soul) {
+        await this._awaitBackend();
         return NodeOps.getNodeBySoul(this, soul);
     }
 
     async deleteNode(holon, lens, key) {
+        await this._awaitBackend();
         return NodeOps.deleteNode(this, holon, lens, key);
     }
 
     // ================================ GLOBAL FUNCTIONS ================================
     //
-    // A "global" is just a holon-less get/put: data at appname/table/key instead
-    // of appname/holon/lens/key. These are thin aliases over the holon-aware
-    // methods with `holon = null`. (Global tables hold infrastructure like the
-    // federation config, so they skip signing/resolution — get/put detect the
-    // null holon and route to the holon-less path automatically.)
+    // A "global" is just a holon-less get/put: data at appname/_g/table/key
+    // instead of appname/holon/lens/key. Global tables hold infrastructure
+    // like the federation config, so they skip signing enforcement.
 
     async putGlobal(tableName, data, password = null, options = {}) {
         return this.put(null, tableName, data, password, options);
     }
 
     /** v2-compatible alias for putGlobal (no password param). Contract is
-     *  Promise<void> (see holosphere.d.ts) — don't leak put's result object. */
+     *  Promise<void> — don't leak put's result object. */
     async writeGlobal(tableName, data, options = {}) {
         await this.put(null, tableName, data, null, options);
     }
@@ -748,8 +414,7 @@ class HoloSphere {
 
     /**
      * Subscribe to real-time changes in a global table.
-     * v2-compatible: subscribeGlobal(lens, key, callback, options)
-     *
+     *   subscribeGlobal(lens, key, callback, options) | subscribeGlobal(lens, callback)
      * Returns synchronously — see {@link subscribe}.
      */
     subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
@@ -762,9 +427,7 @@ class HoloSphere {
             key = keyOrCallback;
             callback = callbackOrOptions;
         }
-        if (this._backendReady) {
-            this._backendReady.then(() => this._relaySync(null, lens)).catch(() => {});
-        }
+        this._ready.then(() => this._relaySync(null, lens)).catch(() => {});
         return GlobalOps.subscribeGlobal(this, lens, key, callback, options);
     }
 
@@ -789,8 +452,7 @@ class HoloSphere {
     /**
      * Like {@link resolveHologram} but returns a typed
      * `{ status, data, soul, reason }` envelope so callers can distinguish a
-     * DELETION (`status: 'deleted'`) from network LATENCY (`status: 'unresolved'`).
-     * See `HologramOps.HOLOGRAM_STATUS` / `isPrunableHologramStatus`.
+     * DELETION (`status: 'deleted'`) from LATENCY (`status: 'unresolved'`).
      */
     async resolveHologramDetailed(hologram, options = {}) {
         return HologramOps.resolveHologramDetailed(this, hologram, options);
@@ -828,9 +490,7 @@ class HoloSphere {
 
     /**
      * Retract a record (or every record this holon propagated, when `key` is
-     * null) from the parent hexagons `propagate` copied it to. Called
-     * automatically by delete/deleteAll; exposed for manual repair of records
-     * deleted before deletion propagation existed.
+     * null) from the parent hexagons `propagate` copied it to.
      */
     async propagateDeletion(holon, lens, key = null, options = {}) {
         return Federation.propagateDeletion(this, holon, lens, key, options);
@@ -851,135 +511,71 @@ class HoloSphere {
     /**
      * Subscribe to real-time changes for a holon/lens.
      *
-     * Synchronous return: `{ unsubscribe: () => void }`. Callers do not
-     * need to `await` — both `const s = holosphere.subscribe(...)` and
-     * `const s = await holosphere.subscribe(...)` yield the same shape.
+     * Synchronous return: `{ unsubscribe: () => void }`. Every subscriber
+     * gets the current snapshot replayed, then one callback per change.
      */
     subscribe(holon, lens, callback, options = {}) {
-        // Nostr backend: open the live relay sync for this lens so remote
-        // events flow into the local graph and fire this subscription. The
-        // gun-side listener attaches synchronously below either way.
-        if (this._backendReady) {
-            this._backendReady.then(() => this._relaySync(holon, lens)).catch(() => {});
-        }
+        this._ready.then(() => this._relaySync(holon, lens)).catch(() => {});
         const signer = this._signer;
         const annotate = !!options.includeUnverified;
         // In enforce mode, resolve each update through the signing layer so
-        // subscribers see the authorized value (or null when an update isn't from
-        // a trusted, valid signature, or the item was deleted) — symmetric with
-        // get/getAll. With `includeUnverified`, instead of DROPPING unsigned/
-        // untrusted updates we surface them tagged `_unverified` (display-only —
-        // never trust them for auth). Re-resolving on every change makes deletes
-        // notify too.
+        // subscribers see the authorized value (or null when an update isn't
+        // from a trusted, valid signature, or the item was deleted) —
+        // symmetric with get/getAll. With `includeUnverified`, unsigned/
+        // untrusted updates are surfaced tagged `_unverified` instead of
+        // dropped (display-only). The record and its envelope land in the
+        // store together, so a resolve is never a race against the write.
         if (signer && holon && lens !== '_members' && (signer.enforce || annotate)) {
             const self = this;
-
-            // Resolving an update reads the sibling `_events` envelope subtree
-            // (signer.resolveItem/aggregate) from INSIDE this lens's map().on()
-            // handler. Those reads make Gun re-emit the whole lens, re-firing
-            // this handler with VALUE-IDENTICAL echoes — a positive feedback
-            // loop. Unguarded it grows without bound: a single write to a lens
-            // with N items fans out into thousands of resolves, the event loop
-            // starves, the put never settles (write-timeout), and the new item
-            // never appears. (off/shadow pass the raw callback — no in-handler
-            // reads — so they converge; only this enforce/annotate path loops.)
-            //
-            // So we DROP value-identical echoes. But a resolve can legitimately
-            // CHANGE result without the raw changing: right after a reload the
-            // raw item often arrives (from radisk/a peer) before the local
-            // `_events` envelope has loaded, so the first resolve comes back
-            // UNVERIFIED even though the item is signed. If we deduped that away
-            // permanently, a signed item would show as unsigned until the next
-            // write. So an UNCONFIRMED result (couldn't verify a present item)
-            // gets a few TIME-SPACED re-verifications — enough to catch the
-            // late envelope, bounded so a genuinely-unsigned item settles fast
-            // and the echo storm never re-arms (retries are timer-driven, not
-            // echo-driven). A CONFIRMED result (verified item, or a real
-            // tombstone/absent) is final and dedupes its echoes.
-            const VERIFY_RETRY_MS = [400, 1200, 3000];
-            const st = new Map(); // id -> { sig, confirmed, attempts, timer, raw, holo }
-            const sig = (v) => { try { return JSON.stringify(v); } catch { return String(v); } };
-            const clearT = (e) => { if (e && e.timer) { clearTimeout(e.timer); e.timer = null; } };
-            // When Gun is runaway-re-emitting this lens (a corrupt circular
-            // hologram, a mutual-federation cycle, …) utils.subscribe sets
-            // `__onFireWarnedAt`. While that's hot, our `_events` reads would only
-            // pour fuel on the storm — so the wrapper goes dormant (no resolve, no
-            // retry) until it subsides. The raw write already landed; reads recover
-            // on the next clean update or reload.
-            const storming = () => self.__onFireWarnedAt && (Date.now() - self.__onFireWarnedAt) < 4000;
-
-            const emit = async (id) => {
-                const e = st.get(id);
-                if (!e) return;
-                const raw = e.raw;
-                let confirmed = true;
+            let active = true;
+            const resolved = async (raw, key) => {
+                const id = key ?? raw?.id;
+                if (id == null || !active) return;
                 try {
                     if (signer.isPerActor(lens)) {
                         const agg = await signer.aggregate(self, holon, lens, id);
-                        confirmed = Array.isArray(agg) && agg.length > 0; // empty may be a cold read
-                        callback(agg, id);
-                    } else {
-                        const verified = await signer.resolveItem(self, holon, lens, id);
-                        if (verified) {
-                            callback(annotate ? { ...verified, _verified: true } : verified, id);
-                        } else if (raw && !raw._deleted) {
-                            // present item that didn't verify — maybe a cold envelope read
-                            confirmed = false;
-                            callback(annotate ? { ...raw, _verified: false, _unverified: true } : null, id);
-                        } else {
-                            callback(null, id); // genuine tombstone/delete/absent — final
+                        if (active) callback(agg, id);
+                        return;
+                    }
+                    let verified = await signer.resolveItem(self, holon, lens, id);
+                    if (verified && self.isHologram(verified) && !verified._deleted) {
+                        // Utils.subscribe already resolved this pointer for us.
+                        if (raw && raw._hologram?.soul === verified.soul) verified = raw;
+                        else {
+                            const res = await self.resolveHologramDetailed(verified, { followHolograms: true });
+                            verified = res.status === 'resolved' ? res.data : null;
                         }
                     }
+                    if (!active) return;
+                    if (verified) {
+                        callback(annotate ? { ...verified, _verified: true } : verified, id);
+                    } else if (raw && !raw._deleted) {
+                        callback(annotate ? { ...raw, _verified: false, _unverified: true } : null, id);
+                    } else {
+                        callback(null, id); // genuine tombstone/delete/absent
+                    }
                 } catch { /* ignore */ }
-                const cur = st.get(id);
-                if (!cur || cur.sig !== e.sig) return; // superseded by a newer value
-                cur.confirmed = confirmed;
-                // Retry only a present, NON-hologram item that didn't verify, and
-                // never while storming. Holograms are pointers (the SOURCE carries
-                // the signature) with no local envelope, and a cascading hologram
-                // rewrites `updated` every fire — retrying it would dodge the
-                // echo-dedup and re-arm endlessly, feeding the storm.
-                if (!confirmed && !cur.holo && cur.attempts < VERIFY_RETRY_MS.length) {
-                    const delay = VERIFY_RETRY_MS[cur.attempts++];
-                    cur.timer = setTimeout(() => {
-                        if (st.get(id) === cur && !storming()) { cur.timer = null; emit(id); }
-                    }, delay);
-                }
-            };
-
-            const resolved = (raw, key) => {
-                // Gun can re-fire an update with `key` undefined (a lens-level echo
-                // of an item-level write); fall back to the raw record's id so we
-                // resolve the right envelope instead of mis-tagging it unverified.
-                const id = key ?? raw?.id;
-                if (id == null) return;
-                if (storming()) return; // don't add reads to a runaway lens
-                const s = sig(raw);
-                const e = st.get(id);
-                if (e && e.sig === s) return; // value-identical echo — drop (retries are timer-driven)
-                if (e) clearT(e);
-                const holo = !!(raw && (raw.soul || raw._hologram));
-                st.set(id, { sig: s, confirmed: false, attempts: 0, timer: null, raw, holo });
-                emit(id);
             };
             const sub = Utils.subscribe(this, holon, lens, resolved, { includeDeletes: true });
-            return { unsubscribe: () => { for (const e of st.values()) clearT(e); st.clear(); sub.unsubscribe(); } };
+            return { unsubscribe: () => { active = false; sub.unsubscribe(); } };
         }
         return Utils.subscribe(this, holon, lens, callback, options);
     }
 
+    /** @deprecated no-op: the store's change feed notifies subscribers. */
     notifySubscribers(data) {
         return Utils.notifySubscribers(this, data);
     }
 
+    /** Re-fetch every synced lens from the relays (e.g. from an `online` handler). */
+    async resyncSubscriptions() {
+        await this._awaitBackend();
+        if (this._relayTransport) await this._relayTransport.resync();
+    }
+
     /**
      * Resolve a holon's display name from its `settings/<holon>` record.
-     * Cached per-instance so repeated lookups (e.g. one per hologram in a
-     * federated batch) only fetch once. Returns `null` when no name is set.
-     *
-     * Used internally by `resolveHologram` to stamp
-     * `_hologram.sourceHolonName` so every consumer of a resolved hologram
-     * already has the display name without a second round-trip.
+     * Cached per-instance. Returns `null` when no name is set.
      */
     async getHolonName(holonId) {
         if (!holonId) return null;
@@ -1016,14 +612,6 @@ class HoloSphere {
 
     /**
      * Convenience wrapper around federate() for the common bidirectional case.
-     * @param {string} sourceHolon - Source holon ID
-     * @param {string} targetHolon - Target holon ID
-     * @param {object} [options] - Federation options
-     * @param {object} [options.lensConfig] - Lens config from sourceHolon's perspective
-     * @param {string[]} [options.lensConfig.inbound] - Lenses sourceHolon receives from targetHolon
-     * @param {string[]} [options.lensConfig.outbound] - Lenses sourceHolon sends to targetHolon
-     * @param {string} [options.partnerName] - Display name for the partner
-     * @returns {Promise<boolean>}
      */
     async federateHolon(sourceHolon, targetHolon, options = {}) {
         const lensConfig = options.lensConfig || {};
@@ -1051,12 +639,6 @@ class HoloSphere {
         return ok;
     }
 
-    /**
-     * v2-compatible federation removal.
-     * @param {string} sourceHolon - Source holon ID
-     * @param {string} targetHolon - Target holon ID
-     * @returns {Promise<boolean>}
-     */
     async unfederateHolon(sourceHolon, targetHolon) {
         return Federation.unfederate(this, sourceHolon, targetHolon, null, null);
     }
@@ -1066,19 +648,14 @@ class HoloSphere {
     }
 
     /**
-     * Gets federation info for a holon.
-     * Returns v2-compatible shape with `federated`, `lensConfig`, `partnerNames` fields.
+     * Gets federation info for a holon (v2-compatible shape).
      */
     async getFederation(holonId, password = null) {
         const result = await Federation.getFederation(this, holonId, password);
         if (!result) return { federated: [], lensConfig: {}, partnerNames: {} };
-
-        // Add v2-compatible fields alongside existing v1 fields
         if (!result.federated) result.federated = result.federation || [];
         if (!result.partnerNames) result.partnerNames = {};
-        // Ensure lensConfig exists (v1 already stores this)
         if (!result.lensConfig) result.lensConfig = {};
-
         return result;
     }
 
@@ -1091,13 +668,10 @@ class HoloSphere {
     }
 
     async removeNotify(holonId1, holonId2, password1 = null) {
-        console.log(`HoloSphere.removeNotify called: ${holonId1}, ${holonId2}`);
         try {
-            const result = await Federation.removeNotify(this, holonId1, holonId2, password1);
-            console.log(`HoloSphere.removeNotify completed successfully: ${result}`);
-            return result;
+            return await Federation.removeNotify(this, holonId1, holonId2, password1);
         } catch (error) {
-            console.error(`HoloSphere.removeNotify failed:`, error);
+            console.error('HoloSphere.removeNotify failed:', error);
             throw error;
         }
     }
@@ -1108,10 +682,6 @@ class HoloSphere {
 
     /**
      * Live federated read — the streaming equivalent of {@link getFederated}.
-     * Subscribes to `lens` on this holon plus every partner it receives `lens`
-     * from, merging into one id-deduped stream (local wins on collision) with
-     * partner items tagged `_federation`. Returns `{ unsubscribe }` synchronously.
-     * See {@link Federation.subscribeFederated} for the full contract.
      */
     subscribeFederated(holon, lens, callback, options = {}) {
         return Federation.subscribeFederated(this, holon, lens, callback, options);
@@ -1137,182 +707,151 @@ class HoloSphere {
 
     /**
      * Check if a public key can write to a holon/lens.
-     * @param {string} holonId - The holon ID
-     * @param {string} lensName - The lens name
-     * @param {string} actingAs - The public key attempting to write
-     * @param {object} [options] - Additional options
      * @returns {Promise<{ canWrite: boolean, reason: string, accessType: string }>}
      */
     async canWrite(holonId, lensName, actingAs, options = {}) {
-        // Owner always has access
         if (actingAs === this.client?.publicKey || actingAs === holonId) {
             return { canWrite: true, reason: 'owner', accessType: 'owner' };
         }
-
-        // Check allowed authors
         if (this._allowedAuthors.has(actingAs)) {
             return { canWrite: true, reason: 'allowed_author', accessType: 'allowed' };
         }
-
-        // Check federation
         try {
             const fed = await Federation.getFederation(this, holonId);
             if (fed && fed.federation && fed.federation.includes(actingAs)) {
                 return { canWrite: true, reason: 'federated', accessType: 'federation' };
             }
         } catch (e) { /* ignore */ }
-
         return { canWrite: false, reason: 'not_authorized', accessType: 'none' };
     }
 
-    /**
-     * Add a public key to the allowed authors list.
-     * @param {string} pubkey - The public key to allow
-     */
     addAllowedAuthor(pubkey) {
         this._allowedAuthors.add(pubkey);
     }
 
-    /**
-     * Remove a public key from the allowed authors list.
-     * @param {string} pubkey - The public key to remove
-     */
     removeAllowedAuthor(pubkey) {
         this._allowedAuthors.delete(pubkey);
     }
 
-    /**
-     * List all allowed authors.
-     * @returns {string[]}
-     */
     listAllowedAuthors() {
         return Array.from(this._allowedAuthors);
     }
 
-    // ================================ SIGNING (Phase 1) ================================
+    // ================================ SIGNING ================================
     //
-    // Opt-in NIP-01 signing: sign-on-write + dual-publish to Nostr relay(s),
-    // plus relay-backed recover and relay migration. Non-breaking — the Gun
-    // store is unchanged; signed events are published alongside. Requires the
-    // optional `nostr-tools` dependency. See SIGNING.md.
+    // Every write is a signed NIP-01 event when the instance has a key. The
+    // modes below only change how READS treat those signatures. See SIGNING.md.
 
     /**
-     * Enable signing. Every subsequent put publishes a signed event to the
-     * configured relays.
-     * @param {object} [opts]
-     * @param {string|Uint8Array} [opts.privateKey] - defaults to the instance key
-     * @param {string[]} [opts.relays] - defaults to config.nostr.relays
-     * @param {boolean} [opts.verbose]
+     * (Re)configure signing: shadow / enforce / per-actor lenses / read keys.
+     * Pass `privateKey` to sign with a different identity; pass `relays` to
+     * bring the relay transport up on an instance created without them.
      * @returns {Promise<object>} the signer
      */
     async enableSigning(opts = {}) {
-        const { createSigner } = await import('./signing.js');
+        await this._awaitBackend();
         const privateKey = opts.privateKey || this._privateKey;
-        const relays = opts.relays
-            || this.config?.nostr?.relays
-            || this.config?.nostr?.peers
-            || [];
+        if (!privateKey) throw new Error('enableSigning: a privateKey is required');
+        if (opts.privateKey && opts.privateKey !== this._privateKey) {
+            this._privateKey = opts.privateKey;
+            this.client = { publicKey: this._derivePubKey(opts.privateKey) };
+        }
         // Your read-list lives under your "read space" (default: your own key).
         // Hydrate it from the SAVED federation list, then add any explicit seeds.
         this._readSpace = opts.federationSpace || this.client?.publicKey || this.appname;
         await this._hydrateReadKeys();
         if (Array.isArray(opts.readKeys)) opts.readKeys.forEach((k) => this._addReadKeyLocal(k));
-        this._signer = await createSigner({
-            privateKey, relays, verbose: opts.verbose,
-            shadow: opts.shadow, enforce: opts.enforce, storeEnvelope: opts.storeEnvelope,
-            perActorLenses: opts.perActorLenses,
-            projections: opts.projections, signerFor: opts.signerFor,
-            providerKey: opts.providerKey,
-            reverseSync: opts.reverseSync, trustedAuthors: opts.trustedAuthors,
-            reverseLookbackSec: opts.reverseLookbackSec,
+        const prev = this._signer;
+        this._signer = createSigner({
+            privateKey,
+            verbose: opts.verbose,
+            shadow: opts.shadow,
+            enforce: opts.enforce,
+            perActorLenses: opts.perActorLenses ?? prev?.getPerActorLenses?.() ?? [],
         });
+        const relays = (opts.relays || []).map((r) => String(r).trim()).filter(Boolean);
+        if (relays.length && !this._relayTransport) {
+            const cfg = this.config || {};
+            this.config = {
+                ...cfg,
+                nostr: {
+                    ...(cfg.nostr || {}),
+                    projections: opts.projections ?? cfg.nostr?.projections,
+                    signerFor: opts.signerFor ?? cfg.nostr?.signerFor,
+                    providerKey: opts.providerKey ?? cfg.nostr?.providerKey,
+                    reverseSync: opts.reverseSync ?? cfg.nostr?.reverseSync,
+                    trustedAuthors: opts.trustedAuthors ?? cfg.nostr?.trustedAuthors,
+                    reverseLookbackSec: opts.reverseLookbackSec ?? cfg.nostr?.reverseLookbackSec,
+                },
+            };
+            this._startTransport(relays);
+        }
         return this._signer;
     }
 
     /**
-     * Publish already-signed Nostr events of any kind on whichever relay
-     * arrangement is active (nostr backend transport, or the relay-backup
-     * signer). No-op without relays. Used for group state (NIP-29), gift
-     * wraps (NIP-17) and other events the host builds itself.
+     * Publish already-signed Nostr events of any kind on the relay set. No-op
+     * without relays. Used for group state (NIP-29), gift wraps (NIP-17) and
+     * other events the host builds itself.
      */
     publishNostrEvents(events) {
-        // The nostr backend builds its transport asynchronously — queue behind it.
         this._awaitBackend().then(() => {
             if (this._relayTransport) return this._relayTransport.publishEvents(events);
-            if (this._signer?.publishEvents) return this._signer.publishEvents(events);
         }).catch(() => {});
     }
 
-    /** Raw live REQ on the active relay set; returns a close function. */
+    /** Raw live REQ on the relay set; returns a close function. */
     subscribeNostr(filter, onevent) {
         let close = null;
         let stopped = false;
         this._awaitBackend().then(() => {
             if (stopped) return;
             if (this._relayTransport) close = this._relayTransport.subscribeRaw(filter, onevent);
-            else if (this._signer?.subscribeRaw) close = this._signer.subscribeRaw(filter, onevent);
         }).catch(() => {});
         return () => { stopped = true; try { close?.(); } catch { /* ignore */ } };
     }
 
-    /** Relay URLs of the active arrangement ([] when none). */
+    /** Relay URLs of the wire ([] when local-only). */
     nostrRelays() {
         if (this._relayTransport) return [...this._relayTransport.relays];
-        if (this._signer?.relays?.length) return [...this._signer.relays];
-        if (this.config?.backend === 'nostr') return [...(this.config?.nostr?.relays || this.config?.nostr?.peers || [])];
-        return [];
+        return [...this._relays];
     }
 
-    /** Disable signing and close relay connections. */
+    /** Stop signing (writes become raw, local-only records). */
     disableSigning() {
         try { this._signer?.close(); } catch { /* ignore */ }
         this._signer = null;
     }
 
     /**
-     * Log in as a signing identity. Sets the active key AMBIENTLY — every
-     * subsequent put/delete is signed with it, with NO per-call key — and
-     * (re)enables signing. If already signed in, switches identity cleanly.
-     *
-     * Mode options (relays/shadow/enforce/storeEnvelope/perActorLenses/readKeys/
-     * federationSpace) match {@link enableSigning}; omit them for sane defaults.
-     * Envelope storage defaults to ON so the signature is actually persisted and
-     * verifiable locally even without relays (override via `opts.storeEnvelope`).
-     *
-     * @param {string|Uint8Array} privateKey - the identity to sign as
-     * @param {object} [opts] - same shape as {@link enableSigning} (privateKey is taken from the first arg)
+     * Log in as a signing identity: every subsequent put/delete is signed
+     * with it. If already signed in, switches identity cleanly.
      * @returns {Promise<{pubkey:string, signer:object}>}
      */
     async login(privateKey, opts = {}) {
         if (!privateKey) throw new Error('login: a privateKey is required');
-        if (this._signer) this.disableSigning();        // clean switch when re-logging in
+        if (this._signer) this.disableSigning();
         this._privateKey = privateKey;
         this.client = { publicKey: this._derivePubKey(privateKey) };
-        const signer = await this.enableSigning({ storeEnvelope: true, ...opts, privateKey });
+        const signer = await this.enableSigning({ ...opts, privateKey });
         return { pubkey: this.client.publicKey, signer };
     }
 
-    /**
-     * Log out: stop signing and clear the active signing identity. Subsequent
-     * puts are unsigned (raw Gun writes) until the next {@link login}.
-     */
+    /** Log out: stop signing and clear the active signing identity. */
     logout() {
         this.disableSigning();
         this._privateKey = null;
         this.client = { publicKey: '' };
     }
 
-    /** The pubkey of the currently logged-in signing identity (or '' if none). */
     get currentPubkey() {
         return this.client?.publicKey || '';
     }
 
-    /** Whether a signing identity is currently logged in. */
     get loggedIn() {
         return this._signer !== null && !!this.client?.publicKey;
     }
 
-    /** Derive a hex nostr public key from a secret key (hex string or bytes). */
     _derivePubKey(privateKey) {
         try {
             return nostrUtils.getPublicKeyFromBytes
@@ -1323,63 +862,32 @@ class HoloSphere {
                         : nostrUtils.bytesToHex(privateKey)
                   );
         } catch (e) {
-            console.warn('login: failed to derive public key:', e?.message);
+            console.warn('failed to derive public key:', e?.message);
             return '';
         }
     }
 
-    /** Whether signing is currently enabled. */
     get signingEnabled() {
         return this._signer !== null;
     }
 
-    /** Whether enforce (authorized-read) mode is active. */
     get enforceActive() {
         return !!this._signer?.enforce;
     }
 
-    /** Current signing relays (empty if signing is disabled). */
+    /** @deprecated relays belong to the transport — see nostrRelays(). */
     getSigningRelays() {
-        return this._signer ? this._signer.relays : [];
+        return this.nostrRelays();
     }
 
-    /** Replace the signing relay set. */
-    setSigningRelays(relays) {
-        if (!this._signer) throw new Error('setSigningRelays: signing not enabled');
-        this._signer.setRelays(relays);
-    }
-
-    /**
-     * Recover a holon/lens from the relays into the local Gun store (verifies
-     * signatures, drops forgeries).
-     * @returns {Promise<{found:number, restored:number}>}
-     */
-    async rehydrate(holon, lens, opts = {}) {
-        if (!this._signer) throw new Error('rehydrate: signing not enabled');
-        return this._signer.rehydrate(this, holon, lens, opts);
+    /** @deprecated relays are fixed at construction. */
+    setSigningRelays() {
+        console.warn('[holosphere] setSigningRelays is a no-op: relays are configured at construction');
     }
 
     /**
-     * Move your data to a different relay set. Republishes your signed events
-     * verbatim (signatures stay valid, ids dedup). With no filter it moves ALL
-     * your data across every holon/lens.
-     * @param {object} o
-     * @param {string[]} o.to - destination relays
-     * @param {string[]} [o.from] - source relays (defaults to current)
-     * @param {boolean} [o.switch] - switch to `to` after a successful move
-     * @returns {Promise<{total:number, moved:number, switched:boolean}>}
-     */
-    async migrateRelays(o) {
-        if (!this._signer) throw new Error('migrateRelays: signing not enabled');
-        return this._signer.migrate(o);
-    }
-
-    /**
-     * Shadow audit a lens: read it and classify every item against its local
-     * signed envelope (accounted vs would-drop). Returns a per-call summary and
-     * also updates the cumulative report. Output of the lens is unchanged.
-     * Requires signing enabled with `shadow: true`.
-     * @returns {Promise<{items, accounted, wouldDrop, unsigned, invalidSig, mismatch}>}
+     * Shadow audit a lens: classify every item against its signed claims.
+     * Output of the lens is unchanged.
      */
     async auditLens(holon, lens) {
         if (!this._signer) throw new Error('auditLens: signing not enabled');
@@ -1387,32 +895,20 @@ class HoloSphere {
         return this._signer.shadowCheck(this, holon, lens, items);
     }
 
-    /** Cumulative shadow/authorized report (empty if signing is off). */
     getShadowReport() {
         return this._signer ? this._signer.getReport() : null;
     }
 
-    /** Reset the cumulative report. */
     resetShadowReport() {
         this._signer?.resetReport();
     }
 
     // -------- Per-author aggregate (signed, filterable collaborative state) --------
-    //
-    // For collaborative state where many actors each assert their own status
-    // (participation, reactions, votes, RSVPs), store one signed record per actor
-    // (write with `id` = the subject) instead of a shared mutable array. Each
-    // actor's record lives under their own key, so it can't be forged across keys
-    // and your read-list filters it. `aggregate` returns each trusted actor's
-    // LATEST record; toggling is just a newer record from that actor.
 
-    /**
-     * Per-author aggregate for a lens (optionally one subject). Returns each
-     * trusted author's latest signed record, tagged with `_owner` + `_subject`.
-     * @returns {Promise<object[]>}
-     */
     async aggregate(holon, lens, subject = null) {
         if (!this._signer) throw new Error('aggregate: signing not enabled');
+        await this._awaitBackend();
+        await this._relaySync(holon, lens, { await: true });
         return this._signer.aggregate(this, holon, lens, subject);
     }
 
@@ -1423,22 +919,13 @@ class HoloSphere {
     }
 
     // -------- Federation read-list (default authorized read) --------
-    //
-    // In the default `enforce` mode, your authorized-read set IS your SAVED
-    // federation list — the keys you've federated with under your read space
-    // (default: your own key), hydrated on enableSigning — plus your own key.
-    // `addReadKey`/`removeReadKey` write through to that saved federation, so the
-    // allow-list and the federation list are one and the same. Reader-scoped,
-    // current-list (Nostr follow model). Accepts npub or hex.
 
-    /** Add a key (npub/hex) to the in-memory read-set only (no persistence). */
     _addReadKeyLocal(key) {
         const hex = (nostrUtils.parseNpubOrHex && nostrUtils.parseNpubOrHex(key)) || key;
         if (hex) this._allowedAuthors.add(hex);
         return hex;
     }
 
-    /** Load the read-set from the saved federation list (additive). */
     async _hydrateReadKeys() {
         if (!this._readSpace) return;
         try {
@@ -1448,10 +935,7 @@ class HoloSphere {
         } catch { /* nothing federated yet */ }
     }
 
-    /**
-     * Trust a key (npub or hex): add it to your read-set AND persist it to your
-     * saved federation list. Returns the hex key.
-     */
+    /** Trust a key (npub or hex): add it to your read-set AND your saved federation list. */
     async addReadKey(key) {
         const hex = this._addReadKeyLocal(key);
         if (this._readSpace && hex && hex !== this.client?.publicKey) {
@@ -1467,7 +951,6 @@ class HoloSphere {
         if (this._readSpace && hex) { try { await this.unfederate(this._readSpace, hex); } catch { /* ignore */ } }
     }
 
-    /** Reload the read-set from the saved federation list. */
     async refreshReadKeys() {
         await this._hydrateReadKeys();
         return this.getReadKeys();
@@ -1479,67 +962,49 @@ class HoloSphere {
         return [...(own ? [own] : []), ...this._allowedAuthors];
     }
 
-    // -------- Membership (optional `enforce: 'membership'` holon-authority mode) --------
-    //
-    // An alternative to the federation read-list: authority lives ON THE HOLON
-    // as a signed, append-only log rooted at a genesis key (admin-gated
-    // add/remove, as-of-time). Use this when the *space* defines who may write
-    // (e.g. a shared treasury), rather than each reader choosing whose keys to
-    // read. Only consulted when signing was enabled with `enforce: 'membership'`.
-    // See the membership section of SIGNING.md.
+    // -------- Membership (`enforce: 'membership'` holon-authority mode) --------
 
-    /** Pin the trusted genesis pubkey for a holon (else TOFU = earliest genesis). */
     setGenesis(holon, pubkey) {
         if (!this._signer) throw new Error('setGenesis: signing not enabled');
         this._signer.pinGenesis(holon, pubkey);
     }
 
-    /**
-     * Found a holon: write a self-signed genesis membership event making the
-     * local key the first admin, and pin it as the trust anchor.
-     * @returns {Promise<string>} the genesis pubkey
-     */
+    /** Found a holon: self-signed genesis making the local key the first admin. */
     async foundHolon(holon, opts = {}) {
         if (!this._signer) throw new Error('foundHolon: signing not enabled');
+        await this._awaitBackend();
         this._signer.pinGenesis(holon, this._signer.pubkey);
-        const item = { id: 'genesis', op: 'genesis', role: 'admin' };
-        await this._signer.signAndStore(this, holon, '_members', item, { at: opts.at });
-        await this.put(holon, '_members', item, null, { _skipSign: true });
+        await this._signer.signAndStore(this, holon, '_members', { id: 'genesis', op: 'genesis', role: 'admin' }, { at: opts.at });
+        this._relaySync(holon, '_members');
         return this._signer.pubkey;
     }
 
-    /**
-     * Add a member (only effective if the local key is an admin of the holon).
-     * @param {string} role - 'member' (default) or 'admin'
-     */
+    /** Add a member (only effective if the local key is an admin of the holon). */
     async addMember(holon, pubkey, role = 'member', opts = {}) {
         if (!this._signer) throw new Error('addMember: signing not enabled');
+        await this._awaitBackend();
         const at = opts.at;
-        const item = { id: `add:${pubkey}:${at ?? Date.now()}`, op: 'add', pubkey, role };
-        await this._signer.signAndStore(this, holon, '_members', item, { at });
-        await this.put(holon, '_members', item, null, { _skipSign: true });
+        await this._signer.signAndStore(this, holon, '_members', { id: `add:${pubkey}:${at ?? Date.now()}`, op: 'add', pubkey, role }, { at });
     }
 
     /** Remove a member (only effective if the local key is an admin). */
     async removeMember(holon, pubkey, opts = {}) {
         if (!this._signer) throw new Error('removeMember: signing not enabled');
+        await this._awaitBackend();
         const at = opts.at;
-        const item = { id: `remove:${pubkey}:${at ?? Date.now()}`, op: 'remove', pubkey };
-        await this._signer.signAndStore(this, holon, '_members', item, { at });
-        await this.put(holon, '_members', item, null, { _skipSign: true });
+        await this._signer.signAndStore(this, holon, '_members', { id: `remove:${pubkey}:${at ?? Date.now()}`, op: 'remove', pubkey }, { at });
     }
 
     /** Current authorized members → Map(pubkey -> role). */
     async getMembers(holon) {
         if (!this._signer) throw new Error('getMembers: signing not enabled');
+        await this._awaitBackend();
+        await this._relaySync(holon, '_members', { await: true });
         const tl = await this._signer.resolveMembership(this, holon);
         return tl.currentMembers();
     }
 
-    /**
-     * Items present in the lens but NOT backed by an authorized signature
-     * (unsigned / unauthorized / invalid). What enforce-mode reads hide.
-     */
+    /** Items present in the lens but NOT backed by an authorized signature. */
     async getPending(holon, lens) {
         if (!this._signer) throw new Error('getPending: signing not enabled');
         const items = await this.getAll(holon, lens, null, { _skipAuthorize: true });
@@ -1547,80 +1012,19 @@ class HoloSphere {
         return pending;
     }
 
-    // ================================ END FEDERATION FUNCTIONS ================================
+    // ================================ LIFECYCLE ================================
 
     async close() {
-        // Stop the resilience layer first so it can't restore peers or
-        // schedule resyncs while the instance tears down.
         this._closed = true;
-        if (this._resyncTimer) {
-            clearTimeout(this._resyncTimer);
-            this._resyncTimer = null;
-        }
-        if (this._heartbeatTimer) {
-            clearInterval(this._heartbeatTimer);
-            this._heartbeatTimer = null;
-        }
         try { this._relayTransport?.close(); } catch { /* ignore */ }
         this._relayTransport = null;
-        if (this._legacyMirror) {
-            const mirror = this._legacyMirror;
-            this._legacyMirror = null;
-            try { await mirror.close(); } catch { /* ignore */ }
-        }
         return Utils.close(this);
-    }
-
-    userName(holonId) {
-        return Utils.userName(this, holonId);
     }
 
     getVersion() {
         return HOLOSPHERE_VERSION;
     }
-
-    configureRadisk(options = {}) {
-        const defaultOptions = {
-            file: './radata',
-            radisk: true,
-            until: null,
-            timeout: 5000
-        };
-
-        const radiskOptions = { ...defaultOptions, ...options };
-        // `retry` is NOT a radisk option — Gun reads opt.retry only as the
-        // websocket reconnect budget (defaulted to Infinity in the
-        // constructor). Pass it through only when explicitly set, so
-        // configuring radisk can't silently cap reconnection.
-        if (radiskOptions.retry === undefined) delete radiskOptions.retry;
-
-        if (this.gun && this.gun._.opt) {
-            Object.assign(this.gun._.opt, radiskOptions);
-            console.log("Radisk configuration updated:", radiskOptions);
-        } else {
-            console.warn("Gun instance not available for radisk configuration");
-        }
-    }
-
-    getRadiskStats() {
-        if (!this.gun || !this.gun._.opt) {
-            return { error: "Gun instance not available" };
-        }
-
-        const options = this.gun._.opt;
-        return {
-            enabled: options.radisk || false,
-            filePath: options.file || './radata',
-            // The live websocket reconnect budget (not a radisk knob).
-            retry: options.retry,
-            timeout: options.timeout || 5000,
-            until: options.until || null,
-            peers: options.peers || [],
-            localStorage: options.localStorage || false
-        };
-    }
 }
 
-// Default and named exports (v2-compatible)
 export default HoloSphere;
 export { HoloSphere, handshake, nostrUtils, subscriptions, buildLensPath, registry, version };

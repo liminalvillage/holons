@@ -43,10 +43,7 @@ describe('nostr backend (relay is the wire)', () => {
       privateKey,
       backend: 'nostr',
       nostr: { relays: relays || [relay.url], syncTimeoutMs: 3000 },
-      gunOptions: {
-        peers: [], axe: false, multicast: false, stats: false,
-        radisk: true, file: path.join(dir, 'radata'), localStorage: false,
-      },
+      store: { adapter: 'memory' },
     });
     spheres.push(sphere);
     return sphere;
@@ -74,7 +71,7 @@ describe('nostr backend (relay is the wire)', () => {
   test('gun stays peerless — the relay is the only wire', async () => {
     const a = nostrSphere();
     await a.ready();
-    expect(Object.keys(a.gun?._?.opt?.peers || {})).toHaveLength(0);
+    expect(a.store.adapter?.kind).toBe('memory');
     expect(a._relayTransport).toBeTruthy();
     expect(a.signingEnabled).toBe(true);
   }, 15000);

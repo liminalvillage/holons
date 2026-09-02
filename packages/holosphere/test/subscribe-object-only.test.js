@@ -52,13 +52,11 @@ describe('subscribe callback contract: object | null only', () => {
             }
         });
 
-        // Directly inject a primitive leaf into the gun graph at the same
-        // path subscribe is watching. We can't go through `holosphere.put`
-        // (it sanitizes/requires an object); this simulates legacy/corrupt
-        // data that the wire could deliver.
-        const path = hs.gun.get(APP).get(holon).get(lens).get('primitive');
-        path.put(JSON.stringify('just-a-string'));
-        await new Promise(r => setTimeout(r, 800));
+        // A primitive can no longer even enter the store: the write boundary
+        // refuses it, and a malformed wire event decodes to nothing.
+        expect(() => hs.store.putRaw(holon, lens, 'primitive', 'just-a-string')).toThrow();
+        hs.store.putRaw(holon, lens, 'obj', { id: 'obj', value: 'fine' });
+        await new Promise(r => setTimeout(r, 300));
 
         sub.unsubscribe();
 

@@ -1,58 +1,55 @@
-/**
- * Nostr relay transport for HoloSphere — `backend: 'nostr'`.
- *
- * In this mode the relay IS the wire: Gun stays as the local-first cache
- * (peerless — in-memory graph + radisk), and ALL networking happens over the
- * Nostr relay(s):
- *
- *   write  →  every non-private put/delete is published as a signed NIP-01
- *             event (kind 30078, NIP-33 replaceable per location) — including
- *             holograms and globals, which the signing layer deliberately
- *             skips.
- *   read   →  `ensureSync(holon, lens)` opens ONE live REQ per (holon, lens)
- *             and resolves at EOSE, so a cold read sees the relay's current
- *             state; the subscription stays open and keeps feeding remote
- *             events into the local graph (which fires normal subscribers).
- *
- * Every ingested event is signature-verified and also mirrored into the
- * `_events` envelope sidecar, so shadow/enforce-mode reads authorize remote
- * data exactly like local signed writes.
- *
- * Event scheme (matches nostr-events.js / the signing layer):
- *   tags [["h", holon], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
- * The `n` (namespace) tag scopes events to one app namespace so `Holons` and
- * `HolonsDebug` can share a relay without bleeding into each other; globals
- * (holon == null) use the sentinel `h` value below.
- */
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Nostr relay transport — the relay IS the wire.
+//
+//   write  →  every non-private put/delete is a signed kind-30078 event
+//             (NIP-33 replaceable per location) published to the relay set —
+//             holograms and globals included.
+//   read   →  `ensureSync(holon, lens)` catches the lens up from the relays
+//             (paginated backfill on a cold store, a `since` query from the
+//             persisted cursor on a warm one), then keeps ONE live REQ per
+//             (holon, lens) open. Every event lands in the store through
+//             `store.apply`, which verifies it, decides last-writer-wins and
+//             fires the local subscribers.
+//
+// Event scheme (nostr-events.js / signing.js):
+//   tags [["h", holon], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
+// The `n` (namespace) tag scopes events to one app namespace so `Holons` and
+// `HolonsDebug` can share a relay; globals (holon == null) use the `_g`
+// sentinel in `h`.
 
-import {
-  buildEvent,
-  verifyEvent,
-  eventToItem,
-  getPublicKey,
-  tag,
-  HOLOSPHERE_KIND,
-} from './nostr-events.js';
+import { buildEvent, getPublicKey, HOLOSPHERE_KIND } from './nostr-events.js';
 import { createProjector } from './projections.js';
 import { createReverseSync } from './reverse-sync.js';
+import { GLOBAL_HOLON } from './store/address.js';
 
-/** `h`-tag sentinel for holon-less (global) records — `app/table/key`. */
-export const GLOBAL_HOLON_TAG = '_g';
+/** `h`-tag sentinel for holon-less (global) records. */
+export const GLOBAL_HOLON_TAG = GLOBAL_HOLON;
 
 const EVENTS_NS = '_events';
 
-/** How long a cold read waits for the relay's EOSE before proceeding with
- *  whatever is local. The live subscription keeps catching up afterwards. */
+/** How long a cold read waits for the relay catch-up before proceeding with
+ *  whatever is local. The catch-up keeps running in the background. */
 const DEFAULT_SYNC_TIMEOUT_MS = 5000;
 
-/** Reconnect backoff for a dropped relay subscription. */
-const RESUBSCRIBE_DELAY_MS = 3000;
+/** Page size for the cold backfill — strfry's default `maxFilterLimit`. */
+const DEFAULT_PAGE_SIZE = 500;
+
+/** Overlap re-fetched before a cursor so clock skew between writers cannot
+ *  hide an event (re-applying a seen event is a no-op). */
+const CATCHUP_OVERLAP_SEC = 900;
+
+/** Backoff for reopening a subscription the relay hard-closed. */
+const REOPEN_BACKOFF_MS = [3000, 10000, 30000, 60000];
+
+const MAX_BACKFILL_PAGES = 2000;
 
 export function createRelayTransport(holo, {
   relays = [],
   privateKey,
   kind = HOLOSPHERE_KIND,
   syncTimeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+  pageSize = DEFAULT_PAGE_SIZE,
   verbose = false,
   // Standard-kind projections (see projections.js / @holons/core/nostr).
   projections = [],
@@ -65,38 +62,41 @@ export function createRelayTransport(holo, {
 } = {}) {
   if (!relays.length) throw new Error('relay-transport: at least one relay is required');
   if (!privateKey) throw new Error('relay-transport: a privateKey is required');
+  if (!holo?.store) throw new Error('relay-transport: the instance has no store');
 
   const pubkey = getPublicKey(privateKey);
   const app = holo.appname;
+  const store = holo.store;
   const vlog = (...a) => { if (verbose) console.log('[nostr-transport]', ...a); };
   const projector = createProjector({ projections, privateKey, signerFor, providerKey, verbose });
 
   let pool = null;
   let closed = false;
-  const poolReady = import('nostr-tools/pool').then(({ SimplePool }) => {
-    pool = new SimplePool();
+  const poolReady = (async () => {
+    const mod = await import('nostr-tools/pool');
+    // Node < 22 has no global WebSocket, and nostr-tools then reports every
+    // publish as a connection failure — hand it the `ws` implementation. In
+    // the browser this branch is dead code.
+    if (typeof globalThis.WebSocket === 'undefined') {
+      try {
+        const { default: WS } = await import('ws');
+        mod.useWebSocketImplementation(WS);
+      } catch (e) {
+        console.warn('[nostr-transport] no WebSocket implementation available:', e?.message);
+      }
+    }
+    // Reconnect keeps the live subscriptions alive across relay drops:
+    // nostr-tools reopens the socket and re-fires open subscriptions with
+    // `since` set past what they last emitted.
+    pool = new mod.SimplePool({ enableReconnect: true });
     return pool;
-  });
+  })();
   const reverse = reverseSync && projector.enabled
     ? createReverseSync(holo, { poolReady, relays, projector, pubkey, trustedAuthors, lookbackSec: reverseLookbackSec, verbose })
     : null;
 
-  // ---- loop / ordering guards ------------------------------------------------
-  // Applied wire state per location: skip events at-or-older than what we've
-  // already ingested. `seen` dedups the cold-query/live overlap AND our own
-  // same-session echoes (publishWrite marks the event id seen before
-  // publishing). Own-pubkey events from the wire are otherwise ingested like
-  // anyone else's: NIP-33 replacement is per pubkey, so the relay can hold an
-  // older other-author copy of the same address next to our newer one — a
-  // cold sync (reload, evicted browser cache, second device on the same
-  // derived key) must converge on the newest event, not regress to the other
-  // author's copy because ours was skipped as "already local".
-  const applied = new Map();   // "holon|lens|id" -> created_at of last applied event
-  const seen = new Set();      // event ids already processed
-  const chains = new Map();    // "holon|lens|id" -> tail promise (ordered apply)
-  const trim = (m, cap) => { if (m.size > cap) m.delete(m.keys().next().value); };
-
-  const locKey = (holon, lens, id) => `${holon ?? GLOBAL_HOLON_TAG}|${lens}|${id}`;
+  const normHolon = (h) => (h === null || h === undefined || h === '' ? null : h);
+  const wireHolon = (h) => (normHolon(h) === null ? GLOBAL_HOLON_TAG : String(h));
 
   // ---- publishing ------------------------------------------------------------
 
@@ -105,79 +105,21 @@ export function createRelayTransport(holo, {
     poolReady
       .then((p) => Promise.allSettled(p.publish(relays, event)))
       .then((r) => {
-        if (!r.some((x) => x.status === 'fulfilled')) {
-          vlog('publish reached no relay:', event.id);
-        }
+        if (!r.some((x) => x.status === 'fulfilled')) vlog('publish reached no relay:', event.id);
       })
       .catch((e) => vlog('publish failed:', e?.message));
   }
 
-  // Relays replace an addressable event only when the new created_at is
-  // strictly newer (strfry keeps the first of two equal timestamps), so a
-  // create-then-update within one second must still bump the clock.
-  function nextCreatedAt(lk) {
-    return Math.max(Math.floor(Date.now() / 1000), (applied.get(lk) || 0) + 1);
-  }
-
   function buildFor(holon, lens, item) {
-    const lk = item?.id != null ? locKey(holon, lens, String(item.id)) : null;
     return buildEvent({
-      holon: holon == null ? GLOBAL_HOLON_TAG : String(holon),
+      holon: wireHolon(holon),
       lens,
       item,
       sk: privateKey,
       kind,
-      created_at: lk ? nextCreatedAt(lk) : undefined,
+      created_at: store.nextCreatedAt(normHolon(holon), lens, String(item.id)),
       extraTags: [['n', app]],
     });
-  }
-
-  /**
-   * Publish a write to the relay(s). Fire-and-forget — never blocks the put.
-   * When the signing layer already issued the envelope event for this write,
-   * pass it as `signedEvent` so the wire carries the exact event the local
-   * envelope store attests (no double signing).
-   */
-  function publishWrite(holon, lens, item, { key, signedEvent, skipProjections = false } = {}) {
-    if (closed) return;
-    try {
-      const addressed = withId(item, key);
-      const event = signedEvent || (addressed && buildFor(holon, lens, addressed));
-      if (!event) return;
-      // Our own writes are already local — remember them so the live REQ echo
-      // is dropped without re-applying.
-      seen.add(event.id);
-      trim(seen, 20000);
-      const id = addressed?.id;
-      if (id != null) {
-        const lk = locKey(holon, lens, String(id));
-        applied.set(lk, Math.max(applied.get(lk) || 0, event.created_at));
-        trim(applied, 20000);
-      }
-      publishEvent(event);
-      // Standard-kind projections ride alongside; never ingested back here (see
-      // ingest) — external edits of them arrive via reverse-sync.js, and a write
-      // that folds such an edit in must not re-project it (`skipProjections`).
-      if (skipProjections) return;
-      for (const p of projector.eventsForWrite(holon, lens, addressed)) {
-        seen.add(p.id);
-        publishEvent(p);
-      }
-    } catch (e) {
-      vlog('publishWrite failed:', e?.message);
-    }
-  }
-
-  /** Publish a signed tombstone so the delete travels the wire. When the
-   *  signing layer already issued the tombstone envelope, pass it so the wire
-   *  carries that exact event. */
-  function publishDelete(holon, lens, key, signedEvent = null) {
-    if (closed || key == null) return;
-    publishWrite(holon, lens, { id: String(key), _deleted: true }, { signedEvent });
-    for (const p of projector.eventsForDelete(holon, lens, key)) {
-      seen.add(p.id);
-      publishEvent(p);
-    }
   }
 
   function withId(item, key) {
@@ -187,140 +129,209 @@ export function createRelayTransport(holo, {
     return { ...item, id: String(key) };
   }
 
+  /**
+   * Publish a write. Fire-and-forget — never blocks the put. The signing
+   * layer normally hands over the event it already issued (`signedEvent`) so
+   * the wire carries exactly what the store holds; without one the transport
+   * signs with its own key and applies that event locally.
+   */
+  function publishWrite(holon, lens, item, { key, signedEvent, skipProjections = false } = {}) {
+    if (closed) return;
+    try {
+      const addressed = withId(item, key);
+      let event = signedEvent;
+      if (!event) {
+        if (!addressed) return;
+        event = buildFor(holon, lens, addressed);
+        store.apply(event, { origin: 'local' });
+      }
+      publishEvent(event);
+      // Standard-kind projections ride alongside; never ingested back here (the
+      // store only accepts `kind`) — external edits of them arrive via
+      // reverse-sync.js, and a write that folds such an edit in must not
+      // re-project it (`skipProjections`).
+      if (skipProjections || !addressed) return;
+      for (const p of projector.eventsForWrite(holon, lens, addressed)) publishEvent(p);
+    } catch (e) {
+      vlog('publishWrite failed:', e?.message);
+    }
+  }
+
+  /** Publish a tombstone so the delete travels the wire (+ NIP-09 retractions). */
+  function publishDelete(holon, lens, key, signedEvent = null) {
+    if (closed || key == null) return;
+    publishWrite(holon, lens, { id: String(key), _deleted: true }, { signedEvent, skipProjections: true });
+    for (const p of projector.eventsForDelete(holon, lens, key)) publishEvent(p);
+  }
+
   // ---- ingesting -------------------------------------------------------------
 
-  function envelopeWrite(holon, lens, id, event) {
-    // Mirror the wire event into the `_events` sidecar (same slot the signing
-    // layer uses) so shadow/enforce reads can authorize remote data.
-    try {
-      holo.gun.get(app).get(holon).get(EVENTS_NS).get(lens).get(id)
-        .get(event.pubkey).put(JSON.stringify(event));
-    } catch { /* best-effort */ }
-  }
-
   function ingest(event) {
-    if (closed || !event || seen.has(event.id)) return Promise.resolve();
-    seen.add(event.id);
-    trim(seen, 20000);
-    if (event.kind !== kind) return Promise.resolve(); // projected/other kinds are never ingested
-    if (!verifyEvent(event)) { vlog('dropped forged event', event.id); return Promise.resolve(); }
-    if (tag(event, 'n') !== app) return Promise.resolve(); // another app namespace
-
-    const h = tag(event, 'h');
-    const lens = tag(event, 'l');
-    const item = eventToItem(event);
-    if (!h || !lens || !item || item.id == null) return Promise.resolve();
-    const holon = h === GLOBAL_HOLON_TAG ? null : h;
-
-    const lk = locKey(holon, lens, String(item.id));
-    // created_at has second granularity — an equal timestamp is NOT stale
-    // (create-then-update within one second is common); apply in arrival
-    // order and let the newest write win. Only strictly-older events drop.
-    if ((applied.get(lk) || 0) > event.created_at) return Promise.resolve(); // stale
-    applied.set(lk, event.created_at);
-    trim(applied, 20000);
-
-    // Ordered apply per location so an interleaved pair of awaited puts can't
-    // land newest-first.
-    const prev = chains.get(lk) || Promise.resolve();
-    const next = prev.then(async () => {
-      if (holon != null) envelopeWrite(holon, lens, String(item.id), event);
-      // Raw local write: no re-sign (the wire event IS the signature), no
-      // re-publish (would echo someone else's record under our key), no
-      // federation propagation (the author's transport already published to
-      // the shared wire), no hologram redirection (place the record verbatim
-      // where the author put it).
-      await holo.put(holon, lens, item, null, {
-        _skipSign: true,
-        _skipPublish: true,
-        autoPropagate: false,
-        disableHologramRedirection: true,
-      });
-      vlog('ingested', `${holon ?? GLOBAL_HOLON_TAG}/${lens}/${item.id}`, item._deleted ? '(tombstone)' : '');
-    }).catch((e) => vlog('ingest failed:', e?.message));
-    chains.set(lk, next);
-    next.finally(() => { if (chains.get(lk) === next) chains.delete(lk); });
-    return next;
+    if (closed || !event) return { applied: false, reason: 'closed' };
+    const r = store.apply(event, { origin: 'remote' });
+    if (r.applied) vlog('ingested', event.id.slice(0, 8), r.record.lens, r.record.id, r.record.item?._deleted ? '(tombstone)' : '');
+    else if (r.reason === 'invalid') vlog('dropped forged event', event.id);
+    return r;
   }
 
-  // ---- live sync per (holon, lens) ------------------------------------------
+  // ---- sync per (holon, lens) ------------------------------------------------
 
-  const syncs = new Map(); // "holon|lens" -> { promise, sub, lastAt }
+  const syncs = new Map(); // "holon|lens" -> state
 
   function filterFor(holon, lens) {
-    return {
-      kinds: [kind],
-      '#h': [holon == null ? GLOBAL_HOLON_TAG : String(holon)],
-      '#l': [lens],
-      '#n': [app],
-    };
+    return { kinds: [kind], '#h': [wireHolon(holon)], '#l': [String(lens)], '#n': [app] };
+  }
+
+  /** Paginated backfill of a lens the store has never synced. Returns the newest created_at seen. */
+  async function backfill(p, filter) {
+    let until;
+    let newest = 0;
+    for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
+      const q = { ...filter, limit: pageSize };
+      if (until !== undefined) q.until = until;
+      const events = await p.querySync(relays, q, { maxWait: syncTimeoutMs });
+      if (!events.length) break;
+      let fresh = 0;
+      let oldest = Infinity;
+      for (const e of events) {
+        if (e.created_at < oldest) oldest = e.created_at;
+        if (e.created_at > newest) newest = e.created_at;
+        if (ingest(e).reason !== 'seen') fresh++;
+      }
+      if (events.length < pageSize || fresh === 0) break;
+      until = oldest; // events at `oldest` are re-fetched and deduped as seen
+    }
+    return newest;
+  }
+
+  /** Fetch what was published since a cursor. Returns the newest created_at seen. */
+  async function catchUp(p, filter, since) {
+    const events = await p.querySync(relays, { ...filter, since }, { maxWait: syncTimeoutMs });
+    let newest = 0;
+    for (const e of events) {
+      if (e.created_at > newest) newest = e.created_at;
+      ingest(e);
+    }
+    return newest;
+  }
+
+  function openLive(p, state, since) {
+    if (closed || !syncs.has(state.key)) return;
+    const filter = { ...state.filter, since: Math.max(0, since - CATCHUP_OVERLAP_SEC) };
+    // nostr-tools 2.x subscribeMany takes ONE filter (not an array).
+    state.sub = p.subscribeMany(relays, filter, {
+      onevent: (evt) => {
+        const r = ingest(evt);
+        if (state.synced && r.reason !== 'invalid' && r.reason !== 'malformed' && r.reason !== 'foreign') {
+          // Live events arrive after the catch-up, so the cursor may follow them.
+          store.setCursor(state.holon, state.lens, evt.created_at);
+        }
+      },
+      oneose: () => { state.reopenAttempts = 0; },
+      onclose: (reasons) => {
+        // With reconnect enabled nostr-tools handles transient drops itself;
+        // this fires when a relay hard-fails (connection refused / timed out)
+        // or the caller closed the sub. Reopen with backoff, catching up from
+        // the cursor first.
+        if (closed || !syncs.has(state.key)) return;
+        const callerClosed = (reasons || []).every((r) => /closed by caller/i.test(String(r)));
+        if (callerClosed) return;
+        const delay = REOPEN_BACKOFF_MS[Math.min(state.reopenAttempts++, REOPEN_BACKOFF_MS.length - 1)];
+        state.reopenTimer = setTimeout(async () => {
+          state.reopenTimer = null;
+          if (closed || !syncs.has(state.key)) return;
+          const cursor = store.getCursor(state.holon, state.lens);
+          let newest = cursor?.since || 0;
+          try {
+            newest = Math.max(newest, await catchUp(p, state.filter, Math.max(0, newest - CATCHUP_OVERLAP_SEC)));
+            if (state.synced) store.setCursor(state.holon, state.lens, newest);
+          } catch (e) { vlog('reopen catch-up failed:', e?.message); }
+          openLive(p, state, newest);
+        }, delay);
+        if (typeof state.reopenTimer.unref === 'function') state.reopenTimer.unref();
+      },
+    });
   }
 
   /**
-   * Open (once) a live relay subscription for a (holon, lens) and return a
-   * promise that resolves after the initial catch-up (EOSE + ingest settle),
-   * bounded by `syncTimeoutMs` so an unreachable relay never blocks reads.
-   * The subscription stays open; remote events keep flowing into Gun.
+   * Catch a (holon, lens) up from the relays (once) and keep it live. The
+   * returned promise resolves after the catch-up, bounded by `syncTimeoutMs`
+   * so an unreachable relay never blocks reads; the catch-up itself continues
+   * in the background and the cursor is only advanced once it completes.
    */
   function ensureSync(holon, lens) {
     if (closed || !lens || String(lens) === EVENTS_NS) return Promise.resolve();
-    const key = `${holon ?? GLOBAL_HOLON_TAG}|${lens}`;
+    const h = normHolon(holon);
+    const key = `${wireHolon(h)}|${lens}`;
     const existing = syncs.get(key);
     if (existing) return existing.promise;
 
-    reverse?.ensure(holon);
-    const state = { sub: null, lastAt: 0, promise: null };
+    reverse?.ensure(h);
+    const state = {
+      key, holon: h, lens: String(lens), filter: filterFor(h, lens),
+      sub: null, synced: false, reopenAttempts: 0, reopenTimer: null, promise: null,
+    };
+    syncs.set(key, state);
     state.promise = (async () => {
       const p = await poolReady;
       if (closed) return;
-      await new Promise((resolve) => {
-        let settled = false;
-        const pending = [];
-        const finish = () => { if (!settled) { settled = true; resolve(); } };
-        const deadline = setTimeout(finish, syncTimeoutMs);
-        if (typeof deadline.unref === 'function') deadline.unref();
-
-        const open = (since) => {
-          const filter = since ? { ...filterFor(holon, lens), since } : filterFor(holon, lens);
-          // nostr-tools 2.x subscribeMany takes ONE filter (not an array).
-          state.sub = p.subscribeMany(relays, filter, {
-            onevent: (evt) => {
-              state.lastAt = Math.max(state.lastAt, evt.created_at || 0);
-              const p = ingest(evt);
-              // Track only the initial catch-up; a long-lived sub must not
-              // accumulate a promise per live event forever.
-              if (!settled) pending.push(p);
-            },
-            oneose: () => {
-              Promise.allSettled(pending).then(() => { clearTimeout(deadline); finish(); });
-            },
-            onclose: (reasons) => {
-              // A dropped wire (relay restart, network blip) closes the sub —
-              // reopen with a `since` catch-up so nothing published meanwhile
-              // is missed. Caller-initiated close() sets `closed` first.
-              if (closed || !syncs.has(key)) return;
-              const callerClosed = (reasons || []).every((r) => /closed by caller/i.test(String(r)));
-              if (callerClosed) return;
-              const t = setTimeout(() => {
-                if (!closed && syncs.has(key)) open(Math.max(0, state.lastAt - 60));
-              }, RESUBSCRIBE_DELAY_MS);
-              if (typeof t.unref === 'function') t.unref();
-            },
-          });
-        };
-        open();
-      });
+      const work = (async () => {
+        const cursor = store.getCursor(h, lens);
+        let newest = cursor?.since || 0;
+        try {
+          if (!cursor) newest = Math.max(newest, await backfill(p, state.filter));
+          else newest = Math.max(newest, await catchUp(p, state.filter, Math.max(0, cursor.since - CATCHUP_OVERLAP_SEC)));
+          if (!closed) {
+            state.synced = true;
+            store.setCursor(h, lens, newest);
+          }
+        } catch (e) {
+          vlog('catch-up failed:', e?.message);
+        }
+        openLive(p, state, newest);
+      })();
+      await Promise.race([
+        work,
+        new Promise((resolve) => {
+          const t = setTimeout(resolve, syncTimeoutMs);
+          if (typeof t.unref === 'function') t.unref();
+        }),
+      ]);
     })();
-    syncs.set(key, state);
     return state.promise;
   }
 
-  /** Publish already-signed events (any kind) to the relay set; ids are marked seen. */
+  /** Re-fetch every synced lens from its cursor (after a reconnect / on wake). */
+  let resyncing = null;
+  function resync() {
+    if (closed || resyncing) return resyncing || Promise.resolve();
+    resyncing = (async () => {
+      const p = await poolReady;
+      for (const state of Array.from(syncs.values())) {
+        if (closed) break;
+        const cursor = store.getCursor(state.holon, state.lens);
+        const since = Math.max(0, (cursor?.since || 0) - CATCHUP_OVERLAP_SEC);
+        try {
+          const newest = await catchUp(p, state.filter, since);
+          if (state.synced && newest) store.setCursor(state.holon, state.lens, newest);
+        } catch (e) { vlog('resync failed:', e?.message); }
+      }
+    })().finally(() => { resyncing = null; });
+    return resyncing;
+  }
+
+  // A browser tab that comes back online or into view catches up right away.
+  const onOnline = () => { resync().catch(() => {}); };
+  const onVisible = () => { if (typeof document === 'undefined' || document.visibilityState === 'visible') resync().catch(() => {}); };
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('online', onOnline);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+  }
+
+  /** Publish already-signed events (any kind) to the relay set. */
   function publishEvents(events) {
     for (const e of Array.isArray(events) ? events : [events]) {
-      if (!e || !e.id) continue;
-      seen.add(e.id);
-      publishEvent(e);
+      if (e && e.id) publishEvent(e);
     }
   }
 
@@ -345,12 +356,22 @@ export function createRelayTransport(holo, {
     reverse,
     publishDelete,
     ensureSync,
+    resync,
     /** Test/diagnostic hook: number of live (holon, lens) subscriptions. */
     syncCount: () => syncs.size,
+    /** Whether a lens finished its catch-up. */
+    isSynced: (holon, lens) => !!syncs.get(`${wireHolon(holon)}|${lens}`)?.synced,
     close() {
       closed = true;
       reverse?.close();
-      for (const { sub } of syncs.values()) { try { sub?.close(); } catch { /* ignore */ } }
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('online', onOnline);
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+      }
+      for (const state of syncs.values()) {
+        if (state.reopenTimer) clearTimeout(state.reopenTimer);
+        try { state.sub?.close(); } catch { /* ignore */ }
+      }
       syncs.clear();
       poolReady.then((p) => { try { p.close(relays); } catch { /* ignore */ } }).catch(() => {});
     },

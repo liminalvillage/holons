@@ -36,8 +36,8 @@ describe('NIP-17 direct messages', () => {
   test('gift-wrapped on the relay, readable only by the recipient, sender authenticated by the seal', async () => {
     const aliceSk = generateSecretKey();
     const bobSk = generateSecretKey();
-    const alice = new HoloSphere({ appName: APP, privateKey: aliceSk, backend: 'nostr', nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, gunOptions: gunOptions(dirs) });
-    const bob = new HoloSphere({ appName: APP, privateKey: bobSk, gunOptions: gunOptions(dirs) });
+    const alice = new HoloSphere({ appName: APP, privateKey: aliceSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });
+    const bob = new HoloSphere({ appName: APP, privateKey: bobSk, store: { adapter: 'memory' } });
     spheres.push(alice, bob);
     await bob.enableSigning({ relays: [relay.url], shadow: true });
 
@@ -62,8 +62,8 @@ describe('NIP-17 direct messages', () => {
   test('federation handshake rides on NIP-17 and is handled once despite the legacy Gun copy', async () => {
     const aSk = generateSecretKey();
     const bSk = generateSecretKey();
-    const a = new HoloSphere({ appName: APP, privateKey: aSk, backend: 'nostr', nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, gunOptions: gunOptions(dirs) });
-    const b = new HoloSphere({ appName: APP, privateKey: bSk, backend: 'nostr', nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, gunOptions: gunOptions(dirs) });
+    const a = new HoloSphere({ appName: APP, privateKey: aSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });
+    const b = new HoloSphere({ appName: APP, privateKey: bSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });
     spheres.push(a, b);
     const requests = [];
     const unsub = handshake.subscribeToFederationDMs(b, bSk, getPublicKey(bSk), { onRequest: (m, from) => requests.push({ m, from }) });

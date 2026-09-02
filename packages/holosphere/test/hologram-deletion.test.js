@@ -1,6 +1,6 @@
 /**
  * Tests for hologram deletion functionality
- * Verifies that when deleting holograms, only the hologram is deleted and the target's _holograms list is updated
+ * Verifies that when deleting holograms, only the hologram is deleted and the target's backlinks is updated
  * The original data should remain intact
  */
 
@@ -13,12 +13,7 @@ const otherLens = 'otherLens';
 
 const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
 
-// KNOWN ENFORCE GAP: hologram/pointer writes are unsigned by design (the sign
-// hook skips them), so enforce-mode reads drop them from the authorized view.
-// This suite asserts raw hologram semantics and is skipped under
-// HOLO_TEST_SIGNING=enforce until envelopes resolve through soul redirects.
-const describeUnlessEnforce = process.env.HOLO_TEST_SIGNING === 'enforce' ? describe.skip : describe;
-describeUnlessEnforce('Hologram Deletion Tests', () => {
+describe('Hologram Deletion Tests', () => {
     let holoSphere;
 
     afterAll(cleanupTestEnv, 30000);
@@ -50,10 +45,7 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         const hologramSoul = `${appName}/${testHolon}/${otherLens}/hologram-to-delete`;
 
         // 3. Verify hologram was added to tracking initially
-        const targetNodeRef = holoSphere.getNodeRef(originalSoul);
-        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[hologramSoul]).toBeDefined();
+        expect(holoSphere.store.getBacklinks(originalSoul)).toContain(hologramSoul);
 
         // 4. Delete the hologram
         await holoSphere.delete(testHolon, otherLens, 'hologram-to-delete');
@@ -68,9 +60,8 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         expect(originalStillExists).toBeDefined();
         expect(originalStillExists.value).toBe('Original content');
 
-        // 7. Verify the hologram was removed from target's _holograms list
-        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet[hologramSoul]).toBeNull();
+        // 7. Verify the hologram was removed from target's backlinks
+        expect(holoSphere.store.getBacklinks(originalSoul)).not.toContain(hologramSoul);
     }, 15000);
 
     test('deleteAll() should handle holograms properly', async () => {
@@ -88,10 +79,7 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         const hologramSoul = `${appName}/${testHolon}/${otherLens}/hologram-in-deleteall`;
 
         // 3. Verify hologram was added to tracking initially
-        const targetNodeRef = holoSphere.getNodeRef(originalSoul);
-        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[hologramSoul]).toBeDefined();
+        expect(holoSphere.store.getBacklinks(originalSoul)).toContain(hologramSoul);
 
         // 4. Delete all items from otherLens
         await holoSphere.deleteAll(testHolon, otherLens);
@@ -106,9 +94,8 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         expect(originalStillExists).toBeDefined();
         expect(originalStillExists.value).toBe('Original content');
 
-        // 7. Verify the hologram was removed from target's _holograms list
-        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet[hologramSoul]).toBeNull();
+        // 7. Verify the hologram was removed from target's backlinks
+        expect(holoSphere.store.getBacklinks(originalSoul)).not.toContain(hologramSoul);
     }, 15000);
 
     test('deleteGlobal() should handle holograms properly', async () => {
@@ -123,13 +110,10 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         const hologramStorage = { id: 'hologram-in-global', soul: hologramData.soul };
         await holoSphere.putGlobal('testTable', hologramStorage);
         await waitForGun(500);
-        const hologramSoul = `${appName}/testTable/hologram-in-global`;
+        const hologramSoul = `${appName}/_g/testTable/hologram-in-global`;
 
         // 3. Verify hologram was added to tracking initially
-        const targetNodeRef = holoSphere.getNodeRef(originalSoul);
-        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[hologramSoul]).toBeDefined();
+        expect(holoSphere.store.getBacklinks(originalSoul)).toContain(hologramSoul);
 
         // 4. Delete the hologram from global table
         await holoSphere.deleteGlobal('testTable', 'hologram-in-global');
@@ -144,9 +128,8 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         expect(originalStillExists).toBeDefined();
         expect(originalStillExists.value).toBe('Original content');
 
-        // 7. Verify the hologram was removed from target's _holograms list
-        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet[hologramSoul]).toBeNull();
+        // 7. Verify the hologram was removed from target's backlinks
+        expect(holoSphere.store.getBacklinks(originalSoul)).not.toContain(hologramSoul);
     }, 15000);
 
     test('deleteAllGlobal() should handle holograms properly', async () => {
@@ -161,13 +144,10 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         const hologramStorage = { id: 'hologram-in-deleteallglobal', soul: hologramData.soul };
         await holoSphere.putGlobal('testTable2', hologramStorage);
         await waitForGun(500);
-        const hologramSoul = `${appName}/testTable2/hologram-in-deleteallglobal`;
+        const hologramSoul = `${appName}/_g/testTable2/hologram-in-deleteallglobal`;
 
         // 3. Verify hologram was added to tracking initially
-        const targetNodeRef = holoSphere.getNodeRef(originalSoul);
-        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[hologramSoul]).toBeDefined();
+        expect(holoSphere.store.getBacklinks(originalSoul)).toContain(hologramSoul);
 
         // 4. Delete all items from global table
         await holoSphere.deleteAllGlobal('testTable2');
@@ -182,9 +162,8 @@ describeUnlessEnforce('Hologram Deletion Tests', () => {
         expect(originalStillExists).toBeDefined();
         expect(originalStillExists.value).toBe('Original content');
 
-        // 7. Verify the hologram was removed from target's _holograms list
-        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet[hologramSoul]).toBeNull();
+        // 7. Verify the hologram was removed from target's backlinks
+        expect(holoSphere.store.getBacklinks(originalSoul)).not.toContain(hologramSoul);
     }, 15000);
 
     test('deleting non-hologram data should work normally', async () => {

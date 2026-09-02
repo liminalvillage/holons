@@ -20,7 +20,7 @@ describe('shadow-mode verification (Phase 1)', () => {
     sphere = new HoloSphere({
       appName: 'shadow-test',
       privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     // shadow mode (no relay needed) — stores signed envelopes locally
     await sphere.enableSigning({ relays: [], shadow: true });

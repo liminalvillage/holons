@@ -188,13 +188,13 @@ describe('reverse sync on the wire', () => {
     await scenario('nb', async ({ holonSk, hooks, signerFor, trustedAuthors }) => new HoloSphere({
       appName: APP, privateKey: holonSk, backend: 'nostr',
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: hooks, signerFor, trustedAuthors },
-      gunOptions: gunOptions(dirs),
+      store: { adapter: 'memory' },
     }));
   }, 30000);
 
   test('gun backend + relay backup folds external edits back into records', async () => {
     await scenario('gb', async ({ holonSk, hooks, signerFor, trustedAuthors }) => {
-      const sphere = new HoloSphere({ appName: APP, privateKey: holonSk, gunOptions: gunOptions(dirs) });
+      const sphere = new HoloSphere({ appName: APP, privateKey: holonSk, store: { adapter: 'memory' } });
       await sphere.enableSigning({ relays: [relay.url], shadow: true, projections: hooks, signerFor, trustedAuthors });
       return sphere;
     });
@@ -205,7 +205,7 @@ describe('reverse sync on the wire', () => {
     const sphere = new HoloSphere({
       appName: APP, privateKey: holonSk, backend: 'nostr',
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: [eventsHook(() => undefined)], reverseSync: false },
-      gunOptions: gunOptions(dirs),
+      store: { adapter: 'memory' },
     });
     spheres.push(sphere);
     await sphere.put(HOLON, 'events', { id: 'off', title: 'Dinner', when: '2026-09-01T18:00:00Z' });

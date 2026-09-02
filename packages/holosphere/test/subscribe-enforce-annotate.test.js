@@ -7,9 +7,6 @@
  * Regression guard for the listener-dedup in Utils.subscribe: the shared Gun
  * listener must still deliver each event to the per-call enforce wrapper.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, buildEvent } from '../nostr-events.js';
 
@@ -19,26 +16,19 @@ const TS = 1700000000;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('subscribe under enforce — provenance annotation', () => {
-  let sphere, dir, Ask;
+  let sphere, Ask;
 
   async function writeSignedAndRaw(lens, sk, item, at) {
     const evt = buildEvent({ holon: HOLON, lens, item, sk, created_at: at });
-    await new Promise((r) => {
-      let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(lens).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d());
-    });
-    await sphere.put(HOLON, lens, item, null, { _skipSign: true, autoPropagate: false });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-subenf-'));
     Ask = generateSecretKey();
     sphere = new HoloSphere({
       appName: 'subenf-test',
       privateKey: Ask,
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     await sphere.enableSigning({ relays: [], enforce: 'membership' });
     await sphere.foundHolon(HOLON, { at: TS });
@@ -50,7 +40,6 @@ describe('subscribe under enforce — provenance annotation', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('includeUnverified subscribe tags signed -> _verified, unsigned -> _unverified', async () => {

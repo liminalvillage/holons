@@ -30,8 +30,12 @@ export function resolveAdapter(spec, { appName, dir } = {}) {
             return createMemoryAdapter();
         case 'indexeddb':
             return createIndexedDbAdapter({ appName });
-        case 'file':
-            return () => import('./adapters/file.js').then((m) => m.createFileAdapter({ dir, appName }));
+        case 'file': {
+            // The specifier is kept opaque so browser bundlers (esbuild, vite)
+            // leave this as a runtime import instead of pulling node:fs in.
+            const fileAdapterModule = './adapters/file.js';
+            return () => import(/* @vite-ignore */ fileAdapterModule).then((m) => m.createFileAdapter({ dir, appName }));
+        }
         case 'auto':
             return typeof indexedDB !== 'undefined'
                 ? createIndexedDbAdapter({ appName })

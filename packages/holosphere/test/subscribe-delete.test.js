@@ -14,7 +14,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function mk(signing) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-subdel-'));
   const sphere = new HoloSphere({ appName: 'subdel-test', privateKey: signing ? generateSecretKey() : undefined,
-    gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+    store: { adapter: 'memory' } });
   return { sphere, dir };
 }
 

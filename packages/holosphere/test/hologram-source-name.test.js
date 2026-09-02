@@ -8,12 +8,7 @@ import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
 const APP = 'test-source-holon-name';
 
-// KNOWN ENFORCE GAP: hologram/pointer writes are unsigned by design (the sign
-// hook skips them), so enforce-mode reads drop them from the authorized view.
-// This suite asserts raw hologram semantics and is skipped under
-// HOLO_TEST_SIGNING=enforce until envelopes resolve through soul redirects.
-const describeUnlessEnforce = process.env.HOLO_TEST_SIGNING === 'enforce' ? describe.skip : describe;
-describeUnlessEnforce('resolveHologram stamps sourceHolonName', () => {
+describe('resolveHologram stamps sourceHolonName', () => {
     let hs;
 
     afterAll(cleanupTestEnv, 30000);

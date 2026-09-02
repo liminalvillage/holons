@@ -8,12 +8,7 @@ jest.setTimeout(30000); // 30 second timeout
 const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
 
 // Setup
-// KNOWN ENFORCE GAP: hologram/pointer writes are unsigned by design (the sign
-// hook skips them), so enforce-mode reads drop them from the authorized view.
-// This suite asserts raw hologram semantics and is skipped under
-// HOLO_TEST_SIGNING=enforce until envelopes resolve through soul redirects.
-const describeUnlessEnforce = process.env.HOLO_TEST_SIGNING === 'enforce' ? describe.skip : describe;
-describeUnlessEnforce('HoloSphere Reference System', () => {
+describe('HoloSphere Reference System', () => {
     let holoSphere;
     const appName = 'test-hologram-app'; // Update app name
     const testHolon = 'hologramTestHolon'; // Update holon name
@@ -280,16 +275,9 @@ describeUnlessEnforce('HoloSphere Reference System', () => {
         await waitForGun(500); // Longer wait for tracking update
         const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-1`;
 
-        // 3. Get the target node reference and fetch the _holograms set
-        const targetNodeRef = holoSphere.getNodeRef(targetSoul);
-        const hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-
-        // 4. Verify the _holograms set exists and contains the stored hologram's soul
-        expect(hologramsSet).toBeDefined();
-        // Gun stores set members as keys, excluding metadata '_'
-        const hologramKeys = Object.keys(hologramsSet).filter(k => k !== '_');
-        expect(hologramKeys).toContain(storedHologramSoul);
-        expect(hologramsSet[storedHologramSoul]).toBe(true); // Check the value stored
+        // 3. The target's backlinks index the stored pointer
+        expect(holoSphere.store.getBacklinks(targetSoul)).toContain(storedHologramSoul);
+        expect(holoSphere.getBacklinks(testHolon, testLens, 'target-for-tracking')).toContain(storedHologramSoul);
     });
 
     test('should remove hologram soul from target _holograms set on delete', async () => {
@@ -307,22 +295,15 @@ describeUnlessEnforce('HoloSphere Reference System', () => {
         const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-2`;
 
         // 3. Verify hologram was added to tracking initially
-        const targetNodeRef = holoSphere.getNodeRef(targetSoul);
-        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[storedHologramSoul]).toBeDefined(); // Hologram should be tracked initially
+        expect(holoSphere.store.getBacklinks(targetSoul)).toContain(storedHologramSoul);
 
         // 4. Delete the hologram
         await holoSphere.delete(testHolon, 'otherLens', 'hologram-tracker-2');
         console.log("--- Waiting longer after delete for tracking update ---");
         await waitForGun(1500); // <-- Increased wait time significantly
 
-        // 5. Fetch the _holograms set again directly
-        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
-
-        // 6. Verify the hologram's soul is completely removed (or set to null by Gun)
-        expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[storedHologramSoul]).toBeNull(); // Gun stores null when we put(null)
+        // 5. The backlink is gone
+        expect(holoSphere.store.getBacklinks(targetSoul)).not.toContain(storedHologramSoul);
     });
     // --- End tests for _holograms tracking ---
 
