@@ -51,7 +51,17 @@
   import { themeMode } from "$lib/theme";
   import { langMode, t, tr, type MessageKey } from "$lib/i18n";
   import { readSettingsHex } from "@holons/core/federation";
-  import { loadSettings } from "@holons/core/settings";
+  import {
+    loadSettings,
+    readHolonColor,
+    saveHolonColor,
+  } from "@holons/core/settings";
+  import {
+    holonColor,
+    holonColors,
+    resolveCssColor,
+    setHolonColor,
+  } from "$lib/palette";
   import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
   import { getHolosphere } from "$lib/holosphere";
   import HexPicker from "./HexPicker.svelte";
@@ -239,20 +249,51 @@
   let ocLoadedFor: string | null = null;
   let ocSaving = false;
 
-  $: void loadCollectiveSlug($holonId);
+  // ---- Holon colour ------------------------------------------------------
+  // Per-holon too: the colour its board is washed with, its dock orb and map
+  // hexagon are painted in, and its mirrored cards glow with. Blank means the
+  // automatic one — the note the id hashes to, the same way a task card gets
+  // its colour from its category.
+  let colorOverride = "";
+  let colorSaving = false;
+  $: colorShown = $holonId ? holonColor($holonId, $holonColors) : "";
+  // The picker needs a literal: resolve the note variable against the theme.
+  $: colorDraft = colorShown ? resolveCssColor(colorShown) : "#000000";
 
-  async function loadCollectiveSlug(holon: string | null) {
+  $: void loadHolonSettings($holonId);
+
+  async function loadHolonSettings(holon: string | null) {
     if (holon === ocLoadedFor) return;
     ocLoadedFor = holon;
     ocSlug = "";
+    colorOverride = "";
     if (!holon) return;
     try {
       const hs = await getHolosphere();
       const doc = await loadSettings(hs, holon);
       if (ocLoadedFor !== holon) return; // holon changed while reading
       ocSlug = readCollectiveSlug(doc);
+      colorOverride = readHolonColor(doc);
+      setHolonColor(holon, colorOverride);
     } catch (err) {
-      console.warn("[kiosk] settings: collective slug read failed", err);
+      console.warn("[kiosk] settings: holon settings read failed", err);
+    }
+  }
+
+  /** Persist a chosen colour ('' restores the automatic one). */
+  async function commitHolonColor(value: string) {
+    const holon = $holonId;
+    if (!holon) return;
+    colorSaving = true;
+    try {
+      const hs = await getHolosphere();
+      colorOverride = await saveHolonColor(hs, holon, value);
+      setHolonColor(holon, colorOverride);
+    } catch (err) {
+      console.error("[kiosk] settings: holon colour save failed", err);
+      showNotice(tr("settings.holonColorFailed"));
+    } finally {
+      colorSaving = false;
     }
   }
 
@@ -594,6 +635,44 @@
     </div>
   {/if}
 
+  <!--
+    Per-holon, not per-device: the colour lives on the settings lens, so the
+    board, its orb, its hexagon and its mirrored cards agree on every screen.
+  -->
+  {#if $holonId}
+    <div class="field">
+      {$t("settings.holonColor")}
+      <span class="sub">{$t("settings.holonColorSub")}</span>
+      <div class="accent-row">
+        <label
+          class="swatch custom holon-swatch"
+          class:auto={!colorOverride}
+          style="background: {colorShown};"
+        >
+          <input
+            type="color"
+            value={colorDraft}
+            disabled={colorSaving}
+            on:change={(e) => commitHolonColor(e.currentTarget.value)}
+            aria-label={$t("settings.holonColorPick")}
+          />
+        </label>
+        {#if colorOverride}
+          <button
+            type="button"
+            class="hex-pick"
+            disabled={colorSaving}
+            on:click={() => commitHolonColor("")}
+          >
+            {$t("settings.holonColorAuto")}
+          </button>
+        {:else}
+          <span class="holon-auto">{$t("settings.holonColorIsAuto")}</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- Federation moved to the dock: close the board and drag one circle onto
        another to link, or tap an intersection to tune its lenses. -->
 
@@ -880,6 +959,21 @@
     inset: 0;
     opacity: 0;
     cursor: pointer;
+  }
+  /* The holon's colour: a solid rim (dashed only while automatic). */
+  .holon-swatch {
+    border: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+  .holon-swatch.auto {
+    border-style: dashed;
+  }
+  .holon-auto {
+    align-self: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: none;
+    letter-spacing: 0;
   }
   /* Appearance (theme) segmented control */
   .theme-row {

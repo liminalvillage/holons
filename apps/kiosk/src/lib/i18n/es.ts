@@ -492,6 +492,13 @@ export const es: Record<MessageKey, Msg> = {
   "settings.location": "Ubicación",
   "settings.locationSub":
     "— la celda H3 que este holón reclama en el mapa compartido",
+  "settings.holonColor": "Color del tablero",
+  "settings.holonColorSub":
+    "— el color de este tablero, de su círculo en el dock, de su hexágono en el mapa",
+  "settings.holonColorPick": "Elige el color del tablero",
+  "settings.holonColorAuto": "Automático",
+  "settings.holonColorIsAuto": "automático",
+  "settings.holonColorFailed": "No se pudo guardar el color.",
   "settings.checking": "Comprobando…",
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",

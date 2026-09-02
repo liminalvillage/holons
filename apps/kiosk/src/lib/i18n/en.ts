@@ -480,6 +480,13 @@ export const en = {
     "New currencies start at 0 — nothing changes until the group raises the weight.",
   "settings.location": "Location",
   "settings.locationSub": "— the H3 cell this holon claims on the shared map",
+  "settings.holonColor": "Board colour",
+  "settings.holonColorSub":
+    "— the colour of this board, its circle in the dock, its hexagon on the map",
+  "settings.holonColorPick": "Choose the board colour",
+  "settings.holonColorAuto": "Automatic",
+  "settings.holonColorIsAuto": "automatic",
+  "settings.holonColorFailed": "Could not save the colour.",
   "settings.checking": "Checking…",
   "settings.change": "Change…",
   "settings.setLocation": "Set location…",

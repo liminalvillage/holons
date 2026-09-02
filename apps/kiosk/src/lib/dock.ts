@@ -9,6 +9,7 @@
 // `dockState` for the two transitional frames.
 
 import { get, writable } from "svelte/store";
+import { colorHash } from "@holons/core/settings";
 import { SUBDOMAIN_HOLONS } from "./holons";
 
 export type DockEntry = {
@@ -100,13 +101,12 @@ export function segmentFor(id: string): string {
 }
 
 /**
- * A stable hue (0–359) for a holon's circle, so each board keeps its own
- * colour across sessions without any configuration.
+ * A stable angle (0–359) for a holon from the card hash every surface shares.
+ * The orbs are PAINTED with `holonColor` (lib/palette), which also honours a
+ * caretaker override; this bare number only seeds each orb's drift phase.
  */
 export function hueFor(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 360;
+  return colorHash(id) % 360;
 }
 
 // ── Gravity system (pure, exported for tests) ────────────────────────────--

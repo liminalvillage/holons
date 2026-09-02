@@ -5,6 +5,7 @@
   import { page } from "$app/stores";
   import { afterNavigate, replaceState } from "$app/navigation";
   import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
+  import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import type { Subscription } from "$lib/holosphere";
   import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
   import { getFederationSnapshot } from "@holons/core/federation";
@@ -252,6 +253,9 @@
       getHolonName(hs, id).then((name) => {
         if (boundHolon === id && name) holonName.set(name);
       });
+      // Holon colour override (best-effort): re-read on every bind so a colour
+      // chosen on another surface lands on the next open.
+      void learnHolonColor(hs, id, { fresh: true });
       // Holon language (best-effort) for auto-mode i18n. Read the RAW settings
       // field: `parseHolonSettings` defaults a missing language to "en", which
       // would wrongly pin auto-mode kiosks to English on holons that never
@@ -364,6 +368,9 @@
       if (boundHolon !== id) return;
       partnerNames.set({ ...snap.partnerNames });
       for (const partner of snap.federated) {
+        // A partner's colour override, so its mirrored cards glow in the same
+        // colour its own board, orb and hexagon wear.
+        void learnHolonColor(hs, partner);
         if (snap.partnerNames[partner]) continue;
         getHolonName(hs, partner).then((name) => {
           if (boundHolon !== id || !name) return;
@@ -748,6 +755,18 @@
     s.setProperty("--teal-deep", `color-mix(in srgb, ${$accent} 78%, #000)`);
   }
 
+  // The displayed holon's colour — the note its id hashes to, the same
+  // algorithm the post-it cards use, or the caretaker's chosen colour — as
+  // `--holon` on :root: the board card is faintly washed with it (below), and
+  // it is the very colour of this board's orb in the dock and hexagon on the
+  // map. Cleared between boards so the landing page keeps the plain paper.
+  $: if (typeof document !== "undefined") {
+    const s = document.documentElement.style;
+    if ($holonIdStore)
+      s.setProperty("--holon", holonColor($holonIdStore, $holonColors));
+    else s.removeProperty("--holon");
+  }
+
   // Any pointer/touch/key/scroll counts as someone using the screen → reveal the
   // chrome and pause the auto-flip. Capture phase so it fires before view
   // handlers.
@@ -896,10 +915,13 @@
     flex-direction: column;
     border-radius: 22px;
     border: 1px solid var(--line);
+    /* Faintly washed with the holon's own colour (`--holon`, set on :root by
+       the layout) — the note its cards, orb and hexagon share — so each board
+       is recognisably itself. Without a holon the plain paper stays. */
     background: radial-gradient(
       120% 60% at 50% -10%,
-      var(--paper) 40%,
-      var(--paper-deep) 100%
+      color-mix(in srgb, var(--holon, transparent) 24%, var(--paper)) 40%,
+      color-mix(in srgb, var(--holon, transparent) 32%, var(--paper-deep)) 100%
     );
     box-shadow:
       0 22px 54px rgba(0, 0, 0, 0.3),

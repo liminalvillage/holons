@@ -3,6 +3,7 @@
 // federation-links.ts and the FlowSettings class can both build on them
 // without importing each other (flow-settings → federation-links → here).
 
+import { readHolonColor } from './color.js';
 import type { HoloSphere } from 'holosphere';
 import type { HolonSettings } from './flow-settings.js';
 
@@ -55,6 +56,8 @@ export function parseHolonSettings(data: any): HolonSettings {
     theme: data.theme || 'dark',
     hex: data.hex || '',
     maxTasks: data.maxTasks || 10,
+    // Identity colour override — only a valid hex colour survives the parse.
+    ...(readHolonColor(data) ? { color: readHolonColor(data) } : {}),
     ...(Array.isArray(data.nostrTrustedPubkeys)
       ? { nostrTrustedPubkeys: data.nostrTrustedPubkeys.filter((k: unknown) => typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k)) }
       : {}),

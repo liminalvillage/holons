@@ -493,6 +493,13 @@ export const it: Record<MessageKey, Msg> = {
   "settings.location": "Posizione",
   "settings.locationSub":
     "— la cella H3 che questo holon rivendica sulla mappa condivisa",
+  "settings.holonColor": "Colore della bacheca",
+  "settings.holonColorSub":
+    "— il colore di questa bacheca, del suo cerchio nel dock, del suo esagono sulla mappa",
+  "settings.holonColorPick": "Scegli il colore della bacheca",
+  "settings.holonColorAuto": "Automatico",
+  "settings.holonColorIsAuto": "automatico",
+  "settings.holonColorFailed": "Impossibile salvare il colore.",
   "settings.checking": "Verifica…",
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",

@@ -37,6 +37,7 @@ import {
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
+import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
 
 // ── Connection / source data ───────────────────────────────────────────────
@@ -247,15 +248,17 @@ export const lensEmitAt: Record<
 // networked scope, keeping holograms), then search filters the view models.
 // The translator is a derived input everywhere a view model bakes display
 // text ("Untitled" fallbacks), so a language switch recomputes the boards.
+// `holonColors` is a dep everywhere a foreign card carries its source holon's
+// colour, so a caretaker choosing a colour re-tints the cards live.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scope, t],
-  ([$q, $n, $query, $s, $t]) =>
-    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t), $query),
+  [rawQuests, partnerNames, searchQuery, scope, t, holonColors],
+  ([$q, $n, $query, $s, $t, $c]) =>
+    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t, $c), $query),
 );
 export const backlog = derived(
-  [rawQuests, partnerNames, searchQuery, scope, taskSort, t],
-  ([$q, $n, $query, $s, $sort, $t]) =>
-    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t), $query),
+  [rawQuests, partnerNames, searchQuery, scope, taskSort, t, holonColors],
+  ([$q, $n, $query, $s, $sort, $t, $c]) =>
+    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
 );
 // One palette slot per distinct category, derived from *all* quests (not a
 // search- or scope-filtered subset) so a category keeps the same colour across
@@ -264,28 +267,28 @@ export const categoryColors = derived(rawQuests, ($q) =>
   categoryColorMap($q.map((x) => x.category)),
 );
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, t],
-  ([$l, $n, $query, $s, $t]) =>
-    filterBySearch(toThings(scopeLocal($l, $s), $n, $t), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors],
+  ([$l, $n, $query, $s, $t, $c]) =>
+    filterBySearch(toThings(scopeLocal($l, $s), $n, $t, $c), $query),
 );
 // The library's bookings as calendar spans — what the Library's calendar
 // layout renders (through the same CalendarView the Calendar tab uses). No
 // translator input: a booking's title is the item's own name, so there is no
 // display text to re-resolve on a language switch.
 export const bookingEvents = derived(
-  [rawLibrary, partnerNames, searchQuery, scope],
-  ([$l, $n, $query, $s]) =>
-    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, holonColors],
+  ([$l, $n, $query, $s, $c]) =>
+    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n, $c), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scope, t],
-  ([$r, $n, $query, $s, $t]) =>
-    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t), $query),
+  [rawRoles, partnerNames, searchQuery, scope, t, holonColors],
+  ([$r, $n, $query, $s, $t, $c]) =>
+    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t, $c), $query),
 );
 export const checklistCards = derived(
-  [rawChecklists, partnerNames, searchQuery, scope],
-  ([$c, $n, $query, $s]) =>
-    filterBySearch(toChecklists(scopeLocal($c, $s), $n), $query),
+  [rawChecklists, partnerNames, searchQuery, scope, holonColors],
+  ([$c, $n, $query, $s, $col]) =>
+    filterBySearch(toChecklists(scopeLocal($c, $s), $n, $col), $query),
 );
 // Tap-to-filter chips for the search dropdown, derived from the *unqueried*
 // view models so the list stays stable while a query narrows the boards —

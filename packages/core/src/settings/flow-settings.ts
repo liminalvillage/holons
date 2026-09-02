@@ -49,6 +49,12 @@ export interface HolonSettings {
   hex: string;
   maxTasks: number;
   /**
+   * Caretaker-chosen identity colour (`#rrggbb`) — overrides the palette
+   * colour every surface otherwise hashes from the id (see `holonColor` in
+   * ./color.ts). Optional: absent means "use the hash".
+   */
+  color?: string;
+  /**
    * Extra hex pubkeys allowed to edit this holon's records over Nostr
    * (reverse sync of projected standard kinds), on top of the holon key and
    * members' derived keys — e.g. an Elinor coordinator. Optional, no UI yet.

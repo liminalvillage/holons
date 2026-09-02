@@ -27,7 +27,9 @@
   } from "$lib/holosphere";
   import { resolveAppName, setGeo } from "$lib/config";
   import { showNotice } from "$lib/stores";
-  import { dockEntries, hueFor, requestOpen, type DockEntry } from "$lib/dock";
+  import { dockEntries, requestOpen, type DockEntry } from "$lib/dock";
+  import { holonColor, holonColors, resolveCssColor } from "$lib/palette";
+  import { activeTheme } from "$lib/theme";
   import {
     countsAsPresent,
     edgeFade,
@@ -617,6 +619,17 @@
   }
 
   /** Draw every located board: parent + cell polygons, and the hex badge. */
+  // Repaint when a caretaker colour lands or the day/night palette flips —
+  // the map takes literal colours, resolved from the theme's note variables.
+  $: if (map) {
+    void $holonColors;
+    void $activeTheme;
+    placeBoards();
+  }
+
+  /** The holon's colour as a literal the map can take. */
+  const paint = (id: string) => resolveCssColor(holonColor(id, $holonColors));
+
   function placeBoards() {
     if (!map || !mapboxglMod) return;
     const src = map.getSource("dock-cells");
@@ -625,7 +638,7 @@
         type: "FeatureCollection",
         features: located.map((e) => ({
           type: "Feature",
-          properties: { color: `hsl(${hueFor(e.id)} 60% 50%)` },
+          properties: { color: paint(e.id) },
           geometry: { type: "Polygon", coordinates: [ring(e.hex)] },
         })),
       });
@@ -638,7 +651,7 @@
           return {
             type: "Feature",
             properties: {
-              color: `hsl(${hueFor(e.id)} 60% 50%)`,
+              color: paint(e.id),
               hex: e.hex, // the tap-to-go-to target, not the parent itself
             },
             geometry: {
@@ -655,7 +668,7 @@
       const [lat, lng] = cellToLatLng(e.hex);
       const el = document.createElement("button");
       el.className = "hexmark";
-      el.style.setProperty("--h", String(hueFor(e.id)));
+      el.style.setProperty("--c", holonColor(e.id, $holonColors));
       el.setAttribute("data-dock-circle", e.id);
       el.setAttribute("aria-label", e.name);
       const glyph = /[\p{L}\p{N}]/u.exec(e.name)?.[0]?.toUpperCase() ?? "·";
@@ -1035,13 +1048,15 @@
     display: grid;
     place-items: center;
     clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
-    background: hsl(var(--h, 200) 60% 50% / 0.55);
+    /* `--c` is the holon's colour — the same note as its dock orb, its board
+       wash and its cards (lib/palette). */
+    background: color-mix(in srgb, var(--c, var(--teal)) 78%, transparent);
     /* clip-path eats a real border — fake the rim with an inset shadow. */
-    box-shadow: inset 0 0 0 3px hsl(var(--h, 200) 65% 62%);
-    color: #fff;
+    box-shadow: inset 0 0 0 3px
+      color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+    color: var(--ink);
     font-size: 1.3rem;
     font-weight: 800;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   }
   :global(.hexmark:active .hexmark__face) {
     transform: scale(0.93);

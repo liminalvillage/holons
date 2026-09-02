@@ -19,6 +19,7 @@
     editOnOpen,
     partnerNames,
   } from "$lib/stores";
+  import { holonColors } from "$lib/palette";
   import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
@@ -114,7 +115,7 @@
   }
   $: rec = isThing ? item : quest;
   $: holo = isHologram(rec);
-  $: srcGlow = sourceGlow(rec);
+  $: srcGlow = sourceGlow(rec, $holonColors);
   $: srcName = sourceLabel(rec, $partnerNames);
   $: seed = holo ? holoSeed(String(rec?.id ?? rec?.title ?? "")) : undefined;
 

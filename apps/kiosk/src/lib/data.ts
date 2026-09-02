@@ -24,25 +24,17 @@ import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
 import { recordKey, sourceHolonId, sourceRef } from "@holons/core/holosphere";
 import type { Translator } from "./i18n";
+import {
+  holonColor,
+  NOTE_COLORS,
+  noteColor,
+  type HolonColors,
+} from "./palette";
 
-/** Warm post-it palette, indexed deterministically by category. */
-export const NOTE_COLORS = [
-  "var(--note-sun)",
-  "var(--note-mint)",
-  "var(--note-sky)",
-  "var(--note-coral)",
-  "var(--note-lav)",
-  "var(--note-lime)",
-] as const;
-
-/** Stable colour for a label so the same category always gets the same note. */
-export function noteColor(seed: string | undefined): string {
-  const s = seed && seed.length ? seed : "•";
-  let hash = 0;
-  for (let i = 0; i < s.length; i++)
-    hash = (hash << 5) - hash + s.charCodeAt(i);
-  return NOTE_COLORS[Math.abs(hash) % NOTE_COLORS.length];
-}
+// The post-it palette and the hash that picks from it live in lib/palette —
+// the same algorithm colours a holon (board wash, dock orb, map hexagon), so
+// it sits beside the holon overrides. Re-exported for the views.
+export { NOTE_COLORS, noteColor };
 
 /**
  * Build a stable category → post-it colour map for a set of cards. The distinct
@@ -145,20 +137,21 @@ export function sourceLabel(rec: unknown, names?: Names): string | undefined {
 }
 
 /**
- * A stable glow-edge colour for a foreign item (one mirrored from another holon
- * via federation or a hologram), hashed from its origin holon id so every item
- * from the same holon shares one hue. `undefined` for the kiosk's own items —
- * they get no glow. Returned ready to drop into a `--glow` custom property.
+ * The glow-edge colour for a foreign item (one mirrored from another holon via
+ * federation or a hologram): its origin holon's colour — the SAME colour that
+ * holon's board is washed with and its dock orb and map hexagon are painted in
+ * (`holonColor` in lib/palette: the card hash of the id unless the holon's
+ * settings choose one; `colors` carries the overrides learned so far).
+ * `undefined` for the kiosk's own items — they get no glow. Returned ready to
+ * drop into a `--glow` custom property.
  */
-export function sourceGlow(rec: unknown): string | undefined {
+export function sourceGlow(
+  rec: unknown,
+  colors?: HolonColors,
+): string | undefined {
   const id = sourceHolonId(rec);
   if (!id) return undefined;
-  let hash = 0;
-  for (let i = 0; i < id.length; i++)
-    hash = (hash << 5) - hash + id.charCodeAt(i);
-  // Fixed saturation/lightness so every partner hue reads as a vivid edge
-  // against the warm post-it palette.
-  return `hsl(${Math.abs(hash) % 360} 75% 52%)`;
+  return holonColor(id, colors);
 }
 
 /**
@@ -340,6 +333,7 @@ export function toEvents(
   quests: Quest[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
@@ -367,7 +361,7 @@ export function toEvents(
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
-      sourceColor: sourceGlow(q),
+      sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
     });
   }
@@ -387,6 +381,7 @@ export function toBacklog(
   names?: Names,
   sort: TaskSort = "loved",
   t?: Translator,
+  colors?: HolonColors,
 ): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
@@ -417,7 +412,7 @@ export function toBacklog(
       appreciation: countOf(q.appreciation),
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
-      sourceColor: sourceGlow(q),
+      sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
       initiator: toInitiator(q),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
@@ -507,6 +502,7 @@ export function toRoles(
   roles: Role[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
 ): RoleCard[] {
   const seen = new Set<string>();
   return roles
@@ -517,7 +513,7 @@ export function toRoles(
       people: toPeople(r.participants),
       count: countOf(r.participants),
       source: sourceLabel(r, names),
-      sourceColor: sourceGlow(r),
+      sourceColor: sourceGlow(r, colors),
       hologram: isHologram(r),
     }))
     .filter((r) => {
@@ -567,6 +563,7 @@ export interface ChecklistCard {
 export function toChecklists(
   lists: Checklist[],
   names?: Names,
+  colors?: HolonColors,
 ): ChecklistCard[] {
   const seen = new Set<string>();
   return lists
@@ -584,7 +581,7 @@ export function toChecklists(
         special: isSpecialChecklist(typed),
         creator: typed.creator ?? null,
         source: sourceLabel(c, names),
-        sourceColor: sourceGlow(c),
+        sourceColor: sourceGlow(c, colors),
         hologram: isHologram(c),
       };
     })
@@ -612,6 +609,7 @@ export function toThings(
   items: LibraryItem[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
 ): LibraryThing[] {
   const seen = new Set<string>();
   return items
@@ -625,7 +623,7 @@ export function toThings(
       borrowerId: it.borrowerId ?? null,
       returnBy: parseWhen(it.returnBy),
       source: sourceLabel(it, names),
-      sourceColor: sourceGlow(it),
+      sourceColor: sourceGlow(it, colors),
       hologram: isHologram(it),
     }))
     .filter((t) => {
@@ -665,6 +663,7 @@ function dayStart(day: string): Date | null {
 export function toBookingEvents(
   items: LibraryItem[],
   names?: Names,
+  colors?: HolonColors,
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
@@ -675,7 +674,7 @@ export function toBookingEvents(
     if (!itemId || item._deleted || seen.has(itemId)) continue;
     seen.add(itemId);
     const source = sourceLabel(item, names);
-    const sourceColor = sourceGlow(item);
+    const sourceColor = sourceGlow(item, colors);
     const hologram = isHologram(item);
     for (const b of getDisplayBookings(item)) {
       const date = dayStart(b.start);

@@ -19,6 +19,19 @@ export {
 // doc comment for why position is never a valid way to find the settings doc.
 export { readHolonSettings } from './persistence.js';
 
+// The one colour algorithm (hash a seed into a palette, caretaker `color`
+// override) that every surface tints a holon with — card glow, board wash,
+// dock orb, map hexagon — and that the kiosk colours its post-it cards with.
+export {
+  COLOR_KEY,
+  colorHash,
+  holonColor,
+  normalizeHolonColor,
+  pickColor,
+  readHolonColor,
+  saveHolonColor,
+} from './color.js';
+
 export type {
   FederationPartnerView,
   FlowEdge,

@@ -18,7 +18,7 @@
   } from "@holons/core/federation";
   import type { HoloSphere } from "holosphere";
   import { getHolosphere } from "$lib/holosphere";
-  import { hueFor } from "$lib/dock";
+  import { holonColor, holonColors } from "$lib/palette";
   import { t, type MessageKey, type Translator } from "$lib/i18n";
 
   /** The board whose federation record is edited (the dragged/tapped one). */
@@ -166,8 +166,10 @@
   <!-- The pair, drawn the way the dock draws it: two orbs overlapping 25%,
        their vesica between them — this popup edits that intersection. -->
   <div class="pair" aria-hidden="true">
-    <span class="orb" style="--h: {hueFor(holon)}">{initialOf(nameA())}</span>
-    <span class="orb second" style="--h: {hueFor(partner)}"
+    <span class="orb" style="--c: {holonColor(holon, $holonColors)}"
+      >{initialOf(nameA())}</span
+    >
+    <span class="orb second" style="--c: {holonColor(partner, $holonColors)}"
       >{initialOf(nameB())}</span
     >
   </div>
@@ -245,10 +247,9 @@
     place-items: center;
     font-size: 1.35rem;
     font-weight: 700;
-    background: color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 26%, transparent);
-    border: 3px solid
-      color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 65%, var(--line));
-    color: color-mix(in srgb, hsl(var(--h, 200) 70% 42%) 72%, var(--ink));
+    background: color-mix(in srgb, var(--c, var(--teal)) 62%, transparent);
+    border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+    color: var(--ink);
   }
   /* 25% overlap, like the constellation the popup was opened from. */
   .orb.second {

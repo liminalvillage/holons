@@ -10,12 +10,12 @@
   // in the tray adds a board from an id, a registered label, or a pasted
   // link (parseHolonPaste accepts anything people actually copy).
   import { onMount, tick } from "svelte";
+  import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import {
     boundsPath,
     dockEntries,
     dockView,
     forgetBoard,
-    hueFor,
     labelFor,
     lensPath,
     linksAmong,
@@ -240,6 +240,19 @@
     positions = settled;
   }
 
+  // Each docked board's caretaker colour (settings `color`), so an orb wears
+  // the same colour as the board behind it. Best-effort and de-duplicated.
+  $: void learnDockColors($dockEntries);
+  async function learnDockColors(entries: { id: string }[]) {
+    if (typeof window === "undefined" || entries.length === 0) return;
+    try {
+      const hs = await getHolosphere();
+      for (const e of entries) void learnHolonColor(hs, e.id);
+    } catch {
+      /* the hash applies */
+    }
+  }
+
   onMount(() => {
     // A federation change (this popup's writes included) redraws the ties:
     // flush the partner cache and refetch, and the orbs pull together live.
@@ -408,7 +421,10 @@
               class="slot"
               class:front={dragId === e.id}
               role="listitem"
-              style="--h: {hueFor(e.id)}; --i: {i}; left: {p.x}px; top: {p.y}px"
+              style="--c: {holonColor(
+                e.id,
+                $holonColors,
+              )}; --i: {i}; left: {p.x}px; top: {p.y}px"
             >
               <button
                 class="orb"
@@ -622,10 +638,12 @@
     display: grid;
     place-items: center;
     /* Translucent tinted glass with a firm rim: overlapping circles stack
-       their fills, so the intersection deepens naturally under the vesica. */
-    background: color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 26%, transparent);
-    border: 3px solid
-      color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 65%, var(--line));
+       their fills, so the intersection deepens naturally under the vesica.
+       `--c` is the holon's colour — the same note its cards and board wear
+       (lib/palette) — so the rim is that note pulled toward the ink, which
+       reads on both the day and the night palette. */
+    background: color-mix(in srgb, var(--c, var(--teal)) 62%, transparent);
+    border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
     box-shadow: var(--shadow-soft);
     animation: dock-pop 0.35s ease both;
     animation-delay: calc(var(--i, 0) * 40ms);
@@ -661,7 +679,7 @@
     font-size: 2.4rem;
     font-weight: 700;
     line-height: 1;
-    color: color-mix(in srgb, hsl(var(--h, 200) 70% 42%) 72%, var(--ink));
+    color: var(--ink);
   }
 
   .name {
