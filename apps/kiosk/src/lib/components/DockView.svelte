@@ -422,7 +422,8 @@
     </div>
   {/if}
 
-  <div class="tray">
+  <!-- The view switch hovers over whichever surface is showing. -->
+  <div class="topbar">
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
       <button
         type="button"
@@ -445,37 +446,36 @@
         <span aria-hidden="true">⬡</span>{$t("dock.map")}
       </button>
     </div>
+  </div>
 
-    {#if $dockView === "deck"}
-      {#if adding}
-        <form class="add" on:submit|preventDefault={submitAdd}>
-          <input
-            type="text"
-            bind:value={draft}
-            bind:this={addInput}
-            placeholder={$t("dock.addPlaceholder")}
-            aria-label={$t("dock.add")}
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            on:keydown={(e) => e.key === "Escape" && cancelAdd()}
-          />
-          <button type="submit" class="go" aria-label={$t("dock.add")}>→</button
-          >
-          {#if addError}
-            <span class="err" role="alert">{addError}</span>
-          {/if}
-        </form>
-      {:else}
-        <button class="plus" on:click={startAdd}>
-          <span class="plus__sign">+</span>{$t("dock.add")}
-        </button>
-      {/if}
-      <p class="hint">{$t("dock.hint")}</p>
+  <div class="tray">
+    {#if adding}
+      <form class="add" on:submit|preventDefault={submitAdd}>
+        <input
+          type="text"
+          bind:value={draft}
+          bind:this={addInput}
+          placeholder={$t("dock.addPlaceholder")}
+          aria-label={$t("dock.add")}
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          on:keydown={(e) => e.key === "Escape" && cancelAdd()}
+        />
+        <button type="submit" class="go" aria-label={$t("dock.add")}>→</button>
+        {#if addError}
+          <span class="err" role="alert">{addError}</span>
+        {/if}
+      </form>
     {:else}
-      <p class="hint">{$t("dock.mapHint")}</p>
+      <button class="plus" on:click={startAdd}>
+        <span class="plus__sign">+</span>{$t("dock.add")}
+      </button>
     {/if}
+    <p class="hint">
+      {$dockView === "map" ? $t("dock.mapHint") : $t("dock.hint")}
+    </p>
   </div>
 </div>
 
@@ -682,12 +682,22 @@
     padding: 0.4rem 1.4rem 1.2rem;
   }
 
+  /* Floating view switch: hovers over the field / the map, never in-flow. */
+  .topbar {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 0.8rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6; /* above the map (and its overlays) and the gravity field */
+  }
   .viewtoggle {
     display: inline-flex;
     padding: 0.2rem;
     border-radius: 999px;
     border: 1.5px solid var(--line);
-    background: color-mix(in srgb, var(--card) 60%, transparent);
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
   }
   .viewopt {
     display: inline-flex;

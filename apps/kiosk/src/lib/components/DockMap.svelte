@@ -15,6 +15,7 @@
     cellToLatLng,
     cellToParent,
     getResolution,
+    polygonToCells,
   } from "h3-js";
   import { readSettingsHex } from "@holons/core/federation";
   import { getHolosphere } from "$lib/holosphere";
@@ -46,6 +47,28 @@
   // a res-9 "block" gets a res-4 neighbourhood — the two-layer display the
   // dashboard map uses, so a board is findable even from country zoom.
   const PARENT_COARSER = 5;
+
+  // Zoom → grid resolution bands, mirroring the HexPicker / dashboard so the
+  // grid lines up cell-for-cell across every surface.
+  function zoomToResolution(zoom: number): number {
+    const bands: Array<[number, number]> = [
+      [3.0, 0],
+      [4.4, 1],
+      [5.7, 2],
+      [7.1, 3],
+      [8.4, 4],
+      [9.8, 5],
+      [11.4, 6],
+      [12.7, 7],
+      [14.1, 8],
+      [15.5, 9],
+      [16.8, 10],
+      [18.2, 11],
+      [19.5, 12],
+    ];
+    for (const [z, r] of bands) if (zoom <= z) return r;
+    return 12;
+  }
 
   let mapContainer: HTMLDivElement | null = null;
   let map: any = null;
@@ -86,11 +109,16 @@
   }
 
   function ring(cell: string): number[][] {
-    const r = (cellToBoundary(cell, true) as Array<[number, number]>).map(
-      ([lng, lat]) => [lng, lat],
-    );
-    r.push(r[0]);
-    return r;
+    let r = cellToBoundary(cell, true) as Array<[number, number]>;
+    // The dashboard map's antimeridian hack: a cell straddling ±180° comes
+    // back with a huge longitude jump and would paint as a line across the
+    // whole world — shift the positive side by -360 so the polygon stays
+    // local.
+    if (r.some(([lng]) => lng < -128))
+      r = r.map(([lng, lat]) => (lng > 0 ? [lng - 360, lat] : [lng, lat]));
+    const out: number[][] = r.map(([lng, lat]) => [lng, lat]);
+    out.push(out[0]);
+    return out;
   }
 
   async function initMap() {
@@ -114,6 +142,36 @@
       if (import.meta.env.DEV) (window as any).__dockMap = map;
       map.on("load", () => {
         if (!map) return;
+        // The zoom-following H3 grid, in the dashboard map's two layers: the
+        // current resolution plus the next finer one, fainter, inside it.
+        map.addSource("dock-grid", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "dock-grid-fine-line",
+          type: "line",
+          source: "dock-grid",
+          filter: ["==", ["get", "kind"], "fine"],
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": 1.2,
+            "line-opacity": 0.18,
+          },
+        });
+        map.addLayer({
+          id: "dock-grid-line",
+          type: "line",
+          source: "dock-grid",
+          filter: ["==", ["get", "kind"], "grid"],
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": 2,
+            "line-opacity": 0.45,
+          },
+        });
+        map.on("moveend", rebuildGrid);
+        map.on("zoomend", rebuildGrid);
         // Two hexagon layers, like the dashboard map's upper/lower grids:
         // the faint PARENT neighbourhood underneath, the exact cell on top.
         map.addSource("dock-parents", {
@@ -132,8 +190,8 @@
           source: "dock-parents",
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 1.5,
-            "line-opacity": 0.55,
+            "line-width": 2.5,
+            "line-opacity": 0.6,
             "line-dasharray": [2, 2],
           },
         });
@@ -153,7 +211,7 @@
           source: "dock-cells",
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 2.5,
+            "line-width": 3.5,
             "line-opacity": 0.9,
           },
         });
@@ -163,11 +221,54 @@
           const hex = e.features?.[0]?.properties?.hex;
           if (typeof hex === "string" && hex) flyToCell(hex);
         });
+        rebuildGrid();
         placeBoards();
       });
     } catch (err) {
       console.warn("[kiosk] dock map unavailable", err);
     }
+  }
+
+  /**
+   * Refill the viewport grid at the zoom-matched resolution (plus the next
+   * finer one). Both layers live in one source, told apart by `kind`; a cap
+   * keeps a pathological viewport from ever exploding the cell count.
+   */
+  function rebuildGrid() {
+    if (!map) return;
+    const src = map.getSource("dock-grid");
+    const bounds = map.getBounds();
+    if (!src || !bounds) return;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const view: Array<[number, number]> = [
+      [ne.lat, sw.lng],
+      [ne.lat, ne.lng],
+      [sw.lat, ne.lng],
+      [sw.lat, sw.lng],
+      [ne.lat, sw.lng],
+    ];
+    const res = zoomToResolution(map.getZoom());
+    const features: any[] = [];
+    for (const [kind, r, cap] of [
+      ["grid", res, 3000],
+      ["fine", res + 1, 6000],
+    ] as const) {
+      let cells: string[] = [];
+      try {
+        cells = polygonToCells(view, r);
+      } catch {
+        cells = [];
+      }
+      if (cells.length > cap) continue;
+      for (const c of cells)
+        features.push({
+          type: "Feature",
+          properties: { kind },
+          geometry: { type: "Polygon", coordinates: [ring(c)] },
+        });
+    }
+    src.setData({ type: "FeatureCollection", features });
   }
 
   /** Fly to a cell at the zoom its resolution reads best (goToHex-style). */
@@ -256,6 +357,58 @@
 
   $: if (alive) void loadHexes($dockEntries);
 
+  // ── Location search (Mapbox Geocoding, same token as the basemap) ───────--
+  interface PlaceHit {
+    label: string;
+    lat: number;
+    lng: number;
+  }
+  let searchQuery = "";
+  let searchHits: PlaceHit[] = [];
+  let searching = false;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function onSearchInput() {
+    clearTimeout(searchTimer);
+    const q = searchQuery.trim();
+    if (q.length < 3) {
+      searchHits = [];
+      return;
+    }
+    searchTimer = setTimeout(() => void searchPlaces(q), 300);
+  }
+
+  async function searchPlaces(q: string) {
+    if (!MAPBOX_TOKEN) return;
+    searching = true;
+    try {
+      const res = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=address,poi,place,locality,neighborhood`,
+      );
+      const data = await res.json();
+      if (searchQuery.trim() !== q) return; // stale response
+      searchHits = (data?.features ?? []).map((f: any) => ({
+        label: f.place_name as string,
+        lng: f.center?.[0],
+        lat: f.center?.[1],
+      }));
+    } catch {
+      searchHits = [];
+    } finally {
+      searching = false;
+    }
+  }
+
+  function pickPlace(hit: PlaceHit) {
+    searchHits = [];
+    searchQuery = hit.label;
+    map?.flyTo({
+      center: [hit.lng, hit.lat],
+      zoom: Math.max(map.getZoom(), 12),
+      essential: true,
+    });
+  }
+
   // The ONLY place this view asks for coordinates — an explicit tap on the
   // My-location button. The fix is cached (setGeo) so the sunset theme can
   // track the real horizon without ever prompting on its own.
@@ -286,6 +439,7 @@
   });
   onDestroy(() => {
     alive = false;
+    clearTimeout(searchTimer);
     for (const m of markers) m.remove();
     markers = [];
     try {
@@ -298,6 +452,28 @@
 <div class="mapwrap">
   {#if MAPBOX_TOKEN}
     <div class="map" bind:this={mapContainer}></div>
+    <!-- Find a place: floats below the hovering Deck/Map switch. -->
+    <div class="search">
+      <input
+        type="text"
+        bind:value={searchQuery}
+        on:input={onSearchInput}
+        placeholder={$t("hex.searchPlaceholder")}
+        aria-label={$t("hex.searchPlaceholder")}
+      />
+      {#if searching}
+        <span class="searching">{$t("hex.searching")}</span>
+      {/if}
+      {#if searchHits.length}
+        <div class="hits">
+          {#each searchHits as hit (hit.label)}
+            <button type="button" on:click={() => pickPlace(hit)}>
+              {hit.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
     <button
       type="button"
       class="locate"
@@ -338,6 +514,64 @@
       #000 60%,
       transparent 99%
     );
+  }
+
+  .search {
+    position: absolute;
+    top: 3.6rem; /* clears the hovering Deck/Map switch */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    width: min(24rem, calc(100% - 2rem));
+  }
+  .search input {
+    width: 100%;
+    height: 2.6rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-family: inherit;
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+  }
+  .search input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  .searching {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .hits {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 5;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-soft);
+    overflow: hidden;
+  }
+  .hits button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+  .hits button:last-child {
+    border-bottom: none;
   }
 
   .locate {
