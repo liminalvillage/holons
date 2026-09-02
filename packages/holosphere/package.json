@@ -25,13 +25,14 @@
     "@scure/base": "^1.2.0",
     "ajv": "^8.12.0",
     "gun": "^0.2020.1240",
-    "h3-js": "^4.1.0"
+    "h3-js": "^4.1.0",
+    "nostr-tools": "^2.23.5"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",
+    "fake-indexeddb": "^6.2.5",
     "jest": "^29.7.0",
     "jest-environment-node": "^29.7.0",
-    "nostr-tools": "^2.23.5",
     "ws": "^8.21.3"
   },
   "jest": {
@@ -64,6 +65,8 @@
     "nostr-events.js",
     "signing.js",
     "relay-transport.js",
+    "store/",
+    "STORE.md",
     "README.md",
     "SIGNING.md",
     "LICENSE",
@@ -86,7 +89,11 @@
     "./relay-transport": "./relay-transport.js",
     "./relay-transport.js": "./relay-transport.js",
     "./projections": "./projections.js",
-    "./projections.js": "./projections.js"
+    "./projections.js": "./projections.js",
+    "./store": "./store/index.js",
+    "./store/index.js": "./store/index.js",
+    "./store/adapters/file.js": "./store/adapters/file.js",
+    "./store/private.js": "./store/private.js"
   },
   "repository": {
     "type": "git",
@@ -122,8 +129,5 @@
     "gun": {
       "optional": false
     }
-  },
-  "optionalDependencies": {
-    "nostr-tools": "^2.23.5"
   }
 }

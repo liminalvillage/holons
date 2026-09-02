@@ -87,7 +87,15 @@ export function startRelay({ port = 0 } = {}) {
         for (const evt of events.values()) {
           if (filters.some((f) => matches(f, evt))) out.push(evt);
         }
-        out.sort((a, b) => a.created_at - b.created_at);
+        // NIP-01: with `limit`, the newest events are returned (newest first);
+        // otherwise the stored set in chronological order.
+        const limit = Math.min(...filters.map((f) => (f.limit > 0 ? f.limit : Infinity)));
+        if (Number.isFinite(limit)) {
+          out.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
+          out.length = Math.min(out.length, limit);
+        } else {
+          out.sort((a, b) => a.created_at - b.created_at);
+        }
         for (const evt of out) ws.send(JSON.stringify(['EVENT', subId, evt]));
         ws.send(JSON.stringify(['EOSE', subId]));
         return;
