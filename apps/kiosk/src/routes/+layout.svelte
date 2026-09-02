@@ -607,7 +607,7 @@
   // interface never wedges mid-morph.
   let windowEl: HTMLDivElement | null = null;
   let morphBusy = false;
-  const MORPH_MS = 650;
+  const MORPH_MS = 1000; // unhurried — the iris should read as a breath, not a snap
   const MORPH_EASE = "cubic-bezier(0.45, 0, 0.2, 1)";
 
   function circleRect(id: string): DOMRect | null {
