@@ -16,6 +16,7 @@
     forgetBoard,
     hueFor,
     labelFor,
+    lensPath,
     linksAmong,
     orbClusters,
     orbLayout,
@@ -32,7 +33,7 @@
   import { parseHolonPaste } from "$lib/holons";
   import { t } from "$lib/i18n";
   import Modal from "./Modal.svelte";
-  import FederationSettings from "./FederationSettings.svelte";
+  import FederationLens from "./FederationLens.svelte";
 
   const ORB = 104; // px diameter — keep in sync with the 6.5rem circle below
   const BOUND_PAD = 30; // air between an orb and its holographic bound
@@ -114,14 +115,32 @@
     if (pressTimer) clearTimeout(pressTimer);
     pressTimer = null;
   }
-  function onOrbClick(id: string) {
+  function onOrbClick(e: MouseEvent, id: string) {
     if (longPressed || dragMoved) {
       longPressed = false; // this click closes out the long-press or drag
       dragMoved = false;
       return;
     }
     if (editing) return; // in edit mode a tap is not an open
+    // A tap INSIDE the overlap of two federated circles is a tap on their
+    // intersection lens: it configures the pair instead of opening a board.
+    const other = intersectionAt(fieldPoint(e as PointerEvent), id);
+    if (other) {
+      fedPair = { home: id, partner: other };
+      return;
+    }
     requestOpen(id);
+  }
+
+  /** The linked partner whose circle also covers `p`, if any. */
+  function intersectionAt(p: Vec, id: string): string | null {
+    for (const [a, b] of links) {
+      const other = a === id ? b : b === id ? a : null;
+      if (!other) continue;
+      const q = positions.get(other);
+      if (q && Math.hypot(p.x - q.x, p.y - q.y) <= ORB / 2) return other;
+    }
+    return null;
   }
 
   /** The orb the pointer is over — centres closer than one diameter touch. */
@@ -327,6 +346,28 @@
         {/each}
       </svg>
 
+      <!-- The intersection lenses, drawn ABOVE the orbs (they are opaque):
+           each federated pair's vesica, tinted and marked ⇅ — tap it to
+           configure the pair's flow. Hit detection lives in onOrbClick. -->
+      <svg class="overlaps" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
+        {#each links as l (l[0] + "|" + l[1])}
+          {@const pa = positions.get(l[0])}
+          {@const pb = positions.get(l[1])}
+          {#if pa && pb}
+            {@const vesica = lensPath(pa, pb, ORB / 2)}
+            {#if vesica}
+              <path class="vesica" d={vesica} />
+              <text
+                class="vesica-glyph"
+                x={(pa.x + pb.x) / 2}
+                y={(pa.y + pb.y) / 2}
+                dominant-baseline="central">⇅</text
+              >
+            {/if}
+          {/if}
+        {/each}
+      </svg>
+
       {#each $dockEntries as e, i (e.id)}
         {@const p = positions.get(e.id)}
         {#if p}
@@ -342,7 +383,7 @@
               class:target={dropTarget === e.id}
               data-dock-circle={e.id}
               aria-label={$t("dock.open", { name: e.name })}
-              on:click={() => onOrbClick(e.id)}
+              on:click={(ev) => onOrbClick(ev, e.id)}
               on:pointerdown={(ev) => onOrbDown(ev, e.id)}
               on:pointermove={onOrbMove}
               on:pointerup={onOrbUp}
@@ -396,18 +437,19 @@
   </div>
 </div>
 
-<!-- Dropping one circle onto another federates the two boards: the shared
-     federation editor opens on the dragged board with the drop target linked
-     (kiosk default, receive-only) and expanded for tuning. -->
+<!-- The intersection popup: dropping one circle onto another (or tapping an
+     existing overlap) opens just this pair's lens settings. A fresh drop is
+     linked on open with the kiosk default (receive-only); unlinking closes
+     the popup — the intersection it edited no longer exists. -->
 {#if fedPair}
   <Modal on:close={() => (fedPair = null)}>
-    <h3 class="fed-title">
-      {$t("dock.federateTitle", {
-        a: nameOf(fedPair.home),
-        b: nameOf(fedPair.partner),
-      })}
-    </h3>
-    <FederationSettings holon={fedPair.home} focusPartner={fedPair.partner} />
+    <FederationLens
+      holon={fedPair.home}
+      partner={fedPair.partner}
+      holonName={nameOf(fedPair.home)}
+      partnerName={nameOf(fedPair.partner)}
+      on:unlinked={() => (fedPair = null)}
+    />
   </Modal>
 {/if}
 
@@ -466,9 +508,35 @@
     stroke-linecap: round;
   }
 
+  /* The intersection layer rides above the (opaque) orbs so each federated
+     pair's vesica reads as a glassy lens between them — the tap target that
+     opens the pair's flow settings. */
+  .overlaps {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2; /* over resting orbs, under a carried one (.slot.front, z 3) */
+  }
+  .vesica {
+    fill: color-mix(in srgb, var(--teal) 24%, transparent);
+    stroke: color-mix(in srgb, var(--teal) 55%, transparent);
+    stroke-width: 1.5;
+  }
+  .vesica-glyph {
+    fill: color-mix(in srgb, var(--teal) 80%, var(--ink));
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+
   .slot {
     position: absolute;
-    transform: translate(-50%, -50%);
+    /* Anchor the ORB's centre (not the column's) on the physics position:
+       shift up by half the orb so the vesica, ties, and hit math all line up
+       with the visible circle; the name simply hangs below. */
+    transform: translate(-50%, -3.25rem);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -487,9 +555,11 @@
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 20%, var(--card));
-    border: 2px solid
-      color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 45%, var(--line));
+    /* Translucent tinted glass with a firm rim: overlapping circles stack
+       their fills, so the intersection deepens naturally under the vesica. */
+    background: color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 26%, transparent);
+    border: 3px solid
+      color-mix(in srgb, hsl(var(--h, 200) 60% 50%) 65%, var(--line));
     box-shadow: var(--shadow-soft);
     animation: dock-pop 0.35s ease both;
     animation-delay: calc(var(--i, 0) * 40ms);
@@ -646,12 +716,5 @@
     font-size: 0.85rem;
     color: var(--muted);
     text-align: center;
-  }
-
-  .fed-title {
-    margin: 0 0 0.5rem;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--ink);
   }
 </style>

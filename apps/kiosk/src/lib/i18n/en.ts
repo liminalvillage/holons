@@ -303,7 +303,6 @@ export const en = {
   "dock.addInvalid": "That doesn't name a holon.",
   "dock.hint":
     "Tap a circle to open its board, hold one to remove it — drag one onto another to federate them.",
-  "dock.federateTitle": "Federate {a} with {b}",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Logged in",
@@ -452,15 +451,10 @@ export const en = {
   "settings.checking": "Checking…",
   "settings.change": "Change…",
   "settings.setLocation": "Set location…",
-  "settings.federation": "Federation",
-  "settings.federationSub":
-    "— partner holons this screen shares with · changes apply immediately",
-
-  // Federation editor
-  "fed.loading": "Loading partners…",
+  // Federation lens editor (the dock's intersection popup)
+  "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
-  "fed.none": "No partners yet — link a holon below to share boards.",
-  "fed.hint": "Receive = show their items here · Send = share ours with them",
+  "fed.pairHint": "Receive = {a} shows {b}'s items · Send = {a} shares its own",
   "fed.lensAria": "{lens} federation",
   "fed.off": "Off",
   "fed.receive": "Receive",
@@ -468,9 +462,6 @@ export const en = {
   "fed.both": "Both",
   "fed.tapAgainUnlink": "Tap again to unlink",
   "fed.unlink": "Unlink {name}",
-  "fed.linking": "Linking…",
-  "fed.link": "Link",
-  "fed.selfLink": "That's this holon.",
   "fed.linkError": "Could not link that holon — try again.",
   "fed.changeError": "Change didn't save — try again.",
   "fed.unlinkError": "Unlink didn't save — try again.",

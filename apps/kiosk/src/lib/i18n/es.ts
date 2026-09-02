@@ -310,7 +310,6 @@ export const es: Record<MessageKey, Msg> = {
   "dock.addInvalid": "Eso no identifica un holon.",
   "dock.hint":
     "Toca un círculo para abrir su tablón, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
-  "dock.federateTitle": "Federar {a} con {b}",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Sesión iniciada",
@@ -464,17 +463,11 @@ export const es: Record<MessageKey, Msg> = {
   "settings.checking": "Comprobando…",
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",
-  "settings.federation": "Federación",
-  "settings.federationSub":
-    "— los holones socios con los que comparte esta pantalla · los cambios se aplican de inmediato",
-
-  // Federation editor
-  "fed.loading": "Cargando los socios…",
+  // Federation lens editor (the dock's intersection popup)
+  "fed.loading": "Cargando…",
   "fed.loadError": "No se pudo cargar la federación — inténtalo de nuevo.",
-  "fed.none":
-    "Aún no hay socios — vincula un holón abajo para compartir los tableros.",
-  "fed.hint":
-    "Recibir = mostrar aquí sus elementos · Enviar = compartir los nuestros con ellos",
+  "fed.pairHint":
+    "Recibir = {a} muestra los elementos de {b} · Enviar = {a} comparte los suyos",
   "fed.lensAria": "Federación de {lens}",
   "fed.off": "Off",
   "fed.receive": "Recibir",
@@ -482,9 +475,6 @@ export const es: Record<MessageKey, Msg> = {
   "fed.both": "Ambos",
   "fed.tapAgainUnlink": "Toca otra vez para desvincular",
   "fed.unlink": "Desvincular {name}",
-  "fed.linking": "Vinculando…",
-  "fed.link": "Vincular",
-  "fed.selfLink": "Ese es este holón.",
   "fed.linkError": "No se pudo vincular ese holón — inténtalo de nuevo.",
   "fed.changeError": "El cambio no se guardó — inténtalo de nuevo.",
   "fed.unlinkError": "La desvinculación no se guardó — inténtalo de nuevo.",

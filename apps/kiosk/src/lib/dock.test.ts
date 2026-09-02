@@ -5,6 +5,7 @@ import {
   convexHull,
   hueFor,
   labelFor,
+  lensPath,
   linksAmong,
   orbClusters,
   orbLayout,
@@ -156,6 +157,18 @@ describe("orbLayout", () => {
     expect(d("-1", "-2")).toBeLessThan(d("-1", "-3"));
   });
 
+  it("settles a federated pair overlapping by ~25% of the diameter", () => {
+    const r = 52;
+    const pos = orbLayout(["-1", "-2"], [["-1", "-2"]], 900, 560, r);
+    const d = Math.hypot(
+      pos.get("-1")!.x - pos.get("-2")!.x,
+      pos.get("-1")!.y - pos.get("-2")!.y,
+    );
+    const overlap = (2 * r - d) / (2 * r);
+    expect(overlap).toBeGreaterThan(0.2);
+    expect(overlap).toBeLessThan(0.3);
+  });
+
   it("is deterministic and safe on empty/degenerate input", () => {
     expect(orbLayout(ids, links, 800, 500, 50)).toEqual(
       orbLayout(ids, links, 800, 500, 50),
@@ -253,6 +266,19 @@ describe("convexHull / boundsPath", () => {
     expect(two).toMatch(/Z$/);
     expect(boundsPath([{ x: 50, y: 50 }], 40)).toMatch(/^M .* Z$/);
     expect(boundsPath([], 40)).toBe("");
+  });
+});
+
+describe("lensPath", () => {
+  it("draws the vesica of two overlapping circles", () => {
+    const d = lensPath({ x: 100, y: 100 }, { x: 178, y: 100 }, 52);
+    expect(d).toMatch(/^M .* A 52 52 .* A 52 52 .* Z$/);
+  });
+
+  it("is empty when the circles are apart or concentric", () => {
+    expect(lensPath({ x: 0, y: 0 }, { x: 200, y: 0 }, 52)).toBe("");
+    expect(lensPath({ x: 0, y: 0 }, { x: 104, y: 0 }, 52)).toBe(""); // touching
+    expect(lensPath({ x: 5, y: 5 }, { x: 5, y: 5 }, 52)).toBe("");
   });
 });
 

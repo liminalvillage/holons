@@ -54,7 +54,6 @@
   import { loadSettings } from "@holons/core/settings";
   import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
   import { getHolosphere } from "$lib/holosphere";
-  import FederationSettings from "./FederationSettings.svelte";
   import HexPicker from "./HexPicker.svelte";
   import Modal from "./Modal.svelte";
   import ValueEquation from "./ValueEquation.svelte";
@@ -595,13 +594,8 @@
     </div>
   {/if}
 
-  {#if $holonId}
-    <div class="field">
-      {$t("settings.federation")}
-      <span class="sub">{$t("settings.federationSub")}</span>
-      <FederationSettings />
-    </div>
-  {/if}
+  <!-- Federation moved to the dock: close the board and drag one circle onto
+       another to link, or tap an intersection to tune its lenses. -->
 
   <div class="actions">
     <button class="primary" on:click={() => settingsOpen.set(false)}

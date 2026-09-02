@@ -311,7 +311,6 @@ export const it: Record<MessageKey, Msg> = {
   "dock.addInvalid": "Questo non identifica un holon.",
   "dock.hint":
     "Tocca un cerchio per aprire la sua bacheca, tienilo premuto per rimuoverlo — trascinane uno su un altro per federarli.",
-  "dock.federateTitle": "Federa {a} con {b}",
 
   // Login card (Telegram suggested + own-key providers)
   "login.loggedIn": "Accesso effettuato",
@@ -464,17 +463,11 @@ export const it: Record<MessageKey, Msg> = {
   "settings.checking": "Verifica…",
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",
-  "settings.federation": "Federazione",
-  "settings.federationSub":
-    "— gli holon partner con cui questo schermo condivide · le modifiche si applicano subito",
-
-  // Federation editor
-  "fed.loading": "Caricamento dei partner…",
+  // Federation lens editor (the dock's intersection popup)
+  "fed.loading": "Caricamento…",
   "fed.loadError": "Impossibile caricare la federazione — riprova.",
-  "fed.none":
-    "Nessun partner ancora — collega un holon qui sotto per condividere le bacheche.",
-  "fed.hint":
-    "Ricevi = mostra qui i loro elementi · Invia = condividi i nostri con loro",
+  "fed.pairHint":
+    "Ricevi = {a} mostra gli elementi di {b} · Invia = {a} condivide i propri",
   "fed.lensAria": "Federazione {lens}",
   "fed.off": "Off",
   "fed.receive": "Ricevi",
@@ -482,9 +475,6 @@ export const it: Record<MessageKey, Msg> = {
   "fed.both": "Entrambi",
   "fed.tapAgainUnlink": "Tocca di nuovo per scollegare",
   "fed.unlink": "Scollega {name}",
-  "fed.linking": "Collegamento…",
-  "fed.link": "Collega",
-  "fed.selfLink": "È questo holon.",
   "fed.linkError": "Impossibile collegare quell'holon — riprova.",
   "fed.changeError": "La modifica non è stata salvata — riprova.",
   "fed.unlinkError": "Lo scollegamento non è stato salvato — riprova.",

@@ -267,10 +267,22 @@ export function stepOrbs(
   const cy = height / 2;
   const idx = new Map(sim.ids.map((id, i) => [id, i]));
   const lifted = liftedId != null ? (idx.get(liftedId) ?? -1) : -1;
-  const rest = radius * 2.3; // linked orbs settle about this far apart
+  // Linked circles OVERLAP by ~25% of their diameter — the intersection is
+  // the tappable lens that configures the pair. The spring alone sets their
+  // distance (mutual repulsion is off for linked pairs below); rest sits a
+  // touch above the 75%-of-diameter target because central gravity squeezes
+  // a settled pair together by about that much.
+  const rest = radius * 1.55;
   const repel = radius * radius * 20; // unlinked orbs drift much farther out
   const padX = Math.min(radius * 1.3, width / 2);
   const padY = Math.min(radius * 1.3, height / 2);
+  const linked = new Set<number>();
+  for (const [a, b] of links) {
+    const i = idx.get(a);
+    const j = idx.get(b);
+    if (i != null && j != null && i !== j)
+      linked.add(Math.min(i, j) * n + Math.max(i, j));
+  }
   for (let i = 0; i < n; i++) {
     if (i !== lifted) {
       vx[i] += (cx - px[i]) * 0.004;
@@ -278,6 +290,7 @@ export function stepOrbs(
     }
     for (let j = i + 1; j < n; j++) {
       if (i === lifted || j === lifted) continue;
+      if (linked.has(i * n + j)) continue; // the spring owns this pair
       let dx = px[i] - px[j];
       let dy = py[i] - py[j];
       const d2 = dx * dx + dy * dy || 1;
@@ -349,6 +362,30 @@ export function orbLayout(
   const sim = seedOrbs(ids, width, height);
   for (let it = 0; it < 300; it++) stepOrbs(sim, links, width, height, radius);
   return orbPositions(sim);
+}
+
+/**
+ * The vesica between two overlapping circles of radius `r` — the intersection
+ * lens the dock highlights and makes tappable to configure a federated pair.
+ * Empty when the circles don't overlap (or are concentric).
+ */
+export function lensPath(a: Vec, b: Vec, r: number): string {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  if (d >= 2 * r || d < 1e-6) return "";
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const h = Math.sqrt(r * r - (d * d) / 4);
+  const ux = -(b.y - a.y) / d; // unit perpendicular to the centre line
+  const uy = (b.x - a.x) / d;
+  const rnd = (v: number) => Math.round(v * 10) / 10;
+  const p1x = rnd(mx + ux * h);
+  const p1y = rnd(my + uy * h);
+  const p2x = rnd(mx - ux * h);
+  const p2y = rnd(my - uy * h);
+  return (
+    `M ${p1x} ${p1y} A ${r} ${r} 0 0 1 ${p2x} ${p2y}` +
+    ` A ${r} ${r} 0 0 1 ${p1x} ${p1y} Z`
+  );
 }
 
 /** Convex hull (monotone chain), counter-clockwise, no repeated endpoint. */
