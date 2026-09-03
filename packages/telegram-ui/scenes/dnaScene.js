@@ -31,7 +31,7 @@ dnaScene.action('done', ctx => {
 });
 
 export function createScenesForDNA() {
-  //todo:load questions from gun db
+  //todo: load questions from the holon's dna lens
   return dnaData.dna.map((question, index) => {
     return createScene(question, index);
   });

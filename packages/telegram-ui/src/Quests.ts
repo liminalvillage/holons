@@ -421,8 +421,8 @@ export default class Quests {
         // Persist via @holons/core/tasks so the bot, web and any future UIs
         // share one persistence path. saveTasksToHolon returns the count of
         // successful saves (best-effort; logs failures internally).
-        // `holosphere.put` awaits Gun's local ack, so by the time this
-        // resolves the record is on disk.
+        // `holosphere.put` resolves once the record is in the local store
+        // (and queued for the relays).
         await saveTasksToHolon(holonDB, holonId.toString(), [quest as CoreQuest]);
 
         // Update buttons and pin message

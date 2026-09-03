@@ -1,5 +1,6 @@
 import { Scenes, Markup } from 'telegraf';
 import { getholonId } from '../src/utilities.js';
+import { mergeDna } from '../src/dna.js';
 
 // Create a scene
 const h3Scene = new Scenes.BaseScene('h3');
@@ -37,10 +38,7 @@ h3Scene.on('message', async ctx => {
   ctx.session.hex = ctx.message.web_app_data.data;
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun
-      .get(ctx.from.id.toString())
-      .get('hex')
-      .put(ctx.session.hex);
+    void mergeDna(ctx.session.db, ctx.from.id, { hex: ctx.session.hex });
     h3Scene.leave();
     return;
   }

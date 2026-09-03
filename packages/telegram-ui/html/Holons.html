@@ -889,66 +889,6 @@
 
                                     <h4 class="card-title mb-4">Upcoming</h4>
                                     <div id="upcoming-task" class="pb-1 task-list">
-                                        <script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1239/gun.js"></script>
-                                        <script>
-                                            gun = Gun({ peers: ['https://59.src.eco/gun'], axe:false });
-                                            var quests = gun.get('WeQuestDebug').get('235114395/quests')
-                                            ul = document.getElementById('upcoming-task');
-
-                                            quests.map().on((data, id) => {
-                                                console.log(data)
-                                                var li = $('#' + id)
-                                                if (!li.get(0)) {
-                                                    li = $('<div class="card task-box">').attr('id', id).appendTo(ul)
-                                                }
-                                                if (data) {
-                                                    object = JSON.parse(data)
-                                                    if (object.status == 'ongoing') {
-                                                        html = `
-                                                            <div class="card-body">
-                                                                <div class="float-end ms-2">
-                                                                    <span
-                                                                        class="badge rounded-pill bg-secondary-subtle text-secondary  font-size-12">Waiting</span>
-                                                                </div>
-                                                                <div>
-                                                                    <h5 class="font-size-15"><a href="javascript: void(0);"
-                                                                            class="text-reset">${object.title}</a></h5>
-                                                                    <p class="text-muted mb-4">${object.when ? Date(object.when).toLocaleString() : ''}</p>
-                                                                </div>
-                                                                <div class="team float-start">
-                                                                    <p class="mb-0 text-muted">Participants</p>
-                                                                    ${object.participants.map(u => '@' + u.username).join(', ')}
-                                                                    <a href="javascript: void(0);" class="team-member d-inline-block">
-                                                                        <img src="assets/images/users/liminal.png"
-                                                                            class="rounded-circle avatar-xs m-1" alt="">
-                                                                    </a>
-
-                                                                    <a href="javascript: void(0);" class="team-member d-inline-block">
-                                                                        <div class="avatar-xs">
-                                                                            <span
-                                                                                class="avatar-title rounded-circle bg-soft-primary text-primary">
-                                                                                3 +
-                                                                            </span>
-                                                                        </div>
-                                                                    </a>
-                                                                </div>
-
-                                                                <div class="text-end">
-                                                                    <h5 class="font-size-15 mb-1">${object.appreciation.length} </h5>
-                                                                    <p class="mb-0 text-muted">Appreciation</p>
-                                                                </div>
-                                                            </div>
-                                                        </div>`
-                                                        li.html(html);
-                                                    } else
-                                                        li.remove()  // remove completed quests
-                                                }
-                                                else { // remove deleted items
-                                                    li.remove()
-                                                }
-                                            });
-                                        </script>
-
                                     </div>
 
                                     <div class="text-center">

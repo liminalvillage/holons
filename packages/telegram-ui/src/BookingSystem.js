@@ -27,7 +27,7 @@ const __dirname = path.dirname(__filename);
  * Generates scenes dynamically and handles navigation, data storage, and admin notifications.
  *
  * @property {Object} bot - Telegraf bot instance
- * @property {Object} db - Database instance (Gun)
+ * @property {Object} db - Database instance (HoloSphere)
  * @property {Object} config - Loaded booking configuration from JSON
  * @property {Array} scenes - Generated Telegraf scenes
  * @property {NotificationService} notificationService - Admin notification handler

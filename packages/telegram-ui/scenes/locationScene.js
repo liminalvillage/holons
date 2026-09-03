@@ -1,4 +1,5 @@
 import { Scenes } from 'telegraf';
+import { mergeDna } from '../src/dna.js';
 
 // Create a scene for location input - using InputScene pattern
 const locationScene = new Scenes.BaseScene('location');
@@ -16,10 +17,9 @@ locationScene.enter(ctx => {
 
       if (!ctx.session.wizard) {
         // save the new data to the database
-        ctx.session.db.gun
-          .get(ctx.from.id.toString())
-          .get('location')
-          .put(ctx.session.location);
+        void mergeDna(ctx.session.db, ctx.from.id, {
+          location: ctx.session.location,
+        });
         if (ctx.session.sceneStack) {
           ctx.session.sceneStack.pop();
           if (ctx.session.sceneStack.length > 0) {

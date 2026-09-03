@@ -1,4 +1,5 @@
 import { Scenes, Markup } from 'telegraf';
+import { clearDna, readDna } from '../src/dna.js';
 
 // Create a scene for offboarding
 const welcomeScene = new Scenes.BaseScene('welcome');
@@ -23,9 +24,7 @@ welcomeScene.enter(async ctx => {
 
   // Check existing profile for individual users
   try {
-    const data = await new Promise(resolve => {
-      ctx.session.db.gun.get(ctx.from.id.toString()).once(resolve);
-    });
+    const data = await readDna(ctx.session.db, ctx.from.id);
 
     if (data) {
       return ctx.reply(
@@ -53,9 +52,8 @@ welcomeScene.enter(async ctx => {
 // Action handlers
 welcomeScene.action('DNA', async ctx => {
   await ctx.answerCbQuery().catch();
-  ctx.session.db.gun.get(ctx.from.id.toString()).once(data => {
-    ctx.reply('Your current DNA:\n\n' + JSON.stringify(data, null, 2));
-  });
+  const data = await readDna(ctx.session.db, ctx.from.id);
+  ctx.reply('Your current DNA:\n\n' + JSON.stringify(data, null, 2));
 });
 
 welcomeScene.action('change', async ctx => {
@@ -91,7 +89,7 @@ welcomeScene.action('dnawizard', async ctx => {
 
 welcomeScene.action('delete', async ctx => {
   await ctx.answerCbQuery().catch();
-  await ctx.session.db.gun.get(ctx.from.id.toString()).put(null);
+  await clearDna(ctx.session.db, ctx.from.id);
   await ctx.reply('Your DNA has been deleted, type /start to create a new DNA');
 });
 

@@ -9,8 +9,9 @@
  */
 import {
   createHoloSphere as coreCreateHoloSphere,
-  enableRelayBackup,
-  parseRelayBackupMode,
+  parseSigningMode,
+  resolveRelays,
+  signingOptionsFor,
 } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
@@ -49,10 +50,17 @@ function generatePrivateKey() {
  * 2) stored key from utils/key-storage
  * 3) generate new key
  *
+ * The relays are the wire (HOLOSPHERE_RELAYS, default: the production
+ * relays): every write is published as a signed kind-30078 event and every
+ * touched (holon, lens) is synced into a local file-backed store under
+ * HOLOSPHERE_STORE_DIR (default `./holosphere-store`), so a restart only
+ * catches up from its cursor instead of re-downloading the network.
+ *
  * @param {string} [appName] - Application name (defaults to env HOLONS_APP or 'Holons')
  * @param {Object} [options] - Additional HoloSphere configuration options
  * @param {string} [options.privateKey] - Override private key
  * @param {string[]} [options.relays] - Override relay list
+ * @param {{adapter?: string, dir?: string}} [options.store] - Override the local store
  * @param {string} [options.logLevel] - Log level (default: 'INFO')
  * @returns {HoloSphere} Configured HoloSphere instance
  *
@@ -66,9 +74,9 @@ export default function createHoloSphere(appName, options = {}) {
     appName || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
   const {
     privateKey: pkOverride,
-    backend,
     logLevel,
     relays: relaysOption,
+    store: storeOption,
     ...extra
   } = options;
   const privateKey =
@@ -76,36 +84,23 @@ export default function createHoloSphere(appName, options = {}) {
     process.env.HOLOSPHERE_PRIVATE_KEY ||
     getOrCreateKey(resolvedAppName, generatePrivateKey);
 
-  // Relays serve two DIFFERENT arrangements, picked by HOLOSPHERE_BACKEND:
-  //
-  //   HOLOSPHERE_BACKEND=nostr  → the relay is the WIRE. Gun runs peerless as
-  //     a local cache, so the bot sees only what is on the relay — a full
-  //     migration off gun.holons.io, not something to switch on casually.
-  //
-  //   anything else (default)   → Gun stays the wire and the relay is a
-  //     BACKUP: with HOLOSPHERE_SIGNING=shadow every write is additionally
-  //     published as a signed NIP-01 event. Nothing that works today changes.
-  //
-  // Either way needs HOLOSPHERE_RELAYS=wss://relay.holons.io[,wss://…] (or
-  // options.relays). See packages/holosphere/relay-transport.js.
-  const relays =
+  const relays = resolveRelays(
     Array.isArray(relaysOption) && relaysOption.length
       ? relaysOption
-      : (process.env.HOLOSPHERE_RELAYS || '')
-          .split(',')
-          .map(r => r.trim())
-          .filter(Boolean);
-  const resolvedBackend =
-    backend || process.env.HOLOSPHERE_BACKEND?.toLowerCase() || 'gun';
-  const relayIsWire = resolvedBackend === 'nostr' && relays.length > 0;
+      : process.env.HOLOSPHERE_RELAYS
+  );
+  const store = storeOption || {
+    adapter: 'file',
+    dir: process.env.HOLOSPHERE_STORE_DIR || './holosphere-store',
+  };
 
   // Standard-kind projections (HOLOSPHERE_PROJECTIONS=off|all|quests,events,…):
   // every write on a listed lens is ALSO published as its standard Nostr kind
   // (NIP-52 / NIP-99 / kind 0 / NIP-51) so third-party clients can read it.
   // Opt-in and only meaningful with relays. See packages/holosphere/NOSTR-BACKEND.md.
-  const projectionLenses = relays.length
-    ? parseProjectionList(process.env.HOLOSPHERE_PROJECTIONS)
-    : [];
+  const projectionLenses = parseProjectionList(
+    process.env.HOLOSPHERE_PROJECTIONS
+  );
   const projectionOptions = projectionLenses.length
     ? buildProjectionOptions(resolvedAppName, privateKey, projectionLenses)
     : {};
@@ -123,29 +118,25 @@ export default function createHoloSphere(appName, options = {}) {
     if (lookback) projectionOptions.reverseLookbackSec = lookback;
   }
 
+  // Callers depend on this factory staying synchronous: the instance is
+  // returned before its store has opened and its relay sync is up. Writes
+  // queue behind `ready()` inside holosphere; HolonsBotCore awaits it
+  // before launching the bot.
   const instance = coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
-    backend: resolvedBackend,
-    logLevel: logLevel || 'INFO',
-    extra: {
-      ...(relayIsWire ? { nostr: { relays, ...projectionOptions } } : {}),
-      ...extra,
-    },
-  });
-
-  // Callers depend on this factory staying synchronous, so the backup is armed
-  // in the background: writes in the first moments after startup may land on
-  // Gun before the publisher is up. A no-op unless HOLOSPHERE_SIGNING is set.
-  projectionHost.instance = instance;
-  enableRelayBackup(instance, {
     relays,
-    mode: parseRelayBackupMode(process.env.HOLOSPHERE_SIGNING),
-    backend: resolvedBackend,
-    ...projectionOptions,
-  }).then(on => {
-    if (on) console.log(`[holosphere] relay backup on → ${relays.join(', ')}`);
+    store,
+    signing: signingOptionsFor(
+      parseSigningMode(process.env.HOLOSPHERE_SIGNING)
+    ),
+    nostr: projectionOptions,
+    extra: { logLevel: logLevel || 'INFO', ...extra },
   });
+  projectionHost.instance = instance;
+  console.log(
+    `[holosphere] relays → ${relays.join(', ')} (store: ${store.adapter}${store.dir ? ` ${store.dir}` : ''})`
+  );
 
   return instance;
 }
@@ -419,7 +410,7 @@ export function createKeyManager(appName, options = {}) {
 
   // Create KeyManager with master holosphere
   const keyManager = new KeyManager(resolvedAppName, masterHolosphere, {
-    relays: options.relays || ['wss://relay.holons.io/'],
+    relays: resolveRelays(options.relays || process.env.HOLOSPHERE_RELAYS),
     logLevel: options.logLevel || 'INFO',
   });
 

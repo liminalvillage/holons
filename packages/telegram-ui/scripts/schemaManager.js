@@ -21,10 +21,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { HoloSphere } from 'holosphere';
-import { getRelays } from '../relay-config.js';
+import { resolveRelays } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
-import 'gun/sea.js';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
@@ -49,43 +48,13 @@ const holosphere = new HoloSphere({
   appName: appName,
   privateKey: privateKey,
   logLevel: 'WARN',
-  relays: getRelays('production'),
+  relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+  store: { adapter: 'memory' },
 });
 
 // Initialize JSON Schema validator
 const ajv = new Ajv({ allErrors: true });
 addFormats(ajv);
-
-// Authentication configuration
-const AUTH_CONFIG = {
-  username: process.env.HOLOSPHERE_USER || 'holonsbot-schema-uploader',
-  password: process.env.HOLOSPHERE_PASS || 'holons2024schemas!',
-};
-
-// Gun user for authentication
-let gunUser = null;
-
-// Function to authenticate with Gun/HoloSphere
-async function authenticateUser() {
-  return new Promise((resolve, reject) => {
-    console.log('🔐 Authenticating with holosphere...');
-
-    gunUser = holosphere.gun.user();
-
-    gunUser.auth(AUTH_CONFIG.username, AUTH_CONFIG.password, ack => {
-      if (ack.err) {
-        console.error('❌ Authentication failed:', ack.err);
-        console.log(
-          '💡 Make sure you have run uploadSchemas.js first to create the user'
-        );
-        reject(new Error(`Authentication failed: ${ack.err}`));
-      } else {
-        console.log('✅ Authentication successful');
-        resolve(true);
-      }
-    });
-  });
-}
 
 // Command handlers
 const commands = {
@@ -93,17 +62,10 @@ const commands = {
     console.log('📋 Listing all schemas in holosphere...');
 
     try {
-      await authenticateUser();
-
-      const registry = await new Promise((resolve, reject) => {
-        gunUser.get('schema_registry').once(data => {
-          if (data) {
-            resolve(data);
-          } else {
-            resolve(null);
-          }
-        });
-      });
+      const registry = await holosphere.getGlobal(
+        'schema_registry',
+        'registry'
+      );
 
       if (!registry) {
         console.log('❌ No schema registry found');
@@ -143,20 +105,7 @@ const commands = {
     console.log(`📥 Retrieving schema: \${schemaName}`);
 
     try {
-      await authenticateUser();
-
-      const schema = await new Promise((resolve, reject) => {
-        gunUser
-          .get('schemas')
-          .get(schemaName)
-          .once(data => {
-            if (data) {
-              resolve(data);
-            } else {
-              resolve(null);
-            }
-          });
-      });
+      const schema = await holosphere.getGlobal('schemas', schemaName);
 
       if (!schema) {
         console.log(`❌ Schema '\${schemaName}' not found`);
@@ -274,7 +223,10 @@ const commands = {
 
       // Update registry
       try {
-        const registry = await holosphere.getGlobal('schema_registry');
+        const registry = await holosphere.getGlobal(
+          'schema_registry',
+          'registry'
+        );
         if (registry) {
           const schemaIndex = registry.schemas.findIndex(
             s => s.name === schemaName
@@ -412,10 +364,13 @@ async function main() {
   }
 
   try {
+    await holosphere.ready();
     await commands[command](...args);
   } catch (error) {
     console.error('💥 Command execution error:', error.message);
     process.exit(1);
+  } finally {
+    await holosphere.close().catch(() => {});
   }
 }
 

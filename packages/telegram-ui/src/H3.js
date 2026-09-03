@@ -3,7 +3,6 @@
  * @module src/H3
  */
 
-import 'gun/lib/then.js';
 import { publishToFederation } from '@holons/core/federation';
 
 // WRAPPER CLASS FOR HOLOSPHERE
@@ -59,10 +58,6 @@ class H3 {
 
       const node = await this.db.getNode(holonId, 'quests', messageId);
       console.log(node);
-
-      // if (!node) {
-      //     node = await this.db.gun.get(holonId + '/' + messageId).put({ id: holonId + '/' + messageId, content: messageContent })
-      // }
 
       //for (let tag of tags) {
 
@@ -162,46 +157,6 @@ class H3 {
         ctx.reply('Error publishing quest');
       }
     });
-  }
-
-  reconstructNodeRef(soul) {
-    const parts = soul.split('/');
-    let ref = this.db.gun;
-    parts.forEach(part => {
-      ref = ref.get(part);
-    });
-    return ref;
-  }
-
-  findSoul(gunRef) {
-    // // Method 1: Direct soul
-    // if (gunRef._ && gunRef._['#']) {
-    //     console.log('soul found 1: ', gunRef._['#'])
-    //     return gunRef._['#']
-    // }
-
-    // // Method 2: Back reference
-    // if (gunRef._.back && gunRef._.back.link) {
-    //     console.log('soul found 2: ', gunRef._.back.link)
-    //     return gunRef._.back.link;
-    // }
-
-    // Method 4: Check back chain
-    let back = gunRef._.back;
-    let backChain = [];
-    while (back) {
-      if (back.get) backChain.push(back.get);
-      //if (back.link) backChain.push(back.link);
-      back = back.back;
-    }
-    if (backChain.length > 0) {
-      //reverse the backchain
-      backChain = backChain.reverse();
-      //chain the backchain into a string
-      let soul = backChain.join('/');
-      soul += '/' + gunRef._.get;
-      return soul;
-    } else return null;
   }
 }
 

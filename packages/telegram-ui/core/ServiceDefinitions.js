@@ -146,59 +146,39 @@ export const serviceDefinitions = {
       const appname =
         process.env.HOLONS_APP ||
         (config.isDevelopment ? 'HolonsDebug' : 'Holons');
-      // Env-driven factory (src/createHoloSphere.js): HOLOSPHERE_BACKEND
-      // ('nostr' = relay is the wire, gun peerless cache), HOLOSPHERE_RELAYS,
+      // Env-driven factory (src/createHoloSphere.js): HOLOSPHERE_RELAYS is
+      // the wire, HOLOSPHERE_STORE_DIR the warm local store,
       // HOLOSPHERE_PROJECTIONS(+_SYNC) standard-kind projections + reverse
-      // sync, HOLOSPHERE_SIGNING relay backup. The previous direct
-      // `new HoloSphere(appname, false, null, { peers })` bypassed all of it.
+      // sync, HOLOSPHERE_SIGNING the read-side signing mode.
       const { default: createHoloSphere } =
         await import('../src/createHoloSphere.js');
-      const backend = (process.env.HOLOSPHERE_BACKEND || 'gun').toLowerCase();
-      const holosphere = createHoloSphere(appname, {
-        // Gun-wire mode keeps the HOLONS_PEER override; the nostr wire is peerless.
-        ...(backend !== 'nostr' && process.env.HOLONS_PEER
-          ? { gunOptions: { peers: [process.env.HOLONS_PEER] } }
-          : {}),
-      });
-      // Inspect the local radisk file at startup so we can see what survived
+      const holosphere = createHoloSphere(appname);
+      // Inspect the local store at startup so we can see what survived.
+      const storeDir = process.env.HOLOSPHERE_STORE_DIR || './holosphere-store';
+      let storeFiles = [];
       try {
         const fs = await import('fs');
         const path = await import('path');
-        const radDir = path.resolve(process.cwd(), 'holosphere');
-        let stat = null,
-          files = [];
-        try {
-          stat = fs.statSync(radDir);
-          files = fs.readdirSync(radDir).map(name => {
-            try {
-              const s = fs.statSync(path.join(radDir, name));
-              return { name, size: s.size, mtime: s.mtime.toISOString() };
-            } catch {
-              return { name, error: 'stat-failed' };
-            }
-          });
-        } catch (e) {
-          stat = { missing: true, error: e.message };
-        }
-        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
-          appname,
-          isDevelopment: config.isDevelopment,
-          cwd: process.cwd(),
-          radiskFile: './holosphere',
-          radiskExists: !!stat && !stat.missing,
-          radiskFiles: files,
-          pid: process.pid,
+        const dir = path.resolve(process.cwd(), storeDir);
+        storeFiles = fs.readdirSync(dir).map(name => {
+          try {
+            const st = fs.statSync(path.join(dir, name));
+            return { name, size: st.size, mtime: st.mtime.toISOString() };
+          } catch {
+            return { name, error: 'stat-failed' };
+          }
         });
-      } catch (e) {
-        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
-          appname,
-          isDevelopment: config.isDevelopment,
-          cwd: process.cwd(),
-          radiskFile: './holosphere',
-          inspectError: e.message,
-          pid: process.pid,
-        });
+      } catch {
+        storeFiles = [{ missing: true }];
       }
+      console.log('[QUEST_PERSIST_DEBUG] BOOT', {
+        appname,
+        isDevelopment: config.isDevelopment,
+        cwd: process.cwd(),
+        storeDir,
+        storeFiles,
+        pid: process.pid,
+      });
 
       const keyManager = {
         masterHolosphere: holosphere,

@@ -1,4 +1,5 @@
 import { Scenes } from 'telegraf';
+import { mergeDna } from '../src/dna.js';
 
 // Create a scene for video input - using InputScene pattern
 const videoScene = new Scenes.BaseScene('video');
@@ -19,10 +20,9 @@ videoScene.enter(ctx => {
 
       if (!ctx.session.wizard) {
         // save the new data to the database
-        ctx.session.db.gun
-          .get(ctx.from.id.toString())
-          .get('video')
-          .put(ctx.session.video);
+        void mergeDna(ctx.session.db, ctx.from.id, {
+          video: ctx.session.video,
+        });
         if (ctx.session.sceneStack) {
           ctx.session.sceneStack.pop();
           if (ctx.session.sceneStack.length > 0) {

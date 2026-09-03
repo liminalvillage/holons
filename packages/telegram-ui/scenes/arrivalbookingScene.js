@@ -1,5 +1,6 @@
 import { Scenes } from 'telegraf';
 import { Calendar } from '../src/Calendar.js';
+import { mergeDna } from '../src/dna.js';
 
 // Create a scene for onboarding
 const arrivalbookingScene = new Scenes.BaseScene('arrivalbooking');
@@ -22,10 +23,9 @@ arrivalbookingScene.on('callback_query', ctx => {
   ctx.session.arrival = when;
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun
-      .get(ctx.from.id.toString())
-      .get('arrival')
-      .put(ctx.session.arrival);
+    void mergeDna(ctx.session.db, ctx.from.id, {
+      arrival: ctx.session.arrival,
+    });
     ctx.session.sceneStack.pop();
     ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
     return;

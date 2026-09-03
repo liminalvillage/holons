@@ -29,13 +29,7 @@ type TelebotLike = Telegraf<Context> & {
 /** Minimal shape used when interacting with the database service in this module. */
 interface DatabaseLike {
   appname?: string;
-  gun?: GunLike;
-  getGun?: () => GunLike | undefined;
-}
-
-/** The slice of the Gun.js API that this module touches. */
-interface GunLike {
-  get(key: string): { once(cb: () => void): unknown };
+  ready?: () => Promise<unknown>;
 }
 
 /** The slice of the Library service that this module touches. */
@@ -128,17 +122,14 @@ class HolonsBot {
       // Setup process event handlers
       this.setupProcessHandlers();
 
-      // Warm up GunDB cache — subscribe to known data so peer sync starts early
+      // Wait for the local store to open and the relay transport to come up
+      // so the first Telegram update reads a hydrated store, not an empty one.
       try {
         const db = await this.container.get<DatabaseLike>('database');
-        const gun = db.gun || db.getGun?.();
-        if (gun) {
-          // Touch the top-level app node to trigger sync from peers
-          gun.get(db.appname || 'Holons').once(() => {});
-          log.info('GunDB warmup: subscribed to peer data');
-        }
+        await db.ready?.();
+        log.info('Holosphere ready: local store open, relay sync up');
       } catch (e) {
-        log.warn('GunDB warmup failed (non-fatal)', { error: errorMessage(e) });
+        log.warn('Holosphere warmup failed (non-fatal)', { error: errorMessage(e) });
       }
 
       // Launch the Telegram bot now that everything is initialized

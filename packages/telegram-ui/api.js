@@ -15,7 +15,6 @@ loadDotenv();
 import http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 const APP = process.env.HOLONS_APP || 'HolonsDebug';
 const PORT = parseInt(
   process.argv[process.argv.indexOf('--port') + 1] || '3101'
@@ -29,9 +28,15 @@ if (!BOT_TOKEN) {
 let hs;
 async function getHS() {
   if (hs) return hs;
-  const { HoloSphere } = await import('holosphere');
-  hs = new HoloSphere(APP, false, null, { peers: [PEER] });
-  await new Promise(r => setTimeout(r, 2000));
+  const { createHoloSphere, resolveRelays } =
+    await import('@holons/core/holosphere');
+  hs = await createHoloSphere({
+    appName: APP,
+    privateKey: process.env.HOLOSPHERE_PRIVATE_KEY || null,
+    relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+    store: { adapter: 'memory' },
+    awaitReady: true,
+  });
   return hs;
 }
 

@@ -97,12 +97,14 @@ class KeyManager {
       generatePrivateKey
     );
 
-    // Create HoloSphere instance with holon's key
+    // Create HoloSphere instance with holon's key. Per-holon signers share
+    // the master's relays; their store stays in memory (the master holds
+    // the warm file store — this one only needs to sign and publish).
     const holosphere = new HoloSphere({
-      backend: 'nostr',
       appName: this.appName,
       privateKey: privateKey,
       relays: this.options.relays || ['wss://relay.holons.io/'],
+      store: { adapter: 'memory' },
       logLevel: this.options.logLevel || 'INFO',
     });
 

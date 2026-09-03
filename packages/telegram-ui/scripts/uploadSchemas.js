@@ -14,10 +14,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { HoloSphere } from 'holosphere';
-import { getRelays } from '../relay-config.js';
+import { resolveRelays } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
-import 'gun/sea.js';
 
 // Get current directory for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -36,85 +35,18 @@ const privateKey =
   process.env.HOLOSPHERE_PRIVATE_KEY ||
   getOrCreateKey(appName, generatePrivateKey);
 
+// Schemas are public global records (`schemas/<name>`, registry under
+// `schema_registry/registry`), signed by this key and published to the relays.
 const holosphere = new HoloSphere({
   appName: appName,
   privateKey: privateKey,
   logLevel: 'WARN',
-  relays: getRelays('production'),
+  relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+  store: { adapter: 'memory' },
 });
-
-// Gun user for authentication
-let gunUser = null;
-let isAuthenticated = false;
 
 // Schema directory path
 const schemasDir = path.join(__dirname, '..', 'schemas');
-
-// Authentication configuration
-const AUTH_CONFIG = {
-  username: process.env.HOLOSPHERE_USER || 'holonsbot-schema-uploader',
-  password: process.env.HOLOSPHERE_PASS || 'holons2024schemas!',
-  autoCreate: true, // Will create user if it doesn't exist
-};
-
-// Function to authenticate with Gun/HoloSphere
-async function authenticateUser() {
-  return new Promise((resolve, reject) => {
-    console.log('🔐 Authenticating with holosphere...');
-
-    // Get Gun user instance
-    gunUser = holosphere.gun.user();
-
-    // First try to authenticate
-    gunUser.auth(AUTH_CONFIG.username, AUTH_CONFIG.password, ack => {
-      if (ack.err && AUTH_CONFIG.autoCreate) {
-        console.log('👤 User not found, creating new user...');
-
-        // Create new user if authentication failed
-        gunUser.create(
-          AUTH_CONFIG.username,
-          AUTH_CONFIG.password,
-          createAck => {
-            if (createAck.err) {
-              console.error('❌ Failed to create user:', createAck.err);
-              reject(new Error(`Failed to create user: ${createAck.err}`));
-              return;
-            }
-
-            console.log('✅ User created successfully');
-
-            // Now authenticate with the new user
-            gunUser.auth(
-              AUTH_CONFIG.username,
-              AUTH_CONFIG.password,
-              authAck => {
-                if (authAck.err) {
-                  console.error(
-                    '❌ Failed to authenticate new user:',
-                    authAck.err
-                  );
-                  reject(new Error(`Failed to authenticate: ${authAck.err}`));
-                  return;
-                }
-
-                console.log('✅ Authentication successful');
-                isAuthenticated = true;
-                resolve(true);
-              }
-            );
-          }
-        );
-      } else if (ack.err) {
-        console.error('❌ Authentication failed:', ack.err);
-        reject(new Error(`Authentication failed: ${ack.err}`));
-      } else {
-        console.log('✅ Authentication successful');
-        isAuthenticated = true;
-        resolve(true);
-      }
-    });
-  });
-}
 
 // Function to read and upload a schema file
 async function uploadSchema(filename) {
@@ -138,25 +70,10 @@ async function uploadSchema(filename) {
       },
     };
 
-    // Upload to holosphere using authenticated user
     console.log(`📤 Uploading schema: ${schemaName}`);
-
-    if (!isAuthenticated || !gunUser) {
-      throw new Error('User not authenticated');
-    }
-
-    // Use Gun user to put data
-    await new Promise((resolve, reject) => {
-      gunUser
-        .get('schemas')
-        .get(schemaName)
-        .put(schemaWithMeta, ack => {
-          if (ack.err) {
-            reject(new Error(`Failed to upload schema: ${ack.err}`));
-          } else {
-            resolve();
-          }
-        });
+    await holosphere.putGlobal('schemas', {
+      ...schemaWithMeta,
+      id: schemaName,
     });
 
     console.log(`✅ Successfully uploaded: ${schemaName}`);
@@ -189,19 +106,9 @@ async function uploadSchemaRegistry(uploadedSchemas) {
 
     console.log(`📤 Uploading schema registry...`);
 
-    if (!isAuthenticated || !gunUser) {
-      throw new Error('User not authenticated');
-    }
-
-    // Use Gun user to put registry data
-    await new Promise((resolve, reject) => {
-      gunUser.get('schema_registry').put(registry, ack => {
-        if (ack.err) {
-          reject(new Error(`Failed to upload registry: ${ack.err}`));
-        } else {
-          resolve();
-        }
-      });
+    await holosphere.putGlobal('schema_registry', {
+      ...registry,
+      id: 'registry',
     });
 
     console.log(`✅ Successfully uploaded schema registry`);
@@ -219,8 +126,7 @@ async function uploadAllSchemas() {
   console.log(`📁 Schemas directory: ${schemasDir}`);
 
   try {
-    // Authenticate first
-    await authenticateUser();
+    await holosphere.ready();
 
     // Check if schemas directory exists
     if (!fs.existsSync(schemasDir)) {
@@ -278,6 +184,7 @@ async function uploadAllSchemas() {
     // Also create a verification script
     await createVerificationScript();
 
+    await holosphere.close();
     process.exit(failed > 0 ? 1 : 0);
   } catch (error) {
     console.error('💥 Fatal error during schema upload:', error.message);
@@ -295,7 +202,7 @@ async function createVerificationScript() {
  */
 
 import { HoloSphere } from 'holosphere';
-import { getRelays } from '../relay-config.js';
+import { resolveRelays } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
 
@@ -313,7 +220,8 @@ const holosphere = new HoloSphere({
     appName: appName,
     privateKey: privateKey,
     logLevel: 'WARN',
-    relays: getRelays('production')
+    relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+    store: { adapter: 'memory' },
 });
 
 async function verifySchemas() {
@@ -321,7 +229,7 @@ async function verifySchemas() {
 
     try {
         // Get schema registry
-        const registry = await holosphere.getGlobal('schema_registry');
+        const registry = await holosphere.getGlobal('schema_registry', 'registry');
 
         if (!registry) {
             console.log('❌ Schema registry not found');
@@ -358,7 +266,8 @@ async function verifySchemas() {
 }
 
 // Run verification
-verifySchemas().then(success => {
+verifySchemas().then(async success => {
+    await holosphere.close();
     if (success) {
         console.log('🎉 All schemas verified successfully!');
         process.exit(0);

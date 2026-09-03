@@ -422,12 +422,9 @@ export default class Settings {
                     new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout after ${ms}ms`)), ms)),
                 ]).then(v => ({ ok: true, v }), e => ({ ok: false, err: e.message, label }));
 
-                // holosphere.deleteAll bails as "success" with zero deletions
-                // when Gun's cache is cold (dataPath.once() fires with null —
-                // see node_modules/holosphere/content.js:962). Enumerate via
-                // getAll, which retries on cold cache, then issue per-item
-                // deletes so put(null) actually fires for every item and the
-                // count reflects what was deleted.
+                // Enumerate via getAll (which awaits the relay sync for a lens
+                // this bot has never touched), then issue per-item deletes so
+                // the count reflects what was actually tombstoned.
                 let deletedCount = 0;
                 for (const lens of lenses) {
                     const t0 = Date.now();
@@ -4193,23 +4190,17 @@ export default class Settings {
             const userName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Unknown';
             await ctx.reply(`⏳ Looking up ${lens.slice(0, -1)}...`);
 
-            // Read from GunDB
             const appName = this.db.appname || process.env.HOLONS_APP || process.env.APPNAME || 'Holons';
             console.log(`[Deeplink] Reading: ${appName} > ${targetHolonId} > ${lens} > ${itemId}`);
 
-            const item = await new Promise((resolve) => {
-                this.db.gun.get(appName).get(targetHolonId).get(lens).get(itemId).once((data) => {
-                    console.log(`[Deeplink] Gun response:`, typeof data, data ? String(data).substring(0, 200) : 'null');
-                    if (data && typeof data === 'string') {
-                        try { resolve(JSON.parse(data)); } catch { resolve(null); }
-                    } else if (data && typeof data === 'object') {
-                        resolve(data);
-                    } else {
-                        resolve(null);
-                    }
-                });
-                setTimeout(() => { console.log('[Deeplink] Gun timeout'); resolve(null); }, 8000);
-            });
+            // Live-resolved read (holograms followed); awaits the relay sync
+            // for a lens this bot has never touched.
+            let item: any = null;
+            try {
+                item = await this.db.get(targetHolonId, lens, itemId);
+            } catch (err) {
+                console.log('[Deeplink] read failed:', (err as any)?.message);
+            }
 
             if (!item) {
                 await ctx.reply(`❌ Could not find that ${lens.slice(0, -1)}.\n\nDebug: app=${appName} holon=${targetHolonId} lens=${lens} id=${itemId}`);

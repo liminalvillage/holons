@@ -1,4 +1,5 @@
 import { Scenes, Markup } from 'telegraf';
+import { mergeDna } from '../src/dna.js';
 
 // Define the values that can function as the user's DNA
 const values = [
@@ -101,10 +102,7 @@ valuesScene.action('next_page', ctx => {
 valuesScene.action('done_picking', ctx => {
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun
-      .get(ctx.from.id.toString())
-      .get('values')
-      .put(ctx.session.values);
+    void mergeDna(ctx.session.db, ctx.from.id, { values: ctx.session.values });
     valuesScene.leave();
     ctx.session.sceneStack.pop();
     ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);

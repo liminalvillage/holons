@@ -2,6 +2,7 @@ import { Scenes, Markup } from 'telegraf';
 import { getQuestions } from '../src/AI.js';
 import questionsData from '../data/questions.json' with { type: 'json' };
 import enquiryTypes from '../data/enquiries.json' with { type: 'json' };
+import { mergeDna } from '../src/dna.js';
 
 // Create a scene
 export const questionsScene = new Scenes.BaseScene('questions');
@@ -58,7 +59,7 @@ questionsScene.action(/enquiry_(.+)/, ctx => {
 });
 
 export function createScenesForQuestions() {
-  //todo:load questions from gun db
+  //todo: load questions from the holon's dna lens
   return questionsData.questions.map(question => {
     return createScene(question);
   });
@@ -106,10 +107,9 @@ function createScene(question) {
       ctx.reply('Thank you for completing the questions!');
       if (!ctx.session.wizard) {
         // save the new data to the database
-        ctx.session.db.gun
-          .get(ctx.from.id.toString())
-          .get('questions')
-          .put(ctx.session.questions);
+        void mergeDna(ctx.session.db, ctx.from.id, {
+          questions: ctx.session.questions,
+        });
         ctx.session.sceneStack.pop();
         ctx.scene.enter(
           ctx.session.sceneStack[ctx.session.sceneStack.length - 1]

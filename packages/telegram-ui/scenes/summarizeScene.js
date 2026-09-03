@@ -1,5 +1,6 @@
 import { Scenes } from 'telegraf';
 import { summarize } from '../src/AI.js';
+import { mergeDna } from '../src/dna.js';
 
 const summarizeScene = new Scenes.BaseScene('summarize');
 
@@ -17,10 +18,7 @@ summarizeScene.command('done', async ctx => {
     ctx.session.summary = summary;
     if (!ctx.session.wizard) {
       // save the new data to the database
-      ctx.session.db.gun
-        .get(ctx.from.id.toString())
-        .get('summary')
-        .put(summary);
+      void mergeDna(ctx.session.db, ctx.from.id, { summary: summary });
       ctx.reply(summary);
       ctx.scene.leave();
 
