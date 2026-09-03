@@ -7,8 +7,9 @@
   // federated boards gather into constellations — each wrapped in a soft
   // hull, its holographic bound. Tap a circle to expand it back into the
   // window, long-press for edit mode (every circle grows a ✕), and the "+"
-  // in the tray adds a board from an id, a registered label, or a pasted
-  // link (parseHolonPaste accepts anything people actually copy).
+  // in the tray adds a hub from an id, a registered label, an identity
+  // (npub, Ethereum address), a pasted link, or any bare name
+  // (parseHolonAdd accepts anything people actually copy or type).
   import { onMount, tick } from "svelte";
   import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import {
@@ -328,7 +329,7 @@
     addInput?.focus();
   }
   async function submitAdd() {
-    const id = parseHolonPaste(draft);
+    const id = parseHolonAdd(draft);
     if (!id) {
       addError = $t("dock.addInvalid");
       return;

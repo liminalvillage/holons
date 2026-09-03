@@ -8,10 +8,15 @@ import { describe, it as spec, expect } from "vitest";
 import {
   holonForHost,
   holonForPath,
+  parseHolonAdd,
   parseHolonPaste,
   parseHolonRef,
   subdomainOf,
 } from "./holons";
+
+// A holon can be keyed by any of a person's identities, not only a chat id.
+const ETH = "0x52908400098527886E0F7030069857D2E4169EE7";
+const NPUB = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6";
 
 describe("subdomainOf", () => {
   spec("takes the label attached to the base domain", () => {
@@ -77,6 +82,20 @@ describe("parseHolonRef", () => {
     );
   });
 
+  spec("takes an identity — Ethereum address or npub — as the id", () => {
+    // Normalised to lowercase so checksum-cased and plain copies of the same
+    // address land in the same holon namespace.
+    expect(parseHolonRef(ETH)).toBe(ETH.toLowerCase());
+    expect(parseHolonRef(ETH.toLowerCase())).toBe(ETH.toLowerCase());
+    expect(parseHolonRef(NPUB)).toBe(NPUB);
+  });
+
+  spec("refuses identity look-alikes", () => {
+    expect(parseHolonRef("0x1234")).toBeNull(); // too short for an address
+    expect(parseHolonRef(ETH + "ff")).toBeNull(); // too long
+    expect(parseHolonRef("npub1tooshort")).toBeNull();
+  });
+
   spec("is null on anything that names no holon", () => {
     expect(parseHolonRef("")).toBeNull();
     expect(parseHolonRef("   ")).toBeNull();
@@ -90,6 +109,10 @@ describe("holonForHost", () => {
   spec("a declared mapping wins", () => {
     expect(holonForHost("akasha.hubs.network")).toBe("-1003958094547");
     expect(holonForHost("liminal.hubs.network")).toBe("-1003864542239");
+    // "valley" and "commons" are two names for the same holon.
+    expect(holonForHost("valley.hubs.network")).toBe(
+      holonForHost("commons.hubs.network"),
+    );
   });
 
   spec("an undeclared subdomain IS the holon id", () => {
@@ -156,4 +179,39 @@ describe("parseHolonPaste", () => {
       expect(parseHolonPaste("we met the liminal crew last week")).toBeNull();
     },
   );
+
+  spec("finds an identity in prose without shredding it into digits", () => {
+    // ID_IN_TEXT would otherwise pluck a digit run out of the hex/bech32.
+    expect(parseHolonPaste(`my address is ${ETH}, add me`)).toBe(
+      ETH.toLowerCase(),
+    );
+    expect(parseHolonPaste(`on nostr I'm ${NPUB}.`)).toBe(NPUB);
+  });
+});
+
+describe("parseHolonAdd", () => {
+  spec("accepts everything the paste parse does", () => {
+    expect(parseHolonAdd("-1001234567890")).toBe("-1001234567890");
+    expect(parseHolonAdd("This holon ID is -1001234567890")).toBe(
+      "-1001234567890",
+    );
+    expect(parseHolonAdd(ETH)).toBe(ETH.toLowerCase());
+    expect(parseHolonAdd(NPUB)).toBe(NPUB);
+  });
+
+  spec("a registered name resolves to its holon id, not itself", () => {
+    expect(parseHolonAdd("liminal")).toBe("-1003864542239");
+    expect(parseHolonAdd("Liminal")).toBe("-1003864542239");
+  });
+
+  spec("any bare alphanumeric token is taken verbatim as an id", () => {
+    expect(parseHolonAdd("myfarm")).toBe("myfarm");
+    expect(parseHolonAdd("  my-farm_2 ")).toBe("my-farm_2");
+  });
+
+  spec("still refuses what cannot be an id", () => {
+    expect(parseHolonAdd("")).toBeNull();
+    expect(parseHolonAdd("our garden group")).toBeNull(); // spaces → a sentence
+    expect(parseHolonAdd("-notanid")).toBeNull(); // leading '-' is ids only
+  });
 });

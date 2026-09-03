@@ -293,29 +293,34 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.menu": "Menú",
   "tabbar.login": "Entrar",
   "tabbar.views": "Vistas",
-  "tabbar.pinnedTitle": "Fijada — mantén pulsado para soltar",
-  "tabbar.pinTitle": "Mantén pulsado para fijar",
+  "tabbar.pinnedHint":
+    "Fijada — mantén pulsado para editar las pestañas, arrastra para reordenar",
+  "tabbar.holdHint":
+    "Mantén pulsado para editar las pestañas — arrastra para reordenar, ✕ para quitar",
+  "tabbar.removeTab": "Quitar la pestaña {tab}",
+  "tabbar.addTab": "Añadir una pestaña",
+  "tabbar.addMenu": "Pestañas que puedes añadir",
   "tabbar.unpinTab": "Soltar {tab}",
   "tabbar.pinTab": "Fijar en {tab}",
   "tabbar.unpinView": "Soltar esta vista",
   "tabbar.pinView": "Fijar esta vista",
 
-  // Dock (the board's window closed into a circle per visited board)
-  "dock.close": "Cerrar este tablón",
-  "dock.boards": "Tus tablones",
+  // Dock (the hub's window closed into a circle per visited hub)
+  "dock.close": "Cerrar este hub",
+  "dock.boards": "Tus hubs",
   "dock.open": "Abrir {name}",
   "dock.delete": "Quitar {name}",
-  "dock.add": "Añadir un tablón",
-  "dock.addPlaceholder": "Id del holon, etiqueta o enlace",
+  "dock.add": "Añadir un hub",
+  "dock.addPlaceholder": "Id del holon, nombre, npub, dirección o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
   "dock.hint":
-    "Toca un círculo para abrir su tablón, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
-  "dock.deck": "Círculos",
-  "dock.map": "Mapa",
+    "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
+  "dock.deck": "Holosfera",
+  "dock.map": "Geosfera",
   "dock.mapHint":
-    "Toca un hexágono para abrir su tablón — un tablón elige su lugar en Ajustes → Fijar la ubicación.",
+    "Toca un hexágono para abrir su hub — un hub elige su lugar en Ajustes → Fijar la ubicación.",
   "dock.mapUnavailable":
-    "El mapa necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para mostrarlo.",
+    "La geosfera necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para mostrarla.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Elige una lente",
@@ -467,6 +472,13 @@ export const es: Record<MessageKey, Msg> = {
   "settings.dark": "Oscuro",
   "settings.language": "Idioma",
   "settings.languageSub": "— Auto sigue el idioma del holón",
+  "settings.tasksTab": "Pestaña Tareas",
+  "settings.tasksTabSub":
+    "— la lista de tareas; activa salvo que la quites. Mantén pulsada una pestaña en la barra para quitarla allí, + para añadir una",
+  "settings.tasksTabAria": "Mostrar la pestaña Tareas",
+  "settings.calendarTab": "Pestaña Calendario",
+  "settings.calendarTabSub": "— activa salvo que la quites",
+  "settings.calendarTabAria": "Mostrar la pestaña Calendario",
   "settings.libraryTab": "Pestaña Biblioteca",
   "settings.libraryTabSub":
     "— aparece sola cuando la biblioteca tiene objetos; actívala para forzarla",
@@ -481,7 +493,7 @@ export const es: Record<MessageKey, Msg> = {
   "settings.listsTabAria": "Mostrar la pestaña Listas",
   "settings.shiftsTab": "Pestaña Turnos",
   "settings.shiftsTabSub":
-    "— turnos comunitarios del relay compartido (formato Elinor); aparece sola cuando existen turnos",
+    "— turnos comunitarios del relay compartido; aparece sola cuando existen turnos",
   "settings.shiftsTabAria": "Mostrar la pestaña Turnos",
   "settings.statusTab": "Pestaña Estado",
   "settings.statusTabSub": "— una clasificación de contribuciones",
@@ -512,10 +524,10 @@ export const es: Record<MessageKey, Msg> = {
   "settings.location": "Ubicación",
   "settings.locationSub":
     "— la celda H3 que este holón reclama en el mapa compartido",
-  "settings.holonColor": "Color del tablero",
+  "settings.holonColor": "Color del hub",
   "settings.holonColorSub":
-    "— el color de este tablero, de su círculo en el dock, de su hexágono en el mapa",
-  "settings.holonColorPick": "Elige el color del tablero",
+    "— el color de este hub, de su círculo en la holosfera, de su hexágono en la geosfera",
+  "settings.holonColorPick": "Elige el color del hub",
   "settings.holonColorAuto": "Automático",
   "settings.holonColorIsAuto": "automático",
   "settings.holonColorFailed": "No se pudo guardar el color.",
@@ -574,7 +586,7 @@ export const es: Record<MessageKey, Msg> = {
   "detail.completeFailed": "No se pudo completar.",
   "detail.deleteConfirm": '¿Eliminar "{title}"? No se puede deshacer.',
   "detail.hideConfirm":
-    '¿Ocultar "{title}" de este tablero? Pertenece a otro holón y permanece allí — solo desaparece de tu vista.',
+    '¿Ocultar "{title}" de este hub? Pertenece a otro holón y permanece allí — solo desaparece de tu vista.',
   "detail.thisTask": "esta tarea",
   "detail.deleteFailed": "No se pudo eliminar — inténtalo de nuevo.",
   "detail.hideFailed": "No se pudo ocultar — inténtalo de nuevo.",
@@ -770,7 +782,7 @@ export const es: Record<MessageKey, Msg> = {
   "home.tool7": "Gastos y flujos",
   "home.tool8": "Una memoria de las contribuciones",
   "home.toolsNote":
-    "Esta pantalla es una de ellas: apúntala a un hub y se convierte en su tablero, colgado en la pared junto a la puerta.",
+    "Esta pantalla es una de ellas: apúntala a un hub y se convierte en ese hub, colgado en la pared junto a la puerta.",
 
   "home.fedKicker": "Conectores",
   "home.fedTitle": "Cómo se conectan los hubs.",
@@ -783,14 +795,14 @@ export const es: Record<MessageKey, Msg> = {
 
   "home.backTitle": "Bienvenida de vuelta.",
   "home.backLead":
-    "En cuanto el bot entra en tu chat, publica un enlace directo a este tablero. Si te lo perdiste, lanza el comando de abajo en ese chat y pega aquí su respuesta.",
+    "En cuanto el bot entra en tu chat, publica un enlace directo a este hub. Si te lo perdiste, lanza el comando de abajo en ese chat y pega aquí su respuesta.",
   "home.openTitle": "¿Ya tienes un hub?",
   "home.openLead":
-    "Pega su enlace o su id y esta pantalla se convierte en su tablero.",
+    "Pega su enlace o su id y esta pantalla se convierte en su hub.",
   "home.openHint":
     "Escríbelo en el chat de tu hub. El bot responde con el id — pega la respuesta entera, la encontrará.",
   "home.openPlaceholder": "-1001234567890, o un enlace a tu grupo",
-  "home.openButton": "Abrir el tablero",
+  "home.openButton": "Abrir el hub",
   "home.openInvalid":
     "Ahí dentro no hay ningún id. Lanza /id en el chat de tu hub y pega lo que responda el bot.",
   "home.openAria": "Id o enlace del hub",

@@ -294,29 +294,34 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.menu": "Menu",
   "tabbar.login": "Accedi",
   "tabbar.views": "Viste",
-  "tabbar.pinnedTitle": "Fissata — tieni premuto per sbloccare",
-  "tabbar.pinTitle": "Tieni premuto per fissare",
+  "tabbar.pinnedHint":
+    "Fissata — tieni premuto per modificare le schede, trascina per riordinare",
+  "tabbar.holdHint":
+    "Tieni premuto per modificare le schede — trascina per riordinare, ✕ per togliere",
+  "tabbar.removeTab": "Togli la scheda {tab}",
+  "tabbar.addTab": "Aggiungi una scheda",
+  "tabbar.addMenu": "Schede che puoi aggiungere",
   "tabbar.unpinTab": "Sblocca {tab}",
   "tabbar.pinTab": "Fissa su {tab}",
   "tabbar.unpinView": "Sblocca questa vista",
   "tabbar.pinView": "Fissa questa vista",
 
-  // Dock (the board's window closed into a circle per visited board)
-  "dock.close": "Chiudi questa bacheca",
-  "dock.boards": "Le tue bacheche",
+  // Dock (the hub's window closed into a circle per visited hub)
+  "dock.close": "Chiudi questo hub",
+  "dock.boards": "I tuoi hub",
   "dock.open": "Apri {name}",
   "dock.delete": "Rimuovi {name}",
-  "dock.add": "Aggiungi una bacheca",
-  "dock.addPlaceholder": "Id dell'holon, etichetta o link",
+  "dock.add": "Aggiungi un hub",
+  "dock.addPlaceholder": "Id dell'holon, nome, npub, indirizzo o link",
   "dock.addInvalid": "Questo non identifica un holon.",
   "dock.hint":
-    "Tocca un cerchio per aprire la sua bacheca, tienilo premuto per rimuoverlo — trascinane uno su un altro per federarli.",
-  "dock.deck": "Cerchi",
-  "dock.map": "Mappa",
+    "Tocca un cerchio per aprire il suo hub, tienilo premuto per rimuoverlo — trascinane uno su un altro per federarli.",
+  "dock.deck": "Olosfera",
+  "dock.map": "Geosfera",
   "dock.mapHint":
-    "Tocca un esagono per aprire la sua bacheca — una bacheca sceglie il suo posto in Impostazioni → Imposta la posizione.",
+    "Tocca un esagono per aprire il suo hub — un hub sceglie il suo posto in Impostazioni → Imposta la posizione.",
   "dock.mapUnavailable":
-    "La mappa ha bisogno di un token Mapbox — imposta VITE_MAPBOX_TOKEN per mostrarla.",
+    "La geosfera ha bisogno di un token Mapbox — imposta VITE_MAPBOX_TOKEN per mostrarla.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Scegli una lente",
@@ -468,6 +473,13 @@ export const it: Record<MessageKey, Msg> = {
   "settings.dark": "Scuro",
   "settings.language": "Lingua",
   "settings.languageSub": "— Auto segue la lingua dell'holon",
+  "settings.tasksTab": "Scheda Attività",
+  "settings.tasksTabSub":
+    "— la lista delle attività; attiva finché non la togli. Tieni premuta una scheda sulla barra per toglierla lì, + per aggiungerne una",
+  "settings.tasksTabAria": "Mostra la scheda Attività",
+  "settings.calendarTab": "Scheda Calendario",
+  "settings.calendarTabSub": "— attiva finché non la togli",
+  "settings.calendarTabAria": "Mostra la scheda Calendario",
   "settings.libraryTab": "Scheda Biblioteca",
   "settings.libraryTabSub":
     "— appare da sola quando la biblioteca ha oggetti; attivala per forzarla",
@@ -482,7 +494,7 @@ export const it: Record<MessageKey, Msg> = {
   "settings.listsTabAria": "Mostra la scheda Liste",
   "settings.shiftsTab": "Scheda Turni",
   "settings.shiftsTabSub":
-    "— turni comunitari dal relay condiviso (formato Elinor); appare da sola quando esistono turni",
+    "— turni comunitari dal relay condiviso; appare da sola quando esistono turni",
   "settings.shiftsTabAria": "Mostra la scheda Turni",
   "settings.statusTab": "Scheda Stato",
   "settings.statusTabSub": "— una classifica dei contributi",
@@ -513,10 +525,10 @@ export const it: Record<MessageKey, Msg> = {
   "settings.location": "Posizione",
   "settings.locationSub":
     "— la cella H3 che questo holon rivendica sulla mappa condivisa",
-  "settings.holonColor": "Colore della bacheca",
+  "settings.holonColor": "Colore dell'hub",
   "settings.holonColorSub":
-    "— il colore di questa bacheca, del suo cerchio nel dock, del suo esagono sulla mappa",
-  "settings.holonColorPick": "Scegli il colore della bacheca",
+    "— il colore di questo hub, del suo cerchio nell'olosfera, del suo esagono sulla geosfera",
+  "settings.holonColorPick": "Scegli il colore dell'hub",
   "settings.holonColorAuto": "Automatico",
   "settings.holonColorIsAuto": "automatico",
   "settings.holonColorFailed": "Impossibile salvare il colore.",
@@ -576,7 +588,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.completeFailed": "Impossibile completare.",
   "detail.deleteConfirm": 'Eliminare "{title}"? Non si può annullare.',
   "detail.hideConfirm":
-    'Nascondere "{title}" da questa bacheca? Appartiene a un altro holon e vi rimane — sparisce solo dalla tua vista.',
+    'Nascondere "{title}" da questo hub? Appartiene a un altro holon e vi rimane — sparisce solo dalla tua vista.',
   "detail.thisTask": "questa attività",
   "detail.deleteFailed": "Impossibile eliminare — riprova.",
   "detail.hideFailed": "Impossibile nascondere — riprova.",
@@ -775,7 +787,7 @@ export const it: Record<MessageKey, Msg> = {
   "home.tool7": "Spese e flussi",
   "home.tool8": "Una memoria dei contributi",
   "home.toolsNote":
-    "Questo schermo è uno di loro: puntalo su un hub e diventa la sua bacheca, appesa al muro accanto alla porta.",
+    "Questo schermo è uno di loro: puntalo su un hub e diventa quell'hub, appeso al muro accanto alla porta.",
 
   "home.fedKicker": "Connettori",
   "home.fedTitle": "Come si connettono gli hub.",
@@ -788,14 +800,14 @@ export const it: Record<MessageKey, Msg> = {
 
   "home.backTitle": "Bentornatə.",
   "home.backLead":
-    "Appena il bot entra nella tua chat, pubblica un link diretto a questa bacheca. Se te lo sei perso, lancia il comando qui sotto in quella chat e incolla qui la risposta.",
+    "Appena il bot entra nella tua chat, pubblica un link diretto a questo hub. Se te lo sei perso, lancia il comando qui sotto in quella chat e incolla qui la risposta.",
   "home.openTitle": "Hai già un hub?",
   "home.openLead":
-    "Incolla il suo link o il suo id e questo schermo diventa la sua bacheca.",
+    "Incolla il suo link o il suo id e questo schermo diventa il suo hub.",
   "home.openHint":
     "Scrivilo nella chat del tuo hub. Il bot risponde con l'id — incolla pure tutta la risposta, lo troverà.",
   "home.openPlaceholder": "-1001234567890, oppure un link al tuo gruppo",
-  "home.openButton": "Apri la bacheca",
+  "home.openButton": "Apri l'hub",
   "home.openInvalid":
     "Qui dentro non c'è nessun id. Lancia /id nella chat del tuo hub e incolla la risposta del bot.",
   "home.openAria": "Id o link dell'hub",

@@ -286,29 +286,32 @@ export const en = {
   "tabbar.menu": "Menu",
   "tabbar.login": "Log in",
   "tabbar.views": "Views",
-  "tabbar.pinnedTitle": "Pinned — long-press to unpin",
-  "tabbar.pinTitle": "Long-press to pin",
+  "tabbar.pinnedHint": "Pinned — hold to edit the tabs, drag to reorder",
+  "tabbar.holdHint": "Hold to edit the tabs — drag to reorder, ✕ to remove",
+  "tabbar.removeTab": "Remove the {tab} tab",
+  "tabbar.addTab": "Add a tab",
+  "tabbar.addMenu": "Tabs you can add",
   "tabbar.unpinTab": "Unpin {tab}",
   "tabbar.pinTab": "Pin to {tab}",
   "tabbar.unpinView": "Unpin this view",
   "tabbar.pinView": "Pin this view",
 
-  // Dock (the board's window closed into a circle per visited board)
-  "dock.close": "Close this board",
-  "dock.boards": "Your boards",
+  // Dock (the hub's window closed into a circle per visited hub)
+  "dock.close": "Close this hub",
+  "dock.boards": "Your hubs",
   "dock.open": "Open {name}",
   "dock.delete": "Remove {name}",
-  "dock.add": "Add a board",
-  "dock.addPlaceholder": "Holon id, label, or link",
+  "dock.add": "Add a hub",
+  "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
   "dock.hint":
-    "Tap a circle to open its board, hold one to remove it — drag one onto another to federate them.",
-  "dock.deck": "Deck",
-  "dock.map": "Map",
+    "Tap a circle to open its hub, hold one to remove it — drag one onto another to federate them.",
+  "dock.deck": "Holosphere",
+  "dock.map": "Geosphere",
   "dock.mapHint":
-    "Tap a hexagon to open its board — a board claims its place in Settings → Set location.",
+    "Tap a hexagon to open its hub — a hub claims its place in Settings → Set location.",
   "dock.mapUnavailable":
-    "The map needs a Mapbox token — set VITE_MAPBOX_TOKEN to show it.",
+    "The geosphere needs a Mapbox token — set VITE_MAPBOX_TOKEN to show it.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Choose a lens",
@@ -457,6 +460,13 @@ export const en = {
   "settings.dark": "Dark",
   "settings.language": "Language",
   "settings.languageSub": "— Auto follows the holon's language",
+  "settings.tasksTab": "Tasks tab",
+  "settings.tasksTabSub":
+    "— the task list; on unless you take it off. Hold a tab on the strip to remove it there, + to add one",
+  "settings.tasksTabAria": "Show the Tasks tab",
+  "settings.calendarTab": "Calendar tab",
+  "settings.calendarTabSub": "— on unless you take it off",
+  "settings.calendarTabAria": "Show the Calendar tab",
   "settings.libraryTab": "Library tab",
   "settings.libraryTabSub":
     "— shows by itself when the library has items; flip to force",
@@ -470,7 +480,7 @@ export const en = {
   "settings.listsTabAria": "Show the Lists tab",
   "settings.shiftsTab": "Shifts tab",
   "settings.shiftsTabSub":
-    "— community shifts from the shared relay (Elinor format); shows by itself when shifts exist",
+    "— community shifts from the shared relay; shows by itself when shifts exist",
   "settings.shiftsTabAria": "Show the Shifts tab",
   "settings.statusTab": "Status tab",
   "settings.statusTabSub": "— a ranked contribution leaderboard",
@@ -500,10 +510,10 @@ export const en = {
     "New currencies start at 0 — nothing changes until the group raises the weight.",
   "settings.location": "Location",
   "settings.locationSub": "— the H3 cell this holon claims on the shared map",
-  "settings.holonColor": "Board colour",
+  "settings.holonColor": "Hub colour",
   "settings.holonColorSub":
-    "— the colour of this board, its circle in the dock, its hexagon on the map",
-  "settings.holonColorPick": "Choose the board colour",
+    "— the colour of this hub, its circle in the holosphere, its hexagon on the geosphere",
+  "settings.holonColorPick": "Choose the hub colour",
   "settings.holonColorAuto": "Automatic",
   "settings.holonColorIsAuto": "automatic",
   "settings.holonColorFailed": "Could not save the colour.",
@@ -561,7 +571,7 @@ export const en = {
   "detail.completeFailed": "Could not complete.",
   "detail.deleteConfirm": 'Delete "{title}"? This can\'t be undone.',
   "detail.hideConfirm":
-    'Hide "{title}" from this board? It belongs to another holon and stays there — this only removes it from your view.',
+    'Hide "{title}" from this hub? It belongs to another holon and stays there — this only removes it from your view.',
   "detail.thisTask": "this task",
   "detail.deleteFailed": "Could not delete — try again.",
   "detail.hideFailed": "Could not hide — try again.",
@@ -757,7 +767,7 @@ export const en = {
   "home.tool7": "Expenses and flows",
   "home.tool8": "A memory of contributions",
   "home.toolsNote":
-    "This screen is one of them: point it at a hub and it becomes that hub's board, on the wall by the door.",
+    "This screen is one of them: point it at a hub and it becomes that hub, on the wall by the door.",
 
   "home.fedKicker": "Connectors",
   "home.fedTitle": "How hubs connect.",
@@ -770,14 +780,13 @@ export const en = {
 
   "home.backTitle": "Welcome back.",
   "home.backLead":
-    "Once the bot is in your chat it posts a link straight to this board. If you missed it, run the command below in that chat and paste its answer here.",
+    "Once the bot is in your chat it posts a link straight to this hub. If you missed it, run the command below in that chat and paste its answer here.",
   "home.openTitle": "Already have a hub?",
-  "home.openLead":
-    "Paste its link or its id, and this screen becomes its board.",
+  "home.openLead": "Paste its link or its id, and this screen becomes its hub.",
   "home.openHint":
     "Type this in your hub's chat. The bot answers with the id — paste the whole reply, it will find it.",
   "home.openPlaceholder": "-1001234567890, or a link to your group",
-  "home.openButton": "Open the board",
+  "home.openButton": "Open the hub",
   "home.openInvalid":
     "No hub id in there. Run /id in your hub's chat and paste what the bot answers.",
   "home.openAria": "Hub id or link",

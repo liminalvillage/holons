@@ -21,12 +21,11 @@
     rolesEnabled,
     checklistsEnabled,
     shiftsEnabled,
-    libraryPref,
-    rolesPref,
-    checklistsPref,
-    shiftsPref,
     statusEnabled,
     flowsEnabled,
+    tasksEnabled,
+    calendarEnabled,
+    setTabShown,
     settingsOpen,
     showNotice,
   } from "$lib/stores";
@@ -36,12 +35,6 @@
     setBrandName,
     setBrandLogo,
     setAccent,
-    setLibraryPref,
-    setRolesPref,
-    setChecklistsPref,
-    setShiftsPref,
-    setStatusEnabled,
-    setFlowsEnabled,
     setThemeMode,
     setLangMode,
     DEFAULT_ACCENT,
@@ -65,8 +58,8 @@
   import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
   import { getHolosphere } from "$lib/holosphere";
   import HexPicker from "./HexPicker.svelte";
-  import Modal from "./Modal.svelte";
   import ValueEquation from "./ValueEquation.svelte";
+  import StatusConfirm from "./StatusConfirm.svelte";
 
   // Drafts for the free-text fields only — every other control writes through
   // on touch and renders its store.
@@ -191,29 +184,35 @@
   // Touching a tab switch records an explicit on/off. Until then the pref stays
   // `auto` and the switch simply mirrors the tab's content-driven visibility —
   // so a caretaker who never opens Settings keeps the automatic behaviour.
+  // The tab switches all write through `setTabShown` — the same path the
+  // tab strip's own "+" and ✕ use — so the two surfaces never disagree.
   function commitLibrary(on: boolean) {
-    setLibraryPref(on ? "on" : "off");
-    libraryPref.set(on ? "on" : "off");
+    setTabShown("library", on);
+  }
+
+  function commitTasks(on: boolean) {
+    setTabShown("tasks", on);
+  }
+
+  function commitCalendar(on: boolean) {
+    setTabShown("calendar", on);
   }
 
   function commitRoles(on: boolean) {
-    setRolesPref(on ? "on" : "off");
-    rolesPref.set(on ? "on" : "off");
+    setTabShown("roles", on);
   }
 
   function commitChecklists(on: boolean) {
-    setChecklistsPref(on ? "on" : "off");
-    checklistsPref.set(on ? "on" : "off");
+    setTabShown("checklists", on);
   }
 
   function commitShifts(on: boolean) {
-    setShiftsPref(on ? "on" : "off");
-    shiftsPref.set(on ? "on" : "off");
+    setTabShown("shifts", on);
   }
 
-  // Turning the board ON is gated behind the framing modal below: a ranking
-  // changes how a group reads itself, so nobody switches one on without having
-  // read what it does and doesn't mean. Turning it off needs no ceremony.
+  // Turning the board ON is gated behind the framing modal (StatusConfirm):
+  // a ranking changes how a group reads itself, so nobody switches one on
+  // without having read what it does and doesn't mean. Off needs no ceremony.
   let statusConfirmOpen = false;
 
   function commitStatus(on: boolean) {
@@ -221,14 +220,12 @@
       statusConfirmOpen = true;
       return;
     }
-    setStatusEnabled(false);
-    statusEnabled.set(false);
+    setTabShown("status", false);
   }
 
   function confirmStatus() {
     statusConfirmOpen = false;
-    setStatusEnabled(true);
-    statusEnabled.set(true);
+    setTabShown("status", true);
   }
 
   // ---- Value equation ----------------------------------------------------
@@ -316,8 +313,7 @@
   }
 
   function commitFlows(on: boolean) {
-    setFlowsEnabled(on);
-    flowsEnabled.set(on);
+    setTabShown("flows", on);
   }
 
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
@@ -449,6 +445,42 @@
         </button>
       {/each}
     </div>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.tasksTab")}
+      <span class="sub">{$t("settings.tasksTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$tasksEnabled}
+      role="switch"
+      aria-checked={$tasksEnabled}
+      aria-label={$t("settings.tasksTabAria")}
+      on:click={() => commitTasks(!$tasksEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.calendarTab")}
+      <span class="sub">{$t("settings.calendarTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$calendarEnabled}
+      role="switch"
+      aria-checked={$calendarEnabled}
+      aria-label={$t("settings.calendarTabAria")}
+      on:click={() => commitCalendar(!$calendarEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
   </div>
 
   <div class="field toggle-field">
@@ -684,23 +716,10 @@
 </div>
 
 {#if statusConfirmOpen}
-  <Modal on:close={() => (statusConfirmOpen = false)}>
-    <div class="confirm">
-      <h4>{$t("settings.statusConfirmTitle")}</h4>
-      <p class="lead">{$t("status.disclaimerLead")}</p>
-      <p>{$t("status.disclaimerBody")}</p>
-      <p>{$t("status.disclaimerUse")}</p>
-      <p>{$t("status.disclaimerEquation")}</p>
-      <div class="confirm-actions">
-        <button type="button" on:click={() => (statusConfirmOpen = false)}>
-          {$t("common.cancel")}
-        </button>
-        <button type="button" class="primary" on:click={confirmStatus}>
-          {$t("settings.statusConfirmAccept")}
-        </button>
-      </div>
-    </div>
-  </Modal>
+  <StatusConfirm
+    on:close={() => (statusConfirmOpen = false)}
+    on:accept={confirmStatus}
+  />
 {/if}
 
 {#if hexPickerOpen && $holonId}
@@ -1074,52 +1093,4 @@
   }
 
   /* Framing modal shown before the Status board can be switched on. */
-  .confirm {
-    text-align: left;
-    color: var(--ink);
-  }
-  .confirm h4 {
-    margin: 0 0 0.8rem;
-    font-size: 1.15rem;
-    color: var(--ink);
-  }
-  .confirm p {
-    margin: 0 0 0.7rem;
-    font-size: 0.92rem;
-    line-height: 1.45;
-    color: var(--muted);
-  }
-  .confirm .lead {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .confirm-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-    margin-top: 1.1rem;
-  }
-  .confirm-actions button {
-    flex: 1;
-    min-width: 8rem;
-    min-height: 52px;
-    border-radius: 14px;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    color: var(--teal-deep);
-    font-size: 0.95rem;
-    font-weight: 700;
-    transition: transform 0.1s ease;
-  }
-  /* Beats the generic rule above (same file order, higher specificity). */
-  .confirm-actions button.primary {
-    background: var(--teal);
-    border-color: var(--teal);
-    color: #fff;
-    box-shadow: var(--shadow-soft);
-  }
-  .confirm-actions button:active {
-    transform: scale(0.97);
-  }
 </style>

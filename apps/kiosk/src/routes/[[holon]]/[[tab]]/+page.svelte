@@ -1,6 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { activeTab, boardReady } from "$lib/stores";
+  import { activeTab, boardReady, idle } from "$lib/stores";
   import GlobalPills from "$lib/components/GlobalPills.svelte";
   import CalendarView from "$lib/views/CalendarView.svelte";
   import ShiftsView from "$lib/views/ShiftsView.svelte";
@@ -12,7 +12,10 @@
   import FlowsView from "$lib/views/FlowsView.svelte";
 </script>
 
-<div class="surface">
+<!-- The surface follows the chrome: framed inside the card while someone is
+     at the screen, edge to edge once the kiosk goes idle (the layout's card
+     does the same one level out). -->
+<div class="surface" class:idle={$idle}>
   <!-- Mount the view only once the holon's initial data has settled (see
        boardReady): a fresh mount on the full set plays the entrance animation
        cleanly, the same way switching tabs does. Keyed on the tab so each
@@ -50,12 +53,22 @@
     flex: 1;
     min-height: 0;
     background: var(--card);
-    margin: 0 1.4rem 1.4rem;
-    border-radius: 0 0 var(--radius) var(--radius);
+    /* The frame scales with the screen: a hand's width on a wall display,
+       a sliver on a phone. */
+    margin: 0 var(--frame) var(--frame);
+    --frame: clamp(0.4rem, 2vw, 1.4rem);
+    border-radius: 0 0 min(var(--radius), 2.5vw) min(var(--radius), 2.5vw);
     box-shadow: var(--shadow-soft);
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    transition:
+      margin 0.5s ease,
+      border-radius 0.5s ease; /* the header's own fade timing */
+  }
+  .surface.idle {
+    margin: 0;
+    border-radius: 0;
   }
   .view {
     flex: 1;

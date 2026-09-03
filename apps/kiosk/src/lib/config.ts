@@ -29,7 +29,10 @@ const CHECKLISTS_KEY = "kiosk_checklists";
 const SHIFTS_KEY = "kiosk_shifts";
 const STATUS_KEY = "kiosk_status";
 const FLOWS_KEY = "kiosk_flows";
+const TASKS_KEY = "kiosk_tasks";
+const CALENDAR_KEY = "kiosk_calendar";
 const PINNED_KEY = "kiosk_pinned";
+const TAB_ORDER_KEY = "kiosk_tab_order";
 const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
@@ -407,6 +410,51 @@ export function resolveFlowsEnabled(): boolean {
 /** Persist the Flows-tab toggle. */
 export function setFlowsEnabled(on: boolean): void {
   persist(FLOWS_KEY, on ? "1" : "0");
+}
+
+/**
+ * Whether the Tasks board is shown. On by default — it is the kiosk's home
+ * view — but a hub that runs on the calendar or the library alone can take
+ * the task list off the screen from Settings.
+ */
+export function resolveTasksEnabled(): boolean {
+  return persisted(TASKS_KEY) !== "0";
+}
+
+/** Persist the Tasks-tab toggle. */
+export function setTasksEnabled(on: boolean): void {
+  persist(TASKS_KEY, on ? "1" : "0");
+}
+
+/** Whether the Calendar is shown — on by default, a caretaker opt-out. */
+export function resolveCalendarEnabled(): boolean {
+  return persisted(CALENDAR_KEY) !== "0";
+}
+
+/** Persist the Calendar-tab toggle. */
+export function setCalendarEnabled(on: boolean): void {
+  persist(CALENDAR_KEY, on ? "1" : "0");
+}
+
+/**
+ * The order the tabs sit in on the strip (a caretaker drags them), as a list
+ * of tab ids — empty when never rearranged, so the default order applies.
+ * Ids that no longer exist are tolerated by the reader (`$lib/taborder`).
+ */
+export function resolveTabOrder(): string[] {
+  const v = persisted(TAB_ORDER_KEY);
+  return v
+    ? v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
+/** Persist the tab order (an empty list clears it, back to the default). */
+export function setTabOrder(ids: readonly string[]): void {
+  if (ids.length) persist(TAB_ORDER_KEY, ids.join(","));
+  else forget(TAB_ORDER_KEY);
 }
 
 /**

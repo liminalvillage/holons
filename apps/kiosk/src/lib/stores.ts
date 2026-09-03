@@ -29,6 +29,15 @@ import {
   isPhoneDisplay,
   setPinnedTab,
   resolvePinnedTab,
+  setTabOrder,
+  setLibraryPref,
+  setRolesPref,
+  setChecklistsPref,
+  setShiftsPref,
+  setStatusEnabled,
+  setFlowsEnabled,
+  setTasksEnabled,
+  setCalendarEnabled,
   type Scope,
   type TaskViewMode,
   type LibraryViewMode,
@@ -37,6 +46,7 @@ import {
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
+import { applyTabOrder, mergeTabOrder } from "./taborder";
 import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
 
@@ -114,6 +124,16 @@ export const statusEnabled = writable<boolean>(false);
  * want its finances on a screen by the front door. FlowsView owns its own reads.
  */
 export const flowsEnabled = writable<boolean>(false);
+
+/**
+ * Whether the Tasks board is shown. On by default (it is the boot view), a
+ * caretaker opt-out persisted in config; when it goes, `visibleTabs`'s
+ * subscriber below moves the screen to the pin or the first remaining tab.
+ */
+export const tasksEnabled = writable<boolean>(true);
+
+/** Whether the Calendar is shown — on by default, same shape as `tasksEnabled`. */
+export const calendarEnabled = writable<boolean>(true);
 
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
@@ -384,6 +404,31 @@ export const TABS = [
 export type TabId = (typeof TABS)[number]["id"];
 
 /**
+ * The caretaker's tab order (persisted per device, see `resolveTabOrder`):
+ * ids in strip order, empty for the default. Set by dragging tabs on the
+ * strip; `orderedTabs` applies it, `visibleTabs` filters it.
+ */
+export const tabOrder = writable<string[]>([]);
+
+/** Every tab in the caretaker's order, hidden ones included. */
+export const orderedTabs = derived(tabOrder, ($order) =>
+  applyTabOrder(TABS, $order),
+);
+
+/**
+ * Commit a new order of the tabs currently on the strip — what a drag on the
+ * tab bar produces. Hidden tabs keep their slots (`mergeTabOrder`), and the
+ * result persists so the strip reads the same after a power-cycle.
+ */
+export function reorderTabs(visibleIds: readonly TabId[]): void {
+  const full = get(orderedTabs).map((t) => t.id);
+  const next = mergeTabOrder(full, visibleIds);
+  if (next.every((id, i) => id === full[i])) return;
+  tabOrder.set(next);
+  setTabOrder(next);
+}
+
+/**
  * Whether the Library / Roles tab is actually shown: an explicit caretaker
  * choice wins; `auto` (the default) follows the content, so a hub that stocks
  * a library or defines roles gets those tabs without any setup, and an empty
@@ -413,11 +458,15 @@ export const shiftsEnabled = derived(
 );
 
 /**
- * Tabs actually shown: Library, Lists, Roles, and Shifts per their (possibly
- * content-driven) visibility above, Status only when the caretaker enabled it.
+ * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
+ * Lists, Roles, and Shifts per their (possibly content-driven) visibility
+ * above; Status and Flows only when the caretaker enabled them.
  */
 export const visibleTabs = derived(
   [
+    orderedTabs,
+    tasksEnabled,
+    calendarEnabled,
     libraryEnabled,
     checklistsEnabled,
     rolesEnabled,
@@ -425,9 +474,21 @@ export const visibleTabs = derived(
     statusEnabled,
     flowsEnabled,
   ],
-  ([$library, $checklists, $roles, $shifts, $status, $flows]) =>
-    TABS.filter(
+  ([
+    $tabs,
+    $tasks,
+    $calendar,
+    $library,
+    $checklists,
+    $roles,
+    $shifts,
+    $status,
+    $flows,
+  ]) =>
+    $tabs.filter(
       (t) =>
+        (t.id !== "tasks" || $tasks) &&
+        (t.id !== "calendar" || $calendar) &&
         (t.id !== "library" || $library) &&
         (t.id !== "checklists" || $checklists) &&
         (t.id !== "roles" || $roles) &&
@@ -436,6 +497,58 @@ export const visibleTabs = derived(
         (t.id !== "flows" || $flows),
     ),
 );
+
+/** The tabs a caretaker could add back: in order, not currently shown. */
+export const hiddenTabs = derived(
+  [orderedTabs, visibleTabs],
+  ([$all, $shown]) => $all.filter((t) => !$shown.some((s) => s.id === t.id)),
+);
+
+/**
+ * Show or hide one tab — the single path behind the Settings switches and
+ * the strip's own "+" / ✕. Content-driven tabs (library, lists, roles,
+ * shifts) get an explicit on/off that overrides their `auto`; the opt-in
+ * boards (status, flows) and the opt-out ones (tasks, calendar) flip their
+ * flag. Everything persists per device. (The Status framing modal is the
+ * caller's job — this only records the decision.)
+ */
+export function setTabShown(id: TabId, on: boolean): void {
+  const pref: TabPref = on ? "on" : "off";
+  switch (id) {
+    case "library":
+      setLibraryPref(pref);
+      libraryPref.set(pref);
+      break;
+    case "roles":
+      setRolesPref(pref);
+      rolesPref.set(pref);
+      break;
+    case "checklists":
+      setChecklistsPref(pref);
+      checklistsPref.set(pref);
+      break;
+    case "shifts":
+      setShiftsPref(pref);
+      shiftsPref.set(pref);
+      break;
+    case "status":
+      setStatusEnabled(on);
+      statusEnabled.set(on);
+      break;
+    case "flows":
+      setFlowsEnabled(on);
+      flowsEnabled.set(on);
+      break;
+    case "tasks":
+      setTasksEnabled(on);
+      tasksEnabled.set(on);
+      break;
+    case "calendar":
+      setCalendarEnabled(on);
+      calendarEnabled.set(on);
+      break;
+  }
+}
 
 // A persisted pin from a previous session, validated against the known tabs.
 const savedPin = resolvePinnedTab();

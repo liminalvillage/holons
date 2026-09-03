@@ -22,6 +22,9 @@
     resolveShiftsPref,
     resolveStatusEnabled,
     resolveFlowsEnabled,
+    resolveTasksEnabled,
+    resolveCalendarEnabled,
+    resolveTabOrder,
     resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
@@ -59,6 +62,9 @@
     shiftsPref,
     statusEnabled,
     flowsEnabled,
+    tasksEnabled,
+    calendarEnabled,
+    tabOrder,
     taskViewMode,
     taskSort,
     libraryViewMode,
@@ -73,6 +79,7 @@
     startClock,
     startRotation,
     noteInteraction,
+    idle,
     activeTab,
     requestedTab,
     visibleTabs,
@@ -519,6 +526,9 @@
     shiftsPref.set(resolveShiftsPref());
     statusEnabled.set(resolveStatusEnabled());
     flowsEnabled.set(resolveFlowsEnabled());
+    tasksEnabled.set(resolveTasksEnabled());
+    calendarEnabled.set(resolveCalendarEnabled());
+    tabOrder.set(resolveTabOrder());
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
     libraryViewMode.set(resolveLibraryView());
@@ -819,11 +829,11 @@
     {/if}
 
     {#if $dockState !== "dock"}
-      <div class="kiosk" bind:this={windowEl}>
+      <div class="kiosk" class:idle={$idle} bind:this={windowEl}>
         <!-- The whole tab interface is one card floating in the space — the
              same sky the dock shows — so closing it into a circle reads as
              the card shrinking into its place among the others. -->
-        <div class="card">
+        <div class="card" class:idle={$idle}>
           <TabBar />
           <main class="stage">
             <slot />
@@ -901,11 +911,19 @@
       ),
       radial-gradient(120% 90% at 50% 115%, var(--paper) 0%, transparent 70%),
       var(--paper-deep);
-    padding: calc(env(safe-area-inset-top) + 0.8rem)
-      calc(env(safe-area-inset-right) + 0.9rem)
-      calc(env(safe-area-inset-bottom) + 0.9rem)
-      calc(env(safe-area-inset-left) + 0.9rem);
+    /* The sky around the card scales with the screen (a phone keeps only a
+       sliver) and closes up entirely when the kiosk goes idle. */
+    --sky: clamp(0.3rem, 1.5vw, 0.9rem);
+    padding: calc(env(safe-area-inset-top) + var(--sky))
+      calc(env(safe-area-inset-right) + var(--sky))
+      calc(env(safe-area-inset-bottom) + var(--sky))
+      calc(env(safe-area-inset-left) + var(--sky));
     overflow: hidden;
+    transition: padding 0.5s ease; /* the header's own fade timing */
+  }
+  .kiosk.idle {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   .card {
@@ -913,7 +931,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border-radius: 22px;
+    border-radius: clamp(12px, 2.5vw, 22px);
     border: 1px solid var(--line);
     /* Faintly washed with the holon's own colour (`--holon`, set on :root by
        the layout) — the note its cards, orb and hexagon share — so each board
@@ -927,6 +945,17 @@
       0 22px 54px rgba(0, 0, 0, 0.3),
       var(--shadow-soft);
     overflow: hidden;
+    transition:
+      border-radius 0.5s ease,
+      border-color 0.5s ease;
+  }
+  /* With the chrome gone (idle) the card takes the whole screen: the sky
+     around it closes up (no padding) and its corners square off, so the
+     board stands edge to edge. Any touch brings the frame back with the
+     header, on the header's own timing. */
+  .card.idle {
+    border-radius: 0;
+    border-color: transparent;
   }
 
   .stage {
