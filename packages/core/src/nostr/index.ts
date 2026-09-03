@@ -4,6 +4,7 @@
 // @holons/core/nostr — standard-kind projections of HoloSphere lenses
 // (NIP-52 / NIP-99 / kind 0 / NIP-51) published next to the canonical
 // kind-30078 record. Subpath import:
+//   import { projectionOptionsFor } from '@holons/core/nostr'   // every surface
 //   import { buildProjections, parseProjectionList } from '@holons/core/nostr'
 
 export * from './types.js';

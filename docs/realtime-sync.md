@@ -45,8 +45,7 @@ in-process relay for tests.
      privateKey: hexToBytes(privateKey),
      relays: resolveRelays(import.meta.env.VITE_HOLOSPHERE_RELAYS),
      store: { adapter: 'indexeddb' },
-     signing: signingOptionsFor(parseSigningMode(import.meta.env.VITE_HOLOSPHERE_SIGNING)),
-     nostr: projectionOptions,                        // standard-kind projections
+     nostr: projectionOptions,                        // standard-kind projections (on by default)
      awaitReady: true,                                // store open + transport up
    });
    ```

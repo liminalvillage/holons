@@ -149,7 +149,7 @@ export const serviceDefinitions = {
       // Env-driven factory (src/createHoloSphere.js): HOLOSPHERE_RELAYS is
       // the wire, HOLOSPHERE_STORE_DIR the warm local store,
       // HOLOSPHERE_PROJECTIONS(+_SYNC) standard-kind projections + reverse
-      // sync, HOLOSPHERE_SIGNING the read-side signing mode.
+      // sync (both on by default).
       const { default: createHoloSphere } =
         await import('../src/createHoloSphere.js');
       const holosphere = createHoloSphere(appname);

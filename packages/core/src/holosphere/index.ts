@@ -10,7 +10,6 @@ export {
   createHoloSphere,
   type CreateHoloSphereOptions,
   type HoloSphereStoreOptions,
-  type HoloSphereSigningOptions,
   type HoloSphereNostrOptions,
 } from './factory.js';
 export {
@@ -24,9 +23,6 @@ export {
   DEFAULT_RELAYS,
   parseRelayList,
   resolveRelays,
-  parseSigningMode,
-  signingOptionsFor,
-  type SigningMode,
 } from './relays.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
 export {

@@ -43,7 +43,8 @@ describe('tags', () => {
   });
   it('parses the env list', () => {
     expect(parseProjectionList('off')).toEqual([]);
-    expect(parseProjectionList(undefined)).toEqual([]);
+    expect(parseProjectionList(undefined)).toEqual([...PROJECTABLE_LENSES]); // on by default
+    expect(parseProjectionList('')).toEqual([...PROJECTABLE_LENSES]);
     expect(parseProjectionList('all')).toEqual([...PROJECTABLE_LENSES]);
     expect(parseProjectionList('quests, events,bogus')).toEqual(['quests', 'events']);
   });

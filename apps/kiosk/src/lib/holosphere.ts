@@ -12,13 +12,14 @@
 import {
   createHoloSphere,
   createHolonWriter,
-  signingOptionsFor,
   type HolonWriter,
 } from "@holons/core/holosphere";
+import { projectionOptionsFor } from "@holons/core/nostr";
+import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
-import { resolveAppName, resolveRelays, resolveSigningMode } from "./config";
+import { resolveAppName, resolveRelays } from "./config";
 import { actingAs } from "./auth";
 import { lookupHolonName } from "./hns";
 import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
@@ -55,12 +56,25 @@ export function getHolosphere(): Promise<HoloSphere> {
     // travels as a signed NIP-01 kind-30078 event, mirrored into the local
     // IndexedDB store so a reload paints instantly and the display survives
     // a flaky network.
+    // Every write is ALSO published as its standard Nostr kind (NIP-52 /
+    // NIP-99 / NIP-51 / NIP-58 / NIP-29) next to the 30078 record, so any
+    // Nostr client can read it — on for every lens unless
+    // VITE_KIOSK_PROJECTIONS (or VITE_HOLOSPHERE_PROJECTIONS) says `off`.
+    const appName = resolveAppName();
+    const privateKey = deviceKeyHex();
     instance = createHoloSphere({
-      appName: resolveAppName(),
-      privateKey: deviceKeyHex(),
+      appName,
+      privateKey,
       relays: resolveRelays(),
       store: { adapter: "indexeddb" },
-      signing: signingOptionsFor(resolveSigningMode()),
+      nostr: projectionOptionsFor({
+        appName,
+        privateKey,
+        lenses:
+          (import.meta.env.VITE_KIOSK_PROJECTIONS as string | undefined) ??
+          (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
+        cellToLatLng,
+      }),
       awaitReady: true,
     });
 

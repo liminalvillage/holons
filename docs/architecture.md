@@ -84,9 +84,9 @@ constructed and the single gate for identity-aware writes. Files:
   a `Promise<HoloSphere>` when `awaitReady: true`. Takes `relays`, `store`
   (`memory` | `indexeddb` | `file`), `signing` and `nostr` (projections);
   anything else passes through `extra`.
-- `relays.ts` — `DEFAULT_RELAYS`, `resolveRelays(env)`, `parseSigningMode`,
-  `signingOptionsFor`: the one place the production relay set and the
-  env-to-option parsing live.
+- `relays.ts` — `DEFAULT_RELAYS` and `resolveRelays(env)`: the one place the
+  production relay set lives. Every write is signed by the instance key and
+  published; there is no signing mode to configure.
 - `identity.ts` — `canWriteToHolon()` / `resolveActingAs()`. Asks the
   holosphere `canWrite` mixin "may `actingAs` write to `holonId/lens`?",
   falling back to an owner check. Used for UI gating, not security
@@ -113,9 +113,13 @@ cache (`packages/holosphere/STORE.md`).
   long-lived Node hosts (`store: { adapter: 'file', dir }`), and memory in
   serverless functions and scripts. Reloads paint from the store and catch
   up from the cursor.
+- Every record is ALSO published as its standard Nostr kind (NIP-52 events,
+  NIP-99 classifieds, kind-0 profiles, NIP-51 sets, NIP-58 badges, NIP-29
+  group metadata) by default — `projectionOptionsFor` in `@holons/core/nostr`
+  — and external edits of those kinds fold back into the record.
 - Private (password) lenses are NIP-44 encrypted with a scrypt-derived key
   and never leave the device.
-- Configure per surface: web `VITE_HOLOSPHERE_RELAYS` / `VITE_HOLOSPHERE_SIGNING`,
+- Configure per surface: web `VITE_HOLOSPHERE_RELAYS`,
   kiosk `VITE_KIOSK_RELAYS`, bot/mcp `HOLOSPHERE_RELAYS` +
   `HOLOSPHERE_STORE_DIR`. Unset relays mean the production relay set.
 

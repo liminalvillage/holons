@@ -56,7 +56,7 @@ Guard rails:
 | Local store (`store/`) | records, per-author events, backlinks, cursors, private lenses |
 | Networking | `relay-transport.js` (SimplePool, paginated backfill, cursor catch-up, reconnect) |
 | Signing layer | always on, **envelope-only**; the transport is the single publisher |
-| shadow / enforce | via `config.signing.{shadow,enforce}` or `enableSigning({...})` |
+| shadow / enforce | library-only test modes (`config.signing`); no product surface sets them |
 
 Ingested remote events are verified and kept per author in the store's
 events table, so enforce mode authorizes remote data the same way as local
@@ -108,10 +108,11 @@ copies and globals are not projected. `created_at` is kept strictly
 monotone per `(kind, d)` so rapid re-puts are not rejected as "older".
 
 Configure: `nostr: { projections, signerFor }` next to the constructor's
-`relays`, or `enableSigning({ relays, projections, signerFor })`.
-Build hooks with `buildProjections(parseProjectionList(env), ctx)` from
-`@holons/core/nostr`; the monorepo apps read `HOLOSPHERE_PROJECTIONS` /
-`VITE_HOLOSPHERE_PROJECTIONS` (`off` default | `all` | comma list).
+`relays`. Every monorepo surface builds that block with
+`projectionOptionsFor({ appName, privateKey, lenses })` from
+`@holons/core/nostr`: projections are **on for every lens by default**;
+`HOLOSPHERE_PROJECTIONS` / `VITE_HOLOSPHERE_PROJECTIONS` (`off` | comma list)
+narrow or disable them.
 
 ### Mutual update — folding external edits back (`reverse-sync.js`)
 
@@ -212,12 +213,11 @@ Every surface builds its instance through `createHoloSphere` in
 `@holons/core/holosphere` and resolves relays with `resolveRelays(env)`
 (unset → `DEFAULT_RELAYS`, the production pair):
 
-- **web** (`apps/web`): `VITE_HOLOSPHERE_RELAYS`, `VITE_HOLOSPHERE_SIGNING`,
-  IndexedDB store.
+- **web** (`apps/web`): `VITE_HOLOSPHERE_RELAYS`, IndexedDB store.
 - **kiosk** / **wequest**: `VITE_KIOSK_RELAYS` / `VITE_WEQUEST_RELAYS`
   (falling back to `VITE_HOLOSPHERE_RELAYS`), IndexedDB store.
 - **telegram bot** / **discord bot**: `HOLOSPHERE_RELAYS`, file store under
-  `HOLOSPHERE_STORE_DIR` (default `./holosphere-store`), `HOLOSPHERE_SIGNING`.
+  `HOLOSPHERE_STORE_DIR` (default `./holosphere-store`).
 - **mcp-ui** / scripts: `HOLOSPHERE_RELAYS` (+ `HOLOSPHERE_PRIVATE_KEY`);
   memory store unless `HOLOSPHERE_STORE_DIR` is set.
 

@@ -9,6 +9,9 @@
  * the filesystem — callers resolve their own private key, relays and store
  * location (see `resolveRelays` in `./relays.js`). That keeps the core
  * importable from any runtime (browser, Node, edge).
+ *
+ * Every write is signed by `privateKey` and published to the relays; there
+ * is no signing mode to pick.
  */
 
 import { HoloSphere } from 'holosphere';
@@ -25,14 +28,6 @@ export interface HoloSphereStoreOptions {
   /** Directory for the file adapter. */
   dir?: string;
   compactAfter?: number;
-}
-
-/** Read-side signing behaviour (see holosphere/SIGNING.md). */
-export interface HoloSphereSigningOptions {
-  shadow?: boolean;
-  enforce?: boolean | 'membership';
-  perActorLenses?: string[];
-  verbose?: boolean;
 }
 
 /** Relay-side extras: standard-kind projections and their reverse sync. */
@@ -63,8 +58,6 @@ export interface CreateHoloSphereOptions {
   relays?: string[];
   /** Local store configuration. */
   store?: HoloSphereStoreOptions;
-  /** Read-side signing modes. */
-  signing?: HoloSphereSigningOptions;
   /** Relay-side extras (projections, sync tuning). */
   nostr?: HoloSphereNostrOptions;
   /** Strict-mode toggle for holosphere. */
@@ -89,14 +82,13 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, signing, nostr, strict, awaitReady, extra } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, extra } = options;
 
   const config: Record<string, unknown> = {
     appName,
     ...(privateKey !== undefined ? { privateKey } : {}),
     ...(relays ? { relays } : {}),
     ...(store ? { store } : {}),
-    ...(signing ? { signing } : {}),
     ...(nostr ? { nostr } : {}),
     ...(strict !== undefined ? { strict } : {}),
     ...(extra ?? {}),

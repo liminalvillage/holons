@@ -5,10 +5,9 @@
  */
 import {
   createHoloSphere as coreCreateHoloSphere,
-  parseSigningMode,
   resolveRelays,
-  signingOptionsFor,
 } from '@holons/core/holosphere';
+import { projectionOptionsFor } from '@holons/core/nostr';
 import { generateSecretKey } from 'nostr-tools';
 import { getOrCreateKey } from './utils/keyStorage.js';
 
@@ -51,9 +50,12 @@ export function createHoloSphere(
       adapter: 'file',
       dir: process.env.HOLOSPHERE_STORE_DIR || './holosphere-store',
     },
-    signing: signingOptionsFor(
-      parseSigningMode(process.env.HOLOSPHERE_SIGNING)
-    ),
+    // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
+    nostr: projectionOptionsFor({
+      appName,
+      privateKey,
+      lenses: process.env.HOLOSPHERE_PROJECTIONS,
+    }),
     extra: { logLevel: options.logLevel || 'INFO' },
   });
 }

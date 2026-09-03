@@ -9,9 +9,7 @@
  */
 import {
   createHoloSphere as coreCreateHoloSphere,
-  parseSigningMode,
   resolveRelays,
-  signingOptionsFor,
 } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
@@ -94,10 +92,11 @@ export default function createHoloSphere(appName, options = {}) {
     dir: process.env.HOLOSPHERE_STORE_DIR || './holosphere-store',
   };
 
-  // Standard-kind projections (HOLOSPHERE_PROJECTIONS=off|all|quests,events,…):
-  // every write on a listed lens is ALSO published as its standard Nostr kind
-  // (NIP-52 / NIP-99 / kind 0 / NIP-51) so third-party clients can read it.
-  // Opt-in and only meaningful with relays. See packages/holosphere/NOSTR-BACKEND.md.
+  // Standard-kind projections: every write is ALSO published as its standard
+  // Nostr kind (NIP-52 / NIP-99 / kind 0 / NIP-51 / NIP-58 / NIP-29) so
+  // third-party clients can read it. ON for every lens by default;
+  // HOLOSPHERE_PROJECTIONS=off|quests,events,… narrows or disables it. See
+  // packages/holosphere/NOSTR-BACKEND.md.
   const projectionLenses = parseProjectionList(
     process.env.HOLOSPHERE_PROJECTIONS
   );
@@ -127,9 +126,6 @@ export default function createHoloSphere(appName, options = {}) {
     privateKey,
     relays,
     store,
-    signing: signingOptionsFor(
-      parseSigningMode(process.env.HOLOSPHERE_SIGNING)
-    ),
     nostr: projectionOptions,
     extra: { logLevel: logLevel || 'INFO', ...extra },
   });

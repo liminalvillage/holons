@@ -189,21 +189,6 @@ export function resolveRelays(): string[] {
 }
 
 /**
- * Read-side signing mode: "off" (default), "shadow" or "enforce". Every write
- * is signed and published regardless; `shadow` measures what enforce would
- * hide, `enforce` narrows reads to trusted keys — which is not what a public
- * entrance display wants, so keep it for testing.
- */
-export function resolveSigningMode(): "off" | "shadow" | "enforce" {
-  const env =
-    (import.meta.env.VITE_KIOSK_SIGNING as string | undefined) ||
-    (import.meta.env.VITE_HOLOSPHERE_SIGNING as string | undefined) ||
-    "off";
-  const want = String(env).trim().toLowerCase();
-  return want === "shadow" || want === "enforce" ? want : "off";
-}
-
-/**
  * The Telegram Mini App serving the signing-key vault (routes/key), as
  * "<botUsername>/<appShortName>" — e.g. "HolonsBot/keys", registered in
  * BotFather. Unset → the key-link flow is hidden and writes stay signed by

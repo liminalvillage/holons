@@ -26,13 +26,6 @@
   NETLIFY_USE_PNPM = "true"
   # Force clean install to avoid stale cached node_modules
   NPM_FLAGS = "--prefer-online"
-  # Holosphere signing mode for the deployed client. MUST stay "off" for the
-  # production `Holons` graph: the existing group data is all unsigned/legacy,
-  # and "enforce" collapses every read to the signed authorized view — which
-  # hides ALL of it (the data isn't deleted, just filtered out of reads). Only
-  # ever set this to "shadow"/"enforce" after a one-time migration that re-signs
-  # the legacy items. See apps/web/src/routes/+layout.svelte for the modes.
-  VITE_HOLOSPHERE_SIGNING = "off"
   # Netlify's secrets scanner flags any value of these env vars appearing in
   # build output. Vite's VITE_* prefix is the explicit contract that these
   # values WILL be inlined into client bundles — they are public-by-design

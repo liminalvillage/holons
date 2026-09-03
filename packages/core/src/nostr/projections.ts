@@ -4,6 +4,8 @@
 // Registry of lens → codec, plus the adapter that turns codecs into the
 // generic hooks `holosphere/projections.js` consumes.
 
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { schnorr } from '@noble/curves/secp256k1';
 import type { LensCodec, NostrEventLike, ProjectionCtx, ProjectionHook, Reversed } from './types.js';
 import { calendarCodec } from './codecs/calendar.js';
 import { classifiedCodec } from './codecs/classified.js';
@@ -33,13 +35,14 @@ export const REVERSE_KINDS: Readonly<Record<string, readonly number[]>> = Object
 );
 
 /**
- * Parse `HOLOSPHERE_PROJECTIONS`: `off`/empty → none, `all` → every lens,
- * otherwise a comma-separated list (unknown names are dropped).
+ * Parse `HOLOSPHERE_PROJECTIONS`. Projections are ON by default: unset/empty
+ * and `all` → every lens; `off` opts out; otherwise a comma-separated list
+ * (unknown names are dropped).
  */
 export function parseProjectionList(raw: string | undefined | null): string[] {
   const v = (raw ?? '').trim().toLowerCase();
-  if (!v || v === 'off' || v === 'false' || v === '0' || v === 'none') return [];
-  if (v === 'all' || v === 'true' || v === '1') return [...PROJECTABLE_LENSES];
+  if (v === 'off' || v === 'false' || v === '0' || v === 'none') return [];
+  if (!v || v === 'all' || v === 'true' || v === '1') return [...PROJECTABLE_LENSES];
   return v
     .split(',')
     .map((s) => s.trim())
@@ -67,4 +70,58 @@ export function buildProjections(lenses: readonly string[], ctx: ProjectionCtx):
     });
   }
   return hooks;
+}
+
+/** Hex x-only pubkey of a Nostr secret key (hex or bytes). */
+export function pubkeyOf(privateKey: string | Uint8Array): string {
+  const sk = typeof privateKey === 'string' ? hexToBytes(privateKey) : privateKey;
+  return bytesToHex(schnorr.getPublicKey(sk));
+}
+
+/** Inputs for {@link projectionOptionsFor}. */
+export interface ProjectionOptionsInput extends Omit<ProjectionCtx, 'appName' | 'holonPubkey'> {
+  appName: string;
+  /** The instance's signing key; its pubkey addresses every projected event. */
+  privateKey: string | Uint8Array;
+  /** `HOLOSPHERE_PROJECTIONS`-style value; unset → every projectable lens. */
+  lenses?: string | readonly string[] | null;
+  /** Per-user signer for kind 0 / RSVPs (the bot derives member keys). */
+  signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+  /** Service-level identity provider key (kind-31926 attestations). */
+  providerKey?: string | Uint8Array | null;
+  /** Who may edit a holon's records over standard kinds (reverse sync). */
+  trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+  /** Fold external edits back (default on). */
+  reverseSync?: boolean;
+  reverseLookbackSec?: number;
+}
+
+/**
+ * The `nostr` block every surface passes to `createHoloSphere`: standard-kind
+ * projections for the configured lenses (all of them by default) plus the
+ * reverse sync of external edits. Returns `{}` when projections are off, so
+ * it can always be spread/passed as-is.
+ */
+export function projectionOptionsFor(input: ProjectionOptionsInput): {
+  projections?: ProjectionHook[];
+  signerFor?: ProjectionOptionsInput['signerFor'];
+  providerKey?: ProjectionOptionsInput['providerKey'];
+  trustedAuthors?: ProjectionOptionsInput['trustedAuthors'];
+  reverseSync?: boolean;
+  reverseLookbackSec?: number;
+} {
+  const { appName, privateKey, lenses, signerFor, providerKey, trustedAuthors, reverseSync, reverseLookbackSec, ...ctx } = input;
+  const list = Array.isArray(lenses)
+    ? lenses.filter((l) => PROJECTABLE_LENSES.includes(l))
+    : parseProjectionList(lenses as string | undefined | null);
+  if (!list.length) return {};
+  const projections = buildProjections(list, { ...ctx, appName, holonPubkey: pubkeyOf(privateKey) });
+  return {
+    projections,
+    ...(signerFor ? { signerFor } : {}),
+    ...(providerKey ? { providerKey } : {}),
+    ...(trustedAuthors ? { trustedAuthors } : {}),
+    reverseSync: reverseSync ?? true,
+    ...(reverseLookbackSec ? { reverseLookbackSec } : {}),
+  };
 }

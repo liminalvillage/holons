@@ -37,11 +37,6 @@ jobs:
       - name: Test
         run: pnpm -r --if-present test
 
-      - name: Holosphere suite under enforce signing
-        run: pnpm -F holosphere test
-        env:
-          HOLO_TEST_SIGNING: enforce
-
       - name: Lint
         run: pnpm -r --if-present lint
         continue-on-error: true

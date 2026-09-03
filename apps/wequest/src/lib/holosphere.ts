@@ -7,6 +7,8 @@
 // acting user's identity.
 
 import { createHoloSphere } from "@holons/core/holosphere";
+import { projectionOptionsFor } from "@holons/core/nostr";
+import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
 import {
   resolveAppName,
@@ -45,11 +47,23 @@ export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
     // The relays are the wire; the local IndexedDB store paints instantly on
     // reload and survives a flaky network.
+    // Standard-kind projections are on for every lens (VITE_WEQUEST_PROJECTIONS
+    // / VITE_HOLOSPHERE_PROJECTIONS=off opts out).
+    const appName = resolveAppName();
+    const privateKey = deviceKeyHex();
     instance = createHoloSphere({
-      appName: resolveAppName(),
-      privateKey: deviceKeyHex(),
+      appName,
+      privateKey,
       relays: resolveRelays(),
       store: { adapter: "indexeddb" },
+      nostr: projectionOptionsFor({
+        appName,
+        privateKey,
+        lenses:
+          (import.meta.env.VITE_WEQUEST_PROJECTIONS as string | undefined) ??
+          (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
+        cellToLatLng,
+      }),
       awaitReady: true,
     });
     // Dev-only console/smoke-test hook.

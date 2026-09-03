@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { handshake } from "holosphere"
-	import { createHoloSphere, resolveRelays, parseSigningMode, signingOptionsFor } from '@holons/core/holosphere';
+	import { createHoloSphere, resolveRelays } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -485,13 +485,12 @@
 		// from its cursor. Env:
 		//   VITE_HOLOSPHERE_RELAYS      = comma-separated wss:// relay URLs
 		//                                 (default: the production relays)
-		//   VITE_HOLOSPHERE_SIGNING     = off (default) | shadow | enforce
-		//   VITE_HOLOSPHERE_READ_KEYS   = comma-separated npub/hex keys to trust
-		//   VITE_HOLOSPHERE_PROJECTIONS = off | all | quests,…
+		//   VITE_HOLOSPHERE_PROJECTIONS = all (default) | off | quests,…
+		// Every write is signed by the user's key and published; there is no
+		// signing mode to pick.
 		const relays = resolveRelays(import.meta.env.VITE_HOLOSPHERE_RELAYS);
-		const signingMode = parseSigningMode(import.meta.env.VITE_HOLOSPHERE_SIGNING);
-		// Standard-kind projections: listed lenses are ALSO published as their
-		// standard Nostr kind next to the 30078 record. The logged-in user's own
+		// Standard-kind projections (on for every lens by default): writes are
+		// ALSO published as their standard Nostr kind next to the 30078 record. The logged-in user's own
 		// key signs their kind-0 profile / RSVPs; nobody else's. See
 		// packages/holosphere/NOSTR-BACKEND.md.
 		const projectionLenses = parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS);
@@ -519,10 +518,7 @@
 				signerFor: (id: string | number) =>
 					pendingTelegramUserId && String(id) === String(pendingTelegramUserId) ? privateKey : null,
 				reverseSync,
-				trustedAuthors: () => [
-					ownPubkey,
-					...((holosphere as any)?.getReadKeys?.() ?? []),
-				],
+				trustedAuthors: () => [ownPubkey],
 			}
 			: {};
 		holosphere = await createHoloSphere({
@@ -530,7 +526,6 @@
 			privateKey: hexToBytes(privateKey),
 			relays,
 			store: { adapter: 'indexeddb' },
-			signing: signingOptionsFor(signingMode),
 			nostr: projectionOptions,
 			awaitReady: true,
 		});
@@ -539,31 +534,12 @@
 		if (holosphere.client) {
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
-		console.log(`[holosphere] ${relays.length} relay(s), signing ${signingMode}`);
+		console.log(`[holosphere] ${relays.length} relay(s)`);
 
-		// Signing modes (the constructor owns the signer; nothing to enable here):
-		// - off:     reads are unchanged (default — safe for production).
-		// - shadow:  every write is signed + published; reads UNCHANGED. Inspect
-		//            via window.__signingReport().
-		// - enforce: reads return only your own writes + writes from keys in your
-		//            federation read-list (VITE_HOLOSPHERE_READ_KEYS / addReadKey).
-		//            Your own key is always trusted.
 		if (typeof window !== 'undefined') {
-			try {
-				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
-					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				if (readKeys.length && typeof (holosphere as any).addReadKey === 'function') {
-					for (const k of readKeys) {
-						try { await (holosphere as any).addReadKey(k); } catch { /* bad key format */ }
-					}
-				}
-				(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
-				// Direct delete escape hatch for known-bad keys, e.g.
-				// await __del('123','quests','moufplh7i0t').
-				(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
-			} catch (e) {
-				console.warn('[holosphere] signing/helper setup failed:', (e as any)?.message);
-			}
+			// Direct delete escape hatch for known-bad keys, e.g.
+			// await __del('123','quests','moufplh7i0t').
+			(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
 		}
 
 		// Notify holonsbot on every put so the bot can bootstrap (or refresh)
