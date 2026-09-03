@@ -21,9 +21,9 @@
 	let store = {};
 	let userStore = {};
 
-	// Live-subscription handles. The two Gun listeners (quests, users) MUST be
+	// Live-subscription handles. The two store listeners (quests, users) MUST be
 	// torn down before re-subscribing and on destroy, or every holon switch
-	// leaks `.map().on()` callbacks that Gun keeps forever. `idUnsub` is the
+	// leaks watch callbacks that the store keeps forever. `idUnsub` is the
 	// manual ID-store subscription that drives the re-subscribe.
 	let idUnsub: (() => void) | undefined;
 	let activeSubs: Array<{ unsubscribe: () => void }> = [];
@@ -122,7 +122,7 @@
 	$: update(holonID);
 
 	function subscribe() {
-		// Tear down any previous Gun listeners before opening new ones so a
+		// Tear down any previous store listeners before opening new ones so a
 		// holon switch (or repeated calls) can't stack listeners.
 		teardownSubs();
 		store = {};

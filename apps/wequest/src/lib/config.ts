@@ -56,7 +56,9 @@ export function resolveHolon(): string {
  *  `VITE_HOLOSPHERE_RELAYS`, else the production relay set. */
 export function resolveRelays(): string[] {
   return coreResolveRelays(
-    import.meta.env.VITE_WEQUEST_RELAYS || import.meta.env.VITE_HOLOSPHERE_RELAYS || "",
+    import.meta.env.VITE_WEQUEST_RELAYS ||
+      import.meta.env.VITE_HOLOSPHERE_RELAYS ||
+      "",
   );
 }
 

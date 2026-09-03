@@ -141,7 +141,7 @@ tests/                   # Testing framework and setup
 A shared-secret approach was considered and rejected: holons is a browser SPA, so any token shipped in its bundle is visible in DevTools and is therefore not a secret.
 
 **Current threat model (acceptable for now):**
-The endpoints are *idempotent and constructive* — they re-render an existing Telegram message from the latest GunDB state. They cannot create messages, delete data, or read private state. The worst an attacker can do is spam edits on `(chatId, messageId)` pairs they can guess, capped by the IP rate limiter.
+The endpoints are *idempotent and constructive* — they re-render an existing Telegram message from the latest Holosphere state. They cannot create messages, delete data, or read private state. The worst an attacker can do is spam edits on `(chatId, messageId)` pairs they can guess, capped by the IP rate limiter.
 
 **The proper fix — Telegram login verification (option B):**
 

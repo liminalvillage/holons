@@ -33,9 +33,9 @@
     const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
-    // Gun-listener handle for the users subscription. This modal mounts/unmounts
+    // Store-listener handle for the users subscription. This modal mounts/unmounts
     // repeatedly; without tearing this down on unmount, every open leaks a
-    // `.map().on()` callback that Gun keeps forever.
+    // watch callback that the store keeps forever.
     let usersSub: { unsubscribe: () => void } | undefined;
     let userSearchQuery = '';
     $: filteredUserEntries = (() => {

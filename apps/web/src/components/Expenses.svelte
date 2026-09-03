@@ -197,7 +197,7 @@
 	// Local-first + progressive load via queryManager.subscribe. The cached
 	// snapshot fires synchronously (next microtask) so isLoading clears
 	// immediately even when the lens is empty — no more spinner waiting on
-	// Gun's `.once()` that never fires on cold empty paths. Federated mode
+	// a cold read that never resolves on empty paths. Federated mode
 	// adds a getFederated overlay on top of the local stream.
 	function fetchData() {
 		if (!isValidId(holonID) || !holosphere || !connectionReady) return;

@@ -5,7 +5,7 @@
 // and kept in the store's private table — never signed, never published,
 // never propagated, never exported.
 //
-// The scope string `${appName}:${holon ?? lens}` is the SAME string the Gun
+// The scope string `${appName}:${holon ?? lens}` is the SAME string the old SEA
 // SEA username used to be, so the mental model ("one password per holon, or
 // per lens for globals") is unchanged. The scrypt parameters are frozen: a
 // change orphans every existing private record (the password alone cannot

@@ -13,8 +13,8 @@ action means*, change it in `@holons/core` and every UI inherits it. If you
 change *how it looks*, change it in the UI only. Never duplicate domain logic
 into a UI.
 
-Data lives in **Holosphere** — a decentralized [GUN](https://gun.eco) graph,
-namespaced per holon (group), synced peer-to-peer and local-first. There is no
+Data lives in **Holosphere** — signed Nostr events on relays, mirrored into a
+local store, namespaced per holon (group) and local-first. There is no
 central server of record.
 
 ## 2. Environment

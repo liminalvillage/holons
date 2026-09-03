@@ -228,7 +228,7 @@ export const shiftsLoaded = writable<boolean>(false);
  * Wall-clock time of the last live emission per lens, stamped by the layout's
  * subscription callbacks. This is the heartbeat the write-echo watchdog reads:
  * a successful LOCAL write must echo through its lens subscription within a
- * couple of seconds (same Gun graph, same process), so a write with no
+ * couple of seconds (same local store, same process), so a write with no
  * emission after it proves the subscription has gone deaf — the one failure
  * that otherwise looks exactly like "the app stopped updating" and silently
  * eats every remote update too. Plain object, not a store: the watchdog polls
@@ -306,7 +306,7 @@ export const searchSuggestions: Readable<SearchSuggestions> = derived(
 
 /**
  * Whether the board may render. False while a holon's initial data burst is
- * still streaming in from Gun; the layout flips it true once that settles, so
+ * still streaming in from the relays; the layout flips it true once that settles, so
  * the active view mounts a single time on the full set and its entrance
  * animation plays cleanly — exactly like a tab switch (which remounts on
  * already-loaded data) — instead of animating cards one-by-one as they arrive.

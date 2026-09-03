@@ -3,7 +3,7 @@
  * standard Nostr kind next to the unchanged kind-30078 record, retracts it
  * with a NIP-09 kind 5 on delete, and never ingests projected kinds back.
  * Exercised on both publishers: the nostr-backend transport and the
- * gun-backend relay-backup signer.
+ * enableSigning signer.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -48,12 +48,6 @@ function eventsHook() {
       return [{ kind: 5, created_at: 0, content: '', tags: [['a', `31923:x:holons:${lens}:${holon}:${id}`], ['k', '31923'], ['n', APP]] }];
     },
   };
-}
-
-function gunOptions(dirs) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-proj-'));
-  dirs.push(dir);
-  return { peers: [], axe: false, multicast: false, stats: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false };
 }
 
 describe('createProjector', () => {
@@ -146,7 +140,7 @@ describe('projections on the wire', () => {
 
   test('nostr backend: 31923 published next to the unchanged 30078, kind 5 on delete, never ingested', async () => {
     const sphere = new HoloSphere({
-      appName: APP, privateKey: generateSecretKey(), backend: 'nostr',
+      appName: APP, privateKey: generateSecretKey(),
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: [eventsHook()] },
       store: { adapter: 'memory' },
     });
@@ -163,7 +157,7 @@ describe('projections on the wire', () => {
 
     // A second sphere reading the same relay must see the record once and no projected junk.
     const reader = new HoloSphere({
-      appName: APP, privateKey: generateSecretKey(), backend: 'nostr',
+      appName: APP, privateKey: generateSecretKey(),
       nostr: { relays: [relay.url], syncTimeoutMs: 2000 }, store: { adapter: 'memory' },
     });
     spheres.push(reader);
@@ -178,7 +172,7 @@ describe('projections on the wire', () => {
     expect(del).toBeTruthy();
   });
 
-  test('gun backend + relay backup: signer publishes projections too', async () => {
+  test('enableSigning with relays: the signer publishes projections too', async () => {
     const sphere = new HoloSphere({ appName: APP, privateKey: generateSecretKey(), store: { adapter: 'memory' } });
     spheres.push(sphere);
     await sphere.enableSigning({ relays: [relay.url], shadow: true, projections: [eventsHook()] });

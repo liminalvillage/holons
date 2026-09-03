@@ -34,7 +34,7 @@ invented for it.
 
 - **Holons and lenses.** Every group is a holon; every data type is a lens
   (`quests`, `needs`, `library`, `checklists`, …) namespaced under it in the
-  Holosphere GUN graph — peer-to-peer and local-first.
+  Holosphere store — signed events on relays, local-first.
 - **Every H3 cell is a holon.** Geography is addressable: an H3 hexagon id is
   a valid holon id (`app/<cellId>/<lens>`), so "the map" is just holons at
   geographic addresses, from res 0 (continental) to res 14 (doorstep).
@@ -123,8 +123,8 @@ day it is suddenly needed for blankets, water, or a rescue location.
 - The record type doesn't change — an urgent need is a need with an
   `urgency` field, cross-posted to the `announcements` lens of the hex and
   its partners, and rendered with priority on the map.
-- The infrastructure is the part designed to survive: GUN sync is local-first
-  and peer-to-peer, so the neighborhood's data lives *in the neighborhood*,
+- The infrastructure is the part designed to survive: the store is local-first
+  and any relay can carry the signed events, so the neighborhood's data lives *in the neighborhood*,
   not in a cloud that may be unreachable. And the providers the network
   surfaces are precisely the ones that keep functioning when long supply
   chains fail — they are three kilometers away.

@@ -1,7 +1,7 @@
 // Thin facade over @holons/core/expenses.
 //
 // We keep this module so existing call sites (`Status.svelte`, `Expenses.svelte`)
-// don't need to change shape: web stores expenses as a Gun-style
+// don't need to change shape: web stores expenses as a record-map-style
 // Record<id, Expense> rather than the Expense[] core works with, and the
 // legacy `unit` field needs to be folded into `currency` before delegating.
 import {

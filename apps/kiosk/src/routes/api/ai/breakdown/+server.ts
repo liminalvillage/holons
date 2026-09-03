@@ -6,7 +6,7 @@
 // with the key read from the deploy's server env (e.g. Netlify site config) so
 // it never ships in the client bundle. All Holosphere writes happen back in
 // the browser, where the device's signing identity lives — this route never
-// touches GUN.
+// touches the store.
 //
 // GET reports `{ configured }` so the client can decide between this route
 // and the device-key direct call (see $lib/breakdown) without shipping the

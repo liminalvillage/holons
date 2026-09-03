@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The "Mine" scope: each view's items filtered to the logged-in user.
-// Participant ids round-trip through Gun as number or string depending on the
+// Participant ids round-trip through holosphere as number or string depending on the
 // writer, so identity is compared stringified — the same rule core's
 // membership helpers use (never `===` on raw ids).
 

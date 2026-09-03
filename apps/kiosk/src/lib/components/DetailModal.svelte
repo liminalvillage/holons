@@ -586,7 +586,7 @@
     message = "";
     // Core turns the local form fields into the stored schedule: UTC instants
     // for a timed card, bare dates for an all-day one, and an inclusive end
-    // date for a span. Cleared fields are blanked, never deleted (Gun merges),
+    // date for a span. Cleared fields are blanked, never deleted (older readers expect them),
     // on `ends` and its legacy `until` alias alike.
     const timing: Partial<Quest> = buildScheduleFields({
       startDate: fDate,
@@ -691,7 +691,7 @@
       return;
     }
     // Soft-delete: write a `_deleted: true` tombstone (the bot's convention)
-    // rather than a hard `put(null)`. A hard delete leaves a husk node that Gun
+    // rather than a hard `put(null)`. A hard delete used to leave a husk node that the old graph
     // keeps re-emitting; the live subscription forwards it (it only swallows a
     // clean null), so the board flips between the real card and an empty
     // "Untitled" phantom — re-triggering the FLIP reshuffle indefinitely. A

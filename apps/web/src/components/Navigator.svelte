@@ -833,10 +833,10 @@
                 // Skip shopping items and other path-like entries
                 if (trimmed.includes('/')) return false;
                 
-                // Skip very long hex-like strings that are clearly Gun internal IDs (more than 15 chars)
+                // Skip very long hex-like strings that are clearly internal keys (more than 15 chars)
                 if (trimmed.length > 15 && /^[0-9a-f]+$/i.test(trimmed)) return false;
                 
-                // Skip Gun-specific hex patterns but be more specific
+                // Skip internal hex patterns but be more specific
                 if (trimmed.match(/^8[0-9a-f]{15,}$/i)) return false;
                 
                 return true; // Keep everything else for now
@@ -1039,7 +1039,7 @@
 
     // Add onDestroy to clean up all subscriptions and D3 resources
     onDestroy(() => {
-        // Clean up Gun subscriptions
+        // Clean up store subscriptions
         cleanupSubscriptions();
         
         // Clean up D3 resources

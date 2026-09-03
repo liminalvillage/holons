@@ -23,7 +23,7 @@ pnpm dev
 ```
 
 Open <http://localhost:5173>. You're looking at `holons-web` reading from a
-Holosphere (GUN) namespace. No keys are required just to boot the UI; features
+Holosphere namespace. No keys are required just to boot the UI; features
 like maps need their token (`VITE_MAPBOX_TOKEN`) in `apps/web/.env`.
 
 ## Step 3 — Find the logic, not the pixels
@@ -96,7 +96,7 @@ fill in *what* and *why*.
 - **Core-first:** change meaning in `@holons/core`, presentation in the UI.
 - **Test-first:** every domain change ships with a `vitest` spec.
 - **One gate:** `typecheck`, `test`, `lint` must pass from a clean clone.
-- **One data layer:** Holosphere (GUN) is the source of truth; UIs are renderers.
+- **One data layer:** Holosphere (signed events on relays) is the source of truth; UIs are renderers.
 
 Next: skim [`docs/architecture.md`](./docs/architecture.md) for the full
 picture, and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions.

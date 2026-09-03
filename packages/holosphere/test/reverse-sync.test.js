@@ -3,7 +3,7 @@
  * standard-kind event — by the holon key or a trusted member key — is folded
  * back into the lens record, re-signed as our 30078, never re-projected
  * (no ratchet) and never applied from untrusted keys or our own echoes.
- * Exercised on both wires: nostr backend and gun + relay backup.
+ * Exercised through both entry points: constructor relays and enableSigning.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -83,12 +83,6 @@ function usersHook(userIdFor) {
     },
     merge(current, r) { return r.patch.first_name && r.patch.first_name !== current.first_name ? { ...current, first_name: r.patch.first_name } : null; },
   };
-}
-
-function gunOptions(dirs) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-rev-'));
-  dirs.push(dir);
-  return { peers: [], axe: false, multicast: false, stats: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false };
 }
 
 describe('reverse sync on the wire', () => {
@@ -186,13 +180,13 @@ describe('reverse sync on the wire', () => {
 
   test('nostr backend folds external edits back into records', async () => {
     await scenario('nb', async ({ holonSk, hooks, signerFor, trustedAuthors }) => new HoloSphere({
-      appName: APP, privateKey: holonSk, backend: 'nostr',
+      appName: APP, privateKey: holonSk,
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: hooks, signerFor, trustedAuthors },
       store: { adapter: 'memory' },
     }));
   }, 30000);
 
-  test('gun backend + relay backup folds external edits back into records', async () => {
+  test('enableSigning with relays folds external edits back into records', async () => {
     await scenario('gb', async ({ holonSk, hooks, signerFor, trustedAuthors }) => {
       const sphere = new HoloSphere({ appName: APP, privateKey: holonSk, store: { adapter: 'memory' } });
       await sphere.enableSigning({ relays: [relay.url], shadow: true, projections: hooks, signerFor, trustedAuthors });
@@ -203,7 +197,7 @@ describe('reverse sync on the wire', () => {
   test('reverseSync:false keeps phase-1 behaviour', async () => {
     const holonSk = generateSecretKey();
     const sphere = new HoloSphere({
-      appName: APP, privateKey: holonSk, backend: 'nostr',
+      appName: APP, privateKey: holonSk,
       nostr: { relays: [relay.url], syncTimeoutMs: 2000, projections: [eventsHook(() => undefined)], reverseSync: false },
       store: { adapter: 'memory' },
     });

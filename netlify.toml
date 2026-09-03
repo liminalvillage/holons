@@ -43,7 +43,7 @@
   # a private key must never appear in client bundles. If that variable is
   # set in production, rename it (drop the VITE_ prefix) and load it
   # server-side only, or treat it as a dev-only convenience.
-  SECRETS_SCAN_OMIT_KEYS = "VITE_MAPBOX_TOKEN,VITE_BOT_API_URL,VITE_TELEGRAM_BOT_USERNAME,VITE_LOCAL_MODE,VITE_QR_BASE_URL,VITE_DEV_TELEGRAM_USER_ID,VITE_DEV_TELEGRAM_USER_NAME"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_MAPBOX_TOKEN,VITE_HOLOSPHERE_RELAYS,VITE_BOT_API_URL,VITE_TELEGRAM_BOT_USERNAME,VITE_LOCAL_MODE,VITE_QR_BASE_URL,VITE_DEV_TELEGRAM_USER_ID,VITE_DEV_TELEGRAM_USER_NAME"
 
 # Build settings for SvelteKit
 [build.processing]

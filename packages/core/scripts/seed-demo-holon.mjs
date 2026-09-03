@@ -62,7 +62,7 @@ function parseArgs(args) {
 	return flags;
 }
 
-// Wrap a put in a timeout — Gun gossip can occasionally stall waiting for an
+// Wrap a put in a timeout — parent-propagation writes can occasionally stall waiting for a relay
 // ack on the parent-cell propagation. Local data is already written; the
 // timeout lets the batch move on rather than wedge mid-seed.
 function withTimeout(promise, ms, label) {

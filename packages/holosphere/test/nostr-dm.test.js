@@ -1,6 +1,6 @@
 /**
  * NIP-17 DMs over the active relay set, and the federation handshake riding
- * on them (with the legacy Gun channel still served).
+ * on them.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -16,12 +16,6 @@ async function eventually(fn, { timeout = 8000, step = 100 } = {}) {
   const until = Date.now() + timeout;
   for (;;) { const v = await fn(); if (v || Date.now() > until) return v; await wait(step); }
 }
-function gunOptions(dirs) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-dm-'));
-  dirs.push(dir);
-  return { peers: [], axe: false, multicast: false, stats: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false };
-}
-
 describe('NIP-17 direct messages', () => {
   let relay;
   const dirs = [];
@@ -59,7 +53,7 @@ describe('NIP-17 direct messages', () => {
     expect(await unwrapDirectMessage(onRelay[0], generateSecretKey())).toBeNull(); // strangers cannot read it
   }, 20000);
 
-  test('federation handshake rides on NIP-17 and is handled once despite the legacy Gun copy', async () => {
+  test('federation handshake rides on NIP-17 and is handled once', async () => {
     const aSk = generateSecretKey();
     const bSk = generateSecretKey();
     const a = new HoloSphere({ appName: APP, privateKey: aSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });

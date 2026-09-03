@@ -379,7 +379,7 @@
             await holosphere.put(holonId, "quests", updatedQuest);
             quest = updatedQuest;
             // Let the host view (Calendar, Tasks, …) merge the change into its
-            // own task map immediately — the Gun subscription echo of a local
+            // own task map immediately — the store's subscription echo of a local
             // put isn't reliable enough to repaint chips/cards without it.
             dispatch("updated", { questId, quest: updatedQuest });
 
@@ -419,7 +419,7 @@
                 }
                 // Synchronously drop from the shared cache so the next
                 // snapshot emission doesn't flash the deleted card back
-                // into any list view that hasn't received Gun's null
+                // into any list view that hasn't received the store's null
                 // tombstone yet.
                 queryManager.evict(holonId, "quests", questId);
 

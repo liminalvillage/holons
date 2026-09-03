@@ -93,7 +93,7 @@ export class QRActionService {
   /**
    * Reads a single item from a (possibly other) holon. On a fresh scan the
    * item is a cold cross-holon read, so we wait for the network rather than
-   * letting Gun's synchronous miss report it as not-found.
+   * letting a cold local-store miss report it as not-found.
    */
   private async getItem(
     holonID: string,

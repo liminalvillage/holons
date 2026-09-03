@@ -1,6 +1,6 @@
 # HoloSphere
 
-HoloSphere is a JavaScript library that provides a spatial data management system using H3 geospatial indexing and GunDB for distributed storage. It enables you to store, validate, and retrieve data organized by geographic location using holonic principles.
+HoloSphere is a JavaScript library that provides a spatial data management system using H3 geospatial indexing, with signed Nostr events on relays as the wire and a local event-sourced store as the cache (see STORE.md). It enables you to store, validate, and retrieve data organized by geographic location using holonic principles.
 
 ## What is a Holon?
 
@@ -321,7 +321,7 @@ Data in HoloSphere is organized by:
 ## Dependencies
 
 - h3-js: Uber's H3 geospatial indexing
-- gun: Decentralized database
+- nostr-tools: relay transport, signing and NIP-44
 - ajv: JSON Schema validation
 - openai: AI capabilities (optional)
 

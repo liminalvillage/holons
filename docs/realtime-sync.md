@@ -1,35 +1,33 @@
 # Real-time sync
 
 How data stays live across UIs, devices, and federated holons. This is the
-single source of truth — it supersedes the older websocket/notification
-scratch notes.
-
-> Earlier docs described a custom Nostr relay at `ws://localhost:7777` plus
-> `wss://relay.nostr.band`, and components named `RealtimeNotifications.svelte`
-> / `NotificationToast.svelte`. None of that reflects the current code. What
-> follows does.
+single source of truth.
 
 ## The transport
 
-Sync is provided by the pinned `holosphere@1.3.0-alpha5` package, which runs
-on **GunDB** — a peer-to-peer graph database with its own real-time sync
-layer over WebSocket/HTTP.
+Sync is provided by the workspace `holosphere` package. The **Nostr relays
+are the wire** and a **local event-sourced store** is the cache
+(`packages/holosphere/STORE.md`).
 
-- Default Gun peer: `https://gun.holons.io/gun` (set in holosphere's
-  constructor defaults). This is the shared backend every UI talks to.
-- In the browser, holosphere enables `radisk` (IndexedDB-backed
-  persistence) and disables `localStorage`, so data survives reloads and
-  syncs back when the peer is reachable.
-- The constructor also accepts `nostr: { relays | peers }`. Those URLs are
-  **not** opened as Nostr relays today — holosphere rewrites them to Gun
-  HTTP peers (`wss://host` → `https://host/gun`). It is a
-  forward-compatibility seam for a future native Nostr backend; the web app
-  keeps that path commented out (`apps/web/src/routes/+layout.svelte`,
-  `apps/web/src/routes/[id]/calendar/feed.ics/+server.ts`).
+- Every non-private write is a signed kind-30078 event (NIP-33 replaceable
+  per `holon/lens/id`, tagged with the app namespace) published to the
+  relays. Deletes are signed tombstones.
+- Production relays: `wss://relay.holons.io` and `wss://relay.commonshub.dev`
+  (`DEFAULT_RELAYS` in `@holons/core/holosphere`). Override with
+  `VITE_HOLOSPHERE_RELAYS` (web), `VITE_KIOSK_RELAYS` (kiosk) or
+  `HOLOSPHERE_RELAYS` (bot, MCP, scripts).
+- The first read or subscription of a `(holon, lens)` backfills it from the
+  relays (paginated, newest first) and records a cursor; afterwards one live
+  REQ per pair keeps the store current, and a reconnect or a tab coming back
+  online re-queries from the cursor.
+- The store persists in IndexedDB in browsers, a JSONL log + snapshot on
+  long-lived Node hosts, and memory in serverless functions and scripts. A
+  reload paints from the store immediately, then catches up.
+- Conflicts: newer `created_at` wins; ties go to the larger event id.
 
-There is no separate relay process to run for development. Pointing at
-`gun.holons.io` (the default) is enough; an explicit peer list is only
-needed for self-hosting.
+There is no separate relay process to run for development; the production
+relays are the default. `packages/holosphere/spike/mini-relay.js` is an
+in-process relay for tests.
 
 ## How the web app initializes it
 
@@ -38,23 +36,27 @@ needed for self-hosting.
 1. The splash screen (`Splash.svelte`) resolves an identity — a locally
    stored Nostr key, a freshly generated key, a Telegram-mapped session, or
    a `?key=` URL parameter — and emits an `authenticated` event.
-2. `initHoloSphere(privateKey)` constructs one `HoloSphere`:
+2. `initHoloSphere(privateKey)` builds one `HoloSphere` through the core
+   factory:
 
    ```ts
-   holosphere = new HoloSphere({
-     appName: environmentName,                 // VITE_HOLONS_APP or Holons/HolonsDebug
+   holosphere = await createHoloSphere({
+     appName: environmentName,                        // VITE_HOLONS_APP
      privateKey: hexToBytes(privateKey),
-     // backend: 'nostr' / nostr: { peers: [...] }  // future Nostr backend (commented)
+     relays: resolveRelays(import.meta.env.VITE_HOLOSPHERE_RELAYS),
+     store: { adapter: 'indexeddb' },
+     signing: signingOptionsFor(parseSigningMode(import.meta.env.VITE_HOLOSPHERE_SIGNING)),
+     nostr: projectionOptions,                        // standard-kind projections
+     awaitReady: true,                                // store open + transport up
    });
-   await holosphere.ready();                    // wait for backend init
    ```
 
 3. The instance is published to `holosphereStore`
    (`apps/web/src/lib/stores/holosphere.ts`). Components read it reactively
    or via `getHolosphere()`.
 4. The user's personal holon settings are initialized
-   (`initializeUserHolon`) with retry, because freshly connected peers may
-   take a moment to sync.
+   (`initializeUserHolon`) with retry, because the first relay sync of a
+   lens may take a moment.
 
 App namespace selection: `import.meta.env.VITE_HOLONS_APP` is the single
 source of truth, falling back to `Holons` in production / `HolonsDebug`
@@ -63,16 +65,12 @@ otherwise.
 ## Live updates in components
 
 Real-time UI is driven by `holosphere.subscribe(holonId, lens, callback)`.
-Internally (holosphere `utils.js`) this is:
-
-```js
-gun.get(appName).get(holonId).get(lens).map().on((data, key) => { ... })
-```
-
-so it is a Gun graph listener over the live peer connection — every peer
-that writes to that holon/lens pushes an update to every subscriber. The
+Internally it is a `store.watch` on the `(holon, lens)`: the current
+snapshot is replayed to the new subscriber on a microtask, then every
+accepted event (local writes and relay arrivals alike) fires once. The
 callback receives parsed data with holograms resolved (federation
-provenance followed). The returned object exposes `unsubscribe()`.
+provenance followed); a deletion arrives as `null` for that key. The
+returned object exposes `unsubscribe()`.
 
 Typical component pattern (used in ~25 web components, e.g.
 `apps/web/src/components/Offers.svelte`, `Tasks.svelte`):
@@ -89,17 +87,20 @@ onMount(() => {
 });
 ```
 
-Because the same Gun namespace backs every UI, a `put` from the Telegram
-bot, the MCP server, or another browser appears in any subscribed view
-without extra wiring — there is no manual broadcast step.
+Because every UI publishes to the same relays under the same namespace, a
+`put` from the Telegram bot, the MCP server, or another browser appears in
+any subscribed view without extra wiring — there is no manual broadcast
+step. `apps/web/src/lib/holosphere/QueryManager.ts` coalesces bursts of
+per-item emissions into one re-render per microtask.
 
 ## Writes
 
 Writes go through `@holons/core/holosphere`'s `writeWithIdentity()` /
 `createHolonWriter()`, which call `holosphere.put(holonId, lens, data, {
-actingAs })`. Gun propagates the change to connected peers; subscribers fire
-their `.on()` callbacks. Authorization failures are turned into a `false`
-return plus an optional `onDenied` callback rather than thrown (see
+actingAs })`. The put signs the record, applies it to the local store
+(subscribers fire synchronously) and publishes it to the relays.
+Authorization failures are turned into a `false` return plus an optional
+`onDenied` callback rather than thrown (see
 [architecture.md](./architecture.md)).
 
 ### Bot-refresh hook (web only)
@@ -115,9 +116,10 @@ no-op when no bot URL is configured.
 
 Beyond per-lens data sync, the web root layout opens one global federation
 DM subscription via holosphere's `handshake.subscribeToFederationDMs`
-(`apps/web/src/routes/+layout.svelte`, `setupFederationDMSubscription`). It
-handles four message kinds, each dispatched as a `window` CustomEvent for UI
-components to react to:
+(`apps/web/src/routes/+layout.svelte`, `setupFederationDMSubscription`).
+Messages travel as NIP-17 private messages (NIP-59 gift wrap, NIP-44) on the
+same relays. It handles four message kinds, each dispatched as a `window`
+CustomEvent for UI components to react to:
 
 | Handler | CustomEvent | Purpose |
 | --- | --- | --- |
@@ -130,8 +132,7 @@ The subscription is torn down in the layout's `onDestroy`.
 
 ## Notifications
 
-There is no Nostr-event notification subsystem. The current in-app
-notifications are:
+The current in-app notifications are:
 
 - `apps/web/src/lib/stores/writeNotifications.ts` +
   `apps/web/src/components/WriteNotificationToast.svelte` — toasts for
@@ -147,11 +148,16 @@ notifications are:
 
 - **No live updates**: confirm `holosphereStore` is set (the splash
   completed and `initHoloSphere` ran) and the component actually called
-  `holosphere.subscribe`. Check the browser console for the logged public
-  key after `holosphere.ready()`.
-- **Data missing right after load**: first-connection peer sync is not
-  instant. `initializeUserHolon` already retries settings reads; mirror that
-  pattern for other first-read paths rather than assuming data is present.
-- **Self-hosting a peer**: run a Gun relay peer and pass it via the
-  holosphere config; the default `gun.holons.io` peer is only a convenience
-  default, not a requirement.
+  `holosphere.subscribe`. The console logs the relay count and signing mode
+  after init.
+- **Data missing right after load**: the first sync of a lens is not
+  instant, and a lens this device has never touched has nothing in the
+  store yet. `initializeUserHolon` already retries settings reads; mirror
+  that pattern for other first-read paths rather than assuming data is
+  present.
+- **Stale data after a long offline period**: the store catches up from its
+  cursor on reconnect; `holosphere.resyncSubscriptions()` forces a re-query
+  of every synced lens.
+- **Self-hosting**: run any NIP-01 relay (strfry is what production uses)
+  and point the relay env at it; the production relays are only a
+  convenience default, not a requirement.

@@ -26,7 +26,7 @@ export async function getAllGlobal(holoInstance, tableName, password = null, opt
 
 export async function deleteGlobal(holoInstance, tableName, key, password = null, options = {}) {
     if (!tableName || !key) throw new Error('deleteGlobal: Missing required parameters');
-    return ContentOps.delete(holoInstance, null, tableName, key, password, options);
+    return ContentOps.deleteFunc(holoInstance, null, tableName, key, password, options);
 }
 
 export async function deleteAllGlobal(holoInstance, tableName, password = null, options = {}) {

@@ -157,7 +157,7 @@ export function edgeFade(nx: number, ny: number): number {
 // Per-(lens, hex) "does this cell contain anything" rows, persisted to
 // localStorage in the dashboard's format — `{ [hex]: [ts, 0|1] }` — so a
 // refresh paints last-known highlights instantly instead of waiting on the
-// Gun round-trip. Rows expire after the same 7-day TTL.
+// relay round-trip. Rows expire after the same 7-day TTL.
 
 export type PresenceEntry = { has: boolean; ts: number };
 

@@ -45,7 +45,6 @@ describe('personal-holon mirror survives a participation removal', () => {
     const sphere = new HoloSphere({
       appName: APP,
       privateKey,
-      backend: 'nostr',
       nostr: { relays: [relay.url], syncTimeoutMs: 3000 },
       store: { adapter: 'memory' },
     });

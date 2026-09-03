@@ -48,7 +48,7 @@
 
 	// Local-first + progressive load via queryManager.subscribe. The cached
 	// snapshot fires synchronously so isLoading clears immediately even on a
-	// cold/empty lens — no more spinner hanging on Gun's `.once()`.
+	// cold/empty lens — no more spinner hanging on a cold relay read.
 	function loadScheduleData() {
 		if (!holonID || !holosphere) {
 			isLoading = false;

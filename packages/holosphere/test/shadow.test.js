@@ -1,6 +1,6 @@
 /**
  * Shadow-mode verification (Phase 1, last step): signed envelopes are stored in
- * Gun and reads are classified accounted-vs-would-drop WITHOUT changing output.
+ * the store and reads are classified accounted-vs-would-drop WITHOUT changing output.
  */
 import os from 'node:os';
 import path from 'node:path';

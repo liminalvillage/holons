@@ -51,7 +51,9 @@ export function createHoloSphere(
       adapter: 'file',
       dir: process.env.HOLOSPHERE_STORE_DIR || './holosphere-store',
     },
-    signing: signingOptionsFor(parseSigningMode(process.env.HOLOSPHERE_SIGNING)),
+    signing: signingOptionsFor(
+      parseSigningMode(process.env.HOLOSPHERE_SIGNING)
+    ),
     extra: { logLevel: options.logLevel || 'INFO' },
   });
 }

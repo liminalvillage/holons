@@ -1,18 +1,18 @@
-# Nostr backend — the relay is the wire
+# The relay is the wire
 
-`backend: 'nostr'` runs the whole system on the Nostr relay. Gun stops being
-the network: it stays on as the **local-first cache** (in-memory graph +
-radisk, no peers), and **all networking happens over the Nostr relay(s)**:
+Every HoloSphere instance runs on the Nostr relay(s): the relays are the only
+network, and a local event-sourced store (`STORE.md`) is the cache.
 
-- **write** — every non-private `put`/`delete` is published as a signed
-  NIP-01 event (kind 30078, NIP-33 replaceable per location). This includes
-  **holograms** and **globals**, which the plain signing layer skips.
-- **read** — `get`/`getAll` first catch up the `(holon, lens)` from the relay
-  (bounded by a sync timeout, so an unreachable relay degrades to a local
-  read instead of blocking).
+- **write** — every non-private `put`/`delete` is signed and applied to the
+  local store, then published as a NIP-01 event (kind 30078, NIP-33
+  replaceable per location). This includes **holograms** and **globals**.
+- **read** — `get`/`getAll` first sync the `(holon, lens)` from the relay
+  (paginated backfill the first time, cursor catch-up afterwards, bounded by
+  `nostr.syncTimeoutMs` so an unreachable relay degrades to a local read
+  instead of blocking), then answer from the store.
 - **subscribe** — one live REQ per `(holon, lens)` stays open; remote events
-  are signature-verified and fed into the local graph, which fires the
-  existing subscription machinery unchanged.
+  are signature-verified, applied through the one LWW rule and fed to
+  `store.watch`, which drives every subscription.
 
 Because every record on the wire is a signed, content-addressed event, the
 durability/portability properties from [`SIGNING.md`](./SIGNING.md) hold for
@@ -28,10 +28,10 @@ import { generateSecretKey } from 'holosphere/nostr-events.js';
 const sphere = new HoloSphere({
   appName: 'Holons',
   privateKey: generateSecretKey(),      // device/actor key — signs every write
-  backend: 'nostr',
-  nostr: { relays: ['wss://relay.holons.io'] },
+  relays: ['wss://relay.holons.io', 'wss://relay.commonshub.dev'],
+  store: { adapter: 'file', dir: './holosphere-store' },   // memory | indexeddb | file
 });
-await sphere.ready();                    // transport is up
+await sphere.ready();                    // store open, transport up
 
 // The entire API is unchanged:
 await sphere.put(holon, 'tasks', { id: 't1', title: 'Repair the well' });
@@ -41,30 +41,26 @@ sphere.subscribe(holon, 'tasks', (item, key) => { /* live, from the relay */ });
 
 Guard rails:
 
-- `backend: 'nostr'` **without** `nostr.relays` falls back to the gun backend
-  with a console warning (several callers passed the flag aspirationally
-  before the transport existed).
-- No `privateKey` → an **ephemeral device key** is generated (writes still
-  sign + sync, but identity doesn't survive a restart). Pass a persistent key
-  for a stable identity.
+- No `relays` → the instance is **local-only** (tests, offline tooling): the
+  store works, nothing is published or synced.
+- No `privateKey` → an **ephemeral device key** is generated with a warning
+  (writes still sign + sync, but identity doesn't survive a restart). Pass a
+  persistent key for a stable identity.
+- The store adapter defaults to IndexedDB in a browser and memory elsewhere;
+  long-lived Node hosts should pass `store: { adapter: 'file', dir }`.
 
 ## How it fits the existing layers
 
-| Layer | gun backend | nostr backend |
-|---|---|---|
-| Gun graph | cache **and** wire (gun peers) | cache only (peerless) |
-| Networking | Gun websocket mesh | `relay-transport.js` (SimplePool) |
-| Signing layer | opt-in (`enableSigning`) | always on, **envelope-only** (`relays: []`) |
-| Publisher | signer (when relays set) | transport (single publisher) |
-| shadow / enforce | via `enableSigning` opts | via `config.signing.{shadow,enforce}` |
+| Layer | role |
+|---|---|
+| Local store (`store/`) | records, per-author events, backlinks, cursors, private lenses |
+| Networking | `relay-transport.js` (SimplePool, paginated backfill, cursor catch-up, reconnect) |
+| Signing layer | always on, **envelope-only**; the transport is the single publisher |
+| shadow / enforce | via `config.signing.{shadow,enforce}` or `enableSigning({...})` |
 
-The signing layer is enabled automatically in envelope-only mode: local
-`_events` attestation, shadow measurement, and enforce-mode authorized reads
-all work exactly as documented in `SIGNING.md` — the transport just owns the
-wire, publishing the very envelope events the signer issues (nothing is
-signed or published twice). Ingested remote events are verified and mirrored
-into the `_events` sidecar, so enforce mode authorizes remote data the same
-way as local writes.
+Ingested remote events are verified and kept per author in the store's
+events table, so enforce mode authorizes remote data the same way as local
+writes.
 
 ## Event scheme
 
@@ -111,8 +107,8 @@ holon-scoped so H3/federation copies never collide. Hologram/federation
 copies and globals are not projected. `created_at` is kept strictly
 monotone per `(kind, d)` so rapid re-puts are not rejected as "older".
 
-Configure: `nostr: { relays, projections, signerFor }` (nostr backend) or
-`enableSigning({ relays, projections, signerFor })` (gun + relay backup).
+Configure: `nostr: { projections, signerFor }` next to the constructor's
+`relays`, or `enableSigning({ relays, projections, signerFor })`.
 Build hooks with `buildProjections(parseProjectionList(env), ctx)` from
 `@holons/core/nostr`; the monorepo apps read `HOLOSPHERE_PROJECTIONS` /
 `VITE_HOLOSPHERE_PROJECTIONS` (`off` default | `all` | comma list).
@@ -137,7 +133,7 @@ a member editing their kind 0 — the edit is folded back into the record:
    folds it into the current record — only fields the event carries, so a
    client that drops `location` does not blank it. Then a normal
    `put(..., { _skipProjections: true })`: signed and published as OUR 30078
-   (gun subscribers, other Holons instances and enforce reads see it as an
+   (subscribers, other Holons instances and enforce reads see it as an
    ordinary write) but not re-projected, so the ingested event is never
    echoed. `projector.noteExternal` keeps our next projection of that
    address strictly newer than the edit (no ratchet, no stale overwrite).
@@ -184,66 +180,50 @@ active relay set: `sendDirectMessage(holo, { privateKey, recipientPubkey,
 content, subject })`, `subscribeDirectMessages(holo, privateKey, onMessage)`.
 The relay sees a kind-1059 by a throwaway key addressed to the recipient;
 the sender is authenticated by the seal, never by the payload. The
-federation handshake (`handshake-shim.js`) now rides on it whenever the
-caller passes its key and relays exist, while still writing/reading the
-legacy plaintext Gun `_dm/<pubkey>` channel for peers that have not
-upgraded (messages carry an `id`, so a copy on both paths is handled once).
+federation handshake (`handshake-shim.js`) rides on it (messages carry an
+`id`, so a redelivered copy is handled once); without relays it warns and
+does nothing.
 Generic host API: `holosphere.publishNostrEvents(events)`,
 `holosphere.subscribeNostr(filter, onevent)`, `holosphere.nostrRelays()`.
 
 ## Semantics & limits
 
 - **Conflicts** are last-writer-wins by event `created_at` (second
-  granularity; equal timestamps apply in arrival order). Per-actor lenses
+  granularity; equal timestamps go to the larger event id — see
+  `store/lww.js`). Per-actor lenses
   (participation, votes …) should use the signing layer's per-author
   aggregate as before — each actor's record is their own event.
-- **Private (password) lenses never touch the relay.** They are
-  SEA-encrypted, access-controlled by the password, and publishing them
-  would leak ciphertext + metadata; they remain local to the device in this
-  backend.
+- **Private (password) lenses never touch the relay.** They are NIP-44
+  encrypted with a scrypt-derived key (`store/private.js`, parameters frozen
+  in `STORE.md`), access-controlled by the password, and remain local to the
+  device.
 - **Read-key hydration at init is local-only** (the transport isn't up yet
-  when `enableSigning` runs). If your federation read-list lives remotely,
+  when the signer is built). If your federation read-list lives remotely,
   call `refreshReadKeys()` after the first sync.
 - **Relay policy**: the spike relay config is open; production should
   restrict writes (NIP-42 auth / allow-list) — see `spike/README.md`.
-- **Browser cache storage**: in a browser the backend forces
-  `radisk: false, localStorage: true` for Gun (callers can override).
-  Gun's radisk has no browser adapter unless `gun/lib/rindexed` is loaded,
-  so the stock `radisk: true` / `localStorage: false` default stores
-  nothing — survivable on the gun backend (the peer answers every read),
-  fatal here, where the local cache is the only reader and every read would
-  come back empty. localStorage's ~5 MB quota is the current ceiling for the
-  browser cache; loading the IndexedDB adapter would lift it.
-
-## Legacy Gun relay reads (`getAllLegacy`)
-
-Gun runs peerless on this backend, so records that only exist on the legacy
-Gun relay(s) — written before the Nostr relay became the wire — are invisible
-to `get`/`getAll`/`subscribe`. `getAllLegacy(holon, lens)` reads them through
-a lazily-created, **in-memory, read-only mirror** peered with the legacy
-relay(s) (`config.nostr.legacyGunPeers`, default
-`['https://gun.holons.io/gun']`; `[]` disables it). The mirror's graph never
-touches the primary instance's local cache and nothing is ever written
-through it. Every item comes back tagged
-`_verified: false, _unverified: true, _legacy: true` so UIs can gate it
-behind a "show all data" affordance — display-only, never trust legacy items
-for auth/ownership. On the gun backend it returns `[]` (the relay data is
-already the wire there). The web dashboard's "Show all data" toggle merges
-these into every subscribed lens view.
+- **Browser storage**: the IndexedDB adapter (`holosphere:<appName>`)
+  holds records, events, cursors and private lenses; a quota error degrades
+  to memory with a warning.
 
 ## Wiring in the monorepo
 
-- **web** (`apps/web`): `VITE_HOLOSPHERE_BACKEND=nostr` +
-  `VITE_HOLOSPHERE_RELAYS=wss://relay.holons.io`. Shadow/enforce flow through
-  the same `VITE_HOLOSPHERE_SIGNING` variable as before.
-- **telegram bot**: `HOLOSPHERE_RELAYS=wss://relay.holons.io` (the bot already
-  passes `backend: 'nostr'`; relays activate it).
-- **mcp-ui**: `HOLOSPHERE_BACKEND=nostr` + `HOLOSPHERE_RELAYS=…`
-  (+ optional `HOLOSPHERE_PRIVATE_KEY`).
+Every surface builds its instance through `createHoloSphere` in
+`@holons/core/holosphere` and resolves relays with `resolveRelays(env)`
+(unset → `DEFAULT_RELAYS`, the production pair):
+
+- **web** (`apps/web`): `VITE_HOLOSPHERE_RELAYS`, `VITE_HOLOSPHERE_SIGNING`,
+  IndexedDB store.
+- **kiosk** / **wequest**: `VITE_KIOSK_RELAYS` / `VITE_WEQUEST_RELAYS`
+  (falling back to `VITE_HOLOSPHERE_RELAYS`), IndexedDB store.
+- **telegram bot** / **discord bot**: `HOLOSPHERE_RELAYS`, file store under
+  `HOLOSPHERE_STORE_DIR` (default `./holosphere-store`), `HOLOSPHERE_SIGNING`.
+- **mcp-ui** / scripts: `HOLOSPHERE_RELAYS` (+ `HOLOSPHERE_PRIVATE_KEY`);
+  memory store unless `HOLOSPHERE_STORE_DIR` is set.
 
 ## Tests
 
-`test/nostr-backend.test.js` runs two+ peerless instances against the
+`test/nostr-backend.test.js` runs two+ instances that share nothing but the
 in-process relay (`spike/mini-relay.js`): cold reads, live subscriptions,
 LWW updates, deletes, globals, cold-start recovery, forged-event rejection,
 and namespace isolation.

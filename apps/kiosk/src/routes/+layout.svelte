@@ -401,7 +401,7 @@
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //
   // A successful LOCAL write must echo back through its lens subscription
-  // within a couple of seconds — same Gun graph, same process. When it
+  // within a couple of seconds — same local store, same process. When it
   // doesn't, the subscription is provably dead (however it died: quarantine,
   // a torn-down listener, a wedged storage adapter …) and every remote update
   // is being silently dropped too — the "writes work but the screen never

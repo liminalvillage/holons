@@ -18,7 +18,7 @@ interface CacheEntry {
   data: Map<string, any>;
   timestamp: number;
   subscription?: { unsubscribe: () => void };
-  // Kept so toggle-driven refetches (legacy Gun reads) can address the
+  // Kept so refetches can address the
   // holon/lens without parsing the cache key back apart.
   holonId?: string;
   lens?: string;
@@ -276,7 +276,7 @@ class QueryManager {
       });
     }
 
-    // Set up holosphere subscription if not already active. Gun's
+    // Set up holosphere subscription if not already active. The store's
     // map().on() fires per-item — first for whatever is in the local
     // graph, then again for each peer response as it arrives.
     //
@@ -367,7 +367,7 @@ class QueryManager {
 
   /**
    * Coalesce a burst of per-item updates into one subscriber notification
-   * per microtask. Gun's map().on() can fire hundreds of times in a row
+   * per microtask. The store's watch can fire hundreds of times in a row
    * when local cache hydrates; without this, every subscriber would
    * re-render once per item.
    */
@@ -390,9 +390,7 @@ class QueryManager {
     if (!subs || subs.size === 0) return;
     // Items only carry _unverified under enforce (unsigned, or signed by a key
     // outside the read-list); they are never surfaced. No-op in off/shadow.
-    const data = Array.from(entry.data.values()).filter(
-      (i) => !i?._unverified,
-    );
+    const data = Array.from(entry.data.values()).filter((i) => !i?._unverified);
     subs.forEach((callback) => {
       try {
         callback(data);

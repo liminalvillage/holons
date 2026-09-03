@@ -1,10 +1,10 @@
 /**
- * `backend: 'nostr'` — the whole system functioning on the Nostr relay.
+ * The relay is the wire — the whole system functioning on the Nostr relay.
  *
- * Two (or more) HoloSphere instances with NO Gun peers, connected only
- * through an in-process Nostr relay (spike/mini-relay.js): every write is a
- * signed event on the wire, every read/subscription live-syncs from the
- * relay into the local peerless Gun cache.
+ * Two (or more) HoloSphere instances that share nothing but an in-process
+ * Nostr relay (spike/mini-relay.js): every write is a signed event on the
+ * wire, every read/subscription live-syncs from the relay into the local
+ * store.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -41,7 +41,6 @@ describe('nostr backend (relay is the wire)', () => {
     const sphere = new HoloSphere({
       appName,
       privateKey,
-      backend: 'nostr',
       nostr: { relays: relays || [relay.url], syncTimeoutMs: 3000 },
       store: { adapter: 'memory' },
     });
@@ -68,7 +67,7 @@ describe('nostr backend (relay is the wire)', () => {
     }
   });
 
-  test('gun stays peerless — the relay is the only wire', async () => {
+  test('the relay is the only wire', async () => {
     const a = nostrSphere();
     await a.ready();
     expect(a.store.adapter?.kind).toBe('memory');
@@ -142,7 +141,7 @@ describe('nostr backend (relay is the wire)', () => {
     const a = nostrSphere();
     await a.put(HOLON, 'library', { id: 'book-1', title: 'Walden' });
     await wait(500); // let the publish land on the relay
-    const fresh = nostrSphere(); // empty radisk — everything must come from the relay
+    const fresh = nostrSphere(); // empty store — everything must come from the relay
     const items = await eventually(async () => {
       const got = await fresh.getAll(HOLON, 'library');
       return got.some((i) => i.id === 'book-1') ? got : null;

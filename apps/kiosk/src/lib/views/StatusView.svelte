@@ -11,7 +11,7 @@
   // Self-contained and scoped to the kiosk's own holon (federation is out of
   // scope). It reads `rea_events` with a one-shot `getAll` (retried for the
   // replication race) and refreshes on an interval — deliberately NOT a live
-  // subscription: a `map().on()` on that large lens triggers a Gun fire-storm.
+  // subscription: a live watch on that large lens re-renders on every event.
   // Those events feed an in-memory store so all scoring runs offline/locally.
   import { onMount } from "svelte";
   import { get } from "svelte/store";
@@ -351,7 +351,7 @@
 
     // Score against an IN-MEMORY view of the events (the `events` array), not a
     // live store: each per-user aggregate query reads the cached array instead
-    // of hitting Gun, and we never open a `map().on()` on the huge rea_events
+    // of hitting the store, and we never open a live watch on the huge rea_events
     // lens (which storms). `getAll` here returns whatever we've loaded so far.
     aggregator = new REAAggregator(
       new REAEventStore({ getAll: async () => events } as any),

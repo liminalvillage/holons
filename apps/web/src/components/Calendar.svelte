@@ -536,7 +536,7 @@
 
     // Local-first + progressive load via queryManager.subscribe: cached
     // snapshot fires synchronously even when the lens is empty, so the
-    // calendar never waits on a cold Gun `.once()` to render.
+    // calendar never waits on a cold relay read to render.
     function loadProfiles() {
         if (!holosphere || !$ID) return;
 
@@ -845,7 +845,7 @@
     }
 
     // Local-first + progressive: queryManager.subscribe emits the cached
-    // snapshot synchronously (next microtask) and streams items as Gun's
+    // snapshot synchronously (next microtask) and streams items as the store's
     // map().on() delivers them. No blocking `await holosphere.getAll` on
     // the render path — calendar paints with empty tasks instantly even
     // when the lens is cold.

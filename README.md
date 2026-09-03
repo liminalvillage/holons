@@ -29,7 +29,7 @@ The repository is a **pnpm monorepo**: a single UI-agnostic domain core
 
 Most coordination tools lock your group's data inside one app and one company.
 Holons is **local-first and federated**: data lives in a decentralized
-[GUN](https://gun.eco) graph (the *Holosphere* layer), every group ("holon")
+relay-backed event store (the *Holosphere* layer), every group ("holon")
 owns its namespace, and groups federate peer-to-peer without a central
 authority. The same domain logic drives a web dashboard, a Telegram bot, a CLI,
 a natural-language agent, and an MCP server — so you can meet your community
@@ -52,8 +52,8 @@ where it already is.
           └──────────┘ └───────────┘ └─────────┘ └─────────┘ └──────────┘
                 └────────────┴────────────┴────────────┴───────────┘
                                        │
-                       Holosphere — decentralized GUN graph
-                          (peer-to-peer, local-first sync)
+                 Holosphere — signed events on Nostr relays
+                    (local-first store, relay-synced)
 ```
 
 Core never imports a UI framework; UIs never re-implement domain rules. Full

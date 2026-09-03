@@ -26,7 +26,7 @@ describe('HoloSphere Deletion Tests', () => {
         await holoSphere.deleteAll(testHolon, testLens);
         await holoSphere.deleteAllGlobal(testGlobalTable);
         
-        // Close Gun connections
+        // Close the instance
         if (holoSphere) {
             await holoSphere.close();
         }
@@ -197,7 +197,7 @@ describe('HoloSphere Deletion Tests', () => {
         test('should handle deletion of non-existent items gracefully', async () => {
             // Try to delete non-existent item
             const deleteResult = await holoSphere.delete(testHolon, testLens, 'non-existent-id');
-            expect(deleteResult).toBe(true); // Gun returns success even for non-existent items
+            expect(deleteResult).toBe(true); // delete reports success even for non-existent items
             
             // Try to delete non-existent global item
             const deleteGlobalResult = await holoSphere.deleteGlobal(testGlobalTable, 'non-existent-global-id');

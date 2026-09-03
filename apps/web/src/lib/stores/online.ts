@@ -3,7 +3,7 @@ import { readable, type Readable } from "svelte/store";
 import { browser } from "$app/environment";
 
 // `navigator.onLine` reflects whether the browser has a network connection.
-// It's a heuristic — true doesn't guarantee the Gun peer is reachable — but
+// It's a heuristic — true doesn't guarantee the relays are reachable — but
 // it's the right signal for "data flow is degraded" UX. SSR returns true so
 // the banner doesn't flash during hydration.
 export const online: Readable<boolean> = readable(true, (set) => {

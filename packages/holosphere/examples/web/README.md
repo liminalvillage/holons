@@ -75,7 +75,7 @@ Projects federate their holons to share relevant data:
 - VoiceVillage → ALL: Democratic governance across the ecosystem
 
 ### Decentralization
-Built on GunDB principles:
+Built on local-first principles:
 - No central server required
 - Community-owned data
 - Peer-to-peer synchronization
@@ -162,10 +162,10 @@ const federated = await sphere.getFederated('holon-a', 'lens-name');
 
 While these examples use a simulated browser API, production deployments would:
 
-1. **Use the full HoloSphere library** (`holosphere.js`) with GunDB
-2. **Set up GunDB relay servers** for peer-to-peer synchronization
+1. **Use the full HoloSphere library** (`holosphere.js`) with Nostr relays
+2. **Point it at Nostr relay(s)** for synchronization
 3. **Configure H3 resolution** appropriate for your geographic scale
-4. **Implement authentication** using GunDB's SEA (Security, Encryption, Authorization)
+4. **Implement authentication** with Nostr keys (every write is signed)
 5. **Add real-time subscriptions** for live data updates
 6. **Bundle for browsers** using Webpack/Vite if needed
 

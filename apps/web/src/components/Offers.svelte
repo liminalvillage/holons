@@ -150,9 +150,9 @@
 	const ensureCurrentUserInStore = (store: any) => mergeSelfIntoUsers(store);
 
 	// Fetch and subscribe to users for the current holon
-	// Gun-listener handle for the users subscription. Tear it down before
+	// Store-listener handle for the users subscription. Tear it down before
 	// re-subscribing (called on every holon change) and on destroy, or each
-	// switch leaks a `.map().on()` callback Gun keeps forever.
+	// switch leaks a watch callback the store keeps forever.
 	let usersSubscriptionOff: (() => void) | null = null;
 
 	async function fetchAndSubscribeUsers() {

@@ -28,7 +28,7 @@ async function organizationFederationExample() {
     }
     console.log(`Federation created between ${techTeamHolon} and ${orgHolon}`);
     
-    // Allow a moment for GunDB propagation of federation settings
+    // Allow a moment for relay propagation of federation settings
     await new Promise(resolve => setTimeout(resolve, 1500)); 
 
     // Step 2: Verify federation is set up properly
@@ -140,7 +140,7 @@ async function organizationFederationExample() {
     await holoSphere.unfederate(techTeamHolon, orgHolon);
     console.log(`Federation removed between ${techTeamHolon} and ${orgHolon}`);
     
-    // Optional: Clean up data (can be slow and sometimes unreliable in Gun)
+    // Optional: Clean up data (can be slow)
     // console.log('Cleaning up task data...');
     // await holoSphere.delete(techTeamHolon, 'tasks', task.id);
     // await holoSphere.delete(orgHolon, 'tasks', task.id); // Delete the reference

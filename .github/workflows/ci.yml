@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install (frozen lockfile)
@@ -36,6 +36,11 @@ jobs:
 
       - name: Test
         run: pnpm -r --if-present test
+
+      - name: Holosphere suite under enforce signing
+        run: pnpm -F holosphere test
+        env:
+          HOLO_TEST_SIGNING: enforce
 
       - name: Lint
         run: pnpm -r --if-present lint

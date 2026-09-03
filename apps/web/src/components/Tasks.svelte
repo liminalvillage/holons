@@ -829,7 +829,7 @@
 			// Drop from queryManager's cache too. Otherwise the next snapshot
 			// emission (any unrelated quest update, or just another subscriber
 			// registering) re-puts the deleted item into our `store` before
-			// Gun's null tombstone has propagated through `subscribe()` — and
+			// the store's null tombstone has propagated through `subscribe()` — and
 			// the deleted card flashes back into the list.
 			if (holonID) queryManager.evict(holonID, 'quests', deletedId);
 			// Update local store immediately

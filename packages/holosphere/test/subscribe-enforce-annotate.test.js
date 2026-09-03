@@ -4,7 +4,7 @@
  * (legacy/forged) items are surfaced tagged `_unverified: true`. This is what
  * the dashboard's "show all data" toggle + signed/unsigned badges rely on.
  *
- * Regression guard for the listener-dedup in Utils.subscribe: the shared Gun
+ * Regression guard for the listener-dedup in Utils.subscribe: the shared store
  * listener must still deliver each event to the per-call enforce wrapper.
  */
 import HoloSphere from '../holosphere.js';

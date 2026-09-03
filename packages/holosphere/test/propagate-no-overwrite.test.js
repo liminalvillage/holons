@@ -14,7 +14,7 @@
 // copies are the shape that could overwrite, so that is what the guard has to
 // be proven against. Propagation itself is opt-in now, hence `autoPropagate`.
 //
-// Uses live Gun: fresh holon ids per test, generous settle waits.
+// Uses a live instance: fresh holon ids per test, generous settle waits.
 
 import { jest } from '@jest/globals';
 import { testSphere, cleanupTestEnv } from './helpers/testenv.js';

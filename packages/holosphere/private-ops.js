@@ -4,7 +4,7 @@
 // `${appName}:${holon ?? lens}` and encrypts them with NIP-44 under a key
 // derived from the password (store/private.js). Private records never touch
 // the relay, the signing layer, holograms or propagation — they are exactly
-// as isolated as the old SEA user space was, minus the Gun.
+// as isolated as the old SEA user space was.
 
 import { privateLens } from './store/index.js';
 import { isTombstone } from './store/store.js';

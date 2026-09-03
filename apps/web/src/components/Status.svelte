@@ -105,7 +105,7 @@
     async function saveEquation() {
         try {
             // Not `getAll(...)[0]`: the settings lens can hold more than one
-            // record (imported calendars, legacy id-less writes) and Gun's map
+            // record (imported calendars, legacy id-less writes) and the lens
             // order is undefined, so index 0 is a coin toss. Spreading the
             // wrong record here would save it back over the real settings.
             const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
@@ -187,7 +187,7 @@
         try {
             // Get current settings first to check for existing currencies
             // Not `getAll(...)[0]`: the settings lens can hold more than one
-            // record (imported calendars, legacy id-less writes) and Gun's map
+            // record (imported calendars, legacy id-less writes) and the lens
             // order is undefined, so index 0 is a coin toss. Spreading the
             // wrong record here would save it back over the real settings.
             const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
@@ -418,10 +418,10 @@
     let settingsAutoMerged = false;
     let currentSettingsSnapshot: any = null;
 
-    // Live Gun-listener handles. Each subscribe function below tears down its
+    // Live store-listener handles. Each subscribe function below tears down its
     // own previous handle before opening a new one, and onDestroy tears them
     // all down — otherwise every holon switch (the ID/page subscriptions call
-    // these on each change) would leak a `.map().on()` callback that Gun keeps
+    // these on each change) would leak a watch callback that the store keeps
     // forever.
     let settingsSub: { unsubscribe: () => void } | undefined;
     let expensesSub: { unsubscribe: () => void } | undefined;

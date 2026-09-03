@@ -7,7 +7,7 @@
 // at the destination, redirected the write to its soul — the SOURCE — and
 // stored the pointer on top of the original, destroying its content and
 // leaving a hologram that points at its own path. Resolving such a husk
-// loops, Gun re-emits unboundedly, and the fire-storm guard quarantines the
+// loops, resolution would chase itself unboundedly, and the guard quarantines the
 // lens (the "board frozen until reload" failure).
 
 import { testSphere, cleanupTestEnv } from './helpers/testenv.js';

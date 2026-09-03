@@ -98,14 +98,14 @@
   //
   // Every lens this component listens to is held as a keyed map and folded in
   // from the subscription payload itself. No handler reads the lens it is
-  // listening to: a read makes Gun re-emit that lens, the re-emission re-fires
+  // listening to: a read makes the store re-emit that lens, the re-emission re-fires
   // the handler, and the handler reads again — a loop that never settles, it
   // only paces itself at whatever the debounce is. One pass here rebuilds the
   // event list, the name map, both Sankeys and the entire ledger, so the tab
   // ends up doing that several times a second for as long as the page is open
   // and eventually runs out of room.
   //
-  // Gun re-emits value-identical records constantly on ordinary relay traffic,
+  // The store may re-emit value-identical records on ordinary relay traffic,
   // so each map also keeps a signature per id and drops echoes that carry no
   // change — otherwise the same rebuild happens for records that did not move.
   const eventsById = new Map<string, REAEvent>();
@@ -732,7 +732,7 @@
     }
   }
 
-  /** Gun hands back a record map or an array depending on the call. */
+  /** Holosphere hands back a record map or an array depending on the call. */
   function normalizeLens(items: any): any[] {
     if (Array.isArray(items)) return items.filter(Boolean);
     if (items && typeof items === "object") return Object.values(items).filter(Boolean);
@@ -852,7 +852,7 @@
   /**
    * Member shares for the interior, scored through the same pipeline the Status
    * board ranks with — so the two views cannot disagree about contribution.
-   * Runs against an in-memory view of the events rather than re-reading Gun.
+   * Runs against an in-memory view of the events rather than re-reading the store.
    */
   async function rescoreMembers() {
     const id = holonID;

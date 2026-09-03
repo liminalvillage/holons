@@ -67,7 +67,7 @@
 	// and 8s (reads) — fine for general code paths but too long for the splash,
 	// which must feel responsive. Use this to race calls that don't accept a
 	// per-call `{ timeout }` option yet (notably hnsLookup / hnsRegister, which
-	// go through holosphere.getGlobal / writeGlobal). Local radisk hits
+	// go through holosphere.getGlobal / writeGlobal). Local store hits
 	// resolve in <100ms so 1s here is generous.
 	const SPLASH_OP_TIMEOUT_MS = 1000;
 	function withSplashTimeout<T>(promise: Promise<T>, label: string): Promise<T | undefined> {
@@ -97,7 +97,7 @@
 		console.log('Initializing user holon with ID:', userPublicKey, 'telegramUserId:', pendingTelegramUserId);
 
 		try {
-			// Check if holon settings already exist with a short retry — Gun may
+			// Check if holon settings already exist with a short retry — the relay sync may
 			// not have synced the user's namespace yet on first connection. Kept
 			// tight (2 attempts × 300ms = ~600ms worst case) so the splash hides
 			// quickly; if the real name shows up later the reactive nameResolver
@@ -110,7 +110,7 @@
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
 				// holosphere.get is bounded by READ_TIMEOUT_MS in the library
 				// (8s default), but the splash needs to feel fast: a local
-				// radisk hit returns in <100ms, so cap each attempt at 1s
+				// local-store hit returns in <100ms, so cap each attempt at 1s
 				// and let the retry/HNS/fallback chain take over from there.
 				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey, null, { timeout: 1000 });
 				if (existingSettings && existingSettings.name) {
@@ -211,7 +211,7 @@
 			const isFreshUser = !existingSettings;
 			if (isGenuinelyNewUser || isFreshUser) {
 				console.log('New user - creating personal holon:', holonName);
-				// Library default is 5s; splash needs faster. Local radisk
+				// Library default is 5s; splash needs faster. Local store
 				// ack returns in <100ms.
 				await holosphere.put(userPublicKey, 'settings', {
 					id: userPublicKey,
@@ -624,7 +624,7 @@
 				// holon namespace is fully determined by the telegram id (or
 				// pubkey) and the URL — none of it needs the relay. Doing the
 				// ID/route now lets the splash hide and the dashboard render as
-				// soon as Gun is constructed; the slow part of
+				// soon as the instance is constructed; the slow part of
 				// initializeUserHolon (settings read retries, HNS lookup +
 				// register, settings/mappings writes) used to be awaited here
 				// and, on a cold device with an empty cache, stalled toward each
@@ -714,7 +714,7 @@
 				}
 			}
 		} catch (err) {
-			// initHoloSphere can throw on invalid keys or Nostr/Gun init failures.
+			// initHoloSphere can throw on invalid keys or relay/store init failures.
 			// Without this catch the splash would stay visible forever — surface
 			// the failure to the user instead of hanging on the loading view.
 			console.error('HoloSphere initialization failed:', err);

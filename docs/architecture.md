@@ -1,7 +1,7 @@
 # Architecture
 
 Holons is a pnpm monorepo with one shared domain layer and several UIs that
-all read from and write to the same peer-to-peer data namespace. The guiding
+all read from and write to the same relay-synced data namespace. The guiding
 principle: "compute a score", "create a task", "publish to federation" mean
 the exact same thing in every UI because they all call the same
 `@holons/core` functions.
@@ -18,9 +18,9 @@ UIs            web · telegram · text · ai · mcp
                           │  (reads/writes through)
 Holosphere     identity-aware HoloSphere instance
                           │
-Data layer     GunDB peer-to-peer sync (default peer
-               https://gun.holons.io/gun; Nostr relay URLs are
-               mapped to Gun peers by holosphere)
+Data layer     signed Nostr events (kind 30078) on relays
+               (wss://relay.holons.io, wss://relay.commonshub.dev)
+               mirrored into a local event-sourced store
 ```
 
 Each layer only depends downward. `@holons/core` never imports `svelte`,
@@ -81,8 +81,12 @@ constructed and the single gate for identity-aware writes. Files:
 - `factory.ts` — `createHoloSphere(options)`. UI-agnostic: it never touches
   `process.env`, `localStorage`, or the filesystem. The caller resolves its
   own private key and passes it in. Returns a `HoloSphere` synchronously, or
-  a `Promise<HoloSphere>` when `awaitReady: true`. Extra config (including
-  Nostr-style `nostr: { relays, peers }`) passes through `extra`.
+  a `Promise<HoloSphere>` when `awaitReady: true`. Takes `relays`, `store`
+  (`memory` | `indexeddb` | `file`), `signing` and `nostr` (projections);
+  anything else passes through `extra`.
+- `relays.ts` — `DEFAULT_RELAYS`, `resolveRelays(env)`, `parseSigningMode`,
+  `signingOptionsFor`: the one place the production relay set and the
+  env-to-option parsing live.
 - `identity.ts` — `canWriteToHolon()` / `resolveActingAs()`. Asks the
   holosphere `canWrite` mixin "may `actingAs` write to `holonId/lens`?",
   falling back to an owner check. Used for UI gating, not security
@@ -92,26 +96,28 @@ constructed and the single gate for identity-aware writes. Files:
   authorization errors into a `false` return (with an optional `onDenied`
   callback) while letting non-auth errors bubble.
 
-### Backend reality (holosphere 1.3.0-alpha5)
+### Data layer reality (holosphere 2.x)
 
-The pinned `holosphere` is consumed straight from npm (the soft-tombstone,
-hologram-resolve-resilience, and bounded-read fixes that used to live in
-`patches/holosphere@1.3.0-alpha4.patch` are now upstream as of alpha5).
-Under the hood it runs on **GunDB**, not raw Nostr:
+The workspace `holosphere` package has no network library of its own: the
+**Nostr relays are the wire** and a **local event-sourced store** is the
+cache (`packages/holosphere/STORE.md`).
 
-- Default Gun peer: `https://gun.holons.io/gun`. In the browser, `radisk`
-  persistence is on and `localStorage` is disabled.
-- On the default gun backend, any `nostr: { relays | peers }` URLs are
-  rewritten to Gun HTTP peers: `wss://host` → `https://host/gun` (and
-  `ws://` → `http://`).
-- **Nostr backend** (`backend: 'nostr'` + `nostr.relays`): the relay IS the
-  wire. Gun runs peerless as the local-first cache; every non-private write
-  is published as a signed NIP-01 event and every read/subscription
-  live-syncs its `(holon, lens)` from the relay. See
-  `packages/holosphere/NOSTR-BACKEND.md`. Opt in per surface:
-  web `VITE_HOLOSPHERE_BACKEND=nostr` + `VITE_HOLOSPHERE_RELAYS=…`,
-  bot `HOLOSPHERE_RELAYS=…`, mcp `HOLOSPHERE_BACKEND=nostr` +
-  `HOLOSPHERE_RELAYS=…`. Without relays the flag falls back to gun.
+- Every non-private `put`/`delete` is a signed kind-30078 event (NIP-33
+  replaceable per `holon/lens/id`, tagged with the app namespace) published
+  to the configured relays. Deletes are signed tombstones.
+- Every `get`/`getAll`/`subscribe` syncs its `(holon, lens)` from the relays
+  once (paginated backfill, then a cursor) and serves reads from the store;
+  a live REQ keeps the store current. One last-writer-wins rule: newer
+  `created_at` wins, ties go to the larger event id.
+- The store persists in IndexedDB in browsers, a JSONL log + snapshot on
+  long-lived Node hosts (`store: { adapter: 'file', dir }`), and memory in
+  serverless functions and scripts. Reloads paint from the store and catch
+  up from the cursor.
+- Private (password) lenses are NIP-44 encrypted with a scrypt-derived key
+  and never leave the device.
+- Configure per surface: web `VITE_HOLOSPHERE_RELAYS` / `VITE_HOLOSPHERE_SIGNING`,
+  kiosk `VITE_KIOSK_RELAYS`, bot/mcp `HOLOSPHERE_RELAYS` +
+  `HOLOSPHERE_STORE_DIR`. Unset relays mean the production relay set.
 
 ### Namespacing and identity
 

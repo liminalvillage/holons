@@ -18,8 +18,9 @@ packages/ai-ui/        Codex tool-use NL interface
 packages/mcp-ui/       Model Context Protocol server
 ```
 
-Data layer: **Holosphere**, a decentralized [GUN](https://gun.eco) graph,
-namespaced per holon, peer-to-peer and local-first.
+Data layer: **Holosphere** — signed Nostr events (kind 30078) on relays,
+mirrored into a local event-sourced store; namespaced per holon and
+local-first. See `packages/holosphere/STORE.md`.
 
 License: **AGPL-3.0-or-later** with a commercial option — see
 [`LICENSING.md`](./LICENSING.md). New source files get the SPDX header.
@@ -49,7 +50,7 @@ License: **AGPL-3.0-or-later** with a commercial option — see
   domain's `index.ts` + tests first.
 - Prefer the smallest change that satisfies the requirement; match the style of
   the file you touch (the bot is mixed JS/TS by design).
-- Clean up Holosphere/Gun subscriptions and timers; assume async, eventual
+- Clean up Holosphere subscriptions and timers; assume async, eventual
   consistency — don't force synchronous reads.
 - Keep the working tree clean: no `build/`, `.svelte-kit/`, `radata/`, or
   `.env` in commits.

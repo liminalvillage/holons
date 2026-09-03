@@ -89,7 +89,7 @@
 
 	// Per-(lens, hex) presence cache. Stops us refetching the same cell on
 	// every pan/zoom AND survives page refreshes via localStorage so the user
-	// doesn't pay the Gun round-trip on cold start. Each entry stores both
+	// doesn't pay the relay round-trip on cold start. Each entry stores both
 	// the answer (`has`) and the timestamp so we can re-validate stale rows
 	// after `PRESENCE_CACHE_TTL_MS` while serving the rest instantly.
 	type PresenceEntry = { has: boolean; ts: number };
@@ -286,7 +286,7 @@
 	// Apply one item's contribution to a hex's presence sets, then repaint if
 	// the cell's (native) presence flipped. `isOpen=false` removes the key —
 	// used for completed quests so a cell un-lights when its last open quest is
-	// done. Gun nulls (deletes/replays) never reach here (filtered upstream),
+	// done. Null emissions (deletes) never reach here (filtered upstream),
 	// so non-quest presence stays monotonic; only explicit completion removes.
 	function applyPresence(
 		lens: LensType,
@@ -331,7 +331,7 @@
 	// Authoritative, sanitized check of a quest's presence at a cell. `get`
 	// resolves the upcast hologram pointer to its origin AND filters tombstones
 	// by default, so this is the single source of truth for "should this cell
-	// be lit for this quest". Wrapped in a timeout because Gun cold reads for
+	// be lit for this quest". Wrapped in a timeout because cold relay reads for
 	// not-yet-replicated keys never fire.
 	//   'hide'    → completed, or gone (deleted / tombstoned origin)
 	//   'show'    → confirmed open
@@ -418,7 +418,7 @@
 			if (lens === 'quests') {
 				// Quests get sanitized: completed AND deleted/tombstoned must not
 				// light a cell. The emitted item can lag the origin (a stale-open
-				// upcast pointer over a completed/deleted source) or be a Gun null
+				// upcast pointer over a completed/deleted source) or be a null
 				// (a delete), so we never trust it alone.
 				if (item != null) {
 					// Optimistic: light immediately on inline-open so a freshly
@@ -429,7 +429,7 @@
 					if (hideNow) return;
 				}
 				// Reconcile against the authoritative, tombstone-filtered read.
-				// Acts only on a definite verdict, so Gun's noise nulls don't
+				// Acts only on a definite verdict, so transient nulls don't
 				// cause flicker and a fresh task stays lit until truly resolved.
 				void resolveQuestPresence(hex, key).then((verdict) => {
 					if (verdict === 'unknown') return;
@@ -439,7 +439,7 @@
 				return;
 			}
 
-			// Non-quest lenses: ignore Gun nulls (reconnect/replay noise) and
+			// Non-quest lenses: ignore nulls (delete emissions) and
 			// count any item — presence here is just "does this cell contain
 			// anything for this lens".
 			if (item == null) return;
@@ -1015,7 +1015,7 @@
 		previousSubscribedLens = selectedLens;
 
 		// Reconcile subscriptions for the new lens. Small delay so the
-		// previous lens's unsubscribe Gun calls flush before we attach the
+		// previous lens's unsubscribe calls flush before we attach the
 		// new ones. fetchLensData itself does the cache-seed + render so we
 		// don't duplicate that work here.
 		clearMoveTimeout();
@@ -1137,7 +1137,7 @@
 		// monotonic — so a cell discovered in a previous session or at a
 		// previous zoom level remains highlighted forever (until lens change
 		// or component unmount). New positives can still arrive via the
-		// subscribe callback once Gun delivers their items.
+		// subscribe callback once the store delivers their items.
 		let lensDataChanged = false;
 		for (const [hex, entry] of cacheForLens.entries()) {
 			if (entry.has && !lensData[currentLens].has(hex)) {
@@ -1564,7 +1564,7 @@
 			isMoving = false;
 
 			// Tight debounce — just enough that successive moveends from a
-			// single pan gesture coalesce into one reconciliation. Gun .on/.off
+			// single pan gesture coalesce into one reconciliation. Subscribe/unsubscribe
 			// is cheap so we don't need the long delay the old getAll path
 			// needed.
 			clearMoveTimeout();
@@ -1664,7 +1664,7 @@
 			// map starts asking holosphere for content. Hydrating first means
 			// the very first `renderHexes` already has positives to draw, so
 			// refreshes show the last-known highlights instantly instead of
-			// waiting for the Gun round-trip.
+			// waiting for the relay round-trip.
 			hydratePresenceCache();
 
 			// Add global mouse move and up listeners (only when in browser)
@@ -1825,7 +1825,7 @@
 	// Create a fresh map to ensure no references remain
 	holoSubscriptions = new Map();
 
-	// Tear down every live `holosphere.subscribe` so we don't leak Gun
+	// Tear down every live `holosphere.subscribe` so we don't leak store
 	// `.map().on()` listeners when the map hides / unmounts. The persistent
 	// presenceCache survives — it's our fast-path for re-mount.
 	unsubscribeAll();
@@ -1833,7 +1833,7 @@
 
 	// Clear render-side state. Keep `presenceCache` populated — it's our
 	// fast-path for re-mount (visibility toggle, hot reload) and a wipe
-	// here would force every cell to round-trip through Gun again.
+	// here would force every cell to round-trip through the relay again.
 	for (const key of Object.keys(lensData)) {
 		lensData[key as LensType] = new Set<string>();
 	}

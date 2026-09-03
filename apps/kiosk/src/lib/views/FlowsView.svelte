@@ -16,7 +16,7 @@
   //
   // Data rules inherited from StatusView, both learned the hard way:
   //   - `rea_events` is read with a one-shot `getAll` and a retry backoff, never
-  //     a subscription: a `map().on()` on that lens sets off a Gun fire-storm.
+  //     a subscription: a live watch on that large lens re-renders on every event.
   //   - every `await` is followed by a holon-identity check, so a holon switch
   //     mid-load cannot paint the previous holon's numbers.
   // `expenses` is small enough to subscribe to normally.
@@ -496,7 +496,7 @@
    * Member shares for the interior, scored the same way the Status board ranks.
    *
    * Scoring runs against an IN-MEMORY view of the events, so each per-user
-   * aggregate query reads the cached array instead of hitting Gun.
+   * aggregate query reads the cached array instead of hitting the store.
    */
   async function rescoreMembers() {
     const holon = hid;

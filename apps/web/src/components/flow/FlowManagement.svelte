@@ -292,7 +292,7 @@
 
       if (federationData.length > 0) {
         // Read the canonical settings document, not `getAll(...)[0]` — the
-        // lens can hold more than one record and index 0 is whichever Gun
+        // lens can hold more than one record and index 0 is whichever the store
         // happened to list first. `readZoneAssignments` prefers the current
         // `allocation.zones` and falls back to the legacy top-level
         // `federationZones` for holons not yet migrated.

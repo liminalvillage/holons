@@ -8,7 +8,7 @@
 // we make a single forced-tool LLM call — Anthropic when a key is configured,
 // falling back to OpenAI chat completions — and return the validated
 // proposal. All Holosphere writes happen back in the browser, where the
-// user's identity/signing already works — this route never touches GUN.
+// user's identity/signing already works — this route never touches the store.
 //
 // Session-gated: without a valid session cookie this would be an open proxy
 // to the Anthropic API key. Non-production builds skip the gate, matching

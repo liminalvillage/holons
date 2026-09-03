@@ -391,7 +391,7 @@ export function toBacklog(
   for (const q of quests) {
     if (isDone(q)) continue;
     // A hard `put(null)` delete (vs the `_deleted` tombstone) leaves a husk node
-    // that Gun re-emits with every field nulled; the live subscription forwards
+    // that older writers emitted with every field nulled; the live subscription forwards
     // it (it only swallows a clean null). Skip these — otherwise the board shows
     // a phantom "Untitled" card that flips with the real one and re-triggers the
     // FLIP reshuffle endlessly.

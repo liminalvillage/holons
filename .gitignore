@@ -40,19 +40,20 @@ legal/**/*.pdf
 # Private IP / legal working material — never commit or push.
 /ip/
 
-# ── Gun.js / Holosphere local replica (regenerated at runtime) ────────────
+# ── Holosphere local store / legacy replica dirs (regenerated at runtime) ──
 radata*
 radata/*
 holosphere.db/*
-# Gun/radata junk dirs named "holosphere" written to each app's CWD at runtime.
+# Legacy replica dirs named "holosphere" written to each app's CWD at runtime.
 holosphere/
 # …but NOT the vendored package or the source dirs of the same name.
 !packages/holosphere/
 !packages/core/src/holosphere/
 !apps/web/src/lib/holosphere/
-# Gun RAD temp files written to CWD (e.g. holosphere-!-xyz.tmp)
+# Legacy temp files written to CWD (e.g. holosphere-!-xyz.tmp) + the file store
 holosphere-!-*
 holosphere-*
+holosphere-store/
 # ── Generated API docs ────────────────────────────────────────────────────
 docs/api/*
 .codex/

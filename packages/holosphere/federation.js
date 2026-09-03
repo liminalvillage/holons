@@ -765,8 +765,8 @@ function isResolved(item) {
     return item._hologram?.isHologram !== false;
 }
 
-// subscribeFederated's federation-config read is a point-in-time gun.once():
-// on a cold graph (fresh page load, empty radisk) it fires with null before
+// subscribeFederated's federation-config read is a point-in-time get():
+// on a cold store (fresh page load, nothing synced) it can resolve null before
 // the relay has synced the config node, and a single failed read would
 // silently attach ZERO partners for the life of the subscription. Retry on
 // this ladder (delays before attempts 2..n) until the config shows up.
@@ -810,7 +810,7 @@ const PROPAGATE_READ_RETRY_MS = [0, 500];
  * `${space} ${id}`).
  *
  * The federation config is read at setup (with a short retry ladder — a cold
- * graph's first `gun.once()` read loses the race against the relay handshake
+ * store's first read loses the race against the relay handshake
  * and returns null; see FEDERATION_CONFIG_RETRY_MS): the local subscription
  * attaches synchronously and partner subscriptions attach after that async read
  * resolves. A federation link added/removed at runtime is still not picked up
@@ -1000,7 +1000,7 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         partnersOn = true;
         const token = ++attachToken;
         try {
-            // Cold-graph resilience: the first gun.once() read of the config
+            // Cold-store resilience: the first read of the config
             // races the relay handshake and can return null even though the
             // holon IS federated — retry before concluding "no partners".
             let fedInfo = await getFederation(holosphere, holon);

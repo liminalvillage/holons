@@ -199,7 +199,7 @@
 
     // Local-first + progressive load via queryManager.subscribe.
     // - Cached snapshot paints immediately (no waiting on peers).
-    // - Items stream in as Gun delivers them: local graph first, federated
+    // - Items stream in as the store delivers them: local snapshot first, federated
     //   peers after, populating the UI as info arrives.
     // - Federated mode still routes through holosphere.getFederated (which
     //   reads the full federated set) because subscribe is per-holon and

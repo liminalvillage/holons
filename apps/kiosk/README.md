@@ -94,11 +94,11 @@ The kiosk shares the monorepo-root `.env`. It reads exactly two vars (see
 [`.env.example`](./.env.example)), each overridable per device via a URL query
 param or the in-app **Settings** panel, then remembered in `localStorage`:
 
-| What          | Env var            | URL param / Settings   | Default                     |
-| ------------- | ------------------ | ---------------------- | --------------------------- |
-| Holon to show | `VITE_KIOSK_HOLON` | `/<id>`, `?holon=<id>` | _(none)_                    |
-| App namespace | `VITE_KIOSK_APP`   | `?app=<name>`          | `Holons` (production)       |
-| Relays        | `VITE_KIOSK_RELAYS`| —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
+| What          | Env var             | URL param / Settings   | Default                                            |
+| ------------- | ------------------- | ---------------------- | -------------------------------------------------- |
+| Holon to show | `VITE_KIOSK_HOLON`  | `/<id>`, `?holon=<id>` | _(none)_                                           |
+| App namespace | `VITE_KIOSK_APP`    | `?app=<name>`          | `Holons` (production)                              |
+| Relays        | `VITE_KIOSK_RELAYS` | —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
 
 To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
 or open **Settings** and type the id. To _visit_ a holon without re-pointing the

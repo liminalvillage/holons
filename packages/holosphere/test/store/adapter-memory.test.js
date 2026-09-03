@@ -35,7 +35,7 @@ describe('store/adapters/memory', () => {
         expect(typeof resolveAdapter('file', { appName: APP, dir: '/tmp/x' })).toBe('function');
         const inst = createMemoryAdapter();
         expect(resolveAdapter(inst)).toBe(inst);
-        expect(() => resolveAdapter('radisk')).toThrow(/unknown adapter/);
+        expect(() => resolveAdapter('bogus')).toThrow(/unknown adapter/);
     });
 
     test('open is idempotent and use after close throws on open', async () => {

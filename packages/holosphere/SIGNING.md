@@ -1,9 +1,10 @@
 # Signing (Phase 1) — sign-on-write + relay persistence
 
 Opt-in NIP-01 signing for HoloSphere. When enabled, every `put` also publishes a
-**signed Nostr event** to your relay(s), so your data is durable beyond GunDB and
-portable across relays. Non-breaking: the Gun store is unchanged; signed events are
-published alongside.
+**signed Nostr event** to your relay(s), so your data is durable beyond one device
+and portable across relays. Since 2.0 the constructor's `relays` do this for every
+write; `enableSigning` remains for the read-side modes (shadow / enforce) and for
+instances built without relays.
 
 Requires the optional `nostr-tools` dependency (loaded lazily, only when enabled).
 
@@ -16,7 +17,7 @@ import { generateSecretKey } from 'holosphere/nostr-events.js';
 const sphere = new HoloSphere({
   appName: 'my-app',
   privateKey: generateSecretKey(),            // your actor key
-  gunOptions: { /* peers, file, … */ },
+  store: { adapter: 'memory' },
 });
 
 await sphere.enableSigning({
@@ -52,11 +53,13 @@ config) and skip signing/resolution.
 
 ## Recover after data loss
 
-If GunDB loses its local data, pull it back from the relay (signatures are
-re-verified; forgeries dropped):
+If the local store is lost, every read of a lens rebuilds it from the relay
+(signatures are re-verified; forgeries dropped); a store can also be moved with
+`exportEvents()` / `importEvents()`:
 
 ```js
-const { found, restored } = await sphere.rehydrate('89283082803ffff', 'tasks');
+const events = await sphere.exportEvents({ holon: '89283082803ffff', lens: 'tasks' });
+await other.importEvents(events);
 ```
 
 ## Switching relays — taking your data with you
@@ -106,8 +109,7 @@ await sphere.migrateRelays({ to: ['wss://new'], filter: { '#h': ['<holon>'], '#l
 Before Phase 2 turns on *authorized read* (where only signed, authorized data is
 displayed), shadow mode lets you measure how much existing data would be affected —
 **without changing anything that's returned**. With `shadow: true`, each `put` also
-stores its signed event in a reserved `_events` sidecar in Gun (invisible to normal
-reads), and reads classify every item as **accounted** (backed by a valid signature)
+keeps its signed event in the store's events table (invisible to normal reads), and reads classify every item as **accounted** (backed by a valid signature)
 or **would-drop** (unsigned / mismatched / invalid signature).
 
 ```js
@@ -129,7 +131,7 @@ const report = sphere.getShadowReport();
 
 ## Authorized read — your federation read-list (default)
 
-With `enforce: true`, reads no longer return raw Gun items — they return the
+With `enforce: true`, reads no longer return raw store items — they return the
 **authorized view**: for each item, the latest claim from a key **you trust** wins;
 everything else (unsigned, invalid, or from a key you don't read) drops to a
 **pending** view. The raw store is untouched (open graph); enforcement happens
@@ -222,8 +224,7 @@ signer), not its self-reported fields.
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |
 | `sphere.getSigningRelays()` / `sphere.setSigningRelays(list)` | Read / replace relay set |
-| `await sphere.rehydrate(holon, lens)` | Restore a holon/lens from relays into Gun |
-| `await sphere.migrateRelays({ to, from?, filter?, switch? })` | Move/mirror signed data across relays |
+| `await sphere.exportEvents(filter?)` / `importEvents(events, { publish? })` | Move/mirror signed data across stores and relays |
 | `await sphere.auditLens(holon, lens)` | Shadow-audit a lens (accounted vs would-drop); output unchanged |
 | `sphere.getShadowReport()` / `sphere.resetShadowReport()` | Cumulative shadow stats |
 

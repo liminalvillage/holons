@@ -20,7 +20,7 @@ describe('parent-hexagon deletion propagation', () => {
   let sphere;
 
   // One sphere for the whole file: every test uses its own record ids, and a
-  // fresh Gun instance per test would multiply radisk handles for no isolation
+  // fresh instance per test would multiply relay/store handles for no isolation
   // gain (cross-holon behaviour lives inside ONE graph — see testenv.js).
   beforeAll(async () => {
     sphere = await testSphere(APP);

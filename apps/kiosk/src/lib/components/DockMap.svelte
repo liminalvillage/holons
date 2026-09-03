@@ -482,7 +482,7 @@
             if (changed) renderLens();
           },
           (item, key) => {
-            // Keep the records themselves: Gun replays a cell's data to the
+            // Keep the records themselves: the store replays a cell's data to the
             // FIRST subscriber only, and that's this one — the panel can't
             // re-read what already replayed, so it seeds from here.
             if (!alive || selectedLens !== lens) return;
@@ -576,9 +576,9 @@
 
   /**
    * (Re)load the selected (cell, lens) pair into one accumulator with three
-   * feeds, ordered by trust in what Gun actually delivers here:
+   * feeds, ordered by trust in what the store actually delivers here:
    *
-   *  1. `liveItems` — the records the presence channel already heard. Gun
+   *  1. `liveItems` — the records the presence channel already heard. The store
    *     replays a cell's data to the FIRST subscriber only, and the presence
    *     subscription that lit the cell was it; nothing subscribed later ever
    *     hears that replay, so this seed is usually the whole answer.

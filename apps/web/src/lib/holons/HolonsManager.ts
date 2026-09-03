@@ -45,7 +45,7 @@ export interface HolonsManagerEvents {
  * and settings management.
  *
  * Based on the original Holons.js and Settings.js but modernized for web frontend usage.
- * Updated to use holosphere2 API instead of direct Gun access.
+ * Uses the holosphere API only; never touches the store directly.
  *
  * @class HolonsManager
  * @extends EventEmitter

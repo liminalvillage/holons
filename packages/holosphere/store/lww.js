@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The ONE ordering rule for a record address. Everything that used to decide
-// "which write is current" — the Gun graph's HAM, the relay transport's
+// "which write is current" — the relay transport's
 // created_at gate and the signing layer's `authorizedView` sort — collapses to
 // this function.
 

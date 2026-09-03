@@ -5,7 +5,7 @@
 // `_federation.origin`, leaves local items untagged, and dedups by id with the
 // LOCAL item winning. See federation.js.
 //
-// Uses live Gun, so each test gets fresh holon ids (no shared cleanup) and
+// Uses a live instance, so each test gets fresh holon ids (no shared cleanup) and
 // generous settle waits — the partner subscription attaches only after the
 // async federation-config read resolves.
 
@@ -107,10 +107,10 @@ describe('subscribeFederated', () => {
         expect(ids).not.toContain('Ladder');
     }, 90000);
 
-    test('a re-subscribe on a warm instance is seeded (Gun does not replay in-memory data)', async () => {
+    test('a re-subscribe on a warm instance is seeded', async () => {
         // Regression: page remount pattern — subscribe, settle, unsubscribe,
-        // subscribe again on the SAME instance. Gun's map().on() only fires on
-        // radisk/wire/put events, never replaying the in-memory graph, so the
+        // subscribe again on the SAME instance. The seed must work even when the
+        // watch replay is late or absent, so the
         // second subscription used to start empty and stay empty until the next
         // write. The getAll seed inside addSpace must fill it.
         const local = `subfed_d_${Date.now()}_local`;
@@ -160,7 +160,7 @@ describe('subscribeFederated', () => {
         hs.getGlobal = async (table, key, password) => {
             if (table === 'federation' && key === local && coldReads < 2) {
                 coldReads++;
-                return null; // cold graph: gun.once() lost the race
+                return null; // cold store: the read lost the race
             }
             return origGetGlobal(table, key, password);
         };

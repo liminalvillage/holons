@@ -23,15 +23,15 @@ The platform integrates blockchain smart contracts, federated data sharing, and 
 
 ## Tech Stack
 
-| Layer         | Technology                               |
-| ------------- | ---------------------------------------- |
-| Frontend      | Svelte 5, TypeScript, Tailwind CSS       |
-| Build         | Vite, SvelteKit                          |
+| Layer         | Technology                                    |
+| ------------- | --------------------------------------------- |
+| Frontend      | Svelte 5, TypeScript, Tailwind CSS            |
+| Build         | Vite, SvelteKit                               |
 | Data          | HoloSphere (signed Nostr events, local store) |
-| Blockchain    | Ethers.js v6, ERC20 tokens               |
-| Maps          | Mapbox GL, H3-JS hexagonal indexing      |
-| Visualization | D3.js                                    |
-| AI/LLM        | OpenAI, Anthropic, Groq                  |
+| Blockchain    | Ethers.js v6, ERC20 tokens                    |
+| Maps          | Mapbox GL, H3-JS hexagonal indexing           |
+| Visualization | D3.js                                         |
+| AI/LLM        | OpenAI, Anthropic, Groq                       |
 
 ## Getting Started
 

@@ -25,12 +25,6 @@ const HOLON = 'holo-test-relay-roundtrip';
 const LENS = 'roundtrip';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function tmpGun(dirs) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-live-'));
-    dirs.push(dir);
-    return { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false };
-}
-
 describeWithRelay(`live relay round-trip (${RELAYS.join(', ') || 'skipped'})`, () => {
     const dirs = [];
     let writer, reader;
@@ -55,7 +49,7 @@ describeWithRelay(`live relay round-trip (${RELAYS.join(', ') || 'skipped'})`, (
         await writer.put(HOLON, LENS, { id: itemId, title: 'Crossed the wire' });
 
         // The reader shares nothing with the writer but the relay: fresh key,
-        // fresh empty Gun graph. Only the relay can deliver the item.
+        // fresh empty store. Only the relay can deliver the item.
         reader = new HoloSphere({ appName: 'relay-live-test', privateKey: generateSecretKey(), store: { adapter: 'memory' } });
         await reader.enableSigning({ relays: RELAYS });
 

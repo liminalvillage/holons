@@ -9,7 +9,7 @@
 // from a crash mid-append), and — when the log is non-empty — rewrites the
 // snapshot and truncates the log, so a process always starts from a compact
 // state. Appends are serialized through a promise chain. One process per
-// directory (the same constraint the old radisk had).
+// directory (one writer per directory).
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
