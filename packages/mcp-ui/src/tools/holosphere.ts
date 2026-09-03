@@ -1,11 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { readHolonSettings } from '@holons/core/settings';
 import { z } from 'zod';
-import { getApp } from '../holosphere.js';
 import type { ToolDeps } from './index.js';
 
 /**
- * Strip GunDB / Nostr metadata that is noisy in tool output.
+ * Strip Nostr metadata that is noisy in tool output.
  */
 function clean<T extends Record<string, any>>(item: T): Omit<T, '_nostr'> {
   const { _nostr, ...rest } = item;
@@ -22,37 +21,22 @@ export function registerHolosphereTools(server: McpServer, deps: ToolDeps): void
     },
     async ({ limit = 50 }) => {
       const h = await deps.getHoloSphere();
-      const app = getApp();
-      const holons: string[] = [];
-
-      await new Promise<void>((resolve) => {
-        let timer: NodeJS.Timeout | undefined;
-        const reset = () => {
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(() => resolve(), 3000);
-        };
-        reset();
-        h.gun.get(app).map().once((_data: any, key: string) => {
-          if (
-            key &&
-            key !== '_' &&
-            !key.startsWith('federation') &&
-            !key.startsWith('cell')
-          ) {
-            holons.push(key);
-            reset();
-          }
-        });
-      });
+      // Every holon the local store has synced from the relays, unioned with
+      // the global `holons_registry` table (holosphere.listHolons). Internal
+      // federation / cell namespaces are not holons.
+      const all: string[] = await h.listHolons();
+      const holons = all.filter(
+        (key) => key && !key.startsWith('federation') && !key.startsWith('cell'),
+      );
 
       const subset = holons.slice(0, limit);
       const results = await Promise.all(
         subset.map(async (id) => {
           try {
-            // Not `getAll(...)[0]`: the lens can hold several records and
-            // Gun's map order is undefined, so index 0 can be an unrelated one
-            // (imported calendars, a legacy id-less write) and the holon would
-            // list under its raw id instead of its name.
+            // Not `getAll(...)[0]`: the lens can hold several records in no
+            // particular order, so index 0 can be an unrelated one (imported
+            // calendars, a legacy id-less write) and the holon would list
+            // under its raw id instead of its name.
             const s = await readHolonSettings(h as never, id);
             const name = s?.name || s?.title || id;
             return { id, name };

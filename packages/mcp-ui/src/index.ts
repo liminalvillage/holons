@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../..');
-// Gun.js (via holosphere) writes its radata to `./holosphere` relative to CWD.
-// When launched from clients like Claude Desktop, CWD may be `/` (EROFS).
-// Pin CWD to the monorepo root so we share the holosphere/ that web+bot use.
+// A relative HOLOSPHERE_STORE_DIR (file-backed store) resolves against CWD,
+// which may be `/` (EROFS) when launched from clients like Claude Desktop.
+// Pin CWD to the monorepo root so relative paths and the root .env line up.
 // Respect HOLONS_CWD if the operator wants a different writable location.
 try {
   process.chdir(process.env.HOLONS_CWD || REPO_ROOT);
