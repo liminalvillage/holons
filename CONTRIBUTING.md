@@ -16,43 +16,50 @@ git clone https://github.com/HolonicLabs/holons.git
 cd holons
 pnpm install                # installs the whole workspace from the committed lockfile
 pnpm -r typecheck           # everything should typecheck on a clean clone
-pnpm test                   # vitest across all packages
+pnpm test                   # every package's tests — no network needed
 ```
 
-Copy the env template for whatever you're running and fill in only the keys you
-need:
+One root `.env` serves every app and package (the SvelteKit apps read it from
+the repo root). Copy the template and fill in only the keys you need; the
+contract is documented inline, grouped by consumer:
 
 ```bash
-cp apps/web/.env.example apps/web/.env
-cp packages/telegram-ui/.env.example packages/telegram-ui/.env
+cp .env.example .env
 ```
 
 Never commit `.env`, `.mcp.json`, or any secret — they are gitignored on
-purpose. If you add a new variable, document it in the matching `.env.example`.
+purpose. If you add a new variable, document it in `.env.example`. Nostr
+secrets are `*_NSEC` variables; nothing secret ever gets a `VITE_` prefix
+(those are inlined into browser bundles). If a secret leaks, rotate it.
 
 ## 2. Project layout
 
-It's a pnpm monorepo. `@holons/core` is the UI-agnostic domain layer; every UI
-(`apps/web`, `packages/{telegram,text,ai,mcp}-ui`) calls into it and must not
-re-implement domain rules. See [`docs/architecture.md`](./docs/architecture.md).
+It's a pnpm monorepo. `@holons/core` is the UI-agnostic domain layer;
+`packages/holosphere` is the data layer (signed Nostr events on relays,
+mirrored into a local store); every UI (`apps/{web,kiosk,wequest}`,
+`packages/{telegram,discord,text,ai,mcp,voice}-ui`) calls into core and must
+not re-implement domain rules. See
+[`docs/architecture.md`](./docs/architecture.md). Apps consume core's compiled
+`dist`, so rebuild core (`pnpm -F @holons/core build`) after changing it.
 
 Useful workspace commands:
 
 ```bash
 pnpm -F @holons/core test           # one package's tests
-pnpm -F holons-web dev             # run just the web app
+pnpm -F holons-web dev              # run just the web app
+pnpm dev:kiosk                      # the hub kiosk
 pnpm -r --if-present build          # build everything
 ```
 
 ## 3. Branching & commits
 
-- Branch from `main`: `feat/<short-topic>`, `fix/<short-topic>`, `docs/<topic>`.
+- Branch from `dev`: `feat/<short-topic>`, `fix/<short-topic>`, `docs/<topic>`.
 - Use **[Conventional Commits](https://www.conventionalcommits.org/)** with a
   scope, matching the existing history:
   `core/scoring: add collaboration signal`,
   `web: fix canvas route`, `docs: add tutorial`.
 - Keep commits focused and the working tree clean (no build output, no
-  `radata/`, no `.env`).
+  store directories, no `.env`).
 - **Sign off every commit**: `git commit -s` adds the
   `Signed-off-by: Name <email>` line. The sign-off also records your acceptance
   of the [CLA](./CLA.md). A CLA-assistant check may run on your first PR.
@@ -99,16 +106,18 @@ A PR is mergeable when, from a clean clone:
 
 ```bash
 pnpm -r typecheck   # ✅ no type errors
-pnpm test           # ✅ vitest green
+pnpm test           # ✅ tests green
 pnpm lint           # ✅ lint clean
 ```
 
 Add or update tests for any behavior you change. Domain logic in
-`@holons/core` should have a `vitest` spec.
+`@holons/core` should have a `vitest` spec; Holosphere changes ship a jest
+spec built on `packages/holosphere/test/helpers/testenv.js` (isolated
+in-memory store, in-process relay when a wire is needed).
 
 ## 6. Pull requests
 
-1. Open against `main` with a clear title (Conventional Commit style) and a
+1. Open against `dev` with a clear title (Conventional Commit style) and a
    description of *what* and *why*.
 2. Link related issues; include screenshots for UI changes.
 3. Ensure the checks in §5 pass and commits are signed off.

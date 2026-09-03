@@ -3,16 +3,27 @@
 # kiosk
 
 A minimal, touch-first **kiosk PWA** for the entrance of the hub. One vertical
-screen, three views, auto-rotating between them unless someone is interacting:
+screen with a tab strip, auto-rotating between tabs unless someone is
+interacting:
 
-1. **Calendar** — the month at a glance, with post-it notes for what's coming up.
-2. **Tasks** — the backlog, as a wall of sticky notes.
-3. **Library** — the library of things, and what's available to borrow.
+- **Tasks** — the backlog, as a wall of sticky notes (list, swipe and graph layouts).
+- **Calendar** — the month at a glance, with post-it notes for what's coming up.
+- **Shifts** — community shifts in the Elinor format, read live from the relay.
+- **Library** — the library of things, and what's available to borrow.
+- **Lists** — the holon's checklists and shopping lists.
+- **Roles** — who holds which role.
+- **Status** — the holon's standing (opt-in, behind a framing modal).
+- **Flows** — expenses, REA events and the collective's summary.
+
+The strip is the caretaker's: drag a tab to reorder it, hold to hide (✕) or
+add (+) tabs, pin one — all remembered per device. Closing the board shrinks
+it into the **dock**: one circle per holon this device has opened, plus a "+"
+that adds a board by id, label, npub, Ethereum address or pasted link.
 
 _Less is more._ Just the holon's life, served read-only and local-first from
 Holosphere (signed Nostr events on the relays, mirrored into the browser's
-IndexedDB) — with a small caretaker **Settings** panel for
-the few knobs that matter.
+IndexedDB) — with a small caretaker **Settings** panel for the few knobs that
+matter.
 
 ## How it works
 
@@ -20,8 +31,16 @@ the few knobs that matter.
   plain files from anywhere). It depends only on `holosphere` and `@holons/core`
   — it reuses the shared HoloSphere factory and library domain helpers, and
   re-implements no domain rules of its own (core owns meaning).
-- **Live data:** subscribes to the holon's `quests` lens (calendar events + task
-  backlog) and `library` lens.
+- **Live data:** the browser is the Nostr client. `src/lib/holosphere.ts`
+  builds one HoloSphere through the shared core factory — the production
+  relays as the wire, an IndexedDB store as the cache, a per-device signing
+  key — and the layout subscribes to the holon's `quests` (calendar events +
+  task backlog), `library`, `roles` and `checklists` lenses through
+  `subscribeFederated`, plus the per-device `hidden` lens. Every write is
+  signed and published as a kind-30078 event and, by default, also as its
+  standard Nostr kind (NIP-52 / NIP-99 / NIP-51 / NIP-58 / NIP-29) so any
+  Nostr client can read it. Shifts come straight from the relay via
+  `@holons/core/shifts` (see [`docs/shifts-elinor.md`](../../docs/shifts-elinor.md)).
 - **Show & Layout pills:** one global pills band under the tabs adapts to the
   active tab. Its **Show** pill chooses whose items appear — **Personal**
   (only the logged-in user's), **Local** (this holon), or **Global** (this
@@ -90,15 +109,20 @@ Opening a board from that field navigates to `/<holon id>` and is deliberately
 
 ## Configuration
 
-The kiosk shares the monorepo-root `.env`. It reads exactly two vars (see
-[`.env.example`](./.env.example)), each overridable per device via a URL query
-param or the in-app **Settings** panel, then remembered in `localStorage`:
+The kiosk shares the monorepo-root `.env` (see [`.env.example`](./.env.example)
+for every variable it reads). The data-layer vars, each overridable per device
+via a URL query param or the in-app **Settings** panel and then remembered in
+`localStorage`:
 
-| What          | Env var             | URL param / Settings   | Default                                            |
-| ------------- | ------------------- | ---------------------- | -------------------------------------------------- |
-| Holon to show | `VITE_KIOSK_HOLON`  | `/<id>`, `?holon=<id>` | _(none)_                                           |
-| App namespace | `VITE_KIOSK_APP`    | `?app=<name>`          | `Holons` (production)                              |
-| Relays        | `VITE_KIOSK_RELAYS` | —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
+| What          | Env var                  | URL param / Settings   | Default                                            |
+| ------------- | ------------------------ | ---------------------- | -------------------------------------------------- |
+| Holon to show | `VITE_KIOSK_HOLON`       | `/<id>`, `?holon=<id>` | _(none)_                                           |
+| App namespace | `VITE_KIOSK_APP`         | `?app=<name>`          | `Holons` (production)                              |
+| Relays        | `VITE_KIOSK_RELAYS`      | —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
+| Projections   | `VITE_KIOSK_PROJECTIONS` | —                      | every lens (`off` or a comma list narrows it)      |
+
+The kiosk-scoped vars win; the shared `VITE_HOLOSPHERE_RELAYS` /
+`VITE_HOLOSPHERE_PROJECTIONS` are the fallback.
 
 To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
 or open **Settings** and type the id. To _visit_ a holon without re-pointing the
@@ -154,10 +178,17 @@ bake the key into the public bundle). Optional model overrides:
 ## Develop
 
 ```bash
-pnpm -F kiosk dev       # http://localhost:5273
-pnpm -F kiosk build     # static build → ./build
-pnpm -F kiosk preview   # serve the production build
+pnpm -F @holons/core build   # the kiosk consumes core's compiled dist
+pnpm -F kiosk dev            # http://localhost:5273 — open /<holon id> or /<label>
+pnpm -F kiosk test           # vitest specs next to the modules in src/lib
+pnpm -F kiosk typecheck      # svelte-check
+pnpm -F kiosk lint           # prettier --check
+pnpm -F kiosk build          # static build → ./build
+pnpm -F kiosk preview        # serve the production build
 ```
+
+In dev the HoloSphere instance is exposed as `window.__kiosk` for poking from
+the console (`__kiosk.nostrRelays()`, `await __kiosk.listHolons()`).
 
 ## Deploy (Netlify, multi-tenant)
 
