@@ -6,7 +6,13 @@
  * factory + permission logic.
  */
 
-export { createHoloSphere, type CreateHoloSphereOptions } from './factory.js';
+export {
+  createHoloSphere,
+  type CreateHoloSphereOptions,
+  type HoloSphereStoreOptions,
+  type HoloSphereSigningOptions,
+  type HoloSphereNostrOptions,
+} from './factory.js';
 export {
   writeWithIdentity,
   createHolonWriter,
@@ -15,12 +21,13 @@ export {
   type HolonWriter,
 } from './write.js';
 export {
-  enableRelayBackup,
-  parseRelayBackupMode,
+  DEFAULT_RELAYS,
   parseRelayList,
-  type RelayBackupMode,
-  type RelayBackupOptions,
-} from './relayBackup.js';
+  resolveRelays,
+  parseSigningMode,
+  signingOptionsFor,
+  type SigningMode,
+} from './relays.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
 export {
   createIdentityContext,

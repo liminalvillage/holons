@@ -135,7 +135,7 @@ function settingsAffinity(record: unknown): number {
  * Read a holon's settings document, safely.
  *
  * Prefer this over `getAll(holonId, 'settings')[0]`. That idiom is common in
- * this repo and it is a bug: Gun's map iteration has no defined order, so index
+ * this repo and it is a bug: record enumeration has no defined order, so index
  * 0 is whichever record happened to arrive first. On a holon that has imported
  * a calendar, index 0 can be the `imported_calendars` record — and a caller
  * that then spreads it and saves it back copies calendar data into the holon's

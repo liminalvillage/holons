@@ -63,7 +63,7 @@ export function needFromShoppingItem(
 }
 
 /**
- * Coerce a raw record (possibly partial / from gun) into a sane need, or null
+ * Coerce a raw record (possibly partial / from the wire) into a sane need, or null
  * when it isn't a need or was deleted. Unknown statuses fall back to
  * 'requested' rather than dropping the record.
  */

@@ -4,7 +4,7 @@
 /**
  * Global holon registry — the maintained index of every holon.
  *
- * GUN has no server-side "enumerate all holons" operation: a fresh peer can
+ * The relay has no "enumerate all holons" operation: a fresh peer can
  * only see the nodes it happens to have synced. So the global view relies on
  * a single enumerable table (`holons_registry`) that every holon writes
  * itself into at creation time. `registerHolon` is that write.

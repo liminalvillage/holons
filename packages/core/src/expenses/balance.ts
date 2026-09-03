@@ -17,7 +17,7 @@ export function normalizeCurrency(currency: string | null | undefined): string {
 }
 
 /**
- * Coerce a stored `splitWith` value into an array. Older Gun records sometimes
+ * Coerce a stored `splitWith` value into an array. Older records sometimes
  * store a single id as a number/string, or a JSON-encoded string.
  */
 export function coerceSplitWith(value: unknown): AgentId[] {

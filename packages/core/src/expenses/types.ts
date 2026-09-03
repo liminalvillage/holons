@@ -2,10 +2,10 @@
 //
 // Sourced from packages/telegram-ui/src/Expenses.js (authoritative shape) and
 // apps/web/src/utils/expenseCalculations.ts. Both bot and web persist expenses
-// under HoloSphere/Gun, so IDs may arrive as number or string. We normalize at
+// under HoloSphere, so IDs may arrive as number or string. We normalize at
 // the edges (storage) but accept loose input here.
 
-/** A user/holon ID as it appears on the wire (Gun stores numbers and strings). */
+/** A user/holon ID as it appears on the wire (records carry numbers and strings). */
 export type AgentId = string | number;
 
 /** A monetary expense within a holon, split among participants. */

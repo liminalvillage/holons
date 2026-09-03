@@ -118,30 +118,11 @@ async function putToTarget(
 		destinations.push(target);
 
 		// When forwarding an existing hologram (i.e. we're not the original
-		// source), also register the new hop in OUR OWN `_holograms` set on
-		// our local hologram of this item. holosphere.put already tries to
-		// register at the source's `_holograms` set, but that write is
-		// cross-holon and relies on Gun gossip making it across — which
-		// often doesn't in real meshes. Adding the entry to our own local
-		// set is a *local* write we control, and the cascade walk in
-		// holosphere's put (which now also runs for hologram updates) will
-		// pick it up so updates flow A → us → target on every hop.
-		if (forwarderRegistration) {
-			try {
-				const { localHolonId, lens: regLens, itemId } = forwarderRegistration;
-				const appname = (holosphere as any).appname;
-				const ourSoul = `${appname}/${localHolonId}/${regLens}/${itemId}`;
-				const newHopSoul = `${appname}/${target}/${regLens}/${itemId}`;
-				(holosphere as any)
-					.getNodeRef(ourSoul)
-					.get('_holograms')
-					.get(newHopSoul)
-					.put(true);
-			} catch {
-				// Best-effort: cascade is a backup channel for the source-side
-				// registration. If this fails the forward still went through.
-			}
-		}
+		// source) nothing extra is needed for the update cascade: the pointer
+		// we just wrote at `target` is a record in OUR store, so the source's
+		// backlinks (derived from the pointers this instance holds) already
+		// include the new hop, and holosphere's put cascade will stamp it.
+		void forwarderRegistration;
 	} catch (err: any) {
 		if (err?.name === 'AuthorizationError' || err?.message?.includes('Write access denied')) {
 			const message = `Unable to publish to ${target.slice(0, 12)}… — no write permission for ${lens}`;

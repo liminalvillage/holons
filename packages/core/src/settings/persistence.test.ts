@@ -48,7 +48,7 @@ describe('readHolonSettings', () => {
   });
 
   it('is order-independent', async () => {
-    // Gun's map iteration has no defined order, so the answer must not depend
+    // Record enumeration has no defined order, so the answer must not depend
     // on which record replicated first.
     const forward = fakeLens({ h1: settingsDoc, imported_calendars: calendarsDoc });
     const reverse = fakeLens({ imported_calendars: calendarsDoc, h1: settingsDoc });

@@ -1,34 +1,72 @@
 /**
  * UI-agnostic factory for `HoloSphere` instances.
  *
- * Both UIs (web + telegram bot) used to build `HoloSphere` independently with
- * subtly different code paths. This module is the single place where the
- * constructor is invoked; UI wrappers add only environment-specific concerns
- * (svelte stores, Node key files, etc.).
+ * Every UI builds its `HoloSphere` here so the constructor is invoked in one
+ * place; UI wrappers add only environment-specific concerns (svelte stores,
+ * Node key files, etc.).
  *
  * The factory deliberately does NOT touch `process.env`, `localStorage`, or
- * filesystem — callers must resolve their own private key. That keeps the
- * core importable from any runtime (browser, Node, edge).
+ * the filesystem — callers resolve their own private key, relays and store
+ * location (see `resolveRelays` in `./relays.js`). That keeps the core
+ * importable from any runtime (browser, Node, edge).
  */
 
 import { HoloSphere } from 'holosphere';
+import type { ProjectionHook } from '../nostr/types.js';
+
+/** Where the local store persists (see holosphere/STORE.md). */
+export interface HoloSphereStoreOptions {
+  /**
+   * `'memory'` (default outside a browser; serverless functions, scripts),
+   * `'indexeddb'` (default in a browser), `'file'` (long-lived Node hosts),
+   * or `'auto'`.
+   */
+  adapter?: 'memory' | 'indexeddb' | 'file' | 'auto';
+  /** Directory for the file adapter. */
+  dir?: string;
+  compactAfter?: number;
+}
+
+/** Read-side signing behaviour (see holosphere/SIGNING.md). */
+export interface HoloSphereSigningOptions {
+  shadow?: boolean;
+  enforce?: boolean | 'membership';
+  perActorLenses?: string[];
+  verbose?: boolean;
+}
+
+/** Relay-side extras: standard-kind projections and their reverse sync. */
+export interface HoloSphereNostrOptions {
+  syncTimeoutMs?: number;
+  pageSize?: number;
+  verbose?: boolean;
+  projections?: ProjectionHook[];
+  signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+  providerKey?: string | Uint8Array | null;
+  reverseSync?: boolean;
+  trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+  reverseLookbackSec?: number;
+}
 
 /**
- * Configuration for {@link createHoloSphere}. Mirrors the subset of
- * `HoloSphereConfig` both UIs care about, plus an `awaitReady` flag.
- *
- * Anything not modelled here can be passed through `extra` — useful for
- * Nostr-specific keys like `nostr: { relays, peers, persistence }`.
+ * Configuration for {@link createHoloSphere}.
  */
 export interface CreateHoloSphereOptions {
   /** Application namespace (e.g. `"Holons"`, `"HolonsDebug"`). */
   appName: string;
   /** Private key as hex string or raw bytes. Resolved by the caller. */
   privateKey?: Uint8Array | string | null;
-  /** Backend selector — defaults to whatever holosphere picks (Gun in 1.3). */
-  backend?: string;
-  /** Holosphere log level (`'INFO'`, `'DEBUG'`, ...). */
-  logLevel?: string;
+  /**
+   * Relay URLs — the wire. An instance without relays is local-only
+   * (tests, offline tooling). Resolve with `resolveRelays(env)`.
+   */
+  relays?: string[];
+  /** Local store configuration. */
+  store?: HoloSphereStoreOptions;
+  /** Read-side signing modes. */
+  signing?: HoloSphereSigningOptions;
+  /** Relay-side extras (projections, sync tuning). */
+  nostr?: HoloSphereNostrOptions;
   /** Strict-mode toggle for holosphere. */
   strict?: boolean;
   /** When true, await `holosphere.ready()` before returning. */
@@ -44,20 +82,22 @@ export interface CreateHoloSphereOptions {
  * a `Promise<HoloSphere>` when it's true — matching the natural usage in each
  * UI (web awaits, bot uses sync).
  */
-export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions & { awaitReady: true }
 ): Promise<HoloSphere>;
+export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, backend, logLevel, strict, awaitReady, extra } = options;
+  const { appName, privateKey, relays, store, signing, nostr, strict, awaitReady, extra } = options;
 
   const config: Record<string, unknown> = {
     appName,
     ...(privateKey !== undefined ? { privateKey } : {}),
-    ...(backend ? { backend } : {}),
-    ...(logLevel ? { logLevel } : {}),
+    ...(relays ? { relays } : {}),
+    ...(store ? { store } : {}),
+    ...(signing ? { signing } : {}),
+    ...(nostr ? { nostr } : {}),
     ...(strict !== undefined ? { strict } : {}),
     ...(extra ?? {}),
   };

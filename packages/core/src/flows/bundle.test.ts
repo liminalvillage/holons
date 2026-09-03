@@ -31,7 +31,7 @@ function fakeLens(initial: Record<string, any> = {}) {
     async put(_holon: string, _lens: string, data: any) {
       const key = data.id ?? `random-${++counter}`;
       if (!data.id) data.id = key;
-      // Gun merges field-wise rather than replacing the record.
+      // The mock merges field-wise; the real store replaces the record, and core always writes full records.
       store[key] = { ...(store[key] ?? {}), ...data };
     },
     async delete(_holon: string, _lens: string, key: string) {

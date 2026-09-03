@@ -12,29 +12,16 @@
 import {
   createHoloSphere,
   createHolonWriter,
-  enableRelayBackup,
+  signingOptionsFor,
   type HolonWriter,
 } from "@holons/core/holosphere";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
-import { Buffer } from "buffer";
-import {
-  resolveAppName,
-  resolveBackend,
-  resolvePeers,
-  resolveRelays,
-  resolveSigningMode,
-} from "./config";
+import { resolveAppName, resolveRelays, resolveSigningMode } from "./config";
 import { actingAs } from "./auth";
 import { lookupHolonName } from "./hns";
 import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
-
-// Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
-// before the library loads.
-if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
-  (globalThis as any).Buffer = Buffer;
-}
 
 const DEVICE_KEY = "kiosk_device_key";
 
@@ -64,39 +51,17 @@ let instance: Promise<HoloSphere> | null = null;
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
-    // Backend selection (see config.ts): "gun" reads from the production Gun
-    // peer; "nostr" makes the relay the wire — Gun goes peerless as the local
-    // cache and every read/write/subscription travels as a signed NIP-01
-    // kind-30078 event. Either way the config must go through `extra` — the v2
-    // constructor only honors `gunOptions.peers` / `nostr.relays`; a top-level
-    // `peers` key is silently dropped and the instance falls back to its
-    // built-in default.
-    const backend = resolveBackend();
-    // Promise.resolve normalises the factory's overloaded return type.
-    instance = Promise.resolve(
-      createHoloSphere({
-        appName: resolveAppName(),
-        privateKey: deviceKeyHex(),
-        logLevel: "ERROR",
-        awaitReady: true,
-        ...(backend === "nostr"
-          ? { backend, extra: { nostr: { relays: resolveRelays() } } }
-          : { extra: { gunOptions: { peers: resolvePeers() } } }),
-      }),
-    );
-    // Mirror every write to the relay as a signed event while Gun stays the
-    // wire, so the display keeps seeing production data. The decision of when
-    // that applies belongs to core (it is a no-op on the nostr backend, where
-    // the transport already publishes).
-    instance = instance.then(async (hs) => {
-      await enableRelayBackup(hs, {
-        relays: resolveRelays(),
-        mode: resolveSigningMode(),
-        backend,
-        onError: (err) =>
-          console.error("[kiosk] could not enable signing", err),
-      });
-      return hs;
+    // The relays are the wire (see config.ts): every read/write/subscription
+    // travels as a signed NIP-01 kind-30078 event, mirrored into the local
+    // IndexedDB store so a reload paints instantly and the display survives
+    // a flaky network.
+    instance = createHoloSphere({
+      appName: resolveAppName(),
+      privateKey: deviceKeyHex(),
+      relays: resolveRelays(),
+      store: { adapter: "indexeddb" },
+      signing: signingOptionsFor(resolveSigningMode()),
+      awaitReady: true,
     });
 
     // Dev-only: expose the instance so the kiosk can be poked from the console
@@ -199,7 +164,7 @@ export function normalizeSub(raw: unknown): Subscription {
 
 /**
  * Subscribe to every key in a holon's lens, accumulating items into a Map keyed
- * by their `id` (falling back to the Gun key). `null` payloads are deletions.
+ * by their `id` (falling back to the record key). `null` payloads are deletions.
  * `onChange` fires after each mutation with a fresh array snapshot.
  */
 export function subscribeLens<T extends { id?: string | number }>(
@@ -231,17 +196,12 @@ export function subscribeLens<T extends { id?: string | number }>(
 /**
  * Live "does this cell contain anything for this lens" — the dock map's
  * presence channel, one per visible (lens, hex) cell, mirroring the dashboard
- * map's rule set (see maplens.countsAsPresent). Gun nulls are ignored —
- * they're reconnect/replay noise, not deletions (deletes arrive as `_deleted`
- * tombstones) — so presence only flips when a real record says so. `onChange`
+ * map's rule set (see maplens.countsAsPresent). A `null` emission is a
+ * deletion and un-lights the key, like a `_deleted` tombstone. `onChange`
  * fires only when the boolean actually changes.
  *
- * `onItem` taps every non-null emission (tombstones included, so a caller's
- * accumulator can drop them). This matters more than it looks: Gun replays a
- * lens's existing records to the FIRST subscriber only — a later subscription
- * on the same cell hears nothing until a fresh write — so whoever holds the
- * presence subscription is the only one who ever sees the data. The dock
- * map's cell panel is fed from this tap.
+ * `onItem` taps every record emission (tombstones included, so a caller's
+ * accumulator can drop them); the dock map's cell panel is fed from this tap.
  */
 export function subscribeLensPresence(
   holosphere: HoloSphere,
@@ -253,12 +213,18 @@ export function subscribeLensPresence(
   const present = new Set<string>();
   let last: boolean | null = null;
   const raw = holosphere.subscribe(holonId, lens, (item: any, key?: string) => {
-    if (!key || key === "_" || key === "#" || key === ">" || item == null)
+    if (!key) return;
+    if (item == null) {
+      present.delete(key);
+      const hasNow = present.size > 0;
+      if (hasNow !== last) {
+        last = hasNow;
+        onChange(hasNow);
+      }
       return;
-    // Gun leaks graph metadata through subscribe on some cells (HAM state
-    // fragments, soul refs) — junk must neither light a cell nor reach the
-    // panel. Real records — tombstones and completed quests included, which
-    // the counting below must still see to UN-light — always pass.
+    }
+    // Real records — tombstones and completed quests included, which the
+    // counting below must still see to UN-light — always pass.
     if (!looksLikeRecord(item)) return;
     onItem?.(item, key);
     if (countsAsPresent(lens, item)) present.add(key);
@@ -287,9 +253,9 @@ export function subscribeLensPresence(
  * Announce a successful local write so the layout's write-echo watchdog can
  * verify the live subscription actually heard it (see `lensEmitAt` in
  * stores.ts). Every write path funnels through here. `at` must be captured
- * BEFORE the put starts: Gun fires the local echo during the put, ahead of
- * the ack, so a post-ack timestamp would always outrun the echo and read as
- * "no echo" — a false stall on every healthy write.
+ * BEFORE the put starts: the store fires the local echo during the put,
+ * ahead of the returned promise, so a post-put timestamp would always outrun
+ * the echo and read as "no echo" — a false stall on every healthy write.
  */
 function announceWrite(holon: string, lens: string, at: number): void {
   if (typeof window === "undefined") return;

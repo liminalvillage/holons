@@ -16,7 +16,7 @@
 //          Empty means "no end" — a single all-day day, or an open-ended
 //          timed start the calendar renders at its default length.
 //   until  the legacy (bot) alias for `ends`. Read as a fallback, and blanked
-//          — never deleted; Gun merges — whenever we write `ends`.
+//          — never deleted, so older readers keep working — whenever we write `ends`.
 //
 // Multi-day quests are what a UI would call an event: one card that occupies a
 // span of days rather than a moment. Nothing here changes a quest's `type` —

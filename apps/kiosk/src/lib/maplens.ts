@@ -205,11 +205,9 @@ const RECORD_FIELDS = [
 ] as const;
 
 /**
- * Whether an emission is a real lens record at all. Gun leaks graph metadata
- * through subscribe on some cells — HAM state fragments like
- * `{ true: 1730… }` under key ">", soul refs like `{ "#": true }` — and one
- * junk emission must not light a cell on the map. Every real record across
- * the lenses carries at least one of these identity/content fields.
+ * Whether an emission is a real lens record at all: every real record across
+ * the lenses carries at least one of these identity/content fields, and a
+ * malformed one must not light a cell on the map.
  */
 export function looksLikeRecord(item: unknown): boolean {
   const it = item as Record<string, unknown> | null;
@@ -382,8 +380,6 @@ export function formatDetailValue(
     return clip(`${names.length} · ${names.join(", ")}`, max);
   }
   if (typeof v === "object") {
-    // A Gun link ({ "#": soul }) is graph plumbing, not content.
-    if ("#" in (v as object)) return "";
     const coords = latLngOf(v as Record<string, unknown>);
     if (coords) return coords;
     const name = personName(v);

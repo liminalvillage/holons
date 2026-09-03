@@ -3,7 +3,7 @@ import { deleteTaskWithCascade, readForwardSouls } from './deletion.js';
 import type { HoloSphere } from 'holosphere';
 
 interface MockOpts {
-	/** Forwards published from the source, written to its `_holograms` set. */
+	/** Forwards published from the source: the pointer souls in its backlinks. */
 	forwards?: string[];
 	/** Forwards whose delete call should throw AuthorizationError. */
 	denyDeleteFor?: string[];
@@ -31,17 +31,8 @@ function mockHolosphere(opts: MockOpts = {}) {
 		deleteCalls.push({ holon, lens, key });
 	});
 
-	// getNodeRef('source-soul').get('_holograms').once(cb) → cb({soul1: true, soul2: true, dead: null})
-	const getNodeRef = vi.fn((_soul: string) => ({
-		get: (k: string) => ({
-			once: (cb: (d: any) => void) => {
-				if (k !== '_holograms') return cb(null);
-				const data: Record<string, any> = { _: { '#': 'meta' } };
-				for (const f of forwards) data[f] = true;
-				cb(data);
-			}
-		})
-	}));
+	// getBacklinks(holon, lens, key) → the pointer souls that reference the record
+	const getBacklinks = vi.fn((_holon: string, _lens: string, _key: string) => [...forwards]);
 
 	const parseSoulPath = vi.fn((soul: string) => {
 		if (typeof soul !== 'string') return null;
@@ -58,15 +49,15 @@ function mockHolosphere(opts: MockOpts = {}) {
 	const holosphere = {
 		appname,
 		delete: del,
-		getNodeRef,
+		getBacklinks,
 		parseSoulPath
 	} as unknown as HoloSphere;
 
-	return { holosphere, del, deleteCalls, getNodeRef };
+	return { holosphere, del, deleteCalls, getBacklinks };
 }
 
 describe('readForwardSouls', () => {
-	it('returns live forward souls and skips tombstones + metadata', async () => {
+	it('returns the live forward souls', async () => {
 		const m = mockHolosphere({
 			forwards: ['test-app/a/quests/q-1', 'test-app/b/quests/q-1']
 		});
@@ -77,23 +68,20 @@ describe('readForwardSouls', () => {
 		]);
 	});
 
-	it('resolves to [] when getNodeRef returns no data', async () => {
-		const holosphere = {
-			getNodeRef: () => ({
-				get: () => ({ once: (cb: any) => cb(null) })
-			})
-		} as unknown as HoloSphere;
-		expect(await readForwardSouls(holosphere, 's')).toEqual([]);
+	it('resolves to [] for a malformed soul', async () => {
+		const m = mockHolosphere({ forwards: ['test-app/a/quests/q-1'] });
+		expect(await readForwardSouls(m.holosphere, 's')).toEqual([]);
+		expect(m.getBacklinks).not.toHaveBeenCalled();
 	});
 
-	it('times out and resolves [] if Gun never calls back', async () => {
-		const holosphere = {
-			getNodeRef: () => ({
-				get: () => ({ once: (_cb: any) => {} })
-			})
+	it('resolves to [] on an instance without a backlink index, or one that throws', async () => {
+		const bare = { parseSoulPath: (s: string) => ({ appname: 'a', holon: 'h', lens: 'l', key: s }) } as unknown as HoloSphere;
+		expect(await readForwardSouls(bare, 'a/h/l/k')).toEqual([]);
+		const throwing = {
+			parseSoulPath: (s: string) => ({ appname: 'a', holon: 'h', lens: 'l', key: s }),
+			getBacklinks: () => { throw new Error('boom'); }
 		} as unknown as HoloSphere;
-		const out = await readForwardSouls(holosphere, 's', 50);
-		expect(out).toEqual([]);
+		expect(await readForwardSouls(throwing, 'a/h/l/k')).toEqual([]);
 	});
 });
 
@@ -151,7 +139,7 @@ describe('deleteTaskWithCascade', () => {
 		expect(m.del).toHaveBeenCalledTimes(1);
 	});
 
-	it('handles zero forwards (no _holograms set) cleanly', async () => {
+	it('handles zero forwards (no backlinks) cleanly', async () => {
 		const m = mockHolosphere({ forwards: [] });
 		const out = await deleteTaskWithCascade(m.holosphere, 'source', 'source-q');
 		expect(out).toEqual({

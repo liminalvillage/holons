@@ -10,7 +10,8 @@ screen, three views, auto-rotating between them unless someone is interacting:
 3. **Library** — the library of things, and what's available to borrow.
 
 _Less is more._ Just the holon's life, served read-only and local-first from
-[Holosphere](https://gun.eco) — with a small caretaker **Settings** panel for
+Holosphere (signed Nostr events on the relays, mirrored into the browser's
+IndexedDB) — with a small caretaker **Settings** panel for
 the few knobs that matter.
 
 ## How it works
@@ -43,8 +44,8 @@ the few knobs that matter.
   `setFederationPartner` / `removeFederationPartner`). These edits write the
   shared federation record and apply immediately.
 - **Production by default:** the entrance display reads the production `Holons`
-  namespace from the production Gun relay — independent of the shared dev
-  `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
+  namespace from the production relays — independent of the shared dev
+  `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_RELAYS`.
 - **Holon button:** the ⬡ button opens the holon's full web dashboard at
   `https://dashboard.holons.io/<holon-id>` in a new tab.
 - **Tap to zoom:** any post-it or card comes forward into a detail card showing
@@ -97,7 +98,7 @@ param or the in-app **Settings** panel, then remembered in `localStorage`:
 | ------------- | ------------------ | ---------------------- | --------------------------- |
 | Holon to show | `VITE_KIOSK_HOLON` | `/<id>`, `?holon=<id>` | _(none)_                    |
 | App namespace | `VITE_KIOSK_APP`   | `?app=<name>`          | `Holons` (production)       |
-| Gun relay     | `VITE_KIOSK_PEER`  | —                      | `https://gun.holons.io/gun` |
+| Relays        | `VITE_KIOSK_RELAYS`| —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
 
 To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
 or open **Settings** and type the id. To _visit_ a holon without re-pointing the

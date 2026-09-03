@@ -51,7 +51,7 @@
   # key into the public bundle. The "direct" voice mode takes its key from the
   # kiosk's Settings panel instead, per device (localStorage); the env var is a
   # local-dev fallback only.
-  SECRETS_SCAN_OMIT_KEYS = "VITE_KIOSK_HOLON,VITE_KIOSK_APP,VITE_KIOSK_PEER,VITE_HOLONS_APP,VITE_TELEGRAM_BOT_USERNAME"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_KIOSK_HOLON,VITE_KIOSK_APP,VITE_KIOSK_RELAYS,VITE_HOLONS_APP,VITE_TELEGRAM_BOT_USERNAME"
 
 # @sveltejs/adapter-netlify writes the render function to
 # .netlify/functions-internal/sveltekit-render.mjs (resolved from `base`,

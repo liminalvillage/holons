@@ -13,8 +13,6 @@ export default defineConfig(({ command }) => ({
   envDir: resolve(__dirname, "../.."),
   plugins: [sveltekit()],
   define: {
-    // Holosphere expects a Node-ish global; map it to the browser globalThis.
-    global: "globalThis",
     // The OpenAI key env is a LOCAL-DEV fallback for the direct voice mode
     // only. Vite inlines VITE_* values into the bundle, so a key set in a CI
     // host's env (e.g. Netlify) would ship to every visitor — Netlify's
@@ -26,14 +24,10 @@ export default defineConfig(({ command }) => ({
       : {}),
   },
   optimizeDeps: {
-    include: ["buffer"],
     exclude: ["@sveltejs/kit"],
   },
   resolve: {
     dedupe: ["svelte"],
-    alias: {
-      buffer: "buffer/",
-    },
   },
   ssr: {
     external: ["ws"],

@@ -8,19 +8,12 @@
 
 import { createHoloSphere } from "@holons/core/holosphere";
 import type { HoloSphere } from "holosphere";
-import { Buffer } from "buffer";
 import {
   resolveAppName,
-  resolvePeers,
+  resolveRelays,
   resolveUserId,
   resolveUsername,
 } from "./config";
-
-// Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
-// before the library loads.
-if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
-  (globalThis as any).Buffer = Buffer;
-}
 
 const DEVICE_KEY = "wequest_device_key";
 
@@ -50,17 +43,15 @@ let instance: Promise<HoloSphere> | null = null;
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
-    instance = Promise.resolve(
-      createHoloSphere({
-        appName: resolveAppName(),
-        privateKey: deviceKeyHex(),
-        logLevel: "ERROR",
-        awaitReady: true,
-        // Must go through `gunOptions` — the v2 config constructor only honors
-        // `gunOptions.peers`; a top-level `peers` key is silently dropped.
-        extra: { gunOptions: { peers: resolvePeers() } },
-      }),
-    );
+    // The relays are the wire; the local IndexedDB store paints instantly on
+    // reload and survives a flaky network.
+    instance = createHoloSphere({
+      appName: resolveAppName(),
+      privateKey: deviceKeyHex(),
+      relays: resolveRelays(),
+      store: { adapter: "indexeddb" },
+      awaitReady: true,
+    });
     // Dev-only console/smoke-test hook.
     if (import.meta.env.DEV && typeof window !== "undefined") {
       instance.then((hs) => ((window as any).__wequest = hs));

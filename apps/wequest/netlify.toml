@@ -16,7 +16,7 @@
 # URLs: https://<site>/api/auth/telegram/callback
 #
 # Client env vars (public by design, still needed in the Netlify UI):
-#   VITE_WEQUEST_HOLON / VITE_WEQUEST_APP / VITE_WEQUEST_PEER — sync target
+#   VITE_WEQUEST_HOLON / VITE_WEQUEST_APP / VITE_WEQUEST_RELAYS — sync target
 #   VITE_MAPBOX_TOKEN — without it the app SILENTLY degrades to the SVG hex
 #     disk and a manual-entry-only hex picker (no error is shown)
 #   VITE_BOT_API_URL — need-lifecycle DMs via the bot; omitting it just
@@ -48,7 +48,7 @@
   # by contract — the mapbox token is a publishable client token). Whitelist
   # them so Netlify's secrets scanner doesn't flag them. NEVER add a private
   # key here.
-  SECRETS_SCAN_OMIT_KEYS = "VITE_WEQUEST_HOLON,VITE_WEQUEST_APP,VITE_WEQUEST_PEER,VITE_MAPBOX_TOKEN"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_WEQUEST_HOLON,VITE_WEQUEST_APP,VITE_WEQUEST_RELAYS,VITE_MAPBOX_TOKEN"
 
 # Long-cache the content-hashed build assets; never cache the HTML shell.
 [[headers]]

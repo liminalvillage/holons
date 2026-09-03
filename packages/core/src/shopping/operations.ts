@@ -20,7 +20,7 @@ export function createEmptyChecklist(now: number = Date.now()): ShoppingChecklis
   };
 }
 
-/** Coerce a raw document (possibly partial / from gun) into a sane checklist, or null if deleted/absent. */
+/** Coerce a raw document (possibly partial / from the wire) into a sane checklist, or null if deleted/absent. */
 export function normalizeChecklist(data: unknown): ShoppingChecklist | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;

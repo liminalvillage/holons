@@ -170,9 +170,9 @@ describe("countsAsPresent", () => {
     );
   });
 
-  it("Gun graph metadata never lights a cell (the false-positive bug)", () => {
-    // The exact junk observed replaying at a prod cell's quests lens: a HAM
-    // state fragment under key ">" and a soul ref under key "true".
+  it("malformed emissions never light a cell", () => {
+    // Shapes without any identity/content field — the junk a legacy graph
+    // once replayed at a prod cell — must not count as records.
     expect(looksLikeRecord({ true: 1730498418239 })).toBe(false);
     expect(looksLikeRecord({ "#": true })).toBe(false);
     expect(looksLikeRecord([1, 2])).toBe(false);
@@ -317,7 +317,6 @@ describe("itemDetails", () => {
     expect(itemDetails(null)).toEqual([]);
     expect(itemDetails("str")).toEqual([]);
     expect(itemDetails([1, 2])).toEqual([]);
-    expect(formatDetailValue({ "#": "soul" })).toBe("");
     expect(formatDetailValue(1725270000000, { formatDate: iso })).toBe(
       "2024-09-02T09:40:00.000Z",
     );

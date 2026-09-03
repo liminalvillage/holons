@@ -11,7 +11,7 @@ function sameId(a: QuestParticipant | undefined, b: string | number): boolean {
 /**
  * A quest's people list as an array, tolerating wire-format records where the
  * field is missing (no one has joined yet) or arrives as a JSON string (older
- * bot writes / Gun round-trips). Never throws — a quest fresh off the graph
+ * bot writes / wire round-trips). Never throws — a quest fresh off the graph
  * must be joinable.
  */
 function listOf(value: unknown): QuestParticipant[] {

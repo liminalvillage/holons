@@ -11,19 +11,11 @@ export default defineConfig({
   // the other apps — one source of truth.
   envDir: resolve(__dirname, "../.."),
   plugins: [sveltekit()],
-  define: {
-    // Holosphere expects a Node-ish global; map it to the browser globalThis.
-    global: "globalThis",
-  },
   optimizeDeps: {
-    include: ["buffer"],
     exclude: ["@sveltejs/kit"],
   },
   resolve: {
     dedupe: ["svelte"],
-    alias: {
-      buffer: "buffer/",
-    },
   },
   ssr: {
     external: ["ws"],

@@ -1,14 +1,14 @@
 // Task deletion with forward-cascade.
 //
 // holosphere.delete only prunes ONE direction: if the entry being deleted is
-// itself a forward (a `{id, soul}` hologram), the lib removes its soul from
-// the source's `_holograms` set. It does NOT walk `_holograms` on the entry
-// being deleted, so if you delete a SOURCE quest, every forward published
-// from it stays as a dangling pointer that `resolveHologram` can't follow,
-// surfacing as "Hologram at … did not resolve" warnings forever after.
+// itself a forward (a `{id, soul}` hologram), the store drops it from the
+// source's backlinks. It does NOT walk the backlinks of the entry being
+// deleted, so if you delete a SOURCE quest, every forward published from it
+// stays as a dangling pointer that `resolveHologram` can't follow, surfacing
+// as "Hologram at … did not resolve" warnings forever after.
 //
-// `deleteTaskWithCascade` reads `_holograms` on the source before deletion,
-// then deletes the source, then best-effort deletes each forward. Cascade is
+// `deleteTaskWithCascade` reads the source's backlinks before deletion, then
+// deletes the source, then best-effort deletes each forward. Cascade is
 // best-effort because forwards may live in holons we don't have write
 // permission for (other users' personal holons) — those are skipped silently
 // and reported back as `forwardsFailed`.
@@ -18,7 +18,7 @@ import type { HoloSphere } from 'holosphere';
 export interface DeleteCascadeResult {
 	/** True when the source itself was successfully removed. */
 	sourceDeleted: boolean;
-	/** Number of forward souls discovered in the source's `_holograms` set. */
+	/** Number of forward souls discovered in the source's backlinks. */
 	forwardsFound: number;
 	/** Forwards we successfully tombstoned. */
 	forwardsDeleted: number;
@@ -29,10 +29,7 @@ export interface DeleteCascadeResult {
 export interface DeleteCascadeOptions {
 	/** Lens to delete from; defaults to `quests`. */
 	lens?: string;
-	/**
-	 * How long to wait for Gun to surface the `_holograms` set before giving
-	 * up and assuming no forwards exist. Defaults to 2000ms.
-	 */
+	/** @deprecated backlinks are read synchronously from the local store; kept for API compatibility. */
 	readForwardsTimeoutMs?: number;
 }
 
@@ -46,9 +43,9 @@ export async function deleteTaskWithCascade(
 	const appname = (holosphere as any).appname as string;
 	const sourceSoul = `${appname}/${holonId}/${lens}/${questId}`;
 
-	// Snapshot forwards BEFORE deletion. Doing it after would race against
-	// holosphere.delete's own tombstone of the source node, which can wipe
-	// the `_holograms` subtree on the wire before our walk completes.
+	// Snapshot forwards BEFORE deletion: tombstoning the source does not touch
+	// its backlinks, but reading first keeps the cascade independent of what
+	// the delete does to the index.
 	const forwards = await readForwardSouls(
 		holosphere,
 		sourceSoul,
@@ -98,39 +95,26 @@ export async function deleteTaskWithCascade(
 }
 
 /**
- * Read every live forward soul from a node's `_holograms` set. Tombstoned
- * (null) entries are filtered out; the Gun metadata key `_` is skipped.
+ * Every live forward soul that points at a source soul — the store's
+ * backlink index for that record (maintained from the hologram pointers it
+ * holds). Resolves `[]` for a malformed soul or an instance without the
+ * index.
  *
  * Exported for tests and for any future GC pass that wants to enumerate
  * forwards without deleting the source.
  */
-export function readForwardSouls(
+export async function readForwardSouls(
 	holosphere: HoloSphere,
 	sourceSoul: string,
-	timeoutMs = 2000
+	_timeoutMs = 2000
 ): Promise<string[]> {
-	return new Promise((resolve) => {
-		let settled = false;
-		const finish = (out: string[]) => {
-			if (settled) return;
-			settled = true;
-			resolve(out);
-		};
-		try {
-			const ref = (holosphere as any).getNodeRef(sourceSoul).get('_holograms');
-			ref.once((data: any) => {
-				if (!data || typeof data !== 'object') return finish([]);
-				const souls = Object.keys(data).filter(
-					(k) => k !== '_' && k !== '#' && data[k] != null
-				);
-				finish(souls);
-			});
-		} catch {
-			finish([]);
-		}
-		// Gun `.once()` can hang indefinitely on cold reads. The timeout is a
-		// safety net so a delete never blocks on missing peers — empty result
-		// just means no cascade, which is the same outcome we had before.
-		setTimeout(() => finish([]), timeoutMs);
-	});
+	try {
+		const hs = holosphere as any;
+		const parsed = typeof hs.parseSoulPath === 'function' ? hs.parseSoulPath(sourceSoul) : null;
+		if (!parsed || typeof hs.getBacklinks !== 'function') return [];
+		const souls = hs.getBacklinks(parsed.holon, parsed.lens, parsed.key);
+		return Array.isArray(souls) ? souls.filter((x: unknown) => typeof x === 'string' && x) : [];
+	} catch {
+		return [];
+	}
 }

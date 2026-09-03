@@ -18,7 +18,7 @@
  *    `name`, `hex`, `valueEquation` and `currencies`.
  *
  * That is why the loader had to *scan* — `getAll(holonId, 'settings').find(s =>
- * s.bundle)` — taking whichever orphan Gun happened to list first. With several
+ * s.bundle)` — taking whichever orphan the store happened to list first. With several
  * orphans that is a coin toss between a current address and a stale one, and
  * nothing on the canonical settings document ever saw the bundle at all.
  *

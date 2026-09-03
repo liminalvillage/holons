@@ -13,7 +13,6 @@
 
 import { writable } from "svelte/store";
 import { getHolosphere } from "./holosphere";
-import { resolveBackend, resolveRelays, resolveSigningMode } from "./config";
 import type { HoloSphere } from "holosphere";
 
 /** Pubkey (hex) of the adopted session identity, or null when none. */
@@ -36,29 +35,9 @@ export const keyLinkOpen = writable<boolean>(false);
 // The ambient-identity API exists on the instance but isn't in
 // holosphere.d.ts yet; keep the cast in one place.
 type SigningIdentity = {
-  login(
-    privateKey: string,
-    opts?: { relays?: string[] },
-  ): Promise<{ pubkey: string }>;
+  login(privateKey: string): Promise<{ pubkey: string }>;
   logout(): void;
 };
-
-/**
- * Which relays this session's signer publishes to.
- *
- * `login` replaces whatever signer was in place, so it has to re-state the
- * publishing arrangement or adopting a key would silently stop relay writes:
- *  - nostr backend → `[]`. The relay transport is the single publisher and
- *    signs each write with the adopted identity already; a second publisher
- *    here would duplicate every event.
- *  - gun backend + a signing mode → the configured relays, so writes keep
- *    reaching the relay as signed events, now under the user's own key.
- *  - gun backend, signing off → `[]`, envelope-only, as before.
- */
-function signingRelays(): string[] {
-  if (resolveBackend() === "nostr") return [];
-  return resolveSigningMode() === "off" ? [] : resolveRelays();
-}
 
 /**
  * Adopt a paired secret key as this session's signing identity. Returns the
@@ -69,7 +48,8 @@ export async function adoptSessionKey(
 ): Promise<string | null> {
   try {
     const hs = (await getHolosphere()) as HoloSphere & SigningIdentity;
-    const { pubkey } = await hs.login(secretHex, { relays: signingRelays() });
+    // The relay transport keeps publishing; `login` only swaps the signing key.
+    const { pubkey } = await hs.login(secretHex);
     sessionSecret = secretHex;
     sessionKeyPub.set(pubkey);
     return pubkey;

@@ -12,8 +12,7 @@
 // Query-param overrides persist to localStorage so a one-time setup URL
 // survives reloads.
 
-/** Production Gun relay read by default. */
-export const PRODUCTION_PEER = "https://gun.holons.io/gun";
+import { resolveRelays as coreResolveRelays } from "@holons/core/holosphere";
 
 const HOLON_KEY = "wequest_holon";
 const APP_KEY = "wequest_app";
@@ -53,9 +52,12 @@ export function resolveHolon(): string {
   );
 }
 
-export function resolvePeers(): string[] {
-  const peer = import.meta.env.VITE_WEQUEST_PEER || PRODUCTION_PEER;
-  return [peer];
+/** Relay URLs — the wire. `VITE_WEQUEST_RELAYS`, else the shared
+ *  `VITE_HOLOSPHERE_RELAYS`, else the production relay set. */
+export function resolveRelays(): string[] {
+  return coreResolveRelays(
+    import.meta.env.VITE_WEQUEST_RELAYS || import.meta.env.VITE_HOLOSPHERE_RELAYS || "",
+  );
 }
 
 export function resolveUserId(): string {

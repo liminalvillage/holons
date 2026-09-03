@@ -2,7 +2,7 @@
 //
 // Minimal offline shell for the kiosk. Precaches the built app so the entrance
 // screen survives a flaky network; live holon data still flows through
-// Holosphere/Gun when connectivity returns. Navigations fall back to the
+// Holosphere (the relays) when connectivity returns. Navigations fall back to the
 // cached shell (SPA), everything else is cache-first.
 
 /// <reference types="@sveltejs/kit" />
@@ -34,7 +34,7 @@ sw.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.origin !== location.origin) return; // let Gun/peer traffic pass through
+  if (url.origin !== location.origin) return; // let relay traffic pass through
 
   event.respondWith(
     (async () => {
