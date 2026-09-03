@@ -6,6 +6,7 @@
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { schnorr } from '@noble/curves/secp256k1';
+import * as nip19 from 'nostr-tools/nip19';
 import type { LensCodec, NostrEventLike, ProjectionCtx, ProjectionHook, Reversed } from './types.js';
 import { calendarCodec } from './codecs/calendar.js';
 import { classifiedCodec } from './codecs/classified.js';
@@ -72,10 +73,36 @@ export function buildProjections(lenses: readonly string[], ctx: ProjectionCtx):
   return hooks;
 }
 
-/** Hex x-only pubkey of a Nostr secret key (hex or bytes). */
+/**
+ * A Nostr secret key as 64-char hex, whatever form it was given in:
+ * hex, NIP-19 `nsec1…` (the form every `*_NSEC` env var should hold) or
+ * raw bytes. Throws on anything else.
+ */
+export function nsecToHex(secret: string | Uint8Array): string {
+  if (typeof secret !== 'string') return bytesToHex(secret);
+  const v = secret.trim();
+  if (/^nsec1/i.test(v)) {
+    const { type, data } = nip19.decode(v.toLowerCase());
+    if (type !== 'nsec') throw new Error(`expected an nsec, got ${type}`);
+    return bytesToHex(data as Uint8Array);
+  }
+  if (!/^[0-9a-f]{64}$/i.test(v)) throw new Error('expected 64 hex chars or an nsec1… string');
+  return v.toLowerCase();
+}
+
+/** NIP-19 `nsec1…` encoding of a secret key (hex, nsec or bytes). */
+export function toNsec(secret: string | Uint8Array): string {
+  return nip19.nsecEncode(hexToBytes(nsecToHex(secret)));
+}
+
+/** A fresh random secret key as `nsec1…`. */
+export function generateNsec(): string {
+  return nip19.nsecEncode(schnorr.utils.randomPrivateKey());
+}
+
+/** Hex x-only pubkey of a Nostr secret key (hex, nsec or bytes). */
 export function pubkeyOf(privateKey: string | Uint8Array): string {
-  const sk = typeof privateKey === 'string' ? hexToBytes(privateKey) : privateKey;
-  return bytesToHex(schnorr.getPublicKey(sk));
+  return bytesToHex(schnorr.getPublicKey(hexToBytes(nsecToHex(privateKey))));
 }
 
 /** Inputs for {@link projectionOptionsFor}. */

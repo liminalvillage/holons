@@ -57,15 +57,15 @@ export default class Holons {
    * @param {Settings} settings - The settings module instance
    */
   constructor(bot, db, settings) {
-    this.network = process.env.NETWORK;
-    this.chainId = parseInt(process.env.CHAINID);
+    this.network = process.env.ETH_NETWORK;
+    this.chainId = parseInt(process.env.ETH_CHAIN_ID);
     this.bot = bot;
     this.db = db;
     this.settings = settings;
     this.ui = null;
     this.expensesInstance = null;
-    this.privateKey = process.env.WEB3KEY;
-    this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
+    this.privateKey = process.env.ETH_PRIVATE_KEY;
+    this.provider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL);
     this.wallet = new ethers.Wallet(this.privateKey, this.provider);
 
     this.createHolonScene = new Scenes.BaseScene('create_holon_scene');

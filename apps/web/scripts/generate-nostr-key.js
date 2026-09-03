@@ -31,7 +31,9 @@ console.log("   - Store it securely (password manager, encrypted file, etc.)");
 console.log("   - Anyone with your private key has full access to your data\n");
 
 console.log("📝 Add this to your .env file:");
-console.log(`VITE_HOLOSPHERE_PRIVATE_KEY="${privateKeyHex}"\n`);
+console.log(
+  `VITE_HOLOSPHERE_NSEC="${privateKeyHex}"   # nsec1… is accepted too\n`,
+);
 
 console.log("✅ Then update +layout.svelte line 31 with your new public key:");
 console.log(`console.log("Expected:", "${publicKeyHex}");\n`);

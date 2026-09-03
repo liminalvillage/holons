@@ -15,6 +15,7 @@ import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
 import { cellToLatLng } from 'h3-js';
 import {
+  nsecToHex,
   buildProjections,
   parseProjectionList,
   buildGroupState,
@@ -43,8 +44,8 @@ function generatePrivateKey() {
  * Uses persistent private key so the same identity is maintained across restarts.
  * This allows the bot to access its previous data from Nostr relays.
  *
- * Priority for private key:
- * 1) .env HOLOSPHERE_PRIVATE_KEY
+ * Priority for the signing key (nsec1… or 64-char hex):
+ * 1) .env HOLOSPHERE_NSEC
  * 2) stored key from utils/key-storage
  * 3) generate new key
  *
@@ -77,10 +78,11 @@ export default function createHoloSphere(appName, options = {}) {
     store: storeOption,
     ...extra
   } = options;
-  const privateKey =
+  const privateKey = nsecToHex(
     pkOverride ||
-    process.env.HOLOSPHERE_PRIVATE_KEY ||
-    getOrCreateKey(resolvedAppName, generatePrivateKey);
+      process.env.HOLOSPHERE_NSEC ||
+      getOrCreateKey(resolvedAppName, generatePrivateKey)
+  );
 
   const relays = resolveRelays(
     Array.isArray(relaysOption) && relaysOption.length

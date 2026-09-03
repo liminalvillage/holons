@@ -7,7 +7,7 @@ import {
   createHoloSphere as coreCreateHoloSphere,
   resolveRelays,
 } from '@holons/core/holosphere';
-import { projectionOptionsFor } from '@holons/core/nostr';
+import { nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
 import { generateSecretKey } from 'nostr-tools';
 import { getOrCreateKey } from './utils/keyStorage.js';
 
@@ -30,17 +30,18 @@ export interface CreateHoloSphereOptions {
  *
  * Private key priority:
  *   1. `options.privateKey`
- *   2. `process.env.HOLOSPHERE_PRIVATE_KEY`
+ *   2. `process.env.HOLOSPHERE_NSEC` (nsec1… or 64-char hex)
  *   3. stored key (or a freshly generated + persisted one)
  */
 export function createHoloSphere(
   appName = process.env.HOLONS_APP || process.env.APPNAME || 'Holons',
   options: CreateHoloSphereOptions = {}
 ) {
-  const privateKey =
+  const privateKey = nsecToHex(
     options.privateKey ||
-    process.env.HOLOSPHERE_PRIVATE_KEY ||
-    getOrCreateKey(appName, generatePrivateKey);
+      process.env.HOLOSPHERE_NSEC ||
+      getOrCreateKey(appName, generatePrivateKey)
+  );
 
   return coreCreateHoloSphere({
     appName,

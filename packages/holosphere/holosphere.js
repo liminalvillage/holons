@@ -23,7 +23,7 @@ import * as Utils from './utils.js';
 import { createStore, CAPABILITIES_HOLON } from './store/index.js';
 import { createSigner } from './signing.js';
 import { createRelayTransport } from './relay-transport.js';
-import { generateSecretKey } from './nostr-events.js';
+import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
 
 // Named exports (v2-compatible)
 import { nostrUtils } from './nostr-utils-shim.js';
@@ -52,7 +52,7 @@ class HoloSphere {
             this.config = config;
             this.appname = config.appName || config.appname || 'holosphere';
             this.strict = config.strict || false;
-            this._privateKey = config.privateKey || null;
+            this._privateKey = config.privateKey ? normalizeSecretKey(config.privateKey) : null;
             if (config.backend && config.backend !== 'nostr') {
                 console.warn(`[holosphere] backend '${config.backend}' is no longer supported — the relay is the wire (or the instance is local-only without relays)`);
             }
@@ -750,11 +750,11 @@ class HoloSphere {
      */
     async enableSigning(opts = {}) {
         await this._awaitBackend();
-        const privateKey = opts.privateKey || this._privateKey;
+        const privateKey = opts.privateKey ? normalizeSecretKey(opts.privateKey) : this._privateKey;
         if (!privateKey) throw new Error('enableSigning: a privateKey is required');
-        if (opts.privateKey && opts.privateKey !== this._privateKey) {
-            this._privateKey = opts.privateKey;
-            this.client = { publicKey: this._derivePubKey(opts.privateKey) };
+        if (opts.privateKey && privateKey !== this._privateKey) {
+            this._privateKey = privateKey;
+            this.client = { publicKey: this._derivePubKey(privateKey) };
         }
         // Your read-list lives under your "read space" (default: your own key).
         // Hydrate it from the SAVED federation list, then add any explicit seeds.
@@ -830,6 +830,7 @@ class HoloSphere {
      */
     async login(privateKey, opts = {}) {
         if (!privateKey) throw new Error('login: a privateKey is required');
+        privateKey = normalizeSecretKey(privateKey);
         if (this._signer) this.disableSigning();
         this._privateKey = privateKey;
         this.client = { publicKey: this._derivePubKey(privateKey) };

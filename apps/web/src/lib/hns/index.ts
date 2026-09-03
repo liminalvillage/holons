@@ -7,6 +7,7 @@
  * Uses a global table for public accessibility (no federation required to read).
  */
 
+import { pubkeyOf } from "@holons/core/nostr";
 import { schnorr } from "@noble/curves/secp256k1";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { sha256 } from "@noble/hashes/sha256";
@@ -30,12 +31,11 @@ export interface HNSEntry {
  * Get the registry holon ID (derived from service key)
  */
 export function getRegistryHolonId(): string | null {
-  const servicePrivateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-  if (!servicePrivateKey) return null;
+  const serviceNsec = import.meta.env.VITE_HOLOSPHERE_NSEC;
+  if (!serviceNsec) return null;
 
   try {
-    const pubKeyBytes = schnorr.getPublicKey(servicePrivateKey);
-    return bytesToHex(pubKeyBytes);
+    return pubkeyOf(serviceNsec); // nsec1… or hex
   } catch {
     return null;
   }

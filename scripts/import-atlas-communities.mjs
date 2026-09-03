@@ -80,7 +80,7 @@ const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 // thousands of records at once; giving it its own pubkey keeps that provenance
 // legible and makes the whole batch revocable/filterable without touching real
 // users. Lives in the gitignored root .env.
-const IMPORTER_KEY = process.env.ATLAS_IMPORTER_NOSTR_KEY || "";
+const IMPORTER_KEY = process.env.ATLAS_IMPORTER_NSEC || "";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -364,7 +364,7 @@ const HoloSphere = mod.HoloSphere || mod.default;
 // bot/web/kiosk. Memory store: nothing needs to survive the process.
 if (!IMPORTER_KEY) {
   console.error(
-    "FATAL: ATLAS_IMPORTER_NOSTR_KEY is not set — refusing to write under a throwaway key.\n" +
+    "FATAL: ATLAS_IMPORTER_NSEC is not set — refusing to write under a throwaway key.\n" +
       "It lives in the gitignored root .env; run with `env $(grep -v '^#' ../../.env | xargs)` or export it.",
   );
   process.exit(1);

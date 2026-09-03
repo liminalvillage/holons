@@ -18,12 +18,40 @@ import {
   getPublicKey as ntGetPublicKey,
   generateSecretKey as ntGenerateSecretKey,
 } from 'nostr-tools/pure';
-import { hexToBytes } from '@noble/hashes/utils';
+import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
+import * as nip19 from 'nostr-tools/nip19';
 
 /** Default kind: app-specific parameterized-replaceable (NIP-33 range). */
 export const HOLOSPHERE_KIND = 30078;
 
-const toBytes = (sk) => (typeof sk === 'string' ? hexToBytes(sk) : sk);
+/**
+ * Normalize a secret key given as 64-char hex, NIP-19 `nsec1…` or raw
+ * bytes. Strings come back as hex, bytes as-is — so callers can keep
+ * whichever shape they hold while accepting the nsec form everywhere.
+ */
+export function normalizeSecretKey(sk) {
+  if (sk == null || sk === '') return sk;
+  if (typeof sk !== 'string') return sk;
+  const v = sk.trim();
+  if (/^nsec1[02-9ac-hj-np-z]+$/i.test(v)) {
+    const { type, data } = nip19.decode(v.toLowerCase());
+    if (type !== 'nsec') throw new Error(`secret key: expected an nsec, got ${type}`);
+    return bytesToHex(data);
+  }
+  if (!/^[0-9a-f]{64}$/i.test(v)) throw new Error('secret key: expected 64 hex chars or an nsec1… string');
+  return v.toLowerCase();
+}
+
+/** NIP-19 `nsec1…` encoding of a secret key (hex, nsec or bytes). */
+export function toNsec(sk) {
+  const n = normalizeSecretKey(sk);
+  return nip19.nsecEncode(typeof n === 'string' ? hexToBytes(n) : n);
+}
+
+const toBytes = (sk) => {
+  const n = normalizeSecretKey(sk);
+  return typeof n === 'string' ? hexToBytes(n) : n;
+};
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 /** Generate a fresh secret key (Uint8Array). */

@@ -218,7 +218,7 @@ Every surface builds its instance through `createHoloSphere` in
   (falling back to `VITE_HOLOSPHERE_RELAYS`), IndexedDB store.
 - **telegram bot** / **discord bot**: `HOLOSPHERE_RELAYS`, file store under
   `HOLOSPHERE_STORE_DIR` (default `./holosphere-store`).
-- **mcp-ui** / scripts: `HOLOSPHERE_RELAYS` (+ `HOLOSPHERE_PRIVATE_KEY`);
+- **mcp-ui** / scripts: `HOLOSPHERE_RELAYS` (+ `HOLOSPHERE_NSEC`);
   memory store unless `HOLOSPHERE_STORE_DIR` is set.
 
 ## Tests

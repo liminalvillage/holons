@@ -11,8 +11,8 @@
  *   npm run deploy -- --network gnosis --contract Bundle
  *
  * Environment variables (from .env):
- *   WEB3KEY - Deployer wallet private key
- *   WEB3PROVIDER - Custom RPC URL (optional, uses default for network)
+ *   ETH_PRIVATE_KEY - Deployer wallet private key
+ *   ETH_RPC_URL - Custom RPC URL (optional, uses default for network)
  */
 
 import { ethers } from "ethers";
@@ -294,9 +294,9 @@ async function main() {
     }
   }
 
-  // Use NETWORK from .env as default if not specified
+  // Use ETH_NETWORK from .env as default if not specified
   if (!networkKey) {
-    networkKey = process.env.NETWORK || "";
+    networkKey = process.env.ETH_NETWORK || "";
     if (networkKey) {
       console.log(`Using network from .env: ${networkKey}`);
     }
@@ -319,17 +319,17 @@ async function main() {
     process.exit(1);
   }
 
-  // Get private key from WEB3KEY env var
-  const privateKey = process.env.WEB3KEY;
+  // Get private key from ETH_PRIVATE_KEY env var
+  const privateKey = process.env.ETH_PRIVATE_KEY;
   if (!privateKey) {
-    console.error("WEB3KEY environment variable not set");
-    console.log("Set it in your .env file: WEB3KEY=0x...");
+    console.error("ETH_PRIVATE_KEY environment variable not set");
+    console.log("Set it in your .env file: ETH_PRIVATE_KEY=0x...");
     process.exit(1);
   }
 
-  // Setup provider and signer - use WEB3PROVIDER if set
+  // Setup provider and signer - use ETH_RPC_URL if set
   const rpcUrl =
-    process.env.WEB3PROVIDER || process.env.RPC_URL || network.rpcUrl;
+    process.env.ETH_RPC_URL || process.env.RPC_URL || network.rpcUrl;
   console.log(`\nConnecting to ${networkKey} (${rpcUrl})...`);
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);

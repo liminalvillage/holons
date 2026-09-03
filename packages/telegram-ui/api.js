@@ -32,7 +32,7 @@ async function getHS() {
     await import('@holons/core/holosphere');
   hs = await createHoloSphere({
     appName: APP,
-    privateKey: process.env.HOLOSPHERE_PRIVATE_KEY || null,
+    privateKey: process.env.HOLOSPHERE_NSEC || null,
     relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
     store: { adapter: 'memory' },
     awaitReady: true,

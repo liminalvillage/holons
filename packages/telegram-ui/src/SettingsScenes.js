@@ -41,13 +41,13 @@ export default class SettingsScenes {
     this.bot = bot;
 
     // spagheti
-    this.network = process.env.NETWORK;
-    this.chainId = parseInt(process.env.CHAINID);
+    this.network = process.env.ETH_NETWORK;
+    this.chainId = parseInt(process.env.ETH_CHAIN_ID);
     this.bot = bot;
     this.db = db;
     this.settings = settings;
-    this.privateKey = process.env.WEB3KEY;
-    this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
+    this.privateKey = process.env.ETH_PRIVATE_KEY;
+    this.provider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL);
     this.wallet = new ethers.Wallet(this.privateKey, this.provider);
     // this.holons = new Holons(this.bot, this.db, this.settings);
     // spagheti

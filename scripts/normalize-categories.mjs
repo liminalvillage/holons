@@ -16,13 +16,13 @@
 const HOLON = process.argv[2];
 const APPLY = process.argv.includes('--apply');
 if (!HOLON) {
-  console.error('usage: node normalize-categories.mjs <holonId> [--apply]   (env: HOLONS_APP, HOLOSPHERE_RELAYS, HOLOSPHERE_PRIVATE_KEY)');
+  console.error('usage: node normalize-categories.mjs <holonId> [--apply]   (env: HOLONS_APP, HOLOSPHERE_RELAYS, HOLOSPHERE_NSEC)');
   process.exit(64);
 }
 const APP = process.env.HOLONS_APP || 'Holons';
 // Writes are signed: use the bot's key so the rewrites carry its identity
 // (an ephemeral key is generated — with a warning — when unset).
-const KEY = process.env.HOLOSPHERE_PRIVATE_KEY || undefined;
+const KEY = process.env.HOLOSPHERE_NSEC || undefined;
 
 const { createRequire } = await import('module');
 const { pathToFileURL } = await import('url');

@@ -37,7 +37,7 @@
 
 const APP = process.env.HOLONS_APP || 'Holons';
 const STORE_DIR = process.env.HOLOSPHERE_STORE_DIR || './holosphere-store';
-const KEY = process.env.HOLOSPHERE_PRIVATE_KEY || undefined; // the bot's key signs the rows
+const KEY = process.env.HOLOSPHERE_NSEC || undefined; // the bot's key signs the rows
 const WRITE = process.env.WRITE === '1';
 const REGISTRY_TABLE = 'holons_registry';
 

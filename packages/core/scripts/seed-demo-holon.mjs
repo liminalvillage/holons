@@ -24,7 +24,7 @@
  *   node scripts/seed-demo-holon.mjs [--holon-id=demo123] [--app-name=HolonsDebug] [--timeout-ms=20000]
  *
  *   Env:
- *     HOLOSPHERE_PRIVATE_KEY  attribution key (optional; without it puts are
+ *     HOLOSPHERE_NSEC  attribution key (optional; without it puts are
  *                             anonymous which is fine for the public demo)
  *     HOLONS_APP              fallback for --app-name (defaults to HolonsDebug)
  */
@@ -1507,7 +1507,7 @@ async function main() {
 	const flags = parseArgs(argv.slice(2));
 	const holonId = flags.holonId;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 
 	console.log(
 		`Seeding holon "${holonId}" via appName="${appName}"` +

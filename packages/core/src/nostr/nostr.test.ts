@@ -1,3 +1,4 @@
+import { nsecToHex, toNsec, generateNsec, pubkeyOf } from './projections.js';
 import { describe, it, expect } from 'vitest';
 import { cellToLatLng } from 'h3-js';
 import {
@@ -194,5 +195,19 @@ describe('buildProjections', () => {
     expect(out?.primary.created_at).toBe(1_800_000_000);
     expect(hooks[1].requiresAuthor).toBe('user');
     expect(hooks[0].retract(HOLON, 'quests', '1')[0].kind).toBe(DELETION_KIND);
+  });
+});
+
+describe('nsec helpers', () => {
+  it('round-trips hex ↔ nsec and derives one pubkey', () => {
+    const nsec = generateNsec();
+    expect(nsec.startsWith('nsec1')).toBe(true);
+    const hex = nsecToHex(nsec);
+    expect(hex).toMatch(/^[0-9a-f]{64}$/);
+    expect(toNsec(hex)).toBe(nsec);
+    expect(nsecToHex(hex.toUpperCase())).toBe(hex);
+    expect(pubkeyOf(nsec)).toBe(pubkeyOf(hex));
+    expect(() => nsecToHex('npub1qqqq')).toThrow();
+    expect(() => nsecToHex('garbage')).toThrow(/64 hex/);
   });
 });

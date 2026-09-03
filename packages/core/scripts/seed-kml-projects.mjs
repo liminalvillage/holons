@@ -40,7 +40,7 @@
  *     [--concurrency=4] [--timeout-ms=30000] [--no-skip-existing]
  *
  *   Env:
- *     HOLOSPHERE_PRIVATE_KEY  hex-encoded private key (optional — only needed
+ *     HOLOSPHERE_NSEC  Nostr secret key (nsec1… or hex) (optional — only needed
  *                             if you want writes attributable to a specific
  *                             pubkey; cell-based public puts are signed by a throwaway key
  *                             without it)
@@ -208,7 +208,7 @@ async function main() {
 		return;
 	}
 
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
 
 	console.log(

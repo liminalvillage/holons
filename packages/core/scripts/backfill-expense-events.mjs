@@ -49,7 +49,7 @@ async function main() {
 	const flags = parseArgs(argv.slice(2));
 	const holonId = flags.holonId;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 
 	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
 	// the store is in memory for this one-shot process.

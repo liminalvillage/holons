@@ -6,8 +6,7 @@
 // truth (HOLONS_APP / HOLOSPHERE_RELAYS, with the legacy APPNAME as a
 // fallback), matching how the bot and web read it.
 import { createHoloSphere, resolveRelays } from '@holons/core/holosphere';
-import { projectionOptionsFor } from '@holons/core/nostr';
-import { randomBytes } from 'node:crypto';
+import { generateNsec, nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
 
 function resolveApp(): string {
   return process.env.HOLONS_APP || process.env.APPNAME || 'HolonsDebug';
@@ -33,11 +32,10 @@ export async function getHoloSphere(): Promise<any> {
   if (hs) return hs;
   resolvedApp = resolveApp();
   const dir = (process.env.HOLOSPHERE_STORE_DIR || '').trim();
-  // HOLOSPHERE_PRIVATE_KEY signs every write; without it a throwaway key is
-  // generated here (rather than inside holosphere) so the standard-kind
+  // HOLOSPHERE_NSEC (nsec1… or hex) signs every write; without it a throwaway
+  // key is generated here (rather than inside holosphere) so the standard-kind
   // projections are addressed to the same pubkey.
-  const privateKey =
-    (process.env.HOLOSPHERE_PRIVATE_KEY || '').trim() || randomBytes(32).toString('hex');
+  const privateKey = nsecToHex((process.env.HOLOSPHERE_NSEC || '').trim() || generateNsec());
   hs = await createHoloSphere({
     appName: resolvedApp,
     privateKey,

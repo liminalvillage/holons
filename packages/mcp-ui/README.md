@@ -17,7 +17,7 @@ node packages/mcp-ui/dist/index.js --port 3200
 ## Env
 
 - `HOLOSPHERE_RELAYS` — comma-separated Nostr relay URLs, the wire (default `wss://relay.holons.io,wss://relay.commonshub.dev`)
-- `HOLOSPHERE_PRIVATE_KEY` — hex key that signs the server's writes (a throwaway key is generated when unset)
+- `HOLOSPHERE_NSEC` — Nostr secret key (`nsec1…` or hex) that signs the server's writes (a throwaway key is generated when unset)
 - `HOLOSPHERE_STORE_DIR` — directory for a persistent file-backed local store (default: in memory, re-synced per process)
 - `HOLOSPHERE_PROJECTIONS` — standard-kind projections, on for every lens by default (`off` | comma list)
 - `HOLONS_APP` — HoloSphere app name (default `Holons`)

@@ -269,6 +269,7 @@ interface HoloSphereConfig {
   appName?: string;
   appname?: string;
   /** Signing identity. With relays but no key an ephemeral key is generated. */
+  /** 64-char hex, NIP-19 `nsec1…` or raw bytes. */
   privateKey?: Uint8Array | string | null;
   strict?: boolean;
   /** Relay URLs — the wire. Without relays the instance is local-only. */

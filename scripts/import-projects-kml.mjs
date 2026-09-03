@@ -23,14 +23,14 @@
 //
 //   Optional env: HOLONS_APP (default Holons), HOLOSPHERE_RELAYS, KML=/path/to/file.kml,
 //                 START/COUNT (project slice), CONCURRENCY, SETTLE_MS
-//   Signing key:  ATLAS_IMPORTER_NOSTR_KEY (the dedicated importer identity) or
-//                 HOLOSPHERE_PRIVATE_KEY — required for WRITE=1.
+//   Signing key:  ATLAS_IMPORTER_NSEC (the dedicated importer identity) or
+//                 HOLOSPHERE_NSEC — required for WRITE=1.
 
 import { readFileSync } from "fs";
 
 const APP = process.env.HOLONS_APP || "Holons";
 const IMPORTER_KEY =
-  process.env.ATLAS_IMPORTER_NOSTR_KEY || process.env.HOLOSPHERE_PRIVATE_KEY || "";
+  process.env.ATLAS_IMPORTER_NSEC || process.env.HOLOSPHERE_NSEC || "";
 const WRITE = process.env.WRITE === "1";
 const KML =
   process.env.KML ||
@@ -218,7 +218,7 @@ const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 
 if (WRITE && !IMPORTER_KEY) {
   console.error(
-    "FATAL: neither ATLAS_IMPORTER_NOSTR_KEY nor HOLOSPHERE_PRIVATE_KEY is set — refusing to write under a throwaway key.",
+    "FATAL: neither ATLAS_IMPORTER_NSEC nor HOLOSPHERE_NSEC is set — refusing to write under a throwaway key.",
   );
   process.exit(1);
 }
