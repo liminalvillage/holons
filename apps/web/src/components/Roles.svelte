@@ -19,7 +19,7 @@
 	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
 	import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import { goto } from '$app/navigation';
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
@@ -81,7 +81,7 @@
 		const q = filters.searchQuery.trim().toLowerCase();
 		if (!q && $showHolograms && $showFederated) return roles;
 		return roles.filter(([, role]) => {
-			if (!passesLensFilters(role as any, $showHolograms, $showFederated, $showUnverified)) return false;
+			if (!passesLensFilters(role as any, $showHolograms, $showFederated)) return false;
 			if (!q) return true;
 			const title = (role as any)?.title ?? '';
 			const description = (role as any)?.description ?? '';
@@ -126,7 +126,7 @@
 	// Live federation-aware roles subscription; `setFederated` toggles partners
 	// without a re-subscribe. Replaces the local subscribe + fragile one-shot
 	// getFederated overlay (which the next local update used to clobber).
-	let rolesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+	let rolesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 	let usersSubscriptionUnsubscribe: (() => void) | undefined;
 
 	function normalizeRoleKey(role: any, fallback: string): string {
@@ -169,7 +169,7 @@
 				}
 				store = next;
 			},
-			{ includeFederated: $showFederated, includeLegacy: $showUnverified }
+			{ includeFederated: $showFederated }
 		);
 		rolesSubscriptionUnsubscribe = () => rolesFedSub?.unsubscribe();
 
@@ -246,13 +246,6 @@
 		lastRolesFedFlag = $showFederated;
 		// Toggle partners live on the existing stream — no re-subscribe.
 		rolesFedSub?.setFederated($showFederated);
-	}
-
-	// "Show all data" also folds in legacy Gun-relay records, live.
-	let lastRolesLegacyFlag = $showUnverified;
-	$: if (activeHolonId && holosphere && $showUnverified !== lastRolesLegacyFlag) {
-		lastRolesLegacyFlag = $showUnverified;
-		rolesFedSub?.setLegacy($showUnverified);
 	}
 
 	// Format time for display

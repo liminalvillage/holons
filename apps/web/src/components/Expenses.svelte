@@ -40,7 +40,7 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { goto } from '$app/navigation';
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
@@ -181,14 +181,8 @@
 	let unsubscribeFunctions: (() => void)[] = [];
 	let subscribedHolonId: string | null = null;
 	let subscribedFedFlag: boolean | null = null;
-	let expensesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+	let expensesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 
-	// "Show all data" also folds in legacy Gun-relay records, live.
-	let lastExpensesLegacyFlag = $showUnverified;
-	$: if ($showUnverified !== lastExpensesLegacyFlag) {
-		lastExpensesLegacyFlag = $showUnverified;
-		expensesFedSub?.setLegacy($showUnverified);
-	}
 	let reaRefreshTimer: ReturnType<typeof setTimeout>;
 
 	function cleanupSubscriptions() {
@@ -240,7 +234,7 @@
 				expenses = next;
 				isLoading = false;
 			},
-			{ includeFederated: targetFed, includeLegacy: $showUnverified }
+			{ includeFederated: targetFed }
 		);
 		expensesFedSub = expensesSub;
 		unsubscribeFunctions.push(() => { expensesFedSub = undefined; expensesSub.unsubscribe(); });
@@ -406,7 +400,7 @@
 		const q = filters.searchQuery.trim().toLowerCase();
 		return Object.values(expenses)
 			.filter(e => expenseCurrency(e as any) === want)
-			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated, $showUnverified))
+			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated))
 			.filter((e: any) => {
 				if (!q) return true;
 				const split = Array.isArray(e.splitWith) ? e.splitWith : [];

@@ -23,30 +23,24 @@ export default defineConfig({
   envDir: resolve(__dirname, "../.."),
   // Expose HOLONS_* to client code (import.meta.env.HOLONS_APP) alongside the
   // default VITE_ prefix — so HOLONS_APP is the ONE namespace var across server
-  // and browser, with no separate VITE_HOLONS_APP. Only HOLONS_APP / HOLONS_PEER
-  // live under this prefix; never put a secret under HOLONS_*.
+  // and browser, with no separate VITE_HOLONS_APP. Only HOLONS_APP lives under
+  // this prefix; never put a secret under HOLONS_*.
   envPrefix: ["VITE_", "HOLONS_"],
   plugins: [sveltekit()],
   test: {
     include: ["src/**/*.{test,spec}.{js,ts}"],
   },
   define: {
-    // Provide global Buffer for libraries that expect Node.js environment
-    global: "globalThis",
     __COMMIT_HASH__: JSON.stringify(commitHash),
     __HOLOSPHERE_VERSION__: JSON.stringify(holosphereVersion),
   },
   optimizeDeps: {
-    include: ["svelte", "ajv", "h3-js", "buffer"],
+    include: ["svelte", "ajv", "h3-js"],
     exclude: ["@sveltejs/kit"],
   },
   resolve: {
     dedupe: ["svelte", "ajv", "h3-js"],
     preserveSymlinks: false,
-    alias: {
-      // Polyfill Buffer for browser
-      buffer: "buffer/",
-    },
   },
   ssr: {
     // Don't bundle Node.js-only packages for SSR

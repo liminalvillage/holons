@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { handshake } from "holosphere"
-	import { createHoloSphere } from '@holons/core/holosphere';
+	import { createHoloSphere, resolveRelays, parseSigningMode, signingOptionsFor } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -479,29 +479,22 @@
 		console.log('Initializing HoloSphere with user key...');
 		// Build the instance through @holons/core/holosphere — the single
 		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
-		// render). `awaitReady: true` returns the instance after ready()
-		// has resolved, which is a no-op in alpha7 but keeps the contract.
-		// Backend selection:
-		//   VITE_HOLOSPHERE_BACKEND = gun (default) | nostr
-		//   VITE_HOLOSPHERE_RELAYS  = comma-separated wss:// relay URLs
-		// With `nostr`, the relay(s) are the wire: Gun runs peerless as the
-		// local-first cache and every read/write/subscription syncs over the
-		// Nostr relay (holosphere relay-transport). Requires relays; holosphere
-		// falls back to the gun backend (with a console warning) without them.
-		const backendEnv = (import.meta.env.VITE_HOLOSPHERE_BACKEND || 'gun').toLowerCase();
-		const backendRelays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
-			.split(',').map((r: string) => r.trim()).filter(Boolean);
-		// On the nostr backend, shadow/enforce flow through the constructor
-		// (the backend init owns the signer, envelope-only); the manual
-		// enableSigning call below stays gun-backend-only.
-		const signingModeEnv = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
-		// Standard-kind projections (VITE_HOLOSPHERE_PROJECTIONS=off|all|quests,…):
-		// listed lenses are ALSO published as their standard Nostr kind next to
-		// the 30078 record. The logged-in user's own key signs their kind-0
-		// profile / RSVPs; nobody else's. See packages/holosphere/NOSTR-BACKEND.md.
-		const projectionLenses = backendRelays.length
-			? parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS)
-			: [];
+		// render). The relays are the wire: every read/write/subscription
+		// travels as a signed kind-30078 event and is mirrored into the local
+		// IndexedDB store, so a reload paints instantly and then catches up
+		// from its cursor. Env:
+		//   VITE_HOLOSPHERE_RELAYS      = comma-separated wss:// relay URLs
+		//                                 (default: the production relays)
+		//   VITE_HOLOSPHERE_SIGNING     = off (default) | shadow | enforce
+		//   VITE_HOLOSPHERE_READ_KEYS   = comma-separated npub/hex keys to trust
+		//   VITE_HOLOSPHERE_PROJECTIONS = off | all | quests,…
+		const relays = resolveRelays(import.meta.env.VITE_HOLOSPHERE_RELAYS);
+		const signingMode = parseSigningMode(import.meta.env.VITE_HOLOSPHERE_SIGNING);
+		// Standard-kind projections: listed lenses are ALSO published as their
+		// standard Nostr kind next to the 30078 record. The logged-in user's own
+		// key signs their kind-0 profile / RSVPs; nobody else's. See
+		// packages/holosphere/NOSTR-BACKEND.md.
+		const projectionLenses = parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS);
 		const ownPubkey = nostrStore.getState().publicKey || '';
 		// Reverse sync (VITE_HOLOSPHERE_PROJECTIONS_SYNC=on|off, default on):
 		// external edits of those kinds are folded back into the records. In
@@ -535,133 +528,39 @@
 		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
+			relays,
+			store: { adapter: 'indexeddb' },
+			signing: signingOptionsFor(signingMode),
+			nostr: projectionOptions,
 			awaitReady: true,
-			...(backendEnv === 'nostr'
-				? {
-					backend: 'nostr',
-					extra: {
-						nostr: { relays: backendRelays, ...projectionOptions },
-						signing: {
-							shadow: signingModeEnv === 'shadow',
-							enforce: signingModeEnv === 'enforce',
-						},
-					},
-				}
-				: {}),
 		});
 
 		// Log the public key for verification
 		if (holosphere.client) {
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
+		console.log(`[holosphere] ${relays.length} relay(s), signing ${signingMode}`);
 
-		// Opt-in NIP-01 signing (holosphere). Controlled by env:
-		//   VITE_HOLOSPHERE_SIGNING   = off (default) | shadow | enforce
-		//   VITE_HOLOSPHERE_RELAYS    = comma-separated wss:// relay URLs (optional)
-		//   VITE_HOLOSPHERE_READ_KEYS = comma-separated npub/hex keys to trust
-		// - off:     no change (default — safe for production).
-		// - shadow:  sign-on-write + publish to relay(s) + measure; reads are
-		//            UNCHANGED. Inspect via window.__signingReport().
+		// Signing modes (the constructor owns the signer; nothing to enable here):
+		// - off:     reads are unchanged (default — safe for production).
+		// - shadow:  every write is signed + published; reads UNCHANGED. Inspect
+		//            via window.__signingReport().
 		// - enforce: reads return only your own writes + writes from keys in your
 		//            federation read-list (VITE_HOLOSPHERE_READ_KEYS / addReadKey).
 		//            Your own key is always trusted.
-		// Guarded so it's a no-op on holosphere builds without signing.
-		const signingMode = signingModeEnv;
-		// Install console debug/repair helpers (__del / __nuke / __repairCircular /
-		// __signingReport) regardless of signing mode, then enable signing only when
-		// it's actually on. The repair helpers operate at the raw Gun layer and must
-		// stay available with signing off — that's how circular-hologram husks get
-		// cleaned up. (Previously these were nested inside the signing branch, so
-		// VITE_HOLOSPHERE_SIGNING=off silently removed them.)
 		if (typeof window !== 'undefined') {
 			try {
-				const relays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
-					.split(',').map((r: string) => r.trim()).filter(Boolean);
 				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
 					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				// Gun backend only: the nostr backend already enabled its own
-				// envelope-only signer during init (re-enabling here would
-				// bolt on a second publisher next to the relay transport).
-				if (backendEnv !== 'nostr' && signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
-					await (holosphere as any).enableSigning({
-						relays,
-						readKeys,
-						shadow: signingMode === 'shadow',
-						enforce: signingMode === 'enforce',
-						...projectionOptions,
-					});
-					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
-				}
-				// Nostr backend: signer is already up (envelope-only) — just
-				// seed the read-list from env for enforce mode.
-				if (backendEnv === 'nostr' && readKeys.length && typeof (holosphere as any).addReadKey === 'function') {
+				if (readKeys.length && typeof (holosphere as any).addReadKey === 'function') {
 					for (const k of readKeys) {
 						try { await (holosphere as any).addReadKey(k); } catch { /* bad key format */ }
 					}
 				}
-				if (typeof window !== 'undefined') {
-					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
-					// Direct delete escape hatch for known-bad/storming keys, e.g.
-					// await __del('123','quests','moufplh7i0t').
-					(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
-					// Raw-overwrite to null (in case a signed delete is itself blocked
-					// under enforce): nukes the node so Gun stops re-emitting it.
-					(window as any).__nuke = (h: string, l: string, k: string) => new Promise((res) => {
-						(holosphere as any).gun.get((holosphere as any).appname).get(h).get(l).get(k).put(null, (a: any) => res(a));
-					});
-					// Circular-hologram repair. Mutual federation can leave A/x <-> B/x
-					// hologram cycles that make Gun re-emit map().on() forever (heap
-					// blowup on the next write to that lens). Scans a lens, follows each
-					// hologram's soul chain, and deletes the LOCAL pointer of any that
-					// loops back on itself — breaking the ping-pong. Run from the
-					// console, e.g. await __repairCircular('123','quests').
-					(window as any).__repairCircular = async (holon: string, lens = 'quests') => {
-						const hs: any = holosphere;
-						const app = hs.appname;
-						const readRaw = (h: string, l: string, k: string) => new Promise<any>((resolve) => {
-							let done = false; const fin = (v: any) => { if (!done) { done = true; resolve(v); } };
-							hs.gun.get(app).get(h).get(l).get(k).once((d: any) => {
-								if (d == null) return fin(null);
-								try { fin(typeof d === 'string' ? JSON.parse(d) : d); } catch { fin(d); }
-							});
-							setTimeout(() => fin(null), 1500);
-						});
-						const keys: string[] = await new Promise((resolve) => {
-							const set = new Set<string>();
-							hs.gun.get(app).get(holon).get(lens).map().once((d: any, k: string) => { if (d != null && k !== '_') set.add(k); });
-							setTimeout(() => resolve([...set]), 2500);
-						});
-						const removed: string[] = [];
-						for (const key of keys) {
-							const item = await readRaw(holon, lens, key);
-							if (!item || !hs.isHologram(item)) continue;
-							const visited = new Set([`${holon}/${lens}/${key}`]);
-							let cur = item, hops = 0, circular = false;
-							while (cur && hs.isHologram(cur) && hops < 16) {
-								const sp = hs.parseSoulPath(cur.soul);
-								if (!sp || !sp.holon) break;
-								const id = `${sp.holon}/${sp.lens}/${sp.key}`;
-								if (visited.has(id)) { circular = true; break; }
-								visited.add(id);
-								cur = await readRaw(sp.holon, sp.lens, sp.key);
-								hops++;
-							}
-							if (circular) {
-								// Raw-nuke (.put(null)) — forceful; bypasses the slow signed
-								// delete that routes through the enforce layer during a storm.
-								await new Promise<void>((res) => {
-									let d = false; const f = () => { if (!d) { d = true; res(); } };
-									try { hs.gun.get(app).get(holon).get(lens).get(key).put(null, () => f()); } catch { f(); }
-									setTimeout(f, 2000);
-								});
-								removed.push(key);
-								console.warn('[repair] nuked circular', `${holon}/${lens}/${key}`);
-							}
-						}
-						console.log(`[repair] ${holon}/${lens}: scanned ${keys.length}, nuked ${removed.length} circular holograms:`, removed, '— RELOAD to resume.');
-						return removed;
-					};
-				}
+				(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
+				// Direct delete escape hatch for known-bad keys, e.g.
+				// await __del('123','quests','moufplh7i0t').
+				(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
 			} catch (e) {
 				console.warn('[holosphere] signing/helper setup failed:', (e as any)?.message);
 			}

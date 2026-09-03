@@ -102,29 +102,18 @@
         });
     }
 
-    // Discovery fallback: when the global registry/communities tables are empty
-    // (they aren't seeded automatically), enumerate the actual holon nodes from
-    // the GUN graph root so the view isn't stuck at 0. Raw key sweep — filtering
-    // to real community holons happens downstream (validHolonIds + settings).
-    function discoverHolonIdsFromGraph(): Promise<string[]> {
-        return new Promise((resolve) => {
-            const gun = (holosphere as any)?.gun;
-            const app = (holosphere as any)?.appname ?? (holosphere as any)?.appName;
-            if (!gun || !app) return resolve([]);
-            const ids = new Set<string>();
-            let timer: any;
-            const finish = () => resolve(Array.from(ids));
-            const reset = () => { clearTimeout(timer); timer = setTimeout(finish, 2500); };
-            reset();
-            try {
-                gun.get(app).map().once((_data: any, key: string) => {
-                    // Skip GUN metadata keys (`_` node meta, `#` soul ref).
-                    if (key && key !== '_' && key !== '#') { ids.add(key); reset(); }
-                });
-            } catch {
-                finish();
-            }
-        });
+    // Discovery: every holon the local store has synced from the relays,
+    // unioned with the global registry by holosphere itself. Raw id sweep —
+    // filtering to real community holons happens downstream (validHolonIds +
+    // settings).
+    async function discoverHolonIds(): Promise<string[]> {
+        const list = (holosphere as any)?.listHolons;
+        if (typeof list !== 'function') return [];
+        try {
+            return (await list.call(holosphere)) ?? [];
+        } catch {
+            return [];
+        }
     }
 
     async function fetchAllHolons() {
@@ -181,17 +170,17 @@
                 }
             }
 
-            // PRIMARY source: enumerate holon nodes directly from the GUN graph
-            // root (gun.get(app).map()) — that's where holons actually live. The
-            // registry/communities tables are only a supplementary union; they
-            // aren't reliably seeded. Always run this so the view reflects the
-            // whole network rather than whatever happens to be registered.
+            // PRIMARY source: every holon known to the local store plus the
+            // global registry (holosphere.listHolons). The communities table is
+            // only a supplementary union; it isn't reliably seeded. Always run
+            // this so the view reflects the whole network rather than whatever
+            // happens to be registered.
             try {
-                const discovered = await discoverHolonIdsFromGraph();
+                const discovered = await discoverHolonIds();
                 discovered.forEach(id => holonIds.add(id));
-                console.log(`After graph discovery: ${holonIds.size} candidate holons.`);
+                console.log(`After store discovery: ${holonIds.size} candidate holons.`);
             } catch (error) {
-                console.warn('Error discovering holons from graph:', error);
+                console.warn('Error discovering holons from the store:', error);
             }
 
             // Add current holon if not already included

@@ -4,24 +4,23 @@
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { generateICalFeed } from "$lib/services/icalGenerator";
-import { HoloSphere } from "holosphere";
+import type { HoloSphere } from "holosphere";
+import { createHoloSphere, resolveRelays } from "@holons/core/holosphere";
 
 // Lazy-initialized HoloSphere instance to avoid running during SvelteKit build analysis
-let holosphere: InstanceType<typeof HoloSphere>;
+let holosphere: HoloSphere;
 
 function getHolosphere() {
   if (!holosphere) {
-    // Single source of truth: HOLONS_APP from the monorepo root .env.
+    // Single source of truth: HOLONS_APP / HOLOSPHERE_RELAYS from the monorepo
+    // root .env. A serverless function has no durable disk, so the store is
+    // in memory and each cold start catches the holon's lenses up from the
+    // relays (bounded by the sync timeout).
     const appName = process.env.HOLONS_APP || "HolonsDebug";
-    holosphere = new HoloSphere({
+    holosphere = createHoloSphere({
       appName,
-      // Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
-      // Holosphere 2: uncomment below to use Nostr relay instead
-      // backend: 'nostr',
-      // nostr: {
-      //     relays: ['wss://relay.holons.io'],
-      //     persistence: true
-      // }
+      relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+      store: { adapter: "memory" },
     });
   }
   return holosphere;

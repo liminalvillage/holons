@@ -9,7 +9,7 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-    import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
+    import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
     import { CheckSquare, Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -69,7 +69,7 @@
         let entries = Object.entries(allChecklists);
 
         entries = entries.filter(([_, checklist]) =>
-            passesLensFilters(checklist as any, $showHolograms, $showFederated, $showUnverified)
+            passesLensFilters(checklist as any, $showHolograms, $showFederated)
         );
 
         switch (filters.activeFilter) {
@@ -195,14 +195,7 @@
     let questsUnsubscribe: (() => void) | undefined;
     let subscribedHolonId: string | null = null;
     let subscribedFedFlag: boolean | null = null;
-    let checklistsFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
-
-    // "Show all data" also folds in legacy Gun-relay records, live.
-    let lastChecklistsLegacyFlag = $showUnverified;
-    $: if ($showUnverified !== lastChecklistsLegacyFlag) {
-        lastChecklistsLegacyFlag = $showUnverified;
-        checklistsFedSub?.setLegacy($showUnverified);
-    }
+    let checklistsFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 
     // Local-first + progressive load via queryManager.subscribe.
     // - Cached snapshot paints immediately (no waiting on peers).
@@ -248,7 +241,7 @@
             },
             // Checklist ids are only holon-unique — keep each holon's copy
             // instead of letting ours shadow the partners' same-named lists.
-            { includeFederated: targetFed, includeLegacy: $showUnverified, dedupeAcrossSpaces: false }
+            { includeFederated: targetFed, dedupeAcrossSpaces: false }
         );
         checklistsFedSub = checklistSub;
         checklistsUnsubscribe = () => { checklistsFedSub = undefined; checklistSub.unsubscribe(); };

@@ -5,7 +5,7 @@
     import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
     import { goto } from "$app/navigation";
-    import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+    import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
     import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
     import TitleBar from "./shared/TitleBar.svelte";
@@ -75,7 +75,7 @@
     $: libraryItems = Object.entries(store);
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
-        if (!passesLensFilters(item, $showHolograms, $showFederated, $showUnverified)) return false;
+        if (!passesLensFilters(item, $showHolograms, $showFederated)) return false;
 
         const q = filters.searchQuery.trim().toLowerCase();
         if (q) {
@@ -178,7 +178,7 @@
     // toggles partners without dropping the local stream — replacing the old
     // local queryManager.subscribe + one-shot getFederated fork.
     let librarySub:
-        | { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void }
+        | { unsubscribe: () => void; setFederated: (on: boolean) => void }
         | undefined;
     let hologramSourceNames = new Map<string, string>();
 
@@ -348,7 +348,7 @@
                     store = next;
                     preResolveHologramNames(items as LibraryItem[]);
                 },
-                { includeFederated: $showFederated, includeLegacy: $showUnverified },
+                { includeFederated: $showFederated },
             );
         } catch (error) {
             console.error('Error fetching library:', error);
@@ -361,13 +361,6 @@
     $: if (holonID && holosphere && $showFederated !== lastLibraryFedFlag) {
         lastLibraryFedFlag = $showFederated;
         librarySub?.setFederated($showFederated);
-    }
-
-    // "Show all data" also folds in legacy Gun-relay records, live.
-    let lastLibraryLegacyFlag = $showUnverified;
-    $: if (holonID && holosphere && $showUnverified !== lastLibraryLegacyFlag) {
-        lastLibraryLegacyFlag = $showUnverified;
-        librarySub?.setLegacy($showUnverified);
     }
 
     onMount(() => {

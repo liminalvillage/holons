@@ -44,7 +44,7 @@
 	import { queryManager } from "$lib/holosphere/QueryManager";
 	import { dndzone } from "svelte-dnd-action";
 	import { flip } from "svelte/animate";
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import TaskCard from "./shared/TaskCard.svelte";
 	import CompleterModal from "./shared/CompleterModal.svelte";
@@ -229,7 +229,7 @@
 	// Live federation-aware quests stream; `setFederated` toggles partners without
 	// a re-subscribe. Replaces the separate local (fetchData) + federated-overlay
 	// (fetchFederatedTasks) paths.
-	let questsSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+	let questsSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 
 	// Add initialization state tracking
 	let isLoading = $state(true);
@@ -396,7 +396,7 @@
 				return false;
 			}
 
-			if (!passesLensFilters(quest as any, $showHolograms, $showFederated, $showUnverified)) {
+			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
 				return false;
 			}
 
@@ -995,16 +995,6 @@
 		}
 	});
 
-	let lastTasksLegacyFlag = $showUnverified;
-	$effect(() => {
-		// "Show all data" also folds in legacy Gun-relay records, live.
-		if ($showUnverified !== lastTasksLegacyFlag) {
-			lastTasksLegacyFlag = $showUnverified;
-			if (!holosphere || !holonID) return;
-			questsSub?.setLegacy($showUnverified);
-		}
-	});
-
 	// Identity of the current load — `${holonID}:${federated}`. Lets us drop
 	// stale callbacks from a previous holon/mode after a switch.
 	let questsLoadKey: string | null = null;
@@ -1071,7 +1061,7 @@
 				preResolveHologramNames(Object.entries(store));
 				maybeOpenSelectedTask();
 			},
-			{ includeFederated: $showFederated, includeLegacy: $showUnverified }
+			{ includeFederated: $showFederated }
 		);
 		questsUnsubscribe = () => questsSub?.unsubscribe();
 	}

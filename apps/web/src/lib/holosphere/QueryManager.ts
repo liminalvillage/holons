@@ -6,8 +6,6 @@
  */
 
 import type { HoloSphere } from "holosphere";
-import { get } from "svelte/store";
-import { showUnverified } from "$lib/stores/lensFilters";
 
 export interface QueryConfig {
   holonId: string;
@@ -111,71 +109,15 @@ class QueryManager {
   private holosphere: HoloSphere | null = null;
 
   // Pending notifications (coalesced via microtask so a burst of per-item
-  // updates from Gun's map().on() fires one re-render per cycle, not N).
+  // store emissions fires one re-render per cycle, not N).
   private pendingNotifications: Set<string> = new Set();
   private notifyScheduled = false;
-  private toggleHooked = false;
-  // In-flight legacy Gun reads, so a toggle flip + a new subscribe don't
-  // fetch the same lens twice.
-  private legacyFetches: Set<string> = new Set();
 
   /**
    * Initialize the query manager with a HoloSphere instance
    */
   init(holosphere: HoloSphere) {
     this.holosphere = holosphere;
-    // Re-emit every active subscription when the "show all data" toggle flips,
-    // so the _unverified filter in notifySubscribers re-applies without a
-    // re-fetch (items are already loaded & tagged under enforce). Flipping ON
-    // additionally pulls each subscribed lens from the legacy Gun relay
-    // (nostr backend only) so records stranded there show up too.
-    if (!this.toggleHooked) {
-      this.toggleHooked = true;
-      showUnverified.subscribe((on) => {
-        for (const key of this.subscribers.keys()) {
-          this.scheduleNotify(key);
-          if (on) this.fetchLegacy(key);
-        }
-      });
-    }
-  }
-
-  /**
-   * One-shot read of a subscribed lens from the legacy Gun relay(s) —
-   * holosphere.getAllLegacy is a no-op off the nostr backend. Items arrive
-   * tagged `_unverified`/`_legacy`, so notifySubscribers keeps hiding them
-   * whenever "Show all data" is off; the live (relay) copy of an id always
-   * wins over the legacy one.
-   */
-  private fetchLegacy(key: string) {
-    const hs = this.holosphere as any;
-    if (typeof hs?.getAllLegacy !== "function") return;
-    const entry = this.cache.get(key);
-    if (!entry?.holonId || !entry.lens) return;
-    if (this.legacyFetches.has(key)) return;
-    this.legacyFetches.add(key);
-    hs.getAllLegacy(entry.holonId, entry.lens)
-      .then((items: any[]) => {
-        const cur = this.cache.get(key);
-        if (!cur) return;
-        let merged = false;
-        for (const item of items || []) {
-          if (!this.isValidItem(item)) continue;
-          if (cur.data.has(item.id)) continue; // live copy wins
-          cur.data.set(item.id, item);
-          merged = true;
-        }
-        if (merged) {
-          cur.timestamp = Date.now();
-          this.scheduleNotify(key);
-        }
-      })
-      .catch((error: unknown) => {
-        console.warn(`QueryManager: legacy read failed for ${key}:`, error);
-      })
-      .finally(() => {
-        this.legacyFetches.delete(key);
-      });
   }
 
   /**
@@ -278,9 +220,6 @@ class QueryManager {
         lens,
       });
 
-      // The fresh map wiped any merged legacy items — re-pull them.
-      if (get(showUnverified)) this.fetchLegacy(key);
-
       return Array.from(dataMap.values());
     } catch (error) {
       console.error(`QueryManager: Error querying ${holonId}/${lens}:`, error);
@@ -292,8 +231,8 @@ class QueryManager {
    * Subscribe to real-time updates for a holon/lens.
    *
    * Local-first + progressive: emits the cached snapshot synchronously
-   * (next microtask), then streams in items as Gun's map().on() delivers
-   * them — local cache first, federated peers as they respond. No blocking
+   * (next microtask), then streams in items as the local store delivers
+   * them — its own snapshot first, relay catch-up as it lands. No blocking
    * getAll round-trip on the critical path.
    */
   subscribe(config: QueryConfig): () => void {
@@ -320,10 +259,6 @@ class QueryManager {
     }
     entry.holonId = holonId;
     entry.lens = lens;
-
-    // "Show all data" already on: pull this lens from the legacy Gun relay
-    // too (no-op off the nostr backend, deduped while in flight).
-    if (get(showUnverified)) this.fetchLegacy(key);
 
     // Emit current cached snapshot immediately so the UI paints what we
     // already know without waiting on the network.
@@ -357,10 +292,6 @@ class QueryManager {
           (item: any, itemKey?: string) => {
             this.handleSubscriptionEvent(key, item, itemKey);
           },
-          // Under enforce, pull unsigned/legacy items in too (tagged
-          // _unverified) so the "show all data" toggle can reveal them; the
-          // default-hidden filter lives in notifySubscribers. No-op otherwise.
-          { includeUnverified: !!(this.holosphere as any).enforceActive },
         );
         entry.subscription = normalizeSubscription(sub);
       } catch (error) {
@@ -457,12 +388,10 @@ class QueryManager {
     if (!entry) return;
     const subs = this.subscribers.get(key);
     if (!subs || subs.size === 0) return;
-    // "Show all data" gate: hide _unverified (unsigned/legacy) items unless the
-    // toggle is on. Items only carry _unverified under enforce, so this is a
-    // no-op in off/shadow.
-    const showUnv = get(showUnverified);
+    // Items only carry _unverified under enforce (unsigned, or signed by a key
+    // outside the read-list); they are never surfaced. No-op in off/shadow.
     const data = Array.from(entry.data.values()).filter(
-      (i) => showUnv || !i?._unverified,
+      (i) => !i?._unverified,
     );
     subs.forEach((callback) => {
       try {
@@ -477,7 +406,7 @@ class QueryManager {
    * Synchronously drop a single record from the cache and notify
    * subscribers. Use this immediately after `holosphere.delete(...)` so the
    * UI doesn't see the deleted item flash back when an unrelated update
-   * causes the manager to re-emit its cached snapshot before Gun's null
+   * causes the manager to re-emit its cached snapshot before the store's
    * tombstone has propagated through `subscribe()`.
    *
    * If the id isn't in the cache, it's a no-op (no spurious notification).

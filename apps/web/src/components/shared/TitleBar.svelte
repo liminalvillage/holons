@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher, type ComponentType } from 'svelte';
-	import { ArrowLeft, Globe, Eye, AlertTriangle } from 'svelte-feathers';
+	import { ArrowLeft, Globe, Eye } from 'svelte-feathers';
 	import ToggleChip from './ToggleChip.svelte';
-	import { showFederated, showHolograms, showUnverified } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms } from '$lib/stores/lensFilters';
 
 	// Props
 	export let title: string = '';
@@ -72,13 +72,6 @@
 				icon={Globe}
 				tooltip="Federated: also pull in items from the holons this one is federated with. Off by default — turn on to see the wider network's data alongside your own."
 				on:change={(e) => showFederated.set(e.detail)}
-			/>
-			<ToggleChip
-				checked={$showUnverified}
-				label="Show all data"
-				icon={AlertTriangle}
-				tooltip="Show all data: also reveal unsigned/legacy records — records signature enforcement hides, plus records still living on the legacy Gun relay — shown for inspection, NOT verified, don't trust them. Off by default."
-				on:change={(e) => showUnverified.set(e.detail)}
 			/>
 		{/if}
 		<slot name="actions" />

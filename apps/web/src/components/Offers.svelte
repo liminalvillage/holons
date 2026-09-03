@@ -15,7 +15,7 @@
 	import OfferDetailModal from "./OfferDetailModal.svelte";
 	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import SourceBadge from "./shared/SourceBadge.svelte";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -68,7 +68,7 @@
 	let loadingFederated = false;
 
 	function matchesVisibility(item: any): boolean {
-		return passesLensFilters(item, $showHolograms, $showFederated, $showUnverified);
+		return passesLensFilters(item, $showHolograms, $showFederated);
 	}
 
 	function matchesSearch(item: any, query: string): boolean {
@@ -302,7 +302,7 @@
 	// emit and refreshed one-shot in federated mode only: the per-USER-holon
 	// offers fan-out (`_userSpecific` — a DIFFERENT aggregation than federation,
 	// so it can't fold into subscribeFederated) and the participations lens.
-	let offersSub: { unsubscribe: () => void; setFederated: (on: boolean) => void; setLegacy: (on: boolean) => void } | undefined;
+	let offersSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 	let latestOfferItems: any[] = [];
 	let userSpecificOverlay: Record<string, any> = {};
 	let participationsMap = new Map<string, any[]>();
@@ -389,7 +389,7 @@
 					latestOfferItems = items;
 					rebuildOffersStore();
 				},
-				{ includeFederated: $showFederated, includeLegacy: $showUnverified }
+				{ includeFederated: $showFederated }
 			);
 			questSubscriptionOff = () => offersSub?.unsubscribe();
 			void refreshOfferOverlays();
@@ -460,13 +460,6 @@
 		lastFederatedFlag = $showFederated;
 		offersSub?.setFederated($showFederated);
 		void refreshOfferOverlays();
-	}
-
-	// "Show all data" also folds in legacy Gun-relay records, live.
-	let lastLegacyFlag = $showUnverified;
-	$: if ($showUnverified !== lastLegacyFlag) {
-		lastLegacyFlag = $showUnverified;
-		offersSub?.setLegacy($showUnverified);
 	}
 
 
