@@ -4,8 +4,8 @@ import { jest } from '@jest/globals';
 // Configure Jest
 jest.setTimeout(30000); // 30 second timeout
 
-// Utility to wait for GunDB propagation
-const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
+// Utility to wait for local-store propagation
+const waitForStore = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
 
 describe('HoloSphere Deletion Tests', () => {
     const testAppName = 'test-app-deletion';
@@ -103,14 +103,14 @@ describe('HoloSphere Deletion Tests', () => {
             await holoSphere.putGlobal(testGlobalTable, globalData);
 
             // 2. Wait significantly for put to settle
-            await waitForGun(1500); // Generous wait after put
+            await waitForStore(1500); // Generous wait after put
 
             // 3. Delete global data
             const deleteResult = await holoSphere.deleteGlobal(testGlobalTable, globalData.id);
             expect(deleteResult).toBe(true);
 
             // 4. Wait for delete to settle
-            await waitForGun(500); // Wait after delete
+            await waitForStore(500); // Wait after delete
 
             // 5. Verify global data is deleted
             const deletedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);

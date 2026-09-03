@@ -103,7 +103,6 @@ export default [
       'holosphere/**',
       'themes/**',
       'fields/**',
-      'radata/**',
       'data/**',
       'images/**',
       'certs/**',

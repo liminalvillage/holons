@@ -465,7 +465,7 @@
 
     // Tear down any prior room subscriptions before re-subscribing so a
     // repeated joinRoom() (e.g. reopening the video window) can't stack store
-    // `.map().on()` listeners that are never removed.
+    // listeners that are never removed.
     if (unsubscribeUsers) { unsubscribeUsers(); unsubscribeUsers = null; }
     if (unsubscribeSignals) { unsubscribeSignals(); unsubscribeSignals = null; }
 

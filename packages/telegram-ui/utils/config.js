@@ -172,11 +172,6 @@ class Config {
     return this.getBoolean('QUEST_IMAGE_FAST_MODE', true);
   }
 
-  // Database Configuration
-  get dbPath() {
-    return this.getString('DB_PATH', './radata');
-  }
-
   // Logging Configuration
   get logLevel() {
     return this.getString('LOG_LEVEL', this.isProduction ? 'warn' : 'debug');

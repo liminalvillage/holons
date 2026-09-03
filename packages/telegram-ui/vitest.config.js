@@ -17,7 +17,6 @@ export default defineConfig({
         'coverage/**',
         'jest.config.js',
         'vitest.config.js',
-        'radata/**',
         'data/**',
         'images/**',
         'certs/**',

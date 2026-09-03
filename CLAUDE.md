@@ -52,7 +52,7 @@ License: **AGPL-3.0-or-later** with a commercial option — see
   the file you touch (the bot is mixed JS/TS by design).
 - Clean up Holosphere subscriptions and timers; assume async, eventual
   consistency — don't force synchronous reads.
-- Keep the working tree clean: no `build/`, `.svelte-kit/`, `radata/`, or
+- Keep the working tree clean: no `build/`, `.svelte-kit/`, `holosphere-store/`, or
   `.env` in commits.
 - Conventional Commits with a scope: `core/scoring: …`, `web: …`, `docs: …`.
 

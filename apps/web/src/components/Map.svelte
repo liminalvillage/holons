@@ -1826,7 +1826,7 @@
 	holoSubscriptions = new Map();
 
 	// Tear down every live `holosphere.subscribe` so we don't leak store
-	// `.map().on()` listeners when the map hides / unmounts. The persistent
+	// listeners when the map hides / unmounts. The persistent
 	// presenceCache survives — it's our fast-path for re-mount.
 	unsubscribeAll();
 	previousSubscribedLens = undefined;

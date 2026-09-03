@@ -2,61 +2,42 @@
   import { onMount } from 'svelte';
   import HoloSphere from 'holosphere';
 
+  // Relays are the wire and the durable copy; the browser keeps a local
+  // IndexedDB cache (the default store adapter) so reads are instant and
+  // data survives a reload. Leave `relays` empty for a local-only sandbox.
+  const RELAYS = ['wss://relay.holons.io'];
+
   // Reactive variables
   let hs = null;
   let status = 'Loading...';
-  let radiskStats = null;
+  let info = null;
   let storedData = [];
   let newData = { message: '', timestamp: '' };
   let holonId = 'svelte-test';
   let lensId = 'test-lens';
   let dataId = '';
 
-  // Initialize HoloSphere with radisk
+  // Initialize HoloSphere over relays + the local store
   async function initHoloSphere() {
     try {
       status = 'Initializing HoloSphere...';
-      
-      // Create HoloSphere instance with radisk enabled
-      hs = new HoloSphere('svelte-app', false, null, {
-        radisk: true,
-        file: './svelte-radata',
-        localStorage: false
-      });
 
-      // Get initial radisk stats
-      radiskStats = hs.getRadiskStats();
-      
-      status = '✅ HoloSphere Ready with Radisk';
-      console.log('HoloSphere initialized with radisk:', radiskStats);
-      
+      // Without `privateKey` an ephemeral device key signs every write;
+      // pass your own nsec/hex key to keep an identity across reloads.
+      hs = new HoloSphere({ appName: 'svelte-app', relays: RELAYS });
+
+      info = { version: hs.getVersion(), relays: hs.nostrRelays(), pubkey: hs.client.publicKey };
+
+      status = '✅ HoloSphere Ready (relays + local store)';
+      console.log('HoloSphere initialized:', info);
+
     } catch (error) {
       status = '❌ HoloSphere Failed';
       console.error('Error initializing HoloSphere:', error);
     }
   }
 
-  // Configure radisk with custom options
-  async function configureRadisk() {
-    if (!hs) return;
-    
-    try {
-      hs.configureRadisk({
-        file: './custom-svelte-data',
-        radisk: true,
-        retry: 5,
-        timeout: 10000
-      });
-      
-      radiskStats = hs.getRadiskStats();
-      console.log('Radisk reconfigured:', radiskStats);
-      
-    } catch (error) {
-      console.error('Error configuring radisk:', error);
-    }
-  }
-
-  // Store data with radisk persistence
+  // Store data (signed event → relays, mirrored into the local store)
   async function storeData() {
     if (!hs || !newData.message) return;
     
@@ -131,11 +112,9 @@
       await hs.put('persistence-holon', 'persistence-lens', testData);
       console.log('Test data stored for persistence test');
 
-      // Simulate component reload by creating new instance
-      const newHs = new HoloSphere('persistence-test', false, null, {
-        radisk: true,
-        file: './svelte-radata'
-      });
+      // Simulate component reload by creating a new instance: same appName
+      // → same IndexedDB store (and the same relays behind it).
+      const newHs = new HoloSphere({ appName: 'svelte-app', relays: RELAYS });
 
       // Try to retrieve the data
       const retrieved = await newHs.get('persistence-holon', 'persistence-lens', 'persistence-test');
@@ -190,19 +169,12 @@
       <strong>Status:</strong> {status}
     </div>
 
-    {#if radiskStats}
+    {#if info}
       <div class="stats">
-        <h2>📊 Radisk Statistics</h2>
-        <pre>{JSON.stringify(radiskStats, null, 2)}</pre>
+        <h2>📡 Instance</h2>
+        <pre>{JSON.stringify(info, null, 2)}</pre>
       </div>
     {/if}
-
-    <div class="section">
-      <h2>⚙️ Radisk Configuration</h2>
-      <button on:click={configureRadisk} class="button">
-        Configure Radisk
-      </button>
-    </div>
 
     <div class="section">
       <h2>💾 Store Data</h2>

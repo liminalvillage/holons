@@ -26,7 +26,7 @@ Title: use Conventional Commits with a scope, e.g.
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm test` passes (added/updated tests for changed behavior)
 - [ ] `pnpm lint` passes
-- [ ] No secrets, build output, or `radata/` committed
+- [ ] No secrets, build output, or `holosphere-store/` committed
 - [ ] New source files carry the SPDX header
 - [ ] Commits are signed off (`git commit -s`) — this accepts the [CLA](../CLA.md)
 - [ ] Docs updated if behavior/usage changed

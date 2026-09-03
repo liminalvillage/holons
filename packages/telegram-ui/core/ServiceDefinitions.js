@@ -273,14 +273,14 @@ export const serviceDefinitions = {
         },
       };
 
-      log.debug('Database initialized (GunDB via HoloSphere 1.3)', { appname });
+      log.debug('Database initialized (HoloSphere over relays)', { appname });
       return keyManager;
     },
     singleton: true,
     dependencies: ['config', 'logger'],
   },
 
-  // Database (HoloSphere instance for GunDB access)
+  // Database (the HoloSphere instance: relays + local store)
   database: {
     factory: async ({ keyManager }) => {
       const holosphere = keyManager.masterHolosphere;
@@ -290,7 +290,7 @@ export const serviceDefinitions = {
       // forHolon just returns the same instance (no per-holon keys)
       holosphere.forHolon = async () => holosphere;
 
-      log.debug('Database service initialized (HoloSphere 1.3 + GunDB)');
+      log.debug('Database service initialized (HoloSphere over relays)');
       return holosphere;
     },
     singleton: true,

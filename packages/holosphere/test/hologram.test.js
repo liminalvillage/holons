@@ -4,8 +4,8 @@ import { jest } from '@jest/globals';
 // Configure timeout
 jest.setTimeout(30000); // 30 second timeout
 
-// Utility to wait for GunDB propagation
-const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
+// Utility to wait for local-store propagation
+const waitForStore = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
 
 // Setup
 describe('HoloSphere Reference System', () => {
@@ -34,7 +34,7 @@ describe('HoloSphere Reference System', () => {
         // Test data
         const data = { id: 'ref1', value: 'Original Data' };
         await holoSphere.put(testHolon, testLens, data);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
         
         // Create a hologram
         const hologram = holoSphere.createHologram(testHolon, testLens, data); // Use renamed method
@@ -57,7 +57,7 @@ describe('HoloSphere Reference System', () => {
     test('should resolve a valid hologram', async () => { // Rename test description
         const data = { id: 'ref2', value: 'Data to Resolve' };
         await holoSphere.put(testHolon, testLens, data);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
         const hologram = holoSphere.createHologram(testHolon, testLens, data); // Use renamed method
 
         const resolved = await holoSphere.resolveHologram(hologram); // Use renamed method
@@ -97,13 +97,13 @@ describe('HoloSphere Reference System', () => {
         // 1. Original Data stored under its own ID
         const originalData = { id: 'actual-nested-original', value: 'level 0' };
         await holoSphere.put(testHolon, testLens, originalData);
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // 2. Hologram 1 pointing to Original Data, stored under 'hologram1-id'
         const hologram1Data = holoSphere.createHologram(testHolon, testLens, originalData);
         const hologram1Storage = { id: 'hologram1-id', soul: hologram1Data.soul }; // Soul points to originalData
         await holoSphere.put(testHolon, testLens, hologram1Storage); 
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // 3. Hologram 2 pointing to Hologram 1, stored under 'hologram2-id'
         // Create a temporary object representing hologram1 for creating hologram2
@@ -111,7 +111,7 @@ describe('HoloSphere Reference System', () => {
         const hologram2Data = holoSphere.createHologram(testHolon, testLens, hologram1Ref); // Soul points to hologram1Storage
         const hologram2Storage = { id: 'hologram2-id', soul: hologram2Data.soul }; // Soul points to .../hologram1-id
         await holoSphere.put(testHolon, testLens, hologram2Storage); 
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // Resolve Hologram 2 with default (deep) resolution.
         // Chain: hologram2Storage → hologram1Storage → originalData.
@@ -149,12 +149,12 @@ describe('HoloSphere Reference System', () => {
         // Hologram A points to Hologram B's future location
         const holoA = { id: 'holoA', soul: `${appName}/${testHolon}/${testLens}/holoB` };
         await holoSphere.put(testHolon, testLens, holoA);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
 
         // Hologram B points to Hologram A's location
         const holoB = { id: 'holoB', soul: `${appName}/${testHolon}/${testLens}/holoA` };
         await holoSphere.put(testHolon, testLens, holoB);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
 
         // Attempt to resolve Hologram A via get, which should handle the circular error from resolveHologram
         const resolved = await holoSphere.get(testHolon, testLens, holoA.id); 
@@ -167,7 +167,7 @@ describe('HoloSphere Reference System', () => {
         // 1. Store the actual data under its own ID
         const actualData = { id: 'actual-data-id', value: 'Fetched via get' };
         await holoSphere.put(testHolon, testLens, actualData);
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // 2. Create a hologram pointing to the actual data
         // The hologram object itself will have the ID 'actual-data-id'
@@ -178,7 +178,7 @@ describe('HoloSphere Reference System', () => {
         // but has the ID 'get-ref'.
         const hologramStorageObject = { id: 'get-ref', soul: hologramPointingToData.soul };
         await holoSphere.put(testHolon, testLens, hologramStorageObject); 
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // 4. Get the item by the hologram's storage ID ('get-ref').
         // Should resolve hologramStorageObject's soul and return actualData with
@@ -197,13 +197,13 @@ describe('HoloSphere Reference System', () => {
     test('get should not resolve holograms if resolveHolograms is false', async () => { // Rename test description
         const data = { id: 'get-no-res', value: 'Original' };
         await holoSphere.put(testHolon, testLens, data);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
         const hologram = holoSphere.createHologram(testHolon, testLens, data); // Use renamed method
         // Store the pointer in a DIFFERENT lens. Writing it at the path its own
         // soul names is refused since the self-hologram guard (it would replace
         // the original with an unresolvable self-loop).
         await holoSphere.put(testHolon, 'otherLens', hologram);
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
 
         // Get the item by ID without resolving
         const unresolved = await holoSphere.get(testHolon, 'otherLens', 'get-no-res', null, { resolveHolograms: false }); // Use renamed option
@@ -220,7 +220,7 @@ describe('HoloSphere Reference System', () => {
         // Create hologram but DO NOT store the original data
         const hologram = holoSphere.createHologram(testHolon, testLens, data);
         await holoSphere.put(testHolon, testLens, hologram); // Store the hologram
-        await waitForGun(); // <-- Add delay
+        await waitForStore(); // <-- Add delay
 
         // Get the item - resolution should fail
         const result = await holoSphere.get(testHolon, testLens, 'get-deleted-target');
@@ -230,10 +230,10 @@ describe('HoloSphere Reference System', () => {
     test('updates to original data should be reflected when resolving hologram', async () => { // Rename test description
         const originalData = { id: 'update-ref', value: 'Version 1' };
         await holoSphere.put(testHolon, testLens, originalData);
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
         const hologram = holoSphere.createHologram(testHolon, testLens, originalData); // Use renamed method
         await holoSphere.put(testHolon, 'otherLens', hologram); // Store hologram elsewhere
-        await waitForGun(750); // <-- Increased delay
+        await waitForStore(750); // <-- Increased delay
 
         // Resolve initially. (This used to expect null: before the
         // self-hologram guard, the pointer put above could get redirected onto
@@ -246,7 +246,7 @@ describe('HoloSphere Reference System', () => {
         // Update original data
         const updatedData = { ...originalData, value: 'Version 2' };
         await holoSphere.put(testHolon, testLens, updatedData);
-        await waitForGun(750);
+        await waitForStore(750);
 
         // Resolve again
         const resolved2 = await holoSphere.resolveHologram(hologram); // Use renamed method
@@ -265,14 +265,14 @@ describe('HoloSphere Reference System', () => {
         // 1. Store original data
         const targetData = { id: 'target-for-tracking', value: 'Track me' };
         await holoSphere.put(testHolon, testLens, targetData);
-        await waitForGun();
+        await waitForStore();
         const targetSoul = `${appName}/${testHolon}/${testLens}/target-for-tracking`;
 
         // 2. Store a hologram pointing to the original data
         const hologramData = holoSphere.createHologram(testHolon, testLens, targetData);
         const hologramStorage = { id: 'hologram-tracker-1', soul: hologramData.soul };
         await holoSphere.put(testHolon, 'otherLens', hologramStorage); // Store in different lens
-        await waitForGun(500); // Longer wait for tracking update
+        await waitForStore(500); // Longer wait for tracking update
         const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-1`;
 
         // 3. The target's backlinks index the stored pointer
@@ -284,14 +284,14 @@ describe('HoloSphere Reference System', () => {
         // 1. Store original data
         const targetData = { id: 'target-for-delete-tracking', value: 'Untrack me' };
         await holoSphere.put(testHolon, testLens, targetData);
-        await waitForGun();
+        await waitForStore();
         const targetSoul = `${appName}/${testHolon}/${testLens}/target-for-delete-tracking`;
 
         // 2. Store a hologram pointing to the original data
         const hologramData = holoSphere.createHologram(testHolon, testLens, targetData);
         const hologramStorage = { id: 'hologram-tracker-2', soul: hologramData.soul };
         await holoSphere.put(testHolon, 'otherLens', hologramStorage); // Store in different lens
-        await waitForGun(500); // Wait for put and tracking update
+        await waitForStore(500); // Wait for put and tracking update
         const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-2`;
 
         // 3. Verify hologram was added to tracking initially
@@ -300,7 +300,7 @@ describe('HoloSphere Reference System', () => {
         // 4. Delete the hologram
         await holoSphere.delete(testHolon, 'otherLens', 'hologram-tracker-2');
         console.log("--- Waiting longer after delete for tracking update ---");
-        await waitForGun(1500); // <-- Increased wait time significantly
+        await waitForStore(1500); // <-- Increased wait time significantly
 
         // 5. The backlink is gone
         expect(holoSphere.store.getBacklinks(targetSoul)).not.toContain(storedHologramSoul);

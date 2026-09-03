@@ -4,7 +4,7 @@
  * Reads the coordinates written by roundtrip-strfry.mjs and re-fetches the
  * event from strfry — intended to be run AFTER `docker restart strfry-spike`.
  * If strfry persisted the event to its LMDB volume, it comes back and still
- * verifies. This is the durability guarantee GunDB's radisk does not give.
+ * verifies: the relay is the durable copy, the local store is only a cache.
  *
  * Run: node spike/relay-fetch.mjs
  */

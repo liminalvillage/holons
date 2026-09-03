@@ -11,7 +11,6 @@ export default {
     '!node_modules/**',
     '!coverage/**',
     '!jest.config.js',
-    '!radata/**',
     '!data/**',
     '!images/**',
     '!certs/**',
