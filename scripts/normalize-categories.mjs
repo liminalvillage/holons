@@ -16,22 +16,31 @@
 const HOLON = process.argv[2];
 const APPLY = process.argv.includes('--apply');
 if (!HOLON) {
-  console.error('usage: node normalize-categories.mjs <holonId> [--apply]   (env: HOLONS_APP, HOLONS_PEER)');
+  console.error('usage: node normalize-categories.mjs <holonId> [--apply]   (env: HOLONS_APP, HOLOSPHERE_RELAYS, HOLOSPHERE_PRIVATE_KEY)');
   process.exit(64);
 }
 const APP = process.env.HOLONS_APP || 'Holons';
-const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
+// Writes are signed: use the bot's key so the rewrites carry its identity
+// (an ephemeral key is generated — with a warning — when unset).
+const KEY = process.env.HOLOSPHERE_PRIVATE_KEY || undefined;
 
 const { createRequire } = await import('module');
 const { pathToFileURL } = await import('url');
 const requireFromCwd = createRequire(pathToFileURL(`${process.cwd()}/`));
 const mod = await import(pathToFileURL(requireFromCwd.resolve('holosphere')).href);
 const HoloSphere = mod.HoloSphere || mod.default;
+// Resolve core's built dist relative to THIS script, not the cwd: @holons/core
+// is not linked into every workspace package.
+const { resolveRelays } = await import(
+  new URL('../packages/core/dist/holosphere/index.js', import.meta.url).href
+);
+const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 
-const hs = new HoloSphere(APP, false, null, { peers: [PEER] });
+const hs = new HoloSphere({ appName: APP, privateKey: KEY, relays: RELAYS, store: { adapter: 'memory' } });
+await hs.ready();
 
 console.log(`\n=== normalize categories: ${APP}/${HOLON}/quests  (${APPLY ? 'APPLY' : 'DRY-RUN'}) ===`);
-console.log(`peer=${PEER}\n`);
+console.log(`relays=${RELAYS.join(', ')}\n`);
 
 let quests = [];
 try {
@@ -95,5 +104,6 @@ for (const e of edits) {
   }
 }
 console.log(`\nWrote ${ok}/${edits.length}.`);
-await new Promise((r) => setTimeout(r, 1500));
+await new Promise((r) => setTimeout(r, 1500)); // let the relay publishes drain
+await hs.close();
 process.exit(0);

@@ -52,6 +52,7 @@ import { resolve } from 'node:path';
 import { argv, exit, env } from 'node:process';
 import * as h3 from 'h3-js';
 import { HoloSphere } from 'holosphere';
+import { resolveRelays } from '../dist/holosphere/relays.js';
 
 const LENS = 'projects';
 const DEFAULT_CONCURRENCY = 4;
@@ -214,9 +215,13 @@ async function main() {
 		`Connecting to HoloSphere appName="${appName}"` +
 			(privateKey ? ' with provided privateKey …' : ' anonymously (no privateKey) …')
 	);
+	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
+	// the store is in memory for this one-shot process.
 	const holosphere = new HoloSphere({
 		appName,
 		...(privateKey ? { privateKey } : {}),
+		relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+		store: { adapter: 'memory' },
 		logLevel: 'WARN'
 	});
 	await holosphere.ready();
@@ -288,8 +293,9 @@ async function main() {
 	console.log(
 		`\nDone. ok=${ok}, skipped=${skipped}, timeout=${timedOut}, fail=${failed} (of ${total}).`
 	);
-	console.log('Allowing 5s for Gun gossip to settle before exit …');
+	console.log('Allowing 5s for the relay publishes to drain before exit …');
 	await new Promise((r) => setTimeout(r, 5000));
+	await holosphere.close();
 }
 
 main().then(

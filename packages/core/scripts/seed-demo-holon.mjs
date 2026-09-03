@@ -31,6 +31,7 @@
 
 import { argv, exit, env } from 'node:process';
 import { HoloSphere } from 'holosphere';
+import { resolveRelays } from '../dist/holosphere/relays.js';
 import { getAllDefaultChromosomes } from '../dist/dna/index.js';
 
 const DEFAULT_HOLON = 'demo123';
@@ -1513,9 +1514,13 @@ async function main() {
 			(privateKey ? ' with provided privateKey' : ' anonymously')
 	);
 
+	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
+	// the store is in memory for this one-shot process.
 	const holosphere = new HoloSphere({
 		appName,
 		...(privateKey ? { privateKey } : {}),
+		relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+		store: { adapter: 'memory' },
 		logLevel: 'WARN'
 	});
 	await holosphere.ready();
@@ -1616,8 +1621,9 @@ async function main() {
 	const reaEvents = buildREAEvents(holonId, tasks, events, expenses, library_items);
 	await putAll(holosphere, holonId, 'rea_events', reaEvents, flags.timeoutMs, flags.concurrency);
 
-	console.log('\nAllowing 5s for Gun gossip to settle before exit …');
+	console.log('\nAllowing 5s for the relay publishes to drain before exit …');
 	await new Promise((r) => setTimeout(r, 5000));
+	await holosphere.close();
 }
 
 main().then(

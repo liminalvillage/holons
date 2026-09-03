@@ -16,27 +16,30 @@
 //   node ../../scripts/import-projects-kml.mjs                    # dry run
 //   WRITE=1 node ../../scripts/import-projects-kml.mjs            # write to prod
 //
-//   Full import, chunked (fresh process per chunk so GUN's graph can't OOM):
+//   Full import, chunked (fresh process per chunk keeps the in-memory store small):
 //     for s in $(seq 0 50 400); do
 //       WRITE=1 START=$s COUNT=50 node ../../scripts/import-projects-kml.mjs || break
 //     done
 //
-//   Optional env: HOLONS_APP (default Holons), HOLONS_PEER, KML=/path/to/file.kml,
+//   Optional env: HOLONS_APP (default Holons), HOLOSPHERE_RELAYS, KML=/path/to/file.kml,
 //                 START/COUNT (project slice), CONCURRENCY, SETTLE_MS
+//   Signing key:  ATLAS_IMPORTER_NOSTR_KEY (the dedicated importer identity) or
+//                 HOLOSPHERE_PRIVATE_KEY — required for WRITE=1.
 
 import { readFileSync } from "fs";
 
 const APP = process.env.HOLONS_APP || "Holons";
-const PEER = process.env.HOLONS_PEER || "https://gun.holons.io/gun";
+const IMPORTER_KEY =
+  process.env.ATLAS_IMPORTER_NOSTR_KEY || process.env.HOLOSPHERE_PRIVATE_KEY || "";
 const WRITE = process.env.WRITE === "1";
 const KML =
   process.env.KML ||
   "/Users/robertovalenti/Desktop/REGENERATIVA/To organize/Regenerative Project Documentaries.kml";
 const SETTLE_MS = Number(process.env.SETTLE_MS || 10000);
 const CONCURRENCY = Number(process.env.CONCURRENCY || 5);
-// GUN's in-memory graph grows with every soul touched — a single process
-// doing all ~5.8k puts OOMs. Chunk with START/COUNT and a fresh process per
-// chunk (see the driver loop in the header comment).
+// The in-memory store keeps every record this process writes — chunk with
+// START/COUNT and a fresh process per chunk (see the driver loop in the
+// header comment) to keep that bounded.
 const START = Number(process.env.START || 0);
 const COUNT = Number(process.env.COUNT || Infinity);
 
@@ -178,7 +181,7 @@ const items = projects.map((p) => {
 
 console.log(`\n=== Import regen.earth projects ===`);
 console.log(`kml=${KML}`);
-console.log(`app=${APP}  peer=${PEER}  mode=${WRITE ? "WRITE" : "DRY RUN"}`);
+console.log(`app=${APP}  relays=${RELAYS.join(", ")}  mode=${WRITE ? "WRITE" : "DRY RUN"}`);
 console.log(`parsed ${items.length} projects`);
 const slice = items.slice(START, START + COUNT);
 console.log(`slice: START=${START} COUNT=${slice.length}`);
@@ -206,15 +209,27 @@ const mod = await import(
   pathToFileURL(requireFromCwd.resolve("holosphere")).href
 );
 const HoloSphere = mod.HoloSphere || mod.default;
+// Resolve core"s built dist relative to THIS script, not the cwd: @holons/core
+// is not linked into every workspace package.
+const { resolveRelays } = await import(
+  new URL("../packages/core/dist/holosphere/index.js", import.meta.url).href
+);
+const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 
-// radisk:false — we only push over the wire; a local radata copy of every
-// touched soul both wastes disk and reloads into memory on the next chunk.
-const hs = new HoloSphere(APP, false, null, {
-  peers: [PEER],
-  radisk: false,
-  localStorage: false,
+if (WRITE && !IMPORTER_KEY) {
+  console.error(
+    "FATAL: neither ATLAS_IMPORTER_NOSTR_KEY nor HOLOSPHERE_PRIVATE_KEY is set — refusing to write under a throwaway key.",
+  );
+  process.exit(1);
+}
+// Memory store: we only push over the wire; nothing needs to survive the process.
+const hs = new HoloSphere({
+  appName: APP,
+  privateKey: IMPORTER_KEY || undefined,
+  relays: RELAYS,
+  store: { adapter: "memory" },
 });
-if (typeof hs.ready === "function") await hs.ready();
+await hs.ready();
 
 if (typeof hs.getScalespace !== "function") {
   console.error("holosphere instance has no getScalespace(); aborting.");
@@ -224,19 +239,17 @@ if (typeof hs.getScalespace !== "function") {
 let done = 0;
 let failed = 0;
 
-// holosphere's default put resolves `{queued:true}` after a 5s ack timeout —
-// under load that means the write is still in Gun's outbound queue when the
-// process exits, and it silently never reaches the relay. So: wait for the
-// real relay ack (`timeout: 0`) under our own generous deadline, and retry
-// anything that doesn't ack.
+// A put resolves once the signed event is in the local store and handed to
+// the relay transport; bound it with a generous deadline and retry anything
+// that throws or stalls.
 async function ackedPut(cell, item) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await Promise.race([
-        hs.put(cell, "projects", item, null, { timeout: 0 }),
-        sleep(60000).then(() => ({ queued: true, _deadline: true })),
+      const ok = await Promise.race([
+        hs.put(cell, "projects", item).then(() => true),
+        sleep(60000).then(() => false),
       ]);
-      if (!res?.queued) return true;
+      if (ok) return true;
     } catch {
       // fall through to retry
     }
@@ -265,6 +278,7 @@ await Promise.all(
 );
 
 console.log(`\nwrote ${done}/${slice.length} projects (${failed} failed puts)`);
-console.log(`letting GUN sync for ${SETTLE_MS}ms before exit…`);
+console.log(`letting the relay publishes drain for ${SETTLE_MS}ms before exit…`);
 await sleep(SETTLE_MS);
+await hs.close();
 process.exit(failed ? 1 : 0);

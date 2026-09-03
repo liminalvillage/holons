@@ -3,8 +3,8 @@
 // The two surfaces read the SAME lens (`quests` / `library`) two different
 // ways, and the kiosk filters what it shows:
 //
-//   • bot   → holosphere.getAll(holon, lens)   — one-shot enumeration, retries
-//             on a cold cache; shows essentially everything.
+//   • bot   → holosphere.getAll(holon, lens)   — one-shot enumeration after the
+//             relay sync; shows essentially everything.
 //   • kiosk → holosphere.subscribe(holon, lens) — accumulates live `map` events
 //             into a Map keyed by id, THEN drops done/cancelled/completed/
 //             _deleted, and the task backlog also hides `type === "event"`.
@@ -19,18 +19,17 @@
 //
 // HOW TO RUN
 //   cd packages/telegram-ui            # any package that depends on holosphere
-//   # holon id is required; app/peer default to the kiosk's prod target.
+//   # holon id is required; app/relays default to the kiosk's prod target.
 //   HOLONS_APP=Holons node ../../scripts/kiosk-vs-bot-items.mjs -1001652773351
 //   # other lens, or the dev namespace the bot writes to:
 //   LENS=library HOLONS_APP=HolonsDebug node ../../scripts/kiosk-vs-bot-items.mjs <holon>
 
 const HOLON = process.argv[2];
 if (!HOLON) {
-  console.error('usage: node kiosk-vs-bot-items.mjs <holonId>   (env: HOLONS_APP, HOLONS_PEER, LENS)');
+  console.error('usage: node kiosk-vs-bot-items.mjs <holonId>   (env: HOLONS_APP, HOLOSPHERE_RELAYS, LENS)');
   process.exit(64);
 }
 const APP = process.env.HOLONS_APP || 'Holons';
-const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 const LENS = process.env.LENS || 'quests';
 const WARMUP_MS = Number(process.env.WARMUP_MS || 8000);
 const SETTLE_MS = Number(process.env.SETTLE_MS || 6000);
@@ -43,11 +42,18 @@ const { pathToFileURL } = await import('url');
 const requireFromCwd = createRequire(pathToFileURL(`${process.cwd()}/`));
 const mod = await import(pathToFileURL(requireFromCwd.resolve('holosphere')).href);
 const HoloSphere = mod.HoloSphere || mod.default;
+// Resolve core's built dist relative to THIS script, not the cwd: @holons/core
+// is not linked into every workspace package.
+const { resolveRelays } = await import(
+  new URL('../packages/core/dist/holosphere/index.js', import.meta.url).href
+);
+const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 
-const hs = new HoloSphere(APP, false, null, { peers: [PEER] });
+const hs = new HoloSphere({ appName: APP, relays: RELAYS, store: { adapter: 'memory' } });
+await hs.ready();
 
 console.log(`\n=== kiosk vs bot: ${APP}/${HOLON}/${LENS} ===`);
-console.log(`peer=${PEER}\n`);
+console.log(`relays=${RELAYS.join(', ')}\n`);
 
 // ── kiosk display filters (mirrored from apps/kiosk/src/lib/data.ts) ─────────
 function isDone(q) {
@@ -119,5 +125,5 @@ if (LENS === 'quests') {
   console.log(`the gap is ${done} done/deleted + ${events} event-typed + any read-path delta above.`);
 }
 
-await sleep(500);
+await hs.close();
 process.exit(0);

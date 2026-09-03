@@ -13,22 +13,28 @@
 
 const HOLON = process.argv[2];
 if (!HOLON) {
-  console.error('usage: node scan-categories.mjs <holonId>   (env: HOLONS_APP, HOLONS_PEER)');
+  console.error('usage: node scan-categories.mjs <holonId>   (env: HOLONS_APP, HOLOSPHERE_RELAYS)');
   process.exit(64);
 }
 const APP = process.env.HOLONS_APP || 'Holons';
-const PEER = process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
 
 const { createRequire } = await import('module');
 const { pathToFileURL } = await import('url');
 const requireFromCwd = createRequire(pathToFileURL(`${process.cwd()}/`));
 const mod = await import(pathToFileURL(requireFromCwd.resolve('holosphere')).href);
 const HoloSphere = mod.HoloSphere || mod.default;
+// Resolve core's built dist relative to THIS script, not the cwd: @holons/core
+// is not linked into every workspace package.
+const { resolveRelays } = await import(
+  new URL('../packages/core/dist/holosphere/index.js', import.meta.url).href
+);
+const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 
-const hs = new HoloSphere(APP, false, null, { peers: [PEER] });
+const hs = new HoloSphere({ appName: APP, relays: RELAYS, store: { adapter: 'memory' } });
+await hs.ready();
 
 console.log(`\n=== category scan: ${APP}/${HOLON}/quests ===`);
-console.log(`peer=${PEER}\n`);
+console.log(`relays=${RELAYS.join(', ')}\n`);
 
 let quests = [];
 try {
@@ -90,5 +96,5 @@ for (const [key, variants] of sorted) {
   }
 }
 
-await new Promise((r) => setTimeout(r, 300));
+await hs.close();
 process.exit(0);

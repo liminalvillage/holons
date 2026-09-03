@@ -31,10 +31,10 @@
 //   node ../../scripts/retract-regen-earth-copies.mjs              # dry run
 //   WRITE=1 node ../../scripts/retract-regen-earth-copies.mjs      # convert
 //
-//   Optional env: HOLONS_APP, HOLONS_PEER, KML=, LENS (default projects),
+//   Optional env: HOLONS_APP, HOLOSPHERE_RELAYS, KML=, LENS (default projects),
 //                 START/COUNT, CONCURRENCY, SETTLE_MS
 
-import { readFileSync, mkdirSync } from "fs";
+import { readFileSync } from "fs";
 import { createRequire } from "module";
 import { pathToFileURL } from "url";
 
@@ -43,7 +43,6 @@ const importFromCwd = (name) =>
   import(pathToFileURL(requireFromCwd.resolve(name)).href);
 
 const APP = process.env.HOLONS_APP || "Holons";
-const PEER = process.env.HOLONS_PEER || "https://gun.holons.io/gun";
 const LENS = process.env.LENS || "projects";
 const WRITE = process.env.WRITE === "1";
 const KML =
@@ -54,16 +53,17 @@ const CONCURRENCY = Number(process.env.CONCURRENCY || 5);
 const START = Number(process.env.START || 0);
 const COUNT = Number(process.env.COUNT || Infinity);
 
-const RELAYS = (process.env.HOLOSPHERE_RELAYS || "wss://relay.holons.io")
-  .split(",").map((r) => r.trim()).filter(Boolean);
-const RELAY_MODE = process.env.HOLOSPHERE_SIGNING || "shadow";
+// Resolve core"s built dist relative to THIS script, not the cwd: @holons/core
+// is not linked into every workspace package.
+const { resolveRelays } = await import(
+  new URL("../packages/core/dist/holosphere/index.js", import.meta.url).href
+);
+const RELAYS = resolveRelays(process.env.HOLOSPHERE_RELAYS);
 // Dedicated importer identity — never a person's key. A bulk import authors
 // thousands of records at once; giving it its own pubkey keeps that provenance
 // legible and makes the whole batch revocable/filterable without touching real
 // users. Lives in the gitignored root .env.
 const IMPORTER_KEY = process.env.ATLAS_IMPORTER_NOSTR_KEY || "";
-
-const GUN_FILE_DIR = process.env.GUN_FILE_DIR || "./.gun-import-store";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -122,7 +122,7 @@ const projects = parsed.map((p) => {
 console.log(`\n=== Retract regen.earth parent copies → holograms ===`);
 console.log(`kml=${KML}`);
 console.log(
-  `app=${APP}  peer=${PEER}  lens=${LENS}  mode=${WRITE ? "WRITE" : "DRY RUN"}`,
+  `app=${APP}  relays=${RELAYS.join(", ")}  lens=${LENS}  mode=${WRITE ? "WRITE" : "DRY RUN"}`,
 );
 console.log(`re-derived ${projects.length} projects from the KML`);
 
@@ -135,57 +135,24 @@ const h3 = await importFromCwd("h3-js");
 const mod = await importFromCwd("holosphere");
 const HoloSphere = mod.HoloSphere || mod.default;
 
-// Gun's node build keeps a local file store even with radisk:false, and its
-// default (holosphere's `file: './holosphere'`) does not exist in the cwd we run
-// from — every put then acks `ENOENT rename ./holosphere-!-xxx.tmp -> ./holosphere/!`,
-// and putCallback rejects on ack.err, so the whole import fails while looking like
-// a network problem. Point it at a scratch dir we know exists.
-mkdirSync(GUN_FILE_DIR, { recursive: true });
-
-const hs = new HoloSphere(APP, false, null, {
-  peers: [PEER],
-  radisk: false,
-  localStorage: false,
-  // Gun's node build auto-discovers LAN peers on 233.255.255.255:8765; any other
-  // local Gun process would then join the write path. We only want the prod relay.
-  multicast: false,
-  file: GUN_FILE_DIR,
-});
-if (typeof hs.ready === "function") await hs.ready();
-
-// Mirror every write to the Nostr relay as a signed NIP-01 event, exactly as
-// the bot/web/kiosk do (gun stays the wire; the relay is the backup). Without
-// this an import is the ONE writer in the monorepo with no relay copy — the
-// worst thing to be when gun.holons.io is throwing ENOENT on its own radisk.
-// The v1 positional constructor builds no identity, hence the explicit key.
+// Every write is signed by the importer key and published to the relays as
+// its own event — the import has exactly the same provenance trail as the
+// bot/web/kiosk. Memory store: nothing needs to survive the process.
 if (!IMPORTER_KEY) {
   console.error(
-    "FATAL: ATLAS_IMPORTER_NOSTR_KEY is not set — refusing to write unmirrored.\n" +
+    "FATAL: ATLAS_IMPORTER_NOSTR_KEY is not set — refusing to write under a throwaway key.\n" +
       "It lives in the gitignored root .env; run with `env $(grep -v '^#' ../../.env | xargs)` or export it.",
   );
   process.exit(1);
 }
-// Resolve core's built dist relative to THIS script, not the cwd: @holons/core
-// is not linked into every workspace package, and require.resolve would hand
-// back the .ts source (the "require" condition), which node cannot import.
-const { enableRelayBackup } = await import(
-  new URL("../packages/core/dist/holosphere/index.js", import.meta.url).href
-);
-const mirrored = await enableRelayBackup(hs, {
-  relays: RELAYS,
-  mode: RELAY_MODE,
+const hs = new HoloSphere({
+  appName: APP,
   privateKey: IMPORTER_KEY,
-  backend: "gun",
+  relays: RELAYS,
+  store: { adapter: "memory" },
 });
-console.log(
-  mirrored
-    ? `relay backup ON (${RELAY_MODE}) -> ${RELAYS.join(", ")}`
-    : `relay backup OFF — writes land on gun only`,
-);
-if (!mirrored) {
-  console.error("FATAL: relay backup could not be enabled; refusing to write unmirrored.");
-  process.exit(1);
-}
+await hs.ready();
+console.log(`relays -> ${RELAYS.join(", ")}`);
 
 
 // A cold get races the relay handshake and returns null on a key that exists.
@@ -210,11 +177,11 @@ async function getByKey(cell, id, attempts = 3) {
 async function ackedPut(cell, item) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await Promise.race([
-        hs.put(cell, LENS, item, null, { timeout: 0 }),
-        sleep(60000).then(() => ({ queued: true })),
+      const ok = await Promise.race([
+        hs.put(cell, LENS, item).then(() => true),
+        sleep(60000).then(() => false),
       ]);
-      if (!res?.queued) return true;
+      if (ok) return true;
     } catch {
       // retry
     }
@@ -305,6 +272,7 @@ if (!WRITE) {
   process.exit(0);
 }
 
-console.log(`letting GUN sync for ${SETTLE_MS}ms before exit…`);
+console.log(`letting the relay publishes drain for ${SETTLE_MS}ms before exit…`);
 await sleep(SETTLE_MS);
+await hs.close();
 process.exit(stats.failed ? 1 : 0);

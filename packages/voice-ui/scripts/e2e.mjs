@@ -30,8 +30,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Same env the voice server and mcp-ui read (HOLONS_APP/HOLONS_PEER — the
-// GUN namespace MUST match the server's or the verification reads see nothing).
+// Same env the voice server and mcp-ui read (HOLONS_APP/HOLOSPHERE_RELAYS —
+// the namespace MUST match the server's or the verification reads see nothing).
 loadDotenv({ path: resolve(here, '..', '..', '..', '.env') });
 
 const WS_URL = process.env.VOICE_WS || 'ws://localhost:8788';
