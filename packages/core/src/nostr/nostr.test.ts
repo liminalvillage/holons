@@ -1,4 +1,4 @@
-import { nsecToHex, toNsec, generateNsec, pubkeyOf } from './projections.js';
+import { nsecToHex, toNsec, generateNsec, pubkeyOf, npubToHex, toNpub } from './projections.js';
 import { describe, it, expect } from 'vitest';
 import { cellToLatLng } from 'h3-js';
 import {
@@ -209,5 +209,17 @@ describe('nsec helpers', () => {
     expect(pubkeyOf(nsec)).toBe(pubkeyOf(hex));
     expect(() => nsecToHex('npub1qqqq')).toThrow();
     expect(() => nsecToHex('garbage')).toThrow(/64 hex/);
+  });
+});
+
+describe('npub helpers', () => {
+  it('round-trips hex ↔ npub and rejects an nsec', () => {
+    const nsec = generateNsec();
+    const pub = pubkeyOf(nsec);
+    const npub = toNpub(pub);
+    expect(npub.startsWith('npub1')).toBe(true);
+    expect(npubToHex(npub)).toBe(pub);
+    expect(npubToHex(pub.toUpperCase())).toBe(pub);
+    expect(() => npubToHex(nsec)).toThrow(/npub/);
   });
 });

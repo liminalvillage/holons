@@ -100,6 +100,27 @@ export function generateNsec(): string {
   return nip19.nsecEncode(schnorr.utils.randomPrivateKey());
 }
 
+/**
+ * A Nostr public key as 64-char hex, given as hex or NIP-19 `npub1…` (the
+ * form a `*_NPUB` env var holds — safe to ship in a client bundle).
+ */
+export function npubToHex(pub: string | Uint8Array): string {
+  if (typeof pub !== 'string') return bytesToHex(pub);
+  const v = pub.trim();
+  if (/^npub1/i.test(v)) {
+    const { type, data } = nip19.decode(v.toLowerCase());
+    if (type !== 'npub') throw new Error(`expected an npub, got ${type}`);
+    return data as string;
+  }
+  if (!/^[0-9a-f]{64}$/i.test(v)) throw new Error('expected 64 hex chars or an npub1… string');
+  return v.toLowerCase();
+}
+
+/** NIP-19 `npub1…` encoding of a public key (hex or npub). */
+export function toNpub(pub: string | Uint8Array): string {
+  return nip19.npubEncode(npubToHex(pub));
+}
+
 /** Hex x-only pubkey of a Nostr secret key (hex, nsec or bytes). */
 export function pubkeyOf(privateKey: string | Uint8Array): string {
   return bytesToHex(schnorr.getPublicKey(hexToBytes(nsecToHex(privateKey))));
