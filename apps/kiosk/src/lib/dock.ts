@@ -75,6 +75,31 @@ export function upsertEntry(
   return [...list.slice(0, i), next, ...list.slice(i + 1)];
 }
 
+/**
+ * Set a docked board's DISPLAY NAME. Unlike {@link upsertEntry}, an empty
+ * `name` is not "keep whatever is there" — it means the holon resolves no
+ * name of its own, so the circle falls back to `labelFor(id)`: the registered
+ * label, else the bare id. Keeping a stale name here is what let a name
+ * learned for one holon sit under another holon's circle.
+ *
+ * Renaming a board that isn't docked is a no-op — the caller docks it first.
+ */
+export function renameEntry(
+  list: DockEntry[],
+  id: string,
+  name: string,
+): DockEntry[] {
+  const i = list.findIndex((e) => e.id === id);
+  if (i < 0) return list;
+  const display = name.trim() || labelFor(id);
+  if (list[i].name === display) return list;
+  return [
+    ...list.slice(0, i),
+    { ...list[i], name: display },
+    ...list.slice(i + 1),
+  ];
+}
+
 /** Remove a board from the list (a no-op when it isn't there). */
 export function removeEntry(list: DockEntry[], id: string): DockEntry[] {
   return list.some((e) => e.id === id) ? list.filter((e) => e.id !== id) : list;
@@ -116,6 +141,12 @@ export function hueFor(id: string): number {
 // weak central gravity keeps the whole constellation on screen. Federated
 // clusters therefore gather visibly, and DockView draws a soft hull — the
 // holographic bound — around each one.
+//
+// With the earth showing beneath the sky, an orb whose holon has claimed a
+// place is ANCHORED: instead of the centre it is drawn toward a point above
+// its hexagon on the map (the `anchors` argument, in field px), so it hovers
+// over its place and follows the map as it pans — and DockView ties the two
+// with a beacon cone (`beaconPath`). Orbs with no place keep the centre.
 
 export type Vec = { x: number; y: number };
 /** An undirected federation link between two dock circles. */
@@ -189,6 +220,18 @@ export type OrbSim = {
 };
 
 const GOLDEN_ANGLE = 2.399963229728653; // spreads any orb count evenly
+// The pull toward an anchor: five times the central gravity, so a placed orb
+// holds its spot against its neighbours' repulsion yet still glides there
+// (damping 0.8 settles it in about a second, without overshoot).
+const ANCHOR_PULL = 0.02;
+/**
+ * The widest a federated pair is ever drawn, in radii: 1.9 leaves 5% of a
+ * diameter overlapping, so the vesica — the tappable lens that configures the
+ * pair — is never empty. The spring settles a free pair far closer than this
+ * (~1.5 radii, a 25% overlap); this is the hard floor for the cases a spring
+ * cannot reach, above all two orbs held apart by their places on the earth.
+ */
+export const LINK_MAX_GAP = 1.9;
 
 /** A fresh sim with `ids` seeded on a golden-angle ring around the centre. */
 export function seedOrbs(
@@ -250,6 +293,17 @@ export function syncOrbs(
  * physics — it exerts and feels no forces and is not integrated (the caller
  * pins it to the pointer). Without this, its repulsion would shove the drop
  * target away and dropping would become a chase.
+ *
+ * `anchors` (field px, by id) names the orbs with a place on the map: an
+ * anchored orb is pulled to its anchor instead of the centre — firmly enough
+ * that the place wins over its neighbours' repulsion — and a federation
+ * spring only ever moves its free ends: a placed orb stays on its place and a
+ * free partner is pulled alongside it.
+ *
+ * The last word belongs to `linkOverlap`: whatever the forces worked out,
+ * federated orbs are ALWAYS left overlapping, so their vesica is always there
+ * to tap. Places bend to that (a placed orb yields a quarter as much as a
+ * free one) and keep their beacon pointing home.
  */
 export function stepOrbs(
   sim: OrbSim,
@@ -259,6 +313,7 @@ export function stepOrbs(
   radius: number,
   wobbleT?: number,
   liftedId?: string,
+  anchors?: ReadonlyMap<string, Vec>,
 ): void {
   const n = sim.ids.length;
   if (!n || width <= 0 || height <= 0) return;
@@ -274,8 +329,24 @@ export function stepOrbs(
   // a settled pair together by about that much.
   const rest = radius * 1.55;
   const repel = radius * radius * 20; // unlinked orbs drift much farther out
-  const padX = Math.min(radius * 1.3, width / 2);
-  const padY = Math.min(radius * 1.3, height / 2);
+  // A third, not a half: at a half a field narrower than 2.6 radii collapses
+  // to a single line every orb is clamped onto, stacked one on the other.
+  const padX = Math.min(radius * 1.3, width / 3);
+  const padY = Math.min(radius * 1.3, height / 3);
+  const clampX = (v: number) => Math.min(width - padX, Math.max(padX, v));
+  const clampY = (v: number) => Math.min(height - padY, Math.max(padY, v));
+  // A place OUTSIDE the view is parked at the edge nearest it. Pulling toward
+  // the raw off-screen point drove the orb into the wall with a force that
+  // grew with the distance — hundreds of pixels per frame, dwarfing every
+  // repulsion — so each orb sat pinned on the exact same boundary pixel and
+  // several distant places stacked their orbs into one, of which only the top
+  // could be tapped. Clamping the anchor into the field makes that pull local
+  // and weak, so ordinary repulsion spreads the parked orbs along the edge
+  // and each is still on the side its own place lies.
+  const anchor = sim.ids.map((id) => {
+    const a = anchors?.get(id);
+    return a ? { x: clampX(a.x), y: clampY(a.y) } : undefined;
+  });
   const linked = new Set<number>();
   for (const [a, b] of links) {
     const i = idx.get(a);
@@ -285,8 +356,14 @@ export function stepOrbs(
   }
   for (let i = 0; i < n; i++) {
     if (i !== lifted) {
-      vx[i] += (cx - px[i]) * 0.004;
-      vy[i] += (cy - py[i]) * 0.004;
+      const a = anchor[i];
+      if (a) {
+        vx[i] += (a.x - px[i]) * ANCHOR_PULL;
+        vy[i] += (a.y - py[i]) * ANCHOR_PULL;
+      } else {
+        vx[i] += (cx - px[i]) * 0.004;
+        vy[i] += (cy - py[i]) * 0.004;
+      }
     }
     for (let j = i + 1; j < n; j++) {
       if (i === lifted || j === lifted) continue;
@@ -315,10 +392,16 @@ export function stepOrbs(
     const f = (d - rest) * 0.06;
     dx /= d;
     dy /= d;
-    vx[i] += dx * f;
-    vy[i] += dy * f;
-    vx[j] -= dx * f;
-    vy[j] -= dy * f;
+    // A spring only ever moves its FREE ends: a placed orb stays on its
+    // place, and between two placed orbs it does nothing at all.
+    if (!anchor[i]) {
+      vx[i] += dx * f;
+      vy[i] += dy * f;
+    }
+    if (!anchor[j]) {
+      vx[j] -= dx * f;
+      vy[j] -= dy * f;
+    }
   }
   if (wobbleT !== undefined) {
     // A slow orbital breeze, phased per orb: strong enough to see the sky
@@ -334,8 +417,72 @@ export function stepOrbs(
     if (i === lifted) continue;
     vx[i] *= 0.8;
     vy[i] *= 0.8;
-    px[i] = Math.min(width - padX, Math.max(padX, px[i] + vx[i]));
-    py[i] = Math.min(height - padY, Math.max(padY, py[i] + vy[i]));
+    px[i] = clampX(px[i] + vx[i]);
+    py[i] = clampY(py[i] + vy[i]);
+  }
+  linkOverlap(sim, links, radius, lifted, anchor, width, height, padX, padY);
+}
+
+/**
+ * The hard constraint behind the soft spring: pull any federated pair drawn
+ * wider than `LINK_MAX_GAP` radii back until it overlaps again, and drop the
+ * velocity that was separating them.
+ *
+ * Ends yield by weight — a lifted orb (under a finger) not at all, a placed
+ * orb a quarter as much as a free one — so a drag stays exact, a place is
+ * mostly kept, and a free partner does most of the travelling. Chains and
+ * hubs need a few passes to settle, hence the sweep.
+ */
+function linkOverlap(
+  sim: OrbSim,
+  links: readonly OrbLink[],
+  radius: number,
+  lifted: number,
+  anchor: readonly (Vec | undefined)[],
+  width: number,
+  height: number,
+  padX: number,
+  padY: number,
+): void {
+  if (!links.length || !(radius > 0)) return;
+  const { px, py, vx, vy } = sim;
+  const idx = new Map(sim.ids.map((id, i) => [id, i]));
+  const max = radius * LINK_MAX_GAP;
+  const clampX = (v: number) => Math.min(width - padX, Math.max(padX, v));
+  const clampY = (v: number) => Math.min(height - padY, Math.max(padY, v));
+  const weight = (i: number) => (i === lifted ? 0 : anchor[i] ? 0.25 : 1);
+  for (let pass = 0; pass < 4; pass++) {
+    let corrected = false;
+    for (const [a, b] of links) {
+      const i = idx.get(a);
+      const j = idx.get(b);
+      if (i == null || j == null || i === j) continue;
+      const dx = px[j] - px[i];
+      const dy = py[j] - py[i];
+      const d = Math.hypot(dx, dy);
+      if (d <= max) continue;
+      const wi = weight(i);
+      const wj = weight(j);
+      const sum = wi + wj;
+      if (sum <= 0) continue; // both ends pinned — nothing may move
+      const ux = dx / d;
+      const uy = dy / d;
+      const excess = d - max;
+      px[i] = clampX(px[i] + ux * excess * (wi / sum));
+      py[i] = clampY(py[i] + uy * excess * (wi / sum));
+      px[j] = clampX(px[j] - ux * excess * (wj / sum));
+      py[j] = clampY(py[j] - uy * excess * (wj / sum));
+      // Whatever was driving them apart along this axis is spent.
+      const sep = (vx[j] - vx[i]) * ux + (vy[j] - vy[i]) * uy;
+      if (sep > 0) {
+        vx[i] += ux * sep * (wi / sum);
+        vy[i] += uy * sep * (wi / sum);
+        vx[j] -= ux * sep * (wj / sum);
+        vy[j] -= uy * sep * (wj / sum);
+      }
+      corrected = true;
+    }
+    if (!corrected) return;
   }
 }
 
@@ -344,6 +491,38 @@ export function orbPositions(sim: OrbSim): Map<string, Vec> {
   const out = new Map<string, Vec>();
   sim.ids.forEach((id, i) => out.set(id, { x: sim.px[i], y: sim.py[i] }));
   return out;
+}
+
+/**
+ * The orb a dragged finger is OVER — the only thing a drop can federate with.
+ *
+ * The pointer must be inside the target's own circle (`radius`), not merely
+ * near it. A federated partner is towed along behind the finger by
+ * `linkOverlap`, which holds it within `LINK_MAX_GAP` radii of the carried
+ * orb for as long as the drag lasts. A capture radius as wide as that leash
+ * therefore matched the partner on every single frame, so dragging a
+ * federated orb onto the earth could never reach the ground: the hexagon lit
+ * up between frames and the drop always came out a federation.
+ *
+ * `self` (the carried orb) is never its own target.
+ */
+export function orbUnder(
+  positions: ReadonlyMap<string, Vec>,
+  p: Vec,
+  self: string,
+  radius: number,
+): string | null {
+  let best: string | null = null;
+  let bestD = radius;
+  for (const [id, q] of positions) {
+    if (id === self) continue;
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (d < bestD) {
+      bestD = d;
+      best = id;
+    }
+  }
+  return best;
 }
 
 /**
@@ -357,11 +536,58 @@ export function orbLayout(
   width: number,
   height: number,
   radius: number,
+  anchors?: ReadonlyMap<string, Vec>,
 ): Map<string, Vec> {
   if (!ids.length || width <= 0 || height <= 0) return new Map();
   const sim = seedOrbs(ids, width, height);
-  for (let it = 0; it < 300; it++) stepOrbs(sim, links, width, height, radius);
+  for (let it = 0; it < 300; it++)
+    stepOrbs(sim, links, width, height, radius, undefined, undefined, anchors);
   return orbPositions(sim);
+}
+
+/**
+ * Where the lines of sight from `ground` touch an orb of radius `r` centred
+ * at `orb` — the two shoulders the beacon cone hangs from. Null when the
+ * ground point is inside the circle (the orb is sitting on its place).
+ */
+export function beaconTangents(
+  orb: Vec,
+  ground: Vec,
+  r: number,
+): [Vec, Vec] | null {
+  const dx = ground.x - orb.x;
+  const dy = ground.y - orb.y;
+  const d = Math.hypot(dx, dy);
+  if (!(r > 0) || d <= r) return null;
+  const a = Math.atan2(dy, dx);
+  const th = Math.acos(r / d);
+  const rnd = (v: number) => Math.round(v * 10) / 10;
+  return [
+    {
+      x: rnd(orb.x + Math.cos(a + th) * r),
+      y: rnd(orb.y + Math.sin(a + th) * r),
+    },
+    {
+      x: rnd(orb.x + Math.cos(a - th) * r),
+      y: rnd(orb.y + Math.sin(a - th) * r),
+    },
+  ];
+}
+
+/**
+ * The beacon cone tying an orb (centre `orb`, radius `r`) to its place on
+ * the ground: the two tangent points (`beaconTangents`) joined through the
+ * ground point — orb-wide at the orb, converging on the spot. Empty when the
+ * ground point is inside the circle (nothing to draw).
+ */
+export function beaconPath(orb: Vec, ground: Vec, r: number): string {
+  const t = beaconTangents(orb, ground, r);
+  if (!t) return "";
+  const rnd = (v: number) => Math.round(v * 10) / 10;
+  return (
+    `M ${t[0].x} ${t[0].y} L ${rnd(ground.x)} ${rnd(ground.y)}` +
+    ` L ${t[1].x} ${t[1].y} Z`
+  );
 }
 
 /**
@@ -455,9 +681,13 @@ function save(list: DockEntry[]): void {
 /** Every board this device has opened, in first-opened order. */
 export const dockEntries = writable<DockEntry[]>(load());
 
-// ── Deck ⇄ map ───────────────────────────────────────────────────────────--
+// ── Sky ⇄ earth ──────────────────────────────────────────────────────────--
 
-/** How the closed boards are shown: the gravity deck, or the real map. */
+/**
+ * What lies beneath the orbs: "deck" is the sky alone, "map" shows the earth
+ * under it — each placed orb then hovers over its hexagon, tied to it by a
+ * beacon. The orbs themselves are always there.
+ */
 export type DockViewMode = "deck" | "map";
 
 const VIEW_KEY = "kiosk_dock_view";
@@ -491,6 +721,20 @@ export const dockOpenTarget = writable<string | null>(null);
 export function rememberBoard(id: string, name: string): void {
   const cur = get(dockEntries);
   const next = upsertEntry(cur, id, name, cur.find((e) => e.id === id)?.at);
+  if (next !== cur) {
+    dockEntries.set(next);
+    save(next);
+  }
+}
+
+/**
+ * Name a docked board from the one authority on it — a name resolved FOR that
+ * holon. An unresolved name (`""`) resets the circle to its id/label rather
+ * than leaving the previous holon's name under it.
+ */
+export function nameBoard(id: string, name: string): void {
+  const cur = get(dockEntries);
+  const next = renameEntry(cur, id, name);
   if (next !== cur) {
     dockEntries.set(next);
     save(next);

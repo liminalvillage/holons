@@ -1,6 +1,16 @@
-<script lang="ts">
+<script lang="ts" context="module">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  //
+  import type { OrbSim } from "$lib/dock";
+
+  // The sky outlives the dock. The layout mounts DockView only while the
+  // board's window is closed or morphing, and a sim seeded on every mount
+  // had the orbs gliding in from the ring each time the dock opened — under
+  // the closing window's iris, and into a different sky each visit. Kept
+  // here, a returning orb is already where it was left.
+  let keptSim: OrbSim | null = null;
+</script>
+
+<script lang="ts">
   // The dock: the space the board's card floats in. Each board this device
   // has opened is a circle in a little gravity field (see orbLayout): every
   // orb repels every other, federation links pull their orbs together, so
@@ -13,6 +23,8 @@
   import { onMount, tick } from "svelte";
   import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import {
+    beaconPath,
+    beaconTangents,
     boundsPath,
     dockEntries,
     dockView,
@@ -20,30 +32,70 @@
     labelFor,
     lensPath,
     linksAmong,
+    nameBoard,
     orbClusters,
     orbLayout,
     orbPositions,
+    orbUnder,
     rememberBoard,
     requestOpen,
     setDockView,
     stepOrbs,
     syncOrbs,
-    type OrbSim,
     type Vec,
   } from "$lib/dock";
-  import { getHolosphere } from "$lib/holosphere";
+  import { getHolonName, getHolosphere, getWriter } from "$lib/holosphere";
+  import { showNotice } from "$lib/stores";
   import { getFederationSnapshot } from "@holons/core/federation";
+  import { isValidCell } from "h3-js";
   import { parseHolonAdd } from "$lib/holons";
-  import { t } from "$lib/i18n";
+  import { t, tr } from "$lib/i18n";
   import Modal from "./Modal.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
   import PlaceSearch from "./PlaceSearch.svelte";
 
-  // The map, when it's showing — the top bar's place search flies it, and
-  // its My-location button asks it to locate.
+  // The earth, when it's showing beneath the sky — the top bar's place
+  // search flies it, its My-location button asks it to locate, and every
+  // frame the sky asks it where each placed board's hexagon sits.
   let dockMap: DockMap | undefined;
   let locating = false;
+  $: mapOn = $dockView === "map";
+
+  // ── Anchors + beacons ───────────────────────────────────────────────────--
+  //
+  // With the earth on, an orb whose holon has claimed a place hovers HOVER
+  // above its hexagon (the anchor the physics pulls it to) and is tied to
+  // the hexagon's centre (the ground point) by a beacon cone in its own
+  // colour. Both are re-read from the map every frame, so the orbs follow a
+  // pan or a fly with a balloon's lag and the cones always land true. With
+  // the earth off there are no anchors and the sky is just the sky.
+  const HOVER_REM = 8;
+  $: HOVER = (HOVER_REM / ORB_REM) * ORB; // scales with the root font like ORB
+  let mapTick = 0; // bumped by the earth when it settles (reduced-motion relayout)
+  let grounds: ReadonlyMap<string, Vec> = new Map();
+  let anchors: ReadonlyMap<string, Vec> = new Map();
+
+  function readAnchors() {
+    const g = mapOn ? dockMap?.projectBoards() : null;
+    if (!g) {
+      if (grounds.size) grounds = anchors = new Map();
+      return;
+    }
+    const a = new Map<string, Vec>();
+    for (const [id, pt] of g) a.set(id, { x: pt.x, y: pt.y - HOVER });
+    grounds = g;
+    anchors = a;
+  }
+
+  /** Is this ground point near enough to draw a beacon to? A place far
+   *  outside the view would draw as a hair-thin sliver across the sky; the
+   *  orb parked at the edge nearest it already says "that way". */
+  const nearField = (g: Vec) =>
+    g.x > -fieldW && g.x < 2 * fieldW && g.y > -fieldH && g.y < 2 * fieldH;
+
+  /** A gradient id the SVG will accept, unique per holon. */
+  const gradId = (id: string) => "beacon-" + id.replace(/[^\w-]/g, "_");
 
   // The orb is sized in rem so it scales with the kiosk's fluid root font
   // (app.css clamps it 14–22px by viewport width). The physics, the vesica,
@@ -83,6 +135,19 @@
 
   /** The two boards being federated by a drop — drives the config popup. */
   let fedPair: { home: string; partner: string } | null = null;
+  /** A drop on a hexagon, waiting to be confirmed as that board's new home. */
+  let homeDrop: { holon: string; hex: string } | null = null;
+
+  /**
+   * Take the confirm sheet's answer. The cell and the board come in as
+   * ARGUMENTS, read while the sheet is still up: `{@const}` is lazy in Svelte
+   * 5, so a handler that closed the sheet first and then reached back into it
+   * would find nothing there and quietly move nothing.
+   */
+  function confirmHome(holon: string, hex: string) {
+    homeDrop = null;
+    void claimHome(holon, hex);
+  }
 
   function fieldPoint(e: PointerEvent): Vec {
     const r = fieldEl.getBoundingClientRect();
@@ -124,8 +189,17 @@
     cancelPress();
     if (dragging && dragId) {
       dragMoved = true; // the click that follows must not open the board
-      if (dropTarget && dropTarget !== dragId)
-        fedPair = { home: dragId, partner: dropTarget };
+      if (dropTarget && dropTarget !== dragId) {
+        // Another ORB: federate the two holons. A hexagon — any hexagon,
+        // another board's included: that cell becomes the carried board's
+        // HOME. Places never federate; only holons do.
+        if ($dockEntries.some((e) => e.id === dropTarget))
+          fedPair = { home: dragId, partner: dropTarget };
+        else if (isValidCell(dropTarget))
+          // Moving a holon's home is not something a slip of the finger
+          // should do: ask first, and keep the cell lit while it asks.
+          homeDrop = { holon: dragId, hex: dropTarget };
+      }
     }
     dragId = null;
     dragging = false;
@@ -167,19 +241,72 @@
     return null;
   }
 
-  /** The orb the pointer is over — centres closer than one diameter touch. */
+  /**
+   * What the pointer is over: another board's ORB, when the finger is INSIDE
+   * it — the only thing a drop can federate with — else, with the earth on,
+   * the bare grid hexagon under the finger, which a drop claims as the
+   * carried board's home. Being inside the target is what lets a federated
+   * orb reach the ground at all: its partner trails the finger for the whole
+   * drag, so anything looser matches the partner and never the hexagon.
+   *
+   * Hexagons are deliberately NOT boards here. A place is somewhere a holon
+   * lives, not someone it federates with, so the map's painted cells and
+   * neighbourhoods are just ground to drop on.
+   */
   function findDropTarget(p: Vec, self: string): string | null {
-    let best: string | null = null;
-    let bestD = ORB;
-    for (const [id, q] of positions) {
-      if (id === self) continue;
-      const d = Math.hypot(p.x - q.x, p.y - q.y);
-      if (d < bestD) {
-        bestD = d;
-        best = id;
+    const orb = orbUnder(positions, p, self, ORB / 2);
+    if (orb || !mapOn) return orb;
+    return dockMap?.cellAt(p.x, p.y) ?? null;
+  }
+
+  /** A partner's display name — always another docked board's. */
+  const partnerLabel = (id: string) =>
+    $dockEntries.find((e) => e.id === id)?.name ?? id;
+
+  /**
+   * Make `hex` the board's home — `settings.hex`, exactly what Settings →
+   * Set location writes (merged over the existing settings doc, through the
+   * identity-aware writer), announced the same way so the beacon moves at
+   * once. A drop on the cell it already lives in changes nothing.
+   *
+   * The move is announced BEFORE the write: reading the settings doc and
+   * getting a signed put acknowledged takes a relay round trip, and until it
+   * came back the orb sprang home to its old place and only then flew to the
+   * new one. The hexagon and the beacon land where the finger let go, and a
+   * write that fails puts them back.
+   */
+  async function claimHome(holon: string, hex: string) {
+    const announce = (cell: string | null) =>
+      window.dispatchEvent(
+        new CustomEvent("kiosk:hex-changed", {
+          detail: { holon, hex: cell ?? undefined },
+        }),
+      );
+    const previous = dockMap?.hexOf(holon) ?? null;
+    announce(hex); // optimistic: the earth follows the finger
+    try {
+      const hs = await getHolosphere();
+      let existing: any = {};
+      try {
+        const raw = await (hs as any).get(holon, "settings", holon);
+        if (raw && typeof raw === "object" && !Array.isArray(raw))
+          existing = raw;
+      } catch {
+        /* fresh settings */
       }
+      if (existing.hex === hex) return; // already home here — nothing to write
+      const writer = await getWriter(holon, (msg) => showNotice(msg));
+      const ok = await writer.put("settings", { ...existing, id: holon, hex });
+      if (ok) showNotice(tr("hex.claimed"));
+      else {
+        announce(existing.hex ?? previous); // refused — put it back
+        showNotice(tr("hex.saveError"));
+      }
+    } catch (err) {
+      console.error("[kiosk] dock: failed to set home", err);
+      announce(previous);
+      showNotice(tr("hex.saveError"));
     }
-    return best;
   }
 
   const nameOf = (id: string) =>
@@ -228,7 +355,7 @@
   let fieldH = 0;
   $: ORB = fieldW ? orbPx() : ORB; // the root size is viewport-driven
   let positions: ReadonlyMap<string, Vec> = new Map();
-  let sim: OrbSim | null = null;
+  let sim: OrbSim | null = keptSim;
   let simKey = "";
 
   const reducedMotion =
@@ -237,7 +364,10 @@
 
   $: links = linksAmong(ids, partnerMap);
   $: if (reducedMotion) {
-    const settled = orbLayout(ids, links, fieldW, fieldH, ORB / 2);
+    void mapTick; // the earth settled somewhere new: the places moved
+    void mapOn;
+    readAnchors();
+    const settled = orbLayout(ids, links, fieldW, fieldH, ORB / 2, anchors);
     // Even a parked sky lets a dragged orb follow the finger.
     if (dragging && dragId && dragPos) settled.set(dragId, dragPos);
     positions = settled;
@@ -256,6 +386,31 @@
     }
   }
 
+  // Each docked board's own name, refreshed while the dock is up — so a board
+  // is named by ITS holon or not at all. A holon that resolves no name falls
+  // back to its id/label, which also heals circles stamped with another
+  // board's name. Once per id per mount: `nameBoard` writes `$dockEntries`,
+  // which is this statement's own dependency.
+  const namedIds = new Set<string>();
+  $: void learnDockNames($dockEntries);
+  async function learnDockNames(entries: { id: string }[]) {
+    if (typeof window === "undefined" || entries.length === 0) return;
+    const pending = entries.filter((e) => !namedIds.has(e.id));
+    if (pending.length === 0) return;
+    for (const e of pending) namedIds.add(e.id);
+    let hs: Awaited<ReturnType<typeof getHolosphere>>;
+    try {
+      hs = await getHolosphere();
+    } catch {
+      return; // offline — the stored labels stand
+    }
+    for (const e of pending)
+      void getHolonName(hs, e.id).then(
+        (n) => nameBoard(e.id, n),
+        () => {},
+      );
+  }
+
   onMount(() => {
     // A federation change (this popup's writes included) redraws the ties:
     // flush the partner cache and refetch, and the orbs pull together live.
@@ -265,21 +420,29 @@
       void loadPartners(ids);
     };
     window.addEventListener("kiosk:federation-changed", onFedChanged);
+    // Dev/test hook, like window.__dockMap: lets a headless run read where
+    // the orbs and their places are without scraping the DOM. DEV only.
+    if (import.meta.env.DEV)
+      (window as any).__dock = {
+        positions: () => positions,
+        grounds: () => grounds,
+      };
 
     let raf = 0;
     if (!reducedMotion)
       raf = requestAnimationFrame(function frame(t) {
-        // fieldEl is null while the map view is showing — the physics idles.
         if (fieldEl && fieldW && fieldH && ids.length) {
           // Re-seat the sim when the cast or the field changes; retained orbs
           // keep their place and momentum, newcomers glide in from the ring.
           const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
           if (!sim || key !== simKey) {
-            sim = syncOrbs(sim, ids, fieldW, fieldH);
+            sim = keptSim = syncOrbs(sim, ids, fieldW, fieldH);
             simKey = key;
           }
           const lifted = dragging && dragId ? dragId : undefined;
-          stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t, lifted);
+          // Where the places are THIS frame — the earth may be mid-fly.
+          readAnchors();
+          stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t, lifted, anchors);
           // A dragged orb is kinematic: lifted out of the physics (see
           // stepOrbs) and pinned under the finger.
           if (dragging && dragId && dragPos) {
@@ -348,21 +511,124 @@
     addError = "";
   }
 
-  // A tap on empty space stands down edit mode and the add form.
-  function onBackdrop(e: Event) {
-    if (e.target !== e.currentTarget) return;
+  // A tap on empty space stands down edit mode and the add form. The field
+  // lets taps through (the earth beneath pans and selects), so the map
+  // asks first via `standDown`; with the earth off the sky itself is tapped.
+  function standDown(): boolean {
+    const had = editing || adding;
     editing = false;
     cancelAdd();
+    return had;
+  }
+  function onBackdrop(e: Event) {
+    if (e.target !== e.currentTarget) return;
+    standDown();
   }
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-<div class="dock" on:click={onBackdrop}>
-  {#if $dockView === "map"}
-    <!-- The same boards, placed where they live: each claimed cell is a
-         hexagon, and its badge opens the board through the same morph. -->
-    <DockMap bind:this={dockMap} bind:locating />
-  {:else}
+<div class="dock" class:onmap={mapOn} on:click={onBackdrop}>
+  <!-- The sky: one box the earth, the beacons and the gravity field all
+       fill edge to edge, so a point the map projects is a point in the
+       field. Bottom to top: the earth (when on), the beacon cones, the
+       orbs. The field lets pointer events through everywhere but its orbs,
+       so a drag on bare sky pans the earth beneath. -->
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="sky" on:click={onBackdrop}>
+    {#if mapOn}
+      <DockMap
+        bind:this={dockMap}
+        bind:locating
+        onbackdrop={standDown}
+        onmove={() => (mapTick += 1)}
+        highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
+        carrying={dragging ? dragId : (homeDrop?.holon ?? null)}
+      />
+    {/if}
+
+    {#if mapOn && fieldW && fieldH}
+      <!-- Each placed orb's beacon: a cone in the orb's colour, orb-wide at
+           the orb and converging on its hexagon's centre, fading toward the
+           ground where a small pulse marks the landing. Read `positions` and
+           `grounds` inline — a helper closure would hide the dependency from
+           the compiler and freeze the cones in place. -->
+      <svg class="beacons" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
+        {#each $dockEntries as e, i (e.id)}
+          {@const p = positions.get(e.id)}
+          {@const g = grounds.get(e.id)}
+          {#if p && g && nearField(g)}
+            {@const tan = beaconTangents(p, g, ORB / 2)}
+            {#if tan}
+              {@const gid = gradId(e.id)}
+              <!-- A beam, not a drawn triangle: the fill runs ACROSS the
+                   cone (bright on the centre line, nothing at either
+                   shoulder) and a mask fades it ALONG the way down, so it
+                   has no edge anywhere — it just dissolves. -->
+              <g
+                class="beacon"
+                style="--c: {holonColor(e.id, $holonColors)}; --i: {i}"
+              >
+                <linearGradient
+                  id="{gid}-across"
+                  gradientUnits="userSpaceOnUse"
+                  x1={tan[0].x}
+                  y1={tan[0].y}
+                  x2={tan[1].x}
+                  y2={tan[1].y}
+                >
+                  <stop class="beam-stop" offset="0" stop-opacity="0" />
+                  <stop class="beam-stop" offset="0.3" stop-opacity="0.85" />
+                  <stop class="beam-stop" offset="0.7" stop-opacity="0.85" />
+                  <stop class="beam-stop" offset="1" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient
+                  id="{gid}-along"
+                  gradientUnits="userSpaceOnUse"
+                  x1={p.x}
+                  y1={p.y}
+                  x2={g.x}
+                  y2={g.y}
+                >
+                  <stop offset="0" stop-color="#fff" />
+                  <stop offset="1" stop-color="#fff" stop-opacity="0.2" />
+                </linearGradient>
+                <mask
+                  id="{gid}-mask"
+                  maskUnits="userSpaceOnUse"
+                  x="0"
+                  y="0"
+                  width={fieldW}
+                  height={fieldH}
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width={fieldW}
+                    height={fieldH}
+                    fill="url(#{gid}-along)"
+                  />
+                </mask>
+                <path
+                  class="cone"
+                  d={beaconPath(p, g, ORB / 2)}
+                  fill="url(#{gid}-across)"
+                  mask="url(#{gid}-mask)"
+                />
+                <circle class="landing-pulse" cx={g.x} cy={g.y} r="7" />
+                <circle
+                  class="landing"
+                  class:target={dropTarget === e.id}
+                  cx={g.x}
+                  cy={g.y}
+                  r={dropTarget === e.id ? 9 : 4}
+                />
+              </g>
+            {/if}
+          {/if}
+        {/each}
+      </svg>
+    {/if}
+
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
       class="field"
@@ -372,7 +638,6 @@
       bind:clientWidth={fieldW}
       bind:clientHeight={fieldH}
       style="--orb: {ORB_REM}rem"
-      on:click={onBackdrop}
     >
       {#if fieldW && fieldH}
         <!-- Ties + holographic bounds, drawn beneath the orbs. -->
@@ -459,14 +724,14 @@
         {/each}
       {/if}
     </div>
-  {/if}
+  </div>
 
-  <!-- The top bar hovers over whichever surface is showing, in three slots:
-       the view switch always in the middle; on the map, the place search to
-       its left and the My-location button at the right edge. -->
-  <div class="topbar" class:onmap={$dockView === "map"}>
+  <!-- The top bar hovers over the sky, in three slots: the sky/earth switch
+       always in the middle; with the earth on, the place search to its left
+       and the My-location button at the right edge. -->
+  <div class="topbar" class:onmap={mapOn}>
     <div class="topbar__left">
-      {#if $dockView === "map"}
+      {#if mapOn}
         <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
       {/if}
     </div>
@@ -493,7 +758,7 @@
       </button>
     </div>
     <div class="topbar__right">
-      {#if $dockView === "map"}
+      {#if mapOn}
         <button
           type="button"
           class="locate"
@@ -508,7 +773,7 @@
     </div>
   </div>
 
-  <div class="tray">
+  <div class="tray" class:onmap={mapOn}>
     {#if adding}
       <form class="add" on:submit|preventDefault={submitAdd}>
         <input
@@ -533,25 +798,58 @@
         <span class="plus__sign">+</span>{$t("dock.add")}
       </button>
     {/if}
-    <p class="hint">
-      {$dockView === "map" ? $t("dock.mapHint") : $t("dock.hint")}
-    </p>
+    {#if !mapOn}
+      <p class="hint">{$t("dock.hint")}</p>
+    {/if}
   </div>
 </div>
 
-<!-- The intersection popup: dropping one circle onto another (or tapping an
-     existing overlap) opens just this pair's lens settings. A fresh drop is
-     linked on open with the kiosk default (receive-only); unlinking closes
-     the popup — the intersection it edited no longer exists. -->
+<!-- The intersection popup: dropping one circle onto another, or tapping the
+     overlap they already share, opens just that pair's flows. Federation is
+     between HOLONS — a hexagon is only ever a home, never a partner. Opening
+     the popup federates nothing: the pair stays unlinked until an arrow is
+     tapped, and unlinking closes it, since the intersection it edited no
+     longer exists. -->
 {#if fedPair}
   <Modal on:close={() => (fedPair = null)}>
     <FederationLens
       holon={fedPair.home}
       partner={fedPair.partner}
       holonName={nameOf(fedPair.home)}
-      partnerName={nameOf(fedPair.partner)}
+      partnerName={partnerLabel(fedPair.partner)}
       on:unlinked={() => (fedPair = null)}
     />
+  </Modal>
+{/if}
+
+<!-- Dropping a circle on a hexagon asks before it moves that holon's home:
+     the cell stays lit underneath, so the confirm is read against the place
+     it is about to claim. Dismissing the sheet leaves the home where it is. -->
+{#if homeDrop}
+  {@const drop = homeDrop}
+  <Modal on:close={() => (homeDrop = null)}>
+    <div class="home-confirm">
+      <span
+        class="orb-chip"
+        style="--c: {holonColor(drop.holon, $holonColors)}"
+        aria-hidden="true">⬡</span
+      >
+      <h3>{$t("hex.moveTitle", { name: nameOf(drop.holon) })}</h3>
+      <p>{$t("hex.moveBody")}</p>
+      <code>{drop.hex}</code>
+      <div class="acts">
+        <button type="button" class="ghost" on:click={() => (homeDrop = null)}>
+          {$t("common.cancel")}
+        </button>
+        <button
+          type="button"
+          class="go"
+          on:click={() => confirmHome(drop.holon, drop.hex)}
+        >
+          {$t("hex.moveConfirm")}
+        </button>
+      </div>
+    </div>
   </Modal>
 {/if}
 
@@ -560,10 +858,16 @@
     position: fixed;
     inset: 0;
     z-index: 5; /* beneath the board window (z 10), which morphs over it */
+    /* The floating tray's zone — the field, the beacons and the map's cell
+       panel all keep clear of it. It carries the bottom safe area itself
+       (see .tray) so the sky, and with it the earth, runs to the true
+       bottom edge of the screen rather than stopping on a paper margin. */
+    --dock-lens: 0rem;
+    --dock-tray: calc(6.6rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-      env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+      env(safe-area-inset-left);
     /* The space — deeper than the card, shared with the window layer so the
        card visibly floats in the same sky it shrinks into. */
     background:
@@ -576,10 +880,103 @@
       var(--paper-deep);
   }
 
-  .field {
+  /* With the earth up the lens chips take the bottom row and the tray — now
+     just the add button — stacks above them. --dock-lens is the room the
+     chips occupy: DockMap sits them 0.9rem off the bottom and they stand
+     ~2.5rem tall, so the two numbers must move together. Both rows live
+     inside --dock-tray, so everything that already cleared the tray (the
+     field, the beacons, the cell panel) clears the chips too. */
+  .dock.onmap {
+    --dock-lens: 3.4rem;
+    --dock-tray: calc(4.4rem + var(--dock-lens) + env(safe-area-inset-bottom));
+  }
+
+  /* The sky's box: earth, beacons and field all fill it edge to edge. */
+  .sky {
     position: relative;
     flex: 1;
     min-height: 0;
+  }
+
+  /* The field rides above the earth (and the map's own vignette, z 1) but
+     below the map's chips and panel (z 4+). It is transparent to the
+     pointer: only its orbs (.slot) catch taps and drags, so a finger on
+     bare sky pans the earth beneath. It stops short of the tray floating
+     along the bottom, so no orb ever parks under it; the earth carries on
+     beneath. The beacons share the field's box exactly — their viewBox is
+     the field's size, so any other box would scale them. */
+  .field,
+  .beacons {
+    position: absolute;
+    inset: 0 0 var(--dock-tray) 0;
+    pointer-events: none;
+  }
+  .field {
+    z-index: 2;
+  }
+  .beacons {
+    width: 100%;
+    height: calc(100% - var(--dock-tray));
+    z-index: 1;
+    overflow: visible;
+  }
+  /* The cone is not animated at all: it is redrawn every frame from the orb
+     and its place, so it simply follows the orb. A pop-in replayed itself
+     every time a place panned back into view, which read as the beacon
+     twitching rather than pointing. */
+  /* The beam is the orb's note lifted toward white: a light beam must read
+     over satellite imagery on the night palette too, where the notes are
+     deep. Its edges get the same light so the cone keeps its shape where
+     the fill has faded. */
+  .beam-stop {
+    stop-color: color-mix(in srgb, var(--c, var(--teal)) 55%, #fff);
+  }
+  /* The cross-fade already leaves the beam edgeless; a little blur melts
+     the last of the geometry into the light. */
+  .cone {
+    filter: blur(3px);
+  }
+  .landing {
+    fill: var(--c, var(--teal));
+    stroke: #fff;
+    stroke-width: 1.5;
+    transition: r 0.15s ease;
+  }
+  /* A federated place's landing opens that federation (change or unlink). */
+  /* A carried orb hovering this place: the landing swells and wears the
+     same dashed teal halo as an orb about to be federated. */
+  .landing.target {
+    stroke: var(--teal);
+    stroke-width: 2;
+    stroke-dasharray: 3 3;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--teal) 70%, #fff));
+  }
+  /* The landing pulse: a ring in the orb's colour swelling out of the spot
+     and fading, phased per orb like the pop. */
+  .landing-pulse {
+    fill: none;
+    stroke: var(--c, var(--teal));
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: beacon-pulse 2.2s ease-out infinite;
+    animation-delay: calc(var(--i, 0) * 300ms);
+  }
+  @keyframes beacon-pulse {
+    from {
+      transform: scale(0.6);
+      opacity: 0.9;
+    }
+    to {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-pulse {
+      animation: none;
+      opacity: 0.6;
+    }
   }
 
   .web {
@@ -635,6 +1032,7 @@
 
   .slot {
     position: absolute;
+    pointer-events: auto; /* the one thing in the field that catches a finger */
     /* Anchor the ORB's centre (not the column's) on the physics position:
        shift up by half the orb so the vesica, ties, and hit math all line up
        with the visible circle; the name simply hangs below. */
@@ -685,6 +1083,66 @@
     border-color: var(--teal);
     box-shadow: 0 0 0 7px color-mix(in srgb, var(--teal) 22%, transparent);
   }
+  /* The move-home confirm: the carried board's colour, the cell it would
+     claim, and the two ways out. */
+  .home-confirm {
+    min-width: min(22rem, 82vw);
+    text-transform: none;
+    letter-spacing: 0;
+    text-align: center;
+  }
+  .home-confirm .orb-chip {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    margin: 0 auto 0.5rem;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    background: color-mix(in srgb, var(--c, var(--teal)) 55%, transparent);
+    border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+    color: var(--ink);
+  }
+  .home-confirm h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .home-confirm p {
+    margin: 0.35rem 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .home-confirm code {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .home-confirm .acts {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+  }
+  .home-confirm .acts button {
+    flex: 1;
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    padding: 0 0.8rem;
+  }
+  .home-confirm .ghost {
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--ink-soft);
+  }
+  .home-confirm .go {
+    background: var(--teal);
+    color: #fff;
+  }
+
   @keyframes dock-pop {
     from {
       opacity: 0;
@@ -734,14 +1192,45 @@
     transform: scale(0.9);
   }
 
-  /* Bottom tray: view toggle, add a board, and the one-line hint. */
+  /* Bottom tray — add a board, and the one-line hint — floating over the
+     sky's foot (the earth runs on beneath it), on a soft gradient so the
+     hint reads over the map. Only its controls catch the pointer. */
   .tray {
-    flex: 0 0 auto;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    height: var(--dock-tray);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
-    padding: 0.4rem 1.4rem 1.2rem;
+    padding: 0.4rem 1.4rem
+      calc(1.2rem + var(--dock-lens) + env(safe-area-inset-bottom));
+    background: linear-gradient(
+      to top,
+      var(--paper-deep) 45%,
+      color-mix(in srgb, var(--paper-deep) 70%, transparent) 80%,
+      transparent
+    );
+    pointer-events: none;
+  }
+  /* Over the earth the tray never becomes a floor: an opaque foot cut the
+     map off well above the screen's edge. It stays a scrim — enough to carry
+     the hint, thin enough that the ground reads all the way down. */
+  .tray.onmap {
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--paper-deep) 58%, transparent) 0%,
+      color-mix(in srgb, var(--paper-deep) 30%, transparent) 55%,
+      transparent
+    );
+  }
+  .tray > * {
+    pointer-events: auto;
   }
 
   /* Floating top bar: three slots — search | view switch | my-location —
@@ -760,13 +1249,11 @@
     gap: 0.5rem;
     pointer-events: none;
   }
-  /* On the map the bar lives INSIDE the map card: inset to the card's
-     margin (DockMap .mapwrap) plus the same breathing room its lens chips
-     keep, so neither the search nor the locate button ever hangs past the
-     rounded frame. */
+  /* With the earth on, the bar keeps the same breathing room from the edge
+     as the map's lens chips (DockMap .lensbar). */
   .topbar.onmap {
-    left: calc(env(safe-area-inset-left) + 1.2rem + 0.9rem);
-    right: calc(env(safe-area-inset-right) + 1.2rem + 0.9rem);
+    left: calc(env(safe-area-inset-left) + 0.9rem);
+    right: calc(env(safe-area-inset-right) + 0.9rem);
   }
   .topbar__left,
   .topbar__right {

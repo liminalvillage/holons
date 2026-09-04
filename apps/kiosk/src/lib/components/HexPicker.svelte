@@ -388,6 +388,13 @@
       if (ok) {
         showNotice(tr("hex.claimed"));
         dispatch("saved", selected);
+        // The dock's earth (DockMap) lands this board's beacon on the new
+        // place at once, instead of on its next look-up.
+        window.dispatchEvent(
+          new CustomEvent("kiosk:hex-changed", {
+            detail: { holon: holonId, hex: selected },
+          }),
+        );
         dispatch("close");
       }
     } catch (err) {

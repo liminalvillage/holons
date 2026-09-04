@@ -314,13 +314,11 @@ export const es: Record<MessageKey, Msg> = {
   "dock.addPlaceholder": "Id del holon, nombre, npub, dirección o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
   "dock.hint":
-    "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para federarlos.",
+    "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para abrir sus flujos.",
   "dock.deck": "Holosfera",
   "dock.map": "Geosfera",
-  "dock.mapHint":
-    "Toca un hexágono para abrir su hub — un hub elige su lugar en Ajustes → Fijar la ubicación.",
   "dock.mapUnavailable":
-    "La geosfera necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para mostrarla.",
+    "Mostrar la tierra necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para activarla.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Elige una lente",
@@ -537,13 +535,13 @@ export const es: Record<MessageKey, Msg> = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Cargando…",
   "fed.loadError": "No se pudo cargar la federación — inténtalo de nuevo.",
-  "fed.pairHint":
-    "Recibir = {a} muestra los elementos de {b} · Enviar = {a} comparte los suyos",
-  "fed.lensAria": "Federación de {lens}",
-  "fed.off": "Off",
-  "fed.receive": "Recibir",
-  "fed.send": "Enviar",
-  "fed.both": "Ambos",
+  "fed.arrowHint":
+    "Toca la flecha hacia el holón al que deben viajar los elementos. Tócala otra vez para cerrar ese sentido.",
+  "fed.notLinked": "Sin federar — toca una flecha para abrir el primer flujo.",
+  "fed.flowsOpen": { one: "{n} flujo abierto", other: "{n} flujos abiertos" },
+  "fed.all": "Todos",
+  "fed.sendAria": "{lens}: enviar de {a} a {b}",
+  "fed.receiveAria": "{lens}: recibir de {b} en {a}",
   "fed.tapAgainUnlink": "Toca otra vez para desvincular",
   "fed.unlink": "Desvincular {name}",
   "fed.linkError": "No se pudo vincular ese holón — inténtalo de nuevo.",
@@ -569,6 +567,10 @@ export const es: Record<MessageKey, Msg> = {
     "Este dispositivo no tiene geolocalización — toca el mapa o pega el id de una celda.",
   "hex.denied": "Ubicación denegada — toca el mapa o pega el id de una celda.",
   "hex.invalidCell": "No es un id de celda H3 válido.",
+  "hex.moveTitle": "¿Mover {name} aquí?",
+  "hex.moveBody":
+    "Este hexágono pasa a ser su hogar, y desde ahora su faro aterriza aquí.",
+  "hex.moveConfirm": "Mover el hogar aquí",
   "hex.claimed": "Ubicación reclamada — este holón está en el mapa.",
   "hex.saveError": "No se pudo guardar la ubicación — inténtalo de nuevo.",
 

@@ -315,13 +315,11 @@ export const it: Record<MessageKey, Msg> = {
   "dock.addPlaceholder": "Id dell'holon, nome, npub, indirizzo o link",
   "dock.addInvalid": "Questo non identifica un holon.",
   "dock.hint":
-    "Tocca un cerchio per aprire il suo hub, tienilo premuto per rimuoverlo — trascinane uno su un altro per federarli.",
+    "Tocca un cerchio per aprire il suo hub, tienilo premuto per rimuoverlo — trascinane uno su un altro per aprire i loro flussi.",
   "dock.deck": "Olosfera",
   "dock.map": "Geosfera",
-  "dock.mapHint":
-    "Tocca un esagono per aprire il suo hub — un hub sceglie il suo posto in Impostazioni → Imposta la posizione.",
   "dock.mapUnavailable":
-    "La geosfera ha bisogno di un token Mapbox — imposta VITE_MAPBOX_TOKEN per mostrarla.",
+    "Per mostrare la terra serve un token Mapbox — imposta VITE_MAPBOX_TOKEN per attivarla.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Scegli una lente",
@@ -538,13 +536,14 @@ export const it: Record<MessageKey, Msg> = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Caricamento…",
   "fed.loadError": "Impossibile caricare la federazione — riprova.",
-  "fed.pairHint":
-    "Ricevi = {a} mostra gli elementi di {b} · Invia = {a} condivide i propri",
-  "fed.lensAria": "Federazione {lens}",
-  "fed.off": "Off",
-  "fed.receive": "Ricevi",
-  "fed.send": "Invia",
-  "fed.both": "Entrambi",
+  "fed.arrowHint":
+    "Tocca la freccia verso l'holon in cui devono viaggiare gli elementi. Toccala di nuovo per chiudere quella direzione.",
+  "fed.notLinked":
+    "Non federati — tocca una freccia per aprire il primo flusso.",
+  "fed.flowsOpen": { one: "{n} flusso aperto", other: "{n} flussi aperti" },
+  "fed.all": "Tutti",
+  "fed.sendAria": "{lens}: invia da {a} a {b}",
+  "fed.receiveAria": "{lens}: ricevi da {b} in {a}",
   "fed.tapAgainUnlink": "Tocca di nuovo per scollegare",
   "fed.unlink": "Scollega {name}",
   "fed.linkError": "Impossibile collegare quell'holon — riprova.",
@@ -571,6 +570,10 @@ export const it: Record<MessageKey, Msg> = {
   "hex.denied":
     "Posizione negata — tocca la mappa o incolla l'id di una cella.",
   "hex.invalidCell": "Non è un id di cella H3 valido.",
+  "hex.moveTitle": "Spostare {name} qui?",
+  "hex.moveBody":
+    "Questo esagono diventa la sua casa, e da adesso il suo faro atterra qui.",
+  "hex.moveConfirm": "Sposta la casa qui",
   "hex.claimed": "Posizione rivendicata — questo holon è sulla mappa.",
   "hex.saveError": "Impossibile salvare la posizione — riprova.",
 

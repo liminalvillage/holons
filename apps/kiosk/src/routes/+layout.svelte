@@ -89,6 +89,7 @@
   import {
     dockState,
     dockOpenTarget,
+    nameBoard,
     rememberBoard,
     touchBoard,
     segmentFor,
@@ -256,9 +257,14 @@
       boundHolon = id;
       boundFed = fed;
       holonName.set("");
-      // Holon display name (best-effort; the screen works without it).
+      // Holon display name (best-effort; the screen works without it). The
+      // dock circle is named from the SAME resolution, so an unnamed holon
+      // shows its id rather than inheriting the last board's name.
+      nameBoard(id, "");
       getHolonName(hs, id).then((name) => {
-        if (boundHolon === id && name) holonName.set(name);
+        if (boundHolon !== id) return;
+        if (name) holonName.set(name);
+        nameBoard(id, name);
       });
       // Holon colour override (best-effort): re-read on every bind so a colour
       // chosen on another surface lands on the next open.
@@ -610,15 +616,21 @@
   // circle on the dock (DockView), and tapping a circle expands that board
   // back out. The morph is a clip-path iris centred on the circle's spot,
   // crossfading into the real circle beneath — pure paint work, no reflow of
-  // the board mid-animation. dock.ts owns the state; this layout owns the two
-  // transitional frames ("closing"/"opening"), where window AND dock are both
-  // mounted so one can be measured against the other. Anywhere the animation
-  // can't run (no WAAPI, no circle to aim at) the states still settle, so the
-  // interface never wedges mid-morph.
+  // the board mid-animation. The circle is measured afresh every frame: the
+  // dock's sky is alive (a just-mounted dock seeds its orbs on a ring and
+  // lets them glide to rest over about the second the morph takes, and even
+  // a settled orb wanders), so an iris aimed once at the spot seen on mount
+  // closes onto empty sky beside its orb. dock.ts owns the state; this
+  // layout owns the two transitional frames ("closing"/"opening"), where
+  // window AND dock are both mounted so one can be measured against the
+  // other. Anywhere the animation can't run (no rAF, no circle to aim at)
+  // the states still settle, so the interface never wedges mid-morph.
   let windowEl: HTMLDivElement | null = null;
   let morphBusy = false;
   const MORPH_MS = 1000; // unhurried — the iris should read as a breath, not a snap
-  const MORPH_EASE = "cubic-bezier(0.45, 0, 0.2, 1)";
+  const MORPH_FADE = 0.22; // the crossfade's share of the morph
+  const morphEase = (x: number) =>
+    x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
   function circleRect(id: string): DOMRect | null {
     const el = document.querySelector(`[data-dock-circle="${CSS.escape(id)}"]`);
@@ -626,10 +638,10 @@
   }
 
   /**
-   * The morph target, waiting briefly for it to exist: the dock's MAP view
-   * places its hexagon badges only after the basemap and the boards' claimed
-   * cells load, so the target can lag the mount by a beat. Past the timeout
-   * the morph just jumps — the interface never wedges on a missing target.
+   * The morph target, waiting briefly for it to exist: a just-mounted dock
+   * paints its orbs only once its field has measured itself, so the target
+   * can lag the mount by a beat. Past the timeout the morph just jumps — the
+   * interface never wedges on a missing target.
    */
   async function circleRectSoon(
     id: string,
@@ -644,35 +656,56 @@
     }
   }
 
-  async function irisMorph(r: DOMRect, closing: boolean): Promise<void> {
-    if (!windowEl || typeof windowEl.animate !== "function") return;
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const disc = `circle(${r.width / 2}px at ${cx}px ${cy}px)`;
-    const full = `circle(150% at ${cx}px ${cy}px)`;
-    // Closing: iris down onto the circle's spot, then fade to reveal the real
-    // circle exactly beneath. Opening is the same path in reverse.
-    const frames = closing
-      ? [
-          { clipPath: full, opacity: 1 },
-          { clipPath: disc, opacity: 1, offset: 0.78 },
-          { clipPath: disc, opacity: 0 },
-        ]
-      : [
-          { clipPath: disc, opacity: 0 },
-          { clipPath: disc, opacity: 1, offset: 0.22 },
-          { clipPath: full, opacity: 1 },
-        ];
-    const anim = windowEl.animate(frames, {
-      duration: MORPH_MS,
-      easing: MORPH_EASE,
-      fill: "forwards",
+  /**
+   * Run the iris, following the circle wherever it drifts. `target()` is
+   * asked for the circle's rect on every frame; when it has nothing (the
+   * dock re-rendering mid-morph) the last spot seen holds. Resolves with the
+   * window back on its base style — the callers switch the dock state in the
+   * same microtask checkpoint, so the end frame never shows through.
+   */
+  function irisMorph(
+    target: () => DOMRect | null,
+    first: DOMRect,
+    closing: boolean,
+  ): Promise<void> {
+    const el = windowEl;
+    if (!el || typeof requestAnimationFrame !== "function")
+      return Promise.resolve();
+    let rect = first;
+    const paint = (p: number) => {
+      rect = target() ?? rect;
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const disc = rect.width / 2;
+      const full = Math.hypot(
+        Math.max(cx, window.innerWidth - cx),
+        Math.max(cy, window.innerHeight - cy),
+      );
+      // Closing: iris down onto the circle's spot, then fade to reveal the
+      // real circle exactly beneath. Opening is the same path in reverse.
+      const open = closing
+        ? 1 - Math.min(1, p / (1 - MORPH_FADE))
+        : Math.max(0, (p - MORPH_FADE) / (1 - MORPH_FADE));
+      const alpha = closing
+        ? Math.min(1, (1 - p) / MORPH_FADE)
+        : Math.min(1, p / MORPH_FADE);
+      el.style.clipPath = `circle(${disc + (full - disc) * open}px at ${cx}px ${cy}px)`;
+      el.style.opacity = String(alpha);
+    };
+    return new Promise<void>((resolve) => {
+      let t0 = 0;
+      paint(0);
+      requestAnimationFrame(function frame(t) {
+        if (!t0) t0 = t;
+        const p = morphEase(Math.min(1, (t - t0) / MORPH_MS));
+        paint(p);
+        if (p < 1) requestAnimationFrame(frame);
+        else resolve();
+      });
+    }).finally(() => {
+      el.style.clipPath = "";
+      el.style.opacity = "";
     });
-    try {
-      await anim.finished;
-    } finally {
-      anim.cancel(); // drop the forwards fill; the base style is the end state
-    }
   }
 
   async function morphToDock() {
@@ -682,9 +715,9 @@
       await tick(); // the dock is mounted underneath now
       const id = get(holonIdStore);
       const r = id ? await circleRectSoon(id) : null;
-      if (r) await irisMorph(r, true);
+      if (id && r) await irisMorph(() => circleRect(id), r, true);
     } catch {
-      /* reduced motion / no WAAPI → jump */
+      /* no rAF → jump */
     }
     dockState.set("dock");
     morphBusy = false;
@@ -707,7 +740,7 @@
     }
     try {
       await tick(); // the window is mounted again — animate it open
-      if (r) await irisMorph(r, false);
+      if (id && r) await irisMorph(() => circleRect(id), r, false);
     } catch {
       /* jump */
     }
@@ -733,10 +766,14 @@
     replaceState(path + (q ? `?${q}` : "") + location.hash, {});
   }
 
-  // Keep the shown board's circle fresh: created on first visit, its label
-  // upgraded to the holon's real name as soon as that streams in.
+  // Keep the shown board's circle fresh: created on first visit under its
+  // label. The NAME is written only where it is RESOLVED (in the bind below,
+  // which knows the holon it resolved for). Reading `holonName` here would
+  // stamp the previous holon's name on the new board — the id changes a tick
+  // before the async bind clears the name, and a holon that resolves no name
+  // of its own would then keep that borrowed one forever.
   $: if (mounted && !isMiniApp && $holonIdStore)
-    rememberBoard($holonIdStore, $holonName.trim());
+    rememberBoard($holonIdStore, "");
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).

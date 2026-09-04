@@ -1,20 +1,23 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The dock's MAP view: the same closed boards, but placed where they live.
-  // Each docked holon that has claimed a cell (`settings.hex`, the field the
-  // HexPicker writes) appears as its H3 hexagon on the Mapbox basemap, with a
-  // tappable hexagon badge at its centre. The badge carries the same
-  // `data-dock-circle` handle the deck's orbs do, so tapping it opens the
-  // board through the exact same morph — and closing a board irises back
-  // down onto its hexagon. Boards with no claimed cell simply aren't here;
-  // the deck view always shows everything.
+  // The earth beneath the dock's sky: the Mapbox basemap, filling the same
+  // box as the gravity field (DockView), so a point projected by the map IS
+  // a point in the field. Each docked holon that has claimed a cell
+  // (`settings.hex`, the field the HexPicker writes) shows as its H3 hexagon
+  // in the holon's colour; the orb itself stays in the sky above, tethered
+  // to the hexagon by its beacon — DockView asks `projectBoards()` every
+  // frame for where each place sits on screen. Boards with no claimed cell
+  // have no hexagon; their orbs float free. Tapping bare map selects a cell
+  // (the dashboard's click-to-select), after the dock has had first say
+  // (`onbackdrop`) so a tap can stand edit mode down instead.
   import { onDestroy, onMount } from "svelte";
   import {
     cellToBoundary,
     cellToLatLng,
     cellToParent,
     getResolution,
+    isValidCell,
     latLngToCell,
   } from "h3-js";
   import { readSettingsHex } from "@holons/core/federation";
@@ -27,7 +30,7 @@
   } from "$lib/holosphere";
   import { resolveAppName, setGeo } from "$lib/config";
   import { showNotice } from "$lib/stores";
-  import { dockEntries, requestOpen, type DockEntry } from "$lib/dock";
+  import { dockEntries, type DockEntry, type Vec } from "$lib/dock";
   import { holonColor, holonColors, resolveCssColor } from "$lib/palette";
   import { activeTheme } from "$lib/theme";
   import {
@@ -52,47 +55,181 @@
 
   const MAPBOX_TOKEN: string = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 
-  // How much coarser a board's PARENT hexagon is drawn than its exact cell:
-  // a res-9 "block" gets a res-4 neighbourhood — the two-layer display the
-  // dashboard map uses, so a board is findable even from country zoom.
+  // How much coarser a board's PARENT hexagon is than its exact cell: a
+  // res-9 "block" gets a res-4 neighbourhood. Never drawn — it is the
+  // tap target that keeps a board reachable from country zoom.
   const PARENT_COARSER = 5;
 
   let mapContainer: HTMLDivElement | null = null;
   let map: any = null;
   let mapboxglMod: any = null;
-  let markers: any[] = [];
   let alive = true;
   let loadingHexes = true;
-  let located: Array<DockEntry & { hex: string }> = [];
+  /** The docked boards with a place, each with its cell's centre resolved
+   *  once (the per-frame projection must not redo the H3 math). */
+  let located: Array<DockEntry & { hex: string; lng: number; lat: number }> =
+    [];
 
-  // A board's claimed cell rarely changes — cache across mounts so flipping
-  // deck ⇄ map (and the close morph that needs the badge in place) is instant
-  // after the first look-up. `null` = looked up, none claimed.
-  const hexCache: Map<string, string | null> = ((
+  /**
+   * A tap on bare map: the dock gets first say — it stands edit/add mode
+   * down and returns true to say the tap is spent, so no cell gets selected
+   * under a closing ✕.
+   */
+  export let onbackdrop: () => boolean = () => false;
+  /** The view settled or the box changed — the reduced-motion sky relays out. */
+  export let onmove: () => void = () => {};
+  /**
+   * The board a carried orb is about to be dropped on (DockView's drop
+   * target): its hexagon lights up so the place reads as the landing zone.
+   */
+  export let highlight: string | null = null;
+  /** The board being carried — a bare cell lights in ITS colour, since a
+   *  drop there makes that cell the board's home. */
+  export let carrying: string | null = null;
+  $: if (map) {
+    void carrying;
+    paintHighlight(highlight);
+  }
+  /**
+   * Light the cell a drop would claim as the carried board's HOME, in that
+   * board's colour.
+   *
+   * Only ever a bare cell. Dropping on another ORB is what federates, and
+   * the sky already says so — the target orb wears a dashed halo — so a
+   * board's own hexagon (and the huge neighbourhood around it) is never lit
+   * by a drag any more.
+   */
+  function paintHighlight(id: string | null) {
+    const src = map?.getSource("drop-cell");
+    if (!src) return;
+    const cell = id && isValidCell(id) ? id : null;
+    src.setData(
+      cell
+        ? {
+            type: "Feature",
+            properties: {
+              color: carrying
+                ? paint(carrying)
+                : resolveCssColor("var(--teal)"),
+            },
+            geometry: { type: "Polygon", coordinates: [ring(cell)] },
+          }
+        : { type: "FeatureCollection", features: [] },
+    );
+  }
+
+  /**
+   * The grid cell under this point (container px = field px) at the zoom's
+   * own resolution — the hexagon one sees there. Any of them can take a
+   * dropped orb: the board then federates with that place. Null before the
+   * map exists.
+   */
+  export function cellAt(x: number, y: number): string | null {
+    if (!map) return null;
+    try {
+      const ll = map.unproject([x, y]);
+      return latLngToCell(ll.lat, ll.lng, zoomToResolution(map.getZoom()));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Where each placed board's hexagon centre sits on screen, in container
+   * px — which, the map filling the same box as the gravity field, is field
+   * px. The world copy nearest the middle of the view wins, so a place just
+   * across the antimeridian doesn't project a world-width away. Null until
+   * there is a map to ask.
+   */
+  export function projectBoards(): Map<string, Vec> | null {
+    if (!map) return null;
+    const mid = (map.getContainer() as HTMLElement).clientWidth / 2;
+    const out = new Map<string, Vec>();
+    for (const e of located) {
+      let best: Vec | null = null;
+      for (const lng of [e.lng, e.lng - 360, e.lng + 360]) {
+        const p = map.project([lng, e.lat]);
+        if (!best || Math.abs(p.x - mid) < Math.abs(best.x - mid))
+          best = { x: p.x, y: p.y };
+      }
+      if (best) out.set(e.id, best);
+    }
+    return out;
+  }
+
+  // A board's claimed cell rarely changes — a cell once seen is kept across
+  // mounts so flipping sky ⇄ earth is instant. A MISS is never kept: a
+  // partner's settings replicate a beat after we first ask (so a miss is
+  // retried while the earth is up, like the palette's colour look-up), and a
+  // place claimed later in Settings must show on the next look — the picker
+  // announces it (`kiosk:hex-changed`) so an open dock lands the beacon at
+  // once.
+  const hexCache: Map<string, string> = ((
     globalThis as any
   ).__kioskDockHexes ??= new Map());
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const looking = new Set<string>();
+
+  async function lookupHex(hs: HoloSphere, id: string): Promise<void> {
+    if (looking.has(id)) return;
+    looking.add(id);
+    try {
+      for (const delay of [0, 800, 2000]) {
+        if (delay) await sleep(delay);
+        if (!alive) return;
+        const hex = await readSettingsHex(hs, id);
+        if (hex) {
+          hexCache.set(id, hex);
+          return;
+        }
+      }
+    } finally {
+      looking.delete(id);
+    }
+  }
+
+  /** The cell a board is currently drawn on, as far as the map knows. */
+  export function hexOf(id: string): string | null {
+    return hexCache.get(id) ?? null;
+  }
 
   async function loadHexes(entries: DockEntry[]) {
-    const missing = entries.filter((e) => !hexCache.has(e.id));
+    // `get`, not `has`: a stale falsy entry (older code cached misses) is a miss.
+    const missing = entries.filter((e) => !hexCache.get(e.id));
     if (missing.length) {
       try {
         const hs = await getHolosphere();
+        // Place whatever is already known while the misses are retried, and
+        // again as each retry lands, so a late reply still gets its hexagon.
         await Promise.all(
-          missing.map(async (e) => {
-            hexCache.set(e.id, await readSettingsHex(hs, e.id));
-          }),
+          missing.map((e) => lookupHex(hs, e.id).then(() => place(entries))),
         );
       } catch {
-        /* unreachable — those boards stay off the map this time */
+        /* unreachable — those boards stay off the earth this time */
       }
     }
+    place(entries);
+  }
+
+  function place(entries: DockEntry[]) {
     if (!alive) return;
     located = entries.flatMap((e) => {
       const hex = hexCache.get(e.id);
-      return hex ? [{ ...e, hex }] : [];
+      if (!hex) return [];
+      const [lat, lng] = cellToLatLng(hex);
+      return [{ ...e, hex, lng, lat }];
     });
     loadingHexes = false;
     placeBoards();
+  }
+
+  /** Settings → Set location just claimed (or moved) a board's place. */
+  function onHexChanged(ev: Event) {
+    const d = (ev as CustomEvent<{ holon?: string; hex?: string }>).detail;
+    if (!d?.holon) return;
+    if (d.hex) hexCache.set(d.holon, d.hex);
+    else hexCache.delete(d.holon);
+    void loadHexes($dockEntries);
   }
 
   function ring(cell: string): number[][] {
@@ -159,6 +296,10 @@
         });
         map.on("moveend", onViewChange);
         map.on("zoomend", onViewChange);
+        // The sky above relays its placed orbs out when the earth settles
+        // (the live sky re-projects every frame on its own).
+        map.on("moveend", () => onmove());
+        map.on("resize", () => onmove());
         // Cells lit by the selected lens — the dashboard map's highlighted
         // hexagons, in the same per-lens colour.
         map.addSource("lens-cells", {
@@ -181,8 +322,10 @@
             "line-opacity": 0.8,
           },
         });
-        // Two hexagon layers, like the dashboard map's upper/lower grids:
-        // the faint PARENT neighbourhood underneath, the exact cell on top.
+        // A board's PARENT neighbourhood, drawn invisibly: it is purely the
+        // tap target for "take me there" (see the click handler), because at
+        // country zoom a board's exact cell is far too small to hit. The orb
+        // hovering above it is the visual marker, so nothing is painted here.
         map.addSource("dock-parents", {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
@@ -191,18 +334,7 @@
           id: "dock-parents-fill",
           type: "fill",
           source: "dock-parents",
-          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.12 },
-        });
-        map.addLayer({
-          id: "dock-parents-line",
-          type: "line",
-          source: "dock-parents",
-          paint: {
-            "line-color": ["get", "color"],
-            "line-width": 2.5,
-            "line-opacity": 0.6,
-            "line-dasharray": [2, 2],
-          },
+          paint: { "fill-color": "#000000", "fill-opacity": 0 },
         });
         map.addSource("dock-cells", {
           type: "geojson",
@@ -222,6 +354,27 @@
             "line-color": ["get", "color"],
             "line-width": 3.5,
             "line-opacity": 0.9,
+          },
+        });
+        // The drop target's cell (see `highlight`), above the resting cells.
+        map.addSource("drop-cell", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "drop-cell-fill",
+          type: "fill",
+          source: "drop-cell",
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.75 },
+        });
+        map.addLayer({
+          id: "drop-cell-line",
+          type: "line",
+          source: "drop-cell",
+          paint: {
+            "line-color": resolveCssColor("var(--teal)"),
+            "line-width": 5,
+            "line-dasharray": [1.5, 1],
           },
         });
         // The click-selected cell, in the dashboard's selected-hexagon teal.
@@ -250,6 +403,7 @@
         // goToHex move); anywhere else it selects the tapped cell at the
         // current resolution, exactly like clicking the dashboard map.
         map.on("click", (e: any) => {
+          if (onbackdrop()) return; // the tap stood the dock's edit mode down
           const hits = map.queryRenderedFeatures(e.point, {
             layers: ["dock-parents-fill"],
           });
@@ -670,7 +824,7 @@
         type: "FeatureCollection",
         features: located.map((e) => ({
           type: "Feature",
-          properties: { color: paint(e.id) },
+          properties: { color: paint(e.id), id: e.id },
           geometry: { type: "Polygon", coordinates: [ring(e.hex)] },
         })),
       });
@@ -683,7 +837,7 @@
           return {
             type: "Feature",
             properties: {
-              color: paint(e.id),
+              id: e.id,
               hex: e.hex, // the tap-to-go-to target, not the parent itself
             },
             geometry: {
@@ -694,45 +848,32 @@
         }),
       });
 
-    for (const m of markers) m.remove();
-    markers = [];
-    for (const e of located) {
-      const [lat, lng] = cellToLatLng(e.hex);
-      const el = document.createElement("button");
-      el.className = "hexmark";
-      el.style.setProperty("--c", holonColor(e.id, $holonColors));
-      el.setAttribute("data-dock-circle", e.id);
-      el.setAttribute("aria-label", e.name);
-      const glyph = /[\p{L}\p{N}]/u.exec(e.name)?.[0]?.toUpperCase() ?? "·";
-      el.innerHTML =
-        `<span class="hexmark__face">${glyph}</span>` +
-        `<span class="hexmark__name"></span>`;
-      // Name via textContent — entry names are data, never markup.
-      el.querySelector(".hexmark__name")!.textContent = e.name;
-      el.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        requestOpen(e.id);
-      });
-      markers.push(
-        new mapboxglMod.Marker({ element: el, anchor: "center" })
-          .setLngLat([lng, lat])
-          .addTo(map),
-      );
-    }
-
+    // Frame the places once per cast — not on every colour or theme repaint,
+    // which would yank the earth out from under a sky someone is looking
+    // at. Headroom at the top: the orbs hover above their hexagons.
+    const key = located
+      .map((e) => e.id)
+      .sort()
+      .join("\n");
+    if (key === fittedKey) return;
+    fittedKey = key;
     if (located.length === 1) {
-      const [lat, lng] = cellToLatLng(located[0].hex);
-      const res = getResolution(located[0].hex);
-      map.jumpTo({ center: [lng, lat], zoom: Math.max(3, res + 3) });
+      const { lng, lat, hex } = located[0];
+      map.jumpTo({
+        center: [lng, lat],
+        zoom: Math.max(3, getResolution(hex) + 3),
+      });
     } else if (located.length > 1) {
       const bounds = new mapboxglMod.LngLatBounds();
-      for (const e of located) {
-        const [lat, lng] = cellToLatLng(e.hex);
-        bounds.extend([lng, lat]);
-      }
-      map.fitBounds(bounds, { padding: 120, maxZoom: 12, duration: 0 });
+      for (const e of located) bounds.extend([e.lng, e.lat]);
+      map.fitBounds(bounds, {
+        padding: { top: 200, bottom: 260, left: 90, right: 90 },
+        maxZoom: 12,
+        duration: 0,
+      });
     }
   }
+  let fittedKey = "";
 
   $: if (alive) void loadHexes($dockEntries);
 
@@ -773,6 +914,7 @@
 
   onMount(() => {
     if (MAPBOX_TOKEN) void initMap();
+    window.addEventListener("kiosk:hex-changed", onHexChanged);
     // The lens layer needs the shared holosphere; once it's up, reconcile
     // whatever the map is already showing (and any pre-selected cell).
     void getHolosphere().then((h) => {
@@ -784,12 +926,12 @@
   });
   onDestroy(() => {
     alive = false;
+    if (typeof window !== "undefined")
+      window.removeEventListener("kiosk:hex-changed", onHexChanged);
     teardownLensSubs();
     panelSub?.unsubscribe();
     panelSub = null;
     for (const timer of persistTimers.values()) clearTimeout(timer);
-    for (const m of markers) m.remove();
-    markers = [];
     try {
       map?.remove();
     } catch {}
@@ -909,20 +1051,31 @@
 </div>
 
 <style>
-  /* The wequest map card: a rounded, dark-grounded frame the basemap fills
-     edge to edge, with the hex grid dissolving before it reaches the rim
-     (see cellFade) and a soft vignette settling the satellite imagery into
-     the frame. */
+  /* The earth fills the sky's box edge to edge — the SAME box the gravity
+     field and the beacons are drawn in, so nothing has to translate between
+     map px and field px. No stacking context of its own: the lens chips and
+     the cell panel below rise above the orbs on the sky's z-order, so a
+     wandering orb never covers a chip. The hex grid dissolves before it
+     reaches the rim (see cellFade) and a soft vignette settles the satellite
+     imagery under the sky. */
   .mapwrap {
-    position: relative;
-    flex: 1;
-    min-height: 0;
-    margin: 0.4rem 1.2rem 0.6rem;
-    border-radius: calc(var(--radius) * 1.5);
+    position: absolute;
+    inset: 0;
     overflow: hidden;
     background: #1a2426;
-    box-shadow: var(--shadow-soft);
-    isolation: isolate;
+    /* How far the earth is washed back toward the paper. Per skin, because
+       the two washes do opposite things to the imagery: the dark skin's
+       near-black sinks it under the sky, while the light skin's cream at the
+       same strength bleached it out — so the day earth keeps most of its own
+       colour and leans on the vignette instead. */
+    --earth-wash: 22%;
+    --earth-saturate: 0.95;
+    --earth-vignette: rgba(10, 18, 20, 0.3);
+  }
+  :global(:root[data-theme="dark"]) .mapwrap {
+    --earth-wash: 58%;
+    --earth-saturate: 0.6;
+    --earth-vignette: rgba(10, 18, 20, 0.5);
   }
   .map {
     position: absolute;
@@ -932,21 +1085,29 @@
     content: "";
     position: absolute;
     inset: 0;
-    z-index: 2;
+    z-index: 1;
     pointer-events: none;
-    border-radius: inherit;
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-      inset 0 0 48px rgba(10, 18, 20, 0.45);
+    /* Washed back toward the paper: the earth is the ground the sky floats
+       over, and the orbs and their beams must read against it. */
+    background: color-mix(
+      in srgb,
+      var(--paper-deep) var(--earth-wash),
+      transparent
+    );
+    backdrop-filter: saturate(var(--earth-saturate));
+    box-shadow: inset 0 0 64px var(--earth-vignette);
   }
 
-  /* The lens chips: one horizontal, swipeable row along the bottom edge. */
+  /* The lens chips: one horizontal, swipeable row along the very bottom
+     edge — the first thing a thumb reaches. The dock reserves the row as
+     --dock-lens and stacks its tray above it, so the two never collide.
+     z 4 and up sit above the sky's field (z 2) — see DockView. */
   .lensbar {
     position: absolute;
     left: 0.9rem;
     right: 0.9rem;
-    bottom: 0.9rem;
-    z-index: 3;
+    bottom: calc(0.9rem + env(safe-area-inset-bottom));
+    z-index: 4;
     display: flex;
     gap: 0.4rem;
     overflow-x: auto;
@@ -992,8 +1153,8 @@
   .cellpanel {
     position: absolute;
     left: 0.9rem;
-    bottom: 4.2rem;
-    z-index: 4;
+    bottom: calc(var(--dock-tray, 0px) + 0.8rem);
+    z-index: 5;
     width: min(21rem, calc(100% - 6rem));
     max-height: 60%;
     overflow-y: auto;
@@ -1132,7 +1293,7 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    z-index: 2;
+    z-index: 5;
     margin: 0;
     max-width: 26rem;
     padding: 0.8rem 1.2rem;
@@ -1144,51 +1305,5 @@
     font-weight: 600;
     text-align: center;
     box-shadow: var(--shadow-soft);
-  }
-
-  /* The tappable board badge on its cell: a hexagon in the board's hue,
-     translucent fill + firm rim like the deck's orbs, name beneath. Global —
-     the elements are created imperatively as Mapbox markers. */
-  :global(.hexmark) {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  :global(.hexmark .hexmark__face) {
-    width: 3.4rem;
-    height: 3.4rem;
-    display: grid;
-    place-items: center;
-    clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%);
-    /* `--c` is the holon's colour — the same note as its dock orb, its board
-       wash and its cards (lib/palette). */
-    background: color-mix(in srgb, var(--c, var(--teal)) 78%, transparent);
-    /* clip-path eats a real border — fake the rim with an inset shadow. */
-    box-shadow: inset 0 0 0 3px
-      color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
-    color: var(--ink);
-    font-size: 1.3rem;
-    font-weight: 800;
-  }
-  :global(.hexmark:active .hexmark__face) {
-    transform: scale(0.93);
-  }
-  :global(.hexmark .hexmark__name) {
-    max-width: 8.5rem;
-    padding: 0.12rem 0.5rem;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
-    font-size: 0.74rem;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 </style>

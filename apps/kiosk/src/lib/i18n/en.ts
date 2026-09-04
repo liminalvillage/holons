@@ -305,13 +305,11 @@ export const en = {
   "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
   "dock.hint":
-    "Tap a circle to open its hub, hold one to remove it — drag one onto another to federate them.",
+    "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
   "dock.map": "Geosphere",
-  "dock.mapHint":
-    "Tap a hexagon to open its hub — a hub claims its place in Settings → Set location.",
   "dock.mapUnavailable":
-    "The geosphere needs a Mapbox token — set VITE_MAPBOX_TOKEN to show it.",
+    "Showing the earth needs a Mapbox token — set VITE_MAPBOX_TOKEN to turn it on.",
 
   // Map lens layer (dashboard-aligned: same lenses, same colours)
   "map.lensAria": "Choose a lens",
@@ -523,12 +521,13 @@ export const en = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
-  "fed.pairHint": "Receive = {a} shows {b}'s items · Send = {a} shares its own",
-  "fed.lensAria": "{lens} federation",
-  "fed.off": "Off",
-  "fed.receive": "Receive",
-  "fed.send": "Send",
-  "fed.both": "Both",
+  "fed.arrowHint":
+    "Tap the arrow toward the holon items should travel to. Tap it again to close that way.",
+  "fed.notLinked": "Not federated — tap an arrow to open the first flow.",
+  "fed.flowsOpen": { one: "{n} flow open", other: "{n} flows open" },
+  "fed.all": "All",
+  "fed.sendAria": "{lens}: send from {a} to {b}",
+  "fed.receiveAria": "{lens}: receive from {b} into {a}",
   "fed.tapAgainUnlink": "Tap again to unlink",
   "fed.unlink": "Unlink {name}",
   "fed.linkError": "Could not link that holon — try again.",
@@ -554,6 +553,10 @@ export const en = {
     "No geolocation on this device — tap the map or paste a cell id.",
   "hex.denied": "Location denied — tap the map or paste a cell id.",
   "hex.invalidCell": "That's not a valid H3 cell id.",
+  "hex.moveTitle": "Move {name} here?",
+  "hex.moveBody":
+    "This hexagon becomes its home, and its beacon lands here from now on.",
+  "hex.moveConfirm": "Move home here",
   "hex.claimed": "Location claimed — this holon is on the map.",
   "hex.saveError": "Could not save the location — try again.",
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import {
+  beaconPath,
+  beaconTangents,
   boundsPath,
   convexHull,
   hueFor,
@@ -8,14 +10,17 @@ import {
   lensPath,
   linksAmong,
   orbClusters,
+  LINK_MAX_GAP,
   orbLayout,
   orbPositions,
+  orbUnder,
   parseDock,
   removeEntry,
   seedOrbs,
   segmentFor,
   stepOrbs,
   syncOrbs,
+  renameEntry,
   upsertEntry,
   type DockEntry,
 } from "./dock";
@@ -71,6 +76,38 @@ describe("upsertEntry", () => {
   it("falls back to the registered label, then the id, for a new nameless board", () => {
     expect(upsertEntry([], "-1003864542239", "")[0].name).toBe("Liminal");
     expect(upsertEntry([], "-42", "")[0].name).toBe("-42");
+  });
+});
+
+describe("renameEntry", () => {
+  it("sets a resolved name", () => {
+    const list = [entry("-1", "-1")];
+    expect(renameEntry(list, "-1", "Liminal Village")[0].name).toBe(
+      "Liminal Village",
+    );
+  });
+
+  it("falls back to the id/label when the holon resolves no name", () => {
+    expect(renameEntry([entry("-42", "Borrowed")], "-42", "")[0].name).toBe(
+      "-42",
+    );
+    const known = renameEntry(
+      [entry("-1003864542239", "Borrowed")],
+      "-1003864542239",
+      "  ",
+    );
+    expect(known[0].name).toBe("Liminal");
+  });
+
+  it("keeps `at` and the list identity when nothing changes", () => {
+    const list = [entry("-1", "One", 7)];
+    expect(renameEntry(list, "-1", "One")).toBe(list);
+    expect(renameEntry(list, "-1", "Two")[0].at).toBe(7);
+  });
+
+  it("is a no-op for a board that isn't docked", () => {
+    const list = [entry("-1", "One")];
+    expect(renameEntry(list, "-2", "Two")).toBe(list);
   });
 });
 
@@ -131,6 +168,45 @@ describe("orbClusters", () => {
       ["-1", "-2", "-3"],
       ["-4"],
     ]);
+  });
+});
+
+describe("orbUnder (what a drop lands on)", () => {
+  const r = 50;
+  const positions = new Map([
+    ["-1", { x: 100, y: 100 }],
+    ["-2", { x: 220, y: 100 }],
+  ]);
+
+  it("matches only when the pointer is inside the orb", () => {
+    expect(orbUnder(positions, { x: 210, y: 100 }, "-1", r)).toBe("-2");
+    expect(orbUnder(positions, { x: 165, y: 100 }, "-1", r)).toBe(null);
+  });
+
+  it("never matches the carried orb itself", () => {
+    expect(orbUnder(positions, { x: 100, y: 100 }, "-1", r)).toBe(null);
+  });
+
+  it("ignores a federated partner towed along at the link's full reach", () => {
+    // linkOverlap holds a partner within LINK_MAX_GAP radii of the carried
+    // orb for the whole drag. At that reach the finger is over the ground,
+    // so the drop must fall through to the hexagon beneath it.
+    const towed = new Map([
+      ["-1", { x: 100, y: 100 }],
+      ["-2", { x: 100 + r * LINK_MAX_GAP, y: 100 }],
+    ]);
+    expect(orbUnder(towed, { x: 100, y: 100 }, "-1", r)).toBe(null);
+    // A capture radius as wide as the leash matched it on every frame — the
+    // drop that could never land on the ground.
+    expect(orbUnder(towed, { x: 100, y: 100 }, "-1", 2 * r)).toBe("-2");
+  });
+
+  it("picks the nearest of two overlapping candidates", () => {
+    const tight = new Map([
+      ["-2", { x: 120, y: 100 }],
+      ["-3", { x: 140, y: 100 }],
+    ]);
+    expect(orbUnder(tight, { x: 135, y: 100 }, "-1", r)).toBe("-3");
   });
 });
 
@@ -292,5 +368,185 @@ describe("hueFor", () => {
 
   it("separates different ids (spot check)", () => {
     expect(hueFor("-1003864542239")).not.toBe(hueFor("-1001652773351"));
+  });
+});
+
+describe("anchors (the earth beneath the sky)", () => {
+  const r = 50;
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+
+  it("settles a lone anchored orb on its anchor", () => {
+    const anchors = new Map([["-1", { x: 600, y: 120 }]]);
+    const p = orbLayout(["-1"], [], 800, 500, r, anchors).get("-1")!;
+    expect(p.x).toBeCloseTo(600, 0);
+    expect(p.y).toBeCloseTo(120, 0);
+  });
+
+  it("keeps an orb inside the field when its anchor is off-screen", () => {
+    const anchors = new Map([["-1", { x: 1400, y: -300 }]]);
+    const p = orbLayout(["-1"], [], 800, 500, r, anchors).get("-1")!;
+    // Clamped to the pad (1.3 radii) on the edge nearest the place.
+    expect(p.x).toBeCloseTo(800 - r * 1.3, 5);
+    expect(p.y).toBeCloseTo(r * 1.3, 5);
+  });
+
+  it("keeps two placed orbs overlapping, each leaning toward its own place", () => {
+    const anchors = new Map([
+      ["-1", { x: 200, y: 200 }],
+      ["-2", { x: 600, y: 200 }],
+    ]);
+    const pos = orbLayout(["-1", "-2"], [["-1", "-2"]], 800, 500, r, anchors);
+    // Federated means overlapping — the places bend, the beacons still point
+    // home (each orb sits on its own side of the pair).
+    expect(dist(pos.get("-1")!, pos.get("-2")!)).toBeLessThanOrEqual(
+      r * LINK_MAX_GAP + 0.5,
+    );
+    expect(pos.get("-1")!.x).toBeLessThan(pos.get("-2")!.x);
+    expect(lensPath(pos.get("-1")!, pos.get("-2")!, r)).not.toBe("");
+  });
+
+  it("a spring with one free end pulls that partner alongside", () => {
+    const anchors = new Map([["-1", { x: 600, y: 150 }]]);
+    const pos = orbLayout(["-1", "-2"], [["-1", "-2"]], 800, 500, r, anchors);
+    expect(dist(pos.get("-1")!, { x: 600, y: 150 })).toBeLessThan(6);
+    expect(dist(pos.get("-1")!, pos.get("-2")!)).toBeLessThan(2 * r);
+  });
+
+  it("an anchored orb still stands off an unplaced neighbour", () => {
+    const anchors = new Map([["-1", { x: 400, y: 250 }]]);
+    const pos = orbLayout(["-1", "-2"], [], 800, 500, r, anchors);
+    expect(dist(pos.get("-1")!, { x: 400, y: 250 })).toBeLessThan(2 * r);
+    expect(dist(pos.get("-1")!, pos.get("-2")!)).toBeGreaterThan(2 * r);
+  });
+
+  it("spreads orbs parked at the edge by far-away places", () => {
+    // The pull toward a place grows with the distance to it, so a place far
+    // enough outside the view slams its orb into the boundary with a force no
+    // repulsion can answer. Several such places drove every one of their orbs
+    // onto the SAME pixel, and only the top of the pile could be tapped.
+    const far = new Map([
+      ["-1", { x: 9000, y: 9000 }],
+      ["-2", { x: 12000, y: 9000 }],
+      ["-3", { x: 15000, y: 9000 }],
+    ]);
+    const corner = new Map([
+      ["-1", { x: 1900, y: -400 }],
+      ["-2", { x: 2400, y: -900 }],
+      ["-3", { x: 3100, y: -1500 }],
+    ]);
+    for (const anchors of [far, corner]) {
+      const ids = ["-1", "-2", "-3"];
+      const pos = orbLayout(ids, [], 800, 500, r, anchors);
+      const pts = ids.map((id) => pos.get(id)!);
+      for (const p of pts) {
+        expect(p.x).toBeGreaterThanOrEqual(r * 1.3 - 0.5);
+        expect(p.x).toBeLessThanOrEqual(800 - r * 1.3 + 0.5);
+      }
+      for (let i = 0; i < pts.length; i++)
+        for (let j = i + 1; j < pts.length; j++)
+          expect(dist(pts[i], pts[j])).toBeGreaterThan(2 * r);
+    }
+  });
+
+  it("is deterministic with anchors", () => {
+    const anchors = new Map([["-2", { x: 100, y: 400 }]]);
+    expect(orbLayout(["-1", "-2", "-3"], [], 800, 500, r, anchors)).toEqual(
+      orbLayout(["-1", "-2", "-3"], [], 800, 500, r, anchors),
+    );
+  });
+
+  it("holds every link of a placed hub overlapping", () => {
+    const ids = ["-1", "-2", "-3", "-4"];
+    const links: [string, string][] = [
+      ["-1", "-2"],
+      ["-1", "-3"],
+      ["-1", "-4"],
+    ];
+    const anchors = new Map([
+      ["-1", { x: 400, y: 250 }],
+      ["-2", { x: 80, y: 80 }],
+      ["-3", { x: 720, y: 420 }],
+    ]);
+    const pos = orbLayout(ids, links, 800, 500, r, anchors);
+    for (const [a, b] of links)
+      expect(dist(pos.get(a)!, pos.get(b)!)).toBeLessThanOrEqual(
+        r * LINK_MAX_GAP + 0.5,
+      );
+  });
+
+  it("never moves the lifted orb to close a gap — the partner comes to it", () => {
+    const sim = seedOrbs(["-1", "-2"], 800, 500);
+    sim.px[0] = 100;
+    sim.py[0] = 100;
+    sim.px[1] = 700;
+    sim.py[1] = 420;
+    for (let i = 0; i < 200; i++)
+      stepOrbs(sim, [["-1", "-2"]], 800, 500, r, undefined, "-1");
+    expect(sim.px[0]).toBe(100);
+    expect(sim.py[0]).toBe(100);
+    expect(Math.hypot(sim.px[1] - 100, sim.py[1] - 100)).toBeLessThanOrEqual(
+      r * LINK_MAX_GAP + 0.5,
+    );
+  });
+
+  it("a lifted orb ignores its anchor", () => {
+    const sim = seedOrbs(["-1"], 800, 500);
+    const before = { x: sim.px[0], y: sim.py[0] };
+    const anchors = new Map([["-1", { x: 700, y: 50 }]]);
+    for (let i = 0; i < 50; i++)
+      stepOrbs(sim, [], 800, 500, r, undefined, "-1", anchors);
+    expect(sim.px[0]).toBe(before.x);
+    expect(sim.py[0]).toBe(before.y);
+  });
+});
+
+describe("beaconPath", () => {
+  const nums = (d: string) =>
+    d.replace(/[MLZ]/g, " ").trim().split(/\s+/).map(Number);
+
+  it("touches the orb at two tangent points and lands on the ground", () => {
+    const orb = { x: 300, y: 200 };
+    const ground = { x: 420, y: 480 };
+    const [x1, y1, gx, gy, x2, y2] = nums(beaconPath(orb, ground, 52));
+    expect(Math.hypot(x1 - orb.x, y1 - orb.y)).toBeCloseTo(52, 0);
+    expect(Math.hypot(x2 - orb.x, y2 - orb.y)).toBeCloseTo(52, 0);
+    expect(gx).toBe(420);
+    expect(gy).toBe(480);
+    // A tangent is perpendicular to its radius.
+    const dot = (x1 - orb.x) * (x1 - ground.x) + (y1 - orb.y) * (y1 - ground.y);
+    expect(Math.abs(dot)).toBeLessThan(52 * 0.5);
+  });
+
+  it("is symmetric about the orb → ground line, in any direction", () => {
+    for (const ground of [
+      { x: 300, y: 600 },
+      { x: 300, y: -100 },
+      { x: 20, y: 200 },
+    ]) {
+      const orb = { x: 300, y: 200 };
+      const [x1, y1, , , x2, y2] = nums(beaconPath(orb, ground, 40));
+      const mx = (x1 + x2) / 2 - orb.x;
+      const my = (y1 + y2) / 2 - orb.y;
+      const cross = mx * (ground.y - orb.y) - my * (ground.x - orb.x);
+      expect(Math.abs(cross)).toBeLessThan(40);
+    }
+  });
+
+  it("hangs from the same two shoulders beaconTangents reports", () => {
+    const orb = { x: 300, y: 200 };
+    const ground = { x: 420, y: 480 };
+    const [t1, t2] = beaconTangents(orb, ground, 52)!;
+    const [x1, y1, , , x2, y2] = nums(beaconPath(orb, ground, 52));
+    expect([x1, y1, x2, y2]).toEqual([t1.x, t1.y, t2.x, t2.y]);
+    expect(beaconTangents(orb, { x: 310, y: 210 }, 52)).toBeNull();
+  });
+
+  it("is empty when the ground is under the orb or the radius is off", () => {
+    const orb = { x: 100, y: 100 };
+    expect(beaconPath(orb, { x: 110, y: 120 }, 50)).toBe("");
+    expect(beaconPath(orb, { x: 100, y: 100 }, 50)).toBe("");
+    expect(beaconPath(orb, { x: 150, y: 100 }, 50)).toBe("");
+    expect(beaconPath(orb, { x: 400, y: 100 }, 0)).toBe("");
   });
 });
