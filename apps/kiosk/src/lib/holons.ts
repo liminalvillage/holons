@@ -38,8 +38,8 @@ export const SUBDOMAIN_HOLONS: Record<string, string> = {
   civic: "-5349529224",
   lunation80: "-1003711659317",
   armoniaduale: "-1004310409791",
-  commons: "-5459621960",
-  valley: "-5459621960",
+  commons: "-1003691108237",
+  valley: "-1003691108237",
 };
 
 /**

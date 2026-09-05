@@ -33,7 +33,7 @@ P2P mesh. Three things:
      "pubkey":     "<64 hex>",
      "created_at": 1756900000,
      "kind":       30078,
-     "tags":       [["h","-5459621960"],["l","quests"],["d","…"],["n","Holons"]],
+     "tags":       [["h","-1003691108237"],["l","quests"],["d","…"],["n","Holons"]],
      "content":    "<any string; Holons puts JSON here>",
      "sig":        "<schnorr signature over id>"
    }
@@ -59,7 +59,7 @@ P2P mesh. Three things:
 
 **Filters** (fields AND together; several filters in one REQ OR together):
 `ids`, `authors`, `kinds`, `#<letter>`, `since`, `until`, `limit`.
-Example: `{"kinds":[30078],"#h":["-5459621960"],"#l":["quests"],"#n":["Holons"]}`.
+Example: `{"kinds":[30078],"#h":["-1003691108237"],"#l":["quests"],"#n":["Holons"]}`.
 
 **Kind ranges** decide how relays store an event:
 
@@ -95,7 +95,7 @@ tag. Deletion requests are kind 5 (NIP-09) and are advisory.
 
 **Tooling**
 - `nak` — CLI for events/relays (https://github.com/fiatjaf/nak):
-  `nak req -k 30078 -t h=-5459621960 -t n=Holons wss://relay.holons.io`
+  `nak req -k 30078 -t h=-1003691108237 -t n=Holons wss://relay.holons.io`
 - `nostr-tools` — the JS library the repo uses (`nostr-tools/pure`, `SimplePool`).
 - strfry — the relay software behind `relay.holons.io` (https://github.com/hoytech/strfry).
 - Elinor docs, the shifts format we interoperate with: https://elinor.commonshub.dev/docs
@@ -106,7 +106,7 @@ tag. Deletion requests are kind 5 (NIP-09) and are advisory.
 
 ### 2.1 Vocabulary
 - **Holon** — a group. Its id is the Telegram chat id (Commons Hub:
-  `-5459621960`) or, for key-based identities, the user's pubkey hex.
+  `-1003691108237`) or, for key-based identities, the user's pubkey hex.
 - **Lens** — a named collection inside a holon: `quests`, `users`, `offers`,
   `checklists`, `shopping`, `library`, `roles`, `settings`, `events`, …
 - **Record / item** — a JSON object with an `id` inside a lens.
@@ -316,8 +316,8 @@ and maps it to a holon in `apps/kiosk/src/lib/holons.ts`:
 ```ts
 export const SUBDOMAIN_HOLONS: Record<string, string> = {
   …
-  commons: "-5459621960",   // commons.hubs.network
-  valley:  "-5459621960",   // valley.hubs.network — same holon
+  commons: "-1003691108237",   // commons.hubs.network
+  valley:  "-1003691108237",   // valley.hubs.network — same holon
 };
 ```
 An unregistered subdomain is read as the holon id itself
@@ -381,7 +381,7 @@ voice variables; server functions read `TELEGRAM_OIDC_*`, `AUTH_JWT_SECRET`,
 ```bash
 pnpm install
 pnpm -F @holons/core build        # apps consume core's compiled dist — rebuild after any core change
-pnpm -F kiosk dev                 # http://localhost:5273 → open /commons or /-5459621960
+pnpm -F kiosk dev                 # http://localhost:5273 → open /commons or /-1003691108237
 pnpm -F kiosk test                # vitest (holons, taborder, shifts, scope, data …)
 pnpm -F kiosk typecheck && pnpm -F kiosk lint
 pnpm -r typecheck && pnpm test && pnpm lint     # the gate before "done"
@@ -524,7 +524,7 @@ createIdentityContext({ derivationSecret }): { memberSigner, memberPubkey, provi
 2. Run it: build core, `pnpm -F kiosk dev`, open `/commons`. In the console
    check `__kiosk.nostrRelays()` and `await __kiosk.listHolons()`. Watch a
    write arrive:
-   `nak req -k 30078 -t h=-5459621960 -t n=Holons --stream wss://relay.holons.io`.
+   `nak req -k 30078 -t h=-1003691108237 -t n=Holons --stream wss://relay.holons.io`.
 3. Run the tests: `pnpm -r typecheck && pnpm test`, then read
    `packages/holosphere/test/nostr-backend.test.js`, `relay-sync.test.js` and
    `test/store/*.test.js` to see the contracts.
@@ -635,7 +635,7 @@ Let's Encrypt and WebSocket passthrough; needs public DNS and ports 80/443
 **Backups and seeding.**
 ```bash
 strfry export > /backup/events-$(date +%F).jsonl                 # nightly; restore with `strfry import`
-strfry sync wss://relay.holons.io --filter '{"kinds":[30078],"#h":["-5459621960"]}'   # negentropy seed
+strfry sync wss://relay.holons.io --filter '{"kinds":[30078],"#h":["-1003691108237"]}'   # negentropy seed
 ```
 
 **Point the apps at it:** comma-separated relay list — `VITE_KIOSK_RELAYS`
