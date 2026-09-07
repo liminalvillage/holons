@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
-import { parseShiftOccurrence, parseShiftRsvp } from '@holons/core/shifts';
+import {
+  SHIFTS_LENS,
+  SHIFT_IDENTITY_LENS,
+  SHIFT_RSVP_LENS,
+  decodeShiftEvent,
+  parseShiftOccurrence,
+  parseShiftRsvp,
+} from '@holons/core/shifts';
 import Shifts, { shiftRelaysFromEnv } from '../src/Shifts.js';
 
 const SECRET = 'test-derivation-secret';
@@ -8,7 +15,7 @@ const COORD =
   '3f432836bece7b0a06dcbaef023f113fdcb10f96fbf98f35dd2e3b3a3c0e2dcb';
 const GROUP = '-5459621960';
 
-const occurrence = parseShiftOccurrence({
+const OCC_EVENT = {
   content: '',
   created_at: 1788078250,
   id: 'occ1',
@@ -25,25 +32,19 @@ const occurrence = parseShiftOccurrence({
     ['t', 'dp'],
     ['t', `group-${GROUP}`],
   ],
-});
+};
+const occurrence = parseShiftOccurrence(OCC_EVENT);
+/** The same occurrence as the lens record the wire decodes it into. */
+const occRecord = decodeShiftEvent(OCC_EVENT)[0].item;
+const OCC_ID = `${occurrence.date}-${occurrence.code}`;
 
-/** In-memory stand-in for the core relay client. */
+/**
+ * In-memory stand-in for the relay client. Publishing ONLY: the schedule is
+ * lens data now and comes from `fakeDb`.
+ */
 function fakeClient() {
-  const rsvps = [];
-  const attestations = [];
   return {
     relays: ['wss://fake'],
-    rsvps,
-    attestations,
-    fetchOccurrences: vi.fn(async () => [occurrence]),
-    fetchRsvps: vi.fn(async () => rsvps.slice()),
-    fetchSchedule: vi.fn(async () => ({
-      occurrences: [occurrence],
-      rsvps: rsvps.slice(),
-    })),
-    fetchAttestations: vi.fn(async ({ participants }) =>
-      attestations.filter(a => a.pubkeys.some(pk => participants.includes(pk)))
-    ),
     publishRsvp: vi.fn(async ({ occurrence: occ, status, previous }) => {
       // The real client signs; here we just record what a verified event would parse to.
       const created_at = previous ? previous.createdAt + 1 : 1000;
@@ -65,14 +66,19 @@ function fakeClient() {
   };
 }
 
-function ctxFor(userId, callbackData) {
+/**
+ * `text` matters now: the schedule is filtered by the command's range, where
+ * the old fake client ignored it and always returned the fixture. The
+ * occurrence sits on 2026-08-30, so a render test asks for that day.
+ */
+function ctxFor(userId, callbackData, text = '/shifts') {
   return {
     chat: { id: Number(GROUP) },
     from: { id: userId },
     match: callbackData
       ? [callbackData, callbackData.replace(/^shift_(take|drop)_/, '')]
       : undefined,
-    message: { text: '/shifts' },
+    message: { text },
     callbackQuery: {
       message: {
         chat: { id: Number(GROUP) },
@@ -86,12 +92,54 @@ function ctxFor(userId, callbackData) {
   };
 }
 
-const db = {
-  getAll: async () => [
-    { id: 1, first_name: 'Alice' },
-    { id: 2, first_name: 'Bob' },
-  ],
-};
+// A signup and an attestation as the LENS RECORDS the wires decode them into.
+// The tests still speak the protocol shapes, which is what the bot renders.
+const rsvpRecord = r => ({
+  id: `${OCC_ID}|${r.pubkey}`,
+  occurrence: OCC_ID,
+  dTag: r.dTag,
+  pubkey: r.pubkey,
+  status: r.status,
+  address: r.address,
+  createdAt: r.createdAt,
+  ...(r.changedBy ? { changedBy: r.changedBy } : {}),
+  eventId: r.id,
+});
+const attRecord = a => ({
+  ...a,
+  id: `${a.provider}|${a.identifier}`,
+  eventId: a.id,
+});
+
+/**
+ * The holon's store: the users lens the bot names members from, plus the three
+ * shift lenses the schedule is read from.
+ */
+function fakeDb() {
+  const rsvps = [];
+  const attestations = [];
+  let identityFails = false;
+  return {
+    rsvps,
+    attestations,
+    /** Make the global identity read fail, as an unreachable relay would. */
+    breakIdentity: () => {
+      identityFails = true;
+    },
+    getAll: async (_holon, lens) => {
+      if (lens === SHIFTS_LENS) return [occRecord];
+      if (lens === SHIFT_RSVP_LENS) return rsvps.map(rsvpRecord);
+      return [
+        { id: 1, first_name: 'Alice' },
+        { id: 2, first_name: 'Bob' },
+      ];
+    },
+    getAllGlobal: async lens => {
+      if (identityFails) throw new Error('relay down');
+      return lens === SHIFT_IDENTITY_LENS ? attestations.map(attRecord) : [];
+    },
+  };
+}
 
 describe('shiftRelaysFromEnv', () => {
   it('prefers SHIFTS_RELAYS, then HOLOSPHERE_RELAYS, then the default', () => {
@@ -109,8 +157,9 @@ describe('shiftRelaysFromEnv', () => {
 describe('Shifts', () => {
   it('renders the schedule with names resolved from derived keys', async () => {
     const client = fakeClient();
+    const db = fakeDb();
     const alice = deriveTelegramNostrKey(1, SECRET).publicKey;
-    client.rsvps.push(
+    db.rsvps.push(
       parseShiftRsvp({
         kind: 31925,
         pubkey: alice,
@@ -126,7 +175,7 @@ describe('Shifts', () => {
       })
     );
     const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
-    const ctx = ctxFor(2);
+    const ctx = ctxFor(2, undefined, '/shifts 2026-08-30');
     await shifts.list(ctx);
     const [text, extra] = ctx.reply.mock.calls[0];
     expect(text).toContain('Dinner Preparation');
@@ -143,10 +192,11 @@ describe('Shifts', () => {
 
   it('names Elinor-side participants from 31926 attestations, local lens winning', async () => {
     const client = fakeClient();
+    const db = fakeDb();
     const alice = deriveTelegramNostrKey(1, SECRET).publicKey;
     const stranger = 'e'.repeat(64);
     for (const pk of [alice, stranger]) {
-      client.rsvps.push(
+      db.rsvps.push(
         parseShiftRsvp({
           kind: 31925,
           pubkey: pk,
@@ -162,7 +212,7 @@ describe('Shifts', () => {
         })
       );
     }
-    client.attestations.push(
+    db.attestations.push(
       // Elinor's coordinator knows the stranger…
       {
         provider: COORD,
@@ -191,25 +241,25 @@ describe('Shifts', () => {
       derivationSecret: SECRET,
       coordinatorPubkey: COORD,
     });
-    const ctx = ctxFor(2);
+    const ctx = ctxFor(2, undefined, '/shifts 2026-08-30');
     await shifts.list(ctx);
     const [text] = ctx.reply.mock.calls[0];
     expect(text).toContain('Carol');
     expect(text).toContain('Alice');
     expect(text).not.toContain('Not Alice');
     expect(text).not.toContain(`${stranger.slice(0, 8)}…`);
-    // Every signup author is looked up — even lens-named members need their
-    // sibling keys linked for the person-identity collapse.
-    expect(client.fetchAttestations.mock.calls[0][0].participants).toEqual([
-      alice,
-      stranger,
-    ]);
+    // The whole directory is read, not just our members: a lens-named member
+    // still needs their sibling keys linked for the person-identity collapse,
+    // and a stranger is named from it alone.
+    expect(text).toContain('Alice');
+    expect(text).toContain('Carol');
   });
 
   it('falls back to hex prefixes when the attestation fetch fails', async () => {
     const client = fakeClient();
+    const db = fakeDb();
     const stranger = 'e'.repeat(64);
-    client.rsvps.push(
+    db.rsvps.push(
       parseShiftRsvp({
         kind: 31925,
         pubkey: stranger,
@@ -224,15 +274,16 @@ describe('Shifts', () => {
         ],
       })
     );
-    client.fetchAttestations.mockRejectedValueOnce(new Error('relay down'));
+    db.breakIdentity();
     const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
-    const ctx = ctxFor(2);
+    const ctx = ctxFor(2, undefined, '/shifts 2026-08-30');
     await shifts.list(ctx);
     expect(ctx.reply.mock.calls[0][0]).toContain(`${stranger.slice(0, 8)}…`);
   });
 
   it("publishes an accepted RSVP with the tapping user's key and refreshes", async () => {
     const client = fakeClient();
+    const db = fakeDb();
     const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
     const ctx = ctxFor(2, `shift_take_${occurrence.dTag}`);
     await shifts.rsvp(ctx, 'accepted');
@@ -251,8 +302,9 @@ describe('Shifts', () => {
 
   it('refuses to sign up when the shift is full', async () => {
     const client = fakeClient();
+    const db = fakeDb();
     for (const id of [10, 11]) {
-      client.rsvps.push(
+      db.rsvps.push(
         parseShiftRsvp({
           kind: 31925,
           pubkey: deriveTelegramNostrKey(id, SECRET).publicKey,
@@ -280,9 +332,10 @@ describe('Shifts', () => {
     // taps ❌ Drop here — the bot signs with the member's DERIVED key, and
     // the 31926 attestation is what makes them the same person.
     const client = fakeClient();
+    const db = fakeDb();
     const elinorKey = 'e'.repeat(64);
     const derived = deriveTelegramNostrKey(2, SECRET).publicKey;
-    client.rsvps.push(
+    db.rsvps.push(
       parseShiftRsvp({
         kind: 31925,
         pubkey: elinorKey,
@@ -297,7 +350,7 @@ describe('Shifts', () => {
         ],
       })
     );
-    client.attestations.push({
+    db.attestations.push({
       provider: COORD,
       identifier: 'telegram:2',
       platform: 'telegram',
@@ -331,6 +384,7 @@ describe('Shifts', () => {
 
   it('ignores callbacks for another group and refuses without a derivation secret', async () => {
     const client = fakeClient();
+    const db = fakeDb();
     const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
     const foreign = ctxFor(2, 'shift_take_shift--999-2026-08-30-dp');
     await shifts.rsvp(foreign, 'accepted');

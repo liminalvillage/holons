@@ -128,6 +128,17 @@ export default function createHoloSphere(appName, options = {}) {
     privateKey,
     relays,
     store,
+    // Shifts are NOT carried on the kind-30078 envelope: occurrences, signups
+    // and the identity directory are the standard NIP-52 / kind-31926 events
+    // Elinor already publishes, decoded straight into lenses. Reading them
+    // needs relay.commonshub.dev in HOLOSPHERE_RELAYS — it is in the default
+    // set, so only an explicit override has to include it.
+    standardWires: {
+      shifts: {
+        coordinatorPubkey: process.env.SHIFTS_COORDINATOR_PUBKEY || undefined,
+      },
+      shiftIdentity: {},
+    },
     nostr: projectionOptions,
     extra: { logLevel: logLevel || 'INFO', ...extra },
   });

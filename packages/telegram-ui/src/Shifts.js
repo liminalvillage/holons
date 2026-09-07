@@ -32,8 +32,12 @@
 import { Markup } from 'telegraf';
 import { createIdentityContext } from '@holons/core/holosphere';
 import {
+  SHIFTS_LENS,
+  SHIFT_IDENTITY_LENS,
+  SHIFT_RSVP_LENS,
   attestationIdentityMap,
   attestationNameMap,
+  attestationsFrom,
   createShiftRelayClient,
   enrolledPubkeys,
   formatShiftTime,
@@ -41,6 +45,9 @@ import {
   isEnrolled,
   latestRsvpFor,
   parseShiftDTag,
+  sortOccurrences,
+  toOccurrence,
+  toRsvp,
 } from '@holons/core/shifts';
 import { getDisplayName, getParseModeHTML, getholonId } from './utilities.js';
 
@@ -88,6 +95,9 @@ export default class Shifts {
       .split(',')
       .map(p => p.trim())
       .filter(Boolean);
+    // Publishing only. The schedule is lens data (see `readSchedule`); a
+    // signup still goes out through the protocol, because the rule behind it
+    // — newest across a person's linked keys — is not a per-address write.
     this.client =
       options.client ??
       createShiftRelayClient({
@@ -110,6 +120,42 @@ export default class Shifts {
   // ---------------------------------------------------------------------
   // Identity helpers
   // ---------------------------------------------------------------------
+
+  /**
+   * The schedule for a holon, read from the lenses.
+   *
+   * Occurrences, signups and the kind-31926 identity directory are ordinary
+   * Holosphere records now (see the wires in `@holons/core/shifts`), so this
+   * reads the store instead of holding a second relay client. The shape is
+   * exactly what `fetchSchedule` returned, so rendering is untouched.
+   *
+   * @param {string|number} holonId
+   * @param {{since?: number, until?: number}} [range]
+   * @returns {Promise<{occurrences: object[], rsvps: object[], attestations: object[]}>}
+   */
+  async readSchedule(holonId, range = {}) {
+    const holon = String(holonId);
+    const [occ, rsv, dir] = await Promise.all([
+      this.db.getAll(holon, SHIFTS_LENS).catch(() => []),
+      this.db.getAll(holon, SHIFT_RSVP_LENS).catch(() => []),
+      this.db.getAllGlobal(SHIFT_IDENTITY_LENS).catch(() => []),
+    ]);
+    const since = range.since ?? 0;
+    const until = range.until ?? Infinity;
+    return {
+      // The window is applied here rather than in a subscription: the lens
+      // holds the whole schedule, and each command asks for its own range.
+      occurrences: sortOccurrences(
+        (occ || [])
+          .filter(o => o && o.start >= since && o.start <= until)
+          .map(toOccurrence)
+      ),
+      // A request published on someone's behalf is not occupancy — the real
+      // signup follows under that member's own key.
+      rsvps: (rsv || []).filter(r => r && !r.request).map(toRsvp),
+      attestations: attestationsFrom(dir || []),
+    };
+  }
 
   /**
    * The shift directory for a schedule:
@@ -138,25 +184,20 @@ export default class Shifts {
       const pubkey = this.identity.memberPubkey(user.id);
       if (pubkey) names.set(pubkey, getDisplayName(user));
     }
-    // Attestations for EVERY signup author — even a lens-named member needs
-    // their sibling keys linked for the identity collapse to work.
-    const authors = [...new Set((schedule?.rsvps || []).map(r => r.pubkey))];
-    if (authors.length && typeof this.client.fetchAttestations === 'function') {
-      try {
-        const atts = await this.client.fetchAttestations({
-          participants: authors,
-        });
-        const opts = {
-          coordinatorPubkey: this.coordinatorPubkey,
-          blockedProviders: this.blockedProviders,
-        };
-        for (const [pk, name] of attestationNameMap(atts, opts)) {
-          if (!names.has(pk)) names.set(pk, name);
-        }
-        identity = attestationIdentityMap(atts, opts);
-      } catch (err) {
-        console.warn('[Shifts] attestation lookup failed', err?.message || err);
+    // Attestations ride the schedule now — they are lens records read
+    // alongside the occurrences, so no second lookup is needed. Every signup
+    // author matters here, not just our members: a lens-named member still
+    // needs their sibling keys linked for the identity collapse to work.
+    const atts = schedule?.attestations || [];
+    if (atts.length) {
+      const opts = {
+        coordinatorPubkey: this.coordinatorPubkey,
+        blockedProviders: this.blockedProviders,
+      };
+      for (const [pk, name] of attestationNameMap(atts, opts)) {
+        if (!names.has(pk)) names.set(pk, name);
       }
+      identity = attestationIdentityMap(atts, opts);
     }
     return { names, identity };
   }
@@ -254,7 +295,7 @@ export default class Shifts {
       return ctx.reply('Usage: /shifts [today|tomorrow|week|YYYY-MM-DD]');
     }
     try {
-      const schedule = await this.client.fetchSchedule(holonId, range);
+      const schedule = await this.readSchedule(holonId, range);
       const { names, identity } = await this.directory(holonId, schedule);
       const title = range.dateOnly
         ? `Shifts on ${range.dateOnly}`
@@ -268,9 +309,7 @@ export default class Shifts {
       });
     } catch (err) {
       console.error('[Shifts] list failed', err);
-      await ctx.reply(
-        `Could not read shifts from ${this.client.relays.join(', ')}.`
-      );
+      await ctx.reply(`Could not read shifts for this holon.`);
     }
   }
 
@@ -283,7 +322,7 @@ export default class Shifts {
       );
     try {
       const now = Math.floor(Date.now() / 1000);
-      const schedule = await this.client.fetchSchedule(holonId, {
+      const schedule = await this.readSchedule(holonId, {
         since: now - 3600,
         until: now + 14 * DAY_S,
       });
@@ -303,9 +342,7 @@ export default class Shifts {
       });
     } catch (err) {
       console.error('[Shifts] myshifts failed', err);
-      await ctx.reply(
-        `Could not read shifts from ${this.client.relays.join(', ')}.`
-      );
+      await ctx.reply(`Could not read shifts for this holon.`);
     }
   }
 
@@ -323,17 +360,17 @@ export default class Shifts {
       return ctx.answerCbQuery('Unknown shift.');
     }
     try {
-      const occurrences = await this.client.fetchOccurrences(holonId, {
-        since: 0,
-        until: Number.MAX_SAFE_INTEGER,
-      });
-      const occ = occurrences.find(o => o.dTag === dTag);
+      // The whole schedule, unwindowed: a callback can name a shift that has
+      // scrolled out of any command's range. The gates below all filter by
+      // the occurrence's own address, so handing them every signup is exact.
+      const schedule = await this.readSchedule(holonId);
+      const occ = schedule.occurrences.find(o => o.dTag === dTag);
       if (!occ) return ctx.answerCbQuery('That shift is no longer published.');
-      const rsvps = await this.client.fetchRsvps([occ]);
+      const rsvps = schedule.rsvps;
       // Person-level view: the member may have signed up (or cancelled)
       // under an attestation-linked sibling key — via Elinor, say — and the
       // gates below must judge the PERSON, not this bot's derived key.
-      const { identity } = await this.directory(holonId, { rsvps });
+      const { identity } = await this.directory(holonId, schedule);
       const previous = latestRsvpFor(occ, signer.pubkey, rsvps, identity);
       if (status === 'accepted') {
         if (previous?.status === 'accepted')
@@ -393,7 +430,7 @@ export default class Shifts {
     else if (/today$/i.test(title)) range = Shifts.rangeFor('today');
     else if (/tomorrow$/i.test(title)) range = Shifts.rangeFor('tomorrow');
     try {
-      const schedule = await this.client.fetchSchedule(holonId, range);
+      const schedule = await this.readSchedule(holonId, range);
       const { names, identity } = await this.directory(holonId, schedule);
       if (/^My shifts/.test(title)) {
         schedule.occurrences = schedule.occurrences.filter(o =>
