@@ -42,6 +42,9 @@ function freshReport() {
  * before a key was removed stays authorized.
  */
 export function buildTimeline(events, pinnedGenesis) {
+  // `eventToItem` on purpose: this only ever folds `_members` envelopes, an
+  // internal log that is always the kind-30078 envelope and can never be
+  // carried on a standard kind.
   const parsed = events
     .map((e) => ({ author: e.pubkey, at: e.created_at, id: e.id, ...(eventToItem(e) || {}) }))
     .filter((x) => x.op);
@@ -97,6 +100,23 @@ export function createSigner({
 
   // --- envelope reads (the store's events table) -----------------------------
   const envelopes = (holo, holon, lens, id) => holo.store.getEvents(normHolon(holon), lens, String(id));
+  /**
+   * What an envelope claims AT one address, decoded through the store's wire.
+   *
+   * Not `eventToItem`: that reads the event's content as the item, which is
+   * only true of the kind-30078 envelope. A lens carried on a standard kind
+   * keeps its fields somewhere else entirely, and every item on such a lens
+   * would otherwise read as unaccounted here — pending under enforce, and a
+   * mismatch under shadow. One event can also claim several addresses (a
+   * NIP-09 kind 5), so the claim for THIS id is the one that matters.
+   */
+  const claimAt = (holo, event, lens, id) => {
+    const claims = holo.store?.wire?.decode?.(event);
+    if (!claims) return eventToItem(event);
+    const want = String(id);
+    const hit = claims.find((c) => String(c.id) === want && String(c.lens) === String(lens));
+    return hit ? hit.item : null;
+  };
   const lensIds = (holo, holon, lens) => holo.store.listEventIds(normHolon(holon), lens);
 
   async function resolveMembership(holo, holon) {
@@ -202,7 +222,7 @@ export function createSigner({
         report.items++;
         const authorized = events.filter((e) => isAuth(e.pubkey, e.created_at)).sort(newestFirst);
         if (authorized.length) {
-          const claim = eventToItem(authorized[0]);
+          const claim = claimAt(holo, authorized[0], lens, id);
           if (claim && claim._deleted && !opts.includeDeleted) {
             // authorized SIGNED delete — omit from the view (not pending)
             continue;
@@ -240,7 +260,7 @@ export function createSigner({
         .filter((e) => isAuth(e.pubkey, e.created_at))
         .sort(newestFirst);
       if (!events.length) return null;
-      return materialize(eventToItem(events[0]), opts);
+      return materialize(claimAt(holo, events[0], lens, key), opts);
     },
 
     /**
@@ -259,7 +279,7 @@ export function createSigner({
         // The store keeps each author's latest claim per address already.
         const events = envelopes(holo, holon, lens, subj).filter((e) => isAuth(e.pubkey, e.created_at));
         for (const e of events) {
-          const item = eventToItem(e);
+          const item = claimAt(holo, e, lens, subj);
           if (item && !item._deleted) out.push({ ...item, _owner: e.pubkey, _subject: subj }); // signed delete drops the actor
         }
       }
@@ -282,7 +302,7 @@ export function createSigner({
         if (!item || !item.id) continue;
         call.items++; report.items++;
         const events = envelopes(holo, holon, lens, item.id);
-        if (events.some((e) => String(eventToItem(e)?.id) === String(item.id))) {
+        if (events.some((e) => claimAt(holo, e, lens, item.id) !== null)) {
           call.accounted++; report.accounted++;
           for (const e of events) report.byPubkey[e.pubkey] = (report.byPubkey[e.pubkey] || 0) + 1;
         } else if (events.length) {

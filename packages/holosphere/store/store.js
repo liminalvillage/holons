@@ -24,7 +24,7 @@
 import { HOLOSPHERE_KIND, verifyEvent, eventToItem, tag } from '../nostr-events.js';
 import { isHologram } from '../hologram.js';
 import {
-    GLOBAL_HOLON, CAPABILITIES_HOLON, holonKey, holonFromKey, lensKey, addr, lensKeyOfAddr, soulOf,
+    GLOBAL_HOLON, CAPABILITIES_HOLON, holonKey, holonFromKey, lensKey, cursorKey, addr, lensKeyOfAddr, soulOf,
 } from './address.js';
 import { wins, newestFirst } from './lww.js';
 import { createWireRegistry, decodeEvent } from './wire.js';
@@ -375,12 +375,12 @@ export class Store {
 
     // ------------------------------------------------------------------ cursors
 
-    getCursor(holon, lens) {
-        return this.cursors.get(lensKey(holon, lens)) || null;
+    getCursor(holon, lens, wire) {
+        return this.cursors.get(cursorKey(holon, lens, wire)) || null;
     }
 
-    setCursor(holon, lens, since) {
-        const lk = lensKey(holon, lens);
+    setCursor(holon, lens, since, wire) {
+        const lk = cursorKey(holon, lens, wire);
         const cur = this.cursors.get(lk);
         const value = { since: Math.max(since || 0, cur?.since || 0), syncedAt: Date.now() };
         this.cursors.set(lk, value);

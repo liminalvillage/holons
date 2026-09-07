@@ -96,6 +96,9 @@ class HoloSphere {
             adapter: storeCfg.adapter,
             dir: storeCfg.dir,
             compactAfter: storeCfg.compactAfter,
+            // Which kinds this store consumes. Omitted → the kind-30078
+            // envelope alone, which is every lens without a standard codec.
+            wire: storeCfg.wire,
         });
 
         this.openai = null;

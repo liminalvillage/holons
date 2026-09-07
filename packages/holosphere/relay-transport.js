@@ -178,8 +178,32 @@ export function createRelayTransport(holo, {
 
   const syncs = new Map(); // "holon|lens" -> state
 
-  function filterFor(holon, lens) {
-    return { kinds: [kind], '#h': [wireHolon(holon)], '#l': [String(lens)], '#n': [app] };
+  /**
+   * Every wire a lens is carried on, as `{ wire, filter }`.
+   *
+   * The legacy envelope is always first and always id `'30078'`, which is what
+   * keeps cursors already on disk resolving to the same key. A lens whose
+   * codec claims a standard kind contributes its own REQ shapes after it. The
+   * wire id is derived from the kinds so it stays stable across restarts;
+   * cursors are per wire, so a lens can be warm on one and cold on another.
+   */
+  function filtersFor(holon, lens) {
+    const out = [{
+      wire: '30078',
+      filter: { kinds: [kind], '#h': [wireHolon(holon)], '#l': [String(lens)], '#n': [app] },
+    }];
+    const seen = new Set(['30078']);
+    for (const w of store.wire?.wiresFor?.(lens) || []) {
+      let filters = [];
+      try { filters = w.filters?.(wireHolon(holon)) || []; } catch (e) { vlog('wire filters failed:', w.lens, e?.message); }
+      for (const filter of filters) {
+        let id = `std:${[...(filter.kinds || [])].sort((a, b) => a - b).join('-')}`;
+        while (seen.has(id)) id += '+';
+        seen.add(id);
+        out.push({ wire: id, filter });
+      }
+    }
+    return out;
   }
 
   /** Paginated backfill of a lens the store has never synced. Returns the newest created_at seen. */
@@ -228,23 +252,23 @@ export function createRelayTransport(holo, {
     return newest;
   }
 
-  function openLive(p, state, since) {
+  function openLive(p, state, w, since) {
     if (closed || !syncs.has(state.key)) return;
-    const filter = { ...state.filter, since: Math.max(0, since - CATCHUP_OVERLAP_SEC) };
+    const filter = { ...w.filter, since: Math.max(0, since - CATCHUP_OVERLAP_SEC) };
     // nostr-tools 2.x subscribeMany takes ONE filter (not an array).
-    state.sub = p.subscribeMany(relays, filter, {
+    w.sub = p.subscribeMany(relays, filter, {
       onevent: (evt) => {
         const r = ingest(evt);
         // Allow-list, not a deny-list: the cursor may only follow an event this
         // store actually accounted for. A deny-list let every reason nobody had
         // thought of yet ('kind', 'untrusted', 'closed') advance the cursor,
         // which silently skips that history on the next catch-up.
-        if (state.synced && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
+        if (w.synced && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
           // Live events arrive after the catch-up, so the cursor may follow them.
-          store.setCursor(state.holon, state.lens, evt.created_at);
+          store.setCursor(state.holon, state.lens, evt.created_at, w.wire);
         }
       },
-      oneose: () => { state.reopenAttempts = 0; },
+      oneose: () => { w.reopenAttempts = 0; },
       onclose: (reasons) => {
         // With reconnect enabled nostr-tools handles transient drops itself;
         // this fires when a relay hard-fails (connection refused / timed out)
@@ -253,19 +277,19 @@ export function createRelayTransport(holo, {
         if (closed || !syncs.has(state.key)) return;
         const callerClosed = (reasons || []).every((r) => /closed by caller/i.test(String(r)));
         if (callerClosed) return;
-        const delay = REOPEN_BACKOFF_MS[Math.min(state.reopenAttempts++, REOPEN_BACKOFF_MS.length - 1)];
-        state.reopenTimer = setTimeout(async () => {
-          state.reopenTimer = null;
+        const delay = REOPEN_BACKOFF_MS[Math.min(w.reopenAttempts++, REOPEN_BACKOFF_MS.length - 1)];
+        w.reopenTimer = setTimeout(async () => {
+          w.reopenTimer = null;
           if (closed || !syncs.has(state.key)) return;
-          const cursor = store.getCursor(state.holon, state.lens);
+          const cursor = store.getCursor(state.holon, state.lens, w.wire);
           let newest = cursor?.since || 0;
           try {
-            newest = Math.max(newest, await catchUp(p, state.filter, Math.max(0, newest - CATCHUP_OVERLAP_SEC)));
-            if (state.synced) store.setCursor(state.holon, state.lens, newest);
+            newest = Math.max(newest, await catchUp(p, w.filter, Math.max(0, newest - CATCHUP_OVERLAP_SEC)));
+            if (w.synced) store.setCursor(state.holon, state.lens, newest, w.wire);
           } catch (e) { vlog('reopen catch-up failed:', e?.message); }
-          openLive(p, state, newest);
+          openLive(p, state, w, newest);
         }, delay);
-        if (typeof state.reopenTimer.unref === 'function') state.reopenTimer.unref();
+        if (typeof w.reopenTimer.unref === 'function') w.reopenTimer.unref();
       },
     });
   }
@@ -285,28 +309,33 @@ export function createRelayTransport(holo, {
 
     reverse?.ensure(h);
     const state = {
-      key, holon: h, lens: String(lens), filter: filterFor(h, lens),
-      sub: null, synced: false, reopenAttempts: 0, reopenTimer: null, promise: null,
+      key, holon: h, lens: String(lens), promise: null,
+      wires: filtersFor(h, lens).map(({ wire, filter }) => ({
+        wire, filter, sub: null, synced: false, reopenAttempts: 0, reopenTimer: null,
+      })),
     };
     syncs.set(key, state);
     state.promise = (async () => {
       const p = await poolReady;
       if (closed) return;
-      const work = (async () => {
-        const cursor = store.getCursor(h, lens);
+      // Each wire catches up on its own cursor. A lens long warm on the
+      // envelope still BACKFILLS a wire it has never carried, instead of
+      // catching up from a `since` that belongs to a different stream.
+      const work = Promise.all(state.wires.map(async (w) => {
+        const cursor = store.getCursor(h, lens, w.wire);
         let newest = cursor?.since || 0;
         try {
-          if (!cursor) newest = Math.max(newest, await backfill(p, state.filter));
-          else newest = Math.max(newest, await catchUp(p, state.filter, Math.max(0, cursor.since - CATCHUP_OVERLAP_SEC)));
+          if (!cursor) newest = Math.max(newest, await backfill(p, w.filter));
+          else newest = Math.max(newest, await catchUp(p, w.filter, Math.max(0, cursor.since - CATCHUP_OVERLAP_SEC)));
           if (!closed) {
-            state.synced = true;
-            store.setCursor(h, lens, newest);
+            w.synced = true;
+            store.setCursor(h, lens, newest, w.wire);
           }
         } catch (e) {
           vlog('catch-up failed:', e?.message);
         }
-        openLive(p, state, newest);
-      })();
+        openLive(p, state, w, newest);
+      }));
       await Promise.race([
         work,
         new Promise((resolve) => {
@@ -326,12 +355,14 @@ export function createRelayTransport(holo, {
       const p = await poolReady;
       for (const state of Array.from(syncs.values())) {
         if (closed) break;
-        const cursor = store.getCursor(state.holon, state.lens);
-        const since = Math.max(0, (cursor?.since || 0) - CATCHUP_OVERLAP_SEC);
-        try {
-          const newest = await catchUp(p, state.filter, since);
-          if (state.synced && newest) store.setCursor(state.holon, state.lens, newest);
-        } catch (e) { vlog('resync failed:', e?.message); }
+        for (const w of state.wires) {
+          const cursor = store.getCursor(state.holon, state.lens, w.wire);
+          const since = Math.max(0, (cursor?.since || 0) - CATCHUP_OVERLAP_SEC);
+          try {
+            const newest = await catchUp(p, w.filter, since);
+            if (w.synced && newest) store.setCursor(state.holon, state.lens, newest, w.wire);
+          } catch (e) { vlog('resync failed:', e?.message); }
+        }
       }
     })().finally(() => { resyncing = null; });
     return resyncing;
@@ -377,7 +408,7 @@ export function createRelayTransport(holo, {
     /** Test/diagnostic hook: number of live (holon, lens) subscriptions. */
     syncCount: () => syncs.size,
     /** Whether a lens finished its catch-up. */
-    isSynced: (holon, lens) => !!syncs.get(`${wireHolon(holon)}|${lens}`)?.synced,
+    isSynced: (holon, lens) => !!syncs.get(`${wireHolon(holon)}|${lens}`)?.wires.every((w) => w.synced),
     close() {
       closed = true;
       reverse?.close();
@@ -386,8 +417,10 @@ export function createRelayTransport(holo, {
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
       }
       for (const state of syncs.values()) {
-        if (state.reopenTimer) clearTimeout(state.reopenTimer);
-        try { state.sub?.close(); } catch { /* ignore */ }
+        for (const w of state.wires) {
+          if (w.reopenTimer) clearTimeout(w.reopenTimer);
+          try { w.sub?.close(); } catch { /* ignore */ }
+        }
       }
       syncs.clear();
       poolReady.then((p) => { try { p.close(relays); } catch { /* ignore */ } }).catch(() => {});

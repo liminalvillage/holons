@@ -42,6 +42,22 @@ export function lensKey(holon, lens) {
     return `${holonKey(holon)}${SEP}${segment(lens, 'lens')}`;
 }
 
+/**
+ * Key of a lens's sync cursor on one wire.
+ *
+ * The legacy envelope keeps the bare lens key, so every cursor already on disk
+ * still resolves. Any other wire gets its own, because two wires on one lens
+ * have unrelated timestamp distributions: a lens frozen on 30078 while its
+ * standard kind advances would have its shared cursor dragged past the
+ * envelope's own tail, silently skipping a straggler from a peer still running
+ * the old code. Separate cursors also make adding a wire to an already-warm
+ * lens a full backfill rather than a catch-up from someone else's `since`.
+ */
+export function cursorKey(holon, lens, wire) {
+    const base = lensKey(holon, lens);
+    return !wire || wire === '30078' ? base : `${base}${SEP}${segment(wire, 'wire')}`;
+}
+
 /** Key of one record: `holon|lens|id`. */
 export function addr(holon, lens, id) {
     return `${lensKey(holon, lens)}${SEP}${segment(id, 'id')}`;

@@ -53,6 +53,7 @@ export function decodeEvent(event) {
  */
 export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
     const byKind = new Map();        // kind → LensWire
+    const byLens = new Map();        // lens → LensWire[]
     const standardLenses = new Set();
 
     return {
@@ -65,7 +66,15 @@ export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
                 if (k === legacyKind) continue;   // the envelope is never overridable
                 byKind.set(k, wire);
             }
-            standardLenses.add(String(wire.lens));
+            const lens = String(wire.lens);
+            if (!byLens.has(lens)) byLens.set(lens, []);
+            byLens.get(lens).push(wire);
+            standardLenses.add(lens);
+        },
+
+        /** The wires registered for a lens, in registration order. */
+        wiresFor(lens) {
+            return byLens.get(String(lens)) || [];
         },
 
         /** Is this lens canonically encoded as a standard kind? */
