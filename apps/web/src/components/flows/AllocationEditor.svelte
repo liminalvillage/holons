@@ -32,7 +32,7 @@
     type SyncMember,
     type SyncPartner,
   } from "../../lib/holons/allocationSync";
-  import { calculateZonePercentages } from "@holons/core/flows";
+  import { allocate } from "@holons/core/flows";
   import { ZONE_COLORS } from "../flow/types";
   import type { HolonBundleRecord } from "@holons/core/flows";
 
@@ -73,8 +73,28 @@
   let open = false;
 
   $: exteriorPercent = 100 - interiorPercent;
-  $: zonePercentages = calculateZonePercentages(steepness, nzones);
   $: placed = partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1).length;
+
+  // What each zone — and each partner in it — actually receives, as a share
+  // of the WHOLE fund: the draft run through the same `allocate()` the Sankey
+  // draws and the Bundle contract pays by. An empty zone next to an occupied
+  // one shows 0%, because that is what the chain would send it; with nobody
+  // placed at all the zones keep their decay shape as a preview.
+  $: draft = allocate({
+    total: null,
+    config: { interiorPercent, steepness, nzones },
+    members: [],
+    zoned: partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+  });
+  $: zoneShares = draft.exterior.map((z) => z.percentage);
+  $: maxZoneShare = Math.max(0, ...zoneShares);
+  $: partnerShare = (id: string): number =>
+    draft.exterior
+      .flatMap((z) => z.members ?? [])
+      .find((m) => m.id === id)?.percentage ?? 0;
+  $: partnersIn = (zone: number): string[] =>
+    (draft.exterior[zone - 1]?.members ?? []).map((m) => m.label);
+  const pct = (v: number) => `${Math.round(v * 10) / 10}%`;
 
   $: changed =
     interiorPercent !== saved.interiorPercent ||
@@ -240,8 +260,8 @@
   >
     <span class="toggle-label">Adjust the split</span>
     <span class="toggle-meta">
-      {interiorPercent}% interior · {nzones}
-      {nzones === 1 ? "zone" : "zones"}
+      {interiorPercent}% to contributors · {nzones}
+      {nzones === 1 ? "reciprocity zone" : "reciprocity zones"}
       {#if changed}<span class="dot" aria-label="unsaved changes"></span>{/if}
     </span>
     <span class="chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
@@ -252,7 +272,7 @@
       <div class="controls">
         <div class="control">
           <label for="interior-slider">
-            Interior / exterior
+            Contributors share / reciprocity zones
             <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
           </label>
           <input
@@ -264,14 +284,14 @@
             bind:value={interiorPercent}
           />
           <div class="ends">
-            <span>All exterior</span>
-            <span>All interior</span>
+            <span>All to reciprocity zones</span>
+            <span>All to contributors</span>
           </div>
         </div>
 
         <div class="control">
           <label for="steepness-slider">
-            Exterior sharing
+            Reciprocity reach
             <span class="value">{steepness}%</span>
           </label>
           <input
@@ -283,14 +303,14 @@
             bind:value={steepness}
           />
           <div class="ends">
-            <span>Steep — the inner ring takes it</span>
-            <span>Even</span>
+            <span>Close zones first</span>
+            <span>Spread evenly</span>
           </div>
         </div>
 
         <div class="control zones">
           <label for="zones-count">
-            Zones
+            Reciprocity zones
             <span class="value">{nzones}</span>
           </label>
           <div class="stepper">
@@ -317,20 +337,29 @@
         </div>
       </div>
 
-      <!-- What the steepness slider actually does, ring by ring. -->
+      <!-- What each zone actually receives, as a share of the whole fund, and
+           who is in it. Bars scale to the biggest zone so a flat spread still
+           reads; an empty zone beside an occupied one is 0% — contract parity. -->
+      <p class="muted zones-about">
+        {placed
+          ? "What each zone actually receives, as a share of the whole fund."
+          : "Nobody placed yet — the shape the zones would take."}
+      </p>
       <div class="rings">
-        {#each zonePercentages as percent, i (i)}
-          <div class="ring">
+        {#each zoneShares as share, i (i)}
+          {@const names = partnersIn(i + 1)}
+          <div class="ring" class:empty={share <= 0} title="Zone {i + 1}: {pct(share)} of the fund{names.length ? ` — ${names.join(', ')}` : ''}">
+            <span class="ring-value">{pct(share)}</span>
             <div class="ring-track">
               <div
                 class="ring-fill"
-                style="height: {percent}%; background: {ZONE_COLORS[
+                style="height: {maxZoneShare > 0 ? Math.max(3, (share / maxZoneShare) * 100) : 3}%; background: {ZONE_COLORS[
                   i % ZONE_COLORS.length
                 ]};"
               ></div>
             </div>
             <span class="ring-label">Z{i + 1}</span>
-            <span class="ring-value">{percent.toFixed(1)}%</span>
+            <span class="ring-who">{names.length ? names.join(", ") : " "}</span>
           </div>
         {/each}
       </div>
@@ -343,7 +372,12 @@
           </div>
           {#each partners as partner (partner.id)}
             <div class="partner">
-              <span class="partner-name">{partner.name}</span>
+              <span class="partner-name"
+                >{partner.name}
+                {#if (zoneOf[partner.id] ?? 0) >= 1}
+                  <span class="partner-share">{pct(partnerShare(partner.id))} of the fund</span>
+                {/if}</span
+              >
               <div class="ring-picker" role="group" aria-label={partner.name}>
                 <button
                   type="button"
@@ -358,8 +392,7 @@
                     type="button"
                     class:on={(zoneOf[partner.id] ?? 0) === i + 1}
                     on:click={() => setZone(partner.id, i + 1)}
-                    title="Zone {i + 1} — {zonePercentages[i]?.toFixed(1) ??
-                      0}% of the exterior share"
+                    title="Zone {i + 1} — {pct(zoneShares[i] ?? 0)} of the fund"
                   >
                     {i + 1}
                   </button>
@@ -370,8 +403,8 @@
         </div>
       {:else}
         <p class="muted empty">
-          No federated partners yet — the exterior share has nowhere to go until
-          this holon is linked to another.
+          No federated partners yet — the reciprocity zones have nowhere to send
+          value until this holon is linked to another.
         </p>
       {/if}
 
@@ -576,10 +609,15 @@
     color: #e2e8f0;
   }
 
+  .zones-about {
+    margin: 0 0 0.35rem;
+    font-size: 0.72rem;
+  }
+
   .rings {
     display: flex;
     gap: 0.3rem;
-    height: 88px;
+    height: 116px;
     padding: 0.4rem;
     background: #0f172a;
     border-radius: 0.4rem;
@@ -618,8 +656,35 @@
   }
 
   .ring-value {
-    font-size: 0.55rem;
+    font-size: 0.6rem;
+    color: #cbd5e1;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.15rem;
+    white-space: nowrap;
+  }
+
+  .ring.empty .ring-value {
     color: #64748b;
+  }
+
+  .ring.empty .ring-fill {
+    opacity: 0.3;
+  }
+
+  .ring-who {
+    font-size: 0.55rem;
+    color: #94a3b8;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 0.8rem;
+  }
+
+  .partner-share {
+    margin-left: 0.4rem;
+    font-size: 0.72rem;
+    color: #5eead4;
     font-variant-numeric: tabular-nums;
   }
 

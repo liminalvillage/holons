@@ -10,6 +10,7 @@ import {
   isSettlement,
   participantIds,
   settlementPlan,
+  summarizeMutualCredit,
 } from './credit.js';
 import type { Expense, User } from './types.js';
 
@@ -193,5 +194,51 @@ describe('expenseCurrencies', () => {
       expense({ id: 4, currency: 'EURs' }),
     ]);
     expect(list).toEqual(['eur', 'usd', 'hour']);
+  });
+});
+
+describe('summarizeMutualCredit', () => {
+  it('reads the closing line: outstanding, who is owed, who owes, how to square', () => {
+    const credit = computeMutualCredit([expense({})], users, 'eur');
+    const summary = summarizeMutualCredit(credit);
+    expect(summary).toEqual({
+      currency: 'eur',
+      outstanding: 20,
+      gross: 20,
+      creditors: 1,
+      debtors: 2,
+      square: 0,
+      openDebts: 2,
+      transfers: 2,
+      largest: { from: 2, to: 1, amount: 10 },
+      volume: 30,
+      count: 1,
+    });
+  });
+
+  it('gross exceeds outstanding when a chain of debts nets down', () => {
+    // Alice fronts for Bob, Bob fronts for Carol: Bob owes 10 and is owed 10.
+    const credit = computeMutualCredit(
+      [
+        expense({ id: 1, amount: 10, paidBy: 1, splitWith: [2] }),
+        expense({ id: 2, amount: 10, paidBy: 2, splitWith: [3] }),
+      ],
+      users,
+      'eur',
+    );
+    const summary = summarizeMutualCredit(credit);
+    expect(summary.outstanding).toBe(10);
+    expect(summary.gross).toBe(20);
+    expect(summary.square).toBe(1);
+    expect(summary.openDebts).toBe(2);
+    expect(summary.transfers).toBe(1);
+  });
+
+  it('is all zeros with nothing open', () => {
+    const summary = summarizeMutualCredit(computeMutualCredit([], users, 'eur'));
+    expect(summary.outstanding).toBe(0);
+    expect(summary.largest).toBeNull();
+    expect(summary.square).toBe(3);
+    expect(summary.creditors + summary.debtors).toBe(0);
   });
 });

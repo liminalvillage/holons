@@ -39,18 +39,31 @@
     type ScoreEquation,
   } from "@holons/core/scoring";
   import {
+    UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    partyIdOf,
+    segmentTotal,
+    buildFundUsage,
     buildLedger,
     buildValueFlows,
     DEFAULT_ALLOCATION_CONFIG,
     HUB_ID,
     layoutSankey,
     ledgerTrackKey,
+    nodeBreakdown,
     readAllocationConfig,
     readCollectiveSlug,
     readZoneAssignments,
+    readZonePeople,
+    rightsTotal,
     toAllocationPartners,
+    usageOf,
+    usageTotals,
+    usageUnits,
+    type AllocationSlice,
+    type BreakdownRow,
+    type FundUsageParty,
     type LedgerEntry,
     type LedgerSource,
     type OpenCollectiveSnapshot,
@@ -86,7 +99,7 @@
   const PANELS: { id: Panel; label: string; glyph: string }[] = [
     { id: "movement", label: "Movement", glyph: "⇄" },
     { id: "balances", label: "Balances", glyph: "⚖" },
-    { id: "allocation", label: "Allocation", glyph: "◔" },
+    { id: "allocation", label: "Fund allocation rights", glyph: "◔" },
     { id: "ledger", label: "Ledger", glyph: "☰" },
   ];
 
@@ -184,7 +197,7 @@
   // ---- Balances: who can appear, and in which currency ------------------------
   //
   // The roster is everyone with any economic footprint — the users lens, the
-  // REA stream, every payer and sharer on an expense — People only: older bot
+  // REA stream, every payer and sharer on an expense. People only: older bot
   // records could carry the holon id in a split, so it is dropped here.
   $: people = (() => {
     const ids = new Set<string>();
@@ -259,22 +272,71 @@
   /** Partners carry the draft's rings, not the saved ones. */
   $: zonedPartners = partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 }));
 
+  // ---- Fund usage --------------------------------------------------------------
+  //
+  // Every rights-holder, with the names a collective payee might carry so
+  // OpenCollective's "Ada Lovelace" lands on the member the users lens calls
+  // Ada. Usage needs a real pot, so it only exists with a collective. Spending
+  // follows the movement window; claims are owed whenever they were raised.
+  function aliasesFor(users: Record<string, any>, id: string): string[] {
+    const u = users[id];
+    if (!u) return [];
+    const first = String(u.first_name ?? "").trim();
+    const last = String(u.last_name ?? "").trim();
+    return [
+      String(u.username ?? "").trim(),
+      first,
+      [first, last].filter(Boolean).join(" "),
+    ].filter(Boolean);
+  }
+  $: usageParties = [
+    ...memberShares.map((m) => ({ id: m.id, name: m.name, aliases: aliasesFor(usersById, m.id) })),
+    ...zonedPartners
+      .filter((p) => p.zone >= 1)
+      .map((p) => ({ id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) })),
+  ] as FundUsageParty[];
+  $: usage = collective
+    ? buildFundUsage({
+        holonId: holonID,
+        unit: collective.currency,
+        parties: usageParties,
+        expenses,
+        collective,
+        windowDays,
+      })
+    : null;
+  $: usageTotal = usageTotals(usage);
+
   $: allocationResult = allocate({
-    // The collective balance is the honest pot; without one, show the shape of
-    // the split as percentages rather than inventing an amount.
-    total: collective?.balance ?? null,
+    // The collective's money is the honest pot — what is in the bank plus what
+    // rights-holders already drew, since a right that was spent still was one.
+    // Without a collective, show the shape of the split as percentages rather
+    // than inventing an amount.
+    total: collective ? rightsTotal(collective.balance, usage) : null,
     unit: collective?.currency ?? "",
     config: allocationConfig,
     members: memberShares,
     zoned: zonedPartners,
   });
-  $: allocationLayout = layoutSankey(
-    allocationToGraph(allocationResult, {
+  $: allocationTrack = allocationToGraph(
+    allocationResult,
+    {
       pot: collective ? collective.name : "Total",
-      interior: "Interior",
-      exterior: "Exterior",
-    }),
+      interior: "Contributors share",
+      exterior: "Reciprocity zones",
+      spent: "Spent",
+      claimed: "Claimed",
+      available: "Available",
+      over: "Over",
+      unattributed: "Outside rights",
+    },
+    usage,
   );
+  $: allocationLayout = layoutSankey(allocationTrack);
+  // What is left to the rights-holders, as the diagram draws it, and what was
+  // taken beyond any right — both read off the same stacked bars.
+  $: availableTotal = segmentTotal(allocationTrack, "available");
+  $: overTotal = segmentTotal(allocationTrack, "over");
   $: hasAllocation = memberShares.length > 0 || partners.length > 0;
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency })
@@ -301,6 +363,29 @@
       ? allocationDetails(selected.node)
       : movementDetails(selected.node)
     : [];
+
+  // Who is behind the tapped bar, and how much of it is theirs. Core decides
+  // the rows: out-links for a group, in-links for a sink, the swallowed bars
+  // for a "+n more" rollup. A bar with nothing to list stays with its detail
+  // rows and, on the movement side, the ledger hand-off.
+  $: breakdown = ((): BreakdownRow[] => {
+    if (!selected) return [];
+    if (selected.chart === "allocation") {
+      if (selected.node.id === UNATTRIBUTED_ID && usage) {
+        const payees = usage.unattributedPayees
+          .filter((p) => p.unit === usage.unit)
+          .map((p) => ({
+            id: `payee-${p.name}`,
+            label: p.spent > 0 && p.claimed > 0 ? p.name : `${p.name} · ${p.spent > 0 ? "spent" : "claimed"}`,
+            value: p.spent + p.claimed,
+          }));
+        if (payees.length) return payees;
+      }
+      return nodeBreakdown(allocationTrack, allocationLayout, selected.node.id).rows;
+    }
+    if (!activeTrack || !movementLayout) return [];
+    return nodeBreakdown(activeTrack, movementLayout, selected.node.id).rows;
+  })();
 
   function listNames(names: string[]): string {
     if (names.length <= MAX_NAMES) return names.join(", ");
@@ -377,23 +462,36 @@
     return node ? movementDetails(node) : [];
   }
 
-  function findSlice(nodeId: string) {
-    if (nodeId.startsWith("member-")) {
-      const id = nodeId.slice("member-".length);
-      return allocationResult.interior.find((m) => m.id === id) ?? null;
-    }
-    if (nodeId.startsWith("zone-")) {
-      const zone = Number(nodeId.slice("zone-".length));
-      return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
-    }
-    if (nodeId.startsWith("partner-")) {
-      const id = nodeId.slice("partner-".length);
-      for (const zone of allocationResult.exterior) {
-        const hit = (zone.members ?? []).find((p) => p.id === id);
-        if (hit) return hit;
+  function findZone(nodeId: string) {
+    if (!nodeId.startsWith("zone-")) return null;
+    const zone = Number(nodeId.slice("zone-".length));
+    return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
+  }
+
+  /**
+   * The seats behind one party's bar: their contributor share, if any, and
+   * their place on a ring, if any. A person can hold both, and the bar sums
+   * them — so the tooltip names each.
+   */
+  function findSeats(nodeId: string) {
+    const id = partyIdOf(nodeId);
+    if (id == null) return null;
+    const member = allocationResult.interior.find((m) => m.id === id) ?? null;
+    let ring: { zone: number; slice: AllocationSlice } | null = null;
+    for (const zone of allocationResult.exterior) {
+      const hit = (zone.members ?? []).find((p) => p.id === id);
+      if (hit) {
+        ring = { zone: zone.zone ?? 0, slice: hit };
+        break;
       }
     }
-    return null;
+    if (!member && !ring) return null;
+    const percentage = (member?.percentage ?? 0) + (ring?.slice.percentage ?? 0);
+    const amount =
+      member?.amount == null && ring?.slice.amount == null
+        ? null
+        : (member?.amount ?? 0) + (ring?.slice.amount ?? 0);
+    return { id, member, ring, percentage, amount };
   }
 
   /**
@@ -412,16 +510,32 @@
           ]
         : [{ label: "Pot", value: "No collective configured yet" }];
       rows.push(
-        { label: "Interior", value: `${allocationConfig.interiorPercent}%` },
-        { label: "Exterior", value: `${100 - allocationConfig.interiorPercent}%` },
+        { label: "Contributors share", value: `${allocationConfig.interiorPercent}%` },
+        { label: "Reciprocity zones", value: `${100 - allocationConfig.interiorPercent}%` },
       );
+      if (usage) {
+        rows.push(
+          { label: "Spent", value: formatAllocation(usageTotal.spent) },
+          { label: "Claimed", value: formatAllocation(usageTotal.claimed) },
+        );
+      }
+      return rows;
+    }
+    if (usage && node.id === UNATTRIBUTED_ID) {
+      const rows = [{ label: "What", value: "Paid or promised to someone with no right here." }];
+      const un = usageTotal.unattributed;
+      if (un.spent > 0) rows.push({ label: "Spent", value: formatAllocation(un.spent) });
+      if (un.claimed > 0) rows.push({ label: "Claimed", value: formatAllocation(un.claimed) });
+      if (usage.unattributedPayees.length) {
+        rows.push({ label: "Paid to", value: listNames(usage.unattributedPayees.map((p) => p.name)) });
+      }
       return rows;
     }
     if (node.kind === "interior") {
       return [
         { label: "Share of pot", value: pct(interiorPct) },
-        { label: "Members", value: String(allocationResult.interior.length) },
-        { label: "Split by", value: "Contribution score" },
+        { label: "Contributors", value: String(allocationResult.interior.length) },
+        { label: "Split by", value: "Value equation" },
       ];
     }
     if (node.kind === "exterior") {
@@ -431,20 +545,76 @@
         { label: "Split by", value: "Zone distance" },
       ];
     }
-    const slice = findSlice(node.id);
-    if (!slice) return [];
-    const rows = [{ label: "Share of pot", value: pct(slice.percentage) }];
-    if (node.kind === "member") rows.push({ label: "Earned by", value: "Contribution score" });
-    if (node.kind === "zone") {
-      const names = (slice.members ?? []).map((p) => p.label);
-      rows.push({ label: "Ring", value: `Zone ${slice.zone}` });
+    const zone = findZone(node.id);
+    if (zone) {
+      const names = (zone.members ?? []).map((p) => p.label);
+      return [
+        { label: "Share of pot", value: pct(zone.percentage) },
+        { label: "Zone", value: `Zone ${zone.zone}` },
+        {
+          label: names.length === 1 ? "Partner" : "Partners",
+          value: names.length ? listNames(names) : "None yet",
+        },
+      ];
+    }
+
+    const seats = findSeats(node.id);
+    if (!seats) return [];
+    // One bar, one total; then each seat that feeds it, when there is more
+    // than one to tell apart.
+    const rows = [{ label: "Share of pot", value: pct(seats.percentage) }];
+    const both = !!seats.member && !!seats.ring;
+    if (seats.member) {
+      rows.push(
+        both
+          ? { label: "Contributors share", value: formatAllocation(seats.member.amount ?? seats.member.percentage) }
+          : { label: "Earned by", value: "Value equation" },
+      );
+    }
+    if (seats.ring) {
       rows.push({
-        label: names.length === 1 ? "Partner" : "Partners",
-        value: names.length ? listNames(names) : "None yet",
+        label: `Zone ${seats.ring.zone}`,
+        value: both ? formatAllocation(seats.ring.slice.amount ?? seats.ring.slice.percentage) : "Zone distance",
       });
     }
-    if (node.kind === "partner" && slice.zone) rows.push({ label: "Ring", value: `Zone ${slice.zone}` });
+    if (usage) rows.push(...usageRows(seats.id, seats.amount));
     return rows;
+  }
+
+  /**
+   * A right's usage, in the pot's currency and then in every other unit the
+   * party touched the fund in. Other units are text only — hours are not euros
+   * and the diagram never sums across units, so neither do these rows.
+   */
+  function usageRows(partyId: string, right: number | null): { label: string; value: string }[] {
+    if (!usage) return [];
+    const rows: { label: string; value: string }[] = [];
+    const use = usageOf(usage, partyId);
+    if (right != null) {
+      const left = right - use.spent - use.claimed;
+      rows.push(
+        { label: "Right", value: formatAllocation(right) },
+        { label: "Spent", value: formatAllocation(use.spent) },
+        { label: "Claimed", value: formatAllocation(use.claimed) },
+        left >= 0
+          ? { label: "Available", value: formatAllocation(left) }
+          : { label: "Over", value: formatAllocation(-left) },
+      );
+    }
+    for (const unit of usageUnits(usage, partyId)) {
+      if (unit === usage.unit) continue;
+      const other = usageOf(usage, partyId, unit);
+      const fmt = formatter({ id: "money", unit });
+      if (other.spent > 0) rows.push({ label: `Spent · ${unit.toUpperCase()}`, value: fmt(other.spent) });
+      if (other.claimed > 0) rows.push({ label: `Claimed · ${unit.toUpperCase()}`, value: fmt(other.claimed) });
+    }
+    return rows;
+  }
+
+  /** A ribbon says what its deeper end would. */
+  function allocationLinkDetails(link: SankeyLayoutLink): { label: string; value: string }[] {
+    const node = allocationLayout?.nodes.find((n) => n.id === link.target);
+    return node ? allocationDetails(node) : [];
   }
 
   // ---- Ledger hand-offs ----------------------------------------------------------
@@ -699,10 +869,13 @@
     try {
       const snapshot = await getFederationSnapshot(holosphere, id);
       if (holonID !== id) return;
+      // People the kiosk seats on rings ride along with the partner holons,
+      // so both boards draw the same reciprocity zones.
       partners = toAllocationPartners(
         snapshot.federated,
         snapshot.partnerNames,
         readZoneAssignments(settings),
+        readZonePeople(settings),
       );
     } catch {
       // A holon with no federation record simply has no exterior.
@@ -875,9 +1048,11 @@
     <section class="panel">
       <header class="head">
         <div class="titles">
-          <h2>Allocation</h2>
+          <h2>Fund allocation rights</h2>
           <p class="sub">
-            {collective ? `How ${collective.name} is shared out.` : "How value is shared out."}
+            {collective
+              ? `Who may direct ${collective.name}, by how much — and how much of that is already spent or claimed.`
+              : "Who may direct the fund, and by how much."}
           </p>
         </div>
       </header>
@@ -887,17 +1062,38 @@
       {:else}
         <div class="stats">
           <div class="stat">
-            <span class="k">Interior</span>
+            <span class="k">Contributors share</span>
             <span class="v">{allocationConfig.interiorPercent}%</span>
           </div>
           <div class="stat">
-            <span class="k">Exterior</span>
+            <span class="k">Reciprocity zones</span>
             <span class="v">{100 - allocationConfig.interiorPercent}%</span>
           </div>
           <div class="stat">
             <span class="k">Zones</span>
             <span class="v">{allocationConfig.nzones}</span>
           </div>
+          {#if usage}
+            <!-- These double as the legend for the stacked bars. -->
+            <div class="stat">
+              <span class="k"><i class="swatch spent"></i>Spent</span>
+              <span class="v">{formatAllocation(usageTotal.spent)}</span>
+            </div>
+            <div class="stat">
+              <span class="k"><i class="swatch claimed"></i>Claimed</span>
+              <span class="v">{formatAllocation(usageTotal.claimed)}</span>
+            </div>
+            <div class="stat">
+              <span class="k"><i class="swatch available"></i>Available</span>
+              <span class="v">{formatAllocation(availableTotal)}</span>
+            </div>
+            {#if overTotal > 0}
+              <div class="stat">
+                <span class="k"><i class="swatch over"></i>Over</span>
+                <span class="v">{formatAllocation(overTotal)}</span>
+              </div>
+            {/if}
+          {/if}
         </div>
 
         <div class="chart">
@@ -906,6 +1102,7 @@
             format={formatAllocation}
             onSelect={(n) => (selected = { node: n, chart: "allocation" })}
             nodeDetails={allocationDetails}
+            linkDetails={allocationLinkDetails}
           >
             <p slot="empty" class="empty">No members or partners to share with yet.</p>
           </SankeyChart>
@@ -931,7 +1128,7 @@
           />
         </div>
         <p class="note">
-          The concentric editor, deploys and interior-member detail live in
+          The concentric editor, deploys and per-contributor detail live in
           <a href={`/${holonID}/flow`}>Flow Management</a>.
         </p>
       {/if}
@@ -967,6 +1164,20 @@
           </div>
         {/each}
       </dl>
+    {/if}
+    {#if breakdown.length}
+      <!-- Who, and how much: the bars this one is made of. -->
+      <table class="who">
+        <tbody>
+          {#each breakdown as row (row.id)}
+            <tr>
+              <th scope="row">{row.label}</th>
+              <td class="share">{node.value > 0 ? `${Math.round((row.value / node.value) * 100)}%` : ""}</td>
+              <td class="amt">{selectedFormat(row.value)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
     <svelte:fragment slot="actions">
       {#if selected?.chart === "movement"}
@@ -1067,6 +1278,28 @@
     font-size: 1.3rem;
   }
 
+  /* Legend dots, the same hues the stacked bars use. */
+  .swatch {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 999px;
+    margin-right: 0.35em;
+    vertical-align: 0.05em;
+  }
+  .swatch.spent {
+    background: #f43f5e;
+  }
+  .swatch.claimed {
+    background: #f59e0b;
+  }
+  .swatch.available {
+    background: #10b981;
+  }
+  .swatch.over {
+    background: #dc2626;
+  }
+
   .in {
     color: #5eead4;
   }
@@ -1144,6 +1377,38 @@
     text-align: right;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .who {
+    width: 100%;
+    margin: 0.8rem 0 0;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+  .who th,
+  .who td {
+    padding: 0.3rem 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    vertical-align: baseline;
+  }
+  .who th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+  .who .share {
+    text-align: right;
+    padding-left: 0.6rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .who .amt {
+    text-align: right;
+    padding-left: 0.8rem;
+    color: #5eead4;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   @keyframes flows-rise {

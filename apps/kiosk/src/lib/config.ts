@@ -685,12 +685,15 @@ export function setRolesView(mode: RolesViewMode): void {
  * or the balances — the mutual credit behind the shared expenses. Same
  * Layout pill as the other views; the choice sticks per device.
  */
-export type FlowsViewMode = "graph" | "balances";
+export type FlowsViewMode = "mine" | "balances" | "graph";
 
-/** Resolve the Flows view mode; the graph is the default. */
+/**
+ * Resolve the Flows view mode: the viewer's own balance, everyone's
+ * balances, or the graph. The graph is the default — it needs no login.
+ */
 export function resolveFlowsView(): FlowsViewMode {
   const v = persisted(FLOWS_VIEW_KEY);
-  return v === "balances" ? "balances" : "graph";
+  return v === "balances" || v === "mine" ? v : "graph";
 }
 
 /** Persist the Flows view mode. */

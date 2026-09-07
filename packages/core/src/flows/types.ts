@@ -41,6 +41,22 @@ export interface ValueFlowNode {
 	value: number;
 	/** What produced it: 'opencollective' | 'expense' | 'library' | 'treasury' | … */
 	kind?: string;
+	/**
+	 * How the bar itself is made up, for a bar drawn stacked — a right split
+	 * into spent / claimed / available. Top to bottom; sums to `value`. Absent
+	 * on a bar drawn as one block.
+	 */
+	segments?: ValueFlowSegment[];
+}
+
+/** One slice of a stacked bar. */
+export interface ValueFlowSegment {
+	/** What the slice is: 'spent' | 'claimed' | 'available' | 'over' | … */
+	kind: string;
+	/** Display text for the slice, pre-translated by the builder's caller. */
+	label: string;
+	/** Always > 0. */
+	value: number;
 }
 
 /** A ribbon between two nodes. Zero-value links are dropped at build time. */

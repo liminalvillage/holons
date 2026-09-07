@@ -13,7 +13,7 @@
  * shape it made. That keeps this to arithmetic.
  */
 
-import type { ValueFlowLink, ValueFlowTrack } from './types.js';
+import type { ValueFlowLink, ValueFlowSegment, ValueFlowTrack } from './types.js';
 
 export interface SankeyOptions {
   /** Node column width, as a fraction of total width. */
@@ -30,6 +30,8 @@ export interface SankeyLayoutNode {
   value: number;
   depth: number;
   kind?: string;
+  /** Stacked make-up of the bar, top to bottom, when it has one. Sums to `value`. */
+  segments?: ValueFlowSegment[];
   x: number;
   y: number;
   w: number;
@@ -60,6 +62,22 @@ const DEFAULT_TOP_N = 8;
 
 /** Trim to a sane precision so path strings stay short and stable across runs. */
 const r = (n: number) => Math.round(n * 10000) / 10000;
+
+/**
+ * Fold the stacked slices of several bars into one stack, kind by kind, in the
+ * order the kinds first appear — so a rollup of stacked bars is stacked too,
+ * rather than losing what its members had used.
+ */
+function mergeSegments(segments: ValueFlowSegment[]): ValueFlowSegment[] {
+  const byKind = new Map<string, ValueFlowSegment>();
+  for (const s of segments) {
+    if (!(s.value > 0)) continue;
+    const seen = byKind.get(s.kind);
+    if (seen) seen.value += s.value;
+    else byKind.set(s.kind, { ...s });
+  }
+  return [...byKind.values()];
+}
 
 interface Placed {
   node: SankeyLayoutNode;
@@ -116,6 +134,7 @@ export function layoutSankey(
         value: n.value,
         depth,
         kind: n.kind,
+        ...(n.segments?.length ? { segments: n.segments } : {}),
         x: 0,
         y: 0,
         w,
@@ -126,12 +145,14 @@ export function layoutSankey(
       const id = `__other_${depth}`;
       const total = tail.reduce((s, n) => s + n.value, 0);
       for (const n of tail) rollupOf.set(n.id, id);
+      const segments = mergeSegments(tail.flatMap((n) => n.segments ?? []));
       kept.set(id, {
         id,
         label: `+${tail.length} more`,
         value: total,
         depth,
         kind: 'other',
+        ...(segments.length ? { segments } : {}),
         x: 0,
         y: 0,
         w,
@@ -286,4 +307,81 @@ export function layoutSankey(
   }
 
   return { nodes: [...kept.values()], links: laidOut, columns, empty: false };
+}
+
+// ---------------------------------------------------------------------------
+// What is behind a bar: the rows a tap should list.
+// ---------------------------------------------------------------------------
+
+/** One row of a bar's breakdown: who, and how much. */
+export interface BreakdownRow {
+  id: string;
+  label: string;
+  value: number;
+  kind?: string;
+}
+
+export interface NodeBreakdown {
+  /** `out` lists where the bar's value goes, `in` where it came from. */
+  side: 'out' | 'in';
+  /** Largest first. Empty when the bar is a leaf with nothing to list. */
+  rows: BreakdownRow[];
+}
+
+/**
+ * The nodes a "+n more" rollup swallowed, largest first — every node of the
+ * track at that depth the layout did not keep as its own bar.
+ */
+export function rolledUpNodes(track: ValueFlowTrack, layout: SankeyLayout, rollupId: string): BreakdownRow[] {
+  const match = /^__other_(\d+)$/.exec(rollupId);
+  if (!match) return [];
+  const depth = Number(match[1]);
+  const kept = new Set(layout.nodes.map((n) => n.id));
+  return (track.nodes ?? [])
+    .filter((n) => Math.max(0, Math.floor(n.depth)) === depth && !kept.has(n.id) && n.value > 0)
+    .map((n) => ({ id: n.id, label: n.label, value: n.value, kind: n.kind }))
+    .sort((a, b) => b.value - a.value);
+}
+
+/**
+ * Who is behind a bar, and how much of it is theirs.
+ *
+ * A bar is a sum; this is what it sums. Out-links come first — a pot lists
+ * its branches, a zone its partners, a hub what it paid out — unless the
+ * only way out is into a hub, which says nothing a reader did not know. A
+ * terminal bar (a party fed by two seats, a movement sink) lists what flowed
+ * into it instead. A rollup lists what it rolled up. One row is no breakdown,
+ * so a leaf yields an empty list and the caller shows the entries behind it.
+ */
+export function nodeBreakdown(
+  track: ValueFlowTrack,
+  layout: SankeyLayout,
+  nodeId: string,
+): NodeBreakdown {
+  const rolled = rolledUpNodes(track, layout, nodeId);
+  if (rolled.length) return { side: 'out', rows: rolled };
+
+  const byId = new Map((track.nodes ?? []).map((n) => [n.id, n]));
+  const kindOf = (id: string) => byId.get(id)?.kind;
+  const labelOf = (id: string) => byId.get(id)?.label ?? id;
+  const rows = (links: ValueFlowLink[], end: 'source' | 'target'): BreakdownRow[] =>
+    links
+      .filter((l) => l.value > 0)
+      .map((l) => ({ id: l[end], label: labelOf(l[end]), value: l.value, kind: kindOf(l[end]) }))
+      .sort((a, b) => b.value - a.value);
+
+  const links = track.links ?? [];
+  const out = rows(
+    links.filter((l) => l.source === nodeId && kindOf(l.target) !== 'hub'),
+    'target',
+  );
+  if (out.length >= 2) return { side: 'out', rows: out };
+  const into = rows(
+    links.filter((l) => l.target === nodeId && kindOf(l.source) !== 'hub'),
+    'source',
+  );
+  if (into.length >= 2) return { side: 'in', rows: into };
+  // A single branch either way is still worth naming when it is a group.
+  if (out.length === 1 && byId.get(nodeId)?.kind !== 'hub') return { side: 'out', rows: out };
+  return { side: 'out', rows: [] };
 }

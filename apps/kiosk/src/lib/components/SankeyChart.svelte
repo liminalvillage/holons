@@ -183,9 +183,157 @@
       : (node.x + node.w) * vw + 8;
   }
 
-  // Only label a node tall enough to carry text without colliding with its
-  // neighbours; the rest stay readable on tap.
+  // Two kinds of bar, two kinds of label. A STRUCTURAL bar — the pot, a
+  // branch, a zone, the hub, a rollup — is tall and carries its
+  // text vertically inside itself, so the space beside it stays clear. A
+  // PERSON bar — a member, a partner, whoever paid or was paid — keeps its
+  // name horizontal beside it when the branch is tall enough, turns vertical
+  // beside it when not and there is room between the labels already placed,
+  // and otherwise stays readable on tap. Text never stacks on text.
   const MIN_LABEL_H = 16;
+  const FONT_PX = 13;
+  /** Rough advance per character at FONT_PX; labels are never measured. */
+  const CHAR_PX = 7;
+  /** Breathing room between two labels sharing a column's edge. */
+  const LABEL_GAP = 4;
+  const STRUCTURAL = new Set([
+    "pot",
+    "interior",
+    "exterior",
+    "unattributed",
+    "zone",
+    "hub",
+    "other",
+  ]);
+
+  /** `in` is one vertical line inside the bar, `in2` the name and the value
+      side by side inside it, `v` one line beside it, `h` horizontal beside. */
+  type LabelMode = "h" | "v" | "in" | "in2";
+  /** Where a label goes; `cy` is the text's centre, which a vertical label
+      beside a bar may slide along the bar to stay inside the chart. */
+  interface LabelPlace {
+    mode: LabelMode;
+    cy: number;
+  }
+
+  /**
+   * Which bars get a label and how.
+   *
+   * Per column: structural bars first take the inside of their own bar, on
+   * one line or two; people then take a horizontal band beside a branch tall
+   * enough for one; whatever is left goes vertical beside its bar — structural
+   * bars before people, since a branch's name matters more than one small
+   * leaf's — sliding to stay inside the chart, and only where no label is
+   * already in the way.
+   */
+  function planLabels(
+    all: SankeyLayoutNode[],
+    vw: number,
+    vh: number,
+    fmt: (v: number) => string,
+  ): Map<string, LabelPlace> {
+    const plan = new Map<string, LabelPlace>();
+    const byDepth = new Map<number, SankeyLayoutNode[]>();
+    for (const n of all) {
+      const bucket = byDepth.get(n.depth);
+      if (bucket) bucket.push(n);
+      else byDepth.set(n.depth, [n]);
+    }
+    const px = (chars: number) => chars * CHAR_PX;
+    const oneLine = (n: SankeyLayoutNode) =>
+      px(n.label.length + fmt(n.value).length + 1);
+    const twoLine = (n: SankeyLayoutNode) =>
+      px(Math.max(n.label.length, fmt(n.value).length));
+
+    for (const group of byDepth.values()) {
+      const sorted = [...group].sort((a, b) => a.y - b.y);
+      const centre = (n: SankeyLayoutNode) => (n.y + n.h / 2) * vh;
+      // Bands of vertical space beside the column already spoken for.
+      const taken: [number, number][] = [];
+      const leftStructural: SankeyLayoutNode[] = [];
+      const leftPeople: SankeyLayoutNode[] = [];
+
+      for (const n of sorted) {
+        const h = n.h * vh;
+        if (STRUCTURAL.has(n.kind ?? "")) {
+          if (h >= oneLine(n) + 8)
+            plan.set(n.id, { mode: "in", cy: centre(n) });
+          else if (h >= twoLine(n) + 8 && n.w * vw >= 2 * FONT_PX + 6)
+            plan.set(n.id, { mode: "in2", cy: centre(n) });
+          else leftStructural.push(n);
+        } else if (h >= MIN_LABEL_H) {
+          const cy = centre(n);
+          taken.push([cy - MIN_LABEL_H / 2, cy + MIN_LABEL_H / 2]);
+          plan.set(n.id, { mode: "h", cy });
+        } else {
+          leftPeople.push(n);
+        }
+      }
+
+      // Bigger bars first within each group: when two labels want the same
+      // stretch of edge, the one that carries more of the flow gets it.
+      const byValue = (a: SankeyLayoutNode, b: SankeyLayoutNode) =>
+        b.value - a.value;
+      const pending = [
+        ...leftStructural.sort(byValue),
+        ...leftPeople.sort(byValue),
+      ];
+      for (const n of pending) {
+        const len = oneLine(n);
+        if (len > vh) continue;
+        // Centre on the bar, then slide just enough to stay inside the chart;
+        // the text still overlaps its own bar, so it is still read as its.
+        let cy = centre(n);
+        cy = Math.min(Math.max(cy, len / 2), vh - len / 2);
+        const top = cy - len / 2 - LABEL_GAP;
+        const bottom = cy + len / 2 + LABEL_GAP;
+        const clash = taken.some(([a, b]) => top < b && bottom > a);
+        if (clash) continue;
+        taken.push([top, bottom]);
+        plan.set(n.id, { mode: "v", cy });
+      }
+    }
+    return plan;
+  }
+
+  $: labelPlan = planLabels(nodes, VW, VH, format);
+
+  /**
+   * Where each slice of a stacked bar sits, in viewBox pixels. Slices are
+   * laid top to bottom in the order the builder gave them, each as tall as
+   * its share of the bar; a bar with no stack has none.
+   */
+  function stackOf(
+    node: SankeyLayoutNode,
+    vh: number,
+  ): { kind: string; y: number; h: number }[] {
+    const segments = node.segments ?? [];
+    if (!segments.length || node.value <= 0) return [];
+    const top = node.y * vh;
+    const full = Math.max(2, node.h * vh);
+    let y = top;
+    return segments.map((s) => {
+      const h = (s.value / node.value) * full;
+      const slice = { kind: s.kind, y, h };
+      y += h;
+      return slice;
+    });
+  }
+
+  /** The bar for a screen reader: its value, then its stack if it has one. */
+  function stackLabel(node: SankeyLayoutNode): string {
+    const head = `${node.label}: ${format(node.value)}`;
+    const segments = node.segments ?? [];
+    if (!segments.length) return head;
+    return `${head} (${segments.map((s) => `${s.label} ${format(s.value)}`).join(", ")})`;
+  }
+
+  /** A vertical label sits on the same side as a horizontal one would. */
+  function labelXVertical(node: SankeyLayoutNode, vw: number): number {
+    return labelAnchor(node) === "end"
+      ? node.x * vw - 4 - FONT_PX / 2
+      : (node.x + node.w) * vw + 4 + FONT_PX / 2;
+  }
 </script>
 
 {#if !layout || layout.empty}
@@ -224,18 +372,17 @@
 
       <g class="bars">
         {#each nodes as node (node.id)}
-          <rect
-            class="bar {node.kind ?? ''}"
+          <!-- A bar is one block, or a stack: its slices drawn over it in
+               order, so a right reads as spent / claimed / available from
+               the top down. The block underneath keeps the bar one shape
+               for the pointer, the keyboard and the label. -->
+          <g
+            class="bar-group"
             class:tappable={!!onSelect}
             class:dim={litNodes && !litNodes.has(node.id)}
-            x={node.x * VW}
-            y={node.y * VH}
-            width={node.w * VW}
-            height={Math.max(2, node.h * VH)}
-            rx="2"
             role="button"
             tabindex={onSelect ? 0 : -1}
-            aria-label="{node.label}: {format(node.value)}"
+            aria-label={stackLabel(node)}
             on:click={() => onSelect?.(node)}
             on:mouseenter={(e) => {
               hoverLink = null;
@@ -256,13 +403,33 @@
                 onSelect?.(node);
               }
             }}
-          />
+          >
+            <rect
+              class="bar {node.kind ?? ''}"
+              x={node.x * VW}
+              y={node.y * VH}
+              width={node.w * VW}
+              height={Math.max(2, node.h * VH)}
+              rx="2"
+            />
+            {#each stackOf(node, VH) as slice (slice.kind)}
+              <rect
+                class="bar slice {slice.kind}"
+                x={node.x * VW}
+                y={slice.y}
+                width={node.w * VW}
+                height={slice.h}
+              />
+            {/each}
+          </g>
         {/each}
       </g>
 
       <g class="labels">
         {#each nodes as node (node.id)}
-          {#if node.h * VH >= MIN_LABEL_H}
+          {@const place = labelPlan.get(node.id)}
+          {@const mode = place?.mode}
+          {#if mode === "h"}
             <text
               x={labelX(node, VW)}
               y={(node.y + node.h / 2) * VH}
@@ -272,6 +439,44 @@
             >
               <tspan class="name">{node.label}</tspan>
               <tspan class="value" dx="6">{format(node.value)}</tspan>
+            </text>
+          {:else if mode === "v" || mode === "in"}
+            {@const vx =
+              mode === "in"
+                ? (node.x + node.w / 2) * VW
+                : labelXVertical(node, VW)}
+            {@const vy = place?.cy ?? (node.y + node.h / 2) * VH}
+            <text
+              x={vx}
+              y={vy}
+              text-anchor="middle"
+              dominant-baseline="middle"
+              transform="rotate(-90 {vx} {vy})"
+              class:inside={mode === "in"}
+              class:dim={litNodes && !litNodes.has(node.id)}
+            >
+              <tspan class="name">{node.label}</tspan>
+              <tspan class="value" dx="6">{format(node.value)}</tspan>
+            </text>
+          {:else if mode === "in2"}
+            {@const vx = (node.x + node.w / 2) * VW}
+            {@const vy = (node.y + node.h / 2) * VH}
+            <!-- Two vertical lines inside the bar: the name to the left of the
+                 value. In the rotated frame a line stacks along y, which lands
+                 on the screen's x. -->
+            <text
+              text-anchor="middle"
+              dominant-baseline="middle"
+              transform="rotate(-90 {vx} {vy})"
+              class="inside"
+              class:dim={litNodes && !litNodes.has(node.id)}
+            >
+              <tspan class="name" x={vx} y={vy - FONT_PX * 0.6}
+                >{node.label}</tspan
+              >
+              <tspan class="value" x={vx} y={vy + FONT_PX * 0.6}
+                >{format(node.value)}</tspan
+              >
             </text>
           {/if}
         {/each}
@@ -355,6 +560,10 @@
     fill: var(--muted);
     opacity: 0.18;
   }
+  .ribbon.unattributed {
+    fill: #64748b;
+    opacity: 0.25;
+  }
 
   .bar {
     fill: var(--ink-soft);
@@ -384,14 +593,31 @@
   .bar.other {
     fill: var(--muted);
   }
+  .bar.unattributed {
+    fill: #64748b;
+  }
 
-  .bar.tappable {
+  .bar-group.tappable {
     cursor: pointer;
   }
-  .bar.tappable:hover,
-  .bar.tappable:focus-visible {
+  .bar-group.tappable:hover,
+  .bar-group.tappable:focus-visible {
     opacity: 0.75;
     outline: none;
+  }
+
+  /* The slices of a stacked bar: what a right has come to. */
+  .bar.slice.spent {
+    fill: #f43f5e;
+  }
+  .bar.slice.claimed {
+    fill: #f59e0b;
+  }
+  .bar.slice.available {
+    fill: #10b981;
+  }
+  .bar.slice.over {
+    fill: #dc2626;
   }
 
   /* Hovering one part of the picture quiets the rest of it. */
@@ -401,12 +627,12 @@
   .ribbon.dim {
     opacity: 0.07;
   }
-  .bar.dim,
+  .bar-group.dim,
   text.dim {
     opacity: 0.3;
   }
   .ribbon,
-  .bar,
+  .bar-group,
   text {
     transition: opacity 120ms ease;
   }
@@ -422,6 +648,15 @@
 
   .value {
     fill: var(--muted);
+  }
+
+  /* Inside a bar the text sits on colour, so it is white and the value only
+     a little quieter than the name. */
+  text.inside .name {
+    fill: #fff;
+  }
+  text.inside .value {
+    fill: rgba(255, 255, 255, 0.78);
   }
 
   .tip {

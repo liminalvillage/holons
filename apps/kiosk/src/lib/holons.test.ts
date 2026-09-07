@@ -130,6 +130,8 @@ describe("holonForHost", () => {
     expect(holonForHost("www.hubs.network")).toBeNull();
     expect(holonForHost("api.hubs.network")).toBeNull();
     expect(holonForHost("staging.hubs.network")).toBeNull();
+    // The kiosk deploy itself is not a holon called "kiosk".
+    expect(holonForHost("kiosk.hubs.network")).toBeNull();
   });
 
   spec("the bare base domain names no holon", () => {

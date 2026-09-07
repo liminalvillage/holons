@@ -7,7 +7,6 @@
   import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
   import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import type { Subscription } from "$lib/holosphere";
-  import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { HIDDEN_LENS, hiddenIdSet, isRefHidden } from "@holons/core/hidden";
   import type { HiddenEntry } from "@holons/core/hidden";
@@ -494,25 +493,7 @@
     }, ECHO_GRACE_MS);
   }
 
-  // Pre-name tab-title fallback: the registered label that selected this holon
-  // (URL path first — it wins in holon resolution — then the subdomain),
-  // capitalised for the tab. Empty on unlabelled hosts (localhost, previews).
-  let holonLabel = "";
-  function labelFromUrl(): string {
-    const seg = decodeURIComponent(
-      location.pathname.replace(/^\/+/, "").split("/")[0] ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const label = SUBDOMAIN_HOLONS[seg] ? seg : subdomainOf(location.host);
-    // An undeclared subdomain can be a bare holon id (see holonForHost); a
-    // string of digits is no kind of tab title, so fall through to "Holons".
-    if (!label || /^\d+$/.test(label)) return "";
-    return label.charAt(0).toUpperCase() + label.slice(1);
-  }
-
   onMount(() => {
-    holonLabel = labelFromUrl();
     holonIdStore.set(resolveHolonId());
     // A deep-linked tab (`/tasks`, `/liminal/calendar`) opens that view. It
     // only picks the starting tab — it is not a pin, so a wall display's
@@ -836,13 +817,14 @@
 </script>
 
 <svelte:head>
-  <!-- Browser-tab / PWA title: the holon's name (caretaker override first).
-       Until one is known, the subdomain/path label that selected the holon
-       stands in (e.g. armoniaduale.hubs.network → "Armoniaduale") — never
-       the app's own name. The landing page titles itself (HomeView), so stand
-       aside there rather than racing it for the same tag. -->
+  <!-- Browser-tab / PWA title: the holon's name (caretaker override first,
+       then the settings name); until one is known — or when the holon has
+       none — its id. Never a label guessed from the host: a deploy on
+       kiosk.hubs.network is not a holon called "Kiosk". The landing page
+       titles itself (HomeView), so stand aside there rather than racing it
+       for the same tag. -->
   {#if !isHome}
-    <title>{$brandName || $holonName || holonLabel || "Holons"}</title>
+    <title>{$brandName || $holonName || $holonIdStore || "Holons"}</title>
   {/if}
 </svelte:head>
 

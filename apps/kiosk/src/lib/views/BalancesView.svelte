@@ -22,6 +22,11 @@
   //
   // Units never mix: one currency at a time, chosen by the pill. Data is the
   // parent FlowsView's; this only renders and writes.
+  //
+  // `mine` is the "My balance" view: the viewer's card, their debts with a
+  // way to settle each, and the records they are part of — nothing about
+  // anyone else. Without it, "All balances": everyone's position, the
+  // settle-up plan and every record.
 
   import { onDestroy } from "svelte";
   import { get } from "svelte/store";
@@ -59,6 +64,14 @@
   export let currencies: string[] = [];
   export let currency = "";
   export let onCurrency: (c: string) => void = () => {};
+  /** The viewer's own tab only (the "My balance" view). */
+  export let mine = false;
+  /**
+   * The Show pill's Personal scope: keep everyone's numbers (a balance is
+   * computed over the whole tab, not a slice of it) but list only the rows,
+   * transfers and records the viewer is part of.
+   */
+  export let filterMine = false;
 
   const PAGE = 10;
 
@@ -113,7 +126,12 @@
   $: ranked = [...credit.balances].sort(
     (a, b) => Math.abs(b.net) - Math.abs(a.net),
   );
-  $: active = ranked.filter((b) => Math.abs(b.net) >= 0.005);
+  $: active = ranked
+    .filter((b) => Math.abs(b.net) >= 0.005)
+    .filter((b) => !filterMine || isMe(b.userId));
+  $: plan = credit.plan.filter(
+    (p) => !filterMine || isMe(p.from) || isMe(p.to),
+  );
   $: square = ranked.filter((b) => Math.abs(b.net) < 0.005);
   $: maxAbs = active.reduce((m, b) => Math.max(m, Math.abs(b.net)), 0) || 1;
   let showSquare = false;
@@ -121,11 +139,20 @@
   // The list under it all: this currency's records, newest first.
   $: inCurrency = expenses
     .filter((e) => e && expenseCurrency(e) === currency)
+    .filter((e) => !(mine || filterMine) || involvesMe(e))
     .map((e) => ({ e, ts: stamp(e) }))
     .sort((a, b) => b.ts - a.ts);
+
   let limit = PAGE;
   $: if (currency) limit = PAGE;
   $: visible = inCurrency.slice(0, limit);
+
+  /** Paid by the viewer, or shared with them. */
+  function involvesMe(e: Expense): boolean {
+    if (!selfId) return false;
+    if (isMe(e.paidBy)) return true;
+    return coerceSplitWith(e.splitWith).map(String).includes(selfId);
+  }
 
   /** Older records carried the bot's `date` or a `timestamp`; read all three. */
   function stamp(e: any): number {
@@ -221,6 +248,20 @@
   $: personBalance = personSheet
     ? (credit.balances.find((b) => String(b.userId) === personSheet)?.net ?? 0)
     : 0;
+
+  // Hover on a person's row answers in place — their debts, one line each —
+  // the way the Sankey's bars do. Tap opens the sheet, which clears it, so
+  // a touch screen's emulated hover cannot leave it standing behind.
+  let hoverId: string | null = null;
+  $: hoverPairs = hoverId
+    ? credit.pairs.filter(
+        (p) => String(p.from) === hoverId || String(p.to) === hoverId,
+      )
+    : [];
+  function openPerson(id: string) {
+    hoverId = null;
+    personSheet = id;
+  }
 
   /** Every write starts here: not logged in → the login card, nothing else. */
   function requireLogin(): boolean {
@@ -372,8 +413,10 @@
 <section class="balances">
   <header class="head">
     <div class="titles">
-      <h2>{$t("balances.title")}</h2>
-      <p class="sub">{$t("balances.about")}</p>
+      <h2>{mine ? $t("balances.mineTitle") : $t("balances.title")}</h2>
+      <p class="sub">
+        {mine ? $t("balances.mineAbout") : $t("balances.about")}
+      </p>
     </div>
     {#if currencies.length}
       <PillSwitch
@@ -398,8 +441,8 @@
         >{/if}
     </p>
   {:else}
-    <!-- Where do I stand? -->
-    {#if me}
+    <!-- Where do I stand? (the whole of "My balance") -->
+    {#if me && mine}
       <div class="card me">
         <div class="me-top">
           <span class="av big">
@@ -462,112 +505,136 @@
     {/if}
 
     <!-- Where does everyone stand? -->
-    <div class="stats">
-      <div class="stat">
-        <span class="k">{$t("balances.spent")}</span>
-        <span class="v">{format(credit.volume)}</span>
+    {#if !mine}
+      <div class="stats">
+        <div class="stat">
+          <span class="k">{$t("balances.spent")}</span>
+          <span class="v">{format(credit.volume)}</span>
+        </div>
+        <div class="stat">
+          <span class="k">{$t("balances.expenses")}</span>
+          <span class="v">{credit.count}</span>
+        </div>
+        <div class="stat">
+          <span class="k">{$t("balances.openDebts")}</span>
+          <span class="v">{credit.pairs.length}</span>
+        </div>
       </div>
-      <div class="stat">
-        <span class="k">{$t("balances.expenses")}</span>
-        <span class="v">{credit.count}</span>
-      </div>
-      <div class="stat">
-        <span class="k">{$t("balances.openDebts")}</span>
-        <span class="v">{credit.pairs.length}</span>
-      </div>
-    </div>
 
-    {#if active.length}
-      <ul class="people">
-        {#each active as b (String(b.userId))}
-          {@const id = String(b.userId)}
-          <li>
-            <button class="row" on:click={() => (personSheet = id)}>
-              <span class="av">
-                <span class="ini">{avatarInitial(nameOf(id))}</span>
-                <img
-                  src={avatarUrl(id)}
-                  alt=""
-                  loading="lazy"
-                  on:error={hideImg}
-                  on:load={showImg}
-                />
-              </span>
-              <span class="body">
-                <span class="name">{who(id)}</span>
-                <span class="bar" aria-hidden="true">
-                  <span
-                    class="fill {sign(b.net)}"
-                    style="width: {Math.max(
-                      4,
-                      (Math.abs(b.net) / maxAbs) * 100,
-                    )}%"
-                  ></span>
+      {#if active.length}
+        <ul class="people">
+          {#each active as b (String(b.userId))}
+            {@const id = String(b.userId)}
+            <li class="person">
+              <button
+                class="row"
+                on:click={() => openPerson(id)}
+                on:mouseenter={() => (hoverId = id)}
+                on:mouseleave={() => (hoverId = null)}
+                on:focus={() => (hoverId = id)}
+                on:blur={() => (hoverId = null)}
+              >
+                <span class="av">
+                  <span class="ini">{avatarInitial(nameOf(id))}</span>
+                  <img
+                    src={avatarUrl(id)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
                 </span>
-              </span>
-              <span class="right {sign(b.net)}">
-                <span class="amt"
-                  >{sign(b.net) === "in" ? "+" : "−"}{abs(b.net)}</span
-                >
-                <span class="hint"
-                  >{sign(b.net) === "in"
-                    ? $t("balances.isOwed")
-                    : $t("balances.owes")}</span
-                >
-              </span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="empty">{$t("balances.everyoneSquare")}</p>
-    {/if}
-
-    {#if square.length && active.length}
-      <button class="link" on:click={() => (showSquare = !showSquare)}>
-        {$t("balances.squareCount", { n: square.length })}
-        <span aria-hidden="true">{showSquare ? "▴" : "▾"}</span>
-      </button>
-      {#if showSquare}
-        <ul class="chips">
-          {#each square as b (String(b.userId))}
-            <li class="chip">{who(b.userId)}</li>
-          {/each}
-        </ul>
-      {/if}
-    {/if}
-
-    <!-- How do we settle? -->
-    {#if credit.plan.length}
-      <div class="card plan">
-        <h3>{$t("balances.settleTitle")}</h3>
-        <p class="sub">
-          {$t("balances.settleCount", { n: credit.plan.length })}
-        </p>
-        <ul class="pairs">
-          {#each credit.plan as pair (`${pair.from}-${pair.to}`)}
-            <li>
-              <span class="av">
-                <span class="ini">{avatarInitial(nameOf(pair.from))}</span>
-                <img
-                  src={avatarUrl(String(pair.from))}
-                  alt=""
-                  loading="lazy"
-                  on:error={hideImg}
-                  on:load={showImg}
-                />
-              </span>
-              <span class="pair-text"
-                ><b>{who(pair.from)}</b> → <b>{who(pair.to)}</b></span
-              >
-              <span class="pair-amount">{format(pair.amount)}</span>
-              <button class="settle" on:click={() => openSettle(pair)}
-                >{$t("balances.paid")}</button
-              >
+                <span class="body">
+                  <span class="name">{who(id)}</span>
+                  <span class="bar" aria-hidden="true">
+                    <span
+                      class="fill {sign(b.net)}"
+                      style="width: {Math.max(
+                        4,
+                        (Math.abs(b.net) / maxAbs) * 100,
+                      )}%"
+                    ></span>
+                  </span>
+                </span>
+                <span class="right {sign(b.net)}">
+                  <span class="amt"
+                    >{sign(b.net) === "in" ? "+" : "−"}{abs(b.net)}</span
+                  >
+                  <span class="hint"
+                    >{sign(b.net) === "in"
+                      ? $t("balances.isOwed")
+                      : $t("balances.owes")}</span
+                  >
+                </span>
+              </button>
+              {#if hoverId === id && hoverPairs.length}
+                <div class="tip" role="tooltip">
+                  <dl>
+                    {#each hoverPairs as pair (`${pair.from}-${pair.to}`)}
+                      {@const owes = String(pair.from) === id}
+                      <div class="tip-row">
+                        <dt>{who(pair.from)} → {who(pair.to)}</dt>
+                        <dd class={owes ? "out" : "in"}>
+                          {format(pair.amount)}
+                        </dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
-      </div>
+      {:else}
+        <p class="empty">{$t("balances.everyoneSquare")}</p>
+      {/if}
+
+      {#if square.length && active.length}
+        <button class="link" on:click={() => (showSquare = !showSquare)}>
+          {$t("balances.squareCount", { n: square.length })}
+          <span aria-hidden="true">{showSquare ? "▴" : "▾"}</span>
+        </button>
+        {#if showSquare}
+          <ul class="chips">
+            {#each square as b (String(b.userId))}
+              <li class="chip">{who(b.userId)}</li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
+
+      <!-- How do we settle? -->
+      {#if plan.length}
+        <div class="card plan">
+          <h3>{$t("balances.settleTitle")}</h3>
+          <p class="sub">
+            {$t("balances.settleCount", { n: plan.length })}
+          </p>
+          <ul class="pairs">
+            {#each plan as pair (`${pair.from}-${pair.to}`)}
+              <li>
+                <span class="av">
+                  <span class="ini">{avatarInitial(nameOf(pair.from))}</span>
+                  <img
+                    src={avatarUrl(String(pair.from))}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
+                </span>
+                <span class="pair-text"
+                  ><b>{who(pair.from)}</b> → <b>{who(pair.to)}</b></span
+                >
+                <span class="pair-amount">{format(pair.amount)}</span>
+                <button class="settle" on:click={() => openSettle(pair)}
+                  >{$t("balances.paid")}</button
+                >
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
     {/if}
 
     <!-- The records -->
@@ -1095,6 +1162,49 @@
   .people > li,
   .records > li {
     min-width: 0;
+  }
+  .people > li.person {
+    position: relative;
+  }
+
+  /* Hover on a person: their debts, one line each, under the row. Lets the
+     pointer pass through, so leaving the row is what closes it. */
+  .tip {
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    top: calc(100% - 0.2rem);
+    z-index: 10;
+    pointer-events: none;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    box-shadow: 0 10px 28px rgb(20 30 30 / 0.18);
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+  .tip dl {
+    margin: 0;
+    display: grid;
+    gap: 0.15rem;
+  }
+  .tip-row {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+  .tip dt {
+    color: var(--muted);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tip dd {
+    margin: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
   /* The kiosk's row shape: a card surface, soft shadow, everything tappable. */

@@ -780,14 +780,15 @@
     color: var(--muted);
   }
 
-  /* Narrow portrait screens: drop the share bar + percentage, keep the score. */
+  /* Narrow portrait screens: drop the share bar, but keep the percentage next
+     to the score — the share is what the row is about, and a number reads on a
+     phone where a 4rem bar doesn't. */
   @media (max-width: 560px) {
     .rank {
-      grid-template-columns: 2rem 2.2rem 1fr 3rem;
+      grid-template-columns: 2rem 2.2rem 1fr 3.4rem 3rem;
       gap: 0.6rem;
     }
-    .bar,
-    .pct {
+    .bar {
       display: none;
     }
   }

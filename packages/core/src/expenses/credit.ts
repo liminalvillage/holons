@@ -103,6 +103,69 @@ export function settlementPlan(balances: UserBalance[]): CreditPair[] {
   return plan.sort((a, b) => b.amount - a.amount);
 }
 
+/**
+ * The group's standing in one currency, read as one number and a few counts —
+ * the mutual-credit equivalent of a bank statement's closing line.
+ *
+ * `outstanding` is the credit in circulation: everything the creditors are
+ * owed, net. It equals what the debtors owe (the matrix balances to zero), so
+ * one figure describes the whole group. `gross` sums the pairwise debts as
+ * recorded and is never smaller — A owing B who owes C nets down, and the gap
+ * between the two is what the settle-up plan saves.
+ */
+export interface CreditSummary {
+  /** Normalized currency the numbers are in. */
+  currency: string;
+  /** Net credit outstanding: the sum of every positive balance. */
+  outstanding: number;
+  /** Sum of the pairwise debts as recorded. >= outstanding. */
+  gross: number;
+  /** How many are owed, how many owe, how many are square. */
+  creditors: number;
+  debtors: number;
+  square: number;
+  /** Pairwise debts open, and the fewest transfers that would square them. */
+  openDebts: number;
+  transfers: number;
+  /** The single largest debt, or null when nothing is open. */
+  largest: CreditPair | null;
+  /** Ordinary spending this credit came from — settlements excluded. */
+  volume: number;
+  count: number;
+}
+
+/** Sum a group's mutual credit up into its closing line. */
+export function summarizeMutualCredit(credit: MutualCredit): CreditSummary {
+  let outstanding = 0;
+  let creditors = 0;
+  let debtors = 0;
+  let square = 0;
+  for (const b of credit.balances) {
+    if (b.net > DUST) {
+      outstanding += b.net;
+      creditors++;
+    } else if (b.net < -DUST) {
+      debtors++;
+    } else {
+      square++;
+    }
+  }
+  const gross = credit.pairs.reduce((sum, p) => sum + p.amount, 0);
+  return {
+    currency: credit.currency,
+    outstanding: round(outstanding),
+    gross: round(gross),
+    creditors,
+    debtors,
+    square,
+    openDebts: credit.pairs.length,
+    transfers: credit.plan.length,
+    largest: credit.pairs[0] ?? null,
+    volume: credit.volume,
+    count: credit.count,
+  };
+}
+
 /** True for a repayment recorded through `createSettlement`. */
 export function isSettlement(expense: Pick<Expense, 'kind'> | null | undefined): boolean {
   return expense?.kind === 'settlement';

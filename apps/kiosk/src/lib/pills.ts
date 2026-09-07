@@ -23,6 +23,7 @@ export const LAYOUT_SEGMENTS = {
   // The balance sheet: who is owed, who owes. Scales, not a list — the rows
   // are positions, not items.
   balances: { glyph: "⚖", labelKey: "pills.balances" },
+  mine: { glyph: "◎", labelKey: "pills.mine" },
 } as const satisfies Record<string, { glyph: string; labelKey: MessageKey }>;
 
 /** Sort pill segments for the Tasks backlog (see `TaskSort` in data.ts). */

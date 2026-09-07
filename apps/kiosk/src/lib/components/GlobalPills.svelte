@@ -89,14 +89,16 @@
     { id: "week", ...LAYOUT_SEGMENTS.week },
   ];
 
-  // ── Flows: the Sankey graph, or the balance sheet behind the expenses.
+  // ── Flows: my balance (the viewer's account), everyone's balances, or
+  // the Sankey graph. Whose ITEMS show is still the Show pill's business.
   const FLOWS_MODES: {
     id: FlowsViewMode;
     glyph: string;
     labelKey: MessageKey;
   }[] = [
-    { id: "graph", ...LAYOUT_SEGMENTS.graph },
+    { id: "mine", ...LAYOUT_SEGMENTS.mine },
     { id: "balances", ...LAYOUT_SEGMENTS.balances },
+    { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
   // ── Calendar: day / week / month window. Glyphs keep the compact cycling

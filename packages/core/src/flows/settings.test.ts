@@ -4,6 +4,7 @@ import {
   readAllocationConfig,
   readCollectiveSlug,
   readZoneAssignments,
+  readZonePeople,
   saveAllocationConfig,
   saveCollectiveSlug,
   toAllocationPartners,
@@ -151,11 +152,35 @@ describe('toAllocationPartners', () => {
   it('pairs partners with their zone and name', () => {
     const partners = toAllocationPartners(['p1', 'p2'], { p1: 'One' }, { p1: 2 });
     expect(partners).toEqual([
-      { id: 'p1', name: 'One', zone: 2 },
+      { id: 'p1', name: 'One', zone: 2, kind: 'holon' },
       // Unnamed falls back to the id; unassigned lands at zone 0, which
       // `allocate` treats as outside every ring.
-      { id: 'p2', name: 'p2', zone: 0 },
+      { id: 'p2', name: 'p2', zone: 0, kind: 'holon' },
     ]);
+  });
+
+  it('seats placed people after the partners, named from the people map', () => {
+    const partners = toAllocationPartners(
+      ['p1'],
+      { p1: 'One' },
+      { p1: 1 },
+      { u1: 2, u2: 0, p1: 3 },
+      { u1: 'Ada' },
+    );
+    expect(partners).toEqual([
+      { id: 'p1', name: 'One', zone: 1, kind: 'holon' },
+      // u2 is unplaced and so absent; p1 keeps its partner seat, not a second one.
+      { id: 'u1', name: 'Ada', zone: 2, kind: 'person' },
+    ]);
+  });
+});
+
+describe('readZonePeople', () => {
+  it('reads placed people and drops the unplaced', () => {
+    const doc = { allocation: { zones: { p1: 1 }, people: { u1: 2, u2: 0, u3: 'x' } } };
+    expect(readZonePeople(doc)).toEqual({ u1: 2 });
+    // People never leak into the partner map, nor the other way round.
+    expect(readZoneAssignments(doc)).toEqual({ p1: 1 });
   });
 });
 
@@ -173,6 +198,15 @@ describe('saveAllocationConfig', () => {
   it('replaces zones when given a new map', async () => {
     const hs = fakeHolosphere({ allocation: { zones: { p1: 2 } } });
     await saveAllocationConfig(hs as any, 'h1', {}, { p2: 1 });
+    expect(hs.current.allocation.zones).toEqual({ p2: 1 });
+  });
+
+  it('keeps people placements through a partner-zone sync, and replaces them when given', async () => {
+    const hs = fakeHolosphere({ allocation: { zones: { p1: 2 }, people: { u1: 1 } } });
+    await saveAllocationConfig(hs as any, 'h1', {}, { p2: 1 });
+    expect(hs.current.allocation.people).toEqual({ u1: 1 });
+    await saveAllocationConfig(hs as any, 'h1', {}, undefined, { u2: 3, u1: 0 });
+    expect(hs.current.allocation.people).toEqual({ u2: 3 });
     expect(hs.current.allocation.zones).toEqual({ p2: 1 });
   });
 

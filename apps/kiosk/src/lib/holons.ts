@@ -67,6 +67,7 @@ const RESERVED_SUBDOMAINS = new Set([
   "admin",
   "dev",
   "docs",
+  "kiosk",
   "mail",
   "preview",
   "staging",

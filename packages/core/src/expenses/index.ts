@@ -30,5 +30,6 @@ export {
   isSettlement,
   participantIds,
   settlementPlan,
+  summarizeMutualCredit,
 } from './credit.js';
-export type { CreateSettlementInput, CreditPair, MutualCredit } from './credit.js';
+export type { CreateSettlementInput, CreditPair, CreditSummary, MutualCredit } from './credit.js';

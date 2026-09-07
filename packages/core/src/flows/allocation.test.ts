@@ -5,7 +5,7 @@ import {
   calculateZonePercentages,
   normalizeAllocationConfig,
 } from './allocation.js';
-import { allocationToGraph } from './allocation-graph.js';
+import { allocationToGraph, partyIdOf, partyNodeId, segmentTotal } from './allocation-graph.js';
 
 /**
  * The web's original implementation, inlined so the port is checked against the
@@ -311,11 +311,54 @@ describe('allocationToGraph', () => {
     expect(exterior!.value).toBeCloseTo(500, 8);
   });
 
-  it('conserves value into each column', () => {
+  it('conserves value into the party column', () => {
     const intoMembers = graph.links
       .filter((l) => l.source === '__interior')
       .reduce((s, l) => s + l.value, 0);
     expect(intoMembers).toBeCloseTo(500, 8);
+    const parties = graph.nodes.filter((n) => n.id.startsWith('party-'));
+    expect(parties.reduce((s, n) => s + n.value, 0)).toBeCloseTo(1000, 8);
+  });
+
+  it('puts members and partners in one column, members fed straight from the interior', () => {
+    // Members skip the zone column: their ribbon runs from depth 1 to depth 3
+    // so every party ends on the same edge of the chart.
+    const a = graph.nodes.find((n) => n.id === partyNodeId('a'))!;
+    const p1 = graph.nodes.find((n) => n.id === partyNodeId('p1'))!;
+    expect(a.depth).toBe(3);
+    expect(p1.depth).toBe(3);
+    expect(a.kind).toBe('member');
+    expect(p1.kind).toBe('partner');
+    expect(graph.links.find((l) => l.target === a.id)!.source).toBe('__interior');
+    expect(graph.links.find((l) => l.target === p1.id)!.source).toBe('zone-1');
+    expect(partyIdOf(a.id)).toBe('a');
+    expect(partyIdOf('zone-1')).toBeNull();
+  });
+
+  it('draws a twice-seated party as one bar fed by both ribbons', () => {
+    // Member a (250) is also placed on the ring beside p1: 500 split evenly →
+    // 250 each. One bar of 500, one ribbon from the interior, one from the zone.
+    const twice = allocate({
+      total: 1000,
+      unit: 'eur',
+      config: { interiorPercent: 50, steepness: 100, nzones: 1 },
+      members,
+      zoned: [
+        { id: 'p1', name: 'One', zone: 1 },
+        { id: 'a', name: 'A', zone: 1, kind: 'person' },
+      ],
+    });
+    const g = allocationToGraph(twice);
+    const bars = g.nodes.filter((n) => partyIdOf(n.id) === 'a');
+    expect(bars).toHaveLength(1);
+    expect(bars[0].value).toBeCloseTo(500, 8);
+    expect(bars[0].kind).toBe('member');
+    const feeds = g.links.filter((l) => l.target === bars[0].id).map((l) => [l.source, l.value]);
+    expect(feeds).toEqual([
+      ['__interior', 250],
+      ['zone-1', 250],
+    ]);
+    expect(g.nodes.some((n) => n.id === 'member-a' || n.id === 'partner-a')).toBe(false);
   });
 
   it('drops an empty zone when others are occupied', () => {
@@ -350,6 +393,19 @@ describe('allocationToGraph', () => {
     expect(preview.links.some((l) => l.source === 'zone-2')).toBe(false);
   });
 
+  it('sits the parties beside the zones when nobody is placed on one', () => {
+    const preview = allocationToGraph(
+      allocate({
+        total: 100,
+        config: { interiorPercent: 50, steepness: 100, nzones: 2 },
+        members,
+        zoned: [],
+      }),
+    );
+    expect(preview.nodes.find((n) => n.id === partyNodeId('a'))!.depth).toBe(2);
+    expect(Math.max(...preview.nodes.map((n) => n.depth))).toBe(2);
+  });
+
   it('falls back to percentages when there is no pot', () => {
     const pctGraph = allocationToGraph(
       allocate({
@@ -372,5 +428,111 @@ describe('allocationToGraph', () => {
       }),
     );
     expect(empty.nodes).toHaveLength(0);
+  });
+});
+
+describe('allocationToGraph with fund usage', () => {
+  const usage = (parties: Record<string, { spent: number; claimed: number }>, unattributed = { spent: 0, claimed: 0 }) => ({
+    unit: 'eur',
+    parties: Object.fromEntries(Object.entries(parties).map(([id, use]) => [id, { eur: use }])),
+    unattributed: unattributed.spent + unattributed.claimed > 0 ? { eur: unattributed } : {},
+    unattributedPayees: [],
+  });
+
+  const result = allocate({
+    total: 1000,
+    unit: 'eur',
+    config: { interiorPercent: 50, steepness: 100, nzones: 1 },
+    members, // a 50 / b 30 / c 20 → 250 / 150 / 100
+    zoned: [{ id: 'p1', name: 'One', zone: 1 }], // 500
+  });
+
+  const stackOf = (track: ReturnType<typeof allocationToGraph>, id: string) =>
+    Object.fromEntries((track.nodes.find((n) => n.id === id)?.segments ?? []).map((s) => [s.kind, s.value]));
+
+  it('stacks every right into spent, claimed and available on its own bar', () => {
+    const graph = allocationToGraph(result, {}, usage({ a: { spent: 100, claimed: 50 }, p1: { spent: 500, claimed: 0 } }));
+    expect(stackOf(graph, partyNodeId('a'))).toEqual({ spent: 100, claimed: 50, available: 100 });
+    expect(stackOf(graph, partyNodeId('b'))).toEqual({ available: 150 });
+    expect(stackOf(graph, partyNodeId('p1'))).toEqual({ spent: 500 });
+    // The bar is still the right; the stack is how it is made up.
+    expect(graph.nodes.find((n) => n.id === partyNodeId('a'))!.value).toBeCloseTo(250, 8);
+    // No column after the parties: the stack replaced the sinks.
+    expect(Math.max(...graph.nodes.map((n) => n.depth))).toBe(3);
+    expect(graph.nodes.some((n) => n.id.startsWith('__s') || n.id.startsWith('__a') || n.id === '__over')).toBe(false);
+    expect(segmentTotal(graph, 'spent')).toBe(600);
+    expect(segmentTotal(graph, 'claimed')).toBe(50);
+    expect(segmentTotal(graph, 'available')).toBe(350);
+    expect(segmentTotal(graph, 'over')).toBe(0);
+  });
+
+  it('labels the slices with the caller\'s words', () => {
+    const graph = allocationToGraph(result, { spent: 'Speso', available: 'Disponibile' }, usage({ a: { spent: 100, claimed: 0 } }));
+    const a = graph.nodes.find((n) => n.id === partyNodeId('a'))!;
+    expect(a.segments!.map((s) => s.label)).toEqual(['Speso', 'Disponibile']);
+  });
+
+  it('stacks a twice-seated party\'s usage once, over the whole of their right', () => {
+    // Member a (250) is also placed on the ring beside p1: 500 split evenly → 250 each.
+    const twice = allocate({
+      total: 1000,
+      unit: 'eur',
+      config: { interiorPercent: 50, steepness: 100, nzones: 1 },
+      members,
+      zoned: [
+        { id: 'p1', name: 'One', zone: 1 },
+        { id: 'a', name: 'A', zone: 1, kind: 'person' },
+      ],
+    });
+    // a drew 600 in all against a right of 500: 100 over.
+    const graph = allocationToGraph(twice, {}, usage({ a: { spent: 600, claimed: 0 } }));
+    const a = graph.nodes.find((n) => n.id === partyNodeId('a'))!;
+    expect(stackOf(graph, a.id)).toEqual({ spent: 500, over: 100 });
+    expect(a.value).toBeCloseTo(600, 8);
+    // Both ribbons in are still the seats' rights.
+    const feeds = graph.links.filter((l) => l.target === a.id).reduce((s, l) => s + l.value, 0);
+    expect(feeds).toBeCloseTo(500, 8);
+    expect(segmentTotal(graph, 'over')).toBe(100);
+  });
+
+  it('draws an overrun rather than clipping it', () => {
+    const graph = allocationToGraph(result, {}, usage({ b: { spent: 250, claimed: 30 } }));
+    const b = graph.nodes.find((n) => n.id === partyNodeId('b'))!;
+    // The ribbon in is still the right (150); the bar grows to carry 280.
+    expect(graph.links.find((l) => l.target === b.id)!.value).toBeCloseTo(150, 8);
+    expect(b.value).toBeCloseTo(280, 8);
+    expect(stackOf(graph, b.id)).toEqual({ spent: 150, over: 130 });
+    expect(segmentTotal(graph, 'available')).toBeCloseTo(850, 8);
+  });
+
+  it('gives unattributed payouts their own stacked branch off the pot', () => {
+    const graph = allocationToGraph(result, { unattributed: 'Nobody' }, usage({}, { spent: 70, claimed: 30 }));
+    const pot = graph.nodes.find((n) => n.id === '__pot')!;
+    expect(pot.value).toBeCloseTo(1100, 8);
+    const branch = graph.nodes.find((n) => n.id === '__unattributed')!;
+    expect(branch.depth).toBe(1);
+    expect(branch.label).toBe('Nobody');
+    expect(branch.value).toBe(100);
+    expect(stackOf(graph, branch.id)).toEqual({ spent: 70, claimed: 30 });
+    expect(graph.links.some((l) => l.source === '__unattributed')).toBe(false);
+    expect(graph.totalIn).toBeCloseTo(1100, 8);
+  });
+
+  it('ignores usage when the pot is only percentages', () => {
+    const pct = allocate({
+      total: null,
+      config: { interiorPercent: 100, steepness: 100, nzones: 1 },
+      members,
+      zoned: [],
+    });
+    const graph = allocationToGraph(pct, {}, usage({ a: { spent: 10, claimed: 0 } }, { spent: 5, claimed: 0 }));
+    expect(graph.nodes.some((n) => n.segments || n.id === '__unattributed')).toBe(false);
+    expect(graph.nodes.find((n) => n.id === '__pot')!.value).toBeCloseTo(100, 8);
+  });
+
+  it('leaves the plain graph untouched without usage', () => {
+    const plain = allocationToGraph(result);
+    expect(plain.nodes.some((n) => n.depth > 3)).toBe(false);
+    expect(plain.nodes.some((n) => n.segments)).toBe(false);
   });
 });

@@ -71,6 +71,8 @@ export interface AllocationPartner {
   id: string;
   name: string;
   zone: number;
+  /** A federation partner holon, or a person placed on a ring. Absent means holon. */
+  kind?: 'holon' | 'person';
 }
 
 export const DEFAULT_ALLOCATION_CONFIG: AllocationConfig = {

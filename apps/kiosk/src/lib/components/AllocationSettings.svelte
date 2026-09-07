@@ -2,8 +2,8 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The allocation split, editable where it is read — the kiosk's take on the
-  // dashboard's AllocationEditor. Move a slider, place a partner on a ring,
-  // point the holon at its OpenCollective collective; Save writes the settings
+  // dashboard's AllocationEditor. Move a slider, place a partner — or a
+  // person — on a ring, point the holon at its OpenCollective collective; Save writes the settings
   // lens through core (`saveAllocationConfig` / `saveCollectiveSlug`), which
   // is exactly what the Flows board and Flow Management read back. No wallet
   // here: pushing the split on-chain stays with Flow Management.
@@ -15,7 +15,7 @@
   import { t } from "$lib/i18n";
   import { getReaStore } from "$lib/holosphere";
   import {
-    calculateZonePercentages,
+    allocate,
     saveAllocationConfig,
     saveCollectiveSlug,
     type AllocationConfig,
@@ -26,6 +26,10 @@
   export let config: AllocationConfig;
   export let zones: Record<string, number> = {};
   export let partners: { id: string; name: string }[] = [];
+  /** People placed on rings, by user id (settings `allocation.people`). */
+  export let zonePeople: Record<string, number> = {};
+  /** Everyone who could be placed: the holon's roster, the holon itself excluded. */
+  export let candidates: { id: string; name: string }[] = [];
   export let collectiveSlug = "";
 
   const dispatch = createEventDispatcher<{ close: void; saved: void }>();
@@ -35,6 +39,9 @@
   let steepness = config.steepness;
   let nzones = config.nzones;
   let zoneOf: Record<string, number> = { ...zones };
+  let personZone: Record<string, number> = { ...zonePeople };
+  // The picker's choice; placing it moves the person into the list below.
+  let pick = "";
   let slug = collectiveSlug;
   let busy = false;
   let error = "";
@@ -44,13 +51,68 @@
   $: for (const id of Object.keys(zoneOf)) {
     if (zoneOf[id] > nzones) zoneOf[id] = nzones;
   }
-  // What the sharing slider does, ring by ring — the same core arithmetic the
-  // Sankey (and the Bundle contract) split by.
-  $: ringShares = calculateZonePercentages(steepness, nzones);
+  $: for (const id of Object.keys(personZone)) {
+    if (personZone[id] > nzones) personZone[id] = nzones;
+  }
+  // The people on rings, named from the roster; a placed id the roster no
+  // longer knows keeps its id so it can still be removed.
+  $: nameOfPerson = new Map(candidates.map((c) => [c.id, c.name]));
+  $: placedPeople = Object.entries(personZone)
+    .filter(([, zone]) => zone >= 1)
+    .map(([id]) => ({ id, name: nameOfPerson.get(id) ?? id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $: unplaced = candidates
+    .filter(
+      (c) => !(personZone[c.id] >= 1) && !partners.some((p) => p.id === c.id),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // What each zone — and each partner in it — actually receives, as a share
+  // of the WHOLE fund: the draft run through the same `allocate()` the Sankey
+  // draws and the Bundle contract pays by. An empty zone next to an occupied
+  // one shows 0%, because that is what the chain would send it; with nobody
+  // placed at all the zones keep their decay shape as a preview.
+  $: draft = allocate({
+    total: null,
+    config: { interiorPercent, steepness, nzones },
+    members: [],
+    zoned: [
+      ...partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+      ...placedPeople.map((p) => ({
+        ...p,
+        zone: personZone[p.id],
+        kind: "person" as const,
+      })),
+    ],
+  });
+  $: zoneShares = draft.exterior.map((z) => z.percentage);
+  $: maxZoneShare = Math.max(0, ...zoneShares);
+  $: anyPlaced =
+    partners.some((p) => (zoneOf[p.id] ?? 0) >= 1) || placedPeople.length > 0;
+  $: partnerShare = (id: string): number =>
+    draft.exterior.flatMap((z) => z.members ?? []).find((m) => m.id === id)
+      ?.percentage ?? 0;
   $: rings = Array.from({ length: nzones }, (_, i) => i + 1);
+  const pct = (v: number) => `${Math.round(v * 10) / 10}`;
 
   function place(id: string, zone: number) {
     zoneOf = { ...zoneOf, [id]: zoneOf[id] === zone ? 0 : zone };
+  }
+
+  function placePerson(id: string, zone: number) {
+    personZone = { ...personZone, [id]: zone };
+  }
+
+  function removePerson(id: string) {
+    const next = { ...personZone };
+    delete next[id];
+    personZone = next;
+  }
+
+  /** The picker: choosing someone seats them on the first ring at once. */
+  function addPerson() {
+    if (!pick) return;
+    placePerson(pick, 1);
+    pick = "";
   }
 
   async function save() {
@@ -64,6 +126,7 @@
         holonId,
         { interiorPercent, steepness, nzones },
         zoneOf,
+        personZone,
       );
       if (slug.trim() !== collectiveSlug) {
         await saveCollectiveSlug(store, holonId, slug.trim());
@@ -139,17 +202,31 @@
         {$t("alloc.zones")}
         <span class="value">{nzones}</span>
       </div>
+      <p class="sub">
+        {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
+      </p>
       <div class="stepper">
         <button
           on:click={() => (nzones = Math.max(1, nzones - 1))}
           disabled={nzones <= 1}
           aria-label={$t("alloc.fewer")}>−</button
         >
-        <!-- The rings, each as tall as its share of the exterior. -->
-        <div class="rings" aria-hidden="true">
-          {#each ringShares as pct, i (i)}
-            <div class="ring">
-              <div class="fill" style="height: {Math.max(4, pct)}%"></div>
+        <!-- The zones, each as tall as its share of the whole fund, scaled to
+             the biggest so a flat spread still reads. -->
+        <div class="rings">
+          {#each zoneShares as share, i (i)}
+            <div
+              class="ring"
+              class:empty={share <= 0}
+              title={$t("alloc.zoneShare", { pct: pct(share) })}
+            >
+              <span class="rs">{pct(share)}%</span>
+              <div
+                class="fill"
+                style="height: {maxZoneShare > 0
+                  ? Math.max(4, (share / maxZoneShare) * 100)
+                  : 4}%"
+              ></div>
               <span class="rn">{i + 1}</span>
             </div>
           {/each}
@@ -169,7 +246,16 @@
         <ul class="partners">
           {#each partners as p (p.id)}
             <li>
-              <span class="pname">{p.name}</span>
+              <span class="pname">
+                {p.name}
+                {#if (zoneOf[p.id] ?? 0) >= 1}
+                  <span class="pshare"
+                    >{$t("alloc.zoneShare", {
+                      pct: pct(partnerShare(p.id)),
+                    })}</span
+                  >
+                {/if}
+              </span>
               <div class="ringpick" role="radiogroup" aria-label={p.name}>
                 {#each rings as z (z)}
                   <button
@@ -178,7 +264,10 @@
                     class="rp"
                     class:on={(zoneOf[p.id] ?? 0) === z}
                     on:click={() => place(p.id, z)}
-                    title={$t("flows.tipZoneN", { n: String(z) })}>{z}</button
+                    title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                      'alloc.zoneShare',
+                      { pct: pct(zoneShares[z - 1] ?? 0) },
+                    )}">{z}</button
                   >
                 {/each}
                 {#if !(zoneOf[p.id] ?? 0)}
@@ -190,6 +279,61 @@
         </ul>
       {:else}
         <p class="sub">{$t("alloc.noPartners")}</p>
+      {/if}
+    </div>
+
+    <div class="control">
+      <div class="k">{$t("alloc.people")}</div>
+      <p class="sub">{$t("alloc.peopleAbout")}</p>
+      {#if placedPeople.length}
+        <ul class="partners">
+          {#each placedPeople as p (p.id)}
+            <li>
+              <span class="pname">
+                {p.name}
+                <span class="pshare"
+                  >{$t("alloc.zoneShare", {
+                    pct: pct(partnerShare(p.id)),
+                  })}</span
+                >
+              </span>
+              <div class="ringpick" role="radiogroup" aria-label={p.name}>
+                {#each rings as z (z)}
+                  <button
+                    role="radio"
+                    aria-checked={personZone[p.id] === z}
+                    class="rp"
+                    class:on={personZone[p.id] === z}
+                    on:click={() => placePerson(p.id, z)}
+                    title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                      'alloc.zoneShare',
+                      { pct: pct(zoneShares[z - 1] ?? 0) },
+                    )}">{z}</button
+                  >
+                {/each}
+                <button
+                  class="rp remove"
+                  on:click={() => removePerson(p.id)}
+                  aria-label={$t("alloc.removePerson", { name: p.name })}
+                  title={$t("alloc.removePerson", { name: p.name })}>✕</button
+                >
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if unplaced.length}
+        <div class="picker">
+          <select bind:value={pick} aria-label={$t("alloc.addPerson")}>
+            <option value="">{$t("alloc.addPerson")}</option>
+            {#each unplaced as c (c.id)}
+              <option value={c.id}>{c.name}</option>
+            {/each}
+          </select>
+          <button class="add" disabled={!pick} on:click={addPerson}>＋</button>
+        </div>
+      {:else if !placedPeople.length}
+        <p class="sub">{$t("alloc.noPeople")}</p>
       {/if}
     </div>
 
@@ -299,7 +443,7 @@
     display: flex;
     align-items: flex-end;
     gap: 4px;
-    height: 3.6rem;
+    height: 4.6rem;
     padding: 0.2rem 0.3rem 0;
     border-radius: 12px;
     background: var(--paper);
@@ -319,9 +463,29 @@
     background: var(--teal);
     opacity: 0.85;
   }
+  .ring.empty .fill {
+    background: var(--muted);
+    opacity: 0.25;
+  }
   .rn {
     font-size: 0.62rem;
     color: var(--muted);
+  }
+  .rs {
+    font-size: 0.62rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ring.empty .rs {
+    color: var(--muted);
+  }
+  .pshare {
+    margin-left: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--teal-deep);
+    font-variant-numeric: tabular-nums;
   }
   .partners {
     list-style: none;
@@ -363,6 +527,36 @@
   .rp.on {
     background: var(--teal);
     color: #fff;
+  }
+  .rp.remove {
+    color: var(--muted);
+  }
+  .picker {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .picker select {
+    flex: 1;
+    min-height: 2.75rem;
+    padding: 0.4rem 0.7rem;
+    font: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+  }
+  .picker .add {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    border-radius: 12px;
+    background: var(--teal);
+    color: #fff;
+    font-size: 1.2rem;
+    touch-action: manipulation;
+  }
+  .picker .add:disabled {
+    opacity: 0.4;
   }
   .unplaced {
     font-size: 0.72rem;
