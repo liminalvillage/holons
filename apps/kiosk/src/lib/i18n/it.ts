@@ -579,7 +579,15 @@ export const it: Record<MessageKey, Msg> = {
   "hex.noGeo":
     "Nessuna geolocalizzazione su questo dispositivo — tocca la mappa o incolla l'id di una cella.",
   "hex.denied":
-    "Posizione negata — tocca la mappa o incolla l'id di una cella.",
+    "Posizione negata — consentila per questo sito, oppure tocca la mappa o incolla l'id di una cella.",
+  "hex.insecureGeo":
+    "La posizione richiede un indirizzo sicuro (https) — tocca la mappa o incolla l'id di una cella.",
+  "hex.geoUnavailable":
+    "Questo dispositivo non è riuscito a rilevare la posizione — tocca la mappa o incolla l'id di una cella.",
+  "hex.approxGeo":
+    "All'incirca dov'è questa rete — tocca la mappa per il punto esatto.",
+  "hex.geoTimeout":
+    "Rilevamento troppo lento — riprova, tocca la mappa o incolla l'id di una cella.",
   "hex.invalidCell": "Non è un id di cella H3 valido.",
   "hex.moveTitle": "Spostare {name} qui?",
   "hex.moveBody":

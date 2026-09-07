@@ -565,7 +565,16 @@ export const en = {
   "hex.thisIsHome": "This is home",
   "hex.noGeo":
     "No geolocation on this device — tap the map or paste a cell id.",
-  "hex.denied": "Location denied — tap the map or paste a cell id.",
+  "hex.denied":
+    "Location denied — allow it for this site, or tap the map / paste a cell id.",
+  "hex.insecureGeo":
+    "Location needs a secure (https) address — tap the map or paste a cell id.",
+  "hex.geoUnavailable":
+    "This device could not get a location fix — tap the map or paste a cell id.",
+  "hex.approxGeo":
+    "Roughly where this network is — tap the map for the exact spot.",
+  "hex.geoTimeout":
+    "Locating took too long — try again, tap the map, or paste a cell id.",
   "hex.invalidCell": "That's not a valid H3 cell id.",
   "hex.moveTitle": "Move {name} here?",
   "hex.moveBody":

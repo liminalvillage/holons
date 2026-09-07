@@ -13,7 +13,6 @@
   // (`onbackdrop`) so a tap can stand edit mode down instead.
   import { onDestroy, onMount } from "svelte";
   import {
-    cellToBoundary,
     cellToLatLng,
     cellToParent,
     getResolution,
@@ -34,13 +33,15 @@
   import { holonColor, holonColors, resolveCssColor } from "$lib/palette";
   import { activeTheme } from "$lib/theme";
   import {
+    cellRing as ring,
     countsAsPresent,
-    edgeFade,
     isLensId,
+    rimFade,
     itemDetails,
     itemLabel,
     lensColor,
     LENSES,
+    paddedViewBox,
     parsePresence,
     resolutionToZoom,
     serializePresence,
@@ -51,6 +52,7 @@
     type ViewBox,
   } from "$lib/maplens";
   import { prettyField } from "$lib/lensform";
+  import { geoMessage, requestPosition } from "$lib/geolocate";
   import { locale, t, tr, type MessageKey } from "$lib/i18n";
   import { en } from "$lib/i18n/en";
 
@@ -233,19 +235,6 @@
     void loadHexes($dockEntries);
   }
 
-  function ring(cell: string): number[][] {
-    let r = cellToBoundary(cell, true) as Array<[number, number]>;
-    // The dashboard map's antimeridian hack: a cell straddling ±180° comes
-    // back with a huge longitude jump and would paint as a line across the
-    // whole world — shift the positive side by -360 so the polygon stays
-    // local.
-    if (r.some(([lng]) => lng < -128))
-      r = r.map(([lng, lat]) => (lng > 0 ? [lng - 360, lat] : [lng, lat]));
-    const out: number[][] = r.map(([lng, lat]) => [lng, lat]);
-    out.push(out[0]);
-    return out;
-  }
-
   async function initMap() {
     try {
       const [{ default: mapboxgl }] = await Promise.all([
@@ -269,6 +258,8 @@
         if (!map) return;
         // The zoom-following H3 grid, in the dashboard map's two layers: the
         // current resolution plus the next finer one, fainter, inside it.
+        // Per-cell `fade` (see cellFade) thins the outlines at the rim of
+        // the map — the grid itself covers every last corner.
         map.addSource("dock-grid", {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
@@ -447,22 +438,6 @@
     return { west: sw.lng, south: sw.lat, east: ne.lng, north: ne.lat };
   }
 
-  /**
-   * How strongly a cell is drawn: 1 in the middle of the map, dissolving to
-   * 0 at the corners — the grid fades into the card's edge instead of being
-   * cut off by it. Data-driven per cell, so it survives pans between
-   * rebuilds well enough and never touches the lit lens cells.
-   */
-  function cellFade(cell: string): number {
-    if (!map) return 1;
-    const el = map.getContainer() as HTMLElement;
-    const w = el.clientWidth || 1;
-    const h = el.clientHeight || 1;
-    const [lat, lng] = cellToLatLng(cell);
-    const p = map.project([lng, lat]);
-    return edgeFade((p.x - w / 2) / (w / 2), (p.y - h / 2) / (h / 2));
-  }
-
   /** Every move/zoom settles into: grid, lens highlights, subscriptions. */
   function onViewChange() {
     rebuildGrid();
@@ -471,9 +446,43 @@
   }
 
   /**
-   * Refill the viewport grid at the zoom-matched resolution (plus the next
-   * finer one). Both layers live in one source, told apart by `kind`; a cap
-   * keeps a pathological viewport from ever exploding the cell count.
+   * The cells of the grid proper: the zoom's resolution, or the first
+   * coarser one that fits under `cap`. Stepping out beats the old
+   * skip-the-layer, which left the map bare — a grid one size too big still
+   * says where you are, an empty patch of earth says nothing.
+   */
+  function gridCells(view: ViewBox, res: number, cap: number): string[] {
+    for (let r = res; r >= 0; r--) {
+      const cells = viewportCells(paddedViewBox(view, r), r);
+      if (cells.length <= cap) return cells;
+    }
+    return [];
+  }
+
+  /**
+   * How strongly a cell's outline is drawn: full everywhere, thinning only
+   * across a band at the very rim so the grid dissolves into the edge of
+   * the map instead of being guillotined by it. The band is measured to the
+   * nearest EDGE, not out from the centre — a hexagon in the middle of the
+   * bottom edge is just as near the rim as one in a corner — and it runs
+   * past the edge, so the cells straddling it still draw faintly. Nothing
+   * is ever dropped: every place on the map keeps its hexagon.
+   */
+  function cellFade(cell: string): number {
+    if (!map) return 1;
+    const el = map.getContainer() as HTMLElement;
+    const [lat, lng] = cellToLatLng(cell);
+    const p = map.project([lng, lat]);
+    const nx = (p.x - (el.clientWidth || 1) / 2) / ((el.clientWidth || 1) / 2);
+    const ny =
+      (p.y - (el.clientHeight || 1) / 2) / ((el.clientHeight || 1) / 2);
+    return rimFade(Math.max(Math.abs(nx), Math.abs(ny)));
+  }
+
+  /**
+   * Refill the viewport grid at the zoom-matched resolution, with the next
+   * finer one laid faintly inside it. Both layers live in one source, told
+   * apart by `kind`, each cell carrying its own rim `fade`.
    */
   function rebuildGrid() {
     if (!map) return;
@@ -482,22 +491,18 @@
     if (!src || !view) return;
     const res = zoomToResolution(map.getZoom());
     const features: any[] = [];
-    for (const [kind, r, cap] of [
-      ["grid", res, 3000],
-      ["fine", res + 1, 6000],
-    ] as const) {
-      const cells = viewportCells(view, r);
-      if (cells.length > cap) continue;
-      for (const c of cells) {
-        const fade = cellFade(c);
-        if (fade <= 0) continue;
+    const add = (kind: string, cells: string[]) => {
+      for (const c of cells)
         features.push({
           type: "Feature",
-          properties: { kind, fade },
+          properties: { kind, fade: cellFade(c) },
           geometry: { type: "Polygon", coordinates: [ring(c)] },
         });
-      }
-    }
+    };
+    add("grid", gridCells(view, res, 3000));
+    // Detail, not structure: if there is too much of it, it just drops out.
+    const fine = viewportCells(paddedViewBox(view, res + 1), res + 1);
+    if (fine.length <= 6000) add("fine", fine);
     src.setData({ type: "FeatureCollection", features });
   }
 
@@ -904,25 +909,29 @@
   // the sunset theme can track the real horizon without ever prompting on
   // its own.
   export let locating = false;
-  export function locate() {
-    if (!navigator.geolocation) {
-      showNotice(tr("hex.noGeo"));
-      return;
-    }
+  export async function locate() {
+    if (locating) return;
     locating = true;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        locating = false;
-        const { latitude: lat, longitude: lng } = pos.coords;
-        setGeo({ lat, lng });
-        map?.flyTo({ center: [lng, lat], zoom: 13, essential: true });
-      },
-      () => {
-        locating = false;
-        showNotice(tr("hex.denied"));
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    try {
+      const res = await requestPosition();
+      if (!res.ok) {
+        console.warn("[kiosk] map: no location fix", res.reason, res.detail);
+        showNotice(tr(geoMessage(res.reason)));
+        return;
+      }
+      const { lat, lng } = res.fix;
+      setGeo({ lat, lng });
+      // An IP-derived fix knows the town, not the street: stop at a zoom the
+      // fix can honestly carry, and say where it came from.
+      map?.flyTo({
+        center: [lng, lat],
+        zoom: res.approximate ? 9 : 13,
+        essential: true,
+      });
+      if (res.approximate) showNotice(tr("hex.approxGeo"));
+    } finally {
+      locating = false;
+    }
   }
 
   onMount(() => {
@@ -952,9 +961,11 @@
   });
 </script>
 
-<div class="mapwrap">
+<div class="earthbox">
   {#if MAPBOX_TOKEN}
-    <div class="map" bind:this={mapContainer}></div>
+    <div class="mapwrap">
+      <div class="map" bind:this={mapContainer}></div>
+    </div>
 
     <!-- The dashboard's lens picker, as touch chips: light the cells that
          hold this kind of thing. Tapping the active chip stands it down. -->
@@ -1068,14 +1079,33 @@
      field and the beacons are drawn in, so nothing has to translate between
      map px and field px. No stacking context of its own: the lens chips and
      the cell panel below rise above the orbs on the sky's z-order, so a
-     wandering orb never covers a chip. The hex grid dissolves before it
-     reaches the rim (see cellFade) and a soft vignette settles the satellite
-     imagery under the sky. */
+     wandering orb never covers a chip. The hex grid covers the box whole —
+     every cell that touches the viewport — and thins to nothing at the rim
+     (see cellFade); the earth under it keeps its own edge. The map's bottom
+     stops on the lens drawer, so the chips sit on paper, not on satellite. */
+  /* The component's own box, filling the sky. The earth inside it stops
+     short of the foot; the chips and the cell panel hang below, over the
+     dock's paper. */
+  .earthbox {
+    position: absolute;
+    inset: 0;
+  }
   .mapwrap {
     position: absolute;
     inset: 0;
+    /* ...except at the foot, where the earth ends ON the lens drawer rather
+       than running under it: the chips get paper to sit on and the rounded
+       bottom corners read against it. --dock-lens is the row the dock
+       reserves for them (see DockView). */
+    bottom: calc(var(--dock-lens) + env(safe-area-inset-bottom));
     overflow: hidden;
     background: #1a2426;
+    /* The earth is a pane laid into the sky, not a hole cut in it: rounded
+       a touch more than a card (--radius), so the paper gradient behind
+       shows at the four corners and the grid runs off a soft edge instead
+       of a hard screen corner. `overflow: hidden` clips the canvas, the
+       vignette and every hexagon to it. */
+    border-radius: calc(var(--radius) + 8px);
     /* How far the earth is washed back toward the paper. Per skin, because
        the two washes do opposite things to the imagery: the dark skin's
        near-black sinks it under the sky, while the light skin's cream at the
@@ -1093,6 +1123,15 @@
   .map {
     position: absolute;
     inset: 0;
+    border-radius: inherit;
+  }
+  /* WebKit composites the map's canvas on its own layer, where an ancestor's
+     `overflow: hidden` does not always clip it to the radius — the corners
+     come back square on iPad. Carrying the curve down to the canvas itself
+     is what actually rounds the earth there. */
+  .map :global(.mapboxgl-canvas-container),
+  .map :global(.mapboxgl-canvas) {
+    border-radius: inherit;
   }
   .mapwrap::after {
     content: "";
@@ -1100,8 +1139,13 @@
     inset: 0;
     z-index: 1;
     pointer-events: none;
+    /* Same curve, so the vignette turns the corner with the earth rather
+       than banding across it. */
+    border-radius: inherit;
     /* Washed back toward the paper: the earth is the ground the sky floats
-       over, and the orbs and their beams must read against it. */
+       over, and the orbs and their beams must read against it. Flat, and
+       flat only — the imagery keeps its own edge right out to the rim. It
+       is the GRID that fades there, per hexagon, in rebuildGrid. */
     background: color-mix(
       in srgb,
       var(--paper-deep) var(--earth-wash),
@@ -1119,7 +1163,7 @@
     position: absolute;
     left: 0.9rem;
     right: 0.9rem;
-    bottom: calc(0.9rem + env(safe-area-inset-bottom));
+    bottom: calc(0.55rem + env(safe-area-inset-bottom));
     z-index: 4;
     display: flex;
     gap: 0.4rem;

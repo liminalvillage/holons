@@ -7,7 +7,14 @@
 // at the same zoom, in the same colour. Pure data + functions; the Mapbox
 // wiring lives in DockMap.svelte.
 
-import { cellToChildren, getRes0Cells, polygonToCells } from "h3-js";
+import {
+  cellToBoundary,
+  cellToChildren,
+  getHexagonEdgeLengthAvg,
+  getRes0Cells,
+  polygonToCells,
+  UNITS,
+} from "h3-js";
 
 /** The dashboard map's lens catalog, colour-for-colour. */
 export const LENSES = [
@@ -73,6 +80,112 @@ export function resolutionToZoom(resolution: number): number {
   return band ? band[0] : 22.0;
 }
 
+// ── Cell outlines ────────────────────────────────────────────────────────--
+//
+// An H3 cell edge is a straight line on the icosahedron face it lives on —
+// which is a GREAT-CIRCLE arc on the globe, not a straight line in lng/lat.
+// Mapbox draws a GeoJSON segment straight in projected space, so handing it
+// the six bare vertices draws six chords: at coarse resolutions and high
+// latitudes, where Mercator stretches hard, those chords miss the true edge
+// by hundreds of pixels and the hexagon reads as bowed the wrong way. So we
+// walk each edge along the arc instead. Fine cells come back untouched — an
+// edge shorter than the step is one segment, exactly as before.
+
+const DEG = Math.PI / 180;
+type Vec3 = [number, number, number];
+
+const toVec = (lng: number, lat: number): Vec3 => [
+  Math.cos(lat * DEG) * Math.cos(lng * DEG),
+  Math.cos(lat * DEG) * Math.sin(lng * DEG),
+  Math.sin(lat * DEG),
+];
+
+const toLngLat = ([x, y, z]: Vec3): [number, number] => [
+  Math.atan2(y, x) / DEG,
+  Math.asin(Math.max(-1, Math.min(1, z))) / DEG,
+];
+
+/** The angle subtended by two points on the globe, in degrees. */
+export function arcDegrees(a: [number, number], b: [number, number]): number {
+  const [ax, ay, az] = toVec(a[0], a[1]);
+  const [bx, by, bz] = toVec(b[0], b[1]);
+  const dot = Math.max(-1, Math.min(1, ax * bx + ay * by + az * bz));
+  return Math.acos(dot) / DEG;
+}
+
+/** The point `t` of the way along the great circle from `a` to `b`. */
+function slerp(
+  a: [number, number],
+  b: [number, number],
+  t: number,
+): [number, number] {
+  const A = toVec(a[0], a[1]);
+  const B = toVec(b[0], b[1]);
+  const dot = Math.max(
+    -1,
+    Math.min(1, A[0] * B[0] + A[1] * B[1] + A[2] * B[2]),
+  );
+  const omega = Math.acos(dot);
+  if (omega < 1e-9) return a;
+  const s = Math.sin(omega);
+  const k1 = Math.sin((1 - t) * omega) / s;
+  const k2 = Math.sin(t * omega) / s;
+  return toLngLat([
+    A[0] * k1 + B[0] * k2,
+    A[1] * k1 + B[1] * k2,
+    A[2] * k1 + B[2] * k2,
+  ]);
+}
+
+/**
+ * Longitudes made continuous along the ring: each step is nudged by whole
+ * turns until it is the short way round, so a cell straddling ±180° stays a
+ * local polygon instead of painting a band across the whole world. Mapbox
+ * wraps the out-of-range result back for us.
+ */
+function unwrapLongitudes(pts: Array<[number, number]>): number[][] {
+  const out: number[][] = [];
+  let offset = 0;
+  let prev: number | null = null;
+  for (const [lng, lat] of pts) {
+    if (prev !== null) {
+      const step = lng + offset - prev;
+      if (step > 180) offset -= 360;
+      else if (step < -180) offset += 360;
+    }
+    prev = lng + offset;
+    out.push([prev, lat]);
+  }
+  return out;
+}
+
+/** How finely a cell edge is walked, in degrees of arc. Half a degree puts
+ *  the worst coarse-cell error under a couple of pixels away from the poles,
+ *  and leaves every cell at res 4 and finer as its plain six vertices. */
+export const RING_STEP_DEGREES = 0.5;
+
+/**
+ * A cell's outline as a closed GeoJSON ring of `[lng, lat]`, its edges
+ * followed along the globe rather than cut straight across.
+ */
+export function cellRing(
+  cell: string,
+  stepDegrees = RING_STEP_DEGREES,
+): number[][] {
+  const verts = cellToBoundary(cell, true) as Array<[number, number]>;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % verts.length];
+    const steps = Math.max(1, Math.ceil(arcDegrees(a, b) / stepDegrees));
+    for (let k = 0; k < steps; k++)
+      pts.push(k === 0 ? a : slerp(a, b, k / steps));
+  }
+  const ring = unwrapLongitudes(pts);
+  ring.push([...ring[0]]);
+  return ring;
+}
+
 // ── Viewport grid ────────────────────────────────────────────────────────--
 
 /** A map viewport in degrees, as Mapbox reports it: longitudes may be
@@ -92,6 +205,41 @@ export function globalCells(res: number): string[] {
   if (res < 0 || res > 2) return [];
   const base = getRes0Cells();
   return res === 0 ? base : base.flatMap((c) => cellToChildren(c, res));
+}
+
+/** Degrees of latitude per kilometre — the meridian is 40 008 km round. */
+const KM_PER_DEGREE = 40008 / 360;
+
+/**
+ * A viewport grown enough that every cell TOUCHING it comes back from the
+ * fill, not just the ones centred inside it — h3 keeps a cell when its
+ * centre lands in the polygon, so the bare viewport leaves a bald ring
+ * around the edge where the straddling hexagons should be. A whole cell of
+ * margin covers the worst case (a cell centred just outside, reaching in by
+ * nearly its full radius); a tenth of the view on top keeps the grid ahead
+ * of a small pan. Longitude degrees shrink toward the poles, so the
+ * east-west margin is widened by the same factor.
+ *
+ * The margin never pushes a sub-global viewport past the half-globe line,
+ * where h3's fill gives up and only base cells come back.
+ */
+export function paddedViewBox(view: ViewBox, res: number): ViewBox {
+  const span = view.east - view.west;
+  const cellDeg = (getHexagonEdgeLengthAvg(res, UNITS.km) * 2) / KM_PER_DEGREE;
+  const midLat = (view.north + view.south) / 2;
+  // cos() collapses at the poles; a floor keeps the margin finite there.
+  const shrink = Math.max(0.15, Math.cos(midLat * DEG));
+  const dy = Math.max((view.north - view.south) * 0.1, cellDeg);
+  const dx = Math.min(
+    Math.max(span * 0.1, cellDeg / shrink),
+    Math.max(0, (179.9 - span) / 2),
+  );
+  return {
+    west: view.west - dx,
+    east: view.east + dx,
+    south: view.south - dy,
+    north: view.north + dy,
+  };
 }
 
 /**
@@ -135,19 +283,24 @@ export function viewportCells(box: ViewBox, res: number): string[] {
 }
 
 /**
- * How strongly a grid cell is drawn given where its centre sits in the
- * viewport, `nx`/`ny` being the position normalised to [-1, 1] across the
- * width and height. Full strength in the middle disk, dissolving smoothly
- * toward the edge and gone by the corners — the wequest map's hex disk
- * fading into its rounded card.
+ * How strongly a grid cell's outline is drawn, given how near its centre is
+ * to the rim of the map: `edge` is the distance to the NEAREST edge as a
+ * fraction of the half-box (0 at the middle, 1 on an edge, more outside).
+ *
+ * Full strength across almost the whole map, thinning across a band at the
+ * rim and gone a little way past it — so the grid dissolves into the edge
+ * instead of being cut off by it, while the cells straddling the edge still
+ * draw. The distance is to an edge, not out from the centre: a hexagon at
+ * the middle of the bottom edge is exactly as near the rim as one in a
+ * corner, and a centre-out measure would wrongly fade the whole map into a
+ * disk.
  */
-export function edgeFade(nx: number, ny: number): number {
-  const d = Math.hypot(nx, ny);
-  const inner = 0.5;
-  const outer = 1.1;
-  if (d <= inner) return 1;
-  if (d >= outer) return 0;
-  const t = (d - inner) / (outer - inner);
+export function rimFade(edge: number): number {
+  const inner = 0.86;
+  const outer = 1.16;
+  if (edge <= inner) return 1;
+  if (edge >= outer) return 0;
+  const t = (edge - inner) / (outer - inner);
   const smooth = t * t * (3 - 2 * t);
   return Math.round((1 - smooth) * 100) / 100;
 }

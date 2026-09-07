@@ -576,7 +576,16 @@ export const es: Record<MessageKey, Msg> = {
   "hex.thisIsHome": "Este es el hogar",
   "hex.noGeo":
     "Este dispositivo no tiene geolocalización — toca el mapa o pega el id de una celda.",
-  "hex.denied": "Ubicación denegada — toca el mapa o pega el id de una celda.",
+  "hex.denied":
+    "Ubicación denegada — permítela para este sitio, o toca el mapa o pega el id de una celda.",
+  "hex.insecureGeo":
+    "La ubicación necesita una dirección segura (https) — toca el mapa o pega el id de una celda.",
+  "hex.geoUnavailable":
+    "Este dispositivo no pudo obtener la ubicación — toca el mapa o pega el id de una celda.",
+  "hex.approxGeo":
+    "Más o menos dónde está esta red — toca el mapa para el punto exacto.",
+  "hex.geoTimeout":
+    "La localización tardó demasiado — inténtalo de nuevo, toca el mapa o pega el id de una celda.",
   "hex.invalidCell": "No es un id de celda H3 válido.",
   "hex.moveTitle": "¿Mover {name} aquí?",
   "hex.moveBody":

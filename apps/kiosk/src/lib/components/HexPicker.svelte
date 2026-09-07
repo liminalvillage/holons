@@ -10,13 +10,14 @@
     isValidCell,
     latLngToCell,
     cellToLatLng,
-    cellToBoundary,
     getResolution,
     polygonToCells,
   } from "h3-js";
+  import { cellRing } from "$lib/maplens";
   import { showNotice } from "$lib/stores";
   import { getHolosphere, getWriter } from "$lib/holosphere";
   import { setGeo } from "$lib/config";
+  import { geoMessage, requestPosition } from "$lib/geolocate";
   import { t, tr } from "$lib/i18n";
 
   /** The holon whose `settings.hex` is being claimed. */
@@ -190,14 +191,6 @@
     return { type: "FeatureCollection", features: [] };
   }
 
-  function cellRing(cell: string): number[][] {
-    const ring = (cellToBoundary(cell, true) as Array<[number, number]>).map(
-      ([lng, lat]) => [lng, lat],
-    );
-    ring.push(ring[0]);
-    return ring;
-  }
-
   function rebuildHighlight() {
     if (!map || !mapReady) return;
     const src = map.getSource("kiosk-selected");
@@ -313,33 +306,42 @@
     rebuildHighlight();
   }
 
-  function locate() {
-    if (!navigator.geolocation) {
-      showNotice(tr("hex.noGeo"));
-      return;
-    }
+  async function locate() {
+    if (locating) return;
     locating = true;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        locating = false;
-        const { latitude: lat, longitude: lng } = pos.coords;
-        setGeo({ lat, lng }); // the sunset theme reads this cache — see theme.ts
-        selected = latLngToCell(lat, lng, resolution);
-        if (map) {
-          map.flyTo({
-            center: [lng, lat],
-            zoom: resolutionToZoom(resolution),
-            essential: true,
-          });
-        }
-        rebuildHighlight();
-      },
-      () => {
-        locating = false;
-        showNotice(tr("hex.denied"));
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    try {
+      const res = await requestPosition();
+      if (!res.ok) {
+        console.warn("[kiosk] hex: no location fix", res.reason, res.detail);
+        showNotice(tr(geoMessage(res.reason)));
+        return;
+      }
+      const { lat, lng } = res.fix;
+      setGeo({ lat, lng }); // the sunset theme reads this cache — see theme.ts
+      // A network-derived fix is a town, and a claimed cell is a doorstep:
+      // fly there, but let the person pick the hexagon themselves rather than
+      // claiming a block this fix never actually knew.
+      if (res.approximate) {
+        map?.flyTo({
+          center: [lng, lat],
+          zoom: resolutionToZoom(5),
+          essential: true,
+        });
+        showNotice(tr("hex.approxGeo"));
+        return;
+      }
+      selected = latLngToCell(lat, lng, resolution);
+      if (map) {
+        map.flyTo({
+          center: [lng, lat],
+          zoom: resolutionToZoom(resolution),
+          essential: true,
+        });
+      }
+      rebuildHighlight();
+    } finally {
+      locating = false;
+    }
   }
 
   function useManual() {

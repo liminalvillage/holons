@@ -5,28 +5,37 @@
 // presence rule per lens, and the panel's item labelling.
 
 import { describe, it, expect } from "vitest";
-import { getResolution, isValidCell } from "h3-js";
+import {
+  cellToBoundary,
+  getResolution,
+  isValidCell,
+  latLngToCell,
+} from "h3-js";
 import {
   LENSES,
   countsAsPresent,
-  edgeFade,
   formatDetailValue,
   itemDetails,
   globalCells,
   isLensId,
   itemLabel,
+  arcDegrees,
   canAddToCell,
+  cellRing,
   headlineField,
   lensColor,
   lensScaffold,
   newLensItem,
   looksLikeRecord,
+  paddedViewBox,
   parsePresence,
   PRESENCE_TTL_MS,
   resolutionToZoom,
+  rimFade,
   serializePresence,
   viewportCells,
   zoomToResolution,
+  type ViewBox,
 } from "./maplens";
 
 describe("lens catalog", () => {
@@ -113,17 +122,6 @@ describe("viewport grid", () => {
     expect(
       viewportCells({ west: 0, south: 10, east: 10, north: 0 }, 1),
     ).toEqual([]);
-  });
-
-  it("edgeFade is full in the middle, gone at the corners, monotone between", () => {
-    expect(edgeFade(0, 0)).toBe(1);
-    expect(edgeFade(0.3, 0.3)).toBe(1);
-    expect(edgeFade(1, 1)).toBe(0);
-    expect(edgeFade(-1, 1)).toBe(0);
-    const mid = edgeFade(0.8, 0);
-    expect(mid).toBeGreaterThan(0);
-    expect(mid).toBeLessThan(1);
-    expect(edgeFade(1, 0)).toBeLessThan(mid);
   });
 });
 
@@ -398,5 +396,139 @@ describe("quick add", () => {
     expect(newLensItem("projects", "   ", "a1")).toBeNull();
     expect(newLensItem("projects", "Orchard", "")).toBeNull();
     expect(newLensItem("appreciations", "Thanks", "x1")).toBeNull();
+  });
+});
+
+describe("cell outlines", () => {
+  const corners = (cell: string) => cellToBoundary(cell, true).length;
+
+  it("leaves a fine cell as its bare vertices", () => {
+    // A res-9 edge is ~200 m — far under the half-degree step, so nothing
+    // is inserted and the ring is the cell's own corners (six, or seven
+    // where a vertex lands on an icosahedron edge) plus the closing point.
+    const cell = latLngToCell(44.4949, 11.3426, 9);
+    const ring = cellRing(cell);
+    expect(ring).toHaveLength(corners(cell) + 1);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+
+  it("walks a coarse cell's long edges along the globe", () => {
+    const cell = latLngToCell(70, 20, 1);
+    const ring = cellRing(cell);
+    expect(ring.length).toBeGreaterThan(corners(cell) + 1);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+    // Every inserted point sits ON the arc: consecutive points are never
+    // further apart than the step, and no point strays off the boundary.
+    for (let i = 1; i < ring.length; i++) {
+      const a = ring[i - 1] as [number, number];
+      const b = ring[i] as [number, number];
+      expect(arcDegrees(a, b)).toBeLessThanOrEqual(0.5 + 1e-9);
+    }
+  });
+
+  it("puts an edge's midpoint on the arc, not on the chord", () => {
+    // The bug this fixes: a straight lng/lat chord across a long edge bows
+    // the wrong way once Mercator stretches the latitudes.
+    const [a, b] = cellToBoundary(latLngToCell(70, 20, 1), true) as Array<
+      [number, number]
+    >;
+    const mid = cellRing(latLngToCell(70, 20, 1), arcDegrees(a, b) / 2)[1] as [
+      number,
+      number,
+    ];
+    const chordLat = (a[1] + b[1]) / 2;
+    expect(mid[1]).not.toBeCloseTo(chordLat, 6);
+    // ...and it really is equidistant from the two corners.
+    expect(arcDegrees(a, mid)).toBeCloseTo(arcDegrees(mid, b), 6);
+  });
+
+  it("keeps a cell straddling the antimeridian in one piece", () => {
+    const ring = cellRing(latLngToCell(0, 179.9, 3));
+    const lngs = ring.map(([lng]) => lng);
+    expect(Math.max(...lngs) - Math.min(...lngs)).toBeLessThan(180);
+    for (let i = 1; i < ring.length; i++)
+      expect(Math.abs(ring[i][0] - ring[i - 1][0])).toBeLessThan(180);
+  });
+});
+
+describe("grid coverage", () => {
+  /** Does the fill over a padded viewport leave any of it uncovered? */
+  function bald(view: ViewBox, res: number, steps = 9): string[] {
+    const covering = new Set(viewportCells(paddedViewBox(view, res), res));
+    const missed: string[] = [];
+    for (let i = 0; i <= steps; i++)
+      for (let j = 0; j <= steps; j++) {
+        const lat = view.south + ((view.north - view.south) * i) / steps;
+        const lng = view.west + ((view.east - view.west) * j) / steps;
+        const cell = latLngToCell(lat, lng, res);
+        if (!covering.has(cell)) missed.push(`${lat},${lng}`);
+      }
+    return missed;
+  }
+
+  // The whole point: every visible spot sits inside a drawn hexagon. The
+  // bare viewport fails this — h3 keeps only cells CENTRED inside it, so
+  // the ones straddling the edge (and the corners especially) go missing.
+  it.each([
+    [
+      "Bologna, city zoom",
+      { west: 11.2, south: 44.4, east: 11.5, north: 44.6 },
+      8,
+    ],
+    ["Europe, country zoom", { west: 0, south: 40, east: 20, north: 55 }, 3],
+    ["the far north", { west: 10, south: 70, east: 30, north: 78 }, 3],
+    [
+      "a sliver of a view",
+      { west: 11.34, south: 44.49, east: 11.35, north: 44.5 },
+      11,
+    ],
+  ])("covers %s edge to edge", (_name, view, res) => {
+    expect(bald(view as ViewBox, res)).toEqual([]);
+  });
+
+  it("grows the margin with the size of the cell", () => {
+    const view = { west: 0, south: 40, east: 20, north: 55 };
+    const wide = paddedViewBox(view, 1);
+    const tight = paddedViewBox(view, 9);
+    expect(wide.north - wide.south).toBeGreaterThan(tight.north - tight.south);
+    // Even the finest cells still get the tenth-of-a-view head start.
+    expect(tight.north).toBeCloseTo(view.north + 1.5, 6);
+  });
+
+  it("never pads a wide viewport past the half-globe line", () => {
+    const near = paddedViewBox(
+      { west: -89, south: -10, east: 89, north: 10 },
+      0,
+    );
+    expect(near.east - near.west).toBeLessThan(180);
+    // Already global: h3 has given up on the fill anyway, so no margin.
+    const global = paddedViewBox(
+      { west: -180, south: -80, east: 180, north: 80 },
+      0,
+    );
+    expect(global.east - global.west).toBe(360);
+  });
+});
+
+describe("rim fade", () => {
+  it("leaves the whole map at full strength but for a band at the rim", () => {
+    expect(rimFade(0)).toBe(1); // the middle
+    expect(rimFade(0.8)).toBe(1); // most of the way out, still full
+    expect(rimFade(1)).toBeGreaterThan(0); // ON the edge, still drawn
+    expect(rimFade(1)).toBeLessThan(1);
+  });
+
+  it("keeps drawing the cells that straddle the edge, then stops", () => {
+    expect(rimFade(1.1)).toBeGreaterThan(0);
+    expect(rimFade(1.2)).toBe(0);
+  });
+
+  it("thins monotonically across the band", () => {
+    let prev = 1;
+    for (let e = 0.86; e <= 1.2; e += 0.02) {
+      const v = rimFade(e);
+      expect(v).toBeLessThanOrEqual(prev);
+      prev = v;
+    }
   });
 });
