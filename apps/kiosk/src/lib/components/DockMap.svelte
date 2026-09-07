@@ -64,6 +64,16 @@
   const PARENT_COARSER = 5;
 
   let mapContainer: HTMLDivElement | null = null;
+  let wrapEl: HTMLDivElement | null = null;
+
+  /**
+   * Where the earth's pane sits inside the sky: the frame (see .mapwrap)
+   * pushes the map container in from the field's top-left corner, so a
+   * container point and a field point differ by exactly this much.
+   */
+  function frameOffset(): Vec {
+    return { x: wrapEl?.offsetLeft ?? 0, y: wrapEl?.offsetTop ?? 0 };
+  }
   let map: any = null;
   let mapboxglMod: any = null;
   let alive = true;
@@ -122,15 +132,15 @@
   }
 
   /**
-   * The grid cell under this point (container px = field px) at the zoom's
-   * own resolution — the hexagon one sees there. Any of them can take a
-   * dropped orb: the board then federates with that place. Null before the
-   * map exists.
+   * The grid cell under this point (field px) at the zoom's own resolution
+   * — the hexagon one sees there. Any of them can take a dropped orb: the
+   * board then federates with that place. Null before the map exists.
    */
   export function cellAt(x: number, y: number): string | null {
     if (!map) return null;
     try {
-      const ll = map.unproject([x, y]);
+      const o = frameOffset();
+      const ll = map.unproject([x - o.x, y - o.y]);
       return latLngToCell(ll.lat, ll.lng, zoomToResolution(map.getZoom()));
     } catch {
       return null;
@@ -138,15 +148,16 @@
   }
 
   /**
-   * Where each placed board's hexagon centre sits on screen, in container
-   * px — which, the map filling the same box as the gravity field, is field
-   * px. The world copy nearest the middle of the view wins, so a place just
-   * across the antimeridian doesn't project a world-width away. Null until
-   * there is a map to ask.
+   * Where each placed board's hexagon centre sits on screen, in field px:
+   * the map's own container px shifted by the frame the pane keeps from the
+   * sky's edge. The world copy nearest the middle of the view wins, so a
+   * place just across the antimeridian doesn't project a world-width away.
+   * Null until there is a map to ask.
    */
   export function projectBoards(): Map<string, Vec> | null {
     if (!map) return null;
     const mid = (map.getContainer() as HTMLElement).clientWidth / 2;
+    const o = frameOffset();
     const out = new Map<string, Vec>();
     for (const e of located) {
       let best: Vec | null = null;
@@ -155,7 +166,7 @@
         if (!best || Math.abs(p.x - mid) < Math.abs(best.x - mid))
           best = { x: p.x, y: p.y };
       }
-      if (best) out.set(e.id, best);
+      if (best) out.set(e.id, { x: best.x + o.x, y: best.y + o.y });
     }
     return out;
   }
@@ -963,7 +974,7 @@
 
 <div class="earthbox">
   {#if MAPBOX_TOKEN}
-    <div class="mapwrap">
+    <div class="mapwrap" bind:this={wrapEl}>
       <div class="map" bind:this={mapContainer}></div>
     </div>
 
@@ -1092,14 +1103,20 @@
   }
   .mapwrap {
     position: absolute;
-    inset: 0;
-    /* ...except at the foot, where the earth ends ON the lens drawer rather
-       than running under it: the chips get paper to sit on and the rounded
-       bottom corners read against it. --dock-lens is the row the dock
-       reserves for them (see DockView). */
-    bottom: calc(var(--dock-lens) + env(safe-area-inset-bottom));
+    /* A small margin of paper around the earth, the same frame a board's
+       surface keeps from the screen edge (see the tab page's .surface), so
+       the pane floats on the sky and casts the boards' soft shadow onto it.
+       The frame goes in from the top and the sides; the earth ends at the
+       foot ON the lens drawer rather than running under it, so the chips
+       get paper to sit on and the rounded bottom corners read against it.
+       --dock-lens is the row the dock reserves for them (see DockView).
+       frameOffset() folds this inset into the field<->container maths. */
+    --frame: clamp(0.4rem, 2vw, 1.4rem);
+    inset: var(--frame) var(--frame)
+      calc(var(--dock-lens) + env(safe-area-inset-bottom));
     overflow: hidden;
     background: #1a2426;
+    box-shadow: var(--shadow-soft);
     /* The earth is a pane laid into the sky, not a hole cut in it: rounded
        a touch more than a card (--radius), so the paper gradient behind
        shows at the four corners and the grid runs off a soft edge instead
