@@ -10,7 +10,7 @@
  * `_indexEvent` is the snapshot-hydration path, and the only route that accepts
  * more than one kind until the wire registry lands.
  */
-import { createStore } from '../../store/index.js';
+import { createStore, createWireRegistry, decodeEvent } from '../../store/index.js';
 import { buildEvent } from '../../nostr-events.js';
 import { APP, keypair, signed } from './helpers.js';
 
@@ -21,10 +21,21 @@ const ID = 't1';
 const standard = ({ item, sk, created_at }) =>
     buildEvent({ holon: HOLON, lens: LENS, item, sk, created_at, kind: 31923, extraTags: [['n', APP]] });
 
+/**
+ * A stand-in for a real codec's wire: it claims kind 31923 for the `tasks`
+ * lens. The grammar it decodes is deliberately the envelope's, so these tests
+ * are about the registry and the claim index, not about any one codec.
+ */
+const wireFor = () => {
+    const wire = createWireRegistry();
+    wire.register({ lens: LENS, kinds: [31923], decode: (e) => { const d = decodeEvent(e); return d ? [d] : null; } });
+    return wire;
+};
+
 describe('store: envelope claims are keyed by author AND kind', () => {
     let store;
     beforeEach(async () => {
-        store = createStore({ appName: APP, adapter: 'memory' });
+        store = createStore({ appName: APP, adapter: 'memory', wire: wireFor() });
         await store.open();
     });
     afterEach(async () => { await store.close(); });
@@ -84,7 +95,7 @@ describe('store: envelope claims are keyed by author AND kind', () => {
 describe('store: exportEvents narrows by decoding, not by reading tags', () => {
     let store;
     beforeEach(async () => {
-        store = createStore({ appName: APP, adapter: 'memory' });
+        store = createStore({ appName: APP, adapter: 'memory', wire: wireFor() });
         await store.open();
     });
     afterEach(async () => { await store.close(); });

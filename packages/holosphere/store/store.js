@@ -27,6 +27,7 @@ import {
     GLOBAL_HOLON, CAPABILITIES_HOLON, holonKey, holonFromKey, lensKey, addr, lensKeyOfAddr, soulOf,
 } from './address.js';
 import { wins, newestFirst } from './lww.js';
+import { createWireRegistry, decodeEvent } from './wire.js';
 import { privateKeyOf, privateLensPrefix } from './private.js';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -51,35 +52,27 @@ function claimKey(event) {
     return `${event.pubkey}|${event.kind}`;
 }
 
-/** Decode a kind-30078 event into its address + item, or null when malformed. */
-export function decodeEvent(event) {
-    if (!event || typeof event !== 'object' || typeof event.content !== 'string') return null;
-    const h = tag(event, 'h');
-    const lens = tag(event, 'l');
-    if (!h || !lens) return null;
-    const item = eventToItem(event);
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-    let id = item.id !== undefined && item.id !== null ? String(item.id) : '';
-    if (!id) {
-        const d = tag(event, 'd') || '';
-        id = d.split('/').slice(2).join('/');
-    }
-    if (!id) return null;
-    return { holon: h === GLOBAL_HOLON ? null : h, lens, id, item };
-}
+
+
+export { decodeEvent };
 
 export class Store {
     /**
      * @param {object} opts
      * @param {string} opts.appName          namespace this store mirrors (checked against the `n` tag)
      * @param {object|Function} opts.adapter  a StoreAdapter, or a thunk resolving to one
-     * @param {number} [opts.kind]           event kind accepted by `apply` (default 30078)
+     * @param {number} [opts.kind]           legacy envelope kind (default 30078)
+     * @param {object} [opts.wire]           wire registry; defaults to the legacy envelope alone
      * @param {number} [opts.compactAfter]   ops appended before the log is compacted (default 50000)
      */
-    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, compactAfter = 50000 } = {}) {
+    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, wire, compactAfter = 50000 } = {}) {
         if (!appName) throw new Error('store: appName is required');
         this.appName = String(appName);
         this.kind = kind;
+        // Which kinds this store consumes and how each decodes to an address.
+        // Seeded with the legacy envelope alone, so a store nobody configured
+        // behaves exactly as it always did.
+        this.wire = wire || createWireRegistry({ legacyKind: kind });
         this.compactAfter = compactAfter;
 
         this._adapterInit = adapter;
@@ -183,39 +176,53 @@ export class Store {
     // ------------------------------------------------------------------ writes
 
     /**
-     * Apply a signed event. Returns `{ applied, reason, record }`; `reason` is
-     * one of seen | kind | foreign | malformed | invalid | stale when not applied.
+     * Apply a signed event. Returns `{ applied, reason, record, records }`;
+     * `reason` is one of seen | kind | foreign | malformed | invalid | stale
+     * when nothing was applied.
+     *
+     * An event may claim SEVERAL addresses — a NIP-09 kind 5 retracts every
+     * coordinate in its `a` tags — so the address work runs per claim and
+     * `applied` means "at least one claim landed". `record` stays the first
+     * one, which is what every existing caller reads.
      */
     apply(event, { origin = 'remote', verify = true } = {}) {
         if (!event || typeof event !== 'object' || !event.id) return { applied: false, reason: 'malformed' };
-        if (event.kind !== this.kind) return { applied: false, reason: 'kind' };
+        if (!this.wire.accepts(event.kind)) return { applied: false, reason: 'kind' };
         const n = tag(event, 'n');
         if (n !== undefined && n !== this.appName) return { applied: false, reason: 'foreign' };
-        const decoded = decodeEvent(event);
-        if (!decoded) return { applied: false, reason: 'malformed' };
-        const a = addr(decoded.holon, decoded.lens, decoded.id);
-        const current = this.records.get(a);
-        if (this.events.has(event.id)) return { applied: false, reason: 'seen', record: current };
+        const claims = this.wire.decode(event);
+        if (!claims) return { applied: false, reason: 'malformed' };
+
+        const first = this.records.get(addr(claims[0].holon, claims[0].lens, claims[0].id));
+        if (this.events.has(event.id)) return { applied: false, reason: 'seen', record: first };
         if (verify && !verifyEvent(event)) return { applied: false, reason: 'invalid' };
 
-        this._storeEvent(a, decoded, event);
-
-        const candidate = { created_at: event.created_at, eventId: event.id };
-        if (!wins(candidate, current)) return { applied: false, reason: 'stale', record: current };
-
-        const record = {
-            addr: a,
-            holon: decoded.holon,
-            lens: decoded.lens,
-            id: decoded.id,
-            item: decoded.item,
-            created_at: event.created_at,
-            pubkey: event.pubkey,
-            eventId: event.id,
-            origin,
-        };
-        this._setRecord(record);
-        return { applied: true, record };
+        const records = [];
+        let staleAt = 0;
+        for (const decoded of claims) {
+            const a = addr(decoded.holon, decoded.lens, decoded.id);
+            const current = this.records.get(a);
+            this._storeEvent(a, decoded, event);
+            if (!wins({ created_at: event.created_at, eventId: event.id }, current)) {
+                staleAt++;
+                continue;
+            }
+            const record = {
+                addr: a,
+                holon: decoded.holon,
+                lens: decoded.lens,
+                id: decoded.id,
+                item: decoded.item,
+                created_at: event.created_at,
+                pubkey: event.pubkey,
+                eventId: event.id,
+                origin,
+            };
+            this._setRecord(record);
+            records.push(record);
+        }
+        if (!records.length) return { applied: false, reason: staleAt ? 'stale' : 'malformed', record: first };
+        return { applied: true, record: records[0], records };
     }
 
     /**
@@ -478,10 +485,22 @@ export class Store {
         return true;
     }
 
-    /** Index an event loaded from a snapshot (no persistence, no LWW). */
+    /**
+     * Index an event loaded from a snapshot (no persistence, no LWW).
+     *
+     * Decodes through the SAME wire registry as `apply`. Reading the envelope
+     * tags directly here instead would drop every standard-kind event from the
+     * index on restart — silently, with the records still present, and with
+     * `nextCreatedAt` then handing out timestamps that collide on the relay.
+     */
     _indexEvent(event) {
-        const decoded = decodeEvent(event);
-        if (!decoded || !event.id) return;
+        if (!event || !event.id) return;
+        const claims = this.wire.decode(event);
+        if (!claims) return;
+        for (const decoded of claims) this._indexClaim(event, decoded);
+    }
+
+    _indexClaim(event, decoded) {
         const a = addr(decoded.holon, decoded.lens, decoded.id);
         let byAuthor = this.eventsByAddr.get(a);
         if (!byAuthor) { byAuthor = new Map(); this.eventsByAddr.set(a, byAuthor); }

@@ -7,6 +7,7 @@ import { createMemoryAdapter } from './adapters/memory.js';
 import { createIndexedDbAdapter } from './adapters/indexeddb.js';
 
 export { Store, isTombstone, decodeEvent } from './store.js';
+export { createWireRegistry } from './wire.js';
 export { createMemoryAdapter } from './adapters/memory.js';
 export { createIndexedDbAdapter } from './adapters/indexeddb.js';
 export { wins, newestFirst } from './lww.js';
@@ -54,11 +55,12 @@ export function resolveAdapter(spec, { appName, dir } = {}) {
  * @param {number} [opts.compactAfter]
  * @param {number} [opts.kind]
  */
-export function createStore({ appName, adapter = 'auto', dir, compactAfter, kind } = {}) {
+export function createStore({ appName, adapter = 'auto', dir, compactAfter, kind, wire } = {}) {
     return new Store({
         appName,
         adapter: resolveAdapter(adapter, { appName, dir }),
         ...(compactAfter !== undefined ? { compactAfter } : {}),
         ...(kind !== undefined ? { kind } : {}),
+        ...(wire !== undefined ? { wire } : {}),
     });
 }
