@@ -186,6 +186,15 @@ export function createRelayTransport(holo, {
   async function backfill(p, filter) {
     let until;
     let newest = 0;
+    // Pagination progress is "ids this run has not walked yet", NOT "events the
+    // store accepted". Counting acceptance conflated two different things: an
+    // event the store rejects (a kind it does not consume) and an author's
+    // superseded claim (`_storeEvent` returns false, so it never lands in the
+    // events table) are both never 'seen', so they read as progress on every
+    // page and the walk could only end at MAX_BACKFILL_PAGES or the end of
+    // history. With a per-run id set, `fresh === 0` means what the loop
+    // actually needs to know: this page was entirely a re-fetch.
+    const runSeen = new Set();
     for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
       const q = { ...filter, limit: pageSize };
       if (until !== undefined) q.until = until;
@@ -196,7 +205,11 @@ export function createRelayTransport(holo, {
       for (const e of events) {
         if (e.created_at < oldest) oldest = e.created_at;
         if (e.created_at > newest) newest = e.created_at;
-        if (ingest(e).reason !== 'seen') fresh++;
+        if (!runSeen.has(e.id)) {
+          runSeen.add(e.id);
+          fresh++;
+        }
+        ingest(e);
       }
       if (events.length < pageSize || fresh === 0) break;
       until = oldest; // events at `oldest` are re-fetched and deduped as seen
@@ -222,7 +235,11 @@ export function createRelayTransport(holo, {
     state.sub = p.subscribeMany(relays, filter, {
       onevent: (evt) => {
         const r = ingest(evt);
-        if (state.synced && r.reason !== 'invalid' && r.reason !== 'malformed' && r.reason !== 'foreign') {
+        // Allow-list, not a deny-list: the cursor may only follow an event this
+        // store actually accounted for. A deny-list let every reason nobody had
+        // thought of yet ('kind', 'untrusted', 'closed') advance the cursor,
+        // which silently skips that history on the next catch-up.
+        if (state.synced && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
           // Live events arrive after the catch-up, so the cursor may follow them.
           store.setCursor(state.holon, state.lens, evt.created_at);
         }

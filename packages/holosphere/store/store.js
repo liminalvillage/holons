@@ -36,6 +36,21 @@ export function isTombstone(item) {
     return !!item && typeof item === 'object' && item._deleted === true;
 }
 
+/**
+ * The slot an author's claim occupies at an address.
+ *
+ * Keyed by pubkey AND kind, because one record can be encoded two ways on the
+ * wire — the legacy kind-30078 envelope and a standard kind — and NIP-33 makes
+ * those two independent replaceable slots on the relay. Keyed by pubkey alone
+ * they collided in one slot here, so the first standard write by our own key
+ * evicted the legacy envelope: the record survived, but `getEvents`,
+ * `exportEvents`, `nextCreatedAt` and enforce mode all read envelopes, not
+ * records.
+ */
+function claimKey(event) {
+    return `${event.pubkey}|${event.kind}`;
+}
+
 /** Decode a kind-30078 event into its address + item, or null when malformed. */
 export function decodeEvent(event) {
     if (!event || typeof event !== 'object' || typeof event.content !== 'string') return null;
@@ -74,7 +89,7 @@ export class Store {
 
         this.records = new Map();
         this.events = new Map();
-        this.eventsByAddr = new Map();   // addr → Map<pubkey, eventId>
+        this.eventsByAddr = new Map();   // addr → Map<`pubkey|kind`, eventId>
         this.eventIdsByLens = new Map(); // lens key → Set<id>
         this.private = new Map();
         this.cursors = new Map();
@@ -410,9 +425,17 @@ export class Store {
         const wantAuthors = authors ? new Set(authors) : null;
         const out = [];
         for (const e of this.events.values()) {
-            if (wantH !== undefined && tag(e, 'h') !== wantH) continue;
-            if (lens !== undefined && tag(e, 'l') !== String(lens)) continue;
             if (wantAuthors && !wantAuthors.has(e.pubkey)) continue;
+            // Narrow by DECODING, not by reading `h`/`l` off the event. Those
+            // two tags are the 30078 envelope's way of carrying the address;
+            // another encoding carries it somewhere else, and reading the tags
+            // directly would export nothing at all for such a lens.
+            if (wantH !== undefined || lens !== undefined) {
+                const d = decodeEvent(e);
+                if (!d) continue;
+                if (wantH !== undefined && holonKey(d.holon) !== wantH) continue;
+                if (lens !== undefined && d.lens !== String(lens)) continue;
+            }
             out.push(e);
         }
         return out.sort((a, b) => (a.created_at - b.created_at) || (a.id < b.id ? -1 : 1));
@@ -435,7 +458,8 @@ export class Store {
     _storeEvent(a, decoded, event) {
         let byAuthor = this.eventsByAddr.get(a);
         if (!byAuthor) { byAuthor = new Map(); this.eventsByAddr.set(a, byAuthor); }
-        const prevId = byAuthor.get(event.pubkey);
+        const ck = claimKey(event);
+        const prevId = byAuthor.get(ck);
         if (prevId) {
             const prev = this.events.get(prevId);
             if (prev && !wins({ created_at: event.created_at, eventId: event.id }, { created_at: prev.created_at, eventId: prev.id })) {
@@ -444,7 +468,7 @@ export class Store {
             this.events.delete(prevId);
             this._enqueue({ t: 'evt-del', id: prevId });
         }
-        byAuthor.set(event.pubkey, event.id);
+        byAuthor.set(ck, event.id);
         this.events.set(event.id, event);
         const lk = lensKey(decoded.holon, decoded.lens);
         let ids = this.eventIdsByLens.get(lk);
@@ -461,13 +485,14 @@ export class Store {
         const a = addr(decoded.holon, decoded.lens, decoded.id);
         let byAuthor = this.eventsByAddr.get(a);
         if (!byAuthor) { byAuthor = new Map(); this.eventsByAddr.set(a, byAuthor); }
-        const prevId = byAuthor.get(event.pubkey);
+        const ck = claimKey(event);
+        const prevId = byAuthor.get(ck);
         if (prevId) {
             const prev = this.events.get(prevId);
             if (prev && !wins({ created_at: event.created_at, eventId: event.id }, { created_at: prev.created_at, eventId: prev.id })) return;
             this.events.delete(prevId);
         }
-        byAuthor.set(event.pubkey, event.id);
+        byAuthor.set(ck, event.id);
         this.events.set(event.id, event);
         const lk = lensKey(decoded.holon, decoded.lens);
         let ids = this.eventIdsByLens.get(lk);
