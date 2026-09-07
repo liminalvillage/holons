@@ -50,6 +50,7 @@
     type PresenceEntry,
     type ViewBox,
   } from "$lib/maplens";
+  import { prettyField } from "$lib/lensform";
   import { locale, t, tr, type MessageKey } from "$lib/i18n";
   import { en } from "$lib/i18n/en";
 
@@ -681,6 +682,15 @@
   // ── Cell selection (the dashboard's click-to-select) ─────────────────────--
 
   let selectedCell: string | null = null;
+  /**
+   * The (cell, lens) pair in hand, for whoever holds the map: with both
+   * chosen, the dock's "+" adds INTO this pair instead of adding a hub (see
+   * DockView.submitAdd). Bound outward — the map only ever writes it.
+   */
+  export let selection: { cell: string; lens: LensId | null } | null = null;
+  $: selection = selectedCell
+    ? { cell: selectedCell, lens: selectedLens }
+    : null;
   let panelItems: Array<Record<string, unknown>> | null = null;
   /** The list row tapped through to its details (by record id). */
   let detailId: string | null = null;
@@ -699,14 +709,11 @@
           }).format(d),
       })
     : [];
-  /** A row's label: the catalog's, else the field name spaced out. */
+  /** A row's label: the catalog's, else the field name spaced out — the same
+   *  rule the add form labels its inputs by. */
   function fieldLabel(key: string): string {
     const k = `map.field.${key}`;
-    if (k in en) return $t(k as MessageKey);
-    return key
-      .replace(/[_-]+/g, " ")
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .replace(/^./, (c) => c.toUpperCase());
+    return k in en ? $t(k as MessageKey) : prettyField(key);
   }
   const idOf = (it: Record<string, unknown>) => String(it.id ?? "");
   let panelSub: Subscription | null = null;
@@ -789,6 +796,12 @@
         if (!stale()) emit();
       });
     if (acc.size) emit(); // the seed paints immediately
+  }
+
+  /** Re-read the open panel — the dock calls this after writing into it, so
+   *  the new record is listed even if the live channel is slow to echo. */
+  export function reloadPanel() {
+    refreshPanel();
   }
 
   function closeSelection() {

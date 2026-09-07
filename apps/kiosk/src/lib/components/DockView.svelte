@@ -46,10 +46,13 @@
   } from "$lib/dock";
   import { getHolonName, getHolosphere, getWriter } from "$lib/holosphere";
   import { showNotice } from "$lib/stores";
+  import { currentUser, loginOpen } from "$lib/auth";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { isValidCell } from "h3-js";
   import { parseHolonAdd } from "$lib/holons";
-  import { t, tr } from "$lib/i18n";
+  import { canAddToCell, newLensItem, type LensId } from "$lib/maplens";
+  import LensForm from "./LensForm.svelte";
+  import { t, tr, type MessageKey } from "$lib/i18n";
   import Modal from "./Modal.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
@@ -61,6 +64,28 @@
   let dockMap: DockMap | undefined;
   let locating = false;
   $: mapOn = $dockView === "map";
+
+  /**
+   * What the earth has selected, when it is showing: the tapped cell and the
+   * chosen lens. It is what turns the tray's "+" from "add a hub" into "add
+   * one of these, here" — see `submitAdd`.
+   */
+  let mapSel: { cell: string; lens: LensId | null } | null = null;
+  /** The cell an add would land in, or null when the earth is off/unselected. */
+  $: addCell = mapOn ? (mapSel?.cell ?? null) : null;
+  /**
+   * The lens an add would write into that cell. The `holons` lens is NOT one
+   * of these: adding a holon is adding a hub, and the cell becomes its home
+   * (see `submitAdd`), which is what puts it on the map in the first place.
+   */
+  $: addLens =
+    addCell &&
+    mapSel?.lens &&
+    mapSel.lens !== "holons" &&
+    canAddToCell(mapSel.lens)
+      ? mapSel.lens
+      : null;
+  const lensName = (id: LensId) => $t(`lens.${id}` as MessageKey);
 
   // ── Anchors + beacons ───────────────────────────────────────────────────--
   //
@@ -275,7 +300,11 @@
    * new one. The hexagon and the beacon land where the finger let go, and a
    * write that fails puts them back.
    */
-  async function claimHome(holon: string, hex: string) {
+  async function claimHome(
+    holon: string,
+    hex: string,
+    opts: { onlyWhenHomeless?: boolean } = {},
+  ): Promise<boolean> {
     const announce = (cell: string | null) =>
       window.dispatchEvent(
         new CustomEvent("kiosk:hex-changed", {
@@ -283,7 +312,11 @@
         }),
       );
     const previous = dockMap?.hexOf(holon) ?? null;
-    announce(hex); // optimistic: the earth follows the finger
+    // A drop follows the finger, so it announces first and puts the orb back
+    // if the write is refused. A hub added on the map has no orb in the sky
+    // yet and must not move a holon that already lives somewhere, so it waits
+    // for the settings read before saying anything.
+    if (!opts.onlyWhenHomeless) announce(hex);
     try {
       const hs = await getHolosphere();
       let existing: any = {};
@@ -294,7 +327,14 @@
       } catch {
         /* fresh settings */
       }
-      if (existing.hex === hex) return; // already home here — nothing to write
+      if (existing.hex === hex) return true; // already home here — nothing to write
+      // Already living elsewhere: only a deliberate drag moves a home. Say so
+      // — the orb is about to land somewhere other than the selected cell.
+      if (opts.onlyWhenHomeless && existing.hex) {
+        showNotice(tr("dock.addHereTaken"));
+        return false;
+      }
+      if (opts.onlyWhenHomeless) announce(hex);
       const writer = await getWriter(holon, (msg) => showNotice(msg));
       const ok = await writer.put("settings", { ...existing, id: holon, hex });
       if (ok) showNotice(tr("hex.claimed"));
@@ -302,10 +342,12 @@
         announce(existing.hex ?? previous); // refused — put it back
         showNotice(tr("hex.saveError"));
       }
+      return ok;
     } catch (err) {
       console.error("[kiosk] dock: failed to set home", err);
       announce(previous);
       showNotice(tr("hex.saveError"));
+      return false;
     }
   }
 
@@ -479,19 +521,41 @@
   const initialOf = (name: string) =>
     /[\p{L}\p{N}]/u.exec(name)?.[0]?.toUpperCase() ?? "·";
 
-  // The "+" flips into a small add form in place.
+  // The "+" flips into a small add form in place. What the line becomes
+  // depends on what the earth has selected: with a cell AND an addable lens
+  // in hand it is a record written into that pair; otherwise it names a hub,
+  // and a selected cell becomes that hub's home.
   let adding = false;
   let draft = "";
   let addError = "";
   let addInput: HTMLInputElement;
+  $: addLabel = addLens
+    ? $t("dock.addTo", { lens: lensName(addLens) })
+    : addCell
+      ? $t("dock.addHere")
+      : $t("dock.add");
+
+  /** The cell + lens the add form is open on. */
+  let formFor: { cell: string; lens: LensId } | null = null;
 
   async function startAdd() {
+    // With a cell and a lens both in hand, the "+" opens that lens's own
+    // form — the schema knows far more about the record than one line can.
+    if (addCell && addLens) {
+      if (!$currentUser) {
+        loginOpen.set(true);
+        return;
+      }
+      formFor = { cell: addCell, lens: addLens };
+      return;
+    }
     adding = true;
     addError = "";
     await tick();
     addInput?.focus();
   }
   async function submitAdd() {
+    const cell = addCell;
     const id = parseHolonAdd(draft);
     if (!id) {
       addError = $t("dock.addInvalid");
@@ -502,9 +566,38 @@
     addError = "";
     // The circle must exist before the open morph can animate from it.
     rememberBoard(id, labelFor(id));
+    if (cell) {
+      // Added while a cell was selected: that cell is where this hub lives.
+      // The map keeps the sky, so the new orb is seen landing on its hexagon
+      // instead of the board's window opening over it.
+      if (await claimHome(id, cell, { onlyWhenHomeless: true }))
+        void noteHolonInCell(cell, id);
+      return;
+    }
     await tick();
     requestOpen(id);
   }
+
+  /**
+   * Say in the cell itself that this holon lives here: a record under the
+   * cell's `holons` lens, which is what lights the cell for that lens and
+   * lists the hub in its panel — the settings.hex write alone is only known
+   * to the holon.
+   */
+  async function noteHolonInCell(cell: string, holon: string) {
+    try {
+      const name =
+        $dockEntries.find((e) => e.id === holon)?.name ?? labelFor(holon);
+      const item = newLensItem("holons", name, holon);
+      if (!item) return;
+      const writer = await getWriter(cell, (msg) => showNotice(msg));
+      await writer.put("holons", item);
+      dockMap?.reloadPanel();
+    } catch (err) {
+      console.error("[kiosk] dock: failed to note the hub in its cell", err);
+    }
+  }
+
   function cancelAdd() {
     adding = false;
     draft = "";
@@ -539,6 +632,7 @@
       <DockMap
         bind:this={dockMap}
         bind:locating
+        bind:selection={mapSel}
         onbackdrop={standDown}
         onmove={() => (mapTick += 1)}
         highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
@@ -762,12 +856,13 @@
         <button
           type="button"
           class="locate"
+          class:working={locating}
           on:click={() => dockMap?.locate()}
           disabled={locating}
-          aria-label={$t("hex.myLocation")}
-          title={$t("hex.myLocation")}
+          aria-label={locating ? $t("hex.locating") : $t("hex.myLocation")}
+          title={locating ? $t("hex.locating") : $t("hex.myLocation")}
         >
-          ◎
+          {locating ? "◌" : "◎"}
         </button>
       {/if}
     </div>
@@ -781,21 +876,21 @@
           bind:value={draft}
           bind:this={addInput}
           placeholder={$t("dock.addPlaceholder")}
-          aria-label={$t("dock.add")}
+          aria-label={addLabel}
           autocomplete="off"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
           on:keydown={(e) => e.key === "Escape" && cancelAdd()}
         />
-        <button type="submit" class="go" aria-label={$t("dock.add")}>→</button>
+        <button type="submit" class="go" aria-label={addLabel}>→</button>
         {#if addError}
           <span class="err" role="alert">{addError}</span>
         {/if}
       </form>
     {:else}
-      <button class="plus" on:click={startAdd}>
-        <span class="plus__sign">+</span>{$t("dock.add")}
+      <button class="plus" class:here={!!addCell} on:click={startAdd}>
+        <span class="plus__sign">+</span>{addLabel}
       </button>
     {/if}
     {#if !mapOn}
@@ -810,6 +905,21 @@
      the popup federates nothing: the pair stays unlinked until an arrow is
      tapped, and unlinking closes it, since the intersection it edited no
      longer exists. -->
+<!-- Adding to the earth: a cell and a lens are both chosen, so the "+"
+     brought up that lens's own form (its schema's fields, with everything the
+     moment already knows filled in). Saving lands the record in the cell and
+     the panel listing it reloads. -->
+{#if formFor}
+  <Modal on:close={() => (formFor = null)}>
+    <LensForm
+      cell={formFor.cell}
+      lens={formFor.lens}
+      on:saved={() => dockMap?.reloadPanel()}
+      on:close={() => (formFor = null)}
+    />
+  </Modal>
+{/if}
+
 {#if fedPair}
   <Modal on:close={() => (fedPair = null)}>
     <FederationLens
@@ -1317,6 +1427,22 @@
   .locate:disabled {
     opacity: 0.6;
   }
+  /* A fix can take a few seconds (or a permission prompt): show the button is
+     still on it, so nobody reads the disabled state as a dead button. */
+  .locate.working {
+    animation: locate-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes locate-pulse {
+    50% {
+      opacity: 1;
+      color: var(--ink);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .locate.working {
+      animation: none;
+    }
+  }
   .viewtoggle {
     flex: 0 0 auto;
     display: inline-flex;
@@ -1348,30 +1474,64 @@
   .viewopt:active {
     transform: scale(0.96);
   }
+  /* The add pill. A solid card-coloured lozenge with a shadow, because it
+     floats over whatever is beneath it — satellite imagery, at any
+     brightness — and a dashed outline in --muted disappeared into it. */
   .plus {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1.1rem 0.5rem 0.6rem;
+    padding: 0.55rem 1.2rem 0.55rem 0.6rem;
     border-radius: 999px;
-    border: 1.5px dashed var(--line);
-    color: var(--muted);
+    border: 1.5px solid var(--line);
+    color: var(--ink);
     font-size: 0.95rem;
-    font-weight: 600;
-    background: transparent;
+    font-weight: 700;
+    background: var(--card);
+    box-shadow: var(--shadow-note);
+    /* At rest the pill steps back — the earth behind it is the thing being
+       looked at. Reaching for it (hover, focus, or the touch itself) brings
+       it back to full. This holds in every state, the loaded
+       add-a-lens-here one included: it is the same button, and it should
+       not start shouting because a cell got picked. */
+    opacity: 0.62;
+    transition:
+      opacity 160ms ease,
+      transform 120ms ease;
+  }
+  .plus:hover,
+  .plus:focus-visible,
+  .plus:active {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .plus {
+      transition: none;
+    }
+  }
+  /* With a cell and a lens in hand the pill is the action, not an offer:
+     it wears the kiosk's action colour so it reads at arm's length. */
+  .plus.here {
+    color: var(--paper);
+    background: var(--teal);
+    border-color: var(--teal-deep);
   }
   .plus:active {
     transform: scale(0.96);
   }
   .plus__sign {
-    width: 1.7rem;
-    height: 1.7rem;
+    width: 1.8rem;
+    height: 1.8rem;
     border-radius: 50%;
     display: grid;
     place-items: center;
-    border: 1.5px dashed var(--line);
-    font-size: 1.1rem;
+    border: 1.5px solid currentColor;
+    font-size: 1.15rem;
     line-height: 1;
+  }
+  .plus.here .plus__sign {
+    background: color-mix(in srgb, var(--paper) 22%, transparent);
+    border-color: color-mix(in srgb, var(--paper) 55%, transparent);
   }
 
   .add {

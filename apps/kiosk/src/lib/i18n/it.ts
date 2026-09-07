@@ -9,6 +9,7 @@ export const it: Record<MessageKey, Msg> = {
   "common.auto": "Auto",
   "common.close": "Chiudi",
   "common.cancel": "Annulla",
+  "common.saving": "Salvataggio…",
   "common.apply": "Applica",
   "common.send": "Invia",
   "common.untitled": "Senza titolo",
@@ -314,6 +315,13 @@ export const it: Record<MessageKey, Msg> = {
   "dock.add": "Aggiungi un hub",
   "dock.addPlaceholder": "Id dell'holon, nome, npub, indirizzo o link",
   "dock.addInvalid": "Questo non identifica un holon.",
+  "dock.addTo": "Aggiungi {lens} qui",
+  "dock.addToInvalid": "Prima dagli un nome.",
+  "dock.addToFailed": "Non è stato possibile aggiungerlo a questa cella.",
+  "dock.addToSave": "Aggiungi",
+  "dock.addToTagHint": "Scrivi un tag, poi Invio",
+  "dock.addHere": "Aggiungi un hub qui",
+  "dock.addHereTaken": "Questo hub ha già un luogo — resta dov'è.",
   "dock.hint":
     "Tocca un cerchio per aprire il suo hub, tienilo premuto per rimuoverlo — trascinane uno su un altro per aprire i loro flussi.",
   "dock.deck": "Olosfera",
@@ -332,6 +340,9 @@ export const it: Record<MessageKey, Msg> = {
   "map.back": "Indietro",
   "map.detailEmpty": "Nessun altro dettaglio.",
   "map.field.status": "Stato",
+  "map.field.id": "Nome",
+  "map.field.title": "Titolo",
+  "map.field.name": "Nome",
   "map.field.type": "Tipo",
   "map.field.category": "Categoria",
   "map.field.description": "Dettagli",
@@ -836,6 +847,15 @@ export const it: Record<MessageKey, Msg> = {
   "breakdown.rateLimit":
     "Limite di richieste OpenAI raggiunto — riprova tra poco.",
   "breakdown.failed": "Scomposizione AI non riuscita (HTTP {status}).",
+
+  "draft.placeholder": "Descrivilo in una frase e compilo io il modulo…",
+  "draft.go": "Compila",
+  "draft.working": "Leggo…",
+  "draft.nothing":
+    "Non c'è abbastanza per compilare il modulo — prova a dire di più.",
+  "draft.failed": "Non è stato possibile compilare (HTTP {status}).",
+  "draft.unavailable":
+    "Per compilare serve una chiave OpenAI — impostala sul deploy o incollala nelle Impostazioni.",
 
   "settings.flowsTab": "Pannello Flussi",
   "settings.flowsTabSub":

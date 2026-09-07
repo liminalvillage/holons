@@ -15,7 +15,11 @@ import {
   globalCells,
   isLensId,
   itemLabel,
+  canAddToCell,
+  headlineField,
   lensColor,
+  lensScaffold,
+  newLensItem,
   looksLikeRecord,
   parsePresence,
   PRESENCE_TTL_MS,
@@ -320,5 +324,79 @@ describe("itemDetails", () => {
     expect(formatDetailValue(1725270000000, { formatDate: iso })).toBe(
       "2024-09-02T09:40:00.000Z",
     );
+  });
+});
+
+describe("quick add", () => {
+  it("offers every lens whose record a map tap can honestly start", () => {
+    const addable = LENSES.map((l) => l.id).filter(canAddToCell);
+    expect(addable).toEqual([
+      "quests",
+      "needs",
+      "offers",
+      "communities",
+      "organizations",
+      "projects",
+      "currencies",
+      "people",
+      "holons",
+      "events",
+      "library",
+      "roles",
+      "announcements",
+      "expenses",
+      "checklists",
+      "canvases",
+    ]);
+    // Both name a SECOND person the map can't know, and neither record means
+    // anything without them.
+    for (const lens of ["appreciations", "rea_events"] as const) {
+      expect(canAddToCell(lens)).toBe(false);
+      expect(headlineField(lens)).toBeNull();
+    }
+  });
+
+  it("knows where each lens keeps the line the panel lists it by", () => {
+    expect(headlineField("projects")).toBe("name");
+    expect(headlineField("quests")).toBe("title");
+    expect(headlineField("announcements")).toBe("content");
+    expect(headlineField("expenses")).toBe("description");
+  });
+
+  it("carries the constants a lens's record needs whatever is typed", () => {
+    expect(lensScaffold("events")).toEqual({ type: "event" });
+    expect(lensScaffold("library")).toEqual({ type: "other" });
+    expect(lensScaffold("checklists")).toEqual({
+      type: "checklist",
+      items: [],
+    });
+    expect(lensScaffold("projects")).toEqual({});
+  });
+
+  it("builds a bare headline record, scaffolding and all", () => {
+    expect(newLensItem("projects", "  Orchard  ", "a1")).toEqual({
+      id: "a1",
+      name: "Orchard",
+    });
+    expect(newLensItem("events", "Market", "e1")).toEqual({
+      id: "e1",
+      title: "Market",
+      type: "event",
+    });
+  });
+
+  it("reads back as its own label, and counts as present", () => {
+    for (const lens of LENSES.map((l) => l.id).filter(canAddToCell)) {
+      const item = newLensItem(lens, "A thing", "x");
+      expect(item, lens).not.toBeNull();
+      expect(itemLabel(item), lens).toBe("A thing");
+      expect(countsAsPresent(lens, item), lens).toBe(true);
+    }
+  });
+
+  it("builds nothing from a blank line, a missing id, or a lens it can't add", () => {
+    expect(newLensItem("projects", "   ", "a1")).toBeNull();
+    expect(newLensItem("projects", "Orchard", "")).toBeNull();
+    expect(newLensItem("appreciations", "Thanks", "x1")).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ export const en = {
   "common.auto": "Auto",
   "common.close": "Close",
   "common.cancel": "Cancel",
+  "common.saving": "Saving…",
   "common.apply": "Apply",
   "common.send": "Send",
   "common.untitled": "Untitled",
@@ -304,6 +305,15 @@ export const en = {
   "dock.add": "Add a hub",
   "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
+  // The tray's "+" on the map: with a cell and a lens in hand it writes into
+  // that pair; with a cell alone the hub it names comes to live there.
+  "dock.addTo": "Add {lens} here",
+  "dock.addToInvalid": "Give it a name first.",
+  "dock.addToFailed": "That couldn't be added to this cell.",
+  "dock.addToSave": "Add it",
+  "dock.addToTagHint": "Type a tag, then Enter",
+  "dock.addHere": "Add a hub here",
+  "dock.addHereTaken": "That hub already has a place — it stays where it is.",
   "dock.hint":
     "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
@@ -321,6 +331,10 @@ export const en = {
   "map.back": "Back",
   "map.detailEmpty": "No further details.",
   "map.field.status": "Status",
+  // `id` is only ever asked for by the library, where the id IS the name.
+  "map.field.id": "Name",
+  "map.field.title": "Title",
+  "map.field.name": "Name",
   "map.field.type": "Type",
   "map.field.category": "Category",
   "map.field.description": "Details",
@@ -813,6 +827,16 @@ export const en = {
   "breakdown.badKey": "OpenAI rejected this device's API key.",
   "breakdown.rateLimit": "OpenAI rate limit hit — try again shortly.",
   "breakdown.failed": "AI breakdown failed (HTTP {status}).",
+
+  // Drafting a map record from a description (the add form's optional
+  // assistant — see $lib/draft).
+  "draft.placeholder": "Describe it in a sentence and I'll fill the form in…",
+  "draft.go": "Fill it in",
+  "draft.working": "Reading…",
+  "draft.nothing": "Nothing in that to fill the form with — try saying more.",
+  "draft.failed": "Couldn't draft that (HTTP {status}).",
+  "draft.unavailable":
+    "Drafting needs an OpenAI key — set one on the deploy, or paste one in Settings.",
 
   "settings.flowsTab": "Flows board",
   "settings.flowsTabSub": "Where value comes from, goes, and is shared out.",

@@ -9,6 +9,7 @@ export const es: Record<MessageKey, Msg> = {
   "common.auto": "Auto",
   "common.close": "Cerrar",
   "common.cancel": "Cancelar",
+  "common.saving": "Guardando…",
   "common.apply": "Aplicar",
   "common.send": "Enviar",
   "common.untitled": "Sin título",
@@ -313,6 +314,13 @@ export const es: Record<MessageKey, Msg> = {
   "dock.add": "Añadir un hub",
   "dock.addPlaceholder": "Id del holon, nombre, npub, dirección o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
+  "dock.addTo": "Añadir {lens} aquí",
+  "dock.addToInvalid": "Primero ponle un nombre.",
+  "dock.addToFailed": "No se pudo añadir a esta celda.",
+  "dock.addToSave": "Añadir",
+  "dock.addToTagHint": "Escribe una etiqueta y pulsa Intro",
+  "dock.addHere": "Añadir un hub aquí",
+  "dock.addHereTaken": "Ese hub ya tiene un lugar — se queda donde está.",
   "dock.hint":
     "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para abrir sus flujos.",
   "dock.deck": "Holosfera",
@@ -330,6 +338,9 @@ export const es: Record<MessageKey, Msg> = {
   "map.back": "Atrás",
   "map.detailEmpty": "Sin más detalles.",
   "map.field.status": "Estado",
+  "map.field.id": "Nombre",
+  "map.field.title": "Título",
+  "map.field.name": "Nombre",
   "map.field.type": "Tipo",
   "map.field.category": "Categoría",
   "map.field.description": "Detalles",
@@ -829,6 +840,15 @@ export const es: Record<MessageKey, Msg> = {
   "breakdown.rateLimit":
     "Límite de peticiones de OpenAI alcanzado — inténtalo en un momento.",
   "breakdown.failed": "El desglose con IA falló (HTTP {status}).",
+
+  "draft.placeholder": "Descríbelo en una frase y relleno el formulario…",
+  "draft.go": "Rellenar",
+  "draft.working": "Leyendo…",
+  "draft.nothing":
+    "No hay bastante para rellenar el formulario — cuéntame algo más.",
+  "draft.failed": "No se pudo rellenar (HTTP {status}).",
+  "draft.unavailable":
+    "Rellenar necesita una clave de OpenAI — ponla en el deploy o pégala en Ajustes.",
 
   "settings.flowsTab": "Panel de Flujos",
   "settings.flowsTabSub":

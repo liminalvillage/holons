@@ -201,6 +201,7 @@ const RECORD_FIELDS = [
   "name",
   "label",
   "text",
+  "content",
   "description",
 ] as const;
 
@@ -228,6 +229,10 @@ export function countsAsPresent(lens: LensId, item: unknown): boolean {
   return true;
 }
 
+/** The fields a record's headline can live in, best first — `id` is what a
+ *  record is, not what it is called, so it is never a label. */
+const LABEL_FIELDS = RECORD_FIELDS.filter((f) => f !== "id");
+
 /**
  * A one-line human label for a lens item in the cell panel. Lenses carry
  * different shapes (quests have `title`, people have `name`, announcements
@@ -236,7 +241,7 @@ export function countsAsPresent(lens: LensId, item: unknown): boolean {
 export function itemLabel(item: unknown): string {
   const it = item as Record<string, unknown> | null;
   if (it == null || typeof it !== "object") return "";
-  for (const field of ["title", "name", "label", "text", "description"]) {
+  for (const field of LABEL_FIELDS) {
     const v = it[field];
     if (typeof v === "string" && v.trim()) {
       const line = v.trim().split("\n")[0];
@@ -244,6 +249,85 @@ export function itemLabel(item: unknown): string {
     }
   }
   return String(it.id ?? "");
+}
+
+// ── Adding to a cell (the map's quick add) ───────────────────────────────--
+//
+// The cell panel says what lives here, so with a cell AND a lens in hand the
+// dock's "+" adds into that pair instead of adding a hub — through a form
+// built from the lens's own schema (see lib/lensform.ts). This table holds
+// what the schema can't say: which field is the record's HEADLINE (the line
+// the panel lists it by, so the line the form asks for first), and the few
+// constants a lens's record carries whatever anyone types.
+//
+// Two lenses are deliberately missing: an appreciation names a giver AND a
+// receiver, an REA event a provider AND a receiver — a second person a map
+// tap can't know, and neither record means anything without them. Over those
+// the "+" stays a hub add.
+
+/** Where each addable lens carries the line someone types first. */
+const HEADLINE_FIELD: Partial<
+  Record<LensId, "title" | "name" | "content" | "description" | "id">
+> = {
+  quests: "title",
+  needs: "title",
+  offers: "title",
+  communities: "name",
+  organizations: "name",
+  projects: "name",
+  currencies: "name",
+  people: "name",
+  holons: "name",
+  events: "title",
+  // A library thing is keyed BY its name — `addItem(db, holon, name)` — so
+  // the line someone types becomes the record's id, not a field beside it.
+  library: "id",
+  roles: "title",
+  announcements: "content",
+  expenses: "description",
+  checklists: "title",
+  canvases: "title",
+};
+
+/** The field a lens's records are listed by, or null when the map can't add
+ *  to that lens at all. */
+export function headlineField(lens: LensId): string | null {
+  return HEADLINE_FIELD[lens] ?? null;
+}
+
+/** Whether the map offers to add a record of this lens to a cell. */
+export function canAddToCell(lens: LensId): boolean {
+  return lens in HEADLINE_FIELD;
+}
+
+/**
+ * What a lens's record carries beyond the headline, the moment's own
+ * bookkeeping (see lensform's `baseRecord`) and whatever is typed: an event
+ * says which lens it belongs to, a checklist starts with no items, a library
+ * thing that isn't given a kind is simply "other".
+ */
+export function lensScaffold(lens: LensId): Record<string, unknown> {
+  if (lens === "events") return { type: "event" };
+  if (lens === "library") return { type: "other" };
+  if (lens === "checklists") return { type: "checklist", items: [] };
+  return {};
+}
+
+/**
+ * A bare headline record for `lens` — what an add writes when there is no
+ * form to fill in (the hub noted into its cell), or null when the lens isn't
+ * addable or the line is blank.
+ */
+export function newLensItem(
+  lens: LensId,
+  text: string,
+  id: string,
+): Record<string, unknown> | null {
+  const field = HEADLINE_FIELD[lens];
+  const headline = (text ?? "").trim();
+  if (!field || !headline || !id) return null;
+  if (field === "id") return { id: headline, ...lensScaffold(lens) };
+  return { id, [field]: headline, ...lensScaffold(lens) };
 }
 
 // ── Item details (the cell panel's tap-through) ─────────────────────────--
