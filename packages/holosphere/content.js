@@ -11,6 +11,38 @@ import { isTombstone } from './store/store.js';
 import * as PrivateOps from './private-ops.js';
 
 const isGlobalHolon = (holon) => holon === null || holon === undefined || holon === '';
+
+/** Is this lens canonically carried on a standard Nostr kind? */
+const isStandardPrimary = (holoInstance, lens) =>
+    !!holoInstance?.store?.wire?.isStandardPrimary?.(lens);
+
+/**
+ * What a standard-primary lens cannot do, and why it throws instead of quietly
+ * degrading to a local write.
+ *
+ * Holograms — a soul names a PLACE (`app/holon/lens/key`); a standard
+ * coordinate names an AUTHOR (`kind:pubkey:d`). Publishing a pointer as a real
+ * calendar event would lie to every peer reading that kind.
+ *
+ * Globals — every standard grammar in play is group-scoped, so there is no
+ * encoding for a holon-less record.
+ *
+ * Propagation — a fanned-out copy needs a location-scoped `d` tag so N copies
+ * are N replaceable slots. A standard kind's `d` is fixed by its own grammar,
+ * so the copies collide on one slot and the last one written evicts the
+ * original. `_federation.origin` also has nowhere to live in a standard content
+ * schema, and without it a retraction cannot tell a copy from the target's own
+ * record.
+ */
+function refuseUnsupported(holoInstance, holon, lens, data, options) {
+    if (!isStandardPrimary(holoInstance, lens)) return options;
+    const where = `lens '${lens}' is carried on a standard Nostr kind`;
+    if (isGlobalHolon(holon)) throw new Error(`put: ${where}, which has no encoding for a global record`);
+    if (holoInstance.isHologram?.(data)) throw new Error(`put: ${where}, which cannot carry a hologram pointer`);
+    if (data?._federation) throw new Error(`put: ${where}, which cannot carry a federated copy`);
+    if (options.autoPropagate === true) throw new Error(`put: ${where}, which cannot be propagated across scalespace`);
+    return options;
+}
 const normHolon = (holon) => (isGlobalHolon(holon) ? null : holon);
 
 /** Fresh copy of a stored item, so callers can mutate what they read. */
@@ -143,6 +175,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         throw new Error('put: Missing required lens parameter');
     }
     if (password) return PrivateOps.put(holoInstance, holon, lens, data, password, options);
+    refuseUnsupported(holoInstance, holon, lens, data, options);
 
     const isGlobal = isGlobalHolon(holon);
     const { disableHologramRedirection = false } = options;
@@ -739,7 +772,11 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         // that need the result pass `{ awaitPropagation: true }`.
         const deletedCopyOrigin = dataToDelete?._federation?.origin;
         const wasPropagatedCopy = deletedCopyOrigin != null && String(deletedCopyOrigin) !== String(holon);
-        const shouldPropagate = options.autoPropagate !== false && holon && !wasPropagatedCopy;
+        // Propagation on delete is opt-OUT, so a standard-primary lens has to be
+        // excluded explicitly: there are no scalespace copies of such a record
+        // to retract, because it was never allowed to make any.
+        const shouldPropagate = options.autoPropagate !== false && holon && !wasPropagatedCopy
+            && !isStandardPrimary(holoInstance, lens);
         if (shouldPropagate) {
             const runRetraction = () => holoInstance
                 .propagateDeletion(holon, lens, key, options.propagationOptions)

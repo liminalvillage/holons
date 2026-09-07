@@ -36,6 +36,8 @@ import type { NostrEventLike } from './types.js';
 
 /** The lens occurrences land on. */
 export const SHIFTS_LENS = 'shifts';
+/** NIP-09 retraction. */
+const DELETE_KIND = 5;
 /** The lens signups land on, one record per person per occurrence. */
 export const SHIFT_RSVP_LENS = 'shifts_rsvp';
 
@@ -137,6 +139,18 @@ export function decodeShiftEvent(event: NostrEventLike): Claim[] | null {
   return null;
 }
 
+/**
+ * The address a shift d tag names, for resolving a NIP-09 retraction.
+ *
+ * A kind 5 names its targets by `a` coordinate, so the registry has to turn
+ * `shift-<group>-<date>-<code>` back into the record it stands for.
+ */
+export function shiftAddressOf(dTag: string): { holon: string; lens: string; id: string } | null {
+  const key = parseShiftDTag(dTag);
+  if (!key || key.kind !== 'shift') return null;
+  return { holon: key.groupId, lens: SHIFTS_LENS, id: occurrenceId(key.date, key.code) };
+}
+
 /** The REQ shapes that keep a holon's schedule in sync. */
 export function shiftFilters(holon: string, coordinatorPubkey?: string): NostrFilterLike[] {
   const occurrences: NostrFilterLike = {
@@ -147,7 +161,13 @@ export function shiftFilters(holon: string, coordinatorPubkey?: string): NostrFi
   // Signups are filtered by the shift hashtag, not by occurrence address: a
   // live subscription cannot enumerate addresses it has not synced yet. Every
   // kind-31925 event on the relay carries it, checked against the live data.
-  return [occurrences, { kinds: [SHIFT_RSVP_KIND], '#t': [SHIFT_HASHTAG] }];
+  const out: NostrFilterLike[] = [occurrences, { kinds: [SHIFT_RSVP_KIND], '#t': [SHIFT_HASHTAG] }];
+  // Retractions, narrowed to the coordinator. NIP-09 only lets an author
+  // delete their own events, so this is both complete and safe. Without a
+  // pinned coordinator there is no author to narrow to and subscribing to
+  // every kind 5 on the relay would be absurd, so we take none.
+  if (coordinatorPubkey) out.push({ kinds: [DELETE_KIND], authors: [coordinatorPubkey] });
+  return out;
 }
 
 /**
@@ -181,6 +201,7 @@ export function createShiftWire({ coordinatorPubkey }: { coordinatorPubkey?: str
     lens: SHIFTS_LENS,
     kinds: [SHIFT_OCCURRENCE_KIND, SHIFT_RSVP_KIND],
     filters: (holon: string) => shiftFilters(holon, coordinatorPubkey),
+    address: shiftAddressOf,
     decode: (event: NostrEventLike) =>
       (authorizeShiftEvent(event, { coordinatorPubkey }) ? decodeShiftEvent(event) : null),
   };

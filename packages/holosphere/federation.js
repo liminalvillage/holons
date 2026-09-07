@@ -1197,6 +1197,12 @@ async function mayPropagateInto(holosphere, targetSpace, lens, id, holon, readTi
  * @returns {Promise<object>} - Result with success/skipped/error counts
  */
 export async function propagateDeletion(holosphere, holon, lens, key = null, options = {}) {
+    // A lens carried on a standard Nostr kind has no fan-out: its `d` tag is
+    // fixed by its own grammar, so N scalespace copies would collide on one
+    // replaceable slot and the last written would evict the original.
+    if (holosphere?.store?.wire?.isStandardPrimary?.(lens)) {
+        return { skipped: 'standard-primary lens', lens, holon };
+    }
     if (!holosphere || !holon || !lens) {
         throw new Error('propagateDeletion: Missing required parameters');
     }
@@ -1287,6 +1293,12 @@ export async function propagateDeletion(holosphere, holon, lens, key = null, opt
  * @returns {Promise<object>} - Result with success count and errors
  */
 export async function propagate(holosphere, holon, lens, data, options = {}) {
+    // A lens carried on a standard Nostr kind has no fan-out: its `d` tag is
+    // fixed by its own grammar, so N scalespace copies would collide on one
+    // replaceable slot and the last written would evict the original.
+    if (holosphere?.store?.wire?.isStandardPrimary?.(lens)) {
+        return { skipped: 'standard-primary lens', lens, holon };
+    }
     if (!holosphere || !holon || !lens || !data) {
         throw new Error('propagate: Missing required parameters');
     }

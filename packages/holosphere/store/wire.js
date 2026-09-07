@@ -16,6 +16,9 @@
 import { HOLOSPHERE_KIND, eventToItem, tag } from '../nostr-events.js';
 import { GLOBAL_HOLON } from './address.js';
 
+/** NIP-09 retraction. */
+const DELETE_KIND = 5;
+
 /**
  * Decode a kind-30078 event into its address + item, or null when malformed.
  *
@@ -56,6 +59,38 @@ export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
     const byLens = new Map();        // lens → LensWire[]
     const standardLenses = new Set();
 
+    /**
+     * A NIP-09 retraction, as one soft tombstone per address it names.
+     *
+     * Deliberately NOT a new concept downstream: `isTombstone`, the list
+     * filters, the watchers and enforce mode all already understand a record
+     * whose item carries `_deleted`, so a kind 5 becomes one of those and
+     * nothing else has to learn about deletion twice.
+     *
+     * Authorization is the NIP-09 rule itself and nothing more: an author may
+     * retract only their own events, which the `a` coordinate carries, so an
+     * event naming somebody else's address is simply not a claim.
+     */
+    function decodeRetraction(event) {
+        const out = [];
+        for (const t of event.tags || []) {
+            if (t[0] !== 'a' || typeof t[1] !== 'string') continue;
+            const parts = t[1].split(':');
+            if (parts.length < 3) continue;
+            const targetKind = Number(parts[0]);
+            const targetPubkey = String(parts[1]).toLowerCase();
+            const dTag = parts.slice(2).join(':');
+            if (targetPubkey !== String(event.pubkey).toLowerCase()) continue;
+            const w = byKind.get(targetKind);
+            if (!w || typeof w.address !== 'function') continue;
+            let a = null;
+            try { a = w.address(dTag); } catch { continue; }
+            if (!a || !a.id) continue;
+            out.push({ holon: a.holon, lens: a.lens, id: a.id, item: { id: a.id, _deleted: true } });
+        }
+        return out.length ? out : null;
+    }
+
     return {
         legacyKind,
 
@@ -88,7 +123,10 @@ export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
         },
 
         accepts(kind) {
-            return kind === legacyKind || byKind.has(kind);
+            // Kind 5 is consumable only once some lens is carried on a standard
+            // kind: on the envelope alone a delete is a tombstone record, and
+            // there is nothing for a retraction to name.
+            return kind === legacyKind || byKind.has(kind) || (kind === DELETE_KIND && byKind.size > 0);
         },
 
         /**
@@ -101,6 +139,7 @@ export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
                 const d = decodeEvent(event);
                 return d ? [d] : null;
             }
+            if (event.kind === DELETE_KIND) return byKind.size ? decodeRetraction(event) : null;
             const w = byKind.get(event.kind);
             if (!w) return null;
             let claims = null;

@@ -69,21 +69,22 @@ describe('store: the wire registry decides what is consumable', () => {
     });
 
     test('one event may claim several addresses', async () => {
-        // The shape a NIP-09 kind 5 needs: one event, many coordinates.
+        // A codec is free to fan one event out over several records — a list
+        // kind carrying its members, say. Kind 5 is the case the registry
+        // handles itself; this is the general capability underneath it.
         const wire = createWireRegistry();
         wire.register({
             lens: LENS,
-            kinds: [5],
-            decode: (e) => ['t1', 't2', 't3'].map((id) => ({ holon: HOLON, lens: LENS, id, item: { id, _deleted: true } })),
+            kinds: [30003],
+            decode: () => ['t1', 't2', 't3'].map((id) => ({ holon: HOLON, lens: LENS, id, item: { id, title: id } })),
         });
         const store = await open(wire);
         const a = keypair();
 
-        const r = store.apply(asKind(5, { item: { id: 'ignored' }, sk: a.sk }));
+        const r = store.apply(asKind(30003, { item: { id: 'ignored' }, sk: a.sk }));
         expect(r.applied).toBe(true);
         expect(r.records).toHaveLength(3);
-        expect(store.list(HOLON, LENS)).toHaveLength(0);                       // all tombstoned
-        expect(store.list(HOLON, LENS, { includeDeleted: true })).toHaveLength(3);
+        expect(store.list(HOLON, LENS).map((x) => x.id).sort()).toEqual(['t1', 't2', 't3']);
         await store.close();
     });
 
@@ -110,6 +111,84 @@ describe('store: the wire registry decides what is consumable', () => {
         store.apply(signed({ item: { id: 't2', title: 'legacy' }, sk: a.sk, created_at: 2000 }));
         store.apply(asKind(OCC, { item: { id: 't2', title: 'standard' }, sk: a.sk, created_at: 1999 }));
         expect(store.get(HOLON, LENS, 't2').item.title).toBe('legacy');
+        await store.close();
+    });
+
+    test('a NIP-09 retraction becomes an ordinary tombstone', async () => {
+        const wire = createWireRegistry();
+        wire.register({
+            lens: LENS, kinds: [OCC], decode: envelopeGrammar,
+            address: (d) => ({ holon: HOLON, lens: LENS, id: d.replace('shift-', '') }),
+        });
+        const store = await open(wire);
+        const a = keypair();
+
+        store.apply(asKind(OCC, { item: { id: 't1', title: 'live' }, sk: a.sk, created_at: 1000 }));
+        expect(store.list(HOLON, LENS)).toHaveLength(1);
+
+        // The author retracts their own address, naming it the NIP-09 way.
+        const retract = buildEvent({
+            holon: HOLON, lens: LENS, item: { id: 'x' }, sk: a.sk, kind: 5, created_at: 1001,
+            extraTags: [['n', APP], ['a', `${OCC}:${a.pk}:shift-t1`]],
+        });
+        expect(store.apply(retract).applied).toBe(true);
+        expect(store.list(HOLON, LENS)).toHaveLength(0);
+        expect(store.get(HOLON, LENS, 't1').item._deleted).toBe(true);
+        await store.close();
+    });
+
+    test('a retraction naming someone else\'s address is not a claim', async () => {
+        const wire = createWireRegistry();
+        wire.register({
+            lens: LENS, kinds: [OCC], decode: envelopeGrammar,
+            address: (d) => ({ holon: HOLON, lens: LENS, id: d.replace('shift-', '') }),
+        });
+        const store = await open(wire);
+        const a = keypair();
+        const b = keypair();
+
+        store.apply(asKind(OCC, { item: { id: 't1', title: 'live' }, sk: a.sk, created_at: 1000 }));
+        // b tries to delete a's record. NIP-09 says only the author may.
+        const forged = buildEvent({
+            holon: HOLON, lens: LENS, item: { id: 'x' }, sk: b.sk, kind: 5, created_at: 1001,
+            extraTags: [['n', APP], ['a', `${OCC}:${a.pk}:shift-t1`]],
+        });
+        expect(store.apply(forged).reason).toBe('malformed');
+        expect(store.list(HOLON, LENS)).toHaveLength(1);
+        await store.close();
+    });
+
+    test('a later event resurrects a retracted address', async () => {
+        // Not an accident. A peer that cancels a shift and then edits it must
+        // win; our tombstone is a record, not an erasure.
+        const wire = createWireRegistry();
+        wire.register({
+            lens: LENS, kinds: [OCC], decode: envelopeGrammar,
+            address: (d) => ({ holon: HOLON, lens: LENS, id: d.replace('shift-', '') }),
+        });
+        const store = await open(wire);
+        const a = keypair();
+
+        store.apply(asKind(OCC, { item: { id: 't1', title: 'live' }, sk: a.sk, created_at: 1000 }));
+        store.apply(buildEvent({
+            holon: HOLON, lens: LENS, item: { id: 'x' }, sk: a.sk, kind: 5, created_at: 1001,
+            extraTags: [['n', APP], ['a', `${OCC}:${a.pk}:shift-t1`]],
+        }));
+        expect(store.list(HOLON, LENS)).toHaveLength(0);
+
+        store.apply(asKind(OCC, { item: { id: 't1', title: 'back' }, sk: a.sk, created_at: 1002 }));
+        expect(store.get(HOLON, LENS, 't1').item.title).toBe('back');
+        await store.close();
+    });
+
+    test('kind 5 is not consumable while the envelope is the only wire', async () => {
+        const store = await open();
+        const a = keypair();
+        const retract = buildEvent({
+            holon: HOLON, lens: LENS, item: { id: 'x' }, sk: a.sk, kind: 5, created_at: 1000,
+            extraTags: [['n', APP], ['a', `${OCC}:${a.pk}:shift-t1`]],
+        });
+        expect(store.apply(retract).reason).toBe('kind');
         await store.close();
     });
 
