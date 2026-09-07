@@ -62,9 +62,22 @@ describe('a standard-primary lens refuses what its encoding cannot express', () 
         expect(await sphere.propagate(HOLON, OTHER, { id: 't1' })).not.toMatchObject({ skipped: 'standard-primary lens' });
     });
 
-    test('a plain write to the standard-primary lens is not refused', async () => {
-        // Only the four unsupported shapes throw. An ordinary record is a
-        // separate question, settled by whether the wire has an encoder.
-        await expect(sphere.put(HOLON, LENS, { id: 's1', title: 'ok' })).resolves.toBeTruthy();
+    test('any write at all, when the wire has no encoder', async () => {
+        // The records are authored elsewhere, by whoever owns that kind.
+        // Falling through to a kind-30078 envelope would put a second record
+        // at the same address, where last-writer-wins could let our phantom
+        // shadow the real one.
+        await expect(sphere.put(HOLON, LENS, { id: 's1', title: 'ok' })).rejects.toThrow(/read-only here/);
+    });
+
+    test('a wire that CAN encode is written normally', async () => {
+        const wire = createWireRegistry();
+        wire.register({
+            lens: LENS, kinds: [31923],
+            decode: (e) => { const d = decodeEvent(e); return d ? [d] : null; },
+            encode: () => ({ kind: 31923, tags: [], content: '' }),
+        });
+        const writable = await testSphere(APP, { store: { adapter: 'memory', wire } });
+        await expect(writable.put(HOLON, LENS, { id: 's1', title: 'ok' })).resolves.toBeTruthy();
     });
 });

@@ -16,7 +16,7 @@
 
 import { HoloSphere } from 'holosphere';
 import { createWireRegistry } from 'holosphere/store';
-import { createShiftWire } from '../shifts/wire.js';
+import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import type { ProjectionHook } from '../nostr/types.js';
 
 /** Where the local store persists (see holosphere/STORE.md). */
@@ -49,6 +49,16 @@ export interface StandardWireOptions {
    * a shared one.
    */
   shifts?: { coordinatorPubkey?: string };
+  /**
+   * The kind-31926 identity directory, as a global lens. Supplies participant
+   * names and collapses one person's several keys, so a cancel under one key
+   * beats a signup under another. Enables `getAllGlobal('shift_identity')`.
+   *
+   * `providers` narrows the subscription by author; left open it fetches the
+   * whole directory, which is what preserves the board's current behaviour of
+   * honouring any provider.
+   */
+  shiftIdentity?: { providers?: string[] };
 }
 
 /** Relay-side extras: standard-kind projections and their reverse sync. */
@@ -110,9 +120,10 @@ export function createHoloSphere(
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
   let storeCfg = store;
-  if (standardWires?.shifts) {
+  if (standardWires?.shifts || standardWires?.shiftIdentity) {
     const wire = createWireRegistry();
-    wire.register(createShiftWire(standardWires.shifts));
+    if (standardWires.shifts) wire.register(createShiftWire(standardWires.shifts));
+    if (standardWires.shiftIdentity) wire.register(createShiftIdentityWire(standardWires.shiftIdentity));
     storeCfg = { ...(store ?? {}), wire };
   }
 

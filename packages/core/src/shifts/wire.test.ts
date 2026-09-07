@@ -2,9 +2,14 @@
 // pulled from relay.commonshub.dev, not hand-written approximations, so the
 // grammars they exercise are the ones Elinor actually publishes.
 import { describe, expect, it } from 'vitest';
+import { attestationNameMap, attestationIdentityMap } from './attestation.js';
 import {
   SHIFTS_LENS,
+  SHIFT_IDENTITY_LENS,
   SHIFT_RSVP_LENS,
+  attestationsFrom,
+  createShiftIdentityWire,
+  decodeAttestation,
   authorizeShiftEvent,
   createShiftWire,
   decodeShiftEvent,
@@ -176,6 +181,64 @@ describe('shift wire: who is holding a shift', () => {
   it('collapses a person\'s several keys, so a cancel under one beats a signup under another', () => {
     const identity = new Map([['key1', 'person'], ['key2', 'person']]);
     expect(participantsOf('2026-09-07-dp', [at('key1', 'accepted', 10), at('key2', 'declined', 20)], identity)).toEqual([]);
-    expect(participantsOf('2026-09-07-dp', [at('key1', 'declined', 10), at('key2', 'accepted', 20)], identity)).toEqual(['person']);
+    // One entry for the person, identified by the key that actually signed the
+    // winning event — which is what a name map is keyed by.
+    expect(participantsOf('2026-09-07-dp', [at('key1', 'declined', 10), at('key2', 'accepted', 20)], identity)).toEqual(['key2']);
+  });
+});
+
+// A real attestation, pulled off relay.commonshub.dev.
+const ATTESTATION = {
+  id: '4143d30d293531d99a35c885b644b154ae947f25ea741f1f05debee84ea01350',
+  pubkey: COORD,
+  kind: 31926,
+  created_at: 1788714735,
+  content: '{"name":"Samuel"}',
+  tags: [
+    ['d', 'telegram:1117779550'],
+    ['p', '01c2adb79d1c55df26081710e4845836758921835362a5d889c68a3671b115a5'],
+  ],
+};
+
+describe('identity wire: the attestation directory', () => {
+  it('lands on a global lens, one record per provider claim', () => {
+    const [claim] = decodeAttestation(ATTESTATION)!;
+    expect(claim.holon).toBeNull();
+    expect(claim.lens).toBe(SHIFT_IDENTITY_LENS);
+    expect(claim.id).toBe(`${COORD}|telegram:1117779550`);
+    expect(claim.item).toMatchObject({
+      provider: COORD,
+      identifier: 'telegram:1117779550',
+      platform: 'telegram',
+      platformId: '1117779550',
+      name: 'Samuel',
+      eventId: ATTESTATION.id,
+    });
+  });
+
+  it('keeps the event id separate, because `id` has to be the address', () => {
+    const [claim] = decodeAttestation(ATTESTATION)!;
+    expect(claim.item.id).not.toBe(ATTESTATION.id);
+    expect(claim.item.eventId).toBe(ATTESTATION.id);
+  });
+
+  it('round-trips back into what the resolvers expect', () => {
+    const [claim] = decodeAttestation(ATTESTATION)!;
+    const atts = attestationsFrom([claim.item as never]);
+    expect(atts[0].id).toBe(ATTESTATION.id);
+    const pk = '01c2adb79d1c55df26081710e4845836758921835362a5d889c68a3671b115a5';
+    expect(attestationNameMap(atts).get(pk)).toBe('Samuel');
+    expect(attestationIdentityMap(atts).get(pk)).toBe('telegram:1117779550');
+  });
+
+  it('ignores anything that is not an attestation', () => {
+    expect(decodeAttestation(OCCURRENCE)).toBeNull();
+    expect(decodeAttestation({ ...ATTESTATION, tags: [] })).toBeNull();
+  });
+
+  it('fetches the whole directory unless providers are pinned', () => {
+    expect(createShiftIdentityWire().filters()).toEqual([{ kinds: [31926] }]);
+    expect(createShiftIdentityWire({ providers: [COORD] }).filters())
+      .toEqual([{ kinds: [31926], authors: [COORD] }]);
   });
 });

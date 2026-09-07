@@ -112,6 +112,16 @@ export function createWireRegistry({ legacyKind = HOLOSPHERE_KIND } = {}) {
             return byLens.get(String(lens)) || [];
         },
 
+        /**
+         * Can this lens be WRITTEN on its own wire?
+         *
+         * A standard-primary lens without an encoder is read-only: its records
+         * are authored elsewhere, by whoever owns that kind.
+         */
+        canEncode(lens) {
+            return (byLens.get(String(lens)) || []).some((w) => typeof w.encode === 'function');
+        },
+
         /** Is this lens canonically encoded as a standard kind? */
         isStandardPrimary(lens) {
             return standardLenses.has(String(lens));

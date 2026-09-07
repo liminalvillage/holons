@@ -37,10 +37,21 @@ const isStandardPrimary = (holoInstance, lens) =>
 function refuseUnsupported(holoInstance, holon, lens, data, options) {
     if (!isStandardPrimary(holoInstance, lens)) return options;
     const where = `lens '${lens}' is carried on a standard Nostr kind`;
+    // The shapes the ENCODING cannot express come first: they are true of any
+    // lens on a standard kind, writable or not, and they name the actual
+    // problem rather than the weaker fact that this particular wire is
+    // read-only.
     if (isGlobalHolon(holon)) throw new Error(`put: ${where}, which has no encoding for a global record`);
     if (holoInstance.isHologram?.(data)) throw new Error(`put: ${where}, which cannot carry a hologram pointer`);
     if (data?._federation) throw new Error(`put: ${where}, which cannot carry a federated copy`);
     if (options.autoPropagate === true) throw new Error(`put: ${where}, which cannot be propagated across scalespace`);
+    // Then the wire itself. No encoder means the records are authored
+    // elsewhere, by whoever owns that kind. Falling through would write a
+    // kind-30078 envelope at the same address, where last-writer-wins could
+    // let our phantom shadow the real record.
+    if (!holoInstance.store.wire.canEncode(lens)) {
+        throw new Error(`put: ${where} and is read-only here — write it through that protocol instead`);
+    }
     return options;
 }
 const normHolon = (holon) => (isGlobalHolon(holon) ? null : holon);

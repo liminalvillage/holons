@@ -32,12 +32,22 @@ import {
   type NostrFilterLike,
   type ShiftIdentityMap,
 } from './protocol.js';
+import {
+  IDENTITY_ATTESTATION_KIND,
+  parseIdentityAttestation,
+  type IdentityAttestation,
+} from './attestation.js';
 import type { NostrEventLike } from './types.js';
 
 /** The lens occurrences land on. */
 export const SHIFTS_LENS = 'shifts';
 /** NIP-09 retraction. */
 const DELETE_KIND = 5;
+/**
+ * The identity directory, as a GLOBAL lens — an attestation is not scoped to a
+ * holon, and the same one serves every board a person appears on.
+ */
+export const SHIFT_IDENTITY_LENS = 'shift_identity';
 /** The lens signups land on, one record per person per occurrence. */
 export const SHIFT_RSVP_LENS = 'shifts_rsvp';
 
@@ -139,6 +149,91 @@ export function decodeShiftEvent(event: NostrEventLike): Claim[] | null {
   return null;
 }
 
+export interface ShiftIdentityRecord {
+  /** `<provider>|<identifier>` — the replaceable unit, one per provider. */
+  id: string;
+  provider: string;
+  identifier: string;
+  platform: string;
+  platformId: string;
+  pubkeys: string[];
+  name?: string;
+  createdAt: number;
+  /** The attestation event's own id, which the resolvers break ties on. */
+  eventId: string;
+}
+
+/** Address of one provider's claim about one identity. */
+export function identityId(provider: string, identifier: string): string {
+  return `${provider}|${identifier}`;
+}
+
+/** Decode a kind-31926 attestation into its global record. */
+export function decodeAttestation(event: NostrEventLike): Claim[] | null {
+  const a = parseIdentityAttestation(event);
+  if (!a) return null;
+  const item: ShiftIdentityRecord = {
+    id: identityId(a.provider, a.identifier),
+    provider: a.provider,
+    identifier: a.identifier,
+    platform: a.platform,
+    platformId: a.platformId,
+    pubkeys: a.pubkeys,
+    ...(a.name ? { name: a.name } : {}),
+    createdAt: a.createdAt,
+    eventId: a.id,
+  };
+  // `holon: null` is the global holon: this directory belongs to no board.
+  return [{ holon: null as never, lens: SHIFT_IDENTITY_LENS, id: item.id, item: item as never }];
+}
+
+/**
+ * Records back into the shape `attestationNameMap` / `attestationIdentityMap`
+ * expect. The record keeps the event id under `eventId` because `id` has to be
+ * the store address, and the resolvers break ties on the event id.
+ */
+export function attestationsFrom(records: Iterable<ShiftIdentityRecord>): IdentityAttestation[] {
+  const out: IdentityAttestation[] = [];
+  for (const r of records) {
+    if (!r || !r.provider || !r.identifier) continue;
+    out.push({
+      provider: r.provider,
+      identifier: r.identifier,
+      platform: r.platform,
+      platformId: r.platformId,
+      pubkeys: r.pubkeys ?? [],
+      ...(r.name ? { name: r.name } : {}),
+      createdAt: r.createdAt,
+      id: r.eventId,
+    });
+  }
+  return out;
+}
+
+/**
+ * The identity wire.
+ *
+ * `providers` narrows the subscription by author. Left open it fetches every
+ * attestation on the relay, which is what preserves today's behaviour: the
+ * board honours any provider that names a participant, ranked with the
+ * coordinator first. The direct relay client narrows by `#p` to the pubkeys
+ * that turned up in the schedule, which a static lens filter cannot express —
+ * so on a relay carrying a large directory, pin `providers`, accepting that
+ * attestations from anyone else stop being seen.
+ */
+export function createShiftIdentityWire({ providers }: { providers?: string[] } = {}) {
+  return {
+    lens: SHIFT_IDENTITY_LENS,
+    kinds: [IDENTITY_ATTESTATION_KIND],
+    filters: () => [
+      providers?.length
+        ? { kinds: [IDENTITY_ATTESTATION_KIND], authors: providers }
+        : { kinds: [IDENTITY_ATTESTATION_KIND] },
+    ],
+    decode: decodeAttestation,
+  };
+}
+
 /**
  * The address a shift d tag names, for resolving a NIP-09 retraction.
  *
@@ -208,10 +303,13 @@ export function createShiftWire({ coordinatorPubkey }: { coordinatorPubkey?: str
 }
 
 /**
- * The people holding an occurrence, from the signup records on
- * `shifts_rsvp`. Newest wins per person, requests are not occupancy, and a
- * `ShiftIdentityMap` collapses one person's several keys so a cancel under one
- * key beats a signup under another.
+ * The people holding an occurrence, from the signup records on `shifts_rsvp`.
+ *
+ * Newest wins per person, requests are not occupancy, and a `ShiftIdentityMap`
+ * collapses one person's several keys so a cancel under one beats a signup
+ * under another. Returns the PUBKEY of each holder's winning signup, not the
+ * collapsed person id: a name map is keyed by pubkey, so returning the person
+ * id would leave every caller unable to look up who they are.
  */
 export function participantsOf(
   occurrence: string,
@@ -230,5 +328,5 @@ export function participantsOf(
       latest.set(who, r);
     }
   }
-  return [...latest.entries()].filter(([, r]) => r.status === 'accepted').map(([p]) => p);
+  return [...latest.values()].filter((r) => r.status === 'accepted').map((r) => r.pubkey);
 }
