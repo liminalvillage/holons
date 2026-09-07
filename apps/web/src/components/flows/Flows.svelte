@@ -184,8 +184,8 @@
   // ---- Balances: who can appear, and in which currency ------------------------
   //
   // The roster is everyone with any economic footprint — the users lens, the
-  // REA stream, every payer and sharer on an expense — plus the holon itself,
-  // which the bot uses as the "this holon eats the cost" participant.
+  // REA stream, every payer and sharer on an expense — People only: older bot
+  // records could carry the holon id in a split, so it is dropped here.
   $: people = (() => {
     const ids = new Set<string>();
     for (const id of Object.keys(usersById)) ids.add(id);
@@ -197,7 +197,7 @@
       .filter(Boolean)
       .map((id) => ({ id, name: nameMap.get(id) ?? usersById[id]?.first_name ?? id }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return holonID ? [...list, { id: holonID, name: "This holon" }] : list;
+    return list;
   })();
 
   // Every currency anyone has used or configured, normalized and deduped.

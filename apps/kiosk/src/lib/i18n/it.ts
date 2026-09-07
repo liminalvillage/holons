@@ -986,7 +986,6 @@ export const it: Record<MessageKey, Msg> = {
   "balances.yourShare": "La tua quota {amount}",
   "balances.justYou": "Solo tu",
   "balances.you": "Tu",
-  "balances.thisHolon": "Questo holon",
   "balances.netPosition": "Posizione netta",
   "balances.personOwed": "Deve ricevere {amount}",
   "balances.personOwes": "Deve {amount}",

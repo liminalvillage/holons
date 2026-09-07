@@ -178,10 +178,10 @@ export async function settleNeedHandoff(
   // (governance/treasury) and the provider is credited the rest.
   const { toProvider, toTreasury } = splitHours(hours, opts.treasuryRate ?? 0);
 
-  const expenseFor = (holonId: string) =>
+  // The same record lands in both holons (owner, and the provider's mirror).
+  const expenseFor = () =>
     createExpense({
       id: handoffExpenseId(String(final.id)),
-      holonId,
       amount: toProvider,
       currency: 'hour',
       description: String(final.title ?? 'handoff'),
@@ -190,7 +190,7 @@ export async function settleNeedHandoff(
       now,
     });
 
-  const ownerExpense = expenseFor(ownerHolonId);
+  const ownerExpense = expenseFor();
   if (ownerExpense) {
     try {
       await db.put(ownerHolonId, 'expenses', ownerExpense);
@@ -203,7 +203,6 @@ export async function settleNeedHandoff(
   if (toTreasury > 0) {
     const feeExpense = createExpense({
       id: handoffFeeExpenseId(String(final.id)),
-      holonId: ownerHolonId,
       amount: toTreasury,
       currency: 'hour',
       description: `coop share — ${String(final.title ?? 'handoff')}`,
@@ -245,7 +244,7 @@ export async function settleNeedHandoff(
     providerHolonId != null &&
     providerHolonId !== ownerHolonId
   ) {
-    const mirrorExpense = expenseFor(providerHolonId);
+    const mirrorExpense = expenseFor();
     if (mirrorExpense) {
       try {
         await db.put(providerHolonId, 'expenses', mirrorExpense);

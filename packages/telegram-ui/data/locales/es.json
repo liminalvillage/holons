@@ -74,6 +74,7 @@
         "stopped": "Arrêté",
         "completed": "Terminé",
         "expensemessage": "Gasto: {{amount}} {{currency}} por {{description}}\nPagado por : {{paidBy}}\nPartagé avec : {{splitWith}}",
+        "expenseanonymous": "Los gastos necesitan un pagador: desactiva \"Permanecer anónimo\" e inténtalo de nuevo.",
         "expenseusage": "Utilisation : /{{command}} [montant] [devise] [description] (ex. /{{command}} 10 EUR pour le déjeuner)",
         "expenseadded": "Dépense ajoutée : {{amount}} {{currency}} por {{description}}",
         "expenseempty": "Il n'y a pas de dépenses enregistrées, utilisez /gastar para añadir gastos",

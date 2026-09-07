@@ -83,6 +83,7 @@
         "stopped": "Stopped",
         "completed": "Completed",
         "expensemessage": "Expense: {{amount}} {{currency}} for {{description}}\nPaid by: {{paidBy}}\nSplit with: {{splitWith}}",
+        "expenseanonymous": "Expenses need a payer — turn off \"Remain anonymous\" and try again.",
         "expenseusage": "Usage: /{{command}} [amount] [currency] [description] (es. /{{command}} 100 euros lunch @ restaurant)",
         "expenseadded": "Expense added: {{amount}} {{currency}} for {{description}}",
         "expenseempty": "There are no recorded expenses, use /spent to add expenses ",

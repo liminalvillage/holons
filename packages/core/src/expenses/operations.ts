@@ -9,7 +9,6 @@ import type { AgentId, Expense } from './types.js';
 /** Input used to construct a fresh expense before persistence. */
 export interface CreateExpenseInput {
   id: AgentId;
-  holonId: AgentId;
   amount: number;
   currency: string;
   description: string;
@@ -37,8 +36,9 @@ function stripDescriptionPreposition(description: string): string {
  * can keep their existing reply-on-failure code paths.
  *
  * Currency is normalized here too, so callers don't have to remember to do it.
- * If `splitWith` is omitted or empty we default to `[holonId]` to match the
- * bot's "this holon eats the cost" sentinel.
+ * `splitWith` is stored as given (empty when omitted): the split is always an
+ * explicit list of people, and "everyone" is a UI shortcut that selects all
+ * members rather than a value of its own.
  */
 export function createExpense(input: CreateExpenseInput): Expense | null {
   const amount = Number(input.amount);
@@ -46,8 +46,7 @@ export function createExpense(input: CreateExpenseInput): Expense | null {
 
   const currency = normalizeCurrency(input.currency);
   const description = stripDescriptionPreposition(String(input.description ?? ''));
-  const splitWith =
-    input.splitWith && input.splitWith.length > 0 ? [...input.splitWith] : [input.holonId];
+  const splitWith = input.splitWith ? [...input.splitWith] : [];
 
   return {
     id: input.id,
@@ -66,21 +65,12 @@ const sameId = (a: AgentId, b: AgentId): boolean => String(a) === String(b);
 
 /**
  * Toggle a single user in/out of the split. Removing the last participant
- * falls back to `[holonId]` so the expense still has at least one bearer.
+ * leaves the split empty — nobody selected, nobody owing.
  */
-export function toggleParticipant(expense: Expense, userId: AgentId, holonId: AgentId): Expense {
+export function toggleParticipant(expense: Expense, userId: AgentId): Expense {
   const current = coerceSplitWith(expense.splitWith);
   const isPresent = current.some((id) => sameId(id, userId));
-  let next: AgentId[];
-
-  if (isPresent) {
-    next = current.filter((id) => !sameId(id, userId));
-    if (next.length === 0) next = [holonId];
-  } else {
-    next = current.filter((id) => !sameId(id, holonId));
-    next.push(userId);
-  }
-
+  const next = isPresent ? current.filter((id) => !sameId(id, userId)) : [...current, userId];
   return { ...expense, splitWith: next };
 }
 
@@ -97,7 +87,7 @@ export function removeParticipant(expense: Expense, userId: AgentId): Expense {
   return { ...expense, splitWith: next };
 }
 
-/** Replace the split with every known user (excluding the holon sentinel). */
+/** Replace the split with every known user — the "everyone" shortcut, spelled out. */
 export function splitAmongAll(expense: Expense, userIds: AgentId[]): Expense {
   return { ...expense, splitWith: [...userIds] };
 }

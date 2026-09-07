@@ -43,7 +43,7 @@
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
   export let expenses: Expense[] = [];
-  /** Everyone who can appear in the picture, the holon itself included. */
+  /** Everyone who can appear in the picture. */
   export let people: { id: string; name: string }[] = [];
   /** Every currency in use, normalized. */
   export let currencies: string[] = [];
@@ -59,7 +59,6 @@
 
   $: nameById = new Map(people.map((p) => [p.id, p.name]));
   const nameOf = (id: unknown) => nameById.get(String(id)) ?? String(id ?? "");
-  const isHolon = (id: unknown) => String(id) === holonId;
   const isMe = (id: unknown) => !!selfId && String(id) === selfId;
 
   /** A name, or "You" when it is the viewer's. */
@@ -209,15 +208,16 @@
     draftAmount > 0 &&
     !!draft.paidBy &&
     draft.splitWith.length > 0;
-  $: everyoneIn = people.every((p) => isHolon(p.id) || draft.splitWith.includes(p.id));
+  $: everyoneIn = people.every((p) => draft.splitWith.includes(p.id));
   $: draftShare = draft.splitWith.length ? draftAmount / draft.splitWith.length : 0;
 
   function openAdd() {
-    const members = people.filter((p) => !isHolon(p.id)).map((p) => p.id);
+    // "Everyone" is a shortcut: the split is spelled out as every member's id.
+    const members = people.map((p) => p.id);
     draft = {
       amount: "",
       description: "",
-      paidBy: selfId && nameById.has(selfId) ? selfId : (members[0] ?? holonId),
+      paidBy: selfId && nameById.has(selfId) ? selfId : (members[0] ?? ""),
       splitWith: members,
     };
     error = "";
@@ -231,16 +231,13 @@
   }
 
   function splitEveryone() {
-    draft.splitWith = everyoneIn
-      ? []
-      : people.filter((p) => !isHolon(p.id)).map((p) => p.id);
+    draft.splitWith = everyoneIn ? [] : people.map((p) => p.id);
   }
 
   async function confirmAdd() {
     if (!draftValid || !holosphere || busy) return;
     const record = createExpense({
       id: `expense-${Date.now()}`,
-      holonId,
       amount: draftAmount,
       currency,
       description: draft.description.trim(),
@@ -336,7 +333,6 @@
                 <Avatar
                   id={String(owe ? pair.to : pair.from)}
                   name={nameOf(owe ? pair.to : pair.from)}
-                  holon={isHolon(owe ? pair.to : pair.from)}
                   size={32}
                 />
                 <span class="pair-text">
@@ -379,7 +375,7 @@
           {@const id = String(b.userId)}
           <li>
             <button type="button" class="person" on:click={() => (personSheet = id)}>
-              <Avatar {id} name={nameOf(id)} holon={isHolon(id)} size={40} />
+              <Avatar {id} name={nameOf(id)} size={40} />
               <span class="person-body">
                 <span class="person-name">{who(id)}</span>
                 <span class="bar" aria-hidden="true">
@@ -411,7 +407,7 @@
         <ul class="chips">
           {#each square as b (String(b.userId))}
             <li class="chip">
-              <Avatar id={String(b.userId)} name={nameOf(b.userId)} holon={isHolon(b.userId)} size={22} />
+              <Avatar id={String(b.userId)} name={nameOf(b.userId)} size={22} />
               {who(b.userId)}
             </li>
           {/each}
@@ -433,7 +429,7 @@
         <ul class="pairs">
           {#each credit.plan as pair (`${pair.from}-${pair.to}`)}
             <li>
-              <Avatar id={String(pair.from)} name={nameOf(pair.from)} holon={isHolon(pair.from)} size={32} />
+              <Avatar id={String(pair.from)} name={nameOf(pair.from)} size={32} />
               <span class="pair-text">
                 <b>{who(pair.from)}</b> → <b>{who(pair.to)}</b>
               </span>
@@ -462,7 +458,7 @@
           {@const mine = myLine(e)}
           <li>
             <button type="button" class="record" class:settlement={isSettlement(e)} on:click={() => (recordSheet = e)}>
-              <Avatar id={String(e.paidBy)} name={nameOf(e.paidBy)} holon={isHolon(e.paidBy)} size={40} />
+              <Avatar id={String(e.paidBy)} name={nameOf(e.paidBy)} size={40} />
               <span class="record-body">
                 <span class="record-title">{e.description || (isSettlement(e) ? "Settled up" : "Expense")}</span>
                 <span class="record-meta">{summary(e)} · {relativeDay(ts)}</span>
@@ -497,7 +493,7 @@
   {@const pid = personSheet}
   <Sheet title={who(pid)} on:close={() => (personSheet = null)}>
     <div class="sheet-lead">
-      <Avatar id={pid} name={nameOf(pid)} holon={isHolon(pid)} size={56} />
+      <Avatar id={pid} name={nameOf(pid)} size={56} />
       <div>
         <div class="k">Net position</div>
         <div class="v {sign(personBalance)}">
@@ -517,7 +513,7 @@
           {@const owes = String(pair.from) === pid}
           {@const other = String(owes ? pair.to : pair.from)}
           <li>
-            <Avatar id={other} name={nameOf(other)} holon={isHolon(other)} size={32} />
+            <Avatar id={other} name={nameOf(other)} size={32} />
             <span class="pair-text">
               {#if owes}
                 Owes <b>{who(other)}</b>
@@ -563,7 +559,7 @@
       <div class="row">
         <dt>{isSettlement(e) ? "Paid by" : "Paid by"}</dt>
         <dd class="with-face">
-          <Avatar id={String(e.paidBy)} name={nameOf(e.paidBy)} holon={isHolon(e.paidBy)} size={24} />
+          <Avatar id={String(e.paidBy)} name={nameOf(e.paidBy)} size={24} />
           {who(e.paidBy)}
         </dd>
       </div>
@@ -573,7 +569,7 @@
           <ul class="chips">
             {#each coerceSplitWith(e.splitWith) as id (String(id))}
               <li class="chip">
-                <Avatar id={String(id)} name={nameOf(id)} holon={isHolon(id)} size={22} />
+                <Avatar id={String(id)} name={nameOf(id)} size={22} />
                 {who(id)}
               </li>
             {/each}
@@ -655,7 +651,7 @@
             class:on={draft.paidBy === p.id}
             on:click={() => (draft.paidBy = p.id)}
           >
-            <Avatar id={p.id} name={p.name} holon={isHolon(p.id)} size={24} />
+            <Avatar id={p.id} name={p.name} size={24} />
             {who(p.id)}
           </button>
         </li>
@@ -679,7 +675,7 @@
             class:on={draft.splitWith.includes(p.id)}
             on:click={() => toggleSplit(p.id)}
           >
-            <Avatar id={p.id} name={p.name} holon={isHolon(p.id)} size={24} />
+            <Avatar id={p.id} name={p.name} size={24} />
             {who(p.id)}
           </button>
         </li>

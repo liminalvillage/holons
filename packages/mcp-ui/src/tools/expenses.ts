@@ -77,17 +77,16 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     'expense_create',
     'Create a normalized expense via @holons/core. Optionally persists via HoloSphere when persist=true.',
     {
-      holon: z.string().describe('HoloSphere holon id (used as fallback splitWith and for persistence).'),
+      holon: z.string().describe('HoloSphere holon id (used for persistence).'),
       expense: z
         .string()
-        .describe('JSON-encoded CreateExpenseInput: { id, amount, currency, description, paidBy, splitWith?, picture?, date? }. holonId is taken from the "holon" arg unless overridden here.'),
+        .describe('JSON-encoded CreateExpenseInput: { id, amount, currency, description, paidBy, splitWith?, picture?, date? }. splitWith is an explicit list of member ids; omit it for an empty split.'),
       persist: z.boolean().optional().describe('When true, h.put(holon, "expenses", created).'),
     },
     async ({ holon, expense, persist }) => {
       try {
         const input = parseJson<Partial<CreateExpenseInput>>(expense, 'expense');
         const fullInput: CreateExpenseInput = {
-          holonId: input.holonId ?? holon,
           id: input.id ?? Date.now(),
           amount: Number(input.amount),
           currency: String(input.currency ?? ''),
@@ -116,7 +115,7 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     {
       holon: z
         .string()
-        .describe('Holon id (fallback holonId/splitWith and persistence target).'),
+        .describe('Holon id (persistence target).'),
       expenses: z
         .string()
         .describe(
@@ -141,7 +140,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
         for (let i = 0; i < arr.length; i++) {
           const input = arr[i] ?? {};
           const fullInput: CreateExpenseInput = {
-            holonId: input.holonId ?? holon,
             // Stagger default ids by index so a same-millisecond batch can't collide.
             id: input.id ?? Date.now() + i,
             amount: Number(input.amount),
@@ -266,21 +264,17 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // holonId is the sentinel used when the split would otherwise become empty.
   server.tool(
     'expense_toggle_participant',
-    'Toggle a user in/out of an expense splitWith. Falls back to [holonId] when removing the last participant.',
+    'Toggle a user in/out of an expense splitWith. Removing the last participant leaves the split empty.',
     {
       expense: z.string().describe('JSON-encoded Expense.'),
       userId: z.union([z.string(), z.number()]).describe('User id to toggle.'),
-      holonId: z
-        .union([z.string(), z.number()])
-        .describe('Holon id used as the sentinel when the split becomes empty.'),
     },
-    async ({ expense, userId, holonId }) => {
+    async ({ expense, userId }) => {
       try {
         const exp = parseJson<Expense>(expense, 'expense');
-        const next = toggleParticipant(exp, userId as AgentId, holonId as AgentId);
+        const next = toggleParticipant(exp, userId as AgentId);
         return ok({ expense: next });
       } catch (err) {
         return fail(err);
@@ -288,9 +282,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // holonId is accepted for forward-compat with the toggle variant; core's
-  // removeParticipant does not currently re-seed an empty splitWith with the
-  // holon sentinel, so we leave that behaviour to the caller.
   server.registerTool(
     'expense_remove_participant',
     {
@@ -299,9 +290,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
       inputSchema: {
         expense: z.string().describe('JSON-encoded Expense.'),
         userId: z.union([z.string(), z.number()]).describe('User id to remove.'),
-        holonId: z
-          .union([z.string(), z.number()])
-          .describe('Holon id (accepted for forward-compat; not used by core.removeParticipant).'),
       },
     },
     async ({ expense, userId }) => {

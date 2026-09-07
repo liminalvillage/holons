@@ -135,16 +135,15 @@
 			if (!byId.has(id)) byId.set(id, u);
 		}
 		for (const id of [...reaUserIds, ...expenseUserIds]) {
+			// Older bot records could carry the holon id in the split; skip it.
 			if (id === holonID || byId.has(id)) continue;
 			byId.set(id, { id, first_name: resolvedName(id, $nameMap, null, id) });
 		}
 		return [...byId.values()];
 	})();
-	// Include "This Holon" as a virtual participant
-	$: thisHolonUser = holonID ? { id: holonID as any, first_name: 'This Holon' } : null;
-	$: users = thisHolonUser
-		? [thisHolonUser, ...realUsers]
-		: realUsers;
+	// Participants are people only: the split is always an explicit list of
+	// members, and "everyone" just selects all of them.
+	$: users = realUsers;
 
 	// Single lookup for rendering participants as name + avatar everywhere an
 	// id would otherwise leak into the UI. Passed explicitly into the helpers
@@ -559,7 +558,7 @@
 
 	function openAddExpense() {
 		showAddExpense = true;
-		// Default to first real user as payer, include all participants in split
+		// Default to the first member as payer, include everyone in the split
 		newExpense = {
 			amount: 0,
 			description: '',

@@ -259,13 +259,14 @@ export const expensesFeature: Feature = {
 
     let updated: Expense;
     if (parsed.action === 'splitall') {
+      // "Split all" is a shortcut: it spells out every member's id.
       updated = splitAmongAll(
         expense,
-        members.length > 0 ? members.map(m => m.id) : [ctx.holonId]
+        members.map(m => m.id)
       );
     } else {
       // action === 'toggle'
-      updated = toggleExpenseParticipant(expense, userId, ctx.holonId);
+      updated = toggleExpenseParticipant(expense, userId);
     }
     await ctx.holosphere.put(ctx.holonId, EXPENSES_BUCKET, updated);
 
@@ -299,16 +300,12 @@ async function recordExpense(
   const paidBy = interaction.user.id;
 
   const members = await getUsers(db, holonId);
+  // "everyone" is a shortcut for every member's id, never a marker of its own.
   const splitWith: Array<string | number> =
-    split === 'me'
-      ? [paidBy]
-      : members.length > 0
-        ? members.map(m => m.id)
-        : [holonId];
+    split === 'me' ? [paidBy] : members.map(m => m.id);
 
   const expense = createExpense({
     id: generateExpenseId(),
-    holonId,
     amount,
     currency,
     description,

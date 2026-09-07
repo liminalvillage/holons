@@ -961,7 +961,6 @@ export const en = {
   "balances.yourShare": "Your share {amount}",
   "balances.justYou": "Just you",
   "balances.you": "You",
-  "balances.thisHolon": "This holon",
   "balances.netPosition": "Net position",
   "balances.personOwed": "Is owed {amount}",
   "balances.personOwes": "Owes {amount}",

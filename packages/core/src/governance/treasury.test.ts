@@ -40,7 +40,6 @@ describe('treasuryBalance', () => {
   it('is the treasury account hour balance: fees in, funded proposals out', () => {
     const fee = createExpense({
       id: 'e1',
-      holonId: 'h',
       amount: 0.5,
       currency: 'hour',
       description: 'fee',
@@ -49,7 +48,6 @@ describe('treasuryBalance', () => {
     });
     const funded = createExpense({
       id: 'e2',
-      holonId: 'h',
       amount: 0.2,
       currency: 'hour',
       description: 'funded',

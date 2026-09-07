@@ -53,7 +53,7 @@
 
   export let holonId = "";
   export let expenses: Expense[] = [];
-  /** Everyone who can appear in the picture, the holon itself included. */
+  /** Everyone who can appear in the picture. */
   export let people: { id: string; name: string }[] = [];
   /** Every currency in use, normalized. */
   export let currencies: string[] = [];
@@ -66,7 +66,6 @@
   $: nameById = new Map(people.map((p) => [p.id, p.name]));
   // Reactive closures, so a late-arriving name re-labels the rows in place.
   $: nameOf = (id: unknown) => nameById.get(String(id)) ?? String(id ?? "");
-  $: isHolon = (id: unknown) => String(id) === holonId;
   $: isMe = (id: unknown) => !!selfId && String(id) === selfId;
   /** A name, or "You" for the viewer. */
   $: who = (id: unknown) => (isMe(id) ? $t("balances.you") : nameOf(id));
@@ -285,7 +284,8 @@
     !!draftCurrency &&
     !!draft.paidBy &&
     draft.splitWith.length > 0;
-  $: members = people.filter((p) => !isHolon(p.id)).map((p) => p.id);
+  // "Everyone" is a shortcut: the split is spelled out as every member's id.
+  $: members = people.map((p) => p.id);
   $: everyoneIn = members.every((id) => draft.splitWith.includes(id));
   $: draftShare = draft.splitWith.length
     ? draftAmount / draft.splitWith.length
@@ -296,7 +296,7 @@
     draft = {
       amount: "",
       description: "",
-      paidBy: selfId && nameById.has(selfId) ? selfId : (members[0] ?? holonId),
+      paidBy: selfId && nameById.has(selfId) ? selfId : (members[0] ?? ""),
       splitWith: members,
       currency: currency || currencies[0] || "usd",
     };
@@ -320,7 +320,6 @@
     if (!draftValid || busy) return;
     const record = createExpense({
       id: `expense-${Date.now()}`,
-      holonId,
       amount: draftAmount,
       currency: draftCurrency,
       description: draft.description.trim(),
@@ -434,19 +433,15 @@
               {@const owe = String(pair.from) === selfId}
               {@const other = String(owe ? pair.to : pair.from)}
               <li>
-                <span class="av" class:holon={isHolon(other)}>
-                  <span class="ini"
-                    >{isHolon(other) ? "⬡" : avatarInitial(nameOf(other))}</span
-                  >
-                  {#if !isHolon(other)}
-                    <img
-                      src={avatarUrl(other)}
-                      alt=""
-                      loading="lazy"
-                      on:error={hideImg}
-                      on:load={showImg}
-                    />
-                  {/if}
+                <span class="av">
+                  <span class="ini">{avatarInitial(nameOf(other))}</span>
+                  <img
+                    src={avatarUrl(other)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
                 </span>
                 <span class="pair-text">
                   {owe
@@ -488,19 +483,15 @@
           {@const id = String(b.userId)}
           <li>
             <button class="row" on:click={() => (personSheet = id)}>
-              <span class="av" class:holon={isHolon(id)}>
-                <span class="ini"
-                  >{isHolon(id) ? "⬡" : avatarInitial(nameOf(id))}</span
-                >
-                {#if !isHolon(id)}
-                  <img
-                    src={avatarUrl(id)}
-                    alt=""
-                    loading="lazy"
-                    on:error={hideImg}
-                    on:load={showImg}
-                  />
-                {/if}
+              <span class="av">
+                <span class="ini">{avatarInitial(nameOf(id))}</span>
+                <img
+                  src={avatarUrl(id)}
+                  alt=""
+                  loading="lazy"
+                  on:error={hideImg}
+                  on:load={showImg}
+                />
               </span>
               <span class="body">
                 <span class="name">{who(id)}</span>
@@ -556,21 +547,15 @@
         <ul class="pairs">
           {#each credit.plan as pair (`${pair.from}-${pair.to}`)}
             <li>
-              <span class="av" class:holon={isHolon(pair.from)}>
-                <span class="ini"
-                  >{isHolon(pair.from)
-                    ? "⬡"
-                    : avatarInitial(nameOf(pair.from))}</span
-                >
-                {#if !isHolon(pair.from)}
-                  <img
-                    src={avatarUrl(String(pair.from))}
-                    alt=""
-                    loading="lazy"
-                    on:error={hideImg}
-                    on:load={showImg}
-                  />
-                {/if}
+              <span class="av">
+                <span class="ini">{avatarInitial(nameOf(pair.from))}</span>
+                <img
+                  src={avatarUrl(String(pair.from))}
+                  alt=""
+                  loading="lazy"
+                  on:error={hideImg}
+                  on:load={showImg}
+                />
               </span>
               <span class="pair-text"
                 ><b>{who(pair.from)}</b> → <b>{who(pair.to)}</b></span
@@ -596,21 +581,15 @@
             class:settlement={isSettlement(e)}
             on:click={() => (recordSheet = e)}
           >
-            <span class="av" class:holon={isHolon(e.paidBy)}>
-              <span class="ini"
-                >{isHolon(e.paidBy)
-                  ? "⬡"
-                  : avatarInitial(nameOf(e.paidBy))}</span
-              >
-              {#if !isHolon(e.paidBy)}
-                <img
-                  src={avatarUrl(String(e.paidBy))}
-                  alt=""
-                  loading="lazy"
-                  on:error={hideImg}
-                  on:load={showImg}
-                />
-              {/if}
+            <span class="av">
+              <span class="ini">{avatarInitial(nameOf(e.paidBy))}</span>
+              <img
+                src={avatarUrl(String(e.paidBy))}
+                alt=""
+                loading="lazy"
+                on:error={hideImg}
+                on:load={showImg}
+              />
             </span>
             <span class="body">
               <span class="name"
@@ -653,19 +632,15 @@
   <Modal on:close={() => (personSheet = null)}>
     <div class="sheet">
       <div class="lead">
-        <span class="av big" class:holon={isHolon(pid)}>
-          <span class="ini"
-            >{isHolon(pid) ? "⬡" : avatarInitial(nameOf(pid))}</span
-          >
-          {#if !isHolon(pid)}
-            <img
-              src={avatarUrl(pid)}
-              alt=""
-              loading="lazy"
-              on:error={hideImg}
-              on:load={showImg}
-            />
-          {/if}
+        <span class="av big">
+          <span class="ini">{avatarInitial(nameOf(pid))}</span>
+          <img
+            src={avatarUrl(pid)}
+            alt=""
+            loading="lazy"
+            on:error={hideImg}
+            on:load={showImg}
+          />
         </span>
         <div>
           <h3>{who(pid)}</h3>
@@ -1022,18 +997,10 @@
     --sz: 3.2rem;
   }
 
-  .av.holon {
-    background: var(--paper-deep);
-  }
-
   .av .ini {
     font-size: calc(var(--sz) * 0.42);
     font-weight: 800;
     color: #fff;
-  }
-
-  .av.holon .ini {
-    color: var(--teal);
   }
 
   .av img {

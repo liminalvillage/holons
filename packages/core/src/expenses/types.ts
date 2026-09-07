@@ -20,13 +20,14 @@ export interface Expense {
   currency: string;
   /** Free-form description provided by the payer. */
   description: string;
-  /** ID of the user (or holon) who paid. */
+  /** ID of the agent who paid. */
   paidBy: AgentId;
   /**
-   * IDs of agents that share the cost. May contain the holonId itself when
-   * "this holon" is treated as a single participant (legacy bot behaviour).
-   * May arrive as a non-array from older records; consumers should normalize
-   * via `coerceSplitWith`.
+   * IDs of the people who share the cost — always an explicit list. A UI's
+   * "everyone" / "all" is only a shortcut that selects every member; it is
+   * never stored as a marker. Empty means nobody has been selected yet, so
+   * nobody owes anything. May arrive as a non-array from older records;
+   * consumers should normalize via `coerceSplitWith`.
    */
   splitWith: AgentId[];
   /** Optional Telegram file_id for an attached receipt. */

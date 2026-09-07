@@ -288,7 +288,8 @@ export class REAEventFactory {
       }
       return Date.now();
     })();
-    const shareAmount = expense.amount / expense.splitWith.length;
+    const splitWith = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+    const shareAmount = splitWith.length > 0 ? expense.amount / splitWith.length : 0;
 
     events.push(vf({
       id: `${baseId}_paid`,
@@ -309,7 +310,7 @@ export class REAEventFactory {
       status: 'confirmed',
     }));
 
-    expense.splitWith.forEach((userId, index) => {
+    splitWith.forEach((userId, index) => {
       if (String(userId) !== String(expense.paidBy)) {
         events.push(vf({
           id: `${baseId}_share_${index}`,

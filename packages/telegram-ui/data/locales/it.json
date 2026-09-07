@@ -72,6 +72,7 @@
         "scheduled": "Programmato",
         "stopped": "Fermato",
         "completed": "Completato",
+        "expenseanonymous": "Le spese hanno bisogno di chi paga — disattiva \"Resta anonimo\" e riprova.",
         "expenseusage": "Utilizzo: /{{command}} [importo] [valuta] [descrizione] (es. /{{command}} 10 EUR per il pranzo)",
         "expenseadded": "Spesa aggiunta: {{amount}} {{currency}} per {{description}}",
         "expenseempty": "Non ci sono spese registrate",

@@ -121,10 +121,9 @@
   });
 
   // ── Names for ids the name map cannot know ──────────────────────────────
-  // The users lens and the REA stream name people. A HOLON id — this holon as
-  // an expense participant, a federation partner in the REA stream, or a
-  // personal holon nobody here has a profile for — would otherwise print as
-  // its raw number on a Sankey bar. Those resolve the way the dock resolves
+  // The users lens and the REA stream name people. A HOLON id — a federation
+  // partner in the REA stream, or a personal holon nobody here has a profile
+  // for — would otherwise print as its raw number on a Sankey bar. Those resolve the way the dock resolves
   // them: partner names from the federation record, then HNS / the holon's
   // settings through `getHolonName`, asked once per id and folded in as they
   // arrive. Only positive answers are kept, so a lookup that finds nothing
@@ -155,7 +154,6 @@
       holonNames[id] ??
       undefined;
     if (known) return known;
-    if (id === hid) return $t("balances.thisHolon");
     if ($currentUser && id === String($currentUser.id)) {
       return displayName($currentUser);
     }
@@ -235,8 +233,8 @@
 
   // ── Derived: the balances roster ────────────────────────────────────────
   // Everyone with any economic footprint — the users lens, the REA stream,
-  // every payer and sharer on an expense, the viewer — plus the holon itself,
-  // which the bot uses as the "this holon eats the cost" participant.
+  // every payer and sharer on an expense, the viewer. People only: older bot
+  // records could carry the holon id in a split, so it is dropped here.
   $: people = (() => {
     const ids = new Set<string>();
     for (const id of Object.keys(usersById)) ids.add(id);
@@ -255,12 +253,7 @@
           id,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return hid
-      ? [
-          ...list,
-          { id: hid, name: holonNames[hid] ?? $t("balances.thisHolon") },
-        ]
-      : list;
+    return list;
   })();
 
   // Every currency anyone has used or configured, normalized and deduped.

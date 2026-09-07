@@ -977,7 +977,6 @@ export const es: Record<MessageKey, Msg> = {
   "balances.yourShare": "Tu parte {amount}",
   "balances.justYou": "Solo tú",
   "balances.you": "Tú",
-  "balances.thisHolon": "Este holon",
   "balances.netPosition": "Posición neta",
   "balances.personOwed": "Le deben {amount}",
   "balances.personOwes": "Debe {amount}",

@@ -10,6 +10,7 @@ import { createPaddedCaption } from './utilities.js';
 import { REAEventStore, REAEventFactory } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import {
+    coerceSplitWith,
     computeCreditMatrix,
     computeUserCurrencyBalance,
     createExpense,
@@ -251,6 +252,15 @@ export default class Expenses {
             return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
         }
 
+        // An admin posting anonymously arrives as Telegram's anonymous-admin
+        // bot, so there is no person to record as the payer.
+        if (ctx.from?.is_bot) {
+            return ctx.reply(i18next.t('expenseanonymous', {
+                lng: language,
+                defaultValue: 'Expenses need a payer — turn off "Remain anonymous" and try again.'
+            }));
+        }
+
         const amount = parseFloat(args[0]);
         let currencyInput = args[1]; // Renamed to currencyInput
         const description = args.slice(2).join(' ');
@@ -275,7 +285,9 @@ export default class Expenses {
 
 
         const picture = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null;
-        const expense = await this.addExpense(messageId + 1, holonId, amount, normalizedCurrency, description, ctx.from.id, [holonId], picture);
+        // The split starts empty: the payer picks who shares the cost from the
+        // participant buttons, and "Select All" is the shortcut for everyone.
+        const expense = await this.addExpense(messageId + 1, holonId, amount, normalizedCurrency, description, ctx.from.id, [], picture);
         if (expense) {
             ctx.reply(await this.createMessage(holonId, expense), Markup.inlineKeyboard([
                 [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${expense.id}` }]
@@ -291,7 +303,6 @@ export default class Expenses {
         // non-positive/invalid amounts, matching the previous early-return.
         const expense = createExpense({
             id: messageId ?? Date.now(),
-            holonId,
             amount,
             currency,
             description,
@@ -316,12 +327,12 @@ export default class Expenses {
         return expense;
     }
 
-    // add/remove user to split. Delegates the splitWith state machine
-    // (including the holonId sentinel fallback) to @holons/core/expenses.
+    // add/remove user to split. Delegates the splitWith state machine to
+    // @holons/core/expenses.
     async joinSplit(holonId: number | string, userID: number | string, expenseID: string) {
         const expense = await this.db.get(holonId.toString(), 'expenses', expenseID);
         if (!expense) return false;
-        const next = toggleParticipantCore(expense as Expense, userID as AgentId, holonId as AgentId);
+        const next = toggleParticipantCore(expense as Expense, userID as AgentId);
         await this.db.put(holonId.toString(), 'expenses', next);
         return next;
     }
@@ -487,23 +498,14 @@ export default class Expenses {
         const paidBy = await this.getDisplayName(holonId, expense.paidBy);
 
         // Get all splitters' info and map to display names
-        const splitNames = await Promise.all(expense.splitWith.map((userId: number | string) => this.getDisplayName(holonId, userId)));
-        
-        const splitWith = splitNames.join(", ");
+        const splitNames = await Promise.all(coerceSplitWith(expense.splitWith).map((userId: number | string) => this.getDisplayName(holonId, userId)));
+
+        const splitWith = splitNames.length > 0 ? splitNames.join(", ") : '—';
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
 
     async getDisplayName(holonId: number | string, userId: number | string) {
-        if (userId == 6152474485) {
-            return "Holons";
-        }
-
-        if (userId == holonId) {
-            const groupInfo = await this.settings.getSettings(holonId).name;
-            return groupInfo || "This Holon"; //TODO maybe get the group name from the settings
-
-        }
         const userInfo = await this.db.get(holonId.toString(), 'users', String(userId));
         if (!userInfo) {
             return userId.toString();
@@ -536,7 +538,7 @@ export default class Expenses {
 
             // Add individual user buttons
             for (const user of users) {
-                const isSelected = expense.splitWith.includes(user.id);
+                const isSelected = coerceSplitWith(expense.splitWith).includes(user.id);
                 const status = isSelected ? '✅' : '⬜️';
                 const displayName = utils.getDisplayName(user);
                 
@@ -570,7 +572,7 @@ export default class Expenses {
     }
 
     // Toggle individual participant in expense split. SplitWith state machine
-    // (including the holonId sentinel fallback) is delegated to core.
+    // is delegated to core.
     async toggleParticipant(ctx: any, holonId: number | string, messageId: number, expenseID: string, userID: number) {
         try {
             await ctx.answerCbQuery().catch(() => {});
@@ -581,7 +583,7 @@ export default class Expenses {
                 return;
             }
 
-            const next = toggleParticipantCore(expense as Expense, userID as AgentId, holonId as AgentId);
+            const next = toggleParticipantCore(expense as Expense, userID as AgentId);
             await this.db.put(holonId.toString(), 'expenses', next);
 
             // Refresh the participant selection view
@@ -632,7 +634,7 @@ export default class Expenses {
 
             const users = await this.db.getAll(holonId.toString(), 'users');
 
-            // Add all users to the split (excluding holon ID to avoid duplication)
+            // "Select All" is a shortcut: it spells out every member's id.
             expense.splitWith = users.map(user => user.id);
 
             await this.db.put(holonId.toString(), 'expenses', expense);
