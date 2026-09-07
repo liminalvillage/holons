@@ -12,3 +12,4 @@ export * from './types.js';
 export * from './protocol.js';
 export * from './attestation.js';
 export * from './relay.js';
+export * from './wire.js';
