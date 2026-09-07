@@ -12,8 +12,49 @@ export interface CreateStoreOptions {
     /** Directory for the file adapter (default `./holosphere-store`). */
     dir?: string;
     compactAfter?: number;
+    /** Legacy envelope kind (default 30078). */
     kind?: number;
+    /** Which kinds this store consumes; defaults to the envelope alone. */
+    wire?: WireRegistry;
 }
+
+/**
+ * One address claimed by an event: where the record lives and what it says.
+ * An event may make several — a NIP-09 kind 5 retracts every coordinate it
+ * names at once.
+ */
+export interface WireClaim {
+    holon: string | null;
+    lens: string;
+    id: string;
+    item: Record<string, unknown>;
+}
+
+/** A lens carried on its own standard Nostr kind(s). */
+export interface LensWire {
+    lens: string;
+    /** Kinds this lens claims as its canonical wire. */
+    kinds: number[];
+    /** Decode an event into the address(es) it claims, or null when not ours. */
+    decode(event: any): WireClaim[] | WireClaim | null;
+    /** REQ shapes that keep a holon's records in sync. */
+    filters?(holon: string): object[];
+    /** Resolve a `d` tag back to an address, so a NIP-09 retraction can land. */
+    address?(dTag: string): { holon: string; lens: string; id: string } | null;
+}
+
+/** Which event kinds a store consumes, and how each decodes to an address. */
+export interface WireRegistry {
+    legacyKind: number;
+    register(wire: LensWire): void;
+    wiresFor(lens: string): LensWire[];
+    isStandardPrimary(lens: string): boolean;
+    kinds(): number[];
+    accepts(kind: number): boolean;
+    decode(event: any): WireClaim[] | null;
+}
+
+export function createWireRegistry(opts?: { legacyKind?: number }): WireRegistry;
 
 export function createStore(opts: CreateStoreOptions): Store;
 export function resolveAdapter(spec: AdapterSpec | undefined, opts?: { appName?: string; dir?: string }): StoreAdapter | (() => Promise<StoreAdapter>);

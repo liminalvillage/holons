@@ -15,6 +15,8 @@
  */
 
 import { HoloSphere } from 'holosphere';
+import { createWireRegistry } from 'holosphere/store';
+import { createShiftWire } from '../shifts/wire.js';
 import type { ProjectionHook } from '../nostr/types.js';
 
 /** Where the local store persists (see holosphere/STORE.md). */
@@ -28,6 +30,25 @@ export interface HoloSphereStoreOptions {
   /** Directory for the file adapter. */
   dir?: string;
   compactAfter?: number;
+  /** Pre-built wire registry. Usually set for you by `standardWires`. */
+  wire?: unknown;
+}
+
+/**
+ * Lenses carried on their OWN standard Nostr kinds instead of the kind-30078
+ * envelope, so records another Nostr app publishes are readable as an ordinary
+ * lens. Omit this and nothing changes: every lens stays on the envelope.
+ */
+export interface StandardWireOptions {
+  /**
+   * NIP-52 community shifts, as published by Elinor. Enables
+   * `getAll(holon, 'shifts')` and `getAll(holon, 'shifts_rsvp')`.
+   *
+   * Set `coordinatorPubkey` in production. Without it any author's occurrences
+   * are accepted, which is fine against a relay you control and is not fine on
+   * a shared one.
+   */
+  shifts?: { coordinatorPubkey?: string };
 }
 
 /** Relay-side extras: standard-kind projections and their reverse sync. */
@@ -64,6 +85,8 @@ export interface CreateHoloSphereOptions {
   strict?: boolean;
   /** When true, await `holosphere.ready()` before returning. */
   awaitReady?: boolean;
+  /** Lenses carried on their own standard Nostr kinds (see {@link StandardWireOptions}). */
+  standardWires?: StandardWireOptions;
   /** Forward arbitrary extra keys to `HoloSphereConfig`. */
   extra?: Record<string, unknown>;
 }
@@ -82,13 +105,22 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, extra } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra } = options;
+
+  // A lens that owns a standard kind needs the store to consume that kind.
+  // Built here so no UI has to know the registry exists.
+  let storeCfg = store;
+  if (standardWires?.shifts) {
+    const wire = createWireRegistry();
+    wire.register(createShiftWire(standardWires.shifts));
+    storeCfg = { ...(store ?? {}), wire };
+  }
 
   const config: Record<string, unknown> = {
     appName,
     ...(privateKey !== undefined ? { privateKey } : {}),
     ...(relays ? { relays } : {}),
-    ...(store ? { store } : {}),
+    ...(storeCfg ? { store: storeCfg } : {}),
     ...(nostr ? { nostr } : {}),
     ...(strict !== undefined ? { strict } : {}),
     ...(extra ?? {}),
