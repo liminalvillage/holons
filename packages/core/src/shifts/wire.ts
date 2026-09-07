@@ -37,7 +37,7 @@ import {
   parseIdentityAttestation,
   type IdentityAttestation,
 } from './attestation.js';
-import type { NostrEventLike } from './types.js';
+import type { NostrEventLike, ShiftOccurrence, ShiftRsvp } from './types.js';
 
 /** The lens occurrences land on. */
 export const SHIFTS_LENS = 'shifts';
@@ -63,6 +63,10 @@ export function rsvpId(date: string, code: string, pubkey: string): string {
 
 export interface ShiftRecord {
   id: string;
+  /** The holon this occurrence belongs to. */
+  groupId: string;
+  /** Full `d` tag, so the record maps back to the protocol shape exactly. */
+  dTag: string;
   code: string;
   date: string;
   title: string;
@@ -75,11 +79,16 @@ export interface ShiftRecord {
   /** `31923:<coordinator>:<dTag>` — what a signup points at. */
   address: string;
   coordinator: string;
+  createdAt: number;
+  /** The occurrence event's own id. `id` has to be the store address. */
+  eventId: string;
 }
 
 export interface ShiftRsvpRecord {
   id: string;
   occurrence: string;
+  /** Full `d` tag of the signup event. */
+  dTag: string;
   pubkey: string;
   status: 'accepted' | 'declined';
   address: string;
@@ -94,6 +103,8 @@ export interface ShiftRsvpRecord {
    * the agent rather than the person it names.
    */
   request?: true;
+  /** The signup event's own id, which the resolution rule breaks ties on. */
+  eventId: string;
 }
 
 type Claim = { holon: string; lens: string; id: string; item: Record<string, unknown> };
@@ -108,6 +119,8 @@ export function decodeShiftEvent(event: NostrEventLike): Claim[] | null {
     if (!occ) return null;
     const item: ShiftRecord = {
       id: occurrenceId(occ.date, occ.code),
+      groupId: occ.groupId,
+      dTag: occ.dTag,
       code: occ.code,
       date: occ.date,
       title: occ.title,
@@ -119,6 +132,8 @@ export function decodeShiftEvent(event: NostrEventLike): Claim[] | null {
       description: occ.content,
       address: occ.address,
       coordinator: occ.pubkey,
+      createdAt: occ.createdAt,
+      eventId: occ.id,
     };
     return [{ holon: occ.groupId, lens: SHIFTS_LENS, id: item.id, item: item as never }];
   }
@@ -136,12 +151,14 @@ export function decodeShiftEvent(event: NostrEventLike): Claim[] | null {
     const item: ShiftRsvpRecord = {
       id: rsvpId(key.date, key.code, rsvp.pubkey),
       occurrence: occurrenceId(key.date, key.code),
+      dTag: rsvp.dTag,
       pubkey: rsvp.pubkey,
       status: rsvp.status,
       address: rsvp.address,
       createdAt: rsvp.createdAt,
       ...(rsvp.changedBy ? { changedBy: rsvp.changedBy } : {}),
       ...(tagged(event, 'p', 'on-behalf-of') ? { request: true as const } : {}),
+      eventId: rsvp.id,
     };
     return [{ holon: key.groupId, lens: SHIFT_RSVP_LENS, id: item.id, item: item as never }];
   }
@@ -299,6 +316,46 @@ export function createShiftWire({ coordinatorPubkey }: { coordinatorPubkey?: str
     address: shiftAddressOf,
     decode: (event: NostrEventLike) =>
       (authorizeShiftEvent(event, { coordinatorPubkey }) ? decodeShiftEvent(event) : null),
+  };
+}
+
+/**
+ * A lens record back into the protocol shape.
+ *
+ * The two exist because a store record is addressed by `(holon, lens, id)`
+ * while the protocol object is addressed by its Nostr coordinates. Every field
+ * survives the round trip, so a caller that already speaks `ShiftOccurrence`
+ * and `ShiftRsvp` — the bot, the board, `resolveRsvps` — needs no changes.
+ */
+export function toOccurrence(rec: ShiftRecord): ShiftOccurrence {
+  return {
+    dTag: rec.dTag,
+    address: rec.address,
+    pubkey: rec.coordinator,
+    groupId: rec.groupId,
+    date: rec.date,
+    code: rec.code,
+    title: rec.title,
+    start: rec.start,
+    end: rec.end,
+    ...(rec.startTzid ? { startTzid: rec.startTzid } : {}),
+    ...(rec.location ? { location: rec.location } : {}),
+    ...(rec.capacity !== undefined ? { capacity: rec.capacity } : {}),
+    content: rec.description,
+    createdAt: rec.createdAt,
+    id: rec.eventId,
+  };
+}
+
+export function toRsvp(rec: ShiftRsvpRecord): ShiftRsvp {
+  return {
+    pubkey: rec.pubkey,
+    address: rec.address,
+    dTag: rec.dTag,
+    status: rec.status,
+    ...(rec.changedBy ? { changedBy: rec.changedBy } : {}),
+    createdAt: rec.createdAt,
+    id: rec.eventId,
   };
 }
 

@@ -3,6 +3,7 @@
 // grammars they exercise are the ones Elinor actually publishes.
 import { describe, expect, it } from 'vitest';
 import { attestationNameMap, attestationIdentityMap } from './attestation.js';
+import { parseShiftOccurrence, parseShiftRsvp } from './protocol.js';
 import {
   SHIFTS_LENS,
   SHIFT_IDENTITY_LENS,
@@ -15,6 +16,8 @@ import {
   decodeShiftEvent,
   participantsOf,
   shiftFilters,
+  toOccurrence,
+  toRsvp,
   type ShiftRsvpRecord,
 } from './wire.js';
 
@@ -240,5 +243,25 @@ describe('identity wire: the attestation directory', () => {
     expect(createShiftIdentityWire().filters()).toEqual([{ kinds: [31926] }]);
     expect(createShiftIdentityWire({ providers: [COORD] }).filters())
       .toEqual([{ kinds: [31926], authors: [COORD] }]);
+  });
+});
+
+describe('shift wire: a record maps back to the protocol shape', () => {
+  // The guarantee that lets a caller already speaking ShiftOccurrence and
+  // ShiftRsvp — the board, the bot, resolveRsvps — keep working unchanged.
+  it('round-trips an occurrence field for field', () => {
+    const [claim] = decodeShiftEvent(OCCURRENCE)!;
+    expect(toOccurrence(claim.item as never)).toEqual(parseShiftOccurrence(OCCURRENCE));
+  });
+
+  it('round-trips a signup field for field', () => {
+    const [claim] = decodeShiftEvent(RSVP)!;
+    expect(toRsvp(claim.item as never)).toEqual(parseShiftRsvp(RSVP));
+  });
+
+  it('round-trips a signup that carries a changed-by marker', () => {
+    const changed = { ...RSVP, tags: [...RSVP.tags, ['p', 'ab'.repeat(32), '', 'changed-by']] };
+    const [claim] = decodeShiftEvent(changed)!;
+    expect(toRsvp(claim.item as never)).toEqual(parseShiftRsvp(changed));
   });
 });

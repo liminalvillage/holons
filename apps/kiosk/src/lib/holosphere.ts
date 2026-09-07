@@ -19,7 +19,11 @@ import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
-import { resolveAppName, resolveRelays } from "./config";
+import {
+  resolveAppName,
+  resolveRelays,
+  resolveShiftCoordinator,
+} from "./config";
 import { actingAs } from "./auth";
 import { lookupHolonName } from "./hns";
 import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
@@ -67,6 +71,16 @@ export function getHolosphere(): Promise<HoloSphere> {
       privateKey,
       relays: resolveRelays(),
       store: { adapter: "indexeddb" },
+      // Shifts are NOT carried on the kind-30078 envelope: occurrences,
+      // signups and the identity directory are the standard NIP-52 / kind-31926
+      // events Elinor already publishes, decoded straight into lenses. Reading
+      // them needs `relay.commonshub.dev` in the relay list — it is in the
+      // default set, so only a deployment that overrides VITE_KIOSK_RELAYS has
+      // to include it explicitly.
+      standardWires: {
+        shifts: { coordinatorPubkey: resolveShiftCoordinator() ?? undefined },
+        shiftIdentity: {},
+      },
       nostr: projectionOptionsFor({
         appName,
         privateKey,

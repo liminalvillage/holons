@@ -15,23 +15,33 @@
 // so the feed simply follows the displayed holon.
 
 import {
+  SHIFTS_LENS,
+  SHIFT_IDENTITY_LENS,
+  SHIFT_RSVP_LENS,
   attestationIdentityMap,
   attestationNameMap,
+  attestationsFrom,
   createShiftRelayClient,
   enrolledPubkeys,
   latestRsvpFor,
   resolveRsvps,
   sortOccurrences,
+  toOccurrence,
+  toRsvp,
   type ShiftIdentityMap,
+  type ShiftIdentityRecord,
   type ShiftOccurrence,
+  type ShiftRecord,
   type ShiftRelayClient,
   type ShiftRsvp,
+  type ShiftRsvpRecord,
   type ShiftRsvpStatus,
 } from "@holons/core/shifts";
 import { signerFromSecretKey } from "@holons/core/holosphere";
 import { get, writable } from "svelte/store";
 import { currentUser } from "./auth";
 import { resolveShiftCoordinator, resolveShiftRelays } from "./config";
+import { getHolosphere, subscribeLens } from "./holosphere";
 import { getSessionSecret } from "./sessionKey";
 import {
   holonId,
@@ -65,7 +75,9 @@ export const shiftSigner = writable<{
   mode: "server" | "local";
 } | null>(null);
 
-// One lazily-created relay client shared by the feed and RSVP publishing.
+// Publishing only. The feed is lens data now; a signup still goes out through
+// the protocol, because the rule behind it — newest across a person's linked
+// keys — is not a per-address write and the generic path would get it wrong.
 let client: ShiftRelayClient | null = null;
 function getClient(): ShiftRelayClient | null {
   const relays = resolveShiftRelays();
@@ -82,17 +94,27 @@ function getClient(): ShiftRelayClient | null {
 let refetchNow: (() => void) | null = null;
 
 /**
- * Start following the displayed holon's shift schedule LIVE: one relay
- * subscription per holon (see `subscribeSchedule` in @holons/core/shifts),
- * re-established on holon change and every RESYNC_MS. An explicit caretaker
+ * Start following the displayed holon's shift schedule LIVE.
+ *
+ * The schedule is now ORDINARY LENS DATA. Occurrences, signups and the
+ * kind-31926 identity directory are decoded by the wires in
+ * `@holons/core/shifts` and read through Holosphere like quests or roles, so
+ * this holds no relay subscription of its own: the store is the source, a
+ * reload paints from IndexedDB, and the same records are available to every
+ * other surface. Only PUBLISHING a signup still speaks the protocol directly,
+ * because the person-level rule behind it is not a per-address write.
+ *
+ * Re-established on holon change and every RESYNC_MS. An explicit caretaker
  * "off" for the tab stands the feed down entirely (the default `auto` keeps
  * it running so the tab's visibility can follow the content, like the
  * Library lens). Also resolves who the logged-in user can sign RSVPs as
  * (see `shiftSigner`). Returns a teardown function.
  */
 export function startShifts(): () => void {
-  if (!resolveShiftRelays().length) return () => {};
-
+  // No shift-relay gate any more: the feed is lens data over the ordinary
+  // relays. `VITE_KIOSK_SHIFT_RELAYS` now governs only where a signup is
+  // PUBLISHED, and `getClient` already degrades to a read-only board when it
+  // is unset. The caretaker's `off` remains the way to stand the tab down.
   let seq = 0; // invalidates a replaced subscription's late callbacks
   let sub: { close(): void } | null = null;
 
@@ -104,37 +126,83 @@ export function startShifts(): () => void {
   function subscribe(id: string) {
     stop();
     const my = ++seq;
-    const c = getClient();
-    if (!c) return;
-    sub = c.subscribeSchedule(id, {
-      // Sliding window, re-evaluated at every emission: past shifts drop
-      // off and newly published days slide in without re-subscribing.
-      range: () => {
-        const nowSec = Math.floor(Date.now() / 1000);
-        return { since: nowSec, until: nowSec + SHIFT_HORIZON_DAYS * 86_400 };
-      },
-      onSchedule(schedule) {
-        if (my !== seq) return;
-        // Every store the board reads comes from this one emission:
-        // occurrences and RSVPs, plus — from the kind-31926 attestations
-        // riding the same subscription — participant names for the wall
-        // and the person-identity collapse, so a cancel under the Elinor
-        // key clears an accept under the Holons key the moment it lands.
-        const opts = {
-          coordinatorPubkey: resolveShiftCoordinator() ?? undefined,
-        };
-        rawShifts.set(schedule);
-        shiftNames.set(attestationNameMap(schedule.attestations, opts));
-        shiftIdentity.set(attestationIdentityMap(schedule.attestations, opts));
-        shiftsLoaded.set(true);
-      },
-      onError(err) {
-        // A dead relay must not take the board down — the tab simply stays
-        // hidden (auto) or shows its empty state (forced on).
-        console.warn("[kiosk] shift subscription failed", err);
+    const opts = { coordinatorPubkey: resolveShiftCoordinator() ?? undefined };
+
+    let occurrences: ShiftRecord[] = [];
+    let signups: ShiftRsvpRecord[] = [];
+    let directory: ShiftIdentityRecord[] = [];
+    // The lenses stream from the store the moment they are subscribed, so the
+    // board would otherwise flash its empty state before the relay has been
+    // reached. `loaded` flips only once the first sync settles.
+    let loaded = false;
+
+    const emit = () => {
+      if (my !== seq) return;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const until = nowSec + SHIFT_HORIZON_DAYS * 86_400;
+      const atts = attestationsFrom(directory);
+      rawShifts.set({
+        // The horizon is applied here rather than in the subscription: a lens
+        // holds the whole schedule, and re-filtering on every emission is what
+        // lets past shifts drop off and new days slide in without
+        // re-subscribing.
+        occurrences: sortOccurrences(
+          occurrences
+            .filter((o) => o.start >= nowSec && o.start <= until)
+            .map(toOccurrence),
+        ),
+        // A request published on someone's behalf is not occupancy — the real
+        // signup follows under that member's own key.
+        rsvps: signups.filter((r) => !r.request).map(toRsvp),
+      });
+      shiftNames.set(attestationNameMap(atts, opts));
+      shiftIdentity.set(attestationIdentityMap(atts, opts));
+      if (loaded) shiftsLoaded.set(true);
+    };
+
+    void (async () => {
+      let hs;
+      try {
+        hs = await getHolosphere();
+      } catch (err) {
+        // An unreachable relay must not take the board down — the tab simply
+        // stays hidden (auto) or shows its empty state (forced on).
+        console.warn("[kiosk] shifts unavailable", err);
         if (my === seq) shiftsLoaded.set(true);
-      },
-    });
+        return;
+      }
+      if (my !== seq) return;
+
+      const subs = [
+        subscribeLens<ShiftRecord>(hs, id, SHIFTS_LENS, (items) => {
+          occurrences = items;
+          emit();
+        }),
+        subscribeLens<ShiftRsvpRecord>(hs, id, SHIFT_RSVP_LENS, (items) => {
+          signups = items;
+          emit();
+        }),
+      ];
+      sub = {
+        close() {
+          for (const s of subs) s.unsubscribe();
+        },
+      };
+
+      try {
+        // Awaiting a read is what waits for the relay sync. The identity
+        // directory is global — one attestation serves every board a person
+        // appears on — and changes rarely, so it is read rather than followed.
+        directory = (await hs.getAllGlobal(
+          SHIFT_IDENTITY_LENS,
+        )) as ShiftIdentityRecord[];
+      } catch (err) {
+        console.warn("[kiosk] shift identities unavailable", err);
+      }
+      if (my !== seq) return;
+      loaded = true;
+      emit();
+    })();
   }
 
   function refetch() {
