@@ -31,6 +31,14 @@ export interface Expense {
   splitWith: AgentId[];
   /** Optional Telegram file_id for an attached receipt. */
   picture?: string | null;
+  /**
+   * What the record is. Absent (or `'expense'`) for an ordinary shared cost;
+   * `'settlement'` for a repayment recorded through `createSettlement` — the
+   * same shape, so every reader of the lens nets it without knowing.
+   */
+  kind?: 'expense' | 'settlement';
+  /** Legacy: older time-tracking records carried the unit here, not in `currency`. */
+  unit?: string;
 }
 
 /** Minimal user shape used for balance display. */

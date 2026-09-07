@@ -21,3 +21,14 @@ export {
   toggleParticipant,
 } from './operations.js';
 export type { CreateExpenseInput } from './operations.js';
+export {
+  computeMutualCredit,
+  createSettlement,
+  creditPairs,
+  expenseCurrencies,
+  expenseCurrency,
+  isSettlement,
+  participantIds,
+  settlementPlan,
+} from './credit.js';
+export type { CreateSettlementInput, CreditPair, MutualCredit } from './credit.js';

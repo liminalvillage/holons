@@ -183,6 +183,17 @@ describe('buildLedger', () => {
     const keys = new Set(entries.map(ledgerTrackKey));
     expect([...keys].sort()).toEqual(['money:usd', 'time:hours']);
   });
+
+  it('labels a repayment as a settlement, not a cost', () => {
+    const { entries } = ledger({
+      expenses: [
+        expense({ id: 's1', kind: 'settlement', amount: 30, paidBy: 'ben', splitWith: ['ana'] }),
+      ],
+    });
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.kind === 'settlement')).toBe(true);
+    expect(entries.map((e) => e.direction).sort()).toEqual(['in', 'out']);
+  });
 });
 
 describe('the ledger and the diagram agree', () => {

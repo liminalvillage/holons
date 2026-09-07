@@ -164,6 +164,8 @@ function collectExpenses(
 		const splitWith = coerceSplitWith(expense.splitWith);
 		const isTreasury = payer === TREASURY_ID;
 		const payerName = isTreasury ? 'Treasury' : payer ? label(payer) : '';
+		// A repayment between members is a transfer, not a cost — say so.
+		const kind = isTreasury ? 'treasury' : expense.kind === 'settlement' ? 'settlement' : 'expense';
 
 		// Every name on the record, so a row can be read without opening it.
 		const participants = [
@@ -187,7 +189,7 @@ function collectExpenses(
 				partyId: isTreasury ? undefined : payer,
 				participants,
 				description,
-				kind: isTreasury ? 'treasury' : 'expense',
+				kind,
 				source: 'expenses',
 				reference,
 			});
@@ -209,7 +211,7 @@ function collectExpenses(
 				partyId: id,
 				participants,
 				description,
-				kind: 'expense',
+				kind,
 				source: 'expenses',
 				reference,
 			});
