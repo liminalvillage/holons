@@ -212,9 +212,14 @@ export const rawChecklists = writable<Checklist[]>([]);
 
 /**
  * The displayed holon's shift schedule — occurrences and resolved signups —
- * as last pushed by the live relay subscription ($lib/shifts owns the
- * feed). Already windowed to the upcoming horizon; NOT Holosphere data, so
- * no federation, scope or watchdog machinery applies.
+ * as last built from the `shifts` and `shifts_rsvp` lenses ($lib/shifts owns
+ * the feed). Already windowed to the upcoming horizon.
+ *
+ * These ARE Holosphere records now, decoded from the NIP-52 events Elinor
+ * publishes rather than from the kind-30078 envelope. They are still kept out
+ * of the federation, scope and watchdog machinery: the lens is read-only on
+ * its wire and refuses the hologram and propagation paths that machinery
+ * drives, because a standard kind's `d` tag cannot carry a scalespace copy.
  */
 export const rawShifts = writable<{
   occurrences: ShiftOccurrence[];

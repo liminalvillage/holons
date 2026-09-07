@@ -34,6 +34,33 @@ when no `previous` is given).
 Only the coordinator publishes 31923; participants (or the bot on their
 behalf, under *their* key) publish 31925.
 
+## How Holons reads it
+
+Shifts are **ordinary lenses**. The wires in `@holons/core/shifts` decode the
+events above straight into Holosphere records, so every surface reads them the
+way it reads quests or roles:
+
+| call | holds |
+|---|---|
+| `getAll(holon, 'shifts')` | occurrences, addressed `<date>-<code>` |
+| `getAll(holon, 'shifts_rsvp')` | signups, one record per person per occurrence |
+| `getAllGlobal('shift_identity')` | the kind-31926 directory, one record per provider claim |
+
+A UI opts in with `createHoloSphere({ standardWires: { shifts: {…},
+shiftIdentity: {} } })`. Reading needs `relay.commonshub.dev` in the ordinary
+relay list; it is in the default set.
+
+`toOccurrence` and `toRsvp` map a record back to `ShiftOccurrence` /
+`ShiftRsvp` field for field, so `resolveRsvps`, `enrolledPubkeys` and
+`hasCapacity` take lens data unchanged.
+
+The lens is **read-only on its wire** and Holosphere throws on a write to it.
+Occurrences belong to the coordinator, and a signup's rule — newest across a
+person's linked keys — is not a per-address write, so signups still go out
+through `buildRsvpTemplate`. A standard kind also cannot carry a hologram, a
+global, a federated copy or a scalespace propagation, and each of those is
+refused rather than quietly degraded.
+
 ## Where it lives
 
 - **`@holons/core/shifts`** — all rules: d-tag/address builders and parsers,
@@ -45,23 +72,23 @@ behalf, under *their* key) publish 31925.
   tests). RSVPs are signed through a `NostrSigner` from
   `@holons/core/holosphere` (`createIdentityContext` / `signerFromSecretKey`)
   — no raw private key crosses a module boundary.
-- **`packages/telegram-ui/src/Shifts.js`** — rendering + Telegraf wiring only:
+- **`packages/telegram-ui/src/Shifts.js`** — rendering + Telegraf wiring:
   `/shifts [today|tomorrow|week|YYYY-MM-DD]`, `/myshifts`, and the inline
-  `✋ Take` / `❌ Drop` buttons; names via the users lens + 31926 lookup.
+  `✋ Take` / `❌ Drop` buttons. `readSchedule` reads the three lenses; names
+  come from the users lens first, then the attestations that arrive with it.
 - **`packages/core/src/nostr/codecs/profile.ts`** — the `users`-lens codec:
   kind 0 (with the NIP-39 `i` claim) + NIP-29 membership + the 31926
   attestation companion the projection host signs as the identity provider.
 - **`apps/kiosk/src/lib/views/ShiftsView.svelte`** — a Shifts tab on the
   kiosk: the next two weeks as day rows of shift notes with capacity meters
-  and participant names, fed by `apps/kiosk/src/lib/shifts.ts` (a live relay
-  subscription via `subscribeSchedule` — occurrences, RSVPs AND the 31926
-  attestations for names/identity all ride the one subscription, so an RSVP
-  made in Elinor lands as the relay pushes it, with an hourly re-subscribe
-  as healing). The tab
-  appears by itself when the displayed holon has upcoming occurrences
-  (tri-state caretaker pref, like Library/Roles). Relay + coordinator come
-  from `VITE_KIOSK_SHIFT_RELAYS` / `VITE_KIOSK_SHIFT_COORDINATOR`, defaulting
-  to `wss://relay.commonshub.dev` with any author trusted.
+  and participant names, fed by `apps/kiosk/src/lib/shifts.ts`, which follows
+  the `shifts` and `shifts_rsvp` lenses and reads the identity directory
+  alongside them. An RSVP made in Elinor lands as the relay pushes it into the
+  lens, and a reload paints from IndexedDB. The tab appears by itself when the
+  displayed holon has upcoming occurrences (tri-state caretaker pref, like
+  Library/Roles). `VITE_KIOSK_SHIFT_COORDINATOR` pins whose occurrences are
+  trusted; `VITE_KIOSK_SHIFT_RELAYS` now governs only where a signup is
+  PUBLISHED, defaulting to `wss://relay.commonshub.dev`.
 - **`apps/kiosk/src/routes/api/shifts/rsvp/+server.ts`** — ✋ Take / ✕ Drop
   from the kiosk, signed under the USER'S own key. Telegram logins are
   signed server-side with `deriveTelegramNostrKey` (the key never reaches
@@ -111,9 +138,9 @@ How Holons plays both sides:
   `["i","telegram:<id>"]` (numeric ids only, no proof element): Elinor sees
   it and asks that Telegram member to confirm the link with one tap.
 - **Consuming** — the bot's `/shifts` board and the kiosk resolve signup
-  pubkeys the local `users` lens cannot explain through 31926 attestations
-  (the bot via `fetchAttestations`; the kiosk gets them pushed on the same
-  `subscribeSchedule` feed as the schedule, then `attestationNameMap`).
+  pubkeys the local `users` lens cannot explain through 31926 attestations.
+  Both read them from the global `shift_identity` lens alongside the
+  schedule, then `attestationNameMap`.
   Precedence: local lens name →
   coordinator directory → other providers (newest wins) → `<8 hex>…`.
   `SHIFTS_IDENTITY_BLACKLIST` (comma-separated provider pubkeys) mutes

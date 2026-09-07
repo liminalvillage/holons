@@ -41,6 +41,15 @@ export async function getHoloSphere(): Promise<any> {
     privateKey,
     relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
     store: dir ? { adapter: 'file', dir } : { adapter: 'memory' },
+    // Shifts are carried on their own standard kinds, not the kind-30078
+    // envelope. Registered here for the same reason the kiosk and the bot do
+    // it: `lens_get(holon, 'shifts')` then returns the real schedule, and a
+    // `lens_put` to it is REFUSED rather than writing a 30078 record that no
+    // other surface would ever read.
+    standardWires: {
+      shifts: { coordinatorPubkey: process.env.SHIFTS_COORDINATOR_PUBKEY || undefined },
+      shiftIdentity: {},
+    },
     // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
     nostr: projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
     awaitReady: true,

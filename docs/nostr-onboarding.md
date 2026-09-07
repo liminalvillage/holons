@@ -285,15 +285,29 @@ secret ever carries a `VITE_` prefix; Ethereum keys are `ETH_*` and never a
 Nostr key. **UIs never hold raw keys** in code paths: they receive a
 `NostrSigner` (`pubkey` + `sign(template)`) from `@holons/core/holosphere`.
 
-### 2.6 Elinor shifts (NIP-52 interop) — the one feed that bypasses Holosphere
+### 2.6 Elinor shifts (NIP-52 interop) — a lens on someone else's kinds
 Community shifts are NIP-52 events shared with Elinor clients on
 `relay.commonshub.dev`: 31923 occurrences by a coordinator
 (`d = shift-<groupId>-<date>-<code>`), 31925 signups by participants
 (`d = rsvp-…`, `a` → the occurrence, `status accepted|declined`), and 31926
 identity attestations (`d = telegram:<id>`, one `p` per linked key). A person
 may act through several keys; the newest RSVP across all their keys wins.
-Rules live in `@holons/core/shifts`; the kiosk Shifts tab holds one live relay
-subscription and only renders. `groupId` is the holon id.
+`groupId` is the holon id.
+
+Holons **reads these as ordinary lenses**. The wires in `@holons/core/shifts`
+decode them straight into records, so `getAll(holon, 'shifts')`,
+`getAll(holon, 'shifts_rsvp')` and the global `getAllGlobal('shift_identity')`
+answer from the store like any other lens — no second relay client, and a
+reload paints from the local cache. A UI opts in with
+`createHoloSphere({ standardWires: { shifts, shiftIdentity } })`; the kiosk and
+the bot both do.
+
+The lens is READ-ONLY on its wire, and Holosphere refuses a write to it.
+Occurrences are the coordinator's to publish, and a signup carries a
+person-level rule — newest across a person's linked keys — that a per-address
+write would get wrong, so signups still go out through `buildRsvpTemplate`.
+Set `SHIFTS_COORDINATOR_PUBKEY` (`VITE_KIOSK_SHIFT_COORDINATOR` in the kiosk)
+in production: without it any author's occurrences are accepted.
 
 ---
 
@@ -339,7 +353,8 @@ browser (kiosk)                                              relays
  ├─ +layout.svelte  hs.subscribeFederated(holon, lens, …)      ◄──  quests, library, roles, checklists (+ partners' items, stamped _federation)
  │                  subscribeLens(hs, holon, "hidden", …)      ◄──  per-device hidden records
  ├─ getWriter(holon).put(lens, item)  (actingAs = logged-in user) ──►  signed 30078 + projections
- ├─ shifts.ts  subscribeSchedule()                             ◄──  31923 / 31925 / 31926 from relay.commonshub.dev
+ ├─ shifts.ts  subscribeLens(hs, holon, "shifts" / "shifts_rsvp")  ◄──  31923 / 31925 decoded into lens records
+ │             hs.getAllGlobal("shift_identity")              ◄──  31926 identity directory
  └─ /api/* (Netlify functions, apps/kiosk/src/routes/api)
         auth/telegram/*, auth/key (NIP-98), auth/session → JWT session cookie scoped to .hubs.network
         shifts/rsvp                                     → signs an Elinor RSVP server-side as the member

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The Shifts feed: community shifts in the Elinor format (NIP-52 style
-// kind-31923 occurrences + kind-31925 signups, see docs/shifts-elinor.md)
-// read from a Nostr relay via `@holons/core/shifts`. Unlike the lens boards
-// this data does not live in Holosphere — the relay is the source of truth
-// shared with the Elinor bot — but it is still a LIVE feed: the board holds
-// a relay subscription (`subscribeSchedule`), so a signup or cancel made in
-// Elinor lands here the moment the relay pushes it. EVERYTHING the board
-// shows rides that one subscription — occurrences, RSVPs, and the kind-31926
-// attestations that yield participant names and the person-identity
-// collapse. A slow re-subscribe heals anything a flaky connection missed.
+// kind-31923 occurrences + kind-31925 signups, see docs/shifts-elinor.md).
+//
+// This IS a lens board now. The wires in `@holons/core/shifts` decode those
+// events into Holosphere records, so the schedule comes from `shifts`,
+// `shifts_rsvp` and the global `shift_identity` directory rather than from a
+// relay subscription of this module's own. A signup or cancel made in Elinor
+// lands as the relay pushes it into the lens, and a reload paints from
+// IndexedDB instead of waiting on a round trip.
+//
+// Publishing a signup still speaks the protocol directly: its rule — newest
+// across a person's linked keys — is not a per-address write, and the lens is
+// read-only on its wire.
 //
 // The `groupId` of a shift IS the holon id (both are the Telegram chat id),
 // so the feed simply follows the displayed holon.
