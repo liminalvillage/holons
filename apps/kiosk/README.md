@@ -13,7 +13,11 @@ interacting:
 - **Lists** — the holon's checklists and shopping lists.
 - **Roles** — who holds which role.
 - **Status** — the holon's standing (opt-in, behind a framing modal).
-- **Flows** — expenses, REA events and the collective's summary.
+- **Flows** — expenses, REA events and the collective's summary as Sankeys;
+  its **Balances** layout reads the same expenses as mutual credit — who is
+  owed, who owes, the fewest transfers that square everyone — and lets a
+  logged-in member add an expense or mark a debt paid. The Allocation
+  section's ⚙ edits the split, the rings and the OpenCollective slug in place.
 
 The strip is the caretaker's: drag a tab to reorder it, hold to hide (✕) or
 add (+) tabs, pin one — all remembered per device. Closing the board shrinks

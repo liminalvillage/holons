@@ -43,6 +43,7 @@ const TASK_VIEW_KEY = "kiosk_task_view";
 const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
+const FLOWS_VIEW_KEY = "kiosk_flows_view";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
@@ -677,6 +678,24 @@ export function resolveRolesView(): RolesViewMode {
 /** Persist the Roles view mode. */
 export function setRolesView(mode: RolesViewMode): void {
   persist(ROLES_VIEW_KEY, mode);
+}
+
+/**
+ * How the Flows board reads the ledger: the Sankeys (movement + allocation),
+ * or the balances — the mutual credit behind the shared expenses. Same
+ * Layout pill as the other views; the choice sticks per device.
+ */
+export type FlowsViewMode = "graph" | "balances";
+
+/** Resolve the Flows view mode; the graph is the default. */
+export function resolveFlowsView(): FlowsViewMode {
+  const v = persisted(FLOWS_VIEW_KEY);
+  return v === "balances" ? "balances" : "graph";
+}
+
+/** Persist the Flows view mode. */
+export function setFlowsView(mode: FlowsViewMode): void {
+  persist(FLOWS_VIEW_KEY, mode);
 }
 
 /**

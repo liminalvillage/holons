@@ -26,6 +26,7 @@
     libraryViewMode,
     libraryCalendarMode,
     rolesViewMode,
+    flowsViewMode,
     calendarMode,
   } from "$lib/stores";
   import {
@@ -33,11 +34,13 @@
     setTaskSort,
     setLibraryView,
     setRolesView,
+    setFlowsView,
     setCalendarView,
     setLibraryCalendarView,
     type TaskViewMode,
     type LibraryViewMode,
     type RolesViewMode,
+    type FlowsViewMode,
     type CalendarMode,
   } from "$lib/config";
   import type { TaskSort } from "$lib/data";
@@ -86,6 +89,16 @@
     { id: "week", ...LAYOUT_SEGMENTS.week },
   ];
 
+  // ── Flows: the Sankey graph, or the balance sheet behind the expenses.
+  const FLOWS_MODES: {
+    id: FlowsViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
+    { id: "graph", ...LAYOUT_SEGMENTS.graph },
+    { id: "balances", ...LAYOUT_SEGMENTS.balances },
+  ];
+
   // ── Calendar: day / week / month window. Glyphs keep the compact cycling
   // toggle legible once names drop.
   const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =
@@ -124,6 +137,10 @@
     rolesViewMode.set(m as RolesViewMode);
     setRolesView(m as RolesViewMode);
   }
+  function pickFlowsMode(m: string) {
+    flowsViewMode.set(m as FlowsViewMode);
+    setFlowsView(m as FlowsViewMode);
+  }
   // Only the choice itself lives here; CalendarView reacts to the store for
   // its offset-reset / focus side effects.
   function pickCalendarMode(m: string) {
@@ -157,6 +174,7 @@
     libMode: string,
     libCalMode: string,
     rolesMode: string,
+    flowsMode: string,
     calMode: string,
   ): OwnPill[] {
     if (tab === "tasks")
@@ -219,6 +237,18 @@
           label: tr("pills.rolesLayout"),
         },
       ];
+    if (tab === "flows")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, FLOWS_MODES),
+          value: flowsMode,
+          onChange: pickFlowsMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.flowsLayout"),
+        },
+      ];
     if (tab === "calendar")
       return [
         {
@@ -242,6 +272,7 @@
     $libraryViewMode,
     $libraryCalendarMode,
     $rolesViewMode,
+    $flowsViewMode,
     $calendarMode,
   );
 

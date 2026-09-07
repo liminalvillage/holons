@@ -10,6 +10,12 @@
   // the interior/exterior split behind the dashboard's Flow Management, applied
   // to the collective's real balance so it reads as money rather than knobs.
   //
+  // The Layout pill swaps the graph for BALANCES: the same expenses lens read
+  // as mutual credit — who is owed, who owes, and the fewest transfers that
+  // square everyone — with the add / settle-up flows (see BalancesView). The
+  // data is loaded once here and handed down, so the two layouts can never
+  // disagree about a number.
+  //
   // Units never mix. Kudos are not hours and hours are not euros, this repo has
   // no exchange rates, and inventing one would be a lie — so each unit gets its
   // own track and the pill switches between them.
@@ -22,9 +28,10 @@
   // `expenses` is small enough to subscribe to normally.
 
   import { onMount } from "svelte";
-  import { holonId, rotationHold } from "$lib/stores";
+  import { holonId, rotationHold, flowsViewMode } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
+    getHolonName,
     getHolosphere,
     subscribeLens,
     type Subscription,
@@ -56,10 +63,19 @@
   import { getFederationSnapshot } from "@holons/core/federation";
   import { loadSettings } from "@holons/core/settings";
   import { buildNameMap } from "@holons/core/identity";
-  import type { Expense } from "@holons/core/expenses";
+  import {
+    expenseCurrencies,
+    normalizeCurrency,
+    participantIds,
+    type Expense,
+  } from "@holons/core/expenses";
+  import { currentUser, displayName, loginOpen } from "$lib/auth";
+  import { get } from "svelte/store";
+  import AllocationSettings from "$lib/components/AllocationSettings.svelte";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
   import PillSwitch from "$lib/components/PillSwitch.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import BalancesView from "./BalancesView.svelte";
 
   // Window options. 90 days is the default: long enough that a quiet month
   // still shows structure, short enough to describe the holon as it is now.
@@ -104,6 +120,49 @@
     profiles: Object.values(usersById),
   });
 
+  // ── Names for ids the name map cannot know ──────────────────────────────
+  // The users lens and the REA stream name people. A HOLON id — this holon as
+  // an expense participant, a federation partner in the REA stream, or a
+  // personal holon nobody here has a profile for — would otherwise print as
+  // its raw number on a Sankey bar. Those resolve the way the dock resolves
+  // them: partner names from the federation record, then HNS / the holon's
+  // settings through `getHolonName`, asked once per id and folded in as they
+  // arrive. Only positive answers are kept, so a lookup that finds nothing
+  // never re-asks and the derivation settles.
+  let holonNames: Record<string, string> = {};
+  let partnerNameMap: Record<string, string> = {};
+  const askedNames = new Set<string>();
+  let hsRef: HoloSphere | null = null;
+
+  function queueName(id: string) {
+    if (!hsRef || !hid || askedNames.has(id)) return;
+    askedNames.add(id);
+    const holon = hid;
+    void getHolonName(hsRef, id).then((name) => {
+      if (hid !== holon || !name) return;
+      holonNames = { ...holonNames, [id]: name };
+    });
+  }
+
+  /** The name for any id on the board, or undefined while still unknown. */
+  $: nameFor = (id: string): string | undefined => {
+    // `buildNameMap` stands in "#<id>" for a REA agent that carried no name;
+    // that is a placeholder, not an answer, so keep looking past it.
+    const mapped = nameMap.get(id);
+    const known =
+      (mapped && mapped !== `#${id}` ? mapped : undefined) ??
+      partnerNameMap[id] ??
+      holonNames[id] ??
+      undefined;
+    if (known) return known;
+    if (id === hid) return $t("balances.thisHolon");
+    if ($currentUser && id === String($currentUser.id)) {
+      return displayName($currentUser);
+    }
+    if (id) queueName(id);
+    return mapped;
+  };
+
   $: graph = buildValueFlows({
     holonId: hid ?? "",
     events,
@@ -111,8 +170,8 @@
     collective,
     settings,
     windowDays,
-    nameOf: (id) => nameMap.get(id),
-    hubLabel: $t("flows.hub"),
+    nameOf: nameFor,
+    hubLabel: holonNames[hid ?? ""] ?? $t("flows.hub"),
   });
 
   $: tracks = graph.tracks;
@@ -155,6 +214,77 @@
 
   $: hasAllocation =
     memberShares.length > 0 || partners.some((p) => p.zone >= 1);
+
+  // The ⚙ on the Allocation section: edit the split, the rings and the
+  // collective in place. Login-gated like every kiosk write; after a save the
+  // settings and the federation record are re-read so the board shows what
+  // actually landed.
+  let allocationOpen = false;
+  function openAllocation() {
+    if (!get(currentUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    allocationOpen = true;
+  }
+  async function afterAllocationSave() {
+    if (!hsRef || !hid) return;
+    await loadHolonSettings(hsRef, hid);
+    await loadFederation(hsRef, hid);
+  }
+
+  // ── Derived: the balances roster ────────────────────────────────────────
+  // Everyone with any economic footprint — the users lens, the REA stream,
+  // every payer and sharer on an expense, the viewer — plus the holon itself,
+  // which the bot uses as the "this holon eats the cost" participant.
+  $: people = (() => {
+    const ids = new Set<string>();
+    for (const id of Object.keys(usersById)) ids.add(id);
+    for (const u of extractReaUsers(events)) ids.add(String(u.id));
+    for (const id of participantIds(expenses)) ids.add(id);
+    if ($currentUser) ids.add(String($currentUser.id));
+    if (hid) ids.delete(hid);
+    const list = [...ids]
+      .filter(Boolean)
+      .map((id) => ({
+        id,
+        name:
+          nameFor(id) ??
+          usersById[id]?.first_name ??
+          (id === String($currentUser?.id) ? $currentUser?.first_name : "") ??
+          id,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return hid
+      ? [
+          ...list,
+          { id: hid, name: holonNames[hid] ?? $t("balances.thisHolon") },
+        ]
+      : list;
+  })();
+
+  // Every currency anyone has used or configured, normalized and deduped.
+  $: currencies = [
+    ...new Set(
+      [
+        ...expenseCurrencies(expenses),
+        ...(
+          (Array.isArray(settings?.currencies)
+            ? settings.currencies
+            : []) as unknown[]
+        )
+          .filter((c): c is string => typeof c === "string")
+          .map(normalizeCurrency),
+      ].filter(Boolean),
+    ),
+  ];
+
+  // The pill's choice, kept valid as currencies appear; the first in use
+  // otherwise, and USD only so a fresh holon can record its first expense.
+  let currencyId = "";
+  $: currency = currencies.includes(currencyId)
+    ? currencyId
+    : (currencies[0] ?? "usd");
 
   function trackKey(track: ValueFlowTrack): string {
     return `${track.id}:${track.unit}`;
@@ -357,6 +487,10 @@
     expenses = [];
     collective = null;
     collectiveError = "";
+    holonNames = {};
+    partnerNameMap = {};
+    askedNames.clear();
+    hsRef = null;
     memberShares = [];
     partners = [];
     loading = true;
@@ -381,6 +515,9 @@
       return;
     }
     if (hid !== holon) return; // holon changed while connecting
+    hsRef = hs;
+    // The board's own name, for its hub bar and its seat at the table.
+    queueName(holon);
 
     // Small lenses: safe to subscribe.
     expensesSub = subscribeLens(hs, holon, "expenses", (items) => {
@@ -419,6 +556,10 @@
       settings = doc;
       const slug = readCollectiveSlug(doc);
       if (slug) void loadCollective(slug, holon);
+      else {
+        collective = null;
+        collectiveError = "";
+      }
     } catch (err) {
       console.warn("[kiosk] flows: settings load failed", err);
     }
@@ -430,6 +571,7 @@
       const snapshot = await getFederationSnapshot(hs, holon);
       if (hid !== holon) return;
       const zones = readZoneAssignments(settings);
+      partnerNameMap = snapshot.partnerNames ?? {};
       partners = toAllocationPartners(
         snapshot.federated,
         snapshot.partnerNames,
@@ -525,7 +667,7 @@
         .filter((s) => s.percentage > 0)
         .map((s) => ({
           id: String(s.userId),
-          name: nameMap.get(String(s.userId)) ?? String(s.userId),
+          name: nameFor(String(s.userId)) ?? String(s.userId),
           percentage: s.percentage,
         }));
     } catch (err) {
@@ -536,16 +678,26 @@
 
   // Suspend auto-rotation while the detail sheet is open so the screen cannot
   // flip away mid-read.
-  $: rotationHold.set(selected != null);
+  $: rotationHold.set(selected != null || allocationOpen);
 </script>
 
 <div class="board">
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("flows.loading")}</p>
-    {:else if !tracks.length && !hasAllocation}
-      <p class="empty">{$t("flows.empty")}</p>
+    {:else if $flowsViewMode === "balances"}
+      <BalancesView
+        holonId={hid ?? ""}
+        {expenses}
+        {people}
+        {currencies}
+        {currency}
+        onCurrency={(c) => (currencyId = c)}
+      />
     {:else}
+      {#if !tracks.length && !hasAllocation}
+        <p class="empty">{$t("flows.empty")}</p>
+      {/if}
       <!-- Movement -->
       {#if tracks.length}
         <section>
@@ -610,20 +762,26 @@
         </section>
       {/if}
 
-      <!-- Allocation -->
-      {#if hasAllocation}
-        <section>
-          <header class="head">
-            <div class="titles">
-              <h2>{$t("flows.allocationTitle")}</h2>
-              <p class="sub">
-                {collective
-                  ? $t("flows.allocationAboutFunds", { name: collective.name })
-                  : $t("flows.allocationAboutShares")}
-              </p>
-            </div>
-          </header>
-
+      <!-- Allocation. The header (and its ⚙) is always there: somebody has
+           to be able to place the first partner or name the collective. -->
+      <section>
+        <header class="head">
+          <div class="titles">
+            <h2>{$t("flows.allocationTitle")}</h2>
+            <p class="sub">
+              {collective
+                ? $t("flows.allocationAboutFunds", { name: collective.name })
+                : $t("flows.allocationAboutShares")}
+            </p>
+          </div>
+          <button
+            class="gear"
+            on:click={openAllocation}
+            aria-label={$t("alloc.settings")}
+            title={$t("alloc.settings")}>⚙</button
+          >
+        </header>
+        {#if hasAllocation}
           <div class="stats">
             <div class="stat">
               <span class="k">{$t("flows.interior")}</span>
@@ -652,8 +810,10 @@
           >
             <p slot="empty" class="empty">{$t("flows.emptyAllocation")}</p>
           </SankeyChart>
-        </section>
-      {/if}
+        {:else}
+          <p class="empty">{$t("flows.emptyAllocation")}</p>
+        {/if}
+      </section>
 
       {#if collectiveError}
         <p class="note">{collectiveError}</p>
@@ -661,6 +821,18 @@
     {/if}
   </div>
 </div>
+
+{#if allocationOpen}
+  <AllocationSettings
+    holonId={hid ?? ""}
+    config={allocationConfig}
+    zones={readZoneAssignments(settings)}
+    partners={partners.map((p) => ({ id: p.id, name: p.name }))}
+    collectiveSlug={readCollectiveSlug(settings)}
+    on:close={() => (allocationOpen = false)}
+    on:saved={() => void afterAllocationSave()}
+  />
+{/if}
 
 {#if selected}
   <Modal on:close={() => (selected = null)}>
@@ -726,6 +898,22 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  .gear {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 1.25rem;
+    display: grid;
+    place-items: center;
+    touch-action: manipulation;
+  }
+
+  .gear:active {
+    transform: scale(0.92);
   }
 
   .stats {

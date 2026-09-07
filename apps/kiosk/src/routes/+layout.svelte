@@ -34,6 +34,7 @@
     resolveTaskSort,
     resolveLibraryView,
     resolveRolesView,
+    resolveFlowsView,
     resolveCalendarView,
     resolveLibraryCalendarView,
   } from "$lib/config";
@@ -69,6 +70,7 @@
     taskSort,
     libraryViewMode,
     rolesViewMode,
+    flowsViewMode,
     calendarMode,
     libraryCalendarMode,
     boardReady,
@@ -539,6 +541,7 @@
     taskSort.set(resolveTaskSort());
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
+    flowsViewMode.set(resolveFlowsView());
     calendarMode.set(resolveCalendarView());
     libraryCalendarMode.set(resolveLibraryCalendarView());
     brandName.set(resolveBrandName() ?? "");

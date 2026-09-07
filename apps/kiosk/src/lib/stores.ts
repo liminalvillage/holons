@@ -42,6 +42,7 @@ import {
   type TaskViewMode,
   type LibraryViewMode,
   type RolesViewMode,
+  type FlowsViewMode,
   type CalendarMode,
   type TabPref,
 } from "./config";
@@ -165,6 +166,9 @@ export const libraryViewMode = writable<LibraryViewMode>("cards");
 
 /** Roles layout: today cards / week grid / the user's own roles. */
 export const rolesViewMode = writable<RolesViewMode>("cards");
+
+/** Flows layout: the Sankey graph, or the balances. */
+export const flowsViewMode = writable<FlowsViewMode>("graph");
 
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");

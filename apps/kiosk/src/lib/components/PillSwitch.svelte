@@ -164,6 +164,11 @@
     {:else if current?.glyph}
       <span class="glyph" aria-hidden="true">{current.glyph}</span>
     {/if}
+    {#if showText}
+      <!-- Text segments (currencies, windows) have no glyph to stand in for
+           them, so the cycler names the current option outright. -->
+      <span class="ctxt">{current?.label}</span>
+    {/if}
   </button>
 </div>
 
@@ -287,6 +292,11 @@
   }
   .cycler .picon {
     fill: var(--ink);
+  }
+  .cycler .ctxt {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--ink);
   }
   @media (max-width: 560px) {
     .viewswitch {
