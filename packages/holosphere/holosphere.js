@@ -499,6 +499,21 @@ class HoloSphere {
         return Federation.propagateDeletion(this, holon, lens, key, options);
     }
 
+    /**
+     * Place a record on every H3-cell partner this holon sends `lens` to, and
+     * let each cell carry it up its configured scalespace reach. Called
+     * automatically after an ordinary `put`; exposed for backfills, which need
+     * to await the result.
+     */
+    async maybeMirrorToHexPartners(holon, lens, data) {
+        return Federation.maybeMirrorToHexPartners(this, holon, lens, data);
+    }
+
+    /** The retraction half of {@link maybeMirrorToHexPartners}. */
+    async retractFromHexPartners(holon, lens, key = null) {
+        return Federation.retractFromHexPartners(this, holon, lens, key);
+    }
+
     async getHolon(lat, lng, resolution) {
         return Utils.getHolon(lat, lng, resolution);
     }
@@ -623,7 +638,11 @@ class HoloSphere {
 
         const ok = await Federation.federate(this, sourceHolon, targetHolon, null, null, true, {
             inbound,
-            outbound
+            outbound,
+            // Scalespace reach for an H3-cell partner. Rebuilding the config
+            // field-by-field is what keeps a caller's stray keys out of the
+            // record, so a new one has to be named here to survive.
+            hops: lensConfig.hops
         });
 
         if (ok && options.partnerName) {

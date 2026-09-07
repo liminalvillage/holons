@@ -88,6 +88,45 @@ can't be identified as copies; retract them by hand with
 `holoSphere.propagateDeletion(holon, lens, key)` (pass `key: null` to sweep
 every copy from that holon in a lens).
 
+### The home hex — a place as a partner
+
+A holon can federate the H3 cell it calls home (`settings.hex`). The cell is a
+partner like any other, with the same per-lens `inbound`/`outbound` directions,
+and one thing no peer has: a **reach**. A cell sits inside a nest of coarser
+hexagons, and `lensConfig[cell].hops` says how many of them an item climbs.
+
+```javascript
+await holoSphere.federateHolon(holon, '89283082803ffff', {
+  lensConfig: { inbound: [], outbound: ['quests'], hops: 5 }
+});
+
+// From here on, an ORDINARY write places itself — no publish step:
+await holoSphere.put(holon, 'quests', { id: 'q1', title: 'Repair the well' });
+// … a pointer lands at 89283082803ffff and at its 5 coarser ancestors,
+//   so the map lights up at five zoom levels instead of only the deepest.
+```
+
+This is the one fan-out that happens without the caller asking for it, and it
+is scoped hard to earn that: only partners that are valid H3 cells, only with a
+reach above 0, only for lenses in that cell's `outbound`. Ordinary partners are
+untouched — propagating copies to every peer on every write is exactly what
+`autoPropagate` being opt-in exists to prevent. `hops: 0` (or no `hops`) is a
+partner with no automatic placement at all.
+
+Deletes retract the whole placement, cell and ancestors together, through the
+same ownership proof described above: the cell's copy is stamped with the
+holon's origin, and each ancestor's with the cell's.
+
+Read it back with the ordinary federated read — a cell is a holon, so
+`getFederated(cell, lens)` and the map's per-cell subscription both see what
+was placed there. Setting a lens `inbound` reads the exact cell only: the
+ancestors are deliberately not read, or a village would inherit a continent.
+
+The core wrapper is `@holons/core/federation`
+(`readHomeHexLink` / `setHomeHexLink` / `unlinkHomeHex`, plus
+`mirrorItemToHomeHex` for backfilling a board that was full before the lens was
+opened).
+
 ## Accessing Federated Data
 
 ### Direct Retrieval

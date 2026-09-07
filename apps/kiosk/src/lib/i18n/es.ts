@@ -545,6 +545,32 @@ export const es: Record<MessageKey, Msg> = {
   "settings.checking": "Comprobando…",
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",
+  "settings.onMap": "En el mapa",
+  "settings.onMapSub":
+    "— lo que este holón pone en el mapa compartido, y desde qué lejos se ve",
+  "settings.onMapLink": "Poner este holón en el mapa",
+  "settings.onMapUnlink": "Dejar de poner en el mapa",
+  "settings.onMapNeedsHex":
+    "Fija primero una ubicación para poner elementos en el mapa.",
+  "settings.onMapReach": "Visible desde",
+  "settings.onMapReachHint":
+    "Cada escritura en una lente abierta aquí aparece en el mapa, sin publicarla a mano.",
+  "settings.onMapPlacing": "Poniendo {done} de {total}…",
+  "settings.onMapPlaced": {
+    one: "Puesto {n} elemento",
+    other: "Puestos {n} elementos",
+  },
+  "settings.onMapFailed": "No se pudieron guardar los ajustes del mapa.",
+  "settings.onMapSend": "{lens}: poner en el mapa",
+  "settings.onMapReceive": "{lens}: leer de esta celda",
+  "settings.reach0": "ninguna parte",
+  "settings.reach1": "la manzana",
+  "settings.reach2": "el barrio",
+  "settings.reach3": "el distrito",
+  "settings.reach4": "el pueblo",
+  "settings.reach5": "la zona más amplia",
+  "settings.reach6": "la región",
+  "settings.reach7": "la región más amplia",
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Cargando…",
   "fed.loadError": "No se pudo cargar la federación — inténtalo de nuevo.",
@@ -910,7 +936,6 @@ export const es: Record<MessageKey, Msg> = {
   "flows.tipPartners": "Socios",
   "flows.tipNoPartners": "Aún ninguno",
   "flows.tipCollective": "Colectivo",
-};
   "balances.title": "Saldos",
   "balances.about": "Quién pagó, quién debe, y cómo saldarlo.",
   "balances.currencyLabel": "Qué moneda",
@@ -1011,3 +1036,4 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.save": "Guardar",
   "alloc.errSave": "No se pudo guardar el reparto. Inténtalo de nuevo.",
   "alloc.errDenied": "No puedes cambiar los ajustes de este holon.",
+};

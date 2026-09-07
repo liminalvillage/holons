@@ -25,6 +25,13 @@ export interface SetFederationPartnerOptions {
 	outbound: string[];
 	/** Display name recorded in `partnerNames` (best-effort, caller-resolved). */
 	partnerName?: string;
+	/**
+	 * Scalespace reach, for a partner that is an H3 cell: how many parent
+	 * levels above it an outbound write climbs. Absent or 0 means no automatic
+	 * placement at all — the partner is written only by an explicit publish,
+	 * which is how every non-cell partner behaves. See `./home-hex.ts`.
+	 */
+	hops?: number;
 }
 
 /** Read the mode of one lens out of a partner's directional config. */
@@ -89,7 +96,8 @@ export async function setFederationPartner(
 	return (holosphere as any).federateHolon(source, target, {
 		lensConfig: {
 			inbound: sanitizeLenses(options.inbound),
-			outbound: sanitizeLenses(options.outbound)
+			outbound: sanitizeLenses(options.outbound),
+			...(options.hops !== undefined ? { hops: options.hops } : {})
 		},
 		...(options.partnerName ? { partnerName: options.partnerName } : {})
 	});

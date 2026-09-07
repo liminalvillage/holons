@@ -242,7 +242,12 @@ export async function publishToFederation(
 		getFederationSnapshot(holosphere, holonId, opts.federationSourceId)
 	]);
 
-	if (settingsHex) {
+	// Skip the settings.hex leg once the hex is a real federation partner: the
+	// propagate() call below already writes it, with the scalespace reach its
+	// partner config asks for. Writing it here as well would land a second,
+	// FLAT copy at the same key — and being the later write, it would overwrite
+	// the one that knows how to climb.
+	if (settingsHex && !snapshot.federated.includes(settingsHex)) {
 		await single(settingsHex);
 	}
 

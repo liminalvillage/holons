@@ -546,6 +546,33 @@ export const it: Record<MessageKey, Msg> = {
   "settings.checking": "Verifica…",
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",
+  "settings.onMap": "Sulla mappa",
+  "settings.onMapSub":
+    "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
+  "settings.onMapLink": "Metti questo holon sulla mappa",
+  "settings.onMapUnlink": "Non mettere più sulla mappa",
+  "settings.onMapNeedsHex":
+    "Imposta prima una posizione per mettere gli elementi sulla mappa.",
+  "settings.onMapReach": "Visibile da",
+  "settings.onMapReachHint":
+    "Ogni scrittura su una lente aperta qui appare sulla mappa, senza pubblicarla a mano.",
+  "settings.onMapPlacing": "Sto mettendo {done} di {total}…",
+  "settings.onMapPlaced": {
+    one: "Messo {n} elemento",
+    other: "Messi {n} elementi",
+  },
+  "settings.onMapFailed":
+    "Non è stato possibile salvare le impostazioni della mappa.",
+  "settings.onMapSend": "{lens}: metti sulla mappa",
+  "settings.onMapReceive": "{lens}: leggi da questa cella",
+  "settings.reach0": "da nessuna parte",
+  "settings.reach1": "l’isolato",
+  "settings.reach2": "il quartiere",
+  "settings.reach3": "il distretto",
+  "settings.reach4": "la città",
+  "settings.reach5": "la zona più ampia",
+  "settings.reach6": "la regione",
+  "settings.reach7": "la regione più ampia",
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Caricamento…",
   "fed.loadError": "Impossibile caricare la federazione — riprova.",
@@ -918,7 +945,6 @@ export const it: Record<MessageKey, Msg> = {
   "flows.tipPartners": "Partner",
   "flows.tipNoPartners": "Ancora nessuno",
   "flows.tipCollective": "Collettivo",
-};
   "balances.title": "Bilanci",
   "balances.about": "Chi ha pagato, chi deve, e come pareggiare.",
   "balances.currencyLabel": "Quale valuta",
@@ -1020,3 +1046,4 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.save": "Salva",
   "alloc.errSave": "Salvataggio della ripartizione non riuscito. Riprova.",
   "alloc.errDenied": "Non puoi cambiare le impostazioni di questo holon.",
+};

@@ -13,6 +13,11 @@ export interface FederationLensDirections {
 	inbound: string[];
 	/** Lenses this holon sends TO the partner. */
 	outbound: string[];
+	/**
+	 * Scalespace reach when the partner is an H3 cell — how many parent levels
+	 * above it an outbound write climbs. Absent for ordinary partners.
+	 */
+	hops?: number;
 }
 
 export interface FederationSnapshot {
@@ -41,9 +46,11 @@ export async function getFederationSnapshot(
 	const lensConfig: Record<string, FederationLensDirections> = {};
 	const rawConfig = fedInfo?.lensConfig ?? {};
 	for (const [partnerId, cfg] of Object.entries(rawConfig)) {
+		const hops = Number((cfg as any)?.hops);
 		lensConfig[partnerId] = {
 			inbound: Array.isArray((cfg as any)?.inbound) ? (cfg as any).inbound : [],
-			outbound: Array.isArray((cfg as any)?.outbound) ? (cfg as any).outbound : []
+			outbound: Array.isArray((cfg as any)?.outbound) ? (cfg as any).outbound : [],
+			...(Number.isFinite(hops) && hops > 0 ? { hops } : {})
 		};
 	}
 

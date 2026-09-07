@@ -145,6 +145,21 @@ describe('publishToFederation', () => {
 		expect(out.usedHolograms).toBe(true);
 	});
 
+	it('all target leaves a LINKED settings.hex to propagate, so it is written once', async () => {
+		// Once the home hex is a real partner, propagate() writes it with the
+		// scalespace reach its config asks for. A second flat write here would
+		// land later at the same key and overwrite the one that climbs.
+		const m = mockHolosphere({
+			federated: ['8928308280fffff', 'p1'],
+			settingsHex: '8928308280fffff',
+			propagateResult: { success: 2, messages: [] }
+		});
+		const out = await publishToFederation(ctx(m.holosphere), { kind: 'all' });
+		expect(m.put).not.toHaveBeenCalled();
+		expect(m.propagate).toHaveBeenCalledOnce();
+		expect(out.publishedTo).toBe(2); // both legs came from propagate
+	});
+
 	it('all target skips settings.hex when includeSettingsHex is false', async () => {
 		const m = mockHolosphere({ federated: [], settingsHex: '8928308280fffff' });
 		const out = await publishToFederation(

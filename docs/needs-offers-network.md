@@ -167,3 +167,13 @@ shopping item carries `needId` back to the need.
 
 MCP surface: `need_publish_from_shopping_item`, `need_respond`, `need_close`,
 `needs_list_at_hex`.
+
+**Any lens can now do this.** What `publishNeedNearby` hand-rolls for needs is
+available to every lens by linking the home hex as a federation partner: tick
+the lenses on the Federation page, set a reach, and ordinary writes place
+themselves on the map at that many zoom levels. Needs keep their own path
+because they publish to partners and the map with different consent and a
+cross-lens soul (`quests` record, `needs` layer); everything else should use the
+home-hex link rather than growing a second bespoke publisher. See
+`@holons/core/federation` (`setHomeHexLink`) and the *home hex* section of
+`packages/holosphere/FEDERATION.md`.

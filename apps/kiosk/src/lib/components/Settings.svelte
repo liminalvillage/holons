@@ -43,7 +43,16 @@
   } from "$lib/config";
   import { themeMode } from "$lib/theme";
   import { langMode, t, tr, type MessageKey } from "$lib/i18n";
-  import { readSettingsHex } from "@holons/core/federation";
+  import {
+    HOME_HEX_DEFAULT_HOPS,
+    HOME_HEX_MAX_HOPS,
+    mirrorItemToHomeHex,
+    readHomeHexLink,
+    readSettingsHex,
+    setHomeHexLink,
+    unlinkHomeHex,
+    type HomeHexLink,
+  } from "@holons/core/federation";
   import {
     loadSettings,
     readHolonColor,
@@ -86,6 +95,127 @@
       if (id === $holonId) homeHex = hex;
     } catch {
       if (id === $holonId) homeHex = null;
+    }
+  }
+
+  // ── On the map ────────────────────────────────────────────────────────
+  // The home hex configured as a federation partner. Opening a lens here is
+  // what makes an ordinary write show up on the shared map; the reach says how
+  // far out you can be zoomed and still find it. The kiosk offers the lenses it
+  // actually shows, plus anything already opened elsewhere, so a dashboard
+  // setting is never silently dropped when this screen saves.
+  const MAP_LENSES = ["quests", "library", "roles", "checklists"];
+  let mapLink: HomeHexLink | null = null;
+  let mapBusy = false;
+  let mapPlacing: { lens: string; done: number; total: number } | null = null;
+  $: void loadMapLink($holonId, homeHex);
+  $: mapLenses = [
+    ...MAP_LENSES,
+    ...[...(mapLink?.inbound ?? []), ...(mapLink?.outbound ?? [])]
+      .filter((l) => !MAP_LENSES.includes(l))
+      .filter((l, i, a) => a.indexOf(l) === i),
+  ];
+
+  async function loadMapLink(
+    id: string | null,
+    hex: string | null | undefined,
+  ) {
+    if (!id || !hex) {
+      mapLink = null;
+      return;
+    }
+    try {
+      const hs = await getHolosphere();
+      const link = await readHomeHexLink(hs, id);
+      if (id === $holonId) mapLink = link;
+    } catch {
+      if (id === $holonId) mapLink = null;
+    }
+  }
+
+  /** Reach as a place rather than a number — 0 means nothing is placed. */
+  function reachLabel(hops: number): string {
+    const i = Math.min(Math.max(hops, 0), 7);
+    return $t(`settings.reach${i}` as MessageKey);
+  }
+
+  /** setHomeHexLink fully replaces the config, so always pass the whole thing. */
+  async function saveMap(next: {
+    inbound: string[];
+    outbound: string[];
+    hops: number;
+  }) {
+    if (!$holonId || mapBusy) return;
+    mapBusy = true;
+    try {
+      const hs = await getHolosphere();
+      mapLink = await setHomeHexLink(hs, $holonId, next);
+    } catch (err) {
+      console.error("[kiosk] home-hex save failed", err);
+      showNotice(tr("settings.onMapFailed"));
+      await loadMapLink($holonId, homeHex);
+    } finally {
+      mapBusy = false;
+    }
+  }
+
+  async function toggleMapLens(lens: string, dir: "in" | "out") {
+    if (!mapLink) return;
+    const key = dir === "in" ? "inbound" : "outbound";
+    const current = mapLink[key];
+    const wasOn = current.includes(lens);
+    const next = wasOn ? current.filter((l) => l !== lens) : [...current, lens];
+    await saveMap({
+      inbound: key === "inbound" ? next : mapLink.inbound,
+      outbound: key === "outbound" ? next : mapLink.outbound,
+      hops: mapLink.hops,
+    });
+    // Opening a lens only affects writes from here on, so a board that is
+    // already full would leave the map looking broken. Place what is there.
+    if (!wasOn && dir === "out") await placeExisting(lens);
+  }
+
+  async function placeExisting(lens: string) {
+    if (!$holonId || !mapLink) return;
+    let items: Array<{ id: string; [k: string]: any }> = [];
+    try {
+      const hs = await getHolosphere();
+      items = (await (hs as any).getAll($holonId, lens)) ?? [];
+      const todo = items.filter((i) => i && i.id && !i._deleted);
+      if (todo.length === 0) return;
+      mapPlacing = { lens, done: 0, total: todo.length };
+      for (const item of todo) {
+        try {
+          await mirrorItemToHomeHex(hs, $holonId, lens, item, mapLink);
+        } catch {
+          // Best-effort — one unplaceable item must not stop the rest.
+        }
+        mapPlacing = { ...mapPlacing, done: mapPlacing.done + 1 };
+      }
+      showNotice(tr("settings.onMapPlaced", { n: todo.length }));
+    } catch (err) {
+      console.error("[kiosk] backfill failed", err);
+    } finally {
+      mapPlacing = null;
+    }
+  }
+
+  async function linkMap() {
+    await saveMap({ inbound: [], outbound: [], hops: HOME_HEX_DEFAULT_HOPS });
+  }
+
+  async function unlinkMap() {
+    if (!$holonId || mapBusy) return;
+    mapBusy = true;
+    try {
+      const hs = await getHolosphere();
+      await unlinkHomeHex(hs, $holonId);
+      mapLink = null;
+    } catch (err) {
+      console.error("[kiosk] home-hex unlink failed", err);
+      showNotice(tr("settings.onMapFailed"));
+    } finally {
+      mapBusy = false;
     }
   }
 
@@ -665,6 +795,97 @@
         </button>
       {/if}
     </div>
+
+    <!--
+      The claimed cell, configured as a federation partner: which lenses reach
+      the shared map, and how far up the scalespace they travel. Opening a lens
+      here is the whole gesture — from then on ordinary writes place themselves.
+    -->
+    <div class="field">
+      {$t("settings.onMap")}
+      <span class="sub">{$t("settings.onMapSub")}</span>
+
+      {#if !homeHex}
+        <p class="hex-note">{$t("settings.onMapNeedsHex")}</p>
+      {:else if !mapLink}
+        <button
+          type="button"
+          class="hex-pick"
+          disabled={mapBusy}
+          on:click={linkMap}
+        >
+          ⬡ {$t("settings.onMapLink")}
+        </button>
+      {:else}
+        <div class="reach">
+          <div class="reach-head">
+            <span>{$t("settings.onMapReach")}</span>
+            <strong>{reachLabel(mapLink.hops)}</strong>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max={HOME_HEX_MAX_HOPS}
+            value={mapLink.hops}
+            disabled={mapBusy || !!mapPlacing}
+            aria-label={$t("settings.onMapReach")}
+            on:change={(e) =>
+              mapLink &&
+              saveMap({
+                inbound: mapLink.inbound,
+                outbound: mapLink.outbound,
+                hops: Number(e.currentTarget.value),
+              })}
+          />
+        </div>
+
+        {#each mapLenses as lens (lens)}
+          <div class="map-row">
+            <span class="map-lens">{lens}</span>
+            <div class="map-lanes">
+              <button
+                type="button"
+                class="lane in"
+                class:on={mapLink.inbound.includes(lens)}
+                aria-pressed={mapLink.inbound.includes(lens)}
+                aria-label={$t("settings.onMapReceive", { lens })}
+                disabled={mapBusy || !!mapPlacing}
+                on:click={() => toggleMapLens(lens, "in")}>↓</button
+              >
+              <button
+                type="button"
+                class="lane out"
+                class:on={mapLink.outbound.includes(lens)}
+                aria-pressed={mapLink.outbound.includes(lens)}
+                aria-label={$t("settings.onMapSend", { lens })}
+                disabled={mapBusy || !!mapPlacing}
+                on:click={() => toggleMapLens(lens, "out")}>↑</button
+              >
+            </div>
+          </div>
+        {/each}
+
+        {#if mapPlacing}
+          <p class="hex-note">
+            {$t("settings.onMapPlacing", {
+              done: mapPlacing.done,
+              total: mapPlacing.total,
+            })}
+          </p>
+        {:else}
+          <p class="hex-note">{$t("settings.onMapReachHint")}</p>
+        {/if}
+
+        <button
+          type="button"
+          class="hex-pick unlink-map"
+          disabled={mapBusy || !!mapPlacing}
+          on:click={unlinkMap}
+        >
+          {$t("settings.onMapUnlink")}
+        </button>
+      {/if}
+    </div>
   {/if}
 
   <!--
@@ -944,6 +1165,79 @@
   }
   .hex-pick:active {
     transform: scale(0.97);
+  }
+  .hex-pick:disabled {
+    opacity: 0.5;
+  }
+
+  /* On the map — reach dial and the per-lens direction lanes. */
+  .reach {
+    margin-top: 0.5rem;
+  }
+  .reach-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .reach-head strong {
+    color: var(--teal-deep);
+    font-weight: 700;
+  }
+  .reach input[type="range"] {
+    width: 100%;
+    margin-top: 0.3rem;
+    accent-color: var(--teal-deep);
+  }
+  .map-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 44px;
+  }
+  .map-lens {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    color: var(--ink);
+    text-transform: capitalize;
+    letter-spacing: 0;
+  }
+  .map-lanes {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .lane {
+    width: 44px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--muted);
+    font-size: 1rem;
+    line-height: 1;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease,
+      border-color 0.12s ease;
+  }
+  .lane.on {
+    background: var(--teal-deep);
+    border-color: var(--teal-deep);
+    color: #fff;
+  }
+  .lane:disabled {
+    opacity: 0.5;
+  }
+  .unlink-map {
+    color: #9a3b2f;
   }
 
   .accent-row {

@@ -22,6 +22,19 @@ export {
 export { readSettingsHex } from './settings-hex.js';
 
 export {
+	HOME_HEX_DEFAULT_HOPS,
+	HOME_HEX_MAX_HOPS,
+	mirrorItemToHomeHex,
+	normalizeHops,
+	readHomeHexLink,
+	retractItemFromHomeHex,
+	setHomeHexLink,
+	unlinkHomeHex,
+	type HomeHexLink,
+	type SetHomeHexLinkOptions
+} from './home-hex.js';
+
+export {
 	applyLensMode,
 	lensMode,
 	removeFederationPartner,

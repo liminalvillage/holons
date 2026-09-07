@@ -454,7 +454,17 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         // The local write is already committed, so propagation is a BACKGROUND
         // cascade that must not block the caller's save; callers that need the
         // result pass `{ awaitPropagation: true }`.
-        const shouldPropagate = options.autoPropagate === true && !isHologram && !isGlobal;
+        //
+        // A hologram payload propagates too. `!isHologram` used to sit in this
+        // condition, and it silently disabled every hologram upcast: a hex publish
+        // with `useHolograms: true` writes a bare `{id, soul}`, so its explicit
+        // `autoPropagate: true` was dropped on the floor and the item stopped dead
+        // at the exact cell — invisible until a viewer zoomed all the way in. The
+        // guard's real job is to stop the hologram UPDATE CASCADE from re-fanning,
+        // and every cascade re-put already passes `autoPropagate: false` by name
+        // (see the two cascade branches above), so asking for it explicitly is the
+        // whole test.
+        const shouldPropagate = options.autoPropagate === true && !isGlobal;
         let propagationResult = null;
 
         if (shouldPropagate) {
@@ -481,6 +491,24 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
             } else {
                 runPropagation(); // Background — don't block the write.
             }
+        } else if (options.autoPropagate !== false && !isHologram && !isGlobal
+                   && !isStandardPrimary(holoInstance, lens)) {
+            // The home-hex mirror — the one fan-out nobody has to ask for.
+            //
+            // A caretaker who ticked "quests → my home hex" meant every quest,
+            // not every quest someone remembers to press Publish on. So a plain
+            // write is enough to place the item on the map and carry it up the
+            // configured number of scalespace rungs.
+            //
+            // Scoped hard: only H3-cell partners with a reach, never ordinary
+            // partners — auto-fanning copies to every peer on every write is the
+            // exact regression the opt-in rule above exists to prevent. Runs
+            // fully in the background (the federation config is read through a
+            // short-TTL cache, so the usual "no hex link" answer is a Map lookup)
+            // and swallows its own errors: the local write is already committed
+            // and must not fail because the map could not be reached.
+            holoInstance.maybeMirrorToHexPartners(targetHolon, targetLens, data)
+                .catch((err) => console.warn('[put] home-hex mirror failed:', err?.message ?? err));
         }
 
         return {

@@ -15,6 +15,8 @@
     } from "$lib/stores/nameResolver";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+    import HomeHexCard from "./federation/HomeHexCard.svelte";
+    import { readSettingsHex } from "@holons/core/federation";
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -78,6 +80,12 @@
     let currentHolonId = '';
     let federationInfo: FederationInfo | null = null;
     let federatedHolons: FederatedHolon[] = [];
+    /**
+     * The home hex, when one is set. It is a federation partner like any other,
+     * but it gets its own card above — a place has a reach, and rendering it in
+     * the peer grid would show the same link twice with half its config missing.
+     */
+    let homeHexCell: string | null = null;
     let loading = true;
     let saving = false;
     let showAddDialog = false;
@@ -136,7 +144,10 @@
         if (!holosphere || !currentHolonId) return;
         loading = true;
         try {
-            federationInfo = await holosphere.getFederation(currentHolonId);
+            [federationInfo, homeHexCell] = await Promise.all([
+                holosphere.getFederation(currentHolonId),
+                readSettingsHex(holosphere, currentHolonId).catch(() => null)
+            ]);
 
             if (!federationInfo) {
                 federatedHolons = [];
@@ -166,6 +177,7 @@
 
             // `federated` is the canonical partner list; iterate it to render one card per partner.
             for (const id of federationInfo.federated || []) {
+                if (homeHexCell && id === homeHexCell) continue; // owned by HomeHexCard
                 await pushHolon(id);
             }
 
@@ -348,6 +360,10 @@
         ]}
     />
 
+    {#if currentHolonId && viewMode === 'list'}
+        <HomeHexCard lenses={ALL_LENSES} {lensIcon} />
+    {/if}
+
     {#if !loading && currentHolonId && totalFederations > 0}
         <div class="stats">
             <span><strong>{totalFederations}</strong> federation{totalFederations === 1 ? '' : 's'}</span>
@@ -370,8 +386,11 @@
     {:else if totalFederations === 0}
         <div class="empty-state">
             <Globe size="40" />
-            <h3>No federations yet</h3>
-            <p>Add another holon to start sharing data.</p>
+            <!-- Says "holon", not "federation": the home hex above is a
+                 federation too, and a linked one made the old heading a
+                 flat contradiction with the card right next to it. -->
+            <h3>No holon partners yet</h3>
+            <p>Federate with another holon to share data directly.</p>
             <button
                 type="button"
                 class="primary-btn"

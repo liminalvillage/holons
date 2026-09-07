@@ -534,6 +534,30 @@ export const en = {
   "settings.checking": "Checking…",
   "settings.change": "Change…",
   "settings.setLocation": "Set location…",
+  // The home hex as a federation partner: which lenses reach the map, and
+  // how far up the scalespace they travel.
+  "settings.onMap": "On the map",
+  "settings.onMapSub":
+    "— what this holon puts on the shared map, and how far out it can be seen",
+  "settings.onMapLink": "Put this holon on the map",
+  "settings.onMapUnlink": "Stop placing on the map",
+  "settings.onMapNeedsHex": "Set a location first to place items on the map.",
+  "settings.onMapReach": "Visible from",
+  "settings.onMapReachHint":
+    "Every write to a lens you open here appears on the map, without publishing it by hand.",
+  "settings.onMapPlacing": "Placing {done} of {total}…",
+  "settings.onMapPlaced": { one: "Placed {n} item", other: "Placed {n} items" },
+  "settings.onMapFailed": "Could not save the map settings.",
+  "settings.onMapSend": "{lens}: place on the map",
+  "settings.onMapReceive": "{lens}: read from this cell",
+  "settings.reach0": "nowhere",
+  "settings.reach1": "the block",
+  "settings.reach2": "the neighbourhood",
+  "settings.reach3": "the district",
+  "settings.reach4": "the town",
+  "settings.reach5": "the wider area",
+  "settings.reach6": "the region",
+  "settings.reach7": "the wider region",
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
@@ -896,9 +920,6 @@ export const en = {
   "flows.tipPartners": "Partners",
   "flows.tipNoPartners": "None yet",
   "flows.tipCollective": "Collective",
-} as const satisfies Record<string, Msg>;
-
-export type MessageKey = keyof typeof en;
   "balances.title": "Balances",
   "balances.about": "Who paid, who owes, and how to square it.",
   "balances.currencyLabel": "Which currency",
@@ -999,3 +1020,6 @@ export type MessageKey = keyof typeof en;
   "alloc.save": "Save",
   "alloc.errSave": "Couldn't save the split. Try again.",
   "alloc.errDenied": "You can't change this holon's settings.",
+} as const satisfies Record<string, Msg>;
+
+export type MessageKey = keyof typeof en;
