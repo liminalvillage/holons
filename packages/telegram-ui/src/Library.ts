@@ -129,7 +129,7 @@ class Library {
 
         // Register commands (using lib prefix to avoid conflicts with Checklists)
         this.bot.command('library', (ctx) => this.showLibrary(ctx));
-        this.bot.command('inventory', (ctx) => this.showLibrary(ctx)); // Alias
+        // `/inventory` now opens the stock shelf (src/Stock.ts); the library is /library.
         this.bot.command('libadd', (ctx) => this.addItem(ctx));
         this.bot.command('libremove', (ctx) => this.removeItem(ctx));
         this.bot.command('borrow', (ctx) => this.borrowItem(ctx, false));

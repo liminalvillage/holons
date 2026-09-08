@@ -18,6 +18,7 @@ import Expenses from '../src/Expenses.js';
 import Settings from '../src/Settings.js';
 import Bigtalk from '../src/Bigtalk.js';
 import Library from '../src/Library.js';
+import Stock from '../src/Stock.js';
 import Users from '../src/Users.js';
 import Tags from '../src/Tags.js';
 import Participation from '../src/RSVP.js';
@@ -515,6 +516,14 @@ export const serviceDefinitions = {
     factory: ({ telebot, database }) => new Library(telebot, database),
     singleton: true,
     dependencies: ['telebot', 'database'],
+  },
+
+  // Stock: fungible inventory folded from REA events (@holons/core/inventory)
+  stock: {
+    factory: ({ telebot, database, settings }) =>
+      new Stock(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
   },
 
   h3: {

@@ -17,6 +17,7 @@ import Expenses from "./Expenses.js";
 import Settings from './Settings.js';
 import Bigtalk from './Bigtalk.js';
 import Library from './Library.js';
+import Stock from './Stock.js';
 import Users from './Users.js';
 import Tags from './Tags.js';
 import Participation from './RSVP.js';
@@ -61,6 +62,7 @@ class HolonsBot {
     this.quests = null;
     this.bigtalk = null;
     this.library = null;
+    this.stock = null;
     this.users = null;
     this.expenses = null;
     this.onboarding = null;
@@ -111,6 +113,7 @@ class HolonsBot {
 
     this.bigtalk = new Bigtalk(this.bot);
     this.library = new Library(this.bot, this.db);
+    this.stock = new Stock(this.bot, this.db, this.settings);
     this.users = new Users(this.bot, this.db);
     this.expenses = new Expenses(this.bot, this.db, this.ui, this.settings);
     this.onboarding = new Onboarding(this.bot, this.db);
