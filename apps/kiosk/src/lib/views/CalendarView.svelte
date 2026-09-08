@@ -435,32 +435,11 @@
     selection.set({ kind: "task", quest: draft, isNew: true });
   }
 
-  // The + button creates an all-day draft on a day that's currently in view, so
-  // the new card lands where the user is looking: the open day, or today when
-  // it falls inside the shown week/month, else the first day of that period.
-  function defaultCreateDay(): string {
-    const today = startOfDay(get(now));
-    if (view === "day") return isoDay(anchorDay);
-    if (view === "week")
-      return isoDay(
-        weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
-      );
-    if (view === "year")
-      return isoDay(
-        today.getFullYear() === displayYear
-          ? today
-          : new Date(displayYear, 0, 1),
-      );
-    return isoDay(
-      today.getMonth() === monthAnchor.getMonth() &&
-        today.getFullYear() === monthAnchor.getFullYear()
-        ? today
-        : monthAnchor,
-    );
-  }
-
+  // The + button prefills the draft with the current date and time, so a task
+  // added on the spot starts as "now" and the user only adjusts if needed.
   function openCreate() {
-    void createAt(defaultCreateDay(), null);
+    const t = get(now);
+    void createAt(isoDay(t), t.getHours() * 60 + t.getMinutes());
   }
 
   // ── Resize: drag a day-event's bottom edge to change its length ───────────--
