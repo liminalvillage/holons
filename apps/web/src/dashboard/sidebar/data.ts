@@ -17,6 +17,7 @@ import MyHolonsIcon from "./icons/MyHolonsIcon.svelte";
 import OrbitsIcon from "./icons/OrbitsIcon.svelte";
 import FlowIcon from "./icons/FlowIcon.svelte";
 import LibraryIcon from "./icons/LibraryIcon.svelte";
+import StockIcon from "./icons/StockIcon.svelte";
 
 export const data = [
   {
@@ -58,6 +59,11 @@ export const data = [
     title: "Library",
     icon: LibraryIcon,
     link: "/library",
+  },
+  {
+    title: "Stock",
+    icon: StockIcon,
+    link: "/stock",
   },
   {
     title: "Checklists",
