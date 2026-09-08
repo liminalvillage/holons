@@ -19,6 +19,12 @@ export type ChecklistType =
 export interface ChecklistItem {
   text: string;
   checked: boolean;
+  /**
+   * Set on rows the inventory reorder derives (`@holons/core/inventory`), so
+   * re-deriving the list replaces the row for that item instead of adding a
+   * second one. Hand-written rows never carry it.
+   */
+  stockItemId?: string;
 }
 
 /** Persisted checklist record. */

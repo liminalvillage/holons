@@ -32,6 +32,26 @@ export interface NeedFromShoppingOptions {
 }
 
 /**
+ * The stock reference a shopping row may carry: the inventory reorder writes
+ * `stock: {itemId, quantity, unit}` on `ShoppingItem`s and `stockItemId` on
+ * plain checklist rows. Either becomes the need's `stock`.
+ */
+export function stockRefOf(
+  item: ShoppingItem & { stockItemId?: unknown; stock?: unknown }
+): PublishedNeed['stock'] | undefined {
+  const ref = item.stock as { itemId?: unknown; quantity?: unknown; unit?: unknown } | undefined;
+  const itemId =
+    typeof ref?.itemId === 'string' && ref.itemId
+      ? ref.itemId
+      : typeof item.stockItemId === 'string' && item.stockItemId
+        ? item.stockItemId
+        : null;
+  if (!itemId) return undefined;
+  const q = typeof ref?.quantity === 'number' && Number.isFinite(ref.quantity) && ref.quantity > 0 ? ref.quantity : 1;
+  return { itemId, quantity: q, ...(typeof ref?.unit === 'string' && ref.unit ? { unit: ref.unit } : {}) };
+}
+
+/**
  * Build a fresh need from a shopping-list item. The item's text becomes the
  * title, its category carries over, and a `source` back-link records the
  * originating item so checking it off can close the need.
@@ -57,6 +77,8 @@ export function needFromShoppingItem(
   need.id = opts.id ?? `need-${now}-${Math.random().toString(36).slice(2, 8)}`;
   need.status = 'requested';
   need.source = { kind: 'shopping', itemId: String(item.id) };
+  const stock = stockRefOf(item);
+  if (stock) need.stock = stock;
   need.responses = [];
   if (opts.hex) need.hex = opts.hex;
   return need;

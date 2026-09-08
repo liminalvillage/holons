@@ -73,6 +73,12 @@ export interface PublishedNeed extends Quest {
   hex?: string;
   /** Back-link to the originating record (phase 1: a shopping-list item). */
   source?: { kind: 'shopping'; itemId: string };
+  /**
+   * The stock item this need asks for, when it came from the inventory
+   * reorder (`@holons/core/inventory`): lets the shelf reserve for it and
+   * count it as demand in that item's unit.
+   */
+  stock?: { itemId: string; quantity: number; unit?: string };
   responses?: NeedResponse[];
   /** Publication stamp — which targets this need has been shared with. */
   published?: { at: number; toHex?: string; toPartners?: boolean };

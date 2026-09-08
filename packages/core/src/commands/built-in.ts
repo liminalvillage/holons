@@ -10,6 +10,19 @@ import type { CommandContext, CommandError, CoreCommand } from './types.js';
 import { createTask } from '../tasks/creation.js';
 import { saveTaskToHolon } from '../tasks/persistence.js';
 import type { Quest } from '../tasks/types.js';
+import {
+	STOCK_LENS,
+	buildStockEvent,
+	correctionKind,
+	createStockItemSpec,
+	demandsOf,
+	foldStock,
+	readStockItemSpecs,
+	reorderList,
+	reserve,
+	stockItemId,
+	type StockEventLike
+} from '../inventory/index.js';
 
 // ---------- shared helpers ----------
 
@@ -252,6 +265,157 @@ export const addToShoppingListCommand: CoreCommand<AddToShoppingListParams, unkn
 	}
 };
 
+// ---------- stock ----------
+
+/** The little the stock commands need from a Holosphere handle. */
+interface StockStoreLike {
+	getAll(holonId: string, lens: string): Promise<unknown>;
+	put(holonId: string, lens: string, value: unknown): Promise<unknown>;
+}
+
+const asArray = (raw: unknown): unknown[] =>
+	Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw) : [];
+
+async function readShelf(store: StockStoreLike, holonId: string) {
+	const [specsRaw, eventsRaw, questsRaw] = await Promise.all([
+		store.getAll(holonId, STOCK_LENS),
+		store.getAll(holonId, 'rea_events'),
+		store.getAll(holonId, 'quests')
+	]);
+	const specs = readStockItemSpecs(asArray(specsRaw));
+	const needs = asArray(questsRaw).filter((q) => (q as { type?: string } | null)?.type === 'need');
+	const demands = demandsOf(needs as Parameters<typeof demandsOf>[0], holonId);
+	const levels = reserve(foldStock(asArray(eventsRaw) as StockEventLike[], holonId), demands);
+	return { specs, levels, demands };
+}
+
+export interface StockShelfParams {
+	holonId: string;
+}
+
+export const stockShelfCommand: CoreCommand<StockShelfParams, unknown> = {
+	name: 'stockShelf',
+	description:
+		'What the holon keeps in stock: each item with its level on hand (folded from REA events) and what to buy to reach the restock targets',
+	paramsSchema: {
+		type: 'object',
+		required: ['holonId'],
+		properties: { holonId: { type: 'string' } }
+	},
+	validate: validateBy((p) => {
+		requireString(p, 'holonId');
+	}),
+	async execute(params, ctx: CommandContext) {
+		if (!ctx.holosphere) throw new Error('stockShelf needs a holosphere in the command context');
+		const { specs, levels } = await readShelf(ctx.holosphere as StockStoreLike, params.holonId);
+		const byItem = new Map(levels.map((l) => [l.itemId, l]));
+		return {
+			items: specs.map((spec) => ({
+				id: spec.id,
+				name: spec.name,
+				category: spec.category,
+				unit: spec.unit,
+				onhand: byItem.get(spec.id)?.onhand ?? 0,
+				reserved: byItem.get(spec.id)?.reserved ?? 0,
+				incoming: byItem.get(spec.id)?.incoming ?? 0,
+				target: spec.target ?? null,
+				min: spec.min ?? null
+			})),
+			reorder: reorderList(levels, specs)
+		};
+	}
+};
+
+export interface RecordStockParams {
+	holonId: string;
+	item: string;
+	/** add = came in, use = went out, count = the level observed now. */
+	kind: 'add' | 'use' | 'count';
+	quantity: number;
+	unit?: string;
+	category?: string;
+	note?: string;
+}
+
+export const recordStockCommand: CoreCommand<RecordStockParams, unknown> = {
+	name: 'recordStock',
+	description:
+		'Record a stock movement for an item the holon keeps: add (came in), use (went out) or count (what is on the shelf now). An unknown item is created on the fly for "add".',
+	paramsSchema: {
+		type: 'object',
+		required: ['holonId', 'item', 'kind', 'quantity'],
+		properties: {
+			holonId: { type: 'string' },
+			item: { type: 'string' },
+			kind: { type: 'string', enum: ['add', 'use', 'count'] },
+			quantity: { type: 'number', minimum: 0 },
+			unit: { type: 'string' },
+			category: { type: 'string' },
+			note: { type: 'string' }
+		}
+	},
+	validate: validateBy((p) => {
+		requireString(p, 'holonId');
+		requireString(p, 'item');
+		const kind = requireString(p, 'kind');
+		if (!['add', 'use', 'count'].includes(kind)) {
+			return { code: 'invalid_params', message: 'kind must be add, use or count' };
+		}
+		const q = p.quantity;
+		if (typeof q !== 'number' || !isFinite(q) || q < 0) {
+			return { code: 'invalid_params', message: 'quantity must be a non-negative number' };
+		}
+	}),
+	async execute(params, ctx: CommandContext) {
+		if (!ctx.holosphere) throw new Error('recordStock needs a holosphere in the command context');
+		const store = ctx.holosphere as StockStoreLike;
+		const { specs, levels } = await readShelf(store, params.holonId);
+		const id = stockItemId(params.item);
+		let spec = specs.find((s) => s.id === id) ?? null;
+		let created = false;
+		if (!spec) {
+			if (params.kind !== 'add') {
+				throw new Error(
+					`Unknown stock item "${params.item}"; the shelf has: ${specs.map((s) => s.name).join(', ') || 'nothing'}`
+				);
+			}
+			spec = createStockItemSpec({
+				name: params.item,
+				category: params.category,
+				unit: params.unit,
+				createdBy: ctx.userId
+			});
+			await store.put(params.holonId, STOCK_LENS, spec);
+			created = true;
+		}
+		const onhand = levels.find((l) => l.itemId === spec!.id)?.onhand ?? 0;
+		let kind: 'stock:produced' | 'stock:consumed' | 'stock:raised' | 'stock:lowered';
+		let quantity = params.quantity;
+		if (params.kind === 'add') kind = 'stock:produced';
+		else if (params.kind === 'use') kind = 'stock:consumed';
+		else {
+			const delta = params.quantity - onhand;
+			if (Math.abs(delta) < 0.0005) return { item: spec.id, onhand, unchanged: true, created };
+			kind = correctionKind(delta);
+			quantity = Math.abs(delta);
+		}
+		if (quantity <= 0) return { item: spec.id, onhand, unchanged: true, created };
+		const event = buildStockEvent({
+			holonId: params.holonId,
+			kind,
+			itemId: spec.id,
+			quantity,
+			unit: spec.unit,
+			actor: { id: ctx.userId ?? params.holonId, username: ctx.userName },
+			note: params.note ?? null
+		});
+		await store.put(params.holonId, 'rea_events', event);
+		const after =
+			kind === 'stock:produced' || kind === 'stock:raised' ? onhand + quantity : onhand - quantity;
+		return { item: spec.id, event, onhand: Math.round(after * 1000) / 1000, created };
+	}
+};
+
 // ---------- registration ----------
 
 let installed = false;
@@ -266,6 +430,8 @@ export function installBuiltInCommands(): void {
 	commandRegistry.replace(createTaskCommand as CoreCommand);
 	commandRegistry.replace(logHoursCommand as CoreCommand);
 	commandRegistry.replace(addToShoppingListCommand as CoreCommand);
+	commandRegistry.replace(stockShelfCommand as CoreCommand);
+	commandRegistry.replace(recordStockCommand as CoreCommand);
 	installed = true;
 }
 

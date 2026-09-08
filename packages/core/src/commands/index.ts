@@ -32,7 +32,11 @@ export {
 	createTaskCommand,
 	installBuiltInCommands,
 	logHoursCommand,
+	recordStockCommand,
+	stockShelfCommand,
 	type AddToShoppingListParams,
 	type CreateTaskParams,
-	type LogHoursParams
+	type LogHoursParams,
+	type RecordStockParams,
+	type StockShelfParams
 } from './built-in.js';

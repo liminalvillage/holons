@@ -564,6 +564,39 @@ export const EVENT_KIND_MAPPINGS: Readonly<Record<string, EventKindMapping>> = O
     measure: 'resourceQuantity',
     resourceConformsTo: 'credit',
   },
+  // Fungible stock (@holons/core/inventory). Levels are folded from these
+  // five kinds by their ValueFlows on-hand effect; `raised` / `lowered` are
+  // the count corrections.
+  'stock:produced': {
+    action: 'produce',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['stock'],
+  },
+  'stock:consumed': {
+    action: 'consume',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['stock'],
+  },
+  'stock:transferred': {
+    action: 'transfer',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['stock'],
+  },
+  'stock:raised': {
+    action: 'raise',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['stock'],
+  },
+  'stock:lowered': {
+    action: 'lower',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['stock'],
+  },
 });
 
 /**

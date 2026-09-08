@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { needFromShoppingItem, normalizeNeed } from './transform.js';
+import { needFromShoppingItem, normalizeNeed, stockRefOf } from './transform.js';
 import type { ShoppingItem } from '../shopping/types.js';
 
 const initiator = { id: 42, username: 'roberto' };
@@ -72,5 +72,29 @@ describe('normalizeNeed', () => {
     const need = normalizeNeed({ ...base, status: 'ongoing', responses: [null, { id: 'r1', responder: { id: 7 } }] });
     expect(need?.status).toBe('requested');
     expect(need?.responses).toHaveLength(1);
+  });
+});
+
+describe('stock reference on a need', () => {
+  it('carries the reorder row\'s stock reference onto the need', () => {
+    const need = needFromShoppingItem(
+      { ...item, stock: { itemId: 'flour', quantity: 5, unit: 'kg' } },
+      { holonId: 'h1', initiator, id: 'need-stock' }
+    );
+    expect(need.stock).toEqual({ itemId: 'flour', quantity: 5, unit: 'kg' });
+  });
+
+  it('reads a plain checklist row\'s stockItemId as one unit of that item', () => {
+    const need = needFromShoppingItem(
+      { ...item, stockItemId: 'flour' } as ShoppingItem,
+      { holonId: 'h1', initiator, id: 'need-row' }
+    );
+    expect(need.stock).toEqual({ itemId: 'flour', quantity: 1 });
+  });
+
+  it('leaves hand-written rows without a stock reference', () => {
+    const need = needFromShoppingItem(item, { holonId: 'h1', initiator, id: 'need-plain' });
+    expect(need.stock).toBeUndefined();
+    expect(stockRefOf(item)).toBeUndefined();
   });
 });

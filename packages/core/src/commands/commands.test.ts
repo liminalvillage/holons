@@ -13,6 +13,7 @@ import {
 	executeCommand,
 	installBuiltInCommands,
 	logHoursCommand,
+	recordStockCommand,
 	type CoreCommand
 } from './index.js';
 
@@ -44,9 +45,9 @@ describe('CommandRegistry', () => {
 		).toThrow(/non-empty name/);
 	});
 
-	it('shared singleton has the three built-ins installed', () => {
+	it('shared singleton has the built-ins installed', () => {
 		installBuiltInCommands(); // idempotent
-		for (const name of ['createTask', 'logHours', 'addToShoppingList']) {
+		for (const name of ['createTask', 'logHours', 'addToShoppingList', 'stockShelf', 'recordStock']) {
 			expect(commandRegistry.has(name)).toBe(true);
 		}
 	});
@@ -170,5 +171,66 @@ describe('built-in commands', () => {
 			expect(withStore.data.persisted).toBe(true);
 			expect(put).toHaveBeenCalledWith('h1', 'quests', expect.objectContaining({ title: 'Saved' }));
 		}
+	});
+});
+
+describe('stock commands', () => {
+	function memoryStore() {
+		const lenses = new Map<string, Map<string, Record<string, unknown>>>();
+		const key = (h: string, l: string) => `${h}/${l}`;
+		return {
+			puts: [] as Array<{ lens: string; value: Record<string, unknown> }>,
+			async getAll(h: string, l: string) {
+				return [...(lenses.get(key(h, l))?.values() ?? [])];
+			},
+			async put(h: string, l: string, value: Record<string, unknown>) {
+				if (!lenses.has(key(h, l))) lenses.set(key(h, l), new Map());
+				lenses.get(key(h, l))!.set(String(value.id), value);
+				this.puts.push({ lens: l, value });
+			}
+		};
+	}
+
+	it('recordStock validates kind and quantity', () => {
+		expect(recordStockCommand.validate?.({ holonId: 'h', item: 'Flour', kind: 'eat', quantity: 1 })).toMatchObject({
+			code: 'invalid_params'
+		});
+		expect(recordStockCommand.validate?.({ holonId: 'h', item: 'Flour', kind: 'add', quantity: -1 })).toMatchObject({
+			code: 'invalid_params'
+		});
+		expect(recordStockCommand.validate?.({ holonId: 'h', item: 'Flour', kind: 'add', quantity: 2 })).toBeFalsy();
+	});
+
+	it('creates the item on a first add, folds later movements, and reads back the shelf', async () => {
+		const store = memoryStore();
+		const ctx = { holosphere: store, userId: 'u1', userName: 'ada' };
+		const first = await executeCommand(
+			'recordStock',
+			{ holonId: 'h', item: 'Flour', kind: 'add', quantity: 10, unit: 'kg', category: 'food' },
+			ctx
+		);
+		expect(first.ok).toBe(true);
+		if (first.ok) expect(first.data).toMatchObject({ item: 'flour', created: true, onhand: 10 });
+		expect(store.puts.map((p) => p.lens)).toEqual(['stock', 'rea_events']);
+
+		const used = await executeCommand('recordStock', { holonId: 'h', item: 'flour', kind: 'use', quantity: 2.5 }, ctx);
+		if (used.ok) expect(used.data).toMatchObject({ onhand: 7.5, created: false });
+		const counted = await executeCommand('recordStock', { holonId: 'h', item: 'Flour', kind: 'count', quantity: 6 }, ctx);
+		if (counted.ok) expect(counted.data).toMatchObject({ onhand: 6 });
+		const same = await executeCommand('recordStock', { holonId: 'h', item: 'Flour', kind: 'count', quantity: 6 }, ctx);
+		if (same.ok) expect(same.data).toMatchObject({ unchanged: true });
+
+		const unknown = await executeCommand('recordStock', { holonId: 'h', item: 'Rice', kind: 'use', quantity: 1 }, ctx);
+		expect(unknown.ok).toBe(false);
+
+		const shelf = await executeCommand('stockShelf', { holonId: 'h' }, ctx);
+		expect(shelf.ok).toBe(true);
+		if (shelf.ok)
+			expect(shelf.data).toEqual({
+				items: [
+					{ id: 'flour', name: 'Flour', category: 'food', unit: 'kg', onhand: 6, reserved: 0, incoming: 0, target: null, min: null }
+				],
+				reorder: []
+			});
 	});
 });

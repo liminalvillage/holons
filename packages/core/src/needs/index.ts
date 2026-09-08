@@ -24,6 +24,7 @@ export {
 
 export {
   needFromShoppingItem,
+  stockRefOf,
   normalizeNeed,
   type NeedFromShoppingOptions,
 } from './transform.js';
