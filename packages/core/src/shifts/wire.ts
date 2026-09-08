@@ -276,9 +276,16 @@ export function shiftFilters(holon: string, coordinatorPubkey?: string): NostrFi
   const out: NostrFilterLike[] = [occurrences, { kinds: [SHIFT_RSVP_KIND], '#t': [SHIFT_HASHTAG] }];
   // Retractions, narrowed to the coordinator. NIP-09 only lets an author
   // delete their own events, so this is both complete and safe. Without a
-  // pinned coordinator there is no author to narrow to and subscribing to
-  // every kind 5 on the relay would be absurd, so we take none.
-  if (coordinatorPubkey) out.push({ kinds: [DELETE_KIND], authors: [coordinatorPubkey] });
+  // pinned coordinator there is no author to narrow to, so narrow by the
+  // `k` tag instead: every retraction core builds names its target kind,
+  // and "deletions of shift occurrences" is a small set on any relay.
+  // Authorization stays the NIP-09 rule itself (the wire registry drops a
+  // retraction naming somebody else's coordinate).
+  out.push(
+    coordinatorPubkey
+      ? { kinds: [DELETE_KIND], authors: [coordinatorPubkey] }
+      : { kinds: [DELETE_KIND], '#k': [String(SHIFT_OCCURRENCE_KIND)] },
+  );
   return out;
 }
 

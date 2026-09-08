@@ -276,6 +276,82 @@ export const en = {
   "shifts.more": { one: "+{n} more", other: "+{n} more" },
   "shifts.noSigner":
     "This screen can't sign for you yet — use /shifts in Telegram.",
+  // Shifts — the coordinator's plan (add / edit / remove shifts, publish and
+  // retract occurrences) and the gap states the wall shows
+  "shifts.unpublished": "Not published",
+  "shifts.stale": "Not in plan",
+  "shifts.drifted": "Differs from plan",
+  "shifts.nobodyYet": "Nobody yet",
+  "shifts.needs": { one: "Needs {n} person", other: "Needs {n} people" },
+  "shifts.publish": "Publish",
+  "shifts.republish": "Republish",
+  "shifts.retract": "Remove",
+  "shifts.unstaffedCount": {
+    one: "{n} shift with nobody",
+    other: "{n} shifts with nobody",
+  },
+  "shifts.spotsOpenTotal": {
+    one: "{n} spot still open",
+    other: "{n} spots still open",
+  },
+  "shifts.allCovered": "Every shift is covered — thank you!",
+  "shifts.configure": "Plan the shifts",
+  "shifts.emptyCta": "Set up the shift plan",
+  "shifts.publishPartial": {
+    one: "{n} shift didn't publish — {reason}",
+    other: "{n} shifts didn't publish — {reason}",
+  },
+  "shifts.publishFailed": "Couldn't publish — {reason}",
+  "shifts.retractFailed": "Couldn't remove — {reason}",
+  "shifts.errDenied": "You're not allowed to change this holon's plan.",
+  "shifts.errSave": "Couldn't save the plan. Try again.",
+  "shifts.noCoordinator":
+    "This kiosk can't publish shifts (no signing key configured on the server). You can still save the plan.",
+  "shifts.cannotPublish":
+    "You can save the plan, but not publish from here — {reason}.",
+  "shifts.adopted":
+    "No plan saved yet — this one was read off the shifts already on the wall. Save it to keep it.",
+  "shifts.catalog": "Shifts",
+  "shifts.enabled": "Enabled",
+  "shifts.title": "Title",
+  "shifts.remove": "Remove shift",
+  "shifts.start": "Start",
+  "shifts.end": "End",
+  "shifts.people": "people",
+  "shifts.days": "Days",
+  "shifts.placeHint": "place (optional)",
+  "shifts.place": "Place",
+  "shifts.newTitle": "New shift — title",
+  "shifts.add": "Add",
+  "shifts.addShift": "Add a shift",
+  "shifts.planSettings": "Plan",
+  "shifts.zone": "Time zone",
+  "shifts.horizon": "Days ahead",
+  "shifts.preview": "The wall, as the kiosk will show it",
+  "shifts.week": "This week",
+  "shifts.horizonDays": { one: "{n} day", other: "{n} days" },
+  "shifts.tallyUnpublished": {
+    one: "{n} not published",
+    other: "{n} not published",
+  },
+  "shifts.tallyShort": {
+    one: "{n} short of hands",
+    other: "{n} short of hands",
+  },
+  "shifts.tallyCovered": { one: "{n} covered", other: "{n} covered" },
+  "shifts.tallyStale": { one: "{n} not in plan", other: "{n} not in plan" },
+  "shifts.tallyNothing": "Nothing planned in this window",
+  "shifts.previewEmpty": "Add a shift or enable one to see the wall.",
+  "shifts.retractStale": {
+    one: "Remove {n} not in plan",
+    other: "Remove {n} not in plan",
+  },
+  "shifts.savePlan": "Save plan",
+  "shifts.publishMissing": {
+    one: "Publish {n} missing",
+    other: "Publish {n} missing",
+  },
+  "shifts.saveAndPublish": "Save & publish",
 
   // Pill segments (shared layout/sort vocabulary)
   "pills.card": "Card",

@@ -11,7 +11,7 @@
 
 import { finalizeEvent, getPublicKey, type Event } from 'nostr-tools/pure';
 import { hexToBytes } from '@noble/hashes/utils';
-import { deriveIdentityProviderKey, deriveTelegramNostrKey } from '../auth/derive.js';
+import { deriveIdentityProviderKey, deriveShiftCoordinatorKey, deriveTelegramNostrKey } from '../auth/derive.js';
 
 /** The unsigned shape every builder in core produces. */
 export interface SignableTemplate {
@@ -52,6 +52,9 @@ export interface IdentityContext {
   memberPubkey(telegramId: string | number): string | null;
   providerSigner(): NostrSigner | null;
   providerPubkey(): string | null;
+  /** The shift coordinator (kind-31923 author) this deployment publishes as. */
+  coordinatorSigner(): NostrSigner | null;
+  coordinatorPubkey(): string | null;
 }
 
 export function createIdentityContext(
@@ -88,10 +91,25 @@ export function createIdentityContext(
     return provider;
   }
 
+  let coordinator: NostrSigner | null | undefined;
+  function coordinatorSigner(): NostrSigner | null {
+    if (!secret) return null;
+    if (coordinator === undefined) {
+      try {
+        coordinator = signerFromSecretKey(deriveShiftCoordinatorKey(secret).privateKey);
+      } catch {
+        coordinator = null;
+      }
+    }
+    return coordinator;
+  }
+
   return {
     memberSigner,
     memberPubkey: (telegramId) => memberSigner(telegramId)?.pubkey ?? null,
     providerSigner,
     providerPubkey: () => providerSigner()?.pubkey ?? null,
+    coordinatorSigner,
+    coordinatorPubkey: () => coordinatorSigner()?.pubkey ?? null,
   };
 }

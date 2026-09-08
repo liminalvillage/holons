@@ -100,6 +100,74 @@ refused rather than quietly degraded.
 - **`@holons/core/auth` → `deriveTelegramNostrKey`** — the per-member signing
   key, shared with the web login so a member has one pubkey everywhere.
 
+## Planning and publishing — the coordinator's side
+
+A holon's **shift plan** is its catalog of recurring shifts, kept on the
+`settings` record under `shifts` and owned by `@holons/core/shifts/plan.ts`:
+
+```ts
+interface ShiftPlan { tzid; location?; horizonDays; shifts: ShiftDefinition[] }
+interface ShiftDefinition { code; title; start: "HH:MM"; end: "HH:MM"; capacity;
+                            enabled; description?; days?: 1..7[]; location? }
+```
+
+The catalog mirrors Elinor's (`src/shifts.js` there) field for field — the
+same five seeds, the same validation (`validateShiftDefinition`), the same
+code generator (`generateShiftCode`), the same 14-day horizon — so a plan
+edited on a kiosk and one edited in Elinor's Mini App describe the same
+schedule. `days` (ISO weekdays; absent = every day, which is what Elinor
+does) and a per-shift `location` are the two extensions.
+
+- `expectedShifts(plan, groupId, fromDate, days)` materialises the plan into
+  the slots it promises, DST-safe in the plan's zone (`localToUnix`).
+- `buildOccurrenceTemplate` builds the kind-31923 exactly as Elinor publishes
+  it (`d`, `title`, `start`, `end`, `start_tzid`, `location`, `capacity`,
+  `t:shift`, `t:<code>`, `t:group-<groupId>`; Elinor-style `content`).
+  Addressable: republishing the same key **replaces** — that is the edit.
+- `buildOccurrenceDeleteTemplate` builds the NIP-09 kind 5 naming each
+  occurrence by `a` coordinate (and `e` id), with `k 31923`. The shift wire
+  follows retractions by author when a coordinator is pinned, else by
+  `#k`, and turns them into `_deleted` tombstones on the `shifts` lens.
+- `reconcileSchedule(expected, occurrences, rsvps, { identity, coordinatorPubkey })`
+  lines the plan up against the wall and classifies every slot:
+  `unpublished` (expected, nothing on the relay), `unstaffed` (published,
+  nobody), `short`, `covered`, `open` (no capacity), `stale` (published, not
+  in the plan any more), plus `drifted` when the published copy disagrees
+  with the plan. `coverageOf` is the per-occurrence version the board uses.
+- `planFromOccurrences` adopts a plan from what is already on the relay, so
+  an Elinor group gets a plan that matches its published shifts rather than
+  a seed catalog that marks every one of them stale.
+- `ShiftRelayClient.publishOccurrence` / `deleteOccurrences` sign and
+  publish as the coordinator; a client pinned to a coordinator refuses any
+  other signer.
+
+**The coordinator key** is a service identity:
+`deriveShiftCoordinatorKey(NOSTR_DERIVATION_SECRET)` (context
+`service:shift-coordinator`, FROZEN — rotating it orphans every occurrence
+and the RSVPs addressed to them), exposed as `coordinatorSigner()` on
+`createIdentityContext`. Every surface holding the secret derives the same
+key, so the bot, the web and a kiosk all publish ONE coordinator's schedule.
+Pin its pubkey as `SHIFTS_COORDINATOR_PUBKEY` / `VITE_KIOSK_SHIFT_COORDINATOR`
+in production.
+
+**On the kiosk** the ⚙ on the Shifts board (login-gated) opens
+`ShiftSettings.svelte`: the catalog editor (add / edit / disable / remove
+shifts, days, people needed, place, zone, horizon) beside **the wall as the
+kiosk will show it** — the same `ShiftNote.svelte` the board draws, over
+the live signups, with ghost notes for unpublished slots, a loud dashed ring
+on published shifts nobody has taken, "short of hands" counts, and flags for
+stale / drifted shifts. Publish, republish and retract act per note or in
+one go ("Publish N missing", "Remove N not in plan"); "Save plan" writes the
+settings record through core. The board itself now headlines the gaps
+("N shifts with nobody · M spots still open") and rings unstaffed shifts.
+`apps/kiosk/src/routes/api/shifts/occurrence/+server.ts` does the signing:
+`GET` → `{ pubkey, allowed }`, `POST { occurrences }` → publish (batch),
+`DELETE { occurrences }` → one retraction. Any logged-in Telegram session
+may drive it unless `KIOSK_SHIFT_MANAGERS` (comma-separated Telegram ids)
+narrows it; key logins cannot (the coordinator is not their identity). Both
+verbs answer 501 without `NOSTR_DERIVATION_SECRET`, and 409 when the deploy
+pins a different coordinator (ours would never show).
+
 ## Configuration (root `.env`)
 
 ```
@@ -107,6 +175,7 @@ SHIFTS_RELAYS=wss://relay.holons.io      # falls back to HOLOSPHERE_RELAYS
 SHIFTS_COORDINATOR_PUBKEY=<hex>          # trust only this author's 31923s
 NOSTR_DERIVATION_SECRET=<same as web>    # required for signups + attestations
 SHIFTS_IDENTITY_BLACKLIST=               # optional: 31926 providers to ignore
+KIOSK_SHIFT_MANAGERS=                    # optional: Telegram ids allowed to publish/retract occurrences
 ```
 
 Without `NOSTR_DERIVATION_SECRET` the bot can still list shifts but refuses
@@ -176,7 +245,8 @@ still not imported as Holons records.
 
 ## Not (yet) covered
 
-- Publishing Elinor-grammar occurrences (acting as coordinator) — Holons
-  roles are day-granular and capacity-free; a `shifts` entity would be needed.
+- Materialising the plan on a schedule (Elinor's daily cron) — publishing
+  is a caretaker action from the kiosk today; the bot does not yet
+  republish the horizon by itself.
 - Per-shift reminders and the pinned daily message.
 - Calendar (ICS) feeds for shifts.

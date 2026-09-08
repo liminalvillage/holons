@@ -155,6 +155,11 @@ describe('shift wire: filters', () => {
   it('drops the author narrowing when no coordinator is pinned', () => {
     expect(shiftFilters(HOLON)[0].authors).toBeUndefined();
   });
+
+  it('follows retractions: by author when pinned, by target kind otherwise', () => {
+    expect(shiftFilters(HOLON, COORD)[2]).toEqual({ kinds: [5], authors: [COORD] });
+    expect(shiftFilters(HOLON)[2]).toEqual({ kinds: [5], '#k': ['31923'] });
+  });
 });
 
 describe('shift wire: who is holding a shift', () => {

@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils';
-import { deriveIdentityProviderKey, deriveTelegramNostrKey } from '../auth/derive.js';
+import { deriveIdentityProviderKey, deriveShiftCoordinatorKey, deriveTelegramNostrKey } from '../auth/derive.js';
 import { createIdentityContext, signerFromSecretKey } from './signers.js';
 
 const template = { kind: 1, created_at: 1_700_000_000, tags: [] as string[][], content: 'hi' };
@@ -41,6 +41,14 @@ describe('createIdentityContext', () => {
     const ctx = createIdentityContext({ derivationSecret: secret });
     expect(ctx.providerPubkey()).toBe(deriveIdentityProviderKey(secret).publicKey);
     expect(verifyEvent(ctx.providerSigner()!.sign(template))).toBe(true);
+  });
+
+  it('coordinator signer matches the shift-coordinator derivation, distinct from the provider', () => {
+    const ctx = createIdentityContext({ derivationSecret: secret });
+    expect(ctx.coordinatorPubkey()).toBe(deriveShiftCoordinatorKey(secret).publicKey);
+    expect(ctx.coordinatorPubkey()).not.toBe(ctx.providerPubkey());
+    expect(verifyEvent(ctx.coordinatorSigner()!.sign(template))).toBe(true);
+    expect(createIdentityContext({}).coordinatorSigner()).toBeNull();
   });
 
   it('degrades to null without a secret', () => {

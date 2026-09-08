@@ -9,6 +9,8 @@
 import type { Event } from 'nostr-tools/pure';
 import type { NostrSigner } from '../holosphere/signers.js';
 import {
+  buildOccurrenceDeleteTemplate,
+  buildOccurrenceTemplate,
   buildRsvpTemplate,
   latestRsvpFor,
   occurrenceFilter,
@@ -19,6 +21,7 @@ import {
   rsvpFilter,
   rsvpSupersedes,
   sortOccurrences,
+  type BuildOccurrenceOptions,
   type BuildRsvpOptions,
   type NostrFilterLike,
   type ShiftIdentityMap,
@@ -149,6 +152,26 @@ export interface ShiftRelayClient {
       identity?: ShiftIdentityMap;
     },
   ): Promise<{ event: Event; results: PromiseSettledResult<string>[] }>;
+  /**
+   * Sign and publish one kind-31923 occurrence as `signer` — the
+   * COORDINATOR. Addressable, so publishing the same group/date/code again
+   * replaces the earlier occurrence: that is the edit path. Resolves with the
+   * signed event (parse it with `parseShiftOccurrence` for an optimistic
+   * board update) and per-relay outcomes.
+   */
+  publishOccurrence(
+    opts: Omit<BuildOccurrenceOptions, 'now'> & { signer: NostrSigner },
+  ): Promise<{ event: Event; occurrence: ShiftOccurrence; results: PromiseSettledResult<string>[] }>;
+  /**
+   * Sign and publish one NIP-09 retraction naming every given occurrence.
+   * Only occurrences `signer` itself published are retractable — a relay
+   * drops the rest, so callers filter by `pubkey` first.
+   */
+  deleteOccurrences(opts: {
+    signer: NostrSigner;
+    occurrences: Array<Pick<ShiftOccurrence, 'address'> & Partial<Pick<ShiftOccurrence, 'id' | 'pubkey'>>>;
+    reason?: string;
+  }): Promise<{ event: Event; results: PromiseSettledResult<string>[] }>;
   close(): void;
 }
 
@@ -425,6 +448,21 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
     };
   }
 
+  /**
+   * nostr-tools FULFILLS a publish whose connection failed, with a
+   * "connection failure: …" string the relay never saw — normalize those to
+   * rejections so callers' accepted-relay counts stay honest.
+   */
+  async function publishEvent(event: Event): Promise<PromiseSettledResult<string>[]> {
+    const p = await pool();
+    return (await Promise.allSettled(p.publish(relays, event))).map(
+      (r): PromiseSettledResult<string> =>
+        r.status === 'fulfilled' && typeof r.value === 'string' && r.value.startsWith('connection failure:')
+          ? { status: 'rejected', reason: r.value }
+          : r,
+    );
+  }
+
   return {
     relays,
     fetchOccurrences,
@@ -460,17 +498,22 @@ export function createShiftRelayClient(options: ShiftRelayClientOptions): ShiftR
         prev = latestRsvpFor(build.occurrence, signer.pubkey, others, ident);
       }
       const event = signer.sign(buildRsvpTemplate({ ...build, previous: prev }));
-      const p = await pool();
-      // nostr-tools FULFILLS a publish whose connection failed, with a
-      // "connection failure: …" string the relay never saw — normalize those
-      // to rejections so callers' accepted-relay counts stay honest.
-      const results = (await Promise.allSettled(p.publish(relays, event))).map(
-        (r): PromiseSettledResult<string> =>
-          r.status === 'fulfilled' && typeof r.value === 'string' && r.value.startsWith('connection failure:')
-            ? { status: 'rejected', reason: r.value }
-            : r,
-      );
-      return { event, results };
+      return { event, results: await publishEvent(event) };
+    },
+    async publishOccurrence({ signer, ...build }) {
+      if (options.coordinatorPubkey && signer.pubkey.toLowerCase() !== options.coordinatorPubkey.toLowerCase()) {
+        throw new Error('publishOccurrence: the signer is not the trusted coordinator');
+      }
+      const event = signer.sign(buildOccurrenceTemplate(build));
+      const occurrence = parseShiftOccurrence(event);
+      if (!occurrence) throw new Error('publishOccurrence: built an unparsable occurrence');
+      return { event, occurrence, results: await publishEvent(event) };
+    },
+    async deleteOccurrences({ signer, occurrences, reason }) {
+      const mine = occurrences.filter((o) => !o.pubkey || o.pubkey.toLowerCase() === signer.pubkey.toLowerCase());
+      if (!mine.length) throw new Error('deleteOccurrences: none of these occurrences were published by the signer');
+      const event = signer.sign(buildOccurrenceDeleteTemplate(mine, { reason }));
+      return { event, results: await publishEvent(event) };
     },
     close() {
       if (poolPromise) void poolPromise.then((p) => p.close?.(relays));

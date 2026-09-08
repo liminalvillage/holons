@@ -107,6 +107,27 @@ export function deriveIdentityProviderKey(derivationSecret: string): DerivedNost
 }
 
 /**
+ * Context for the service-level shift-coordinator key — the author of
+ * kind-31923 shift occurrences a Holons surface publishes (Elinor's
+ * "coordinator" role). Frozen: rotating it orphans every occurrence and the
+ * RSVPs addressed to them, and a deployment pins this pubkey as
+ * `SHIFTS_COORDINATOR_PUBKEY`.
+ */
+export const SHIFT_COORDINATOR_CONTEXT = 'service:shift-coordinator';
+
+/**
+ * Derive the stable shift-coordinator keypair from `NOSTR_DERIVATION_SECRET`.
+ * Every surface holding the secret derives the same key, so a kiosk, the bot
+ * and the web publish the same coordinator's schedule (addressable events
+ * replace each other instead of forking). Domain-separated from the
+ * identity-provider key by context.
+ */
+export function deriveShiftCoordinatorKey(derivationSecret: string): DerivedNostrKey {
+  if (!derivationSecret) throw new Error('NOSTR_DERIVATION_SECRET is not configured');
+  return deriveNostrKeyFromEntropy(enc.encode(derivationSecret), SHIFT_COORDINATOR_CONTEXT);
+}
+
+/**
  * Derive the Nostr keypair for a Telegram user from the server-held
  * `NOSTR_DERIVATION_SECRET`. This is the SAME rule the web login uses, so the
  * bot can sign on a member's behalf under the pubkey they get when they log

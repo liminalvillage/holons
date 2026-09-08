@@ -60,3 +60,44 @@ export interface NostrEventLike {
   content: string;
   sig?: string;
 }
+
+// ---------------------------------------------------------------------------
+// The shift PLAN — what a holon expects to run, from which its coordinator
+// materialises kind-31923 occurrences. Mirrors Elinor's per-group catalog
+// (code/title/start/end/capacity/enabled/description) so a plan edited here
+// and one edited in Elinor describe the same thing; `days` and `location` are
+// Holons extensions Elinor simply never sets (every day, one location).
+// ---------------------------------------------------------------------------
+
+/** One recurring shift in a holon's catalog. */
+export interface ShiftDefinition {
+  /** `[a-z0-9]{1,16}` — the last segment of every occurrence's `d` tag. */
+  code: string;
+  title: string;
+  /** Wall-clock `HH:MM` in the plan's zone. */
+  start: string;
+  /** Wall-clock `HH:MM` in the plan's zone; must be after `start`. */
+  end: string;
+  /** People needed. Elinor's catalog defaults to 2. */
+  capacity: number;
+  /** A disabled shift stays in the catalog (history renders) but is not materialised. */
+  enabled: boolean;
+  description?: string;
+  /**
+   * ISO weekdays the shift runs on (1 = Monday … 7 = Sunday). Absent or
+   * empty means every day, which is what Elinor does.
+   */
+  days?: number[];
+  /** Overrides the plan's location for this shift. */
+  location?: string;
+}
+
+/** A holon's shift plan, kept on its `settings` record under `shifts`. */
+export interface ShiftPlan {
+  /** IANA zone the wall-clock times are in. */
+  tzid: string;
+  location?: string;
+  /** How many days ahead occurrences are materialised (Elinor: 14). */
+  horizonDays: number;
+  shifts: ShiftDefinition[];
+}

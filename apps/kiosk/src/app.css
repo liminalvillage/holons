@@ -15,6 +15,8 @@
   --teal: #0e6b66;
   --teal-deep: #0a4f4a;
   --line: #e3ddcd;
+  /* The one warm alarm: a shift nobody has taken, a plan the wall drifted from. */
+  --warn: #c8542a;
 
   /* Post-it palette (warm, low-saturation) */
   --note-sun: #ffe79a;
@@ -70,6 +72,7 @@
   --ink-soft: #b3c0bd;
   --muted: #7c8b88;
   --line: #2c3539;
+  --warn: #e8815c;
 
   --note-sun: #5a4a1e;
   --note-mint: #214233;

@@ -250,6 +250,114 @@ export function buildRsvpTemplate(opts: BuildRsvpOptions): RsvpTemplate {
 }
 
 // ---------------------------------------------------------------------------
+// Occurrence templates — the coordinator's side of the wire
+// ---------------------------------------------------------------------------
+
+/** NIP-09 retraction. */
+export const SHIFT_DELETE_KIND = 5;
+
+/** `[a-z0-9]{1,16}` — what the d-tag grammar admits as a code. */
+export function isValidShiftCode(code: string): boolean {
+  return /^[a-z0-9]{1,16}$/.test(code ?? '');
+}
+
+export interface OccurrenceTemplate {
+  kind: typeof SHIFT_OCCURRENCE_KIND;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}
+
+export interface BuildOccurrenceOptions extends ShiftKey {
+  title: string;
+  /** Unix seconds. */
+  start: number;
+  /** Unix seconds; must exceed `start`. */
+  end: number;
+  /** IANA zone the shift is displayed in. */
+  tzid?: string;
+  location?: string;
+  capacity?: number;
+  /** Free text; when absent the content is derived Elinor-style from title/time/place. */
+  description?: string;
+  /** Wall-clock `HH:MM–HH:MM` for the derived content (display only). */
+  timeRange?: string;
+  now?: number;
+}
+
+/**
+ * Build the unsigned kind-31923 occurrence exactly as Elinor publishes it
+ * (`d`, `title`, `start`, `end`, `start_tzid`, `location`, `capacity`,
+ * `t:shift`, `t:<code>`, `t:group-<groupId>`), so an Elinor client reads a
+ * Holons-published shift as one of its own. Addressable: republishing the
+ * same key REPLACES the occurrence — that is how an edit goes out.
+ */
+export function buildOccurrenceTemplate(opts: BuildOccurrenceOptions): OccurrenceTemplate {
+  const { groupId, date, code } = opts;
+  if (!isValidShiftCode(code)) throw new Error(`buildOccurrenceTemplate: invalid shift code "${code}"`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`buildOccurrenceTemplate: invalid date "${date}"`);
+  if (!Number.isFinite(opts.start) || !Number.isFinite(opts.end) || opts.end <= opts.start) {
+    throw new Error('buildOccurrenceTemplate: end must be after start');
+  }
+  const title = opts.title.trim() || DEFAULT_SHIFT_CODES[code] || code;
+  const tags: string[][] = [
+    ['d', shiftDTag({ groupId, date, code })],
+    ['title', title],
+    ['start', String(Math.floor(opts.start))],
+    ['end', String(Math.floor(opts.end))],
+  ];
+  if (opts.tzid) tags.push(['start_tzid', opts.tzid]);
+  if (opts.location) tags.push(['location', opts.location]);
+  if (opts.capacity !== undefined && Number.isInteger(opts.capacity) && opts.capacity >= 0) {
+    tags.push(['capacity', String(opts.capacity)]);
+  }
+  tags.push(['t', SHIFT_HASHTAG], ['t', code], ['t', groupHashtag(groupId)]);
+  const range = opts.timeRange ?? `${formatShiftTime(opts.start, opts.tzid)}–${formatShiftTime(opts.end, opts.tzid)}`;
+  const place = opts.location ? ` (${opts.location})` : '';
+  const desc = opts.description?.trim();
+  const content = desc ? `${title} shift, ${range}${place} — ${desc}` : `${title} shift, ${range}${place}`;
+  return {
+    kind: SHIFT_OCCURRENCE_KIND,
+    created_at: opts.now ?? Math.floor(Date.now() / 1000),
+    tags,
+    content,
+  };
+}
+
+export interface DeleteTemplate {
+  kind: typeof SHIFT_DELETE_KIND;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}
+
+/**
+ * Build the unsigned NIP-09 retraction for one or more occurrences. Names
+ * each by its `a` coordinate (what the lens wire resolves to a tombstone)
+ * and by event id when known, plus `k` 31923 so a relay can serve
+ * "deletions of shifts" without a pinned author. Only the coordinator that
+ * published an occurrence can retract it — NIP-09 ignores anyone else.
+ */
+export function buildOccurrenceDeleteTemplate(
+  occurrences: Array<Pick<ShiftOccurrence, 'address'> & Partial<Pick<ShiftOccurrence, 'id'>>>,
+  opts: { reason?: string; now?: number } = {},
+): DeleteTemplate {
+  if (!occurrences.length) throw new Error('buildOccurrenceDeleteTemplate: nothing to retract');
+  const tags: string[][] = [];
+  for (const o of occurrences) {
+    tags.push(['a', o.address]);
+    if (o.id) tags.push(['e', o.id]);
+  }
+  tags.push(['k', String(SHIFT_OCCURRENCE_KIND)]);
+  return {
+    kind: SHIFT_DELETE_KIND,
+    created_at: opts.now ?? Math.floor(Date.now() / 1000),
+    tags,
+    content: opts.reason ?? '',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Filters (NIP-01 REQ shapes)
 // ---------------------------------------------------------------------------
 

@@ -12,6 +12,8 @@
   export let glow: string | undefined = undefined;
   /** Per-record clock seed [0,1) so the modal flickers on its own time. */
   export let seed: number | undefined = undefined;
+  /** A wide card for sheets that carry a board preview beside a form. */
+  export let wide = false;
   function close() {
     dispatch("close");
   }
@@ -45,6 +47,7 @@
   <div
     class="card"
     class:holo
+    class:wide
     style="--tint: {tint};{glow ? ` --glow: ${glow};` : ''}"
     style:--holo-seed={seed}
     role="dialog"
@@ -75,6 +78,11 @@
   .card {
     position: relative;
     width: min(34rem, 100%);
+  }
+  .card.wide {
+    width: min(64rem, 100%);
+  }
+  .card {
     max-height: 86dvh;
     border-radius: 22px;
     background: var(--tint);
