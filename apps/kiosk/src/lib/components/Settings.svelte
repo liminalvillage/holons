@@ -21,6 +21,7 @@
     rolesEnabled,
     checklistsEnabled,
     shiftsEnabled,
+    stockEnabled,
     statusEnabled,
     flowsEnabled,
     tasksEnabled,
@@ -446,6 +447,10 @@
     setTabShown("flows", on);
   }
 
+  function commitStock(on: boolean) {
+    setTabShown("stock", on);
+  }
+
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
   function blurOnEnter(e: KeyboardEvent) {
     if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
@@ -727,6 +732,24 @@
       {/if}
     </div>
   {/if}
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.stockTab")}
+      <span class="sub">{$t("settings.stockTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$stockEnabled}
+      role="switch"
+      aria-checked={$stockEnabled}
+      aria-label={$t("settings.stockTabAria")}
+      on:click={() => commitStock(!$stockEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
 
   <div class="field toggle-field">
     <span class="toggle-label"

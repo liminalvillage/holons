@@ -27,6 +27,7 @@ const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
 const CHECKLISTS_KEY = "kiosk_checklists";
 const SHIFTS_KEY = "kiosk_shifts";
+const STOCK_KEY = "kiosk_stock";
 const STATUS_KEY = "kiosk_status";
 const FLOWS_KEY = "kiosk_flows";
 const TASKS_KEY = "kiosk_tasks";
@@ -44,6 +45,7 @@ const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const FLOWS_VIEW_KEY = "kiosk_flows_view";
+const STOCK_VIEW_KEY = "kiosk_stock_view";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
@@ -353,6 +355,16 @@ export function resolveShiftsPref(): TabPref {
 /** Persist the Shifts-tab preference (`auto` clears the stored choice). */
 export function setShiftsPref(pref: TabPref): void {
   setTabPref(SHIFTS_KEY, pref);
+}
+
+/** The Stock tab preference — same tri-state as Library/Roles/Lists. */
+export function resolveStockPref(): TabPref {
+  return resolveTabPref(STOCK_KEY);
+}
+
+/** Persist the Stock-tab preference (`auto` clears the stored choice). */
+export function setStockPref(pref: TabPref): void {
+  setTabPref(STOCK_KEY, pref);
 }
 
 /**
@@ -699,6 +711,25 @@ export function resolveFlowsView(): FlowsViewMode {
 /** Persist the Flows view mode. */
 export function setFlowsView(mode: FlowsViewMode): void {
   persist(FLOWS_VIEW_KEY, mode);
+}
+
+/**
+ * How the Stock board reads the shelves: the shelf itself (what is on hand,
+ * item by item), the reorder (what to buy to reach the targets), or the
+ * moves (what the federation could shift from surplus to shortage). Same
+ * Layout pill as the other views; the choice sticks per device.
+ */
+export type StockViewMode = "shelf" | "reorder" | "moves";
+
+/** Resolve the Stock view mode; the shelf is the default. */
+export function resolveStockView(): StockViewMode {
+  const v = persisted(STOCK_VIEW_KEY);
+  return v === "reorder" || v === "moves" ? v : "shelf";
+}
+
+/** Persist the Stock view mode. */
+export function setStockView(mode: StockViewMode): void {
+  persist(STOCK_VIEW_KEY, mode);
 }
 
 /**

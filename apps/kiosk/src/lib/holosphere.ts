@@ -339,6 +339,46 @@ export async function getLibraryDb(): Promise<LibraryDB> {
   };
 }
 
+/** A plain lens store: what the Stock board's item specs need. */
+export interface LensStore {
+  get: (holon: string, lens: string, key?: string | number) => Promise<unknown>;
+  getAll: (holon: string, lens: string) => Promise<unknown[]>;
+  put: (holon: string, lens: string, data: unknown) => Promise<unknown>;
+  delete: (
+    holon: string,
+    lens: string,
+    key: string | number,
+  ) => Promise<unknown>;
+}
+
+/**
+ * The generic read/write/delete adapter over Holosphere, with the logged-in
+ * user as `actingAs` and the write-echo announcement like every other write
+ * path. `getLibraryDb` is this same shape, typed for core's library.
+ */
+export async function getLensStore(): Promise<LensStore> {
+  const hs = await getHolosphere();
+  return {
+    get: (holon, lens, key) =>
+      key != null ? hs.get(holon, lens, String(key)) : hs.get(holon, lens),
+    getAll: (holon, lens) => hs.getAll(holon, lens) as Promise<unknown[]>,
+    put: async (holon, lens, data) => {
+      const at = Date.now();
+      const res = await hs.put(
+        holon,
+        lens,
+        data as object,
+        {
+          actingAs: actingAs(),
+        } as any,
+      );
+      announceWrite(holon, lens, at);
+      return res;
+    },
+    delete: (holon, lens, key) => hs.delete(holon, lens, String(key)),
+  };
+}
+
 /**
  * A `ChecklistStore` adapter over Holosphere so core's checklist CRUD owns the
  * meaning of lists. Writes carry the logged-in Telegram user as `actingAs` and

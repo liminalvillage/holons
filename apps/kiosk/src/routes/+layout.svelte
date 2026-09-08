@@ -19,6 +19,8 @@
     resolveRolesPref,
     resolveChecklistsPref,
     resolveShiftsPref,
+    resolveStockPref,
+    resolveStockView,
     resolveStatusEnabled,
     resolveFlowsEnabled,
     resolveTasksEnabled,
@@ -46,6 +48,7 @@
     rawLibrary,
     rawRoles,
     rawChecklists,
+    rawStock,
     lensEmitAt,
     showNotice,
     holonName,
@@ -60,6 +63,7 @@
     rolesPref,
     checklistsPref,
     shiftsPref,
+    stockPref,
     statusEnabled,
     flowsEnabled,
     tasksEnabled,
@@ -70,6 +74,7 @@
     libraryViewMode,
     rolesViewMode,
     flowsViewMode,
+    stockViewMode,
     calendarMode,
     libraryCalendarMode,
     boardReady,
@@ -132,6 +137,7 @@
   let librarySub: FederatedSub | null = null;
   let rolesSub: FederatedSub | null = null;
   let checklistsSub: FederatedSub | null = null;
+  let stockSub: FederatedSub | null = null;
 
   // The holon's mute list (`hidden` lens): source addresses of federated
   // cards this board has hidden. "Deleting" a federated card writes here —
@@ -185,14 +191,17 @@
     libraryOn: boolean,
     rolesOn: boolean,
     checklistsOn: boolean,
+    stockOn: boolean,
   ) {
     if (!id) {
       questsSub?.unsubscribe();
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
       questsSub = librarySub = rolesSub = checklistsSub = hiddenSub = null;
+      stockSub = null;
       boundHolon = null;
       hiddenSet = new Set();
       lastQuestItems = [];
@@ -200,6 +209,7 @@
       rawLibrary.set([]);
       rawRoles.set([]);
       rawChecklists.set([]);
+      rawStock.set([]);
       holonName.set("");
       holonLang.set(null);
       partnerNames.set({});
@@ -235,7 +245,9 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
+      stockSub = null; // recreated below when the Stock tab is enabled
       librarySub = null; // recreated below when the Library tab is enabled
       rolesSub = null; // recreated below when the Roles tab is enabled
       checklistsSub = null; // recreated below when the Lists tab is enabled
@@ -346,6 +358,23 @@
       checklistsSub = null;
       rawChecklists.set([]);
     }
+    if (stockOn && !stockSub) {
+      stockSub = hs.subscribeFederated(
+        id,
+        "stock",
+        (items) => {
+          lensEmitAt.stock = Date.now();
+          rawStock.set(items as unknown[]);
+        },
+        // Specs are keyed by ITEM id and two holons can both keep "flour";
+        // each holon's copy stays, split by origin in $lib/stock.
+        { includeFederated: fed, dedupeAcrossSpaces: false },
+      );
+    } else if (!stockOn && stockSub) {
+      stockSub.unsubscribe();
+      stockSub = null;
+      rawStock.set([]);
+    }
 
     // Federated toggle flipped (holon unchanged) → fold partners in/out live on
     // every active lens, without tearing down the local subscription so the
@@ -356,6 +385,7 @@
       librarySub?.setFederated(fed);
       rolesSub?.setFederated(fed);
       checklistsSub?.setFederated(fed);
+      stockSub?.setFederated(fed);
     }
 
     booting = false;
@@ -368,6 +398,7 @@
         librarySub?.unsubscribe();
         rolesSub?.unsubscribe();
         checklistsSub?.unsubscribe();
+        stockSub?.unsubscribe();
         hiddenSub?.unsubscribe();
       };
     }
@@ -403,7 +434,13 @@
   // subscription is untouched; partner items purge and re-seed.
   function onFederationChanged() {
     if (get(federated)) {
-      for (const sub of [questsSub, librarySub, rolesSub, checklistsSub]) {
+      for (const sub of [
+        questsSub,
+        librarySub,
+        rolesSub,
+        checklistsSub,
+        stockSub,
+      ]) {
         sub?.setFederated(false);
         sub?.setFederated(true);
       }
@@ -439,6 +476,7 @@
       get(libraryPref) !== "off",
       get(rolesPref) !== "off",
       get(checklistsPref) !== "off",
+      get(stockPref) !== "off",
     );
   }
 
@@ -476,7 +514,8 @@
       lens !== "quests" &&
       lens !== "library" &&
       lens !== "roles" &&
-      lens !== "checklists"
+      lens !== "checklists" &&
+      lens !== "stock"
     )
       return;
     const at = d.at;
@@ -513,6 +552,7 @@
     rolesPref.set(resolveRolesPref());
     checklistsPref.set(resolveChecklistsPref());
     shiftsPref.set(resolveShiftsPref());
+    stockPref.set(resolveStockPref());
     statusEnabled.set(resolveStatusEnabled());
     flowsEnabled.set(resolveFlowsEnabled());
     tasksEnabled.set(resolveTasksEnabled());
@@ -523,6 +563,7 @@
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
     flowsViewMode.set(resolveFlowsView());
+    stockViewMode.set(resolveStockView());
     calendarMode.set(resolveCalendarView());
     libraryCalendarMode.set(resolveLibraryCalendarView());
     brandName.set(resolveBrandName() ?? "");
@@ -556,6 +597,7 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
     };
   });
@@ -768,6 +810,7 @@
       $libraryPref !== "off",
       $rolesPref !== "off",
       $checklistsPref !== "off",
+      $stockPref !== "off",
     );
 
   // While awaiting the first reveal, (re)arm the settle timer on every data

@@ -27,6 +27,7 @@
     libraryCalendarMode,
     rolesViewMode,
     flowsViewMode,
+    stockViewMode,
     calendarMode,
   } from "$lib/stores";
   import {
@@ -35,12 +36,14 @@
     setLibraryView,
     setRolesView,
     setFlowsView,
+    setStockView,
     setCalendarView,
     setLibraryCalendarView,
     type TaskViewMode,
     type LibraryViewMode,
     type RolesViewMode,
     type FlowsViewMode,
+    type StockViewMode,
     type CalendarMode,
   } from "$lib/config";
   import type { TaskSort } from "$lib/data";
@@ -103,6 +106,19 @@
 
   // ── Calendar: day / week / month window. Glyphs keep the compact cycling
   // toggle legible once names drop.
+  // ── Stock: the shelf (what is on hand) / the reorder (what to buy) / the
+  // moves (what the federation could shift). The Show pill decides whether
+  // partner shelves come along.
+  const STOCK_MODES: {
+    id: StockViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
+    { id: "shelf", glyph: "▥", labelKey: "pills.shelf" },
+    { id: "reorder", glyph: "☑", labelKey: "pills.reorder" },
+    { id: "moves", glyph: "⇄", labelKey: "pills.moves" },
+  ];
+
   const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =
     [
       { id: "day", glyph: "▣", labelKey: "pills.day" },
@@ -138,6 +154,10 @@
   function pickRolesMode(m: string) {
     rolesViewMode.set(m as RolesViewMode);
     setRolesView(m as RolesViewMode);
+  }
+  function pickStockMode(m: string) {
+    stockViewMode.set(m as StockViewMode);
+    setStockView(m as StockViewMode);
   }
   function pickFlowsMode(m: string) {
     flowsViewMode.set(m as FlowsViewMode);
@@ -177,6 +197,7 @@
     libCalMode: string,
     rolesMode: string,
     flowsMode: string,
+    stockMode: string,
     calMode: string,
   ): OwnPill[] {
     if (tab === "tasks")
@@ -251,6 +272,18 @@
           label: tr("pills.flowsLayout"),
         },
       ];
+    if (tab === "stock")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, STOCK_MODES),
+          value: stockMode,
+          onChange: pickStockMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.stockLayout"),
+        },
+      ];
     if (tab === "calendar")
       return [
         {
@@ -275,6 +308,7 @@
     $libraryCalendarMode,
     $rolesViewMode,
     $flowsViewMode,
+    $stockViewMode,
     $calendarMode,
   );
 

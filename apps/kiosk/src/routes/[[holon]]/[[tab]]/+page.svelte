@@ -10,6 +10,7 @@
   import RolesView from "$lib/views/RolesView.svelte";
   import StatusView from "$lib/views/StatusView.svelte";
   import FlowsView from "$lib/views/FlowsView.svelte";
+  import StockView from "$lib/views/StockView.svelte";
 </script>
 
 <!-- The surface follows the chrome: framed inside the card while someone is
@@ -42,6 +43,8 @@
           <StatusView />
         {:else if $activeTab === "flows"}
           <FlowsView />
+        {:else if $activeTab === "stock"}
+          <StockView />
         {/if}
       </div>
     {/key}

@@ -50,12 +50,13 @@
 
   // Lenses the kiosk renders; already-configured other lenses (set up from
   // Telegram, say) are shown too so a save never drops them.
-  const KIOSK_LENSES = ["quests", "library", "roles", "checklists"];
+  const KIOSK_LENSES = ["quests", "library", "roles", "checklists", "stock"];
   const LENS_LABEL_KEYS: Record<string, MessageKey> = {
     quests: "tabs.tasks",
     library: "tabs.library",
     roles: "tabs.roles",
     checklists: "tabs.checklists",
+    stock: "tabs.stock",
   };
 
   let hs: HoloSphere | null = null;

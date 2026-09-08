@@ -34,6 +34,7 @@ import {
   setRolesPref,
   setChecklistsPref,
   setShiftsPref,
+  setStockPref,
   setStatusEnabled,
   setFlowsEnabled,
   setTasksEnabled,
@@ -43,6 +44,7 @@ import {
   type LibraryViewMode,
   type RolesViewMode,
   type FlowsViewMode,
+  type StockViewMode,
   type CalendarMode,
   type TabPref,
 } from "./config";
@@ -111,6 +113,13 @@ export const checklistsPref = writable<TabPref>("auto");
 export const shiftsPref = writable<TabPref>("auto");
 
 /**
+ * Caretaker preference for the optional Stock tab (fungible stock folded
+ * from REA events — see $lib/stock) — same tri-state semantics as
+ * `libraryPref`: `auto` shows it once the holon keeps any item.
+ */
+export const stockPref = writable<TabPref>("auto");
+
+/**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
  * (a caretaker opt-in, persisted in config). Toggling it adds/removes the tab in
  * `visibleTabs`; the StatusView owns its own data subscriptions, so no aggregator
@@ -170,6 +179,9 @@ export const rolesViewMode = writable<RolesViewMode>("cards");
 /** Flows layout: the Sankey graph, or the balances. */
 export const flowsViewMode = writable<FlowsViewMode>("graph");
 
+/** Stock layout: the shelf, the reorder list, or the federation moves. */
+export const stockViewMode = writable<StockViewMode>("shelf");
+
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");
 
@@ -211,6 +223,12 @@ export const userMenuOpen = writable<boolean>(false);
 
 export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
+/**
+ * The `stock` lens as it streams in: item specs, ours and the partners' we
+ * receive it from (split by `_federation.origin` in $lib/stock). Levels are
+ * never stored — the Stock view folds them from `rea_events` itself.
+ */
+export const rawStock = writable<unknown[]>([]);
 export const rawRoles = writable<Role[]>([]);
 export const rawChecklists = writable<Checklist[]>([]);
 
@@ -264,13 +282,14 @@ export const shiftsLoaded = writable<boolean>(false);
  * it point-in-time; nothing renders from it.
  */
 export const lensEmitAt: Record<
-  "quests" | "library" | "roles" | "checklists",
+  "quests" | "library" | "roles" | "checklists" | "stock",
   number
 > = {
   quests: 0,
   library: 0,
   roles: 0,
   checklists: 0,
+  stock: 0,
 };
 
 // Scope narrows the raw records first (dropping partner copies outside the
@@ -404,6 +423,7 @@ export const TABS = [
   { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
   { id: "status", labelKey: "tabs.status", glyph: "♛" },
   { id: "flows", labelKey: "tabs.flows", glyph: "⇄" },
+  { id: "stock", labelKey: "tabs.stock", glyph: "▥" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
@@ -465,6 +485,19 @@ export const shiftsEnabled = derived(
   ([$pref, $s]) =>
     $pref === "on" || ($pref === "auto" && $s.occurrences.length > 0),
 );
+// Content-driven on OUR specs only: a partner's shelf folding in must not
+// open a tab on a board that keeps nothing itself.
+export const stockEnabled = derived(
+  [stockPref, rawStock],
+  ([$pref, $items]) =>
+    $pref === "on" ||
+    ($pref === "auto" &&
+      $items.some(
+        (r) =>
+          !(r as { _federation?: { origin?: unknown } } | null)?._federation
+            ?.origin,
+      )),
+);
 
 /**
  * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
@@ -482,6 +515,7 @@ export const visibleTabs = derived(
     shiftsEnabled,
     statusEnabled,
     flowsEnabled,
+    stockEnabled,
   ],
   ([
     $tabs,
@@ -493,6 +527,7 @@ export const visibleTabs = derived(
     $shifts,
     $status,
     $flows,
+    $stock,
   ]) =>
     $tabs.filter(
       (t) =>
@@ -503,7 +538,8 @@ export const visibleTabs = derived(
         (t.id !== "roles" || $roles) &&
         (t.id !== "shifts" || $shifts) &&
         (t.id !== "status" || $status) &&
-        (t.id !== "flows" || $flows),
+        (t.id !== "flows" || $flows) &&
+        (t.id !== "stock" || $stock),
     ),
 );
 
@@ -539,6 +575,10 @@ export function setTabShown(id: TabId, on: boolean): void {
     case "shifts":
       setShiftsPref(pref);
       shiftsPref.set(pref);
+      break;
+    case "stock":
+      setStockPref(pref);
+      stockPref.set(pref);
       break;
     case "status":
       setStatusEnabled(on);
