@@ -160,6 +160,35 @@ export const es: Record<MessageKey, Msg> = {
   "cal.winterSolstice": "Solsticio de invierno",
   "cal.dropUnschedule": "Suelta aquí para quitar la fecha",
   "cal.unscheduledTray": "Sin fecha — arrastra a un día",
+  "cal.fromCalendar": "{title} — de {name}",
+  // The Calendar board's settings sheet: this holon's own feed to
+  // subscribe to, and the calendars it follows (see CalendarSettings).
+  "cal.set.title": "Ajustes del calendario",
+  "cal.set.subscribeHead": "Suscríbete a este calendario",
+  "cal.set.subscribeBody":
+    "Añade el calendario en vivo de {name} a Google, Apple o cualquier app de calendario. Se mantiene al día solo.",
+  "cal.set.thisHolon": "este holon",
+  "cal.set.federated": "Incluir los holones federados",
+  "cal.set.federatedSub":
+    "Lleva también los eventos de los holones con los que este se federa",
+  "cal.set.feedUrl": "Enlace del calendario",
+  "cal.set.copy": "Copiar el enlace",
+  "cal.set.copied": "Copiado ✓",
+  "cal.set.openInApp": "Abrir en la app de calendario",
+  "cal.set.importHead": "Calendarios que sigue este tablero",
+  "cal.set.importBody":
+    "Trae otro calendario a este tablero — las reservas de un espacio, el programa de un socio. Los eventos seguidos se ven, no se cambian.",
+  "cal.set.noFeeds": "Ningún calendario seguido todavía.",
+  "cal.set.urlPlaceholder": "https://…/calendario.ics",
+  "cal.set.urlLabel": "Enlace del calendario (iCal)",
+  "cal.set.namePlaceholder": "Nombre (opcional)",
+  "cal.set.nameLabel": "Nombre del calendario",
+  "cal.set.add": "Seguir",
+  "cal.set.showFeed": "Mostrar {name} en el tablero",
+  "cal.set.removeFeed": "Dejar de seguir {name}",
+  "cal.set.syncing": "Leyendo los calendarios…",
+  "cal.set.saveFailed":
+    "No se pudo guardar — entra como cuidador/a e inténtalo de nuevo.",
   "cal.newTask": "Nueva tarea",
 
   // Roles
@@ -725,6 +754,9 @@ export const es: Record<MessageKey, Msg> = {
   "status.disclaimerEquation":
     "Y la ecuación detrás de estos números es del grupo, no del software: decídanla juntos, revísenla cuando deje de encajar y pongan cualquier peso — o todos — a cero si así funciona mejor.",
   "status.disclaimerMore": "Qué cuenta — y qué no puede contar",
+  "status.settingsAria":
+    "Ajustes del tablero — qué cuenta y la ecuación de valor",
+  "status.disclaimerEquationLink": "Ajusta la ecuación de valor",
   "status.score": "Puntuación",
   "status.share": "{pct}% de participación",
   "status.valueEquation": "Ecuación de valor",

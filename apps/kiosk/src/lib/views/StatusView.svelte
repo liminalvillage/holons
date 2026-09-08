@@ -422,6 +422,31 @@
    * equation that produced the numbers — readable and editable by whoever is
    * standing at the board. */
   let framingOpen = false;
+  /**
+   * The sheet opens at the top from the footer — the framing is meant to be
+   * read — but the gear is a settings button, so it lands on the weights.
+   */
+  let framingFocus: "top" | "equation" = "top";
+  function openSettings() {
+    framingFocus = "equation";
+    framingOpen = true;
+  }
+  function openFraming() {
+    framingFocus = "top";
+    framingOpen = true;
+  }
+  /** Bring the equation into view when the sheet was opened by the gear. */
+  function focusEquation(node: HTMLElement) {
+    if (framingFocus !== "equation") return;
+    // The sheet's scroll container has nothing to scroll until the weights
+    // below have rendered, so jump on the next frame.
+    requestAnimationFrame(() => {
+      const box = node.closest<HTMLElement>(".scroll");
+      if (!box) return;
+      box.scrollTop +=
+        node.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
+    });
+  }
 
   // Suspend the kiosk's auto-rotation while a modal is open so the screen
   // can't flip away mid-read.
@@ -443,6 +468,18 @@
 </script>
 
 <div class="board">
+  <!-- The same sheet the footer opens, reachable from the top of the board
+       too: the value equation is a setting, and a group retuning it shouldn't
+       have to scroll past everyone's score to find it. -->
+  <div class="top">
+    <button
+      class="gear"
+      on:click={openSettings}
+      aria-label={$t("status.settingsAria")}
+      title={$t("status.settingsAria")}>⚙</button
+    >
+  </div>
+
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("status.tallying")}</p>
@@ -491,9 +528,11 @@
     scrolled away; tapping it opens the whole thing — and the equation the
     numbers came from.
   -->
-  <button class="disclaimer" on:click={() => (framingOpen = true)}>
+  <button class="disclaimer" on:click={openFraming}>
     <strong>{$t("status.disclaimerLead")}</strong>
-    <span class="more">{$t("status.disclaimerMore")} ›</span>
+    <span class="more">{$t("status.disclaimerMore")}</span>
+    <span class="dot" aria-hidden="true">·</span>
+    <span class="more">{$t("status.disclaimerEquationLink")} ›</span>
   </button>
 </div>
 
@@ -505,7 +544,7 @@
       <p>{$t("status.disclaimerUse")}</p>
       <p>{$t("status.disclaimerEquation")}</p>
       {#if hid}
-        <h4>{$t("settings.valueEquation")}</h4>
+        <h4 use:focusEquation>{$t("settings.valueEquation")}</h4>
         <ValueEquation holon={hid} />
       {/if}
     </div>
@@ -611,10 +650,34 @@
     display: flex;
     flex-direction: column;
   }
+  .top {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.5rem 1rem 0;
+  }
+  .gear {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--teal-deep);
+    background: var(--paper);
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.2s ease,
+      transform 0.1s ease;
+  }
+  .gear:active {
+    transform: scale(0.92);
+    background: var(--paper-deep);
+  }
   .scrollarea {
     flex: 1;
     min-height: 0;
-    padding: 0.9rem 1.4rem 1.6rem;
+    padding: 0.6rem 1.4rem 1.6rem;
   }
 
   .ranks {
@@ -751,6 +814,9 @@
     color: var(--teal-deep);
     font-weight: 700;
     text-decoration: underline;
+  }
+  .disclaimer .dot {
+    color: var(--muted);
   }
   .disclaimer:active {
     opacity: 0.7;

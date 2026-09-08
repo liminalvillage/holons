@@ -165,6 +165,35 @@ export const it: Record<MessageKey, Msg> = {
   "cal.winterSolstice": "Solstizio d'inverno",
   "cal.dropUnschedule": "Rilascia qui per togliere la data",
   "cal.unscheduledTray": "Senza data — trascina su un giorno",
+  "cal.fromCalendar": "{title} — da {name}",
+  // The Calendar board's settings sheet: this holon's own feed to
+  // subscribe to, and the calendars it follows (see CalendarSettings).
+  "cal.set.title": "Impostazioni calendario",
+  "cal.set.subscribeHead": "Iscriviti a questo calendario",
+  "cal.set.subscribeBody":
+    "Aggiungi il calendario dal vivo di {name} a Google, Apple o a qualsiasi app calendario. Si aggiorna da solo.",
+  "cal.set.thisHolon": "questo holon",
+  "cal.set.federated": "Includi gli holon federati",
+  "cal.set.federatedSub":
+    "Porta con sé anche gli eventi degli holon con cui questo è federato",
+  "cal.set.feedUrl": "Link del calendario",
+  "cal.set.copy": "Copia il link",
+  "cal.set.copied": "Copiato ✓",
+  "cal.set.openInApp": "Apri nell'app calendario",
+  "cal.set.importHead": "Calendari seguiti da questa bacheca",
+  "cal.set.importBody":
+    "Porta un altro calendario su questa bacheca — le prenotazioni di uno spazio, il programma di un partner. Gli eventi seguiti si vedono, non si modificano.",
+  "cal.set.noFeeds": "Nessun calendario seguito.",
+  "cal.set.urlPlaceholder": "https://…/calendario.ics",
+  "cal.set.urlLabel": "Link del calendario (iCal)",
+  "cal.set.namePlaceholder": "Nome (facoltativo)",
+  "cal.set.nameLabel": "Nome del calendario",
+  "cal.set.add": "Segui",
+  "cal.set.showFeed": "Mostra {name} sulla bacheca",
+  "cal.set.removeFeed": "Smetti di seguire {name}",
+  "cal.set.syncing": "Lettura dei calendari…",
+  "cal.set.saveFailed":
+    "Non è stato possibile salvare — accedi come custode e riprova.",
   "cal.newTask": "Nuova attività",
 
   // Roles
@@ -730,6 +759,9 @@ export const it: Record<MessageKey, Msg> = {
   "status.disclaimerEquation":
     "E l'equazione dietro questi numeri appartiene al gruppo, non al software: discutetela insieme, rivedetela ogni volta che smette di rappresentarvi e portate qualsiasi peso — o tutti i pesi — a zero se così funziona meglio.",
   "status.disclaimerMore": "Che cosa conta — e che cosa non può contare",
+  "status.settingsAria":
+    "Impostazioni della bacheca — che cosa conta e l'equazione del valore",
+  "status.disclaimerEquationLink": "Imposta l'equazione del valore",
   "status.score": "Punteggio",
   "status.share": "quota {pct}%",
   "status.valueEquation": "Equazione del valore",

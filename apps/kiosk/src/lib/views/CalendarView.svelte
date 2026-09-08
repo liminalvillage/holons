@@ -37,7 +37,9 @@
     holoSeed,
   } from "$lib/data";
   import { personalEvents, personalTasks } from "$lib/personal";
+  import { externalEvents, refreshExternalCalendars } from "$lib/calendars";
   import Avatars from "$lib/components/Avatars.svelte";
+  import CalendarSettings from "$lib/components/CalendarSettings.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import YearTimeline from "./YearTimeline.svelte";
 
@@ -74,7 +76,13 @@
   // on the booking spans, only the bookings that are theirs (the borrower is
   // the span's single "participant").
   $: uid = $currentUser?.id;
-  $: baseEvents = events ?? $questEvents;
+  // Subscribed external calendars belong to the Calendar tab's own board, not
+  // to a caller that hands us its own spans (the Library's bookings) — those
+  // answer "when is this resource gone", and a room's opening hours are no
+  // part of that answer. Refreshing is throttled inside `$lib/calendars`.
+  $: ownBoard = events == null;
+  $: void refreshExternalCalendars(ownBoard ? $holonId : null);
+  $: baseEvents = events ?? [...$questEvents, ...$externalEvents];
   $: shownEvents =
     $scope === "personal" ? personalEvents(baseEvents, uid) : baseEvents;
 
@@ -128,6 +136,17 @@
 
   function open(ev: CalendarEvent) {
     if (justDragged) return;
+    // Nothing to open for a subscribed calendar: the holon watches this
+    // event, it doesn't own it. Say where it came from instead.
+    if (ev.external) {
+      showNotice(
+        $t("cal.fromCalendar", {
+          title: ev.title,
+          name: ev.external.calendarName,
+        }),
+      );
+      return;
+    }
     if (onOpen) onOpen(ev);
     else openQuest(ev.id, "event");
   }
@@ -141,6 +160,13 @@
       open(ev);
     }
   }
+
+  /**
+   * The board's own settings sheet: the feed other calendars subscribe to,
+   * and the calendars this one follows. Only on the Calendar tab — a booking
+   * calendar borrows the board, not the holon's calendar plumbing.
+   */
+  let settingsOpen = false;
 
   // ── Drag & drop: schedule / reschedule by dropping a card on a day ─────────-
   // Pointer-based so it works with touch and mouse alike. A small movement
@@ -189,8 +215,14 @@
     }
   }
 
-  function beginDrag(e: PointerEvent, id: string, title: string) {
+  function beginDrag(
+    e: PointerEvent,
+    id: string,
+    title: string,
+    locked = false,
+  ) {
     if (readonly) return; // a booking span isn't dragged — see the props above
+    if (locked) return; // nor an event read out of someone else's calendar
     if (e.button != null && e.button !== 0) return;
     pendingId = id;
     pendingTitle = title;
@@ -929,6 +961,16 @@
         >›</button
       >
     </div>
+    <!-- Where this board meets calendars outside it: subscribe to this one,
+         or follow another. Off the Calendar tab there is nothing to set. -->
+    {#if ownBoard}
+      <button
+        class="gear"
+        on:click={() => (settingsOpen = true)}
+        aria-label={$t("cal.set.title")}
+        title={$t("cal.set.title")}>⚙</button
+      >
+    {/if}
   </header>
 
   {#if $scope === "personal" && !$currentUser}
@@ -966,7 +1008,8 @@
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
                     class="chip tilt"
-                    class:draggable={!readonly}
+                    class:draggable={!readonly && !ev.external}
+                    class:ext={!!ev.external}
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
                     style:--holo-seed={holoSeed(ev.id)}
@@ -977,7 +1020,8 @@
                     title={ev.title}
                     role="button"
                     tabindex="0"
-                    on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                    on:pointerdown={(e) =>
+                      beginDrag(e, ev.id, ev.title, !!ev.external)}
                     on:click={() => open(ev)}
                     on:keydown={(e) => onKey(e, ev)}
                     >{#if ev.multiDay}<span class="spanb"
@@ -1020,7 +1064,8 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <article
                       class="note sm tilt"
-                      class:draggable={!readonly}
+                      class:draggable={!readonly && !ev.external}
+                      class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
@@ -1030,7 +1075,8 @@
                       )} --glow: {ev.sourceColor ?? 'transparent'};"
                       role="button"
                       tabindex="0"
-                      on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                      on:pointerdown={(e) =>
+                        beginDrag(e, ev.id, ev.title, !!ev.external)}
                       on:click={() => open(ev)}
                       on:keydown={(e) => onKey(e, ev)}
                     >
@@ -1086,7 +1132,8 @@
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <span
                       class="allday-chip"
-                      class:draggable={!readonly}
+                      class:draggable={!readonly && !ev.external}
+                      class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
@@ -1096,7 +1143,8 @@
                       role="button"
                       tabindex="0"
                       title={ev.title}
-                      on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                      on:pointerdown={(e) =>
+                        beginDrag(e, ev.id, ev.title, !!ev.external)}
                       on:click={() => open(ev)}
                       on:keydown={(e) => onKey(e, ev)}
                       >{#if ev.multiDay}<span class="spanb"
@@ -1148,7 +1196,8 @@
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                 <article
                   class="day-event"
-                  class:draggable={!readonly}
+                  class:draggable={!readonly && !ev.external}
+                  class:ext={!!ev.external}
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
@@ -1164,7 +1213,8 @@
                     'transparent'}; --ev-font: {compactFont(heightPx)}px;"
                   role="button"
                   tabindex="0"
-                  on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                  on:pointerdown={(e) =>
+                    beginDrag(e, ev.id, ev.title, !!ev.external)}
                   on:click={() => open(ev)}
                   on:keydown={(e) => onKey(e, ev)}
                 >
@@ -1198,6 +1248,9 @@
                     {#if ev.location}<span class="where">{ev.location}</span
                       >{/if}
                     {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
+                    {#if ev.external}<span class="src"
+                        >⇱ {ev.external.calendarName}</span
+                      >{/if}
                     {#if ev.people.length || ev.appreciation}
                       <div class="ev-foot">
                         {#if ev.appreciation}<span class="appr"
@@ -1209,7 +1262,7 @@
                       </div>
                     {/if}
                   {/if}
-                  {#if !readonly}
+                  {#if !readonly && !ev.external}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <span
                       class="resize-handle"
@@ -1298,6 +1351,10 @@
   >
     {drag.title}
   </div>
+{/if}
+
+{#if settingsOpen}
+  <CalendarSettings on:close={() => (settingsOpen = false)} />
 {/if}
 
 <style>
@@ -1421,6 +1478,12 @@
   }
 
   /* ── Drag & drop ───────────────────────────────────────────────────────--- */
+  /* Read out of a calendar the holon follows: nothing here can be moved,
+     resized or opened, and the dashed edge says so before a finger tries. */
+  .ext {
+    outline: 1.5px dashed var(--muted);
+    outline-offset: -3px;
+  }
   .draggable {
     touch-action: none;
     cursor: grab;
@@ -1522,6 +1585,7 @@
 
   /* Pill band + date navigation, stacked and centred. */
   .head {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -1571,6 +1635,30 @@
       transform 0.1s ease;
   }
   .arrow:active {
+    transform: scale(0.92);
+    background: var(--paper-deep);
+  }
+
+  /* Settings, pinned to the header's right edge so it never pushes the date
+     off centre. Same disc as the month arrows, one size down. */
+  .gear {
+    position: absolute;
+    top: 0.6rem;
+    right: 1rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--teal-deep);
+    background: var(--paper);
+    display: grid;
+    place-items: center;
+    transition:
+      background 0.2s ease,
+      transform 0.1s ease;
+  }
+  .gear:active {
     transform: scale(0.92);
     background: var(--paper-deep);
   }

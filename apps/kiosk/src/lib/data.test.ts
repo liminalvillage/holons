@@ -7,6 +7,7 @@ import {
   toBookingEvents,
   toChecklists,
   toEvents,
+  toExternalEvents,
   toRoles,
   toThings,
   toSuggestions,
@@ -527,5 +528,57 @@ describe("hologram flag — projection cards", () => {
         { id: "list", items: [], ...envelope } as unknown as Checklist,
       ])[0].hologram,
     ).toBe(true);
+  });
+});
+
+describe("toExternalEvents — a calendar the holon follows", () => {
+  const feed = {
+    id: "cal_1",
+    url: "https://example.com/rooms.ics",
+    name: "Room bookings",
+    enabled: true,
+  };
+  const occurrence = (over: Record<string, unknown> = {}) => ({
+    id: "uid-1",
+    title: "Yoga",
+    start: new Date(2026, 4, 7, 9, 0),
+    end: new Date(2026, 4, 7, 10, 0),
+    allDay: false,
+    calendarUrl: feed.url,
+    ...over,
+  });
+
+  it("namespaces ids by feed, so two calendars can share a UID", () => {
+    const [a] = toExternalEvents([occurrence()], feed);
+    const [b] = toExternalEvents([occurrence()], { ...feed, id: "cal_2" });
+    expect(a.id).toBe("ext:cal_1:uid-1");
+    expect(b.id).toBe("ext:cal_2:uid-1");
+  });
+
+  it("marks the event as external so the board won't drag or open it", () => {
+    const [ev] = toExternalEvents([occurrence()], feed);
+    expect(ev.external).toEqual({
+      calendarName: "Room bookings",
+      url: feed.url,
+    });
+    expect(ev.people).toEqual([]);
+    expect(ev.multiDay).toBe(false);
+    expect(ev.days).toBe(1);
+  });
+
+  it("draws a one-day all-day entry on one day (iCal DTEND is exclusive)", () => {
+    const [ev] = toExternalEvents(
+      [
+        occurrence({
+          allDay: true,
+          start: new Date(2026, 0, 1),
+          end: new Date(2026, 0, 2),
+        }),
+      ],
+      feed,
+    );
+    expect(ev.allDay).toBe(true);
+    expect(ev.days).toBe(1);
+    expect(ev.end?.getDate()).toBe(1);
   });
 });

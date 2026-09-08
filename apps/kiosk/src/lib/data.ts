@@ -22,6 +22,11 @@ import {
 } from "@holons/core/checklists";
 import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
+import { occurrenceSpan } from "@holons/core/calendar";
+import type {
+  ExternalCalendarEvent,
+  ImportedCalendar,
+} from "@holons/core/calendar";
 import { recordKey, sourceHolonId, sourceRef } from "@holons/core/holosphere";
 import type { Translator } from "./i18n";
 import {
@@ -213,6 +218,12 @@ export interface CalendarEvent {
    * than looking for a quest that doesn't exist.
    */
   libraryItemId?: string;
+  /**
+   * Set only on an entry read out of a subscribed external calendar (see
+   * `$lib/calendars`). There is no quest behind it, so the board must not
+   * drag, resize or open it — it is something the holon watches, not owns.
+   */
+  external?: { calendarName: string; url: string };
 }
 
 export interface TaskPerson {
@@ -642,6 +653,38 @@ export function toThings(
 function dayStart(day: string): Date | null {
   const d = new Date(`${dayKey(day)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Occurrences read out of a calendar the holon FOLLOWS → board events.
+ *
+ * There is no quest behind these, so they carry `external` and the board
+ * refuses to drag, resize or open them (see CalendarView). Core owns the
+ * iCal semantics — including that an all-day DTEND is exclusive, which
+ * `occurrenceSpan` turns into the inclusive span a board draws.
+ */
+export function toExternalEvents(
+  occurrences: ExternalCalendarEvent[],
+  calendar: ImportedCalendar,
+): CalendarEvent[] {
+  return occurrences.map((ev) => {
+    const { end, days, multiDay } = occurrenceSpan(ev);
+    return {
+      // Namespaced by feed: two calendars can carry the same UID (an
+      // invitation that reached both), and view keys must stay unique.
+      id: `ext:${calendar.id}:${ev.id}`,
+      title: ev.title,
+      date: ev.start,
+      end,
+      days,
+      multiDay,
+      location: ev.location,
+      allDay: ev.allDay,
+      people: [],
+      appreciation: 0,
+      external: { calendarName: calendar.name, url: calendar.url },
+    };
+  });
 }
 
 /**

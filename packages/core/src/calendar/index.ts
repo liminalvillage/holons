@@ -4,4 +4,5 @@
 // at compiled `dist/` for runtime consumers and at `src/` for typecheck.
 
 export * from './ical.js';
+export * from './import.js';
 export * from './rsvp.js';

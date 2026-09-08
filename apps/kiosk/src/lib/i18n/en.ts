@@ -157,6 +157,34 @@ export const en = {
   "cal.winterSolstice": "Winter solstice",
   "cal.dropUnschedule": "Drop here to unschedule",
   "cal.unscheduledTray": "Unscheduled — drag onto a day",
+  "cal.fromCalendar": "{title} — from {name}",
+  // The Calendar board's settings sheet: this holon's own feed to
+  // subscribe to, and the calendars it follows (see CalendarSettings).
+  "cal.set.title": "Calendar settings",
+  "cal.set.subscribeHead": "Subscribe to this calendar",
+  "cal.set.subscribeBody":
+    "Add {name}'s live calendar to Google, Apple or any other calendar app. It keeps itself up to date.",
+  "cal.set.thisHolon": "this holon",
+  "cal.set.federated": "Include federated holons",
+  "cal.set.federatedSub":
+    "Also carry the events of the holons this one federates with",
+  "cal.set.feedUrl": "Calendar link",
+  "cal.set.copy": "Copy link",
+  "cal.set.copied": "Copied ✓",
+  "cal.set.openInApp": "Open in calendar app",
+  "cal.set.importHead": "Calendars this board follows",
+  "cal.set.importBody":
+    "Read another calendar onto this board — a venue's bookings, a partner's programme. Followed events are shown, never changed.",
+  "cal.set.noFeeds": "No calendars followed yet.",
+  "cal.set.urlPlaceholder": "https://…/calendar.ics",
+  "cal.set.urlLabel": "Calendar link (iCal)",
+  "cal.set.namePlaceholder": "Name (optional)",
+  "cal.set.nameLabel": "Calendar name",
+  "cal.set.add": "Follow",
+  "cal.set.showFeed": "Show {name} on the board",
+  "cal.set.removeFeed": "Stop following {name}",
+  "cal.set.syncing": "Reading calendars…",
+  "cal.set.saveFailed": "Couldn't save — log in as a caretaker and try again.",
   "cal.newTask": "New task",
 
   // Roles
@@ -709,6 +737,9 @@ export const en = {
   "status.disclaimerEquation":
     "And the equation behind these numbers belongs to the group, not to the software: agree on it together, revisit it whenever it stops fitting, and set any weight — or every weight — to zero if that serves you better.",
   "status.disclaimerMore": "What this counts — and what it can't",
+  "status.settingsAria":
+    "Board settings — what this counts, and the value equation",
+  "status.disclaimerEquationLink": "Set the value equation",
   "status.score": "Score",
   "status.share": "{pct}% share",
   "status.valueEquation": "Value equation",
