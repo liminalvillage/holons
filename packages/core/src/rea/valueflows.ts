@@ -24,6 +24,12 @@
  *     completion is a service delivered *out* of it (`outputOf`).
  *   - The holon the event happened in is `inScopeOf`.
  *   - `hasPointInTime` is the observation instant (ISO 8601).
+ *   - The planning layer rides in the same stream: a `vf:Commitment` (someone
+ *     joined a quest, took a role, signed up for a shift) and a `vf:Intent`
+ *     (a need, an offer, a request on the board) are records with `vfType`
+ *     set; observed flows are `vf:EconomicEvent`s (`vfType` absent). A
+ *     planning record may carry no measure yet — the amount is unknown
+ *     until it happens.
  *
  * The pre-ValueFlows shape (`eventType`, `resource`, `timestamp`, `context`,
  * `status`) is kept on every record as a *projection* of the ValueFlows
@@ -395,6 +401,13 @@ export interface EconomicEvent {
   id: string;
 
   // --- ValueFlows ---------------------------------------------------------
+  /**
+   * Which ValueFlows class this record is. Absent (or `EconomicEvent`) for an
+   * observed flow; `Commitment` / `Intent` for the planning layer.
+   */
+  vfType?: VfRecordType;
+  /** `vf:finished` — a commitment or intent that has been fulfilled or closed. */
+  finished?: boolean;
   /** `vf:action`. */
   action: VfAction;
   /** `vf:provider`. */
@@ -448,9 +461,19 @@ export interface EconomicEvent {
   [key: string]: unknown;
 }
 
+/** ValueFlows record classes carried in the REA stream. */
+export type VfRecordType = 'EconomicEvent' | 'Commitment' | 'Intent';
+
+/** Planning-layer record classes (no measure required — nothing happened yet). */
+export function isPlanningRecordType(value: unknown): value is 'Commitment' | 'Intent' {
+  return value === 'Commitment' || value === 'Intent';
+}
+
 /** How a Holons event kind maps onto the ValueFlows vocabulary. */
 export interface EventKindMapping {
   action: VfAction;
+  /** Planning-layer kinds: `Commitment` (promised) or `Intent` (wanted/offered). Absent = observed event. */
+  vfType?: 'Commitment' | 'Intent';
   /** Which measure the legacy `resource.quantity` populates. */
   measure: 'resourceQuantity' | 'effortQuantity';
   resourceConformsTo: HolonsResourceKind;
@@ -597,6 +620,93 @@ export const EVENT_KIND_MAPPINGS: Readonly<Record<string, EventKindMapping>> = O
     resourceConformsTo: 'item',
     resourceClassifiedAs: ['stock'],
   },
+  // Library shelf: an item put in the commons is one more on hand for the
+  // holon (`raise`); taking it off the shelf is the correction back (`lower`).
+  'item:listed': {
+    action: 'raise',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['library-listing'],
+  },
+  'item:delisted': {
+    action: 'lower',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['library-listing'],
+  },
+  // A ticked shopping-list line: someone brought the thing in for the holon.
+  'shopping:bought': {
+    action: 'transfer',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['shopping'],
+  },
+  // A peer sending appreciation outside a quest (`/appreciate`) is the same
+  // transfer as the in-quest exchange, just with no process link.
+  // (Uses the existing `appreciation:sent` / `appreciation:received` kinds.)
+
+  // --- Planning layer ----------------------------------------------------
+  // Joining a quest, taking a role, signing up for a shift: a promise of
+  // labour (`vf:Commitment`, action `work`) into that process, with the hours
+  // unknown until they are logged.
+  'quest:joined': {
+    action: 'work',
+    vfType: 'Commitment',
+    measure: 'effortQuantity',
+    resourceConformsTo: 'time',
+    process: 'inputOf',
+    resourceClassifiedAs: ['commitment'],
+  },
+  'role:taken': {
+    action: 'work',
+    vfType: 'Commitment',
+    measure: 'effortQuantity',
+    resourceConformsTo: 'time',
+    resourceClassifiedAs: ['commitment', 'role'],
+  },
+  'shift:accepted': {
+    action: 'work',
+    vfType: 'Commitment',
+    measure: 'effortQuantity',
+    resourceConformsTo: 'time',
+    resourceClassifiedAs: ['commitment', 'shift'],
+  },
+  // A provider claiming a need commits to deliver it.
+  'need:claimed': {
+    action: 'deliverService',
+    vfType: 'Commitment',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    process: 'inputOf',
+    resourceClassifiedAs: ['commitment', 'need'],
+  },
+  // Board items are `vf:Intent`s: a need or request wants something in
+  // (receiver = the asker), an offer wants something out (provider = the
+  // offerer).
+  'need:published': {
+    action: 'deliverService',
+    vfType: 'Intent',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    process: 'outputOf',
+    resourceClassifiedAs: ['intent', 'need'],
+  },
+  'request:listed': {
+    action: 'transfer',
+    vfType: 'Intent',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    process: 'outputOf',
+    resourceClassifiedAs: ['intent', 'request'],
+  },
+  'offer:listed': {
+    action: 'transfer',
+    vfType: 'Intent',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    process: 'outputOf',
+    resourceClassifiedAs: ['intent', 'offer'],
+  },
 });
 
 /**
@@ -712,6 +822,10 @@ export function normalizeReaEvent<T extends Record<string, unknown>>(input: T): 
     : mapping.resourceConformsTo;
 
   if (!isVfAction(e.action)) e.action = mapping.action;
+  if (!isPlanningRecordType(e.vfType)) {
+    if (mapping.vfType) e.vfType = mapping.vfType;
+    else if (e.vfType !== undefined && e.vfType !== 'EconomicEvent') delete e.vfType;
+  }
   if (!eventType) e.eventType = `${kind}:${String(e.action)}`;
   if (resource.type == null) resource.type = kind;
   if (typeof e.resourceConformsTo !== 'string') e.resourceConformsTo = kind;
@@ -799,6 +913,7 @@ export function isEconomicEvent(value: unknown): value is EconomicEvent {
   const e = value as Record<string, unknown>;
   return (
     typeof e.id === 'string' &&
+    !isPlanningRecordType(e.vfType) &&
     isVfAction(e.action) &&
     !!e.provider &&
     typeof (e.provider as VfAgent).id === 'string' &&
@@ -819,8 +934,10 @@ function isMeasure(value: unknown): value is VfMeasure {
 }
 
 /**
- * The problems that stop a record from being a `vf:EconomicEvent`; empty
- * when it is one. Used by the store to refuse malformed writes.
+ * The problems that stop a record from being a `vf:EconomicEvent` (or, when
+ * `vfType` says so, a `vf:Commitment` / `vf:Intent`); empty when it is one.
+ * Used by the store to refuse malformed writes. Planning records may carry no
+ * measure: the amount is unknown until the flow happens.
  */
 export function economicEventProblems(value: unknown): string[] {
   const problems: string[] = [];
@@ -833,7 +950,11 @@ export function economicEventProblems(value: unknown): string[] {
   if (typeof e.hasPointInTime !== 'string' || !Number.isFinite(Date.parse(e.hasPointInTime))) {
     problems.push('hasPointInTime is not an ISO 8601 instant');
   }
-  if (!isMeasure(e.resourceQuantity) && !isMeasure(e.effortQuantity)) {
+  if (
+    !isPlanningRecordType(e.vfType) &&
+    !isMeasure(e.resourceQuantity) &&
+    !isMeasure(e.effortQuantity)
+  ) {
     problems.push('needs a resourceQuantity or effortQuantity Measure');
   }
   return problems;
@@ -863,7 +984,7 @@ export function toValueFlowsJsonLd(event: EconomicEvent): Record<string, unknown
   const out: Record<string, unknown> = {
     '@context': { vf: VF_NAMESPACE },
     '@id': event.id,
-    '@type': 'vf:EconomicEvent',
+    '@type': `vf:${isPlanningRecordType(event.vfType) ? event.vfType : 'EconomicEvent'}`,
     'vf:action': event.action,
     'vf:provider': agent(event.provider),
     'vf:receiver': agent(event.receiver),
@@ -880,5 +1001,6 @@ export function toValueFlowsJsonLd(event: EconomicEvent): Record<string, unknown
   if (event.inputOf) out['vf:inputOf'] = event.inputOf;
   if (event.outputOf) out['vf:outputOf'] = event.outputOf;
   if (event.note) out['vf:note'] = event.note;
+  if (typeof event.finished === 'boolean') out['vf:finished'] = event.finished;
   return out;
 }

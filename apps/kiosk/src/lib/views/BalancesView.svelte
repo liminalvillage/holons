@@ -46,7 +46,6 @@
     type CreditPair,
     type Expense,
   } from "@holons/core/expenses";
-  import { REAEventFactory } from "@holons/core/rea";
   import PillSwitch from "$lib/components/PillSwitch.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import {
@@ -388,9 +387,10 @@
   }
 
   /**
-   * One write path for both kinds of record: the lens, then the REA mirror.
-   * The lens is the source of truth (the bot re-derives the stream anyway),
-   * so a failed mirror is logged, not surfaced.
+   * One write path for both kinds of record: the expenses lens. The REA
+   * mirror (expense:paid + expense:share) is derived from that write by the
+   * ledger projection in @holons/core/rea, attached to every HoloSphere the
+   * core factory builds — the same one the bot's writes go through.
    */
   async function persist(record: Expense, done: () => void) {
     busy = true;
@@ -398,14 +398,6 @@
     try {
       const store = await getReaStore();
       await store.put(holonId, "expenses", record);
-      try {
-        const events = REAEventFactory.expenseEvents(holonId, record as any);
-        await Promise.all(
-          events.map((e) => store.put(holonId, "rea_events", e)),
-        );
-      } catch (err) {
-        console.warn("[kiosk] balances: REA mirror failed", err);
-      }
       done();
     } catch (err: any) {
       const denied =

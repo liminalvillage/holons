@@ -11,7 +11,12 @@
 import { get } from "svelte/store";
 import type { AgentTool, ToolCall, ToolResult } from "@holons/ai-ui";
 import { createTask, addParticipant, type Quest } from "@holons/core/tasks";
-import { borrowItem, returnItem } from "@holons/core/library";
+import {
+  borrowItem,
+  returnItem,
+  recordBorrowAccounting,
+  recordReturnAccounting,
+} from "@holons/core/library";
 import { localFieldsToStored } from "@holons/core/datetime";
 import {
   holonId,
@@ -403,11 +408,18 @@ export async function dispatchKioskTool(
             actingHolon: hid,
             actingHolonName: get(holonName) || null,
           });
+          // Same bookkeeping as a tapped borrow (DetailModal): the credit
+          // charge into the expenses lens. The REA events come from the
+          // ledger projection on the library write itself.
+          if (res.ok && res.item)
+            await recordBorrowAccounting({ db }, holon, actor, res.item);
           return res.ok
             ? ok(call.id, `Borrowed "${title}" until ${due.toDateString()}.`)
             : fail(call.id, `Borrow failed: ${res.reason}.`);
         }
         const res = await returnItem(db, holon, key, actor);
+        if (res.ok && res.item)
+          await recordReturnAccounting({ db }, holon, actor, res.item);
         return res.ok
           ? ok(call.id, `Returned "${title}".`)
           : fail(call.id, `Return failed: ${res.reason}.`);

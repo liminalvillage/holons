@@ -15,6 +15,7 @@
  */
 
 import { HoloSphere } from 'holosphere';
+import { attachLedger, type LedgerHost } from '../rea/attach.js';
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import type { ProjectionHook } from '../nostr/types.js';
@@ -99,6 +100,13 @@ export interface CreateHoloSphereOptions {
   standardWires?: StandardWireOptions;
   /** Forward arbitrary extra keys to `HoloSphereConfig`. */
   extra?: Record<string, unknown>;
+  /**
+   * Keep the `rea_events` ledger in line with every economic write (see
+   * `@holons/core/rea` `attachLedger`). On by default — every UI accounts
+   * the same way. `false` only for tooling that must write raw records
+   * (imports, forensics).
+   */
+  ledger?: boolean;
 }
 
 /**
@@ -115,7 +123,7 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger } = options;
 
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
@@ -138,5 +146,6 @@ export function createHoloSphere(
   };
 
   const instance = new HoloSphere(config as any);
+  if (ledger !== false) attachLedger(instance as unknown as LedgerHost);
   return awaitReady ? instance.ready().then(() => instance) : instance;
 }

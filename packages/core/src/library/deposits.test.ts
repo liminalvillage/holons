@@ -13,6 +13,8 @@ function harness() {
     delete: vi.fn(async () => undefined),
     getAll: vi.fn(async () => [])
   };
+  // Legacy plumbing some callers still pass: the ledger projection owns the
+  // REA side now, so these must never be invoked.
   const eventStorePut = vi.fn(async () => undefined);
   const eventStore = { put: eventStorePut };
   const factory = {
@@ -38,32 +40,41 @@ describe('recordBorrowAccounting', () => {
     expect(dbPut).not.toHaveBeenCalled();
   });
 
-  it('writes expense + REA events for a billable borrow', async () => {
+  it('writes the credit expense for a billable borrow, and no REA events itself', async () => {
     const { deps, dbPut, eventStorePut, factory } = harness();
     const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 1, value: 5 });
     await recordBorrowAccounting(deps, 'h', { id: 2, username: 'b' }, item);
     expect(dbPut).toHaveBeenCalledTimes(1);
     expect(dbPut.mock.calls[0][1]).toBe('expenses');
-    expect(eventStorePut).toHaveBeenCalledTimes(2);
-    expect(factory.itemBorrowed).toHaveBeenCalledWith('h', { id: 2, username: 'b' }, item, 5, 0);
+    expect(dbPut.mock.calls[0][2]).toMatchObject({ type: 'borrow', itemId: 'drill', currency: 'credits', amount: 5 });
+    expect(eventStorePut).not.toHaveBeenCalled();
+    expect(factory.itemBorrowed).not.toHaveBeenCalled();
+  });
+
+  it('works without any event plumbing at all (kiosk, web)', async () => {
+    const { deps, dbPut } = harness();
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 1, value: 5 });
+    await recordBorrowAccounting({ db: deps.db }, 'h', { id: 2 }, item);
+    expect(dbPut).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('recordReturnAccounting', () => {
-  it('writes refund expense + return REA events for non-owner', async () => {
+  it('writes the refund expense for a non-owner, and no REA events itself', async () => {
     const { deps, dbPut, eventStorePut, factory } = harness();
     const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 1, value: 5 });
     await recordReturnAccounting(deps, 'h', { id: 2 }, item);
     expect(dbPut).toHaveBeenCalledTimes(1);
-    expect(eventStorePut).toHaveBeenCalledTimes(1);
-    expect(factory.itemReturned).toHaveBeenCalledWith('h', { id: 2 }, item, 5);
+    expect(dbPut.mock.calls[0][2]).toMatchObject({ type: 'return', itemId: 'drill' });
+    expect(eventStorePut).not.toHaveBeenCalled();
+    expect(factory.itemReturned).not.toHaveBeenCalled();
   });
 
-  it('skips refund expense when owner returns, but still records REA events', async () => {
+  it('skips the refund expense when the owner returns', async () => {
     const { deps, dbPut, eventStorePut } = harness();
     const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 1, value: 5 });
     await recordReturnAccounting(deps, 'h', { id: 1 }, item);
     expect(dbPut).not.toHaveBeenCalled();
-    expect(eventStorePut).toHaveBeenCalledTimes(1);
+    expect(eventStorePut).not.toHaveBeenCalled();
   });
 });

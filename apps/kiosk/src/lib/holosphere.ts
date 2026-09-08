@@ -414,6 +414,7 @@ export interface ReaStore {
     bucket: string,
     key?: string | number,
   ) => Promise<unknown>;
+  delete: (holon: string, bucket: string, key: string) => Promise<unknown>;
 }
 
 /**
@@ -440,5 +441,13 @@ export async function getReaStore(): Promise<ReaStore> {
     },
     get: (holon, bucket, key) =>
       key != null ? hs.get(holon, bucket, String(key)) : hs.get(holon, bucket),
+    delete: async (holon, bucket, key) => {
+      const at = Date.now();
+      const res = await hs.delete(holon, bucket, key, null, {
+        actingAs: actingAs(),
+      } as any);
+      announceWrite(holon, bucket, at);
+      return res;
+    },
   };
 }

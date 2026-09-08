@@ -19,6 +19,25 @@ function vf(event: Record<string, unknown>): REAEvent {
   return normalizeReaEvent(event) as REAEvent;
 }
 
+/**
+ * Knobs shared by the factory methods that the ledger projection
+ * (`ledger.ts`) drives from stored documents:
+ *   - `at`: the instant the thing happened, taken from the document (an
+ *     expense's `created`, a booking's `created`) rather than the wall clock,
+ *     so a re-put of an old record does not move the event in time.
+ *   - `key`: a stable id part (a booking id, an appreciation record id) for
+ *     events that would otherwise get a fresh random id per call, so
+ *     re-deriving the same document upserts instead of duplicating.
+ */
+export interface FactoryOptions {
+  at?: number;
+  key?: string | number | null;
+}
+
+function when(opts?: FactoryOptions): number {
+  return typeof opts?.at === 'number' && Number.isFinite(opts.at) ? opts.at : Date.now();
+}
+
 /** Loose user shape accepted by the factory (id required, name fields optional). */
 interface UserLike {
   id: string | number;
@@ -88,6 +107,16 @@ export class REAEventFactory {
     return `${holonId}_${eventKind}_${normalized.join('_')}`;
   }
 
+  /**
+   * Base id for a family of events keyed on an external record (a booking, an
+   * appreciation record): stable when `key` is given, random otherwise.
+   */
+  static keyedBaseId(holonId: string | number, kind: string, key: string | number | null | undefined): string {
+    return key == null || String(key) === ''
+      ? this.generateId(holonId)
+      : `${holonId}_${kind}_${String(key)}`;
+  }
+
   /** Build a user Agent from a user-like object. */
   static createUserAgent(user: UserLike): Agent {
     return normalizeAgent({
@@ -122,10 +151,11 @@ export class REAEventFactory {
     holonId: string | number,
     initiator: UserLike,
     quest: { id: string | number; title: string },
+    opts?: FactoryOptions,
   ): REAEvent {
     return vf({
       id: this.stableEventId(holonId, 'quest_initiated', initiator.id, quest.id),
-      timestamp: Date.now(),
+      timestamp: when(opts),
       resource: {
         type: 'appreciation',
         quantity: 1,
@@ -176,10 +206,11 @@ export class REAEventFactory {
     hours: number,
     questId: string | number | null = null,
     note: string | null = null,
+    opts?: FactoryOptions,
   ): REAEvent {
     return vf({
       id: this.stableEventId(holonId, 'quest_time_logged', user.id, questId),
-      timestamp: Date.now(),
+      timestamp: when(opts),
       resource: {
         type: 'time',
         quantity: hours,
@@ -210,18 +241,17 @@ export class REAEventFactory {
     amount: number,
     reason: string,
     questId: string | number | null = null,
+    opts?: FactoryOptions,
   ): REAEvent[] {
     // Stable within a (sender, receiver, quest) tuple so a re-completed task
     // collapses its appreciation pair. Ad-hoc appreciation outside a quest
-    // (questId == null) still gets a fresh random base id per call.
-    const baseId = this.stableEventId(
-      holonId,
-      'appreciation',
-      sender.id,
-      receiver.id,
-      questId,
-    );
-    const timestamp = Date.now();
+    // (questId == null) is keyed on `opts.key` (its own record id) when the
+    // caller has one, and gets a fresh random base id per call otherwise.
+    const baseId =
+      questId == null && opts?.key != null
+        ? this.keyedBaseId(holonId, 'appreciation', opts.key)
+        : this.stableEventId(holonId, 'appreciation', sender.id, receiver.id, questId);
+    const timestamp = when(opts);
     const senderAgent = this.createUserAgent(sender);
     const receiverAgent = this.createUserAgent(receiver);
 
@@ -370,9 +400,10 @@ export class REAEventFactory {
     item: LibraryItemLike,
     credits: number,
     deposit: number,
+    opts?: FactoryOptions,
   ): REAEvent[] {
-    const baseId = this.generateId(holonId);
-    const timestamp = Date.now();
+    const baseId = this.keyedBaseId(holonId, 'booking', opts?.key);
+    const timestamp = when(opts);
     const events: REAEvent[] = [];
 
     events.push(vf({
@@ -426,9 +457,10 @@ export class REAEventFactory {
     borrower: UserLike,
     item: LibraryItemLike,
     depositAmount: number,
+    opts?: FactoryOptions,
   ): REAEvent[] {
-    const baseId = this.generateId(holonId);
-    const timestamp = Date.now();
+    const baseId = this.keyedBaseId(holonId, 'booking', opts?.key);
+    const timestamp = when(opts);
     const events: REAEvent[] = [];
 
     events.push(vf({
@@ -461,6 +493,215 @@ export class REAEventFactory {
     }
 
     return events;
+  }
+
+  /**
+   * Item put on the commons shelf: one more library item on hand for the
+   * holon, contributed by its owner. Stable per item.
+   */
+  static itemListed(
+    holonId: string | number,
+    owner: UserLike,
+    item: LibraryItemLike & { title?: string },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    return vf({
+      id: this.stableEventId(holonId, 'item_listed', item.id),
+      timestamp: when(opts),
+      resource: { type: 'item', quantity: 1, unit: 'one', resourceId: item.id },
+      provider: this.createUserAgent(owner),
+      receiver: this.createHolonAgent(holonId),
+      context: { holonId: String(holonId), itemId: item.id, note: String(item.title ?? item.id) },
+      eventType: 'item:listed',
+      status: 'confirmed',
+    });
+  }
+
+  /** Item taken off the shelf for good. Stable per item. */
+  static itemDelisted(
+    holonId: string | number,
+    owner: UserLike,
+    item: LibraryItemLike & { title?: string },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    return vf({
+      id: this.stableEventId(holonId, 'item_delisted', item.id),
+      timestamp: when(opts),
+      resource: { type: 'item', quantity: 1, unit: 'one', resourceId: item.id },
+      provider: this.createHolonAgent(holonId),
+      receiver: this.createUserAgent(owner),
+      context: { holonId: String(holonId), itemId: item.id, note: String(item.title ?? item.id) },
+      eventType: 'item:delisted',
+      status: 'confirmed',
+    });
+  }
+
+  // ==================== Shopping Events ====================
+
+  /**
+   * A ticked shopping-list line: `buyer` brought `quantity` of the thing in
+   * for the holon. Stable per (list, line).
+   */
+  static shoppingBought(
+    holonId: string | number,
+    buyer: UserLike | null,
+    line: { listId: string | number; itemId: string | number; text: string; quantity?: number },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    const qty = typeof line.quantity === 'number' && line.quantity > 0 ? line.quantity : 1;
+    return vf({
+      id: this.stableEventId(holonId, 'shopping_bought', line.listId, line.itemId),
+      timestamp: when(opts),
+      resource: { type: 'item', quantity: qty, unit: 'one', resourceId: String(line.itemId) },
+      provider: buyer ? this.createUserAgent(buyer) : this.createExternalAgent('market'),
+      receiver: this.createHolonAgent(holonId),
+      context: {
+        holonId: String(holonId),
+        listId: String(line.listId),
+        itemId: String(line.itemId),
+        note: line.text,
+      },
+      eventType: 'shopping:bought',
+      status: 'confirmed',
+    });
+  }
+
+  // ==================== Planning: commitments ====================
+
+  /**
+   * A member joined a quest: a `vf:Commitment` to work on that process. The
+   * hours are unknown until logged, so it carries no measure. `finished`
+   * flips once the quest completes. Stable per (quest, member).
+   */
+  static questJoined(
+    holonId: string | number,
+    member: UserLike,
+    quest: { id: string | number; title: string; completed?: boolean },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    return vf({
+      id: this.stableEventId(holonId, 'quest_joined', member.id, quest.id),
+      vfType: 'Commitment',
+      timestamp: when(opts),
+      resource: { type: 'time' },
+      provider: this.createUserAgent(member),
+      receiver: this.createHolonAgent(holonId),
+      context: { holonId: String(holonId), questId: String(quest.id), note: quest.title },
+      eventType: 'quest:joined',
+      finished: !!quest.completed,
+      status: quest.completed ? 'confirmed' : 'pending',
+    });
+  }
+
+  /**
+   * A member holds a role — permanently (`day` omitted) or for one day. A
+   * `vf:Commitment` to work; stable per (role, member[, day]).
+   */
+  static roleTaken(
+    holonId: string | number,
+    member: UserLike,
+    role: { id: string | number; title: string },
+    day: string | null = null,
+    opts?: FactoryOptions,
+  ): REAEvent {
+    return vf({
+      id: this.stableEventId(holonId, 'role_taken', role.id, member.id, day ?? 'permanent'),
+      vfType: 'Commitment',
+      timestamp: when(opts),
+      resource: { type: 'time' },
+      provider: this.createUserAgent(member),
+      receiver: this.createHolonAgent(holonId),
+      context: {
+        holonId: String(holonId),
+        roleId: String(role.id),
+        day,
+        note: day ? `${role.title} · ${day}` : role.title,
+      },
+      eventType: 'role:taken',
+      status: 'pending',
+    });
+  }
+
+  /**
+   * A member signed up for a shift: a `vf:Commitment` of the shift's hours.
+   * Stable per (shift occurrence, member).
+   */
+  static shiftAccepted(
+    holonId: string | number,
+    member: UserLike,
+    shift: { id: string; title: string; start: number; end: number },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    const hours = Math.max(0, (Number(shift.end) - Number(shift.start)) / 3600);
+    return vf({
+      id: this.stableEventId(holonId, 'shift_accepted', shift.id, member.id),
+      vfType: 'Commitment',
+      timestamp: when(opts),
+      resource: { type: 'time', quantity: hours, unit: 'hours' },
+      provider: this.createUserAgent(member),
+      receiver: this.createHolonAgent(holonId),
+      context: { holonId: String(holonId), shiftId: shift.id, note: shift.title },
+      eventType: 'shift:accepted',
+      status: 'pending',
+    });
+  }
+
+  /**
+   * A provider's response was accepted on a need: a `vf:Commitment` to
+   * deliver it to the asker. Stable per need (one claim wins).
+   */
+  static needClaimed(
+    holonId: string | number,
+    provider: UserLike,
+    asker: UserLike | null,
+    need: { id: string | number; title: string; completed?: boolean },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    return vf({
+      id: this.stableEventId(holonId, 'need_claimed', need.id),
+      vfType: 'Commitment',
+      timestamp: when(opts),
+      resource: { type: 'item' },
+      provider: this.createUserAgent(provider),
+      receiver: asker ? this.createUserAgent(asker) : this.createHolonAgent(holonId),
+      context: { holonId: String(holonId), questId: String(need.id), note: need.title },
+      eventType: 'need:claimed',
+      finished: !!need.completed,
+      status: need.completed ? 'confirmed' : 'pending',
+    });
+  }
+
+  // ==================== Planning: intents ====================
+
+  /**
+   * A board item is a `vf:Intent`: a need or request wants something in
+   * (the asker receives), an offer wants something out (the offerer
+   * provides). `closed` marks it fulfilled or withdrawn. Stable per item.
+   */
+  static boardIntent(
+    holonId: string | number,
+    kind: 'need' | 'request' | 'offer',
+    initiator: UserLike,
+    item: { id: string | number; title: string; closed?: boolean; itemType?: 'good' | 'service' },
+    opts?: FactoryOptions,
+  ): REAEvent {
+    const eventType = kind === 'need' ? 'need:published' : kind === 'offer' ? 'offer:listed' : 'request:listed';
+    const person = this.createUserAgent(initiator);
+    const holon = this.createHolonAgent(holonId);
+    const service = item.itemType === 'service';
+    return vf({
+      id: this.stableEventId(holonId, eventType.replace(':', '_'), item.id),
+      vfType: 'Intent',
+      timestamp: when(opts),
+      action: service ? 'deliverService' : 'transfer',
+      resource: { type: service ? 'time' : 'item', quantity: 1, unit: 'one' },
+      provider: kind === 'offer' ? person : holon,
+      receiver: kind === 'offer' ? holon : person,
+      context: { holonId: String(holonId), questId: String(item.id), note: item.title },
+      eventType,
+      finished: !!item.closed,
+      status: item.closed ? 'confirmed' : 'pending',
+    });
   }
 
   // ==================== Credit Events ====================

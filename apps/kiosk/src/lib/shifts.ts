@@ -33,6 +33,7 @@ import {
   loadShiftPlan,
   localToUnix,
   reconcileSchedule,
+  recordShiftRsvp,
   resolveRsvps,
   saveShiftPlan,
   sortOccurrences,
@@ -442,6 +443,33 @@ export async function setShiftRsvp(
     ),
   }));
   refetchNow?.();
+
+  // The signup lives on the relays, out of sight of the ledger projection
+  // behind holosphere.put; account it explicitly as the member's commitment
+  // of the shift hours (retracted on a cancellation). Never blocks the tap.
+  const me = get(currentUser);
+  if (me) {
+    try {
+      const ledger = await recordShiftRsvp(
+        await getReaStore(),
+        occurrence.groupId,
+        {
+          occurrence,
+          member: {
+            id: me.id,
+            username: me.username ?? undefined,
+            first_name: me.first_name || undefined,
+          },
+          status,
+          at: createdAt * 1000,
+        },
+      );
+      if (!ledger.ok)
+        console.warn("[kiosk] shifts: ledger not updated", ledger.error);
+    } catch (err) {
+      console.warn("[kiosk] shifts: ledger not updated", err);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

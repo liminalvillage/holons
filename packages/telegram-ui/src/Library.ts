@@ -501,11 +501,10 @@ class Library {
 
             // Core helper internally skips owners + zero-value items and
             // swallows persistence errors (matches the original inline path).
-            const accountingDeps: AccountingDeps = {
-                db: this.db as any,
-                eventStore: this.eventStore,
-                eventFactory: this.eventFactory,
-            };
+            // The custody + fee REA events come from the ledger projection
+            // on the library write itself; this mirrors the credit charge
+            // into the expenses lens.
+            const accountingDeps: AccountingDeps = { db: this.db as any };
             await coreRecordBorrowAccounting(accountingDeps, holonId, ctx.from, freshItem);
 
             await ctx.answerCbQuery(`Borrowed until ${dateStr}`).catch(() => {});
@@ -617,11 +616,7 @@ class Library {
 
         // Core helper internally skips owners + zero-value items and
         // swallows persistence errors (matches the original inline path).
-        const accountingDeps: AccountingDeps = {
-            db: this.db as any,
-            eventStore: this.eventStore,
-            eventFactory: this.eventFactory,
-        };
+        const accountingDeps: AccountingDeps = { db: this.db as any };
         await coreRecordReturnAccounting(accountingDeps, holonId, ctx.from, currentItem);
 
         if (fromKeyboard) {

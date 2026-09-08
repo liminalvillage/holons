@@ -312,17 +312,12 @@ export default class Expenses {
         });
         if (!expense) return false;
 
-        // Store expense record (for display and backward compatibility)
+        // Store the expense record. The REA side (expense:paid + one
+        // expense:share per participant) is derived from this write by the
+        // ledger projection in @holons/core/rea, attached to every HoloSphere
+        // the core factory builds — and it stays in line when the split is
+        // edited later, which an explicit write here never did.
         await this.db.put(holonId.toString(), 'expenses', expense);
-
-        // Create REA events for accounting (expense:paid + expense:share for each participant)
-        try {
-            const events = this.eventFactory.expenseEvents(String(holonId), expense as any);
-            await Promise.all(events.map((e: any) => this.eventStore.put(holonId, e)));
-            console.log(`Added expense ${expense.id} with ${events.length} REA events`);
-        } catch (error) {
-            console.error('Error creating REA events for expense:', error);
-        }
 
         return expense;
     }

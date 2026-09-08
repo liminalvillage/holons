@@ -17,3 +17,4 @@ the project lives at <https://github.com/HolonicLabs/holons>.
 | [realtime-sync.md](./realtime-sync.md) | How data stays live across UIs and federated holons: relay transport and local store, web initialization, subscriptions, federation messaging, notifications. |
 | [USER_GUIDE.md](./USER_GUIDE.md) | End-user guide: identity/keys, joining holons, tasks, calendar, expenses, federation, and troubleshooting. |
 | [FEDERATION_COMPONENT.md](./FEDERATION_COMPONENT.md) | The web Federation configuration component: managing federation relationships and per-lens data sharing. |
+| [rea-ledger.md](./rea-ledger.md) | The ValueFlows ledger (`rea_events`) and how core derives it from every economic write in every UI: the projection behind `holosphere.put`, stable ids, what each interaction records, commitments and intents, the one explicit call for shifts. |

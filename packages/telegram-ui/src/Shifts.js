@@ -45,6 +45,7 @@ import {
   isEnrolled,
   latestRsvpFor,
   parseShiftDTag,
+  recordShiftRsvp,
   sortOccurrences,
   toOccurrence,
   toRsvp,
@@ -401,6 +402,15 @@ export default class Shifts {
           { show_alert: true }
         );
       }
+      // The signup lives on the relays as a kind-31925 event, out of sight
+      // of the ledger projection; account it explicitly as the member's
+      // commitment of the shift hours (retracted on a drop).
+      const ledger = await recordShiftRsvp(this.db, holonId, {
+        occurrence: occ,
+        member: ctx.from,
+        status,
+      });
+      if (!ledger.ok) console.warn('[Shifts] ledger not updated', ledger.error);
       await ctx.answerCbQuery(
         status === 'accepted'
           ? `You're on ${occ.title} ${occ.date}`

@@ -1,10 +1,13 @@
 /**
- * @holons/core/library — borrow/return accounting (expenses + REA events).
+ * @holons/core/library — borrow/return accounting (the credit expenses).
  *
- * Pure side-effects on the storage + event-store provided by the caller. The
- * REA event factory and aggregator live in `packages/telegram-ui/src/domain/rea`
- * for now; this module accepts them via parameters so future units (e.g. a
- * web borrow flow) can reuse the same accounting glue.
+ * Pure side-effects on the storage provided by the caller. The ValueFlows
+ * side of a borrow — `item:borrowed`, `item:fee_paid`, `item:returned` — is
+ * NOT written here: the ledger projection (`@holons/core/rea`, attached to
+ * every HoloSphere the core factory builds) derives those from the item's
+ * `bookings[]` the moment the library lens is written, in every UI alike.
+ * This module only mirrors the charge into the expenses lens, which the
+ * balances views read.
  */
 
 import type { BorrowActor, LibraryDB, LibraryItem } from './types.js';
@@ -16,12 +19,12 @@ declare const console: { error: (...args: unknown[]) => void };
 
 const EXPENSES_LENS = 'expenses';
 
-/** Minimal interface a REA event store needs to satisfy. */
+/** @deprecated The ledger projection records REA events; kept so old callers type-check. */
 export interface REAEventStoreLike {
   put(holonId: string | number, event: any): Promise<unknown>;
 }
 
-/** Minimal interface a REA event factory needs to satisfy. */
+/** @deprecated The ledger projection records REA events; kept so old callers type-check. */
 export interface REAEventFactoryLike {
   itemBorrowed(
     holonId: string | number,
@@ -40,18 +43,16 @@ export interface REAEventFactoryLike {
 
 export interface AccountingDeps {
   db: LibraryDB;
-  /**
-   * REA event plumbing is optional: surfaces without an event store (web,
-   * kiosk) still record the credit expenses; only the bot emits REA events.
-   */
+  /** @deprecated Ignored — the ledger projection derives the REA events from the library lens. */
   eventStore?: REAEventStoreLike;
+  /** @deprecated Ignored — see `eventStore`. */
   eventFactory?: REAEventFactoryLike;
 }
 
 /**
  * Record the bookkeeping for an item-borrow: a credit-denominated expense
- * shared between owner and borrower, plus the matching REA events. Skipped
- * silently when the borrower owns the item, or when the item has no value.
+ * shared between owner and borrower. Skipped silently when the borrower owns
+ * the item, or when the item has no value.
  *
  * Errors are swallowed (logged) so a bookkeeping hiccup never blocks the
  * underlying borrow — matches the behaviour of the original Library.js.
@@ -79,21 +80,15 @@ export async function recordBorrowAccounting(
       type: 'borrow' as const
     };
     await deps.db.put(holon, EXPENSES_LENS, expense);
-
-    if (deps.eventFactory && deps.eventStore) {
-      const store = deps.eventStore;
-      const events = deps.eventFactory.itemBorrowed(holonId, borrower, item, item.value, 0);
-      await Promise.all(events.map((e) => store.put(holonId, e)));
-    }
   } catch (error) {
-    console.error('Error creating borrow expense/events:', error);
+    console.error('Error creating borrow expense:', error);
   }
 }
 
 /**
  * Record the bookkeeping for an item-return: a refund expense (reverse of the
- * borrow charge) and the matching REA events. Skipped when the returner owns
- * the item or when there is nothing to refund.
+ * borrow charge). Skipped when the returner owns the item or when there is
+ * nothing to refund.
  */
 export async function recordReturnAccounting(
   deps: AccountingDeps,
@@ -121,16 +116,6 @@ export async function recordReturnAccounting(
       await deps.db.put(holon, EXPENSES_LENS, refundExpense);
     } catch (error) {
       console.error('Error creating return expense:', error);
-    }
-  }
-
-  if (deps.eventFactory && deps.eventStore) {
-    const store = deps.eventStore;
-    try {
-      const events = deps.eventFactory.itemReturned(holonId, returner, item, value);
-      await Promise.all(events.map((e) => store.put(holonId, e)));
-    } catch (error) {
-      console.error('Error creating REA events for return:', error);
     }
   }
 }
