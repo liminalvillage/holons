@@ -1260,6 +1260,7 @@ export const it: Record<MessageKey, Msg> = {
   "stock.plusOne": "Uno in più di {name}",
   "stock.copyLink": "Copia il link a questo articolo",
   "stock.linkCopied": "Link copiato",
+  "stock.noMatch": "Niente sullo scaffale corrisponde a “{q}”.",
   "stock.countSame": "Lo scaffale dice già così.",
   "stock.history": "Cronologia",
   "stock.noHistory": "Ancora nessun movimento.",

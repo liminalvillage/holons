@@ -6,7 +6,11 @@
   // Three layouts behind the pills band (see `stockViewMode`):
   //   shelf   — one row per item the holon keeps, grouped by category, with
   //             the level folded from REA stock events; tap a row for its
-  //             story and to record a movement (use / add / count).
+  //             story and to record a movement (use / add / count). Each row
+  //             (and the card) carries a − / + stepper: taps coalesce into one
+  //             ±n event once they go quiet ($lib/stocklink `mergeTap`).
+  //             A `?item=<id>` on the stock route opens the card on boot, so a
+  //             link or a QR on the bin lands on it (`$lib/stocklink`).
   //   reorder — what to buy to bring every item back to its restock level;
   //             one tap writes it into the shared shopping checklist.
   //   moves   — shortages against open needs, and the transfers the
@@ -27,6 +31,7 @@
     partnerNames,
     rotationHold,
     scope,
+    searchQuery,
     stockViewMode,
     showNotice,
   } from "$lib/stores";
@@ -58,6 +63,8 @@
   } from "@holons/core/inventory";
   import {
     buildStockBoard,
+    filterReorder,
+    filterShelf,
     fmtQty,
     groupShelf,
     historyOf,
@@ -66,6 +73,13 @@
     type PartnerStock,
     type ShelfRow,
   } from "$lib/stock";
+  import {
+    mergeTap,
+    stockItemFromSearch,
+    stockItemUrl,
+    withoutStockItem,
+  } from "$lib/stocklink";
+  import { segmentFor } from "$lib/dock";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
@@ -93,6 +107,7 @@
   });
 
   function teardown() {
+    void flushTaps();
     hid = null;
     hsRef = null;
     if (refreshTimer) clearInterval(refreshTimer);
@@ -225,7 +240,13 @@
       })
     : null;
   $: rows = board ? shelfRows(sets.own, board.levels) : [];
-  $: groups = groupShelf(rows);
+  // The header search bar narrows the shelf by item name and/or category
+  // (every term must hit); `rows` stays the full shelf so a deep link or an
+  // open card is never hidden by whatever was typed.
+  $: shelf = filterShelf(rows, $searchQuery);
+  $: groups = groupShelf(shelf);
+  $: reorder = board ? filterReorder(board.reorder, $searchQuery) : [];
+  $: filtering = $searchQuery.trim().length > 0;
   // Partner shelves come along only in the networked scope, like every board.
   $: partnerShelves =
     $scope === "networked" && board
@@ -233,7 +254,10 @@
           .map((p) => ({
             id: p.id,
             name: p.name,
-            rows: shelfRows(p.specs, board!.partnerLevels[p.id] ?? []),
+            rows: filterShelf(
+              shelfRows(p.specs, board!.partnerLevels[p.id] ?? []),
+              $searchQuery,
+            ),
           }))
           .filter((p) => p.rows.length)
       : [];
@@ -242,7 +266,11 @@
     id === hid ? $t("stock.here") : ($partnerNames[id] ?? id);
 
   $: rotationHold.set(
-    openItemId != null || formOpen || confirmDelete || moveOpen != null,
+    openItemId != null ||
+      formOpen ||
+      confirmDelete ||
+      moveOpen != null ||
+      Object.keys(taps).length > 0,
   );
 
   /**
@@ -401,6 +429,121 @@
   // ── Item sheet + movements ──────────────────────────────────────────────
   let openItemId: string | null = null;
   $: openRow = rows.find((r) => r.spec.id === openItemId) ?? null;
+
+  // A deep link (`/<holon>/stock?item=<id>`) opens the card as soon as the
+  // shelf knows the item; the pointer is honoured once per boot and dropped
+  // from the address bar when the card closes, so a reload shows the shelf.
+  let linkedItem: string | null =
+    typeof location !== "undefined"
+      ? stockItemFromSearch(location.search)
+      : null;
+  $: if (linkedItem && rows.some((r) => r.spec.id === linkedItem)) {
+    openItemId = linkedItem;
+    linkedItem = null;
+  }
+  function closeSheet() {
+    openItemId = null;
+    moveOpen = null;
+    confirmDelete = false;
+    if (
+      typeof location === "undefined" ||
+      !stockItemFromSearch(location.search)
+    )
+      return;
+    try {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        location.pathname + withoutStockItem(location.search) + location.hash,
+      );
+    } catch {
+      /* the address bar is cosmetic here */
+    }
+  }
+
+  /** The shareable link to this item's card, from wherever the board is served. */
+  const linkFor = (itemId: string) =>
+    hid ? stockItemUrl(location.origin, segmentFor(hid), itemId) : "";
+  let copied = false;
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  async function copyLink(itemId: string) {
+    const url = linkFor(itemId);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      copied = true;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1800);
+    } catch {
+      showNotice($t("clipboard.writeFailed"));
+    }
+  }
+
+  // ── Quick taps: − / + one unit ──────────────────────────────────────────
+  // Every tap moves the shown level at once; the event is written when the
+  // taps go quiet (or the view leaves), one ±n movement per burst. The
+  // pending delta per item is what the row shows on top of the folded level.
+  const TAP_QUIET_MS = 900;
+  let taps: Record<string, number> = {};
+  let tapTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  $: shown = (row: ShelfRow) => row.onhand + (taps[row.spec.id] ?? 0);
+
+  function tap(row: ShelfRow, delta: 1 | -1) {
+    if (!requireUser()) return;
+    const id = row.spec.id;
+    taps = { ...taps, [id]: mergeTap(taps[id] ?? 0, delta, row.onhand) };
+    if (tapTimers[id]) clearTimeout(tapTimers[id]);
+    tapTimers[id] = setTimeout(() => void flushTap(id), TAP_QUIET_MS);
+  }
+
+  async function flushTap(id: string) {
+    if (tapTimers[id]) clearTimeout(tapTimers[id]);
+    delete tapTimers[id];
+    const delta = taps[id] ?? 0;
+    const holon = hid;
+    const user = get(currentUser);
+    const row = rows.find((r) => r.spec.id === id);
+    if (!holon || !user || !row) {
+      const { [id]: _drop, ...rest } = taps;
+      taps = rest;
+      return;
+    }
+    if (Math.abs(delta) < 0.0005) {
+      const { [id]: _drop, ...rest } = taps;
+      taps = rest;
+      return;
+    }
+    try {
+      const event = buildStockEvent({
+        holonId: holon,
+        kind: delta > 0 ? "stock:produced" : "stock:consumed",
+        itemId: id,
+        quantity: Math.abs(delta),
+        unit: row.spec.unit,
+        actor: user,
+        note: null,
+      });
+      const store = await getReaStore();
+      await new REAEventStore(store as never).put(holon, event);
+      if (hid !== holon) return;
+      // The fold now carries the movement; the optimistic offset steps aside
+      // in the same tick so the number does not jump twice.
+      events = [...events, event];
+      const { [id]: _drop, ...rest } = taps;
+      taps = rest;
+      showNotice($t("stock.recorded"));
+      await tick();
+      publishTotals(holon);
+    } catch (err) {
+      const { [id]: _drop, ...rest } = taps;
+      taps = rest;
+      fail(err, "stock.recordFailed");
+    }
+  }
+
+  async function flushTaps() {
+    await Promise.all(Object.keys(tapTimers).map((id) => flushTap(id)));
+  }
   $: history = openRow && hid ? historyOf(events, hid, openRow.spec.id) : [];
 
   type MoveKind = "use" | "add" | "count";
@@ -604,9 +747,11 @@
         <p class="empty">
           {$t(hasTargets ? "stock.reorderEmpty" : "stock.reorderNoTargets")}
         </p>
+      {:else if !reorder.length}
+        <p class="empty">{$t("stock.noMatch", { q: $searchQuery.trim() })}</p>
       {:else}
         <ul class="rows">
-          {#each board.reorder as line (line.itemId)}
+          {#each reorder as line (line.itemId)}
             <li class="row plain">
               <div class="text">
                 <h3>{line.name}</h3>
@@ -725,11 +870,13 @@
           {/each}
         </ul>
       {/if}
-    {:else if !rows.length && !partnerShelves.length}
+    {:else if !rows.length && !partnerShelves.length && !filtering}
       <div class="empty">
         <p>{$t("stock.emptyShelf")}</p>
         <p class="lead">{$t("stock.emptyShelfLead")}</p>
       </div>
+    {:else if !shelf.length && !partnerShelves.length}
+      <p class="empty">{$t("stock.noMatch", { q: $searchQuery.trim() })}</p>
     {:else}
       {#each groups as group (group.category)}
         <h2 class="section">{group.category}</h2>
@@ -769,7 +916,22 @@
                     ></span>
                   </div>
                 </div>
-                <span class="qty">{fmtQty(row.onhand, row.spec.unit)}</span>
+                <div class="stepper" class:live={taps[row.spec.id] != null}>
+                  <button
+                    class="step"
+                    aria-label={$t("stock.minusOne", { name: row.spec.name })}
+                    disabled={shown(row) <= 0}
+                    on:click|stopPropagation={() => tap(row, -1)}
+                    on:keydown|stopPropagation>−</button
+                  >
+                  <span class="qty">{fmtQty(shown(row), row.spec.unit)}</span>
+                  <button
+                    class="step"
+                    aria-label={$t("stock.plusOne", { name: row.spec.name })}
+                    on:click|stopPropagation={() => tap(row, 1)}
+                    on:keydown|stopPropagation>+</button
+                  >
+                </div>
                 <span class="status st-{row.status}"
                   >{$t(STATUS_KEY[row.status])}</span
                 >
@@ -816,23 +978,49 @@
 
 {#if openRow}
   {@const row = openRow}
-  <Modal on:close={() => ((openItemId = null), (moveOpen = null))}>
+  <Modal on:close={closeSheet}>
     <div class="sheet">
       <div class="head">
         <div>
           <h3>{row.spec.name}</h3>
           <span class="rtype">{row.spec.category}</span>
         </div>
-        <button
-          class="icon-btn"
-          aria-label={$t("stock.editItem")}
-          title={$t("stock.editItem")}
-          on:click={() => openEdit(row.spec)}>✎</button
-        >
+        <div class="tools">
+          <button
+            class="icon-btn"
+            class:done={copied}
+            aria-label={$t("stock.copyLink")}
+            title={$t(copied ? "stock.linkCopied" : "stock.copyLink")}
+            on:click={() => copyLink(row.spec.id)}>{copied ? "✓" : "⛓"}</button
+          >
+          <button
+            class="icon-btn"
+            aria-label={$t("stock.editItem")}
+            title={$t("stock.editItem")}
+            on:click={() => openEdit(row.spec)}>✎</button
+          >
+        </div>
       </div>
       <div class="level">
-        <span class="big">{fmtQty(row.onhand, row.spec.unit)}</span>
-        <span class="status st-{row.status}">{$t(STATUS_KEY[row.status])}</span>
+        <button
+          class="step big-step"
+          aria-label={$t("stock.minusOne", { name: row.spec.name })}
+          disabled={shown(row) <= 0}
+          on:click={() => tap(row, -1)}>−</button
+        >
+        <div class="reading">
+          <span class="big" class:live={taps[row.spec.id] != null}
+            >{fmtQty(shown(row), row.spec.unit)}</span
+          >
+          <span class="status st-{row.status}"
+            >{$t(STATUS_KEY[row.status])}</span
+          >
+        </div>
+        <button
+          class="step big-step"
+          aria-label={$t("stock.plusOne", { name: row.spec.name })}
+          on:click={() => tap(row, 1)}>+</button
+        >
       </div>
       <ul class="facts">
         {#if row.inFlight && row.level}
@@ -1156,6 +1344,51 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* − / + one unit, on the row and on the card. Big enough for a thumb. */
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .stepper .qty {
+    min-width: 3.2ch;
+    text-align: center;
+    transition: color 0.2s ease;
+  }
+  .stepper.live .qty,
+  .big.live {
+    color: var(--teal-deep);
+  }
+  .step {
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--teal-deep);
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .step:active:not(:disabled) {
+    background: color-mix(in srgb, var(--teal) 14%, var(--card));
+    transform: scale(0.94);
+  }
+  .step:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .big-step {
+    width: 3.4rem;
+    height: 3.4rem;
+    font-size: 1.8rem;
+    flex-shrink: 0;
+  }
   .status {
     flex: 0 0 auto;
     white-space: nowrap;
@@ -1315,8 +1548,27 @@
   .level {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.7rem;
     margin: 0.7rem 0 0.3rem;
+  }
+  .level .reading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .sheet .tools {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    /* Clear the modal's own ✕ (44px, top-right corner). */
+    margin-right: 2.4rem;
+  }
+  .icon-btn.done {
+    color: var(--teal);
   }
   .level .big {
     font-size: 2.2rem;

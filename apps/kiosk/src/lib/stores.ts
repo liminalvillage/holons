@@ -49,6 +49,7 @@ import {
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
+import { shelfCategories, splitSpecs } from "./stock";
 import { applyTabOrder, mergeTabOrder } from "./taborder";
 import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
@@ -342,14 +343,21 @@ export const checklistCards = derived(
 // view models so the list stays stable while a query narrows the boards —
 // but scope-filtered, so local scopes don't suggest partner people/categories.
 export const searchSuggestions: Readable<SearchSuggestions> = derived(
-  [rawQuests, rawLibrary, rawRoles, partnerNames, scope, t],
-  ([$q, $l, $r, $n, $s, $t]) =>
-    toSuggestions(
+  [rawQuests, rawLibrary, rawRoles, rawStock, partnerNames, scope, t],
+  ([$q, $l, $r, $st, $n, $s, $t]) => {
+    const base = toSuggestions(
       toEvents(scopeLocal($q, $s), $n, $t),
       toBacklog(scopeLocal($q, $s), $n, undefined, $t),
       toRoles(scopeLocal($r, $s), $n, $t),
       toThings(scopeLocal($l, $s), $n, $t),
-    ),
+    );
+    // The shelf's categories join the chips so the Stock tab can be
+    // narrowed by category with one tap, like the task wall.
+    const categories = [
+      ...new Set([...base.categories, ...shelfCategories(splitSpecs($st).own)]),
+    ].sort((a, b) => a.localeCompare(b));
+    return { ...base, categories };
+  },
 );
 
 /**

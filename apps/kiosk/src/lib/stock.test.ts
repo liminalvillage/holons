@@ -7,9 +7,12 @@ import {
 } from "@holons/core/inventory";
 import {
   buildStockBoard,
+  filterReorder,
+  filterShelf,
   fmtQty,
   groupShelf,
   historyOf,
+  shelfCategories,
   shelfRows,
   splitSpecs,
 } from "./stock";
@@ -256,5 +259,55 @@ describe("fmtQty", () => {
     expect(fmtQty(2.5, "kg")).toBe("2.5 kg");
     expect(fmtQty(60, "one")).toBe("60×");
     expect(fmtQty(1.2345, "l")).toBe("1.23 l");
+  });
+});
+
+describe("filterShelf / filterReorder / shelfCategories", () => {
+  const specs = [
+    spec("Flour", { target: 20 }),
+    spec("Olive oil"),
+    spec("Screws", { category: "workshop", unit: "one", target: 50 }),
+  ];
+  const rows = shelfRows(specs, []);
+
+  it("passes the same array through on an empty query", () => {
+    expect(filterShelf(rows, "  ")).toBe(rows);
+  });
+  it("matches names, case-insensitively", () => {
+    expect(filterShelf(rows, "OIL").map((r) => r.spec.name)).toEqual([
+      "Olive oil",
+    ]);
+  });
+  it("matches categories", () => {
+    expect(filterShelf(rows, "workshop").map((r) => r.spec.name)).toEqual([
+      "Screws",
+    ]);
+  });
+  it("needs every term: category and name together", () => {
+    expect(filterShelf(rows, "food fl").map((r) => r.spec.name)).toEqual([
+      "Flour",
+    ]);
+    expect(filterShelf(rows, "workshop flour")).toEqual([]);
+  });
+  it("narrows the reorder list the same way", () => {
+    const board = buildStockBoard({
+      holonId: H,
+      specs,
+      events: [],
+      needs: [],
+      federated: [],
+      partners: [],
+    });
+    expect(board.reorder.map((l) => l.itemId).sort()).toEqual([
+      "flour",
+      "screws",
+    ]);
+    expect(filterReorder(board.reorder, "work").map((l) => l.itemId)).toEqual([
+      "screws",
+    ]);
+    expect(filterReorder(board.reorder, "")).toBe(board.reorder);
+  });
+  it("lists the shelf's categories, sorted and unique", () => {
+    expect(shelfCategories(specs)).toEqual(["food", "workshop"]);
   });
 });

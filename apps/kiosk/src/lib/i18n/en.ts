@@ -1229,6 +1229,7 @@ export const en = {
   "stock.plusOne": "One more {name}",
   "stock.copyLink": "Copy the link to this item",
   "stock.linkCopied": "Link copied",
+  "stock.noMatch": "Nothing on the shelf matches “{q}”.",
   "stock.countSame": "The shelf already says that.",
   "stock.history": "History",
   "stock.noHistory": "No movements yet.",

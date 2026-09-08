@@ -1253,6 +1253,7 @@ export const es: Record<MessageKey, Msg> = {
   "stock.plusOne": "Uno más de {name}",
   "stock.copyLink": "Copiar el enlace a este artículo",
   "stock.linkCopied": "Enlace copiado",
+  "stock.noMatch": "Nada en la estantería coincide con “{q}”.",
   "stock.countSame": "El estante ya dice eso.",
   "stock.history": "Historial",
   "stock.noHistory": "Todavía no hay movimientos.",

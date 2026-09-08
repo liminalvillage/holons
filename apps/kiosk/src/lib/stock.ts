@@ -29,6 +29,7 @@ import {
   type StockPosition,
   type StockTransfer,
 } from "@holons/core/inventory";
+import { filterBySearch } from "./data";
 
 /** Own specs beside each partner's, keyed by the partner holon id. */
 export interface SpecSets {
@@ -266,4 +267,47 @@ export function fmtQty(quantity: number, unit: string): string {
     ? String(quantity)
     : quantity.toFixed(2).replace(/\.?0+$/, "");
   return unit === "one" || unit === "" ? `${n}×` : `${n} ${unit}`;
+}
+
+/**
+ * The shelf narrowed by the header search bar: every whitespace-separated
+ * term must hit the item's name or its category (the shared `filterBySearch`
+ * rule, so "food fl" finds Flour under food the way it finds a task). An
+ * empty query returns the same array.
+ */
+export function filterShelf(rows: ShelfRow[], query: string): ShelfRow[] {
+  if (!query.trim()) return rows;
+  const keep = new Set(
+    filterBySearch(
+      rows.map((r) => ({
+        title: r.spec.name,
+        category: r.spec.category,
+        id: r.spec.id,
+      })),
+      query,
+    ).map((h) => h.id),
+  );
+  return rows.filter((r) => keep.has(r.spec.id));
+}
+
+/** The reorder list narrowed the same way, by item name and category. */
+export function filterReorder(
+  lines: ReorderLine[],
+  query: string,
+): ReorderLine[] {
+  if (!query.trim()) return lines;
+  const keep = new Set(
+    filterBySearch(
+      lines.map((l) => ({ title: l.name, category: l.category, id: l.itemId })),
+      query,
+    ).map((h) => h.id),
+  );
+  return lines.filter((l) => keep.has(l.itemId));
+}
+
+/** Category names the shelf keeps, for the search bar's suggestion chips. */
+export function shelfCategories(specs: StockItemSpecRecord[]): string[] {
+  return [...new Set(specs.map((s) => s.category).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b),
+  );
 }
