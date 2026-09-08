@@ -18,6 +18,7 @@
  * Everything here is pure; callers persist what they get back.
  */
 
+import { transportPlan } from '../inventory/transport.js';
 import { coerceSplitWith, computeBalances, normalizeCurrency } from './balance.js';
 import type { AgentId, Expense, User, UserBalance } from './types.js';
 
@@ -44,6 +45,13 @@ export interface MutualCredit {
   pairs: CreditPair[];
   /** The fewest transfers that would square everyone, largest first. */
   plan: CreditPair[];
+  /**
+   * The transfers that square everyone while following the recorded debts
+   * as far as the money allows: pay whom you actually owe, then whom they
+   * owe. Usually more transfers than `plan`, never a stranger when a chain
+   * of debts exists. Largest first.
+   */
+  knownPlan: CreditPair[];
   /** Sum of every ordinary expense in this currency — settlements excluded. */
   volume: number;
   /** How many ordinary expenses that sum covers. */
@@ -71,13 +79,77 @@ export function creditPairs(matrix: number[][], userIds: AgentId[]): CreditPair[
 }
 
 /**
- * The fewest transfers that settle every balance.
- *
- * Greedy: the largest debtor pays the largest creditor as much as either can
- * take, and whoever is left with a remainder goes again. This never needs
- * more than n−1 transfers and is what people do around a table.
+ * What one unit of money costs to move from `from` to `to` in a settle-up
+ * plan. `Infinity` forbids the transfer. See `debtCost` for the one the
+ * ledger itself suggests; a caller may bring its own (same holon, same bank,
+ * whatever "settling with people you know" means to it).
  */
-export function settlementPlan(balances: UserBalance[]): CreditPair[] {
+export type SettlementCost = (from: AgentId, to: AgentId) => number;
+
+/**
+ * Cost by distance along the recorded debts: paying someone you owe costs 1,
+ * paying someone they owe costs 2, and so on down the chain; a pair with no
+ * chain of debts between them costs more than any chain could (one more
+ * than the number of people in debt), so the plan still squares everyone
+ * but reaches for a stranger only when no debt leads anywhere useful.
+ *
+ * When the debts and the balances come from the same ledger the fallback
+ * is never needed: the set a debtor can reach is closed under "owes", so
+ * its balances sum to what flows in from outside, which is ≥ 0 — the
+ * creditors in it can absorb every debtor in it. It is there so rounding
+ * at the dust threshold cannot leave anyone unsettled.
+ */
+export function debtCost(pairs: CreditPair[]): SettlementCost {
+  const owesTo = new Map<string, Set<string>>();
+  const people = new Set<string>();
+  for (const p of pairs ?? []) {
+    const from = String(p.from);
+    const to = String(p.to);
+    people.add(from);
+    people.add(to);
+    if (!owesTo.has(from)) owesTo.set(from, new Set());
+    owesTo.get(from)!.add(to);
+  }
+  const stranger = people.size + 1;
+  const memo = new Map<string, Map<string, number>>();
+  const hopsFrom = (start: string): Map<string, number> => {
+    const cached = memo.get(start);
+    if (cached) return cached;
+    const dist = new Map<string, number>([[start, 0]]);
+    const queue = [start];
+    for (let head = 0; head < queue.length; head++) {
+      const u = queue[head];
+      for (const v of owesTo.get(u) ?? []) {
+        if (dist.has(v)) continue;
+        dist.set(v, dist.get(u)! + 1);
+        queue.push(v);
+      }
+    }
+    memo.set(start, dist);
+    return dist;
+  };
+  return (from, to) => {
+    const a = String(from);
+    const b = String(to);
+    if (a === b) return 0;
+    return hopsFrom(a).get(b) ?? stranger;
+  };
+}
+
+/**
+ * Transfers that settle every balance.
+ *
+ * Without a cost, the fewest of them: the largest debtor pays the largest
+ * creditor as much as either can take, and whoever is left with a
+ * remainder goes again. This never needs more than n−1 transfers and is
+ * what people do around a table.
+ *
+ * With a cost, the cheapest of them: debtors are sources, creditors are
+ * sinks, and Kantorovich's transportation problem picks the legs. The
+ * total moved is the same either way — every creditor is paid in full —
+ * only who pays whom changes.
+ */
+export function settlementPlan(balances: UserBalance[], cost?: SettlementCost): CreditPair[] {
   const creditors = balances
     .filter((b) => b.net > DUST)
     .map((b) => ({ id: b.userId, left: b.net }))
@@ -86,6 +158,19 @@ export function settlementPlan(balances: UserBalance[]): CreditPair[] {
     .filter((b) => b.net < -DUST)
     .map((b) => ({ id: b.userId, left: -b.net }))
     .sort((a, b) => b.left - a.left);
+
+  if (cost) {
+    const byKey = new Map<string, AgentId>();
+    for (const x of [...creditors, ...debtors]) byKey.set(String(x.id), x.id);
+    return transportPlan(
+      debtors.map((d) => ({ id: String(d.id), supply: d.left })),
+      creditors.map((c) => ({ id: String(c.id), demand: c.left })),
+      (from, to) => cost(byKey.get(from) ?? from, byKey.get(to) ?? to),
+    )
+      .map((leg) => ({ from: byKey.get(leg.from) ?? leg.from, to: byKey.get(leg.to) ?? leg.to, amount: round(leg.quantity) }))
+      .filter((p) => p.amount > DUST)
+      .sort((a, b) => b.amount - a.amount);
+  }
 
   const plan: CreditPair[] = [];
   let c = 0;
@@ -263,6 +348,7 @@ export function computeMutualCredit(
       balances: [],
       pairs: [],
       plan: [],
+      knownPlan: [],
       volume: 0,
       count: 0,
     };
@@ -275,13 +361,15 @@ export function computeMutualCredit(
 
   const { creditMatrix, userIds, balances } = computeBalances(normalized, users, wanted);
   const spent = normalized.filter((e) => expenseCurrency(e) === wanted && !isSettlement(e));
+  const pairs = creditPairs(creditMatrix, userIds);
 
   return {
     currency: wanted,
     userIds,
     balances: balances.map((b) => ({ ...b, net: round(b.net) })),
-    pairs: creditPairs(creditMatrix, userIds),
+    pairs,
     plan: settlementPlan(balances),
+    knownPlan: settlementPlan(balances, debtCost(pairs)),
     volume: round(spent.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)),
     count: spent.length,
   };

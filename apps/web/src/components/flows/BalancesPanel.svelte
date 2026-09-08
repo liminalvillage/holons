@@ -75,6 +75,17 @@
     currency,
   );
 
+  // Two ways to square up: the fewest transfers, or paying whom you owe
+  // (core's cost-weighted plan along the recorded debts).
+  let planMode: "fewest" | "known" = "fewest";
+  const planKey = (p: { from: unknown; to: unknown; amount: number }[]) =>
+    p
+      .map((x) => `${x.from}>${x.to}:${x.amount}`)
+      .sort()
+      .join("|");
+  $: plansDiffer = planKey(credit.plan) !== planKey(credit.knownPlan);
+  $: plan = planMode === "known" ? credit.knownPlan : credit.plan;
+
   $: me = selfId ? credit.balances.find((b) => String(b.userId) === selfId) : null;
   $: myPairs = selfId
     ? credit.pairs.filter((p) => String(p.from) === selfId || String(p.to) === selfId)
@@ -416,18 +427,32 @@
     {/if}
 
     <!-- How do we settle? -->
-    {#if credit.plan.length}
+    {#if plan.length}
       <div class="plan card">
         <div class="plan-head">
           <h3>Settle up</h3>
+          {#if plansDiffer}
+            <PillSwitch
+              options={[
+                { id: "fewest", label: "Fewest transfers" },
+                { id: "known", label: "Pay whom you owe" },
+              ]}
+              value={planMode}
+              onChange={(id) => (planMode = id as "fewest" | "known")}
+              label="How to settle"
+            />
+          {/if}
           <p class="sub">
-            {credit.plan.length === 1
+            {plan.length === 1
               ? "One transfer squares everyone."
-              : `${credit.plan.length} transfers square everyone.`}
+              : `${plan.length} transfers square everyone.`}
+            {#if planMode === "known"}
+              Each one follows a debt on the books, or a chain of them.
+            {/if}
           </p>
         </div>
         <ul class="pairs">
-          {#each credit.plan as pair (`${pair.from}-${pair.to}`)}
+          {#each plan as pair (`${pair.from}-${pair.to}`)}
             <li>
               <Avatar id={String(pair.from)} name={nameOf(pair.from)} size={32} />
               <span class="pair-text">

@@ -129,7 +129,16 @@
   $: active = ranked
     .filter((b) => Math.abs(b.net) >= 0.005)
     .filter((b) => !filterMine || isMe(b.userId));
-  $: plan = credit.plan.filter(
+  // Two ways to square up: the fewest transfers, or paying whom you owe
+  // (core's cost-weighted plan along the recorded debts).
+  let planMode: "fewest" | "known" = "fewest";
+  const planKey = (p: { from: unknown; to: unknown; amount: number }[]) =>
+    p
+      .map((x) => `${x.from}>${x.to}:${x.amount}`)
+      .sort()
+      .join("|");
+  $: plansDiffer = planKey(credit.plan) !== planKey(credit.knownPlan);
+  $: plan = (planMode === "known" ? credit.knownPlan : credit.plan).filter(
     (p) => !filterMine || isMe(p.from) || isMe(p.to),
   );
   $: square = ranked.filter((b) => Math.abs(b.net) < 0.005);
@@ -607,8 +616,41 @@
       {#if plan.length}
         <div class="card plan">
           <h3>{$t("balances.settleTitle")}</h3>
+          {#if plansDiffer}
+            <ul
+              class="picks"
+              role="radiogroup"
+              aria-label={$t("balances.settleTitle")}
+            >
+              <li>
+                <button
+                  role="radio"
+                  aria-checked={planMode === "fewest"}
+                  class="pick"
+                  class:on={planMode === "fewest"}
+                  on:click={() => (planMode = "fewest")}
+                >
+                  {$t("balances.planFewest")}
+                </button>
+              </li>
+              <li>
+                <button
+                  role="radio"
+                  aria-checked={planMode === "known"}
+                  class="pick"
+                  class:on={planMode === "known"}
+                  on:click={() => (planMode = "known")}
+                >
+                  {$t("balances.planKnown")}
+                </button>
+              </li>
+            </ul>
+          {/if}
           <p class="sub">
             {$t("balances.settleCount", { n: plan.length })}
+            {#if planMode === "known"}
+              {$t("balances.planKnownHint")}
+            {/if}
           </p>
           <ul class="pairs">
             {#each plan as pair (`${pair.from}-${pair.to}`)}

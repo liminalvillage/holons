@@ -6,6 +6,7 @@ import {
   computeMutualCredit,
   createSettlement,
   creditPairs,
+  debtCost,
   expenseCurrencies,
   isSettlement,
   participantIds,
@@ -106,6 +107,86 @@ describe('settlementPlan', () => {
   });
 });
 
+describe('debtCost', () => {
+  const cost = debtCost([
+    { from: 1, to: 2, amount: 10 },
+    { from: 2, to: 3, amount: 10 },
+    { from: 4, to: 5, amount: 1 },
+  ]);
+
+  it('counts hops along the recorded debts, in the direction money owes', () => {
+    expect(cost(1, 2)).toBe(1);
+    expect(cost(1, 3)).toBe(2);
+    expect(cost(2, 3)).toBe(1);
+    expect(cost(1, 1)).toBe(0);
+  });
+
+  it('a stranger, or the reverse of a debt, costs more than any chain could', () => {
+    expect(cost(3, 1)).toBe(6);
+    expect(cost(1, 5)).toBe(6);
+    expect(cost('1', '2')).toBe(1);
+  });
+
+  it('with no debts at all everyone is a stranger at cost 1', () => {
+    expect(debtCost([])(1, 2)).toBe(1);
+  });
+});
+
+describe('settlementPlan with a cost', () => {
+  // Alice owes Bob 10 and Dana 5; Carol owes Dana 10.
+  const pairs = [
+    { from: 1, to: 2, amount: 10 },
+    { from: 1, to: 4, amount: 5 },
+    { from: 3, to: 4, amount: 10 },
+  ];
+  const balances = [
+    { userId: 1, net: -15 },
+    { userId: 2, net: 10 },
+    { userId: 3, net: -10 },
+    { userId: 4, net: 15 },
+  ];
+
+  it('the fewest transfers make Carol pay Bob, whom she never owed', () => {
+    expect(settlementPlan(balances)).toEqual([
+      { from: 1, to: 4, amount: 15 },
+      { from: 3, to: 2, amount: 10 },
+    ]);
+  });
+
+  it('with the debt cost everyone pays whom they owe, one transfer more', () => {
+    expect(settlementPlan(balances, debtCost(pairs))).toEqual([
+      { from: 1, to: 2, amount: 10 },
+      { from: 3, to: 4, amount: 10 },
+      { from: 1, to: 4, amount: 5 },
+    ]);
+  });
+
+  it('moves the same total as the fewest-transfers plan', () => {
+    const sum = (plan: { amount: number }[]) => plan.reduce((s, p) => s + p.amount, 0);
+    expect(sum(settlementPlan(balances, debtCost(pairs)))).toBe(sum(settlementPlan(balances)));
+  });
+
+  it('follows a chain when the person in the middle is square', () => {
+    // Alice owes Bob, Bob owes Carol: Bob nets to zero, so Alice pays Carol.
+    const chain = [
+      { from: 1, to: 2, amount: 10 },
+      { from: 2, to: 3, amount: 10 },
+    ];
+    const net = [
+      { userId: 1, net: -10 },
+      { userId: 2, net: 0 },
+      { userId: 3, net: 10 },
+    ];
+    expect(settlementPlan(net, debtCost(chain))).toEqual([{ from: 1, to: 3, amount: 10 }]);
+  });
+
+  it('keeps the ids as given, and Infinity forbids a leg', () => {
+    const plan = settlementPlan(balances, (from, to) => (from === 3 && to === 2 ? Infinity : 1));
+    expect(plan.every((p) => typeof p.from === 'number')).toBe(true);
+    expect(plan.find((p) => p.from === 3 && p.to === 2)).toBeUndefined();
+  });
+});
+
 describe('createSettlement', () => {
   it('records a repayment as an expense the debtor paid for the creditor', () => {
     const s = createSettlement({
@@ -144,6 +225,22 @@ describe('createSettlement', () => {
 });
 
 describe('computeMutualCredit', () => {
+  it('carries both plans: the fewest transfers and the ones along recorded debts', () => {
+    const result = computeMutualCredit(
+      [
+        expense({ id: 1, amount: 20, paidBy: 2, splitWith: [1, 2] }), // Alice owes Bob 10
+        expense({ id: 2, amount: 10, paidBy: 3, splitWith: [1, 3] }), // Alice owes Carol 5
+        expense({ id: 3, amount: 20, paidBy: 3, splitWith: [2, 3] }), // Bob owes Carol 10
+      ],
+      users,
+      'eur',
+    );
+    // Alice −15, Bob 0, Carol +15 either way.
+    expect(result.plan).toEqual([{ from: 1, to: 3, amount: 15 }]);
+    expect(result.knownPlan).toEqual([{ from: 1, to: 3, amount: 15 }]);
+    expect(computeMutualCredit([], users, 'eur').knownPlan).toEqual([]);
+  });
+
   it('bundles balances, pairs, plan and volume for one currency', () => {
     const result = computeMutualCredit(
       [expense({}), expense({ id: 2, currency: 'usd', amount: 99 })],

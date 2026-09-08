@@ -25,6 +25,7 @@ export {
   computeMutualCredit,
   createSettlement,
   creditPairs,
+  debtCost,
   expenseCurrencies,
   expenseCurrency,
   isSettlement,
@@ -32,4 +33,10 @@ export {
   settlementPlan,
   summarizeMutualCredit,
 } from './credit.js';
-export type { CreateSettlementInput, CreditPair, CreditSummary, MutualCredit } from './credit.js';
+export type {
+  CreateSettlementInput,
+  CreditPair,
+  CreditSummary,
+  MutualCredit,
+  SettlementCost,
+} from './credit.js';
