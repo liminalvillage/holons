@@ -130,6 +130,15 @@ describe('classified codec', () => {
     expect(tag(t, 'g')![1]).toBe('u09tvw0');
     expect(tag(t, 'expiration')![1]).toBe('1900000000');
   });
+
+  it('reads the offer lifecycle: reserved stays active, withdrawn and expired are gone', () => {
+    const status = (s: string) =>
+      tag(PROJECTION_CODECS.offers.project(HOLON, { id: 'o2', title: 'Flour', type: 'offer', status: s }, ctx)!.primary.tags, 'status')![1];
+    expect(status('open')).toBe('active');
+    expect(status('reserved')).toBe('active');
+    expect(status('withdrawn')).toBe('sold');
+    expect(status('expired')).toBe('sold');
+  });
 });
 
 describe('profile codec', () => {

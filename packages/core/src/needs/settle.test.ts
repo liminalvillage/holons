@@ -10,6 +10,9 @@ import {
 } from './settle.js';
 import type { PublishedNeed } from './types.js';
 import type { HoloSphere } from 'holosphere';
+import { createOffer } from '../offers/transform.js';
+import { reserveOffer } from '../offers/lifecycle.js';
+import { foldStock } from '../inventory/fold.js';
 
 function fakeStores() {
   // Every write settleNeedHandoff makes, keyed for assertions.
@@ -267,5 +270,82 @@ describe('settleNeedHandoff treasury fee', () => {
     expect(writes.some((w) => w.value?.id === handoffFeeExpenseId('need-1'))).toBe(false);
     const transfer = writes.find((w) => w.value?.id === handoffExpenseId('need-1'));
     expect(transfer?.value).toMatchObject({ amount: 2 });
+  });
+});
+
+describe('settleNeedHandoff with a standing offer', () => {
+  const stockOffer = () => {
+    const base = createOffer({
+      holonId: 'prov-holon',
+      initiator: { id: 'prov-user' },
+      title: 'Flour',
+      category: 'food',
+      supply: { itemId: 'flour', quantity: 8, unit: 'kg' },
+      source: { kind: 'stock', itemId: 'flour' },
+      id: 'offer-stock-flour',
+      now: 0,
+    });
+    return reserveOffer(base, { needId: 'need-1', needHolonId: 'owner-h', responseId: 'r1', quantity: 5, id: 'resv-1' }).offer;
+  };
+  const needFromOffer = () =>
+    claimedNeed({
+      responses: [
+        {
+          id: 'r1',
+          responder: { id: 'prov-user', name: 'Prov', holonId: 'prov-holon' },
+          price: 2,
+          currency: 'hour',
+          createdAt: 'x',
+          offerId: 'offer-stock-flour',
+          offerHolonId: 'prov-holon',
+          reservationId: 'resv-1',
+        },
+      ],
+    });
+
+  it('settles the reservation, writes one stock transfer on both ledgers, and mints nothing', async () => {
+    const { db, holosphere, writes } = fakeStores();
+    let offer: any = stockOffer();
+    db.get.mockImplementation(async (_h: string, lens: string, key?: string | number) => {
+      if (lens === 'quests' && key === 'offer-stock-flour') return offer;
+      if (lens === 'checklists') return { id: 'shopping', type: 'shopping', items: [] };
+      return null;
+    });
+    (holosphere.put as any).mockImplementation(async (_h: string, lens: string, value: any) => {
+      if (lens === 'quests' && value?.id === 'offer-stock-flour') offer = value;
+    });
+
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', needFromOffer(), {
+      now: 1700000000000,
+      mirrorToProvider: false,
+    });
+
+    expect(out.mintedOfferId).toBeNull();
+    expect(writes.some((w) => w.value?.id === mintedOfferId('need-1'))).toBe(false);
+    expect(out.offerSettled).toMatchObject({ offerId: 'offer-stock-flour', offerHolonId: 'prov-holon', wroteBoth: true });
+
+    // The offer record shrank: 5 delivered, 3 still free.
+    expect(offer.reservations[0].settledAt).toBeTruthy();
+    expect(offer.status).toBe('open');
+
+    // One transfer, same id, on both holons; the provider's shelf drops by 5.
+    const transfers = writes.filter((w) => w.lens === 'rea_events' && w.value?.eventType === 'stock:transferred');
+    expect(transfers.map((w) => w.holon).sort()).toEqual(['owner-h', 'prov-holon']);
+    expect(new Set(transfers.map((w) => w.value.id)).size).toBe(1);
+    expect(transfers[0].value.id).toBe(out.offerSettled!.eventId);
+    const provEvents = transfers.filter((w) => w.holon === 'prov-holon').map((w) => w.value);
+    const levels = foldStock(
+      [{ id: 'seed', eventType: 'stock:produced', resource: { quantity: 8, unit: 'kg', resourceId: 'flour' }, context: { holonId: 'prov-holon' }, timestamp: 1 } as any, ...provEvents],
+      'prov-holon',
+    );
+    expect(levels.find((l) => l.itemId === 'flour')?.onhand).toBe(3);
+  });
+
+  it('still mints when the response was ad hoc', async () => {
+    const { db, holosphere, writes } = fakeStores();
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), { now: 1, mirrorToProvider: false });
+    expect(out.mintedOfferId).toBe(mintedOfferId('need-1'));
+    expect(out.offerSettled).toBeNull();
+    expect(writes.some((w) => w.value?.id === mintedOfferId('need-1'))).toBe(true);
   });
 });

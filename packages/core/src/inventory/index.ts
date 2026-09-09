@@ -30,8 +30,16 @@ export {
   toShoppingItems,
 } from './reorder.js';
 export type { ReorderLine } from './reorder.js';
-export { FLAT_COST, federationCost, rebalancePlan, transportPlan } from './transport.js';
-export type { PartnerGraph, TransportCost, TransportLeg, TransportSink, TransportSource } from './transport.js';
+export { FLAT_COST, federationCost, rebalancePlan, solveTransport, transportPlan } from './transport.js';
+export type {
+  PartnerGraph,
+  SolveTransportOptions,
+  TransportCost,
+  TransportLeg,
+  TransportSink,
+  TransportSolution,
+  TransportSource,
+} from './transport.js';
 export { aggregateStock, sumAggregates } from './aggregate.js';
 export type { StockAggregate } from './aggregate.js';
 export { STOCK_EVENT_KINDS, buildStockEvent, buildStockTransfer, correctionKind } from './events.js';

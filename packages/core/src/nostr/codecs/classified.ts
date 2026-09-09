@@ -43,6 +43,9 @@ export function classifiedStatus(status: unknown): 'active' | 'sold' {
     case 'completed':
     case 'sold':
     case 'closed':
+    // Offer lifecycle (@holons/core/offers): gone from the market either way.
+    case 'withdrawn':
+    case 'expired':
       return 'sold';
     default:
       return 'active';

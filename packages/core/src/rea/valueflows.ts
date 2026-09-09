@@ -608,6 +608,27 @@ export const EVENT_KIND_MAPPINGS: Readonly<Record<string, EventKindMapping>> = O
     resourceConformsTo: 'item',
     resourceClassifiedAs: ['stock'],
   },
+  // Offers delivered against a need (@holons/core/offers). A stock-sourced
+  // offer settles as 'stock:transferred' instead, so the shelf fold sees it;
+  // these three are for offers that are not on any shelf.
+  'offer:delivered': {
+    action: 'transfer',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['offer'],
+  },
+  'offer:lent': {
+    action: 'transferCustody',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'item',
+    resourceClassifiedAs: ['offer', 'lend'],
+  },
+  'offer:service_delivered': {
+    action: 'deliverService',
+    measure: 'resourceQuantity',
+    resourceConformsTo: 'time',
+    resourceClassifiedAs: ['offer', 'service'],
+  },
   'stock:raised': {
     action: 'raise',
     measure: 'resourceQuantity',

@@ -14,6 +14,7 @@ import {
   toValueFlowsJsonLd,
 } from './valueflows.js';
 import { REAEventFactory } from './event-factory.js';
+import { isStockEvent } from '../inventory/fold.js';
 import { REAEventStore } from './event-store.js';
 
 describe('ValueFlows action vocabulary', () => {
@@ -282,5 +283,28 @@ describe('toValueFlowsJsonLd', () => {
     expect(ld['vf:inputOf']).toBe('q1');
     expect(ld['vf:note']).toBe('roof');
     expect(Object.keys(ld).some((k) => ['eventType', 'resource', 'timestamp', 'context'].includes(k))).toBe(false);
+  });
+});
+
+describe('offer event kinds', () => {
+  it('map to the ValueFlows actions a delivery, a loan and a service take', () => {
+    expect(EVENT_KIND_MAPPINGS['offer:delivered'].action).toBe('transfer');
+    expect(EVENT_KIND_MAPPINGS['offer:lent'].action).toBe('transferCustody');
+    expect(EVENT_KIND_MAPPINGS['offer:service_delivered'].action).toBe('deliverService');
+    const ev = normalizeReaEvent({
+      id: 'e1',
+      eventType: 'offer:delivered',
+      provider: { id: 'a', type: 'holon' },
+      receiver: { id: 'b', type: 'holon' },
+      resource: { type: 'item', quantity: 3, unit: 'kg' },
+      timestamp: 1,
+    });
+    expect(ev.action).toBe('transfer');
+    expect(ev.resourceClassifiedAs).toContain('offer');
+  });
+  it('are not stock events — the shelf fold ignores them', () => {
+    for (const kind of ['offer:delivered', 'offer:lent', 'offer:service_delivered']) {
+      expect(isStockEvent({ eventType: kind, resourceClassifiedAs: EVENT_KIND_MAPPINGS[kind].resourceClassifiedAs })).toBe(false);
+    }
   });
 });

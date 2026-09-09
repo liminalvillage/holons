@@ -45,6 +45,8 @@ import { TREASURY_ID, splitHours } from '../governance/treasury.js';
 import { acceptedResponse, closeNeed } from './responses.js';
 import { refreshPublishedNeed } from './publish.js';
 import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
+import { normalizeOffer } from '../offers/transform.js';
+import { settleOfferReservation } from '../offers/settle.js';
 
 /** Stable id of the requester → provider hour transfer for a need. */
 export function handoffExpenseId(needId: string | number): string {
@@ -87,9 +89,17 @@ export interface SettleNeedOptions {
   checkOffShoppingItem?: boolean;
   /**
    * Mint the flywheel offer — a standing `type:'offer'` attributed to the
-   * provider on their own holon (see module doc). Default true.
+   * provider on their own holon (see module doc). Default true. Skipped
+   * when the winning response drew on a standing offer: that offer IS the
+   * provider's catalog entry, and its reservation settles instead.
    */
   mintProviderOffer?: boolean;
+  /**
+   * Settle the standing offer the winning response drew on (its reservation
+   * closes and the movement is recorded as an REA event on both holons —
+   * `@holons/core/offers`). Default true.
+   */
+  settleOffer?: boolean;
   /**
    * Fraction of the moved hours withheld into the coop's treasury (the
    * `treasury` account on the OWNER holon's expenses lens) — the
@@ -111,6 +121,8 @@ export interface SettleNeedOutcome {
   treasuryFee: number;
   /** Id of the flywheel offer minted for the provider, when one was. */
   mintedOfferId: string | null;
+  /** The standing offer settled against, when the response drew on one. */
+  offerSettled: { offerId: string; offerHolonId: string; eventId: string | null; wroteBoth: boolean } | null;
   completion: ExecuteOutcome;
   errors: string[];
 }
@@ -288,8 +300,39 @@ export async function settleNeedHandoff(
   // THEIR holon's board — proof of capability, earned by delivering. Stable
   // id per need, so a double settle upserts. Never pushed to hex or
   // partners here: sharing further stays the provider's explicit act.
+  // A response that drew on a standing offer settles that offer's
+  // reservation: the offer shrinks (or closes) and the movement is recorded
+  // on both ledgers — a stock-sourced offer as `stock:transferred`, so the
+  // provider's shelf drops by what was delivered.
+  let offerSettled: SettleNeedOutcome['offerSettled'] = null;
+  const drewOnOffer = !!accepted?.offerId;
+  if (drewOnOffer && opts.settleOffer !== false) {
+    const offerHolon = String(accepted!.offerHolonId ?? providerHolonId ?? ownerHolonId);
+    const offerId = String(accepted!.offerId);
+    try {
+      const raw = await db.get(offerHolon, NEED_RECORD_LENS, offerId);
+      const offer = normalizeOffer(raw, now);
+      const reservationId =
+        accepted!.reservationId ??
+        offer?.reservations.find((r) => r.responseId === accepted!.id && !r.releasedAt)?.id;
+      if (!offer || !reservationId) {
+        errors.push(`settle offer ${offerId}: ${offer ? 'no reservation for this response' : 'offer not found'}`);
+      } else {
+        const out = await settleOfferReservation({ holosphere, db: db as never }, offerHolon, offer, reservationId, {
+          needHolonId: ownerHolonId,
+          actor: { id: providerId ?? requesterId ?? ownerHolonId, name: accepted?.responder?.name },
+          now,
+        });
+        errors.push(...out.errors.map((e) => `settle offer: ${e}`));
+        offerSettled = { offerId, offerHolonId: offerHolon, eventId: out.event?.id ?? null, wroteBoth: out.wroteBoth };
+      }
+    } catch (err) {
+      errors.push(`settle offer ${offerId}: ${(err as Error).message ?? String(err)}`);
+    }
+  }
+
   let minted: string | null = null;
-  if (opts.mintProviderOffer !== false && providerId != null) {
+  if (opts.mintProviderOffer !== false && providerId != null && !drewOnOffer) {
     const offerHolon = providerHolonId ?? ownerHolonId;
     const base = createMarketItem({
       holonId: offerHolon,
@@ -329,6 +372,7 @@ export async function settleNeedHandoff(
     requesterId,
     treasuryFee: toTreasury,
     mintedOfferId: minted,
+    offerSettled,
     completion,
     errors,
   };

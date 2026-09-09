@@ -46,6 +46,14 @@ export interface NeedResponse {
   /** Offered price — the market price the requester committed to. */
   price?: number;
   currency?: string;
+  /**
+   * The standing offer this response draws on (@holons/core/offers), when
+   * the provider answered from one rather than ad hoc. Settlement then
+   * fulfils the offer's reservation instead of minting a new offer.
+   */
+  offerId?: string;
+  offerHolonId?: string;
+  reservationId?: string;
   /** ISO timestamp. */
   createdAt: string;
 }
