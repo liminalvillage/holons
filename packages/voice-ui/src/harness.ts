@@ -61,89 +61,10 @@ export function idSpecFor(name: string, input: Record<string, unknown>): IdSpec 
   return null;
 }
 
-const normTokens = (s: string): string[] =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gi, ' ')
-    .split(' ')
-    .filter(Boolean);
-
-export type FuzzyResult =
-  | { id: string; title: string }
-  | { candidates: Array<{ id: string; title: string }> }
-  | null;
-
-/**
- * Find the item whose title is best covered by the needle (the bogus id plus
- * the user's utterance). Coverage = fraction of the title's words present in
- * the needle; a clear winner is returned, close calls come back as
- * candidates, and no plausible match is null. STT splits and joins compound
- * words ("futurecasting" ⇄ "future casting"), so a title whose squashed form
- * appears whole in the squashed needle counts as fully covered.
- */
-export function fuzzyFindByTitle(
-  needle: string,
-  items: Array<Record<string, unknown>>,
-): FuzzyResult {
-  const bag = new Set(normTokens(needle));
-  const squashedNeedle = normTokens(needle).join('');
-  const scored = items
-    .map((it) => {
-      const title = String(it?.title ?? '');
-      const words = normTokens(title);
-      let score =
-        it?.id == null || words.length === 0
-          ? 0
-          : words.filter((w) => bag.has(w)).length / words.length;
-      const squashedTitle = words.join('');
-      // Length floor keeps short titles ("do") from matching everywhere.
-      if (
-        score < 1 &&
-        it?.id != null &&
-        squashedTitle.length >= 6 &&
-        squashedNeedle.includes(squashedTitle)
-      ) {
-        score = 1;
-      }
-      return { id: String(it?.id), title, score };
-    })
-    .filter((x) => x.score >= 0.6)
-    .sort((a, b) => b.score - a.score);
-
-  if (scored.length === 0) return null;
-  if (scored.length === 1 || scored[0].score - scored[1].score >= 0.25) {
-    return { id: scored[0].id, title: scored[0].title };
-  }
-  return { candidates: scored.slice(0, 3).map(({ id, title }) => ({ id, title })) };
-}
-
-/** Words too generic to prove the user meant a particular title. */
-const STOPWORDS = new Set([
-  'the', 'a', 'an', 'to', 'of', 'for', 'in', 'on', 'at', 'and', 'or', 'my',
-  'me', 'it', 'this', 'that', 'task', 'one',
-]);
-
-/**
- * Cross-check a VALID record id against the user's utterance. A weak model
- * sometimes grabs the wrong (but existing) id from the snapshot — observed
- * live: "move the future casting to tomorrow" → task_update on a valid id
- * titled "clear out external kitchen". Flag it only when the utterance
- * clearly names a DIFFERENT item AND shares not a single meaningful word
- * with the chosen title — pronoun-only follow-ups ("move it to 5") match no
- * title and never trigger, and partial overlap is trusted as intentional.
- */
-export function titleMismatch(
-  utterance: string,
-  chosen: { id: string; title: string },
-  items: Array<Record<string, unknown>>,
-): { id: string; title: string } | null {
-  const found = fuzzyFindByTitle(utterance, items);
-  if (!found || !('id' in found) || found.id === chosen.id) return null;
-  const bag = new Set(normTokens(utterance));
-  const meaningful = normTokens(chosen.title).filter((w) => !STOPWORDS.has(w));
-  if (meaningful.some((w) => bag.has(w))) return null;
-  return found;
-}
+// Title matching lives in core (@holons/core/actions) so the kiosk's
+// in-browser pipeline and the MCP tools resolve spoken references with the
+// same rules; re-exported here for the server's id-resolution wrapper.
+export { fuzzyFindByTitle, titleMismatch, type FuzzyResult } from '@holons/core/actions';
 
 /** Compact digest rows from a lens_get_all / users_list result payload. */
 function rows(
