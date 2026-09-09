@@ -35,6 +35,7 @@ import {
   setChecklistsPref,
   setShiftsPref,
   setStockPref,
+  setOffersPref,
   setStatusEnabled,
   setFlowsEnabled,
   setTasksEnabled,
@@ -45,6 +46,7 @@ import {
   type RolesViewMode,
   type FlowsViewMode,
   type StockViewMode,
+  type OffersViewMode,
   type CalendarMode,
   type TabPref,
 } from "./config";
@@ -121,6 +123,13 @@ export const shiftsPref = writable<TabPref>("auto");
 export const stockPref = writable<TabPref>("auto");
 
 /**
+ * Caretaker preference for the optional Offers tab (the market: offers
+ * matched to needs — see $lib/offers). `auto` shows it once the holon has
+ * an offer or a need of its own on the quests lens.
+ */
+export const offersPref = writable<TabPref>("auto");
+
+/**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
  * (a caretaker opt-in, persisted in config). Toggling it adds/removes the tab in
  * `visibleTabs`; the StatusView owns its own data subscriptions, so no aggregator
@@ -182,6 +191,9 @@ export const flowsViewMode = writable<FlowsViewMode>("graph");
 
 /** Stock layout: the shelf, the reorder list, or the federation moves. */
 export const stockViewMode = writable<StockViewMode>("shelf");
+
+/** Offers layout: supply, matches, or demand. */
+export const offersViewMode = writable<OffersViewMode>("matches");
 
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");
@@ -432,6 +444,7 @@ export const TABS = [
   { id: "status", labelKey: "tabs.status", glyph: "♛" },
   { id: "flows", labelKey: "tabs.flows", glyph: "⇄" },
   { id: "stock", labelKey: "tabs.stock", glyph: "▥" },
+  { id: "offers", labelKey: "tabs.offers", glyph: "◎" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
@@ -507,6 +520,27 @@ export const stockEnabled = derived(
       )),
 );
 
+// Content-driven on the holon's OWN market items: an offer or a need of
+// its own on the quests lens (partner copies alone do not open the tab).
+export const offersEnabled = derived(
+  [offersPref, rawQuests],
+  ([$pref, $items]) =>
+    $pref === "on" ||
+    ($pref === "auto" &&
+      $items.some((q) => {
+        const r = q as {
+          type?: unknown;
+          _federation?: { origin?: unknown };
+          _hologram?: unknown;
+        } | null;
+        return (
+          (r?.type === "offer" || r?.type === "need") &&
+          !r?._federation?.origin &&
+          !r?._hologram
+        );
+      })),
+);
+
 /**
  * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
  * Lists, Roles, and Shifts per their (possibly content-driven) visibility
@@ -524,6 +558,7 @@ export const visibleTabs = derived(
     statusEnabled,
     flowsEnabled,
     stockEnabled,
+    offersEnabled,
   ],
   ([
     $tabs,
@@ -536,6 +571,7 @@ export const visibleTabs = derived(
     $status,
     $flows,
     $stock,
+    $offers,
   ]) =>
     $tabs.filter(
       (t) =>
@@ -547,7 +583,8 @@ export const visibleTabs = derived(
         (t.id !== "shifts" || $shifts) &&
         (t.id !== "status" || $status) &&
         (t.id !== "flows" || $flows) &&
-        (t.id !== "stock" || $stock),
+        (t.id !== "stock" || $stock) &&
+        (t.id !== "offers" || $offers),
     ),
 );
 
@@ -587,6 +624,10 @@ export function setTabShown(id: TabId, on: boolean): void {
     case "stock":
       setStockPref(pref);
       stockPref.set(pref);
+      break;
+    case "offers":
+      setOffersPref(pref);
+      offersPref.set(pref);
       break;
     case "status":
       setStatusEnabled(on);

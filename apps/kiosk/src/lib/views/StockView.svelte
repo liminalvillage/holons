@@ -61,6 +61,7 @@
     type StockItemSpecRecord,
     type StockTransfer,
   } from "@holons/core/inventory";
+  import { syncSurplusFromShelf } from "@holons/core/offers";
   import {
     buildStockBoard,
     filterReorder,
@@ -286,6 +287,21 @@
     void publishStockAggregate(hs, { holonId: holon, levels, specs }).catch(
       (err) => console.warn("[kiosk] stock: cell publish failed", err),
     );
+    // The shelf's surplus is a standing offer (@holons/core/offers):
+    // automatic, with a per-holon switch on the Offers board.
+    const user = get(currentUser);
+    if (!user) return;
+    void syncSurplusFromShelf(hs, holon, {
+      initiator: {
+        id: user.id,
+        username: user.username ?? String(user.id),
+        firstName: user.first_name,
+        lastName: user.last_name,
+      },
+    }).then((out) => {
+      if (out.errors.length)
+        console.warn("[kiosk] stock: surplus sync", out.errors);
+    });
   }
 
   // ── Login gate ──────────────────────────────────────────────────────────

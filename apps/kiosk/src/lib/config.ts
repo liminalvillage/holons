@@ -28,6 +28,7 @@ const ROLES_KEY = "kiosk_roles";
 const CHECKLISTS_KEY = "kiosk_checklists";
 const SHIFTS_KEY = "kiosk_shifts";
 const STOCK_KEY = "kiosk_stock";
+const OFFERS_KEY = "kiosk_offers";
 const STATUS_KEY = "kiosk_status";
 const FLOWS_KEY = "kiosk_flows";
 const TASKS_KEY = "kiosk_tasks";
@@ -46,6 +47,8 @@ const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const FLOWS_VIEW_KEY = "kiosk_flows_view";
 const STOCK_VIEW_KEY = "kiosk_stock_view";
+const OFFERS_VIEW_KEY = "kiosk_offers_view";
+const OFFERS_SCALE_KEY = "kiosk_offers_scale";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
@@ -365,6 +368,16 @@ export function resolveStockPref(): TabPref {
 /** Persist the Stock-tab preference (`auto` clears the stored choice). */
 export function setStockPref(pref: TabPref): void {
   setTabPref(STOCK_KEY, pref);
+}
+
+/** The Offers tab preference — same tri-state; `auto` shows it once the holon has an offer or a need. */
+export function resolveOffersPref(): TabPref {
+  return resolveTabPref(OFFERS_KEY);
+}
+
+/** Persist the Offers-tab preference (`auto` clears the stored choice). */
+export function setOffersPref(pref: TabPref): void {
+  setTabPref(OFFERS_KEY, pref);
 }
 
 /**
@@ -730,6 +743,31 @@ export function resolveStockView(): StockViewMode {
 /** Persist the Stock view mode. */
 export function setStockView(mode: StockViewMode): void {
   persist(STOCK_VIEW_KEY, mode);
+}
+
+/**
+ * The Offers board's lanes (its Layout pill): supply (what is on the
+ * table), matches (who could serve whom), demand (the needs). Sticks per
+ * device like the other layouts.
+ */
+export type OffersViewMode = "supply" | "matches" | "demand";
+
+export function resolveOffersView(): OffersViewMode {
+  const v = persisted(OFFERS_VIEW_KEY);
+  return v === "supply" || v === "demand" ? v : "matches";
+}
+
+export function setOffersView(mode: OffersViewMode): void {
+  persist(OFFERS_VIEW_KEY, mode);
+}
+
+/** The Offers board's scale pill (this holon / partners / a cell level), per device. */
+export function resolveOffersScale(): string {
+  return persisted(OFFERS_SCALE_KEY) ?? "partners";
+}
+
+export function setOffersScale(id: string): void {
+  persist(OFFERS_SCALE_KEY, id);
 }
 
 /**

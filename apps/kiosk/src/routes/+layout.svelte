@@ -20,7 +20,9 @@
     resolveChecklistsPref,
     resolveShiftsPref,
     resolveStockPref,
+    resolveOffersPref,
     resolveStockView,
+    resolveOffersView,
     resolveStatusEnabled,
     resolveFlowsEnabled,
     resolveTasksEnabled,
@@ -64,6 +66,7 @@
     checklistsPref,
     shiftsPref,
     stockPref,
+    offersPref,
     statusEnabled,
     flowsEnabled,
     tasksEnabled,
@@ -75,6 +78,7 @@
     rolesViewMode,
     flowsViewMode,
     stockViewMode,
+    offersViewMode,
     calendarMode,
     libraryCalendarMode,
     boardReady,
@@ -553,6 +557,7 @@
     checklistsPref.set(resolveChecklistsPref());
     shiftsPref.set(resolveShiftsPref());
     stockPref.set(resolveStockPref());
+    offersPref.set(resolveOffersPref());
     statusEnabled.set(resolveStatusEnabled());
     flowsEnabled.set(resolveFlowsEnabled());
     tasksEnabled.set(resolveTasksEnabled());
@@ -564,6 +569,7 @@
     rolesViewMode.set(resolveRolesView());
     flowsViewMode.set(resolveFlowsView());
     stockViewMode.set(resolveStockView());
+    offersViewMode.set(resolveOffersView());
     calendarMode.set(resolveCalendarView());
     libraryCalendarMode.set(resolveLibraryCalendarView());
     brandName.set(resolveBrandName() ?? "");

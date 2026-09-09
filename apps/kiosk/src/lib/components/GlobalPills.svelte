@@ -28,6 +28,7 @@
     rolesViewMode,
     flowsViewMode,
     stockViewMode,
+    offersViewMode,
     calendarMode,
   } from "$lib/stores";
   import {
@@ -37,6 +38,7 @@
     setRolesView,
     setFlowsView,
     setStockView,
+    setOffersView,
     setCalendarView,
     setLibraryCalendarView,
     type TaskViewMode,
@@ -44,6 +46,7 @@
     type RolesViewMode,
     type FlowsViewMode,
     type StockViewMode,
+    type OffersViewMode,
     type CalendarMode,
   } from "$lib/config";
   import type { TaskSort } from "$lib/data";
@@ -119,6 +122,18 @@
     { id: "moves", glyph: "⇄", labelKey: "pills.moves" },
   ];
 
+  // ── Offers: supply (what is on the table) / matches (who could serve whom)
+  // / demand (the needs). The scale sits inside the board.
+  const OFFERS_MODES: {
+    id: OffersViewMode;
+    glyph: string;
+    labelKey: MessageKey;
+  }[] = [
+    { id: "supply", glyph: "▤", labelKey: "pills.supply" },
+    { id: "matches", glyph: "⇄", labelKey: "pills.matches" },
+    { id: "demand", glyph: "◎", labelKey: "pills.demand" },
+  ];
+
   const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =
     [
       { id: "day", glyph: "▣", labelKey: "pills.day" },
@@ -159,6 +174,10 @@
     stockViewMode.set(m as StockViewMode);
     setStockView(m as StockViewMode);
   }
+  function pickOffersMode(m: string) {
+    offersViewMode.set(m as OffersViewMode);
+    setOffersView(m as OffersViewMode);
+  }
   function pickFlowsMode(m: string) {
     flowsViewMode.set(m as FlowsViewMode);
     setFlowsView(m as FlowsViewMode);
@@ -198,6 +217,7 @@
     rolesMode: string,
     flowsMode: string,
     stockMode: string,
+    offersMode: string,
     calMode: string,
   ): OwnPill[] {
     if (tab === "tasks")
@@ -284,6 +304,18 @@
           label: tr("pills.stockLayout"),
         },
       ];
+    if (tab === "offers")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, OFFERS_MODES),
+          value: offersMode,
+          onChange: pickOffersMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.offersLayout"),
+        },
+      ];
     if (tab === "calendar")
       return [
         {
@@ -309,6 +341,7 @@
     $rolesViewMode,
     $flowsViewMode,
     $stockViewMode,
+    $offersViewMode,
     $calendarMode,
   );
 

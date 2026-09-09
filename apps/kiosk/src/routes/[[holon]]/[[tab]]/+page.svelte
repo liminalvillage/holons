@@ -11,6 +11,7 @@
   import StatusView from "$lib/views/StatusView.svelte";
   import FlowsView from "$lib/views/FlowsView.svelte";
   import StockView from "$lib/views/StockView.svelte";
+  import OffersView from "$lib/views/OffersView.svelte";
 </script>
 
 <!-- The surface follows the chrome: framed inside the card while someone is
@@ -45,6 +46,8 @@
           <FlowsView />
         {:else if $activeTab === "stock"}
           <StockView />
+        {:else if $activeTab === "offers"}
+          <OffersView />
         {/if}
       </div>
     {/key}

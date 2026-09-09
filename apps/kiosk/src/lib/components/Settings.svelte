@@ -22,6 +22,7 @@
     checklistsEnabled,
     shiftsEnabled,
     stockEnabled,
+    offersEnabled,
     statusEnabled,
     flowsEnabled,
     tasksEnabled,
@@ -450,6 +451,9 @@
   function commitStock(on: boolean) {
     setTabShown("stock", on);
   }
+  function commitOffers(on: boolean) {
+    setTabShown("offers", on);
+  }
 
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
   function blurOnEnter(e: KeyboardEvent) {
@@ -746,6 +750,24 @@
       aria-checked={$stockEnabled}
       aria-label={$t("settings.stockTabAria")}
       on:click={() => commitStock(!$stockEnabled)}
+    >
+      <span class="knob"></span>
+    </button>
+  </div>
+
+  <div class="field toggle-field">
+    <span class="toggle-label"
+      >{$t("settings.offersTab")}
+      <span class="sub">{$t("settings.offersTabSub")}</span></span
+    >
+    <button
+      type="button"
+      class="switch"
+      class:on={$offersEnabled}
+      role="switch"
+      aria-checked={$offersEnabled}
+      aria-label={$t("settings.offersTabAria")}
+      on:click={() => commitOffers(!$offersEnabled)}
     >
       <span class="knob"></span>
     </button>

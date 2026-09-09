@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import {
+  cardFromSearch,
   mergeTap,
+  offerUrl,
   stockItemFromSearch,
   stockItemUrl,
+  withoutCard,
   withoutStockItem,
 } from "./stocklink";
 
@@ -48,5 +51,15 @@ describe("mergeTap", () => {
     expect(mergeTap(0, -1, 0)).toBe(0);
     expect(mergeTap(-3, -1, 3)).toBe(-3);
     expect(mergeTap(1, -1, 0)).toBe(0);
+  });
+});
+
+describe("offer links", () => {
+  it("share the grammar under their own param", () => {
+    expect(offerUrl("https://k.io", "liminal", "offer-stock-flour")).toBe(
+      "https://k.io/liminal/offers?offer=offer-stock-flour",
+    );
+    expect(cardFromSearch("?offer=o1&item=x", "offer")).toBe("o1");
+    expect(withoutCard("?offer=o1&item=x", "offer")).toBe("?item=x");
   });
 });
