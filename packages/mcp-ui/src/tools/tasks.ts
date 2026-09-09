@@ -13,9 +13,6 @@ import {
   planTaskCompletion,
   saveTaskToHolon,
   saveTasksToHolon,
-  addParticipant,
-  removeParticipant,
-  toggleParticipant,
   addAppreciation,
   removeAppreciation,
   toggleAppreciation,
@@ -25,7 +22,19 @@ import {
 } from '@holons/core/tasks';
 import { REAEventStore } from '@holons/core/rea';
 import { DEFAULT_EQUATION, loadEquation } from '@holons/core/scoring';
+import {
+  TASK_ADD_PARTICIPANT,
+  TASK_COMPLETE,
+  TASK_CREATE,
+  TASK_REMOVE_PARTICIPANT,
+  TASK_TOGGLE_PARTICIPANT,
+  TASK_UPDATE,
+  describeChange,
+  fuzzyFindByTitle,
+} from '@holons/core/actions';
+import { buildScheduleFields } from '@holons/core/tasks';
 import type { ToolDeps } from './index.js';
+import { legacyScheduleToFields, runAction, toZod } from './catalogue.js';
 
 const TASK_TYPE = z.enum(['task', 'quest', 'bounty']);
 
@@ -154,28 +163,27 @@ async function mutateAndSave(
 // --- registration --------------------------------------------------------
 
 export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
-  // task_create — build a Quest via createTask, optionally persist.
+  // task_create — build a Quest via createTask, optionally persist. The
+  // argument shape is the shared catalogue's (local date/time fields) plus
+  // the MCP extras: an explicit id, type, dependencies, ISO when/until,
+  // and `persist`.
   server.registerTool(
     'task_create',
     {
       description:
         'Create a new task/quest record for a holon. Wraps @holons/core/tasks createTask. A short id is generated automatically if `id` is omitted. Pass persist:true to write it to HoloSphere under the "quests" bucket.',
-      inputSchema: {
-        holon: z.string().describe('Holon id (e.g. Telegram chat id, Discord channel id).'),
-        title: z.string().min(1),
-        description: z.string().optional(),
+      inputSchema: toZod(TASK_CREATE, {
         orderIndex: z.number().int().optional(),
         id: z.string().optional().describe('Override the auto-generated short id.'),
         type: TASK_TYPE.optional(),
-        category: z.string().optional(),
-        when: z.string().optional(),
-        until: z.string().optional(),
+        when: z.string().optional().describe('Scheduled start, ISO 8601 (alternative to date/time).'),
+        until: z.string().optional().describe('Scheduled end, ISO 8601 (alternative to endDate/endTime).'),
         dependencies: z
           .array(z.string())
           .optional()
           .describe('Ids of tasks this one depends on (predecessors). Pass an explicit `id` per task so dependents can reference them.'),
         persist: z.boolean().optional().describe('If true, write the new Quest to HoloSphere under (holon, "quests").'),
-      },
+      }),
     },
     async (args) => {
       try {
@@ -191,8 +199,21 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         task.id = args.id ?? shortTaskId();
         if (args.description !== undefined) task.description = args.description;
         if (args.orderIndex !== undefined) task.orderIndex = args.orderIndex;
-        if (args.when !== undefined) task.when = args.when;
-        if (args.until !== undefined) task.until = args.until;
+        const fields = legacyScheduleToFields(args as Record<string, unknown>);
+        if (fields.date) {
+          Object.assign(
+            task,
+            buildScheduleFields({
+              startDate: String(fields.date),
+              startTime: fields.time ? String(fields.time) : '',
+              endDate: fields.endDate ? String(fields.endDate) : '',
+              endTime: fields.endTime ? String(fields.endTime) : '',
+            }),
+          );
+        } else {
+          if (args.when !== undefined) task.when = args.when;
+          if (args.until !== undefined) task.until = args.until;
+        }
 
         const hs = await deps.getHoloSphere();
 
@@ -393,37 +414,32 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
-  // task_update — patch simple fields on an existing Quest and persist.
+  // task_update — through the shared catalogue: resolve (id, or title as
+  // spoken), stage the change, apply it to the fresh record. Legacy ISO
+  // when/until are accepted and translated to the local date/time fields.
   server.registerTool(
     'task_update',
     {
       description:
-        'Update fields of an existing task/quest and persist it: title, description, category, when/until (ISO 8601 timestamps — use for scheduling/rescheduling), orderIndex. Only the fields passed are changed.',
-      inputSchema: {
-        holon: z.string(),
-        taskId: z.string(),
-        title: z.string().min(1).optional(),
-        description: z.string().optional(),
-        category: z.string().optional(),
-        when: z
-          .string()
-          .optional()
-          .describe('New scheduled start, ISO 8601 (e.g. 2026-07-03T14:00:00).'),
-        until: z.string().optional().describe('New scheduled end, ISO 8601.'),
+        'Update fields of an existing task/quest and persist it: title, description, category, schedule (date/time local fields, or ISO when/until). A bare time keeps the task on its day; the end moves with the start. Name the task by exact taskId, or by taskRef (its title as spoken). Only the fields passed are changed.',
+      inputSchema: toZod(TASK_UPDATE, {
+        when: z.string().optional().describe('New scheduled start, ISO 8601 (alternative to date/time).'),
+        until: z.string().optional().describe('New scheduled end, ISO 8601 (alternative to endDate/endTime).'),
         orderIndex: z.number().int().optional(),
-      },
+      }),
     },
     async (args) => {
       try {
-        return await mutateAndSave(deps, args.holon, args.taskId, (t) => ({
-          ...t,
-          ...(args.title !== undefined ? { title: args.title } : {}),
-          ...(args.description !== undefined ? { description: args.description } : {}),
-          ...(args.category !== undefined ? { category: args.category } : {}),
-          ...(args.when !== undefined ? { when: args.when } : {}),
-          ...(args.until !== undefined ? { until: args.until } : {}),
-          ...(args.orderIndex !== undefined ? { orderIndex: args.orderIndex } : {}),
-        }));
+        const { orderIndex, ...rest } = args;
+        const run = await runAction(deps, 'task_update', rest as Record<string, unknown>);
+        if (!run.ok) return fail(run.error, run.extra);
+        let task = run.task;
+        if (orderIndex !== undefined) {
+          const hs = await deps.getHoloSphere();
+          task = { ...task, orderIndex };
+          if (!(await saveTaskToHolon(hs, args.holon, task))) return fail('Save failed.');
+        }
+        return ok({ success: true, change: describeChange(run.change), task });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -488,76 +504,59 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
-  // task_add_participant — add a user to the participants array.
-  server.registerTool(
-    'task_add_participant',
-    {
-      description:
-        'Add a user to a task\'s participants. Defaults to the configured actor when `user` is omitted. No-op if the user is already a participant.',
-      inputSchema: {
-        holon: z.string(),
-        taskId: z.string(),
-        user: userSchema.optional(),
+  // Participants — through the shared catalogue. `user` may carry an exact
+  // id, a handle, or a name as spoken (resolved against the holon's users
+  // lens); omitted, it is the configured actor. Legacy camelCase
+  // firstName/lastName and a bare `userId` are still accepted.
+  const participantTool = (
+    spec: typeof TASK_ADD_PARTICIPANT,
+    description: string,
+    legacy: boolean,
+  ) =>
+    server.registerTool(
+      spec.name,
+      {
+        description,
+        inputSchema: toZod(
+          spec,
+          legacy
+            ? {
+                userId: z
+                  .union([z.string(), z.number()])
+                  .optional()
+                  .describe('Legacy: user id to remove. Prefer user.id.'),
+              }
+            : {},
+        ),
       },
-    },
-    async (args) => {
-      try {
-        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
-        return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
-          addParticipant(t, user),
-        );
-      } catch (err) {
-        return fail((err as Error).message);
-      }
-    },
-  );
+      async (args) => {
+        try {
+          const { userId, ...rest } = args as Record<string, unknown> & { userId?: string | number };
+          const input = { ...rest } as Record<string, unknown>;
+          if (userId != null && !input.user) input.user = { id: String(userId) };
+          const run = await runAction(deps, spec.name, input);
+          if (!run.ok) return fail(run.error, run.extra);
+          return ok({ success: true, change: describeChange(run.change), task: run.task });
+        } catch (err) {
+          return fail((err as Error).message);
+        }
+      },
+    );
 
-  // task_remove_participant — remove a user from the participants array.
-  server.registerTool(
-    'task_remove_participant',
-    {
-      description: 'Remove a user from a task\'s participants by id.',
-      inputSchema: {
-        holon: z.string(),
-        taskId: z.string(),
-        userId: z.union([z.string(), z.number()]).optional()
-          .describe('User id to remove. Defaults to the configured actor.'),
-      },
-    },
-    async (args) => {
-      try {
-        const userId = args.userId ?? deps.resolveActor().id;
-        return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
-          removeParticipant(t, userId),
-        );
-      } catch (err) {
-        return fail((err as Error).message);
-      }
-    },
+  participantTool(
+    TASK_ADD_PARTICIPANT,
+    "Add a user to a task's participants. Defaults to the configured actor when `user` is omitted. Refuses if the user already takes part.",
+    false,
   );
-
-  // task_toggle_participant — toggle a user in the participants array.
-  server.registerTool(
-    'task_toggle_participant',
-    {
-      description:
-        'Toggle a user\'s membership in a task\'s participants. Defaults to the configured actor when `user` is omitted.',
-      inputSchema: {
-        holon: z.string(),
-        taskId: z.string(),
-        user: userSchema.optional(),
-      },
-    },
-    async (args) => {
-      try {
-        const user = await resolveParticipant(deps, args.holon, args.user ?? actorAsParticipant(deps.resolveActor()));
-        return await mutateAndSave(deps, args.holon, args.taskId, (t) =>
-          toggleParticipant(t, user),
-        );
-      } catch (err) {
-        return fail((err as Error).message);
-      }
-    },
+  participantTool(
+    TASK_REMOVE_PARTICIPANT,
+    "Remove a user from a task's participants (by user.id, user.username, or user.name).",
+    true,
+  );
+  participantTool(
+    TASK_TOGGLE_PARTICIPANT,
+    "Toggle a user's membership in a task's participants. Defaults to the configured actor when `user` is omitted.",
+    false,
   );
 
   // task_add_appreciation — add a user to the appreciation array.
@@ -642,26 +641,31 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     {
       description:
         'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAdmin:true if the caller has verified admin rights). Refuses if the task is already completed or stopped. Also records REA events (quest:initiated/completed, appreciation pairs, quest:time_logged) and time-tracking expenses derived from the holon\'s value equation.',
-      inputSchema: {
-        holon: z.string(),
-        taskId: z.string(),
-        completerId: z
-          .union([z.string(), z.number()])
-          .optional()
-          .describe('User id of the completer. Defaults to the configured actor.'),
+      inputSchema: toZod(TASK_COMPLETE, {
         isAdmin: z
           .boolean()
           .optional()
           .describe('Set true to bypass initiator/participant check (caller has resolved admin rights elsewhere).'),
-      },
+      }),
     },
     async (args) => {
       try {
         const completerId = args.completerId ?? deps.resolveActor().id;
         const hs = await deps.getHoloSphere();
-        const existing = await hs.get(args.holon, 'quests', args.taskId);
+        let taskId = args.taskId;
+        if (!taskId && args.taskRef) {
+          const all = ((await hs.getAll(args.holon, 'quests')) ?? []) as Array<Record<string, unknown>>;
+          const found = fuzzyFindByTitle(args.taskRef, Array.isArray(all) ? all : Object.values(all));
+          if (!found) return fail(`No task matches "${args.taskRef}".`, { holon: args.holon });
+          if ('candidates' in found) {
+            return fail('Several tasks match — pass taskId.', { candidates: found.candidates });
+          }
+          taskId = found.id;
+        }
+        if (!taskId) return fail('taskId or taskRef is required.');
+        const existing = await hs.get(args.holon, 'quests', taskId);
         if (!existing) {
-          return fail('Task not found.', { holon: args.holon, taskId: args.taskId });
+          return fail('Task not found.', { holon: args.holon, taskId });
         }
         const result = applyTaskCompletion(existing as Quest, completerId, {
           isAdmin: args.isAdmin,
@@ -669,7 +673,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         if (!result.ok) {
           return fail(`Cannot complete task: ${result.reason}.`, {
             holon: args.holon,
-            taskId: args.taskId,
+            taskId,
             reason: result.reason,
           });
         }
@@ -691,7 +695,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
         if (!outcome.taskSaved) {
           return fail('Save failed.', {
             holon: args.holon,
-            taskId: args.taskId,
+            taskId,
             errors: outcome.errors,
           });
         }
