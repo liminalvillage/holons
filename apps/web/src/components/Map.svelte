@@ -399,6 +399,14 @@
 				);
 				active = verdicts.some(Boolean);
 			}
+			if (active && (lens === 'offers' || lens === 'needs')) {
+				// Market layers (@holons/core/offers, /needs): a closed record
+				// resolves through its hologram but must not keep the cell lit.
+				const CLOSED = new Set(['fulfilled', 'withdrawn', 'expired', 'cancelled']);
+				active = items.some(
+					(it: any) => it?._deleted !== true && !(typeof it?.status === 'string' && CLOSED.has(it.status))
+				);
+			}
 			if (!active) purgeHex(lens, hex);
 		} catch {
 			// leave as-is on read failure

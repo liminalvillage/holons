@@ -46,7 +46,7 @@ export const data = [
     link: "/map",
   },
   {
-    title: "Offers & Requests",
+    title: "Offers & Needs",
     icon: OffersIcon,
     link: "/offers",
   },

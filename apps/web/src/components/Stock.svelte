@@ -21,7 +21,7 @@
   // (it is the holon's whole ledger); every await is followed by a
   // holon-identity check. The `stock` lens (item specs) is small and streams
   // in live, federation-aware, so a partner's shelf shows beside ours.
-  import { onDestroy, onMount, getContext } from "svelte";
+  import { onDestroy, onMount, getContext, tick } from "svelte";
   import type { HoloSphere } from "holosphere";
   import { ID } from "../dashboard/store";
   import { telegramUser } from "$lib/stores/telegram";
@@ -32,6 +32,9 @@
   import { notifyWriteDenied } from "$lib/stores/writeNotifications";
   import { getEventStore } from "$lib/rea/eventStore";
   import { getFederationSnapshot } from "@holons/core/federation";
+  import { publishStockAggregate } from "@holons/core/inventory";
+  import { syncSurplusFromShelf } from "@holons/core/offers";
+  import { getSelfInitiator } from "$lib/util/usersWithSelf";
   import type { ChecklistStore } from "@holons/core/checklists";
   import {
     STOCK_LENS,
@@ -302,6 +305,30 @@
       ? { id: $nostrPublicKey }
       : null) as StockActorLike | null;
 
+  /**
+   * After a write: push the holon's per-category totals to its home hex
+   * cell so the map can sum stock at any zoom, and bring the shelf's
+   * standing surplus offers in step (@holons/core/offers — automatic, with
+   * a per-holon switch on the Offers board). Fire-and-forget: a board never
+   * fails on its side effects.
+   */
+  function afterShelfWrite(id: string) {
+    if (!board) return;
+    void publishStockAggregate(holosphere, { holonId: id, levels: board.levels, specs: sets.own }).catch((err) =>
+      console.warn("[stock] cell publish failed", err),
+    );
+    const self = getSelfInitiator();
+    const who = self
+      ? { id: self.id, username: self.username, firstName: self.firstName, lastName: self.lastName }
+      : actor
+        ? { id: String(actor.id), username: actor.username ?? String(actor.id) }
+        : null;
+    if (!who) return;
+    void syncSurplusFromShelf(holosphere, id, { initiator: who, federationSourceId: $nostrPublicKey ?? undefined }).then((out) => {
+      if (out.errors.length) console.warn("[stock] surplus sync", out.errors);
+    });
+  }
+
   // ── Feedback ────────────────────────────────────────────────────────────
   let notice = "";
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -426,6 +453,8 @@
       ];
       formOpen = false;
       if (editing && openItemId === editing.id) openItemId = record.id;
+      await tick();
+      afterShelfWrite(id);
     } catch (err) {
       fail(err, "Couldn't save the item.");
       formError = isDenied(err) ? "You can't write to this holon." : "Couldn't save that. Try again.";
@@ -449,6 +478,8 @@
       );
       confirmDelete = false;
       openItemId = null;
+      await tick();
+      afterShelfWrite(id);
     } catch (err) {
       fail(err, "Couldn't remove the item.");
     } finally {
@@ -519,6 +550,8 @@
       events = [...events, event as StockEventLike];
       moveOpen = null;
       say("Recorded.");
+      await tick();
+      afterShelfWrite(id);
       // The relay echo lands a moment later; re-read so the fold is the
       // stored truth rather than our optimistic copy.
       await sleep(1500);
@@ -608,6 +641,8 @@
           ? "Transfer recorded on both shelves."
           : "Recorded on this shelf only; the partner's refused the write.",
       );
+      await tick();
+      afterShelfWrite(id);
     } catch (err) {
       fail(err, "Couldn't record the transfer.");
     } finally {
