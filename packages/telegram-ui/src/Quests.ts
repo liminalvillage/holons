@@ -32,6 +32,8 @@ import {
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
+import { createOffer, publishOfferNearby } from '@holons/core/offers';
+import { parseOfferText } from './Offers.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -346,7 +348,7 @@ export default class Quests {
         const pictureIsDocument = !ctx.message.photo && !!picture;
         
         if (!title) {
-            return ctx.reply(i18next.t('usage', { type, lng: language }));
+            return ctx.reply(i18next.t(type === 'offer' ? 'offerusage' : 'usage', { type, lng: language }));
         }
         
         // Task limit check
@@ -374,10 +376,28 @@ export default class Quests {
         // items (carry exchange_type); everything else is a plain task/quest.
         const messageThreadId = ctx.message?.is_topic_message ? ctx.message.message_thread_id : null;
         const category = this.getCategory(ctx);
+        // An offer is a resource with a quantity (@holons/core/offers): the
+        // command line carries the mode, the amount, a #category and a price
+        // — see Offers.ts — so the matcher can set it against needs.
+        const parsedOffer = type === 'offer' ? parseOfferText(title) : null;
         const quest =
-            type === 'offer' || type === 'request'
-                ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture, messageThreadId })
-                : createTask({ holonId, initiator: sender, title, type, category, picture, messageThreadId });
+            type === 'offer' && parsedOffer
+                ? createOffer({
+                      holonId,
+                      initiator: sender,
+                      title: parsedOffer.title,
+                      category: parsedOffer.category ?? category ?? undefined,
+                      supply: { quantity: parsedOffer.quantity, unit: parsedOffer.unit },
+                      mode: parsedOffer.mode,
+                      price: parsedOffer.price,
+                      currency: parsedOffer.currency,
+                      itemType: parsedOffer.itemType,
+                      picture,
+                  })
+                : type === 'offer' || type === 'request'
+                  ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture, messageThreadId })
+                  : createTask({ holonId, initiator: sender, title, type, category, picture, messageThreadId });
+        if (type === 'offer' && messageThreadId != null) quest.message_thread_id = messageThreadId;
         
         // Send message and save quest
         const showAsImage = this.shouldShowQuestsAsImages();
@@ -438,6 +458,17 @@ export default class Quests {
         // Generate quest image if image mode enabled (picture will be embedded in generated image)
         if (showAsImage) {
             this.regenerateQuestImageBackground(ctx, quest, questHolon, quest.id, this.markup(quest, language));
+        }
+
+        // An offer travels: partner copies and the map's Offers layer at the
+        // holon's hex (skipped with a message, not a throw, when there is no
+        // hex). Best-effort — the record is already on the holon either way.
+        if (type === 'offer' && parsedOffer) {
+            publishOfferNearby(this.db as never, String(holonId), quest as never, { toPartners: true, toHex: true })
+                .then(out => {
+                    if (out.errors.length) log.warn('offer publish partial', { holonId, offerId: quest.id, errors: out.errors });
+                })
+                .catch(err => log.warn('offer publish failed', { holonId, offerId: quest.id, error: String(err) }));
         }
 
         return quest;

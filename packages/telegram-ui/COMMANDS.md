@@ -15,8 +15,9 @@
 ## Needs & Offers
 - `/request [description]` - Something you would like to have
   - Example: `/request foot massage`
-- `/offer [description]` - Something you would like to give
-  - Example: `/offer yoga sessions`
+- `/offer [qty] [what] [#category] [for price]` - A resource on the table, matched to needs: a leading quantity and unit set how much (`5kg flour`, `2 hours plumbing`), a leading verb sets the mode (`lend`, `sell`), `#category` keys the matcher, `for 4 EUR` sets a price per unit. Shared with partners and lit on the map at the chat's hex.
+  - Examples: `/offer 5kg flour #food`, `/offer lend ladder`, `/offer sell 12 eggs for 4 EUR`
+  - Your shelf's surplus (see `/stock`) is offered automatically.
 - `/board` - Lists all users' requests and offers
 
 ## Community & Facilitation

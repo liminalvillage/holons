@@ -250,6 +250,7 @@
         "quest_image_joined_by_header": "Unido por:",
         "quest_image_appreciated_by_header": "Apreciado por:",
         "stocktitle": "📦 Existencias",
+        "offerusage": "Oferta — un recurso sobre la mesa, cruzado con las necesidades.\n/offer <cant> <qué> [#categoría] — lo das (5kg harina, 2 horas fontanería #habilidades)\n/offer lend <qué> — lo prestas\n/offer sell <cant> <qué> for <precio> [EUR] — lo vendes, precio por unidad\nCompartida con los socios y en el mapa en tu hexágono. El excedente de la estantería se ofrece automáticamente (ver /stock).",
         "stockusage": "Existencias — lo que se guarda en cantidad.\n/stock — la estantería\n/stock add <cant> <artículo> [nota] — registra lo que entró (crea el artículo; 5kg, 2l, 3m fijan su unidad)\n/stock use <cant> <artículo> [nota] — registra lo que salió\n/stock count <cant> <artículo> — corrige el nivel tras un recuento\n/stock target <cant> <artículo> — reponer hasta este nivel (0 lo borra)\n/stock keep <cant> <artículo> — reservar al menos esto frente a los socios (0 lo borra)\n/stock reorder — qué comprar; /stock reorder buy lo escribe en la lista de compras\n/stock moves — faltas frente a necesidades abiertas y los movimientos que la federación podría hacer",
         "stockempty": "Todavía no hay nada en la estantería. Añade algo que se guarde en cantidad: /stock add 5kg harina",
         "stockhint": "/stock add · use · count · target · keep · reorder · moves — /stock help para la sintaxis",

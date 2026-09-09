@@ -24,6 +24,7 @@
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { REAEventStore } from '@holons/core/rea';
+import { syncSurplusFromShelf } from '@holons/core/offers';
 import { getFederationSnapshot } from '@holons/core/federation';
 import {
   STOCK_LENS,
@@ -521,6 +522,26 @@ class Stock {
       ...(note ? { note } : {}),
     });
     await this.eventStore.put(holonId, event as any);
+    this.afterShelfWrite(holonId, ctx);
+  }
+
+  /**
+   * After a write: the shelf's surplus is a standing offer
+   * (@holons/core/offers) — one auto offer per item above its keep-back,
+   * shared with partners and the map; automatic, with a per-holon switch.
+   * Fire-and-forget: a command never fails on its side effect.
+   */
+  private afterShelfWrite(holonId: string, ctx: AnyCtx) {
+    const actor = this.actorOf(ctx);
+    void syncSurplusFromShelf(this.db as never, holonId, {
+      initiator: {
+        id: actor.id,
+        username: actor.username ?? String(actor.id),
+        firstName: actor.first_name,
+      },
+    }).then(out => {
+      if (out.errors.length) console.warn('[Stock] surplus sync', out.errors);
+    });
   }
 
   // ── dispatch ─────────────────────────────────────────────────────────────
@@ -633,6 +654,7 @@ class Stock {
         createdBy: ctx.from?.id,
       });
       await this.db.put(holonId, STOCK_LENS, spec);
+      this.afterShelfWrite(holonId, ctx);
       created = true;
     }
     await this.record(holonId, ctx, 'stock:produced', spec, parsed.quantity, parsed.note);
@@ -742,6 +764,7 @@ class Stock {
     const value = parsed.quantity > 0 ? parsed.quantity : null;
     const next = updateStockItemSpec(spec, { [field]: value });
     await this.db.put(holonId, STOCK_LENS, next);
+    this.afterShelfWrite(holonId, ctx);
     const key =
       field === 'target'
         ? value === null

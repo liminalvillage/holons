@@ -15,6 +15,7 @@ import {
 } from './utilities.js';
 import QRCode from 'qrcode';
 import { colorFromCategory } from '@holons/core/categories';
+import { normalizeOffer, remainingSupply } from '@holons/core/offers';
 
 const DASHBOARD_ADDRESS =
   process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
@@ -958,7 +959,15 @@ class UI {
       // Get offers from quests collection using holosphere.getAll with holograms
       const allQuests =
         (await this.db.holosphere.getAll(holonId.toString(), 'quests')) || [];
-      let offers = allQuests.filter(quest => quest.type === 'offer');
+      // Offers carry a lifecycle now (@holons/core/offers): only what is
+      // still on the market, with what is left of it.
+      let offers = allQuests
+        .map(quest => normalizeOffer(quest))
+        .filter(
+          offer =>
+            offer && (offer.status === 'open' || offer.status === 'reserved')
+        )
+        .map(offer => ({ ...offer, remaining: remainingSupply(offer) }));
 
       // If in a topic, filter further by message_thread_id
       if (isTopic && threadId) {
@@ -2029,6 +2038,7 @@ class UI {
             <td class="offer-cell">
               <div class="offer-info">
                 <span class="offer-title">${offer.title}</span>
+                ${offer.supply ? `<span class="offer-qty">${offer.remaining}${offer.supply.unit && offer.supply.unit !== 'one' ? ' ' + offer.supply.unit : '×'}${offer.mode && offer.mode !== 'give' ? ' · ' + offer.mode : ''}${offer.price != null ? ' · ' + offer.price + ' ' + (offer.currency || '') : ''}</span>` : ''}
               </div>
             </td>
           </tr>`;

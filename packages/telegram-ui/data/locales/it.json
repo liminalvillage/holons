@@ -278,6 +278,7 @@
         "select_participants": "Seleziona Partecipanti",
         "creating_quest": "Creazione missione...",
         "stocktitle": "📦 Scorte",
+        "offerusage": "Offerta — una risorsa sul tavolo, incrociata con i bisogni.\n/offer <qtà> <cosa> [#categoria] — la dai (5kg farina, 2 ore idraulica #competenze)\n/offer lend <cosa> — la presti\n/offer sell <qtà> <cosa> for <prezzo> [EUR] — la vendi, prezzo per unità\nCondivisa con i partner e sulla mappa al tuo esagono. L'eccedenza dello scaffale è offerta automaticamente (vedi /stock).",
         "stockusage": "Scorte — ciò che si tiene in quantità.\n/stock — lo scaffale\n/stock add <qtà> <articolo> [nota] — registra ciò che è entrato (crea l'articolo; 5kg, 2l, 3m ne fissano l'unità)\n/stock use <qtà> <articolo> [nota] — registra ciò che è uscito\n/stock count <qtà> <articolo> — corregge il livello dopo una conta\n/stock target <qtà> <articolo> — riassortire fino a questo livello (0 lo toglie)\n/stock keep <qtà> <articolo> — tenere almeno questo per sé rispetto ai partner (0 lo toglie)\n/stock reorder — cosa comprare; /stock reorder buy lo scrive nella lista della spesa\n/stock moves — carenze rispetto ai bisogni aperti e gli spostamenti che la federazione potrebbe fare",
         "stockempty": "Lo scaffale è ancora vuoto. Aggiungi qualcosa che si tiene in quantità: /stock add 5kg farina",
         "stockhint": "/stock add · use · count · target · keep · reorder · moves — /stock help per la sintassi",

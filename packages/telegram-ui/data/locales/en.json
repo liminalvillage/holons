@@ -339,6 +339,7 @@
         "language_native_de": "German",
         "settings_map_redirect": "Redirecting to map...",
         "stocktitle": "📦 Stock",
+        "offerusage": "Offer — a resource on the table, matched to needs.\n/offer <qty> <what> [#category] — give it (5kg flour, 2 hours plumbing #skills)\n/offer lend <what> — lend it\n/offer sell <qty> <what> for <price> [EUR] — sell it, price per unit\nShared with partners and on the map at your hex. Your shelf's surplus is offered automatically (see /stock).",
         "stockusage": "Stock — things kept in quantity.\n/stock — the shelf\n/stock add <qty> <item> [note] — record what came in (creates the item; 5kg, 2l, 3m set its unit)\n/stock use <qty> <item> [note] — record what went out\n/stock count <qty> <item> — correct the level after a count\n/stock target <qty> <item> — restock up to this level (0 clears it)\n/stock keep <qty> <item> — keep at least this back from partners (0 clears it)\n/stock reorder — what to buy; /stock reorder buy writes it to the shopping list\n/stock moves — shortages against open needs and the moves the federation could make",
         "stockempty": "Nothing on the shelf yet. Add something kept in quantity: /stock add 5kg flour",
         "stockhint": "/stock add · use · count · target · keep · reorder · moves — /stock help for the syntax",
