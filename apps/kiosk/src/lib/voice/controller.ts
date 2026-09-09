@@ -38,6 +38,7 @@ import {
   serverVoiceConfigured,
 } from "$lib/voice/direct";
 import { pickVoiceMode } from "$lib/voice/transport";
+import { drawerOpen } from "$lib/voice/plan";
 import { deviceVoiceKey } from "$lib/config";
 
 const WS_URL_ENV = import.meta.env.VITE_VOICE_WS_URL as string | undefined;
@@ -85,6 +86,7 @@ export const holonsSaid = writable("");
 export const activeTool = writable<string | null>(null);
 export const bubbleOpen = writable(false);
 export const typeOpen = writable(false);
+export { drawerOpen };
 
 let backend: VoiceBackend | null = null;
 let player: PcmPlayer | null = null;
@@ -237,6 +239,11 @@ function onBackendEvent(ev: BackendEvent) {
       if (tab) selectTab(tab.id);
       break;
     }
+    case "plan":
+      // Proposed changes wait in the drawer; the bubble stays for the reply.
+      if (ev.size > 0) drawerOpen.set(true);
+      showBubble();
+      break;
     case "error":
       activeTool.set(null);
       holonsSaid.set(`⚠ ${ev.message}`);

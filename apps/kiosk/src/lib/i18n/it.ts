@@ -908,6 +908,37 @@ export const it: Record<MessageKey, Msg> = {
   "voice.serviceUnreachable":
     "Impossibile raggiungere il servizio vocale — controlla la connessione di rete.",
 
+  // Voice review drawer — proposed changes awaiting approval
+  "voice.plan.title": {
+    one: "{n} modifica proposta",
+    other: "{n} modifiche proposte",
+  },
+  "voice.plan.subtitle": "Nulla viene scritto finché non applichi.",
+  "voice.plan.apply": { one: "Applica {n}", other: "Applica {n}" },
+  "voice.plan.applying": "Applico…",
+  "voice.plan.discard": "Scarta",
+  "voice.plan.review": {
+    one: "{n} modifica in attesa — rivedi",
+    other: "{n} modifiche in attesa — rivedi",
+  },
+  "voice.plan.kind.create": "Nuovo compito",
+  "voice.plan.kind.update": "Modifica",
+  "voice.plan.kind.participants": "Partecipanti",
+  "voice.plan.kind.complete": "Completa",
+  "voice.plan.field.title": "Titolo",
+  "voice.plan.field.description": "Descrizione",
+  "voice.plan.field.category": "Categoria",
+  "voice.plan.field.schedule": "Quando",
+  "voice.plan.field.participants": "Chi",
+  "voice.plan.field.status": "Stato",
+  "voice.plan.unscheduled": "senza data",
+  "voice.plan.nobody": "nessuno",
+  "voice.plan.inHolon": "in {holon}",
+  "voice.plan.changedSince":
+    "Modificato dopo la proposta — la modifica viene riapplicata sull'ultima versione.",
+  "voice.plan.done": "Applicata",
+  "voice.plan.failed": "Non riuscita",
+
   // Home / landing page
   "home.metaTitle": "Hubs Network — un hub per ogni gruppo",
   "home.metaDescription":

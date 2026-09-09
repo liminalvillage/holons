@@ -12,16 +12,10 @@
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
   import { currentUser } from "$lib/auth";
-  import { getHolosphere } from "$lib/holosphere";
+  import { loadMembers, type Member } from "$lib/members";
   import { t } from "$lib/i18n";
   import type { Quest } from "@holons/core/tasks";
 
-  type Member = {
-    id: string | number;
-    username?: string;
-    first_name?: string;
-    last_name?: string;
-  };
   type Row = { key: string; name: string; on: boolean; user: Member };
 
   let task: Quest | null = null;
@@ -65,21 +59,9 @@
           user: me as Member,
         },
       ];
-    void loadMembers();
-  }
-
-  async function loadMembers() {
-    const hid = get(holonId);
-    if (!hid) return;
-    try {
-      const hs = await getHolosphere();
-      const all = await hs.getAll(hid, "users");
-      members = (
-        Array.isArray(all) ? all : Object.values(all ?? {})
-      ) as Member[];
-    } catch {
-      members = [];
-    }
+    void loadMembers(get(holonId) ?? undefined).then((list) => {
+      members = list;
+    });
   }
 
   function partName(p: Member): string {

@@ -123,6 +123,7 @@
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
   import VoiceWidget from "$lib/components/VoiceWidget.svelte";
+  import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
 
   let booting = true;
   let mounted = false;
@@ -954,6 +955,8 @@
     <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
        Sends the displayed holon + active view + open record as turn context. -->
     <VoiceWidget />
+    <!-- Changes the voice agent proposed, awaiting the user's Apply. -->
+    <VoiceDrawer />
   {/if}
 
   <!-- Transient one-line feedback for taps that can't proceed. -->

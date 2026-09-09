@@ -1,42 +1,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// In-browser tools for the kiosk's direct voice mode. Each tool reuses the
-// exact write path the touch UI uses (core createTask / completion plan /
-// borrow-return / membership toggles through the identity-aware writer), so a
-// spoken action and a tapped one land identically in the graph — including
-// the sourceRef redirection that keeps writes to federated items on their
-// owner holon. Reads come from the layout's live lens subscriptions (the
-// rawQuests/rawLibrary/rawRoles stores), so listing costs nothing.
+// In-browser tools for the kiosk's direct voice mode.
+//
+// Task writes are NOT performed here: the task tools come from the shared
+// catalogue in @holons/core/actions (the same names and arguments the MCP
+// server exposes) and are staged into the review drawer by voice/plan.ts —
+// nothing lands until the user taps Apply. What this module still executes
+// directly are reads (from the layout's live lens subscriptions, so listing
+// costs nothing), UI actions (navigate, plan_discard) and, for now, the
+// library borrow/return pair, which reuses the exact write path the touch UI
+// uses — including the sourceRef redirection that keeps writes to federated
+// items on their owner holon.
 
 import { get } from "svelte/store";
 import type { AgentTool, ToolCall, ToolResult } from "@holons/ai-ui";
-import { createTask, addParticipant, type Quest } from "@holons/core/tasks";
+import type { Quest } from "@holons/core/tasks";
+import { TASK_ACTIONS, toJsonSchema } from "@holons/core/actions";
 import {
   borrowItem,
   returnItem,
   recordBorrowAccounting,
   recordReturnAccounting,
 } from "@holons/core/library";
-import { localFieldsToStored } from "@holons/core/datetime";
 import {
   holonId,
   holonName,
-  rawQuests,
   rawLibrary,
   rawRoles,
   visibleTabs,
-  selectTab,
   type TabId,
 } from "$lib/stores";
-import { currentUser, borrowActor } from "$lib/auth";
-import { getHolosphere, getWriter, getLibraryDb } from "$lib/holosphere";
-import { toggleJoin, person } from "$lib/membership";
-import { checkComplete, recordCompletion } from "$lib/complete";
+import { borrowActor } from "$lib/auth";
+import { getLibraryDb } from "$lib/holosphere";
 import { sourceRef, toPeople } from "$lib/data";
-
-function newId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
+import { discardPlan, findChange, projectedQuests } from "$lib/voice/plan";
+import { loadMembers } from "$lib/members";
+import { personLabel } from "@holons/core/actions";
 
 const str = (description: string) => ({ type: "string", description });
 
@@ -56,66 +55,32 @@ export const KIOSK_VOICE_TOOLS: AgentTool[] = [
   {
     name: "list_items",
     description:
-      "List the live items of one kind with their EXACT ids. Kinds: tasks (the backlog and calendar quests), library (borrowable things), roles.",
+      "List the live items of one kind with their EXACT ids. Kinds: tasks (the backlog and calendar quests, including changes still pending review), library (borrowable things), roles, members (the people of this holon).",
     inputSchema: {
       type: "object",
       properties: {
-        kind: { type: "string", enum: ["tasks", "library", "roles"] },
+        kind: {
+          type: "string",
+          enum: ["tasks", "library", "roles", "members"],
+        },
       },
       required: ["kind"],
     },
   },
+  // The task actions — one catalogue, shared with the MCP server. Every one of
+  // them is staged for approval, never executed from here.
+  ...TASK_ACTIONS.map(toJsonSchema),
   {
-    name: "task_create",
+    name: "plan_discard",
     description:
-      "Create a new task in the current holon. Optionally schedule it with date (and time) to make it a calendar event.",
+      "Drop a proposed change from the review panel (or all of them) when the user changes their mind. Never needed to apply anything — only the user can apply, by touch.",
     inputSchema: {
       type: "object",
       properties: {
-        title: str("Task title"),
-        description: str("Longer details (optional)"),
-        category: str("Category label (optional)"),
-        date: str("Scheduled local date YYYY-MM-DD (optional)"),
-        time: str("Scheduled local time HH:MM, 24h (optional, requires date)"),
+        change: str(
+          'Which proposed change: the task title it targets, or "all". Omit for all.',
+        ),
       },
-      required: ["title"],
-    },
-  },
-  {
-    name: "task_update",
-    description:
-      "Edit an existing task/event: title, description, category, or schedule. Only pass the fields to change.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        taskId: str("EXACT id of the task, from the snapshot or list_items"),
-        title: str("New title (optional)"),
-        description: str("New description (optional)"),
-        category: str("New category (optional)"),
-        date: str("New local date YYYY-MM-DD (optional)"),
-        time: str("New local time HH:MM, 24h (optional)"),
-      },
-      required: ["taskId"],
-    },
-  },
-  {
-    name: "task_toggle_join",
-    description:
-      "Join the current user to a task as a participant, or leave it if already joined.",
-    inputSchema: {
-      type: "object",
-      properties: { taskId: str("EXACT id of the task") },
-      required: ["taskId"],
-    },
-  },
-  {
-    name: "task_complete",
-    description:
-      "Mark a task completed (records the contribution accounting). The task's current participants are the ones credited — use task_toggle_join first if the speaker took part but has not joined.",
-    inputSchema: {
-      type: "object",
-      properties: { taskId: str("EXACT id of the task") },
-      required: ["taskId"],
     },
   },
   {
@@ -188,6 +153,21 @@ function digestRoles(): string {
   return JSON.stringify(rows);
 }
 
+export function digestMembers(
+  members: Array<{
+    id: string | number;
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+  }>,
+): string {
+  return JSON.stringify(
+    members
+      .slice(0, 60)
+      .map((m) => ({ id: String(m.id), name: personLabel(m) })),
+  );
+}
+
 // ── Dispatch ────────────────────────────────────────────────────────────────
 
 const ok = (id: string, content: string): ToolResult => ({
@@ -200,27 +180,6 @@ const fail = (id: string, content: string): ToolResult => ({
   content,
   isError: true,
 });
-
-function findQuest(taskId: string): Quest | undefined {
-  return get(rawQuests).find((q) => String(q.id ?? "") === taskId);
-}
-
-/** Fresh copy from the graph, following a federated item to its owner holon. */
-async function freshQuest(
-  hid: string,
-  local: Quest,
-): Promise<{ holon: string; key: string; quest: Quest | null }> {
-  const ref = sourceRef(local, String(local.id ?? ""));
-  const holon = ref?.holon ?? hid;
-  const key = ref?.key ?? String(local.id ?? "");
-  try {
-    const hs = await getHolosphere();
-    const quest = ((await hs.get(holon, "quests", key)) as Quest) ?? null;
-    return { holon, key, quest: quest ?? local };
-  } catch {
-    return { holon, key, quest: local };
-  }
-}
 
 const LOGIN_REQUIRED =
   "No one is logged in on this kiosk. Ask the user to log in with Telegram (the account button in the header) first.";
@@ -257,127 +216,35 @@ export async function dispatchKioskTool(
 
       case "list_items": {
         const kind = String(input.kind ?? "");
-        if (kind === "tasks") return ok(call.id, digestTasks(get(rawQuests)));
+        if (kind === "tasks")
+          return ok(call.id, digestTasks(projectedQuests()));
         if (kind === "library") return ok(call.id, digestLibrary());
         if (kind === "roles") return ok(call.id, digestRoles());
-        return fail(call.id, `Unknown kind "${kind}" (tasks|library|roles).`);
+        if (kind === "members")
+          return ok(call.id, digestMembers(await loadMembers(hid)));
+        return fail(
+          call.id,
+          `Unknown kind "${kind}" (tasks|library|roles|members).`,
+        );
       }
 
-      case "task_create": {
-        const user = get(currentUser);
-        if (!user) return fail(call.id, LOGIN_REQUIRED);
-        const title = String(input.title ?? "").trim();
-        if (!title) return fail(call.id, "A title is required.");
-        const task = createTask({
-          holonId: hid,
-          initiator: {
-            id: user.id,
-            username: user.username,
-            firstName: user.first_name,
-            lastName: user.last_name,
-          },
-          title,
-          category: input.category ? String(input.category) : undefined,
-        });
-        task.id = newId();
-        if (input.description) task.description = String(input.description);
-        if (input.date) {
-          const when = localFieldsToStored(
-            String(input.date),
-            input.time ? String(input.time) : "",
-          );
-          if (when) task.when = when;
-        }
-        const writer = await getWriter(hid);
-        const saved = await writer.put("quests", task);
-        return saved
-          ? ok(call.id, `Created task "${title}" (id ${task.id}).`)
-          : fail(call.id, "The write was denied — could not create the task.");
-      }
-
-      case "task_update": {
-        const local = findQuest(String(input.taskId ?? ""));
-        if (!local) {
-          return fail(
+      case "plan_discard": {
+        const ref = String(input.change ?? "").trim();
+        if (!ref || ref.toLowerCase() === "all") {
+          const n = discardPlan();
+          return ok(
             call.id,
-            `No task with id "${String(input.taskId)}". Real items: ${digestTasks(get(rawQuests))}`,
+            n ? `Discarded ${n} proposed change(s).` : "Nothing was pending.",
           );
         }
-        const { holon, quest } = await freshQuest(hid, local);
-        if (!quest) return fail(call.id, "Task not found in the graph.");
-        let when = quest.when;
-        if (input.date) {
-          when =
-            localFieldsToStored(
-              String(input.date),
-              input.time ? String(input.time) : "",
-            ) ?? when;
-        }
-        const updated: Quest = {
-          ...quest,
-          title: input.title ? String(input.title).trim() : quest.title,
-          description: input.description
-            ? String(input.description)
-            : quest.description,
-          category: input.category ? String(input.category) : quest.category,
-          when,
-        };
-        const writer = await getWriter(holon);
-        const saved = await writer.put("quests", updated);
-        return saved
-          ? ok(call.id, `Updated "${updated.title}".`)
-          : fail(call.id, "The write was denied — could not save the task.");
-      }
-
-      case "task_toggle_join": {
-        const user = get(currentUser);
-        if (!user) return fail(call.id, LOGIN_REQUIRED);
-        const local = findQuest(String(input.taskId ?? ""));
-        if (!local) {
-          return fail(
-            call.id,
-            `No task with id "${String(input.taskId)}". Real items: ${digestTasks(get(rawQuests))}`,
-          );
-        }
-        const id = String(local.id ?? "");
-        const done = await toggleJoin(hid, id, user, sourceRef(local, id));
-        return done
-          ? ok(call.id, `Toggled participation on "${local.title}".`)
-          : fail(call.id, "Could not update participation.");
-      }
-
-      case "task_complete": {
-        const user = get(currentUser);
-        if (!user) return fail(call.id, LOGIN_REQUIRED);
-        const local = findQuest(String(input.taskId ?? ""));
-        if (!local) {
-          return fail(
-            call.id,
-            `No task with id "${String(input.taskId)}". Real items: ${digestTasks(get(rawQuests))}`,
-          );
-        }
-        const { holon, quest } = await freshQuest(hid, local);
-        const task = quest ?? local;
-        const check = checkComplete(task);
-        if (!check.ok) {
-          const why =
-            check.reason === "already-completed"
-              ? "It is already completed."
-              : "The task was stopped.";
-          return fail(call.id, `Cannot complete "${local.title}": ${why}`);
-        }
-        // Nobody on the task yet? The speaker completing it is the doer —
-        // credit them, mirroring the confirm dialog's pre-tick in the UI.
-        const credited = (Array.isArray(task.participants)
-          ? task.participants
-          : []
-        ).length
-          ? task
-          : addParticipant(task, person(user));
-        const rec = await recordCompletion(holon, credited, user.id);
-        return rec.ok
-          ? ok(call.id, `Completed "${local.title}" — contribution recorded.`)
-          : fail(call.id, "Completion write failed.");
+        const change = findChange(ref);
+        if (!change)
+          return fail(call.id, `No proposed change matches "${ref}".`);
+        discardPlan(change.id);
+        return ok(
+          call.id,
+          `Discarded the proposed change to "${change.title}".`,
+        );
       }
 
       case "library_borrow":

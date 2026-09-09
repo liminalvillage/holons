@@ -22,7 +22,9 @@
     muted,
     toggleMute,
     closeBubble,
+    drawerOpen,
   } from "$lib/voice/controller";
+  import { pendingPlan } from "$lib/voice/plan";
 
   let typed = "";
   let teardown: (() => void) | null = null;
@@ -95,6 +97,11 @@
         {/if}
         {#if $holonsSaid}<p class="holons">{$holonsSaid}</p>{/if}
       </div>
+    {/if}
+    {#if !$drawerOpen && $pendingPlan && $pendingPlan.changeset.changes.length > 0}
+      <button class="review" on:click={() => drawerOpen.set(true)}>
+        {$t("voice.plan.review", { n: $pendingPlan.changeset.changes.length })}
+      </button>
     {/if}
     {#if $typeOpen}
       <div class="typepanel">
@@ -226,6 +233,20 @@
       transform: translateY(-4px);
       opacity: 1;
     }
+  }
+
+  /* Proposed changes waiting while the drawer is hidden — one tap reopens it. */
+  .review {
+    min-height: 40px;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--teal);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
   }
 
   .typepanel {

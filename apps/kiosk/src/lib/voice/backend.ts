@@ -19,6 +19,8 @@ export type BackendEvent =
   | { type: "tts_pcm"; pcm: Uint8Array }
   | { type: "tts_end" }
   | { type: "navigate"; view: string }
+  /** The pending plan changed — `size` changes now await approval. */
+  | { type: "plan"; size: number }
   | { type: "error"; message: string };
 
 export interface VoiceBackend {

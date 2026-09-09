@@ -885,6 +885,37 @@ export const en = {
   "voice.serviceUnreachable":
     "Could not reach the voice service — check the network connection.",
 
+  // Voice review drawer — proposed changes awaiting approval
+  "voice.plan.title": {
+    one: "{n} proposed change",
+    other: "{n} proposed changes",
+  },
+  "voice.plan.subtitle": "Nothing is written until you apply.",
+  "voice.plan.apply": { one: "Apply {n}", other: "Apply {n}" },
+  "voice.plan.applying": "Applying…",
+  "voice.plan.discard": "Discard",
+  "voice.plan.review": {
+    one: "{n} change waiting — review",
+    other: "{n} changes waiting — review",
+  },
+  "voice.plan.kind.create": "New task",
+  "voice.plan.kind.update": "Change",
+  "voice.plan.kind.participants": "Participants",
+  "voice.plan.kind.complete": "Complete",
+  "voice.plan.field.title": "Title",
+  "voice.plan.field.description": "Description",
+  "voice.plan.field.category": "Category",
+  "voice.plan.field.schedule": "When",
+  "voice.plan.field.participants": "Who",
+  "voice.plan.field.status": "Status",
+  "voice.plan.unscheduled": "unscheduled",
+  "voice.plan.nobody": "nobody",
+  "voice.plan.inHolon": "in {holon}",
+  "voice.plan.changedSince":
+    "Edited since proposed — the change is re-applied on the latest version.",
+  "voice.plan.done": "Applied",
+  "voice.plan.failed": "Failed",
+
   // Home / landing page — the front door. Short on purpose: what a hub is, the
   // two ways to start one, and how hubs connect. The long read lives at
   // docs.holons.io. The bot is never named here — a fork points

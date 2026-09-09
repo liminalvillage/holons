@@ -5,7 +5,9 @@
 //
 //   mic WAV ─→ Whisper (audio/transcriptions)
 //            ─→ agent loop (@holons/ai-ui runAgentLoop over chat/completions)
-//                 tools: tools.ts, executed right here over Holosphere
+//                 reads + UI tools: tools.ts, executed right here
+//                 task writes: STAGED into the review drawer (plan.ts) —
+//                 the user applies them by touch, nothing lands otherwise
 //            ─→ tts-1 (audio/speech, streamed 24 kHz PCM)
 //
 // Auth is resolved per turn (transport.ts): a client-held key (Settings /
@@ -21,7 +23,9 @@ import { get } from "svelte/store";
 import {
   runAgentLoop,
   OpenAICompatProvider,
+  STAGING_GUIDANCE,
   claimsCompletedAction,
+  claimsDespiteStaging,
   correctionHistory,
   correctionPrompt,
   hasSuccessfulWrite,
@@ -29,7 +33,8 @@ import {
   looksLikeActionRequest,
 } from "@holons/ai-ui";
 import type { HistoryMessage, ToolAudit, ToolCall } from "@holons/ai-ui";
-import { holonId, holonName, rawQuests } from "$lib/stores";
+import { isTaskAction } from "@holons/core/actions";
+import { holonId, holonName, selection } from "$lib/stores";
 import { currentUser } from "$lib/auth";
 import { resolveVoiceKey } from "$lib/config";
 import {
@@ -55,7 +60,17 @@ import {
   KIOSK_VOICE_TOOLS,
   dispatchKioskTool,
   digestTasks,
+  digestMembers,
 } from "$lib/voice/tools";
+import {
+  discardPlan,
+  lastStagedTaskId,
+  pendingLines,
+  projectedQuests,
+  stageCall,
+  changeCount,
+} from "$lib/voice/plan";
+import { loadMembers } from "$lib/members";
 import type {
   BackendEvent,
   VoiceBackend,
@@ -135,7 +150,12 @@ const SYSTEM_PROMPT =
   "call navigate with a view id from the views list. It only changes what is " +
   "on screen, never data. " +
   "Honesty: only claim an action happened if a tool call SUCCEEDED this " +
-  "turn. If a tool failed or you called none, say so plainly — never pretend.";
+  "turn. If a tool failed or you called none, say so plainly — never pretend. " +
+  "Focus: when the user says 'it', 'this one', 'that task', they mean the task " +
+  "named in the Focus line of the context; pass no taskId/taskRef then. " +
+  "People: name them as said (user.name); the kiosk resolves who it is. " +
+  "Times: pass only what the user said — a bare time keeps the task's day. " +
+  STAGING_GUIDANCE;
 
 /**
  * Per-turn language directive appended to the system prompt. The
@@ -205,11 +225,52 @@ function contextLines(context: VoiceContext): string {
   return parts.join(" ");
 }
 
-/** Live tasks snapshot so the model starts every turn holding the real ids. */
+/**
+ * Live tasks snapshot so the model starts every turn holding the real ids —
+ * projected through the pending plan, so a task staged for creation is
+ * already addressable ("and add Marco to it").
+ */
 function snapshotLine(): string {
-  const quests = get(rawQuests);
+  const quests = projectedQuests();
   if (quests.length === 0) return "";
   return `\nLive tasks snapshot (id, title, status): ${digestTasks(quests)}`;
+}
+
+/** What "it" refers to: the last staged target first, then the open card. */
+function focusLine(): string {
+  const quests = projectedQuests();
+  const byId = (id: string | null) =>
+    id ? quests.find((q) => String(q.id ?? "") === id) : undefined;
+  const staged = byId(get(lastStagedTaskId));
+  const sel = get(selection);
+  const open =
+    sel && sel.kind !== "thing" ? byId(String(sel.quest.id ?? "")) : undefined;
+  const parts: string[] = [];
+  if (staged)
+    parts.push(
+      `Focus (last proposed change): "${staged.title}" (id ${staged.id}) — 'it' most likely means this.`,
+    );
+  if (open && open !== staged)
+    parts.push(`Open card: "${open.title}" (id ${open.id}).`);
+  return parts.length ? `\n${parts.join(" ")}` : "";
+}
+
+/** The plan awaiting approval, so a follow-up refines it instead of duplicating. */
+function pendingLine(): string {
+  const lines = pendingLines();
+  return lines
+    ? `\nProposed changes awaiting the user's approval in the review panel (a new call on the same task replaces or extends these):\n${lines}`
+    : "";
+}
+
+/** The roster, so a person can be named as said. */
+async function membersLine(): Promise<string> {
+  const hid = get(holonId);
+  if (!hid) return "";
+  const members = await loadMembers(hid);
+  return members.length
+    ? `\nMembers (id, name): ${digestMembers(members)}`
+    : "";
 }
 
 export class DirectVoiceBackend implements VoiceBackend {
@@ -316,7 +377,12 @@ export class DirectVoiceBackend implements VoiceBackend {
 
     const hid = get(holonId);
     if (hid && hid !== this.historyHolon) {
-      if (this.historyHolon) this.history = [];
+      // A holon switch voids "it"/"that one" AND the plan proposed there.
+      if (this.historyHolon) {
+        this.history = [];
+        discardPlan();
+        lastStagedTaskId.set(null);
+      }
       this.historyHolon = hid;
     }
 
@@ -328,7 +394,8 @@ export class DirectVoiceBackend implements VoiceBackend {
 
     // Every dispatched tool call is recorded as a fact (name + outcome) so
     // the reply's claims can be checked against what actually ran — the same
-    // turn harness the voice server enforces (@holons/ai-ui).
+    // turn harness the voice server enforces (@holons/ai-ui). Task writes are
+    // staged (recorded as such), never executed from a turn.
     const audit: ToolAudit[] = [];
     const dispatch = async (call: ToolCall) => {
       if (signal.aborted) {
@@ -339,10 +406,22 @@ export class DirectVoiceBackend implements VoiceBackend {
         };
       }
       this.onEvent({ type: "tool", name: call.name });
+      if (isTaskAction(call.name)) {
+        const result = await stageCall(call, text);
+        audit.push({
+          name: call.name,
+          ok: !result.isError,
+          staged: !result.isError,
+        });
+        this.onEvent({ type: "plan", size: changeCount() });
+        return result;
+      }
       const result = await dispatchKioskTool(call, (view) =>
         this.onEvent({ type: "navigate", view }),
       );
       audit.push({ name: call.name, ok: !result.isError });
+      if (call.name === "plan_discard")
+        this.onEvent({ type: "plan", size: changeCount() });
       return result;
     };
 
@@ -357,6 +436,9 @@ export class DirectVoiceBackend implements VoiceBackend {
         system: `${SYSTEM_PROMPT} ${languageLine()}`,
         prompt,
         history,
+        // In order: "create X and add Marco to it" stages the creation
+        // before the join resolves against it.
+        sequential: true,
         onText: (t) => {
           if (t.trim()) texts.push(t.trim());
         },
@@ -366,25 +448,31 @@ export class DirectVoiceBackend implements VoiceBackend {
       );
     };
 
-    const preamble = `${clockLine()}\n${contextLines(context)}${snapshotLine()}`;
+    const preamble =
+      `${clockLine()}\n${contextLines(context)}${await membersLine()}` +
+      `${snapshotLine()}${focusLine()}${pendingLine()}`;
     let speech = await run(
       `${preamble}\n\nUser request: ${text}`,
       this.history,
     );
 
     // Claim check: a reply asserting a completed action with no successful
-    // write behind it is a hallucination. Write check: an action-shaped
-    // request must END in at least one attempted write (a clarifying
-    // question is the one legitimate way out). Either way, one corrective
-    // pass that actually does the work or owns up.
-    const claimed = claimsCompletedAction(speech) && !hasSuccessfulWrite(audit);
+    // write behind it is a hallucination. Staging check: the same claim over
+    // changes that are only staged is just as false — nothing landed yet.
+    // Write check: an action-shaped request must END in at least one
+    // attempted (or staged) write — a clarifying question is the one
+    // legitimate way out. Either way, one corrective pass.
+    const staged = claimsDespiteStaging(speech, audit);
+    const claimed =
+      !staged && claimsCompletedAction(speech) && !hasSuccessfulWrite(audit);
     const dodged =
       looksLikeActionRequest(text) &&
       !hasWriteAttempt(audit) &&
       !speech.trimEnd().endsWith("?");
-    if ((claimed || dodged) && !signal.aborted) {
+    if ((staged || claimed || dodged) && !signal.aborted) {
+      const reason = staged ? "staged" : claimed ? "claimed" : "no_write";
       speech = await run(
-        `${preamble}\n\n${correctionPrompt(audit, claimed ? "claimed" : "no_write")}`,
+        `${preamble}\n\n${correctionPrompt(audit, reason)}`,
         correctionHistory(this.history, text, speech),
       );
     }
