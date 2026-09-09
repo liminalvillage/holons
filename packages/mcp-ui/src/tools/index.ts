@@ -26,6 +26,7 @@ const DOMAINS = [
   'tags',
   'scheduler',
   'inventory',
+  'offers',
 ];
 
 export async function registerAllTools(server: McpServer, deps: ToolDeps): Promise<void> {
