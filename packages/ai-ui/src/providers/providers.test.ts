@@ -178,3 +178,46 @@ describe('LLM provider normalization', () => {
     expect(openaiMessages[3].content).toBe('add me to it');
   });
 });
+
+describe('sequential dispatch', () => {
+  it('runs a turn\'s tool calls one after another in emitted order', async () => {
+    let turn = 0;
+    const fakeClient = {
+      messages: {
+        create: async () => {
+          turn++;
+          if (turn === 1) {
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                { type: 'tool_use', id: 'a', name: 'task_create', input: { title: 'x' } },
+                { type: 'tool_use', id: 'b', name: 'task_add_participant', input: { taskRef: 'x' } },
+              ],
+            };
+          }
+          return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ready' }] };
+        },
+      },
+    } as unknown as Anthropic;
+    const order: string[] = [];
+    let inFlight = 0;
+    let overlapped = false;
+    await runAgentLoop({
+      provider: new AnthropicProvider({ client: fakeClient }),
+      tools: TOOLS,
+      system: 's',
+      prompt: 'p',
+      sequential: true,
+      dispatch: async (c) => {
+        inFlight++;
+        if (inFlight > 1) overlapped = true;
+        await new Promise((r) => setTimeout(r, c.name === 'task_create' ? 15 : 1));
+        order.push(c.name);
+        inFlight--;
+        return { id: c.id, content: 'staged', isError: false };
+      },
+    });
+    expect(overlapped).toBe(false);
+    expect(order).toEqual(['task_create', 'task_add_participant']);
+  });
+});

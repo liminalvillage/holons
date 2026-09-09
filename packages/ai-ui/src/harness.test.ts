@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
 import {
+  STAGING_GUIDANCE,
   claimsCompletedAction,
+  claimsDespiteStaging,
   correctionHistory,
   correctionPrompt,
+  hasStagedWrite,
   hasSuccessfulWrite,
   hasWriteAttempt,
   isWriteTool,
@@ -123,5 +126,34 @@ describe('correction pass', () => {
     expect(h).toHaveLength(3);
     expect(h[1]).toEqual({ role: 'user', content: 'delete the roof task' });
     expect(h[2]).toEqual({ role: 'assistant', content: "I've deleted it." });
+  });
+});
+
+describe('staging', () => {
+  const staged = [{ name: 'task_update', ok: true, staged: true }];
+
+  it('counts a staged write as attempted but not as landed', () => {
+    expect(hasWriteAttempt(staged)).toBe(true);
+    expect(hasSuccessfulWrite(staged)).toBe(false);
+    expect(hasStagedWrite(staged)).toBe(true);
+    expect(hasStagedWrite([{ name: 'task_update', ok: true }])).toBe(false);
+  });
+
+  it('corrects a reply that says a staged change is done, and passes "ready to review"', () => {
+    expect(claimsDespiteStaging("I've moved the kitchen to 2 PM.", staged)).toBe(true);
+    expect(claimsDespiteStaging("I've prepared the move to 2 PM — it's ready to review.", staged)).toBe(false);
+    expect(claimsDespiteStaging('Two changes are ready to apply.', staged)).toBe(false);
+    // A real write alongside the staged one is a legitimate claim.
+    expect(
+      claimsDespiteStaging("I've moved it.", [...staged, { name: 'navigate', ok: true }]),
+    ).toBe(false);
+  });
+
+  it('phrases the staged correction as a restatement, not a redo', () => {
+    const p = correctionPrompt(staged, 'staged');
+    expect(p).toMatch(/task_update \(STAGED\)/);
+    expect(p).toMatch(/READY for the user to review/);
+    expect(p).not.toMatch(/Fulfill the original request/);
+    expect(STAGING_GUIDANCE).toMatch(/only the user can apply/);
   });
 });

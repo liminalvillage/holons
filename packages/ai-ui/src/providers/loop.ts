@@ -27,6 +27,13 @@ export interface AgentLoopParams {
   onText?: (text: string) => void;
   /** Streaming hook: each tool call before it is dispatched. */
   onToolCall?: (call: ToolCall) => void;
+  /**
+   * Dispatch a turn's tool calls one after another, in the order the model
+   * emitted them, instead of concurrently. Needed when calls build on each
+   * other's effect — a task created by the first call and joined by the
+   * second — as with staged changes.
+   */
+  sequential?: boolean;
 }
 
 export interface AgentLoopResult {
@@ -68,12 +75,21 @@ export async function runAgentLoop(
 
     if (turn.done || turn.toolCalls.length === 0) break;
 
-    const results = await Promise.all(
-      turn.toolCalls.map((call) => {
+    let results;
+    if (params.sequential) {
+      results = [];
+      for (const call of turn.toolCalls) {
         params.onToolCall?.(call);
-        return dispatch(call);
-      }),
-    );
+        results.push(await dispatch(call));
+      }
+    } else {
+      results = await Promise.all(
+        turn.toolCalls.map((call) => {
+          params.onToolCall?.(call);
+          return dispatch(call);
+        }),
+      );
+    }
     runner.submitToolResults(results);
   }
 
