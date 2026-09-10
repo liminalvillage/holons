@@ -122,16 +122,17 @@
     { id: "moves", glyph: "⇄", labelKey: "pills.moves" },
   ];
 
-  // ── Offers: supply (what is on the table) / matches (who could serve whom)
-  // / demand (the needs). The scale sits inside the board.
+  // ── Needs & Offers: demand (the needs, first — the board is demand-driven)
+  // / matches (who could serve whom) / supply (what is on the table). The
+  // scale sits inside the board.
   const OFFERS_MODES: {
     id: OffersViewMode;
     glyph: string;
     labelKey: MessageKey;
   }[] = [
-    { id: "supply", glyph: "▤", labelKey: "pills.supply" },
-    { id: "matches", glyph: "⇄", labelKey: "pills.matches" },
     { id: "demand", glyph: "◎", labelKey: "pills.demand" },
+    { id: "matches", glyph: "⇄", labelKey: "pills.matches" },
+    { id: "supply", glyph: "▤", labelKey: "pills.supply" },
   ];
 
   const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =

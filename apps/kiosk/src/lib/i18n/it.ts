@@ -975,7 +975,7 @@ export const it: Record<MessageKey, Msg> = {
   "home.tool3": "Biblioteca delle cose",
   "home.tool4": "Ruoli e turni",
   "home.tool5": "Liste",
-  "home.tool6": "Offerte e bisogni",
+  "home.tool6": "Bisogni e offerte",
   "home.tool7": "Spese e flussi",
   "home.tool8": "Una memoria dei contributi",
   "home.toolsNote":
@@ -1287,12 +1287,12 @@ export const it: Record<MessageKey, Msg> = {
   "stock.recording": "Registro…",
   "stock.recorded": "Registrato.",
   // Offers board (the market: offers matched to needs — $lib/offers)
-  "tabs.offers": "Offerte",
-  "pills.supply": "Offerta",
+  "tabs.offers": "Bisogni e offerte",
+  "pills.supply": "Offerte",
   "pills.matches": "Incroci",
-  "pills.demand": "Domanda",
+  "pills.demand": "Bisogni",
   "pills.offersLayout": "Vista offerte",
-  "settings.offersTab": "Bacheca offerte",
+  "settings.offersTab": "Bacheca bisogni e offerte",
   "settings.offersTabSub":
     "Il mercato: ciò che è sul tavolo, incrociato con ciò che serve — qui, tra i partner e sulla mappa.",
   "settings.offersTabAria": "Mostra la bacheca offerte",
@@ -1313,6 +1313,12 @@ export const it: Record<MessageKey, Msg> = {
     "L'eccedenza oltre la scorta di ogni articolo è offerta automaticamente — {n} offerte in corso.",
   "offers.autoOff": "L'eccedenza non è offerta automaticamente.",
   "offers.autoToggled": "Offerte di eccedenza {state}.",
+  "offers.autoNeedTitle": "Dalla lista della spesa",
+  "offers.autoNeedOn":
+    "Ciò che resta da comprare è un bisogno in corso, chiuso quando lo spunti — {n} bisogni in corso.",
+  "offers.autoNeedOff":
+    "La lista della spesa non è pubblicata automaticamente.",
+  "offers.autoNeedToggled": "Bisogni dalla lista della spesa {state}.",
   "offers.on": "attive",
   "offers.off": "disattivate",
   "offers.emptySupply": "Niente sul tavolo a questa scala.",
@@ -1324,7 +1330,8 @@ export const it: Record<MessageKey, Msg> = {
   "offers.emptyMatchesNone":
     "Nessun bisogno aperto da servire — allarga la scala per vedere più mercato.",
   "offers.emptyDemand": "Nessun bisogno a questa scala.",
-  "offers.emptyDemandLead": "I bisogni si pubblicano dalla lista della spesa.",
+  "offers.emptyDemandLead":
+    "Chiedi qualcosa qui, o pubblica dalla lista della spesa.",
   "offers.noMatch": "Niente sul mercato corrisponde a “{q}”.",
   "offers.contention": "Tensione per categoria",
   "offers.contentionLine": "{supply} offerto · {demand} richiesto",
@@ -1390,6 +1397,21 @@ export const it: Record<MessageKey, Msg> = {
     "Qualcuno conta su questa offerta — chiudila o liberala prima.",
   "offers.edit": "Modifica",
   "offers.keep": "Mantieni",
+  "offers.unit.hour": "ore",
+  "offers.ask": "Chiedi qualcosa",
+  "offers.askLead":
+    "Una cosa, una mano, una competenza — scritta qui, o presa dalla lista della spesa.",
+  "offers.askPlaceholder":
+    "Imparare la chitarra, una scala per una settimana, un passaggio in città…",
+  "offers.askIt": "Chiedi",
+  "offers.asked": "Richiesto.",
+  "offers.urgent": "Urgente",
+  "offers.urgentHint": "Mostrato per primo, ovunque arrivi",
+  "offers.shareNeedLead": "Dove deve arrivare questo bisogno?",
+  "offers.shareMapNeedHint":
+    "Accende il livello Bisogni nella tua cella e sopra",
+  "offers.ringHome": "La tua cella {d}",
+  "offers.ringAria": "Il raggio coperto da ogni scala",
   "offers.addOffer": "Pubblica un'offerta",
   "offers.editOffer": "Modifica offerta",
   "offers.addLead": "Qualcosa che puoi dare, prestare o vendere.",
@@ -1429,6 +1451,14 @@ export const it: Record<MessageKey, Msg> = {
   "offers.respondPlaceholder": "Messaggio (facoltativo)",
   "offers.responded": "Risposta inviata.",
   "offers.respondFailed": "Impossibile rispondere.",
+  "offers.requestIt": "Richiedilo",
+  "offers.requestLead":
+    "Chiedine una parte. Chi offre conferma con un tocco, poi vi accordate sulla consegna.",
+  "offers.requested": "Richiesto — in attesa di chi offre.",
+  "offers.requestedWaiting":
+    "L'hai già richiesto — in attesa che chi offre confermi.",
+  "offers.requestTooMany": "È più di quanto resta — chiedi meno.",
+  "offers.requestFailed": "Impossibile inviare la richiesta.",
   "offers.confirmRequester": "L'ho ricevuto",
   "offers.confirmProvider": "L'ho consegnato",
   "offers.codePlaceholder": "Codice di consegna",

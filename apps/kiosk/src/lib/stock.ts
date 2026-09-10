@@ -266,7 +266,11 @@ export function fmtQty(quantity: number, unit: string): string {
   const n = Number.isInteger(quantity)
     ? String(quantity)
     : quantity.toFixed(2).replace(/\.?0+$/, "");
-  return unit === "one" || unit === "" ? `${n}×` : `${n} ${unit}`;
+  if (unit === "one" || unit === "") return `${n}×`;
+  // Time reads as "5 h", not "5 hour": the unit id is what core infers a
+  // service from, the screen shortens it.
+  if (unit === "hour" || unit === "hours") return `${n} h`;
+  return `${n} ${unit}`;
 }
 
 /**

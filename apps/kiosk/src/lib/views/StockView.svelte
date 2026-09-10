@@ -166,12 +166,39 @@
   }
 
   async function refreshEvents(hs: HoloSphere, holon: string) {
+    let found = false;
     for (const delay of [0, 600, 1500, 3000]) {
       if (delay) await sleep(delay);
       if (hid !== holon) return;
-      if (await readEvents(hs, holon)) break;
+      if ((found = await readEvents(hs, holon))) break;
     }
-    if (hid === holon) loading = false;
+    if (hid !== holon) return;
+    loading = false;
+    if (found) catchUpSurplus(hs, holon);
+  }
+
+  /**
+   * A shelf filled elsewhere (MCP, Telegram, the web) or before the offers
+   * existed has no kiosk write behind it to sync from, and the Offers tab
+   * only appears once the holon has an offer of its own — so the shelf
+   * lists its surplus on open. Grow-only: a cold read never pulls an offer;
+   * idempotent: in step already, it writes nothing. Needs someone to sign as.
+   */
+  function catchUpSurplus(hs: HoloSphere, holon: string) {
+    const user = get(currentUser);
+    if (!user) return;
+    void syncSurplusFromShelf(hs, holon, {
+      initiator: {
+        id: user.id,
+        username: user.username ?? String(user.id),
+        firstName: user.first_name,
+        lastName: user.last_name,
+      },
+      growOnly: true,
+    }).then((out) => {
+      if (out.errors.length)
+        console.warn("[kiosk] stock: surplus catch-up", out.errors);
+    });
   }
 
   /** Partners: their shelves are public to the federation, so read them directly. */
@@ -411,6 +438,9 @@
       ]);
       formOpen = false;
       if (editing && openItemId === editing.id) openItemId = record.id;
+      // Keep-back (min / target) moved: the auto offers follow the spec too.
+      await tick();
+      publishTotals(holon);
     } catch (err) {
       fail(err, "stock.saveFailed");
     } finally {
@@ -435,6 +465,9 @@
       );
       confirmDelete = false;
       openItemId = null;
+      // The item left the shelf: its auto offer is withdrawn with it.
+      await tick();
+      publishTotals(holon);
     } catch (err) {
       fail(err, "stock.deleteFailed");
     } finally {

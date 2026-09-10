@@ -1,19 +1,23 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The Offers board: the market, read as resources matched to needs.
+  // The Needs & Offers board: the market, read demand first — what people
+  // ask for, and the resources that can answer it.
   //
   // Three layouts behind the pills band (see `offersViewMode`):
-  //   supply  — what is on the table: this holon's offers (the shelf's
-  //             surplus among them, kept in step automatically), then the
-  //             partners' and the cell's as the scale widens.
+  //   demand  — the needs at this scale; ask for something (the ＋ here
+  //             builds a need directly — "learn guitar" never goes on a
+  //             shopping list), respond / accept / hand off.
   //   matches — who could serve whom: the transport plan's legs, offers as
   //             supply and needs as demand, cheapest road first, with each
   //             need's contention (its dual price). One tap commits.
-  //   demand  — the needs at this scale; respond / accept / hand off.
+  //   supply  — what is on the table: this holon's offers (the shelf's
+  //             surplus among them, kept in step automatically), then the
+  //             partners' and the cell's as the scale widens.
   //
-  // The scale chips widen the market: this holon → its partners → its home
-  // cell → the cells above. Meaning lives in `@holons/core/offers`;
+  // The scale slider widens the market: this holon → its partners → its home
+  // cell → the cells above; the ring beside them draws that radius as the
+  // real nested cells (ScaleRing). Meaning lives in `@holons/core/offers`;
   // $lib/offers arranges it for the screen. `?offer=<id>` on the route opens
   // an offer's card on boot ($lib/stocklink). Every await is followed by a
   // holon-identity check.
@@ -46,6 +50,8 @@
     readAutoOfferSetting,
     readCellMarket,
     refreshPublishedOffer,
+    requestOffer,
+    scaleChain,
     syncSurplusFromShelf,
     withdrawPublishedOffer,
     ownerRef,
@@ -56,11 +62,16 @@
   import {
     claimNeed,
     confirmNeedHandoff,
+    createNeed,
     foldHandoffConfirmations,
     normalizeNeed,
+    publishNeedNearby,
+    readAutoNeedSetting,
     refreshPublishedNeed,
+    syncNeedsFromShopping,
     respondToNeed,
     settleNeedHandoff,
+    type PublishedNeed,
   } from "@holons/core/needs";
   import type { PartnerGraph } from "@holons/core/inventory";
   import {
@@ -83,6 +94,7 @@
   } from "$lib/stocklink";
   import { segmentFor } from "$lib/dock";
   import Modal from "$lib/components/Modal.svelte";
+  import ScaleRing from "$lib/components/ScaleRing.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   // ── Data ────────────────────────────────────────────────────────────────
@@ -95,6 +107,7 @@
   let cell: CellMarket | null = null;
   let cellLoading = false;
   let autoOffer = true;
+  let autoNeed = true;
   let cellTimer: ReturnType<typeof setInterval> | null = null;
   let scaleId = resolveOffersScale();
 
@@ -141,6 +154,10 @@
     void readAutoOfferSetting(hs, holon).then((on) => {
       if (hid === holon) autoOffer = on;
     });
+    void catchUpSurplus(hs, holon);
+    void readAutoNeedSetting(hs, holon).then((on) => {
+      if (hid === holon) autoNeed = on;
+    });
   }
 
   async function loadFederation(hs: HoloSphere, holon: string) {
@@ -185,9 +202,20 @@
     : "partners";
   $: activeScale = scaleById(options, activeScaleId) as Scale;
   $: void watchCell(activeScale, hid);
+  $: chain = homeHex ? scaleChain(homeHex, 3) : [];
+  $: activeIndex = Math.max(
+    0,
+    options.findIndex((o) => o.id === activeScaleId),
+  );
+  $: activeOption = options[activeIndex];
+  $: activeScaleLabel = activeOption?.label ?? "";
   function pickScale(id: string) {
     scaleId = id;
     setOffersScale(id);
+  }
+  function pickScaleAt(index: number) {
+    const o = options[index];
+    if (o) pickScale(o.id);
   }
   function scaleLabel(id: string, fallback: string): string {
     const key = (
@@ -254,6 +282,12 @@
   $: supplyGroups = board ? groupByCategory(board.supply) : [];
   $: autoCards = fullBoard
     ? fullBoard.supply.filter((c) => c.own && c.auto)
+    : [];
+  // Needs the shopping sync raised and that still stand (its twin of autoCards).
+  $: autoNeedCards = fullBoard
+    ? fullBoard.demand.filter(
+        (c) => c.own && c.matchable && c.need.source?.auto === true,
+      )
     : [];
   $: handoffConfirmations = foldHandoffConfirmations($rawQuests as never[]);
   $: nameOf = (id: string) =>
@@ -394,6 +428,7 @@
     { id: "l", key: "stock.unit.l" },
     { id: "m", key: "stock.unit.m" },
     { id: "pack", key: "stock.unit.pack" },
+    { id: "hour", key: "offers.unit.hour" },
   ];
   let formOpen = false;
   let editing: OfferRecord | null = null;
@@ -496,6 +531,7 @@
         upsertLocal(offer);
         showNotice($t("offers.created"));
         shareTarget = offer;
+        shareKind = "offer";
         shareOpen = true;
       }
       formOpen = false;
@@ -506,9 +542,70 @@
     }
   }
 
+  // ── Request form (ask for something) ────────────────────────────────────
+  // Demand first: a need built directly, no shopping list in between. Same
+  // record the shopping list publishes, plus `demand` in the asked unit.
+  let askOpen = false;
+  let rTitle = "";
+  let rCategory = "";
+  let rQty: string | number = "1";
+  let rUnit = "one";
+  let rNotes = "";
+  let rUrgent = false;
+  let asking = false;
+
+  function openAsk() {
+    if (!requireUser()) return;
+    rTitle = "";
+    rCategory = "";
+    rQty = "1";
+    rUnit = "one";
+    rNotes = "";
+    rUrgent = false;
+    askOpen = true;
+  }
+
+  async function saveNeed() {
+    const holon = hid;
+    const who = initiator;
+    const hs = hsRef;
+    if (!holon || !who || !hs || !rTitle.trim() || asking) return;
+    const quantity = num(rQty);
+    if (!quantity || quantity <= 0) {
+      showNotice($t("offers.howMany"));
+      return;
+    }
+    asking = true;
+    try {
+      const need = createNeed({
+        holonId: holon,
+        initiator: who,
+        title: rTitle,
+        description: rNotes || undefined,
+        category: rCategory || undefined,
+        demand: { quantity, unit: rUnit },
+        urgency: rUrgent ? "urgent" : undefined,
+      });
+      const store = await getLensStore();
+      await store.put(holon, "quests", need);
+      if (hid !== holon) return;
+      upsertLocal(need);
+      showNotice($t("offers.asked"));
+      askOpen = false;
+      shareTarget = need;
+      shareKind = "need";
+      shareOpen = true;
+    } catch (err) {
+      fail(err, "offers.saveFailed");
+    } finally {
+      asking = false;
+    }
+  }
+
   // ── Share / withdraw / auto ─────────────────────────────────────────────
   let shareOpen = false;
-  let shareTarget: OfferRecord | null = null;
+  let shareTarget: OfferRecord | PublishedNeed | null = null;
+  let shareKind: "offer" | "need" = "offer";
   let shToPartners = true;
   let shToHex = false;
   let sharing = false;
@@ -519,16 +616,17 @@
   async function share() {
     const holon = hid;
     const hs = hsRef;
-    const offer = shareTarget;
-    if (!holon || !hs || !offer || sharing) return;
+    const target = shareTarget;
+    if (!holon || !hs || !target || sharing) return;
     sharing = true;
     try {
-      const out = await publishOfferNearby(hs, holon, offer, {
-        toPartners: shToPartners,
-        toHex: shToHex && !!homeHex,
-      });
+      const opts = { toPartners: shToPartners, toHex: shToHex && !!homeHex };
+      const out =
+        shareKind === "need"
+          ? await publishNeedNearby(hs, holon, target as PublishedNeed, opts)
+          : await publishOfferNearby(hs, holon, target as OfferRecord, opts);
       if (hid !== holon) return;
-      upsertLocal(out.offer);
+      upsertLocal("need" in out ? out.need : out.offer);
       if (out.errors.length) console.warn("[kiosk] offers: share", out.errors);
       shareOpen = false;
       showNotice($t("offers.shared"));
@@ -567,6 +665,29 @@
     }
   }
 
+  // Catch up on open: a shelf filled elsewhere (MCP, Telegram, the web) or
+  // before this board existed leaves no kiosk write behind to sync from.
+  // Grow-only, so a cold cache reading an empty ledger never pulls live
+  // offers; idempotent, so in step already it writes nothing. Needs someone
+  // to sign as — a signed-out kiosk waits for the next shelf write.
+  async function catchUpSurplus(hs: HoloSphere, holon: string) {
+    const who = initiator;
+    if (!who) return;
+    try {
+      const out = await syncSurplusFromShelf(hs, holon, {
+        initiator: who,
+        growOnly: true,
+      });
+      if (hid !== holon) return;
+      for (const o of [...out.created, ...out.updated, ...out.withdrawn])
+        upsertLocal(o);
+      if (out.errors.length)
+        console.warn("[kiosk] offers: surplus catch-up", out.errors);
+    } catch (err) {
+      console.warn("[kiosk] offers: surplus catch-up failed", err);
+    }
+  }
+
   async function toggleAutoOffer(on: boolean) {
     const holon = hid;
     const hs = hsRef;
@@ -597,6 +718,42 @@
       );
     } catch (err) {
       autoOffer = !on;
+      fail(err, "offers.saveFailed");
+    }
+  }
+
+  // The demand side's switch: whatever is still to buy on the shopping list
+  // stands as a need (`settings.shopping.autoNeed`, core needs/auto.ts).
+  async function toggleAutoNeed(on: boolean) {
+    const holon = hid;
+    const hs = hsRef;
+    const who = initiator;
+    if (!holon || !hs || !who || !requireUser()) return;
+    autoNeed = on;
+    try {
+      const settings = ((await hs.get(holon, "settings", holon)) ?? {
+        id: holon,
+      }) as Record<string, unknown> & { shopping?: Record<string, unknown> };
+      const store = await getLensStore();
+      await store.put(holon, "settings", {
+        ...settings,
+        id: holon,
+        shopping: { ...(settings.shopping ?? {}), autoNeed: on },
+      });
+      const out = await syncNeedsFromShopping(hs, holon, {
+        initiator: who,
+        enabled: on,
+      });
+      if (hid !== holon) return;
+      for (const n of [...out.created, ...out.closed.map((c) => c.need)])
+        upsertLocal(n);
+      showNotice(
+        $t("offers.autoNeedToggled", {
+          state: $t(on ? "offers.on" : "offers.off"),
+        }),
+      );
+    } catch (err) {
+      autoNeed = !on;
       fail(err, "offers.saveFailed");
     }
   }
@@ -678,6 +835,72 @@
       await claimResponse(m.need, resp.id);
     } finally {
       accepting = null;
+    }
+  }
+
+  // ── Request it: ask for someone's offer ─────────────────────────────────
+  // Publishes a need on this holon naming the offer; the provider's board
+  // proposes the pair and their "Offer it" answers it (core requestOffer).
+  let reqQty: string | number = "1";
+  let requesting = false;
+  $: reqOpen = openCard && !openCard.own ? openCard : null;
+  $: if (reqOpen) reqQty = String(Math.min(1, reqOpen.remaining) || 1);
+  // The open need of ours already asking for the open offer, if any.
+  $: requestedNeed =
+    openCard && fullBoard
+      ? (fullBoard.demand.find(
+          (c) =>
+            c.own &&
+            c.matchable &&
+            c.need.wants?.offerId === String(openCard!.offer.id),
+        ) ?? null)
+      : null;
+  function canRequest(card: OfferCard): boolean {
+    return (
+      !card.own &&
+      !!viewerId &&
+      card.remaining > 0 &&
+      (card.offer.status === "open" || card.offer.status === "reserved")
+    );
+  }
+  async function requestIt(card: OfferCard) {
+    const holon = hid;
+    const hs = hsRef;
+    const who = initiator;
+    if (!holon || !hs || !who || !requireUser() || requesting) return;
+    const quantity = num(reqQty);
+    if (!quantity || quantity <= 0) {
+      showNotice($t("offers.howMany"));
+      return;
+    }
+    requesting = true;
+    try {
+      const out = await requestOffer(hs, {
+        offer: card.offer,
+        offerHolonId: card.ownerHolonId,
+        holonId: holon,
+        initiator: who,
+        quantity,
+      });
+      if (hid !== holon) return;
+      if (!out.ok || !out.need) {
+        showNotice(
+          $t(
+            out.reason === "insufficient"
+              ? "offers.requestTooMany"
+              : "offers.requestFailed",
+          ),
+        );
+        return;
+      }
+      upsertLocal(out.need);
+      showNotice($t("offers.requested"));
+      closeOffer();
+      openNeedKey = String(out.need.id);
+    } catch (err) {
+      fail(err, "offers.requestFailed");
+    } finally {
+      requesting = false;
     }
   }
 
@@ -864,21 +1087,47 @@
 
 <div class="board">
   <div class="offers scroll">
-    <div class="scale" role="radiogroup" aria-label={$t("offers.scale")}>
-      {#each options as o (o.id)}
-        <button
-          type="button"
-          class="scalechip"
-          class:on={activeScaleId === o.id}
-          role="radio"
-          aria-checked={activeScaleId === o.id}
-          on:click={() => pickScale(o.id)}
-        >
-          <span class="g">{o.glyph}</span>{o.label}
-        </button>
-      {/each}
-      {#if cellLoading}<span class="basis">{$t("offers.cellReading")}</span
-        >{/if}
+    <div class="scale">
+      <ScaleRing
+        {chain}
+        activeId={activeScaleId}
+        activeLabel={activeScaleLabel}
+        on:pick={(e) => pickScale(e.detail)}
+      />
+      <div class="scaleslide">
+        <div class="scalehead">
+          <span class="g">{activeOption?.glyph ?? ""}</span>
+          <strong>{activeScaleLabel}</strong>
+          {#if cellLoading}<span class="basis">{$t("offers.cellReading")}</span
+            >{/if}
+        </div>
+        <input
+          type="range"
+          min="0"
+          max={Math.max(0, options.length - 1)}
+          step="1"
+          value={activeIndex}
+          aria-label={$t("offers.scale")}
+          aria-valuetext={activeScaleLabel}
+          on:input={(e) => pickScaleAt(Number(e.currentTarget.value))}
+        />
+        <!-- The stops under the track: tap one to jump there. The slider
+             itself is the keyboard path, so these stay out of the tab order. -->
+        <div class="ticks" aria-hidden="true">
+          {#each options as o, i (o.id)}
+            <button
+              type="button"
+              class="tick"
+              class:on={i === activeIndex}
+              tabindex="-1"
+              on:click={() => pickScale(o.id)}
+            >
+              <span class="g">{o.glyph}</span>
+              <span class="tl">{o.label}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
     </div>
 
     {#if !board}
@@ -961,6 +1210,27 @@
         {/each}
       {/if}
     {:else if $offersViewMode === "demand"}
+      <div class="auto">
+        <div class="text">
+          <h3>{$t("offers.autoNeedTitle")}</h3>
+          <p class="basis">
+            {autoNeed
+              ? $t("offers.autoNeedOn", { n: autoNeedCards.length })
+              : $t("offers.autoNeedOff")}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="switch"
+          class:on={autoNeed}
+          role="switch"
+          aria-checked={autoNeed}
+          aria-label={$t("offers.autoNeedTitle")}
+          on:click={() => toggleAutoNeed(!autoNeed)}
+        >
+          <span class="knob"></span>
+        </button>
+      </div>
       {#if !board.demand.length}
         {#if filtering}
           <p class="empty">
@@ -1156,6 +1426,16 @@
         title={$t("offers.addOffer")}>＋</button
       >
     </div>
+  {:else if $offersViewMode === "demand"}
+    <div class="fabrow">
+      <VoiceButtons />
+      <button
+        class="fab"
+        on:click={openAsk}
+        aria-label={$t("offers.ask")}
+        title={$t("offers.ask")}>＋</button
+      >
+    </div>
   {/if}
 </div>
 
@@ -1257,6 +1537,47 @@
             </li>
           {/each}
         </ul>
+      {/if}
+      {#if requestedNeed}
+        <p class="lead">{$t("offers.requestedWaiting")}</p>
+        <div class="actions">
+          <button
+            class="ghost"
+            on:click={() => {
+              closeOffer();
+              openNeedKey = requestedNeed!.key;
+            }}>{$t("offers.view")}</button
+          >
+        </div>
+      {:else if canRequest(card)}
+        <p class="lead">{$t("offers.requestLead")}</p>
+        <div class="qtyrow">
+          <input
+            class="line"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            max={card.remaining}
+            step="any"
+            bind:value={reqQty}
+            placeholder={$t("offers.howMuch")}
+            aria-label={$t("offers.howMuch")}
+          />
+          <span class="unit"
+            >{$t(
+              UNITS.find((u) => u.id === card.offer.supply.unit)?.key ??
+                "stock.unit.one",
+            )}</span
+          >
+        </div>
+        <div class="actions">
+          <button
+            class="primary"
+            disabled={requesting || !(num(reqQty) ?? 0)}
+            on:click={() => requestIt(card)}
+            >{requesting ? $t("offers.saving") : $t("offers.requestIt")}</button
+          >
+        </div>
       {/if}
       {#if card.own && (card.offer.status === "open" || card.offer.status === "reserved")}
         {#if confirmWithdraw}
@@ -1502,12 +1823,88 @@
   </Modal>
 {/if}
 
+{#if askOpen}
+  <Modal on:close={() => (askOpen = false)}>
+    <div class="form">
+      <div class="glyph" aria-hidden="true">◎</div>
+      <h3>{$t("offers.ask")}</h3>
+      <p class="lead">{$t("offers.askLead")}</p>
+      <input
+        class="line"
+        bind:value={rTitle}
+        placeholder={$t("offers.askPlaceholder")}
+        maxlength="80"
+      />
+      <input
+        class="line"
+        bind:value={rCategory}
+        placeholder={$t("offers.categoryPlaceholder")}
+        maxlength="40"
+      />
+      <div class="qtyrow">
+        <input
+          class="line"
+          type="number"
+          inputmode="decimal"
+          min="0"
+          step="any"
+          bind:value={rQty}
+          placeholder={$t("offers.howMuch")}
+        />
+        <span class="unit"
+          >{$t(
+            UNITS.find((u) => u.id === rUnit)?.key ?? "stock.unit.one",
+          )}</span
+        >
+      </div>
+      <div class="types" role="radiogroup" aria-label={$t("offers.unit")}>
+        {#each UNITS as u (u.id)}
+          <button
+            type="button"
+            class="typechip"
+            class:on={rUnit === u.id}
+            role="radio"
+            aria-checked={rUnit === u.id}
+            on:click={() => (rUnit = u.id)}
+            ><span class="tl">{$t(u.key)}</span></button
+          >
+        {/each}
+      </div>
+      <input
+        class="line"
+        bind:value={rNotes}
+        placeholder={$t("offers.notesPlaceholder")}
+        maxlength="240"
+      />
+      <label class="opt" class:on={rUrgent}>
+        <input type="checkbox" bind:checked={rUrgent} />
+        <span class="ol"
+          >{$t("offers.urgent")}<small>{$t("offers.urgentHint")}</small></span
+        >
+      </label>
+      <div class="actions">
+        <button
+          class="primary"
+          on:click={saveNeed}
+          disabled={asking || !rTitle.trim()}
+          >{asking ? $t("offers.saving") : $t("offers.askIt")}</button
+        >
+        <button class="ghost" on:click={() => (askOpen = false)}
+          >{$t("common.cancel")}</button
+        >
+      </div>
+    </div>
+  </Modal>
+{/if}
+
 {#if shareOpen && shareTarget}
   <Modal on:close={() => (shareOpen = false)}>
     <div class="form">
       <div class="glyph" aria-hidden="true">⇄</div>
       <h3>{$t("offers.share")}</h3>
-      <p class="lead">{$t("offers.shareLead")}</p>
+      <p class="lead">
+        {$t(shareKind === "need" ? "offers.shareNeedLead" : "offers.shareLead")}
+      </p>
       <label class="opt" class:on={shToPartners}>
         <input type="checkbox" bind:checked={shToPartners} />
         <span class="ol"
@@ -1523,7 +1920,11 @@
         <span class="ol"
           >{$t("offers.shareMap")}<small
             >{homeHex
-              ? $t("offers.shareMapHint")
+              ? $t(
+                  shareKind === "need"
+                    ? "offers.shareMapNeedHint"
+                    : "offers.shareMapHint",
+                )
               : $t("offers.shareMapNone")}</small
           ></span
         >
@@ -1561,33 +1962,75 @@
   }
   .scale {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.8rem;
     margin: 0.2rem 0 0.6rem;
   }
-  .scalechip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    background: var(--card);
-    color: var(--ink);
-    font-size: 0.8rem;
-    font-weight: 700;
+  .scaleslide {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
   }
-  .scalechip .g {
+  .scalehead {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--ink);
+  }
+  .scalehead .g {
     color: var(--teal-deep);
   }
-  .scalechip.on {
-    background: var(--teal);
-    border-color: var(--teal);
-    color: #fff;
+  .scalehead strong {
+    color: var(--teal-deep);
+    font-weight: 700;
   }
-  .scalechip.on .g {
-    color: #fff;
+  .scaleslide input[type="range"] {
+    width: 100%;
+    margin: 0.2rem 0 0;
+    accent-color: var(--teal-deep);
+  }
+  .ticks {
+    display: flex;
+    justify-content: space-between;
+  }
+  .tick {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    padding: 0.1rem 0;
+    background: none;
+    border: 0;
+    color: var(--muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+  .tick:first-child {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .tick:last-child {
+    align-items: flex-end;
+    text-align: right;
+  }
+  .tick .g {
+    font-size: 0.8rem;
+    line-height: 1;
+  }
+  .tick .tl {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tick.on {
+    color: var(--teal-deep);
   }
   .section {
     margin: 1rem 0 0.45rem;

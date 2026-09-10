@@ -193,7 +193,7 @@ export const flowsViewMode = writable<FlowsViewMode>("graph");
 export const stockViewMode = writable<StockViewMode>("shelf");
 
 /** Offers layout: supply, matches, or demand. */
-export const offersViewMode = writable<OffersViewMode>("matches");
+export const offersViewMode = writable<OffersViewMode>("demand");
 
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");

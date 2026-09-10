@@ -754,7 +754,7 @@ export type OffersViewMode = "supply" | "matches" | "demand";
 
 export function resolveOffersView(): OffersViewMode {
   const v = persisted(OFFERS_VIEW_KEY);
-  return v === "supply" || v === "demand" ? v : "matches";
+  return v === "supply" || v === "matches" ? v : "demand";
 }
 
 export function setOffersView(mode: OffersViewMode): void {

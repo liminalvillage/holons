@@ -18,7 +18,7 @@
     pillsSuppressed,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
-  import { getChecklistStore } from "$lib/holosphere";
+  import { getChecklistStore, getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
   import { personalChecklists } from "$lib/personal";
   import { recordKey, sourceRef, holoSeed } from "$lib/data";
@@ -35,6 +35,8 @@
     toggleItem,
     type Checklist,
   } from "@holons/core/checklists";
+  import { SHOPPING_KEY } from "@holons/core/shopping";
+  import { syncNeedsFromShopping } from "@holons/core/needs";
 
   $: shownLists =
     $scope === "personal"
@@ -102,11 +104,17 @@
 
   let busy = false;
 
-  async function mutate(fn: () => Promise<void>, failMsg: string) {
+  async function mutate(
+    fn: () => Promise<Checklist | null | void>,
+    failMsg: string,
+    ref?: { holon: string; key: string } | null,
+  ) {
     if (busy) return;
     busy = true;
     try {
-      await fn();
+      const written = await fn();
+      if (ref && ref.key === SHOPPING_KEY)
+        afterShoppingWrite(ref.holon, written ?? undefined);
     } catch (err) {
       console.error("[kiosk] checklist write failed", err);
       showNotice(failMsg);
@@ -115,24 +123,61 @@
     }
   }
 
+  // The shopping list is demand (@holons/core/needs, `syncNeedsFromShopping`):
+  // whatever is still to buy stands as a need, closed when checked off —
+  // automatic, with a per-holon switch on the Needs & Offers board. Fired
+  // after every write to the list, never awaited: a list must not fail on
+  // its side effect. The list as just written travels along, so the sync
+  // does not race the store's own fold of that write.
+  function afterShoppingWrite(holon: string, list?: Checklist) {
+    const user = get(currentUser);
+    if (!user) return;
+    void getHolosphere()
+      .then((hs) =>
+        syncNeedsFromShopping(hs, holon, {
+          list,
+          initiator: {
+            id: user.id,
+            username: user.username ?? String(user.id),
+            firstName: user.first_name,
+            lastName: user.last_name,
+          },
+        }),
+      )
+      .then((out) => {
+        if (out.errors.length)
+          console.warn("[kiosk] shopping needs sync", out.errors);
+      })
+      .catch((err) => console.warn("[kiosk] shopping needs sync", err));
+  }
+
   function toggle(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await toggleItem(store, ref.holon, ref.key, index);
-    }, $t("lists.updateFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        return toggleItem(store, ref.holon, ref.key, index);
+      },
+      $t("lists.updateFailed"),
+      ref,
+    );
   }
 
   function removeItem(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await removeItemAt(store, ref.holon, ref.key, index);
-    }, $t("lists.removeItemFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const res = await removeItemAt(store, ref.holon, ref.key, index);
+        return res?.checklist ?? null;
+      },
+      $t("lists.removeItemFailed"),
+      ref,
+    );
   }
 
   let addItemText = "";
@@ -141,24 +186,36 @@
     if (!text || !requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await appendItems(store, ref.holon, ref.key, [{ text, checked: false }]);
-      addItemText = "";
-    }, $t("lists.addItemFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const list = await appendItems(store, ref.holon, ref.key, [
+          { text, checked: false },
+        ]);
+        addItemText = "";
+        return list;
+      },
+      $t("lists.addItemFailed"),
+      ref,
+    );
   }
 
   function clearDone() {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      const res = await clearChecklist(store, ref.holon, ref.key);
-      if (!res.ok && res.reason === "nothing_to_remove") {
-        showNotice($t("lists.nothingTicked"));
-      }
-    }, $t("lists.clearFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const res = await clearChecklist(store, ref.holon, ref.key);
+        if (!res.ok && res.reason === "nothing_to_remove") {
+          showNotice($t("lists.nothingTicked"));
+        }
+        return res.ok ? res.checklist : null;
+      },
+      $t("lists.clearFailed"),
+      ref,
+    );
   }
 
   // Deleting is a two-tap confirm — the first tap arms the button.

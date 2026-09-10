@@ -259,6 +259,7 @@ describe("fmtQty", () => {
     expect(fmtQty(2.5, "kg")).toBe("2.5 kg");
     expect(fmtQty(60, "one")).toBe("60×");
     expect(fmtQty(1.2345, "l")).toBe("1.23 l");
+    expect(fmtQty(5, "hour")).toBe("5 h");
   });
 });
 
