@@ -1439,7 +1439,8 @@ export const es: Record<MessageKey, Msg> = {
   "offers.responseGone": "Esa respuesta ya no está.",
   "offers.acceptFailed": "No se pudo aceptar.",
   "offers.respond": "Responder",
-  "offers.respondLead": "Cuéntale a quien lo pide qué puedes hacer.",
+  "offers.respondLead":
+    "Prométeselo: se publica en tu holón una oferta justo para esto, reservada hasta que elijan.",
   "offers.respondPlaceholder": "Mensaje (opcional)",
   "offers.responded": "Respuesta enviada.",
   "offers.respondFailed": "No se pudo responder.",

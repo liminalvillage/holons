@@ -89,30 +89,48 @@ streets away before buying one. Needs and existing resources become two layers
 of the same geographic picture: *what is wanted here* and *what is available
 here*.
 
-## 5. Provider response and disintermediation
+## 5. One shape for every commitment
 
-Any holon that can see a need — via federation or the public map — can
-**respond** to it: a message ("fresh eggs, can deliver Friday") with an
-optional price. Responses are embedded on the need record (the same pattern as
-library bookings) and written via `sourceRef`, so they reach the requester's
-holon regardless of where the responder saw the need. The first response flips
-the need to `offered`; several providers may respond; the requester's board
+Every commitment is an **offer and a need joined by a reservation**. There
+is one move on each side, and each side's move creates the record the other
+side would otherwise have to write:
+
+- A provider **answers** a need (`answerNeed`): from a standing offer when
+  one stands, otherwise by raising an offer for exactly what the need asks —
+  its title, category, unit and quantity, `source: {kind:'need'}` pointing
+  back — and answering from that. The need gets a response naming the offer;
+  the offer holds a reservation. The promise shows in the provider's supply
+  and cannot be promised twice.
+- A requester **requests** an offer (`requestOffer`): a need is published on
+  their holon naming the offer (`wants`), the matcher leans that way, and the
+  provider's one tap answers it. Nothing is written on the provider's side
+  until the provider acts.
+
+Responses are embedded on the need record (the same pattern as library
+bookings) and written via `sourceRef`, so they reach the requester's holon
+regardless of where the responder saw the need. The first response flips the
+need to `offered`; several providers may respond; the requester's board
 updates live with no notification infrastructure needed.
 
-Fulfillment stays conversational by design in this phase — the network's job
-is *visibility and matchmaking*, not escrow. Trust is local; the parties
-close the loop themselves, and checking off the shopping item records the
-outcome.
+When the requester **claims** one response, the others are released
+(`releaseNeedReservations`): a standing offer gets its units back, an offer
+raised for this need alone is withdrawn. Nobody accumulates stray standing
+offers for asks that went elsewhere. The handoff then settles the winning
+reservation and moves the stock on both ledgers.
 
-## 6. The need → offer flywheel *(next phase)*
+Fulfillment stays conversational by design — the network's job is
+*visibility and matchmaking*, not escrow. Trust is local; the parties close
+the loop themselves with the handoff code.
+
+## 6. The need → offer flywheel
 
 Every fulfilled need is proof of capability: someone actually delivered eggs
-in this hexagon. On fulfillment, the network mints a standing **offer**
-attributed to the provider — published to their own holon and optionally
-their hex. Providers therefore accrue a discoverable catalog **by fulfilling,
-not by listing**: reputation is earned through delivery. Over time the map's
-offers layer becomes an accurate, self-maintaining directory of who actually
-produces what, where.
+in this hexagon. Because every answer is an offer, that proof is the offer
+itself — raised for the need, fulfilled on the provider's own holon, never
+pushed further unless the provider shares it. Providers therefore accrue a
+record **by fulfilling, not by listing**: reputation is earned through
+delivery. (An earlier phase minted a separate standing offer at settlement;
+that record is gone — the answering offer is the catalog entry.)
 
 ## 7. Solidarity purchase groups *(later phase)*
 

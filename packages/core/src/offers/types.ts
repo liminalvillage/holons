@@ -47,6 +47,8 @@ export interface OfferSupply {
 /** Where the offer came from, for provenance badges and settlement. */
 export type OfferSource =
   | { kind: 'stock'; itemId: string }
+  /** Raised to answer one need (`answerNeed`): the dual of `PublishedNeed.wants`. Withdrawn if that need goes elsewhere. */
+  | { kind: 'need'; needId: string; holonId: string }
   | { kind: 'minted'; needId: string; holonId: string; at?: number }
   | { kind: 'library'; itemId: string };
 

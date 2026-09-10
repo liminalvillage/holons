@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   handoffExpenseId,
   handoffFeeExpenseId,
-  mintedOfferId,
   settleNeedHandoff,
 } from './settle.js';
 import type { PublishedNeed } from './types.js';
@@ -173,49 +172,12 @@ describe('settleNeedHandoff', () => {
     expect(out.errors.join(' ')).toMatch(/mirror/);
   });
 
-  it('mints the flywheel offer on the provider holon, attributed and provenance-stamped', async () => {
+  it('mints nothing: a response without an offer settles the need alone', async () => {
     const { db, holosphere, writes } = fakeStores();
-    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {
-      now: 1700000000000,
-    });
-    expect(out.mintedOfferId).toBe(mintedOfferId('need-1'));
-    const offer = writes.find(
-      (w) => w.lens === 'quests' && w.holon === 'prov-holon' && w.value.type === 'offer'
-    );
-    expect(offer?.value).toMatchObject({
-      id: 'offer-from-need-1',
-      type: 'offer',
-      title: 'flour 5kg',
-      initiator: { id: 'prov-user' },
-      mintedFrom: {
-        needId: 'need-1',
-        holonId: 'owner-h',
-        at: new Date(1700000000000).toISOString(),
-      },
-    });
-  });
-
-  it('mints on the owner holon when the responder declared no holon of their own', async () => {
-    const { db, holosphere, writes } = fakeStores();
-    const need = claimedNeed();
-    delete (need.responses![0].responder as any).holonId;
-    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', need, {});
-    expect(out.mintedOfferId).toBe('offer-from-need-1');
-    const offer = writes.find((w) => w.lens === 'quests' && w.value.type === 'offer');
-    expect(offer?.holon).toBe('owner-h');
-  });
-
-  it('skips the mint when mintProviderOffer is false or there is no provider', async () => {
-    const { db, holosphere, writes } = fakeStores();
-    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), {
-      mintProviderOffer: false,
-    });
-    expect(out.mintedOfferId).toBeNull();
+    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), { now: 1700000000000 });
+    expect(out.offerSettled).toBeNull();
     expect(writes.some((w) => w.value?.type === 'offer')).toBe(false);
-
-    const orphan = claimedNeed({ claimedResponseId: 'nope' });
-    const out2 = await settleNeedHandoff({ holosphere, db }, 'owner-h', orphan, {});
-    expect(out2.mintedOfferId).toBeNull();
+    expect('mintedOfferId' in out).toBe(false);
   });
 
   it('is idempotent on ids: a double settle writes the same expense id', async () => {
@@ -303,7 +265,7 @@ describe('settleNeedHandoff with a standing offer', () => {
       ],
     });
 
-  it('settles the reservation, writes one stock transfer on both ledgers, and mints nothing', async () => {
+  it('settles the reservation and writes one stock transfer on both ledgers', async () => {
     const { db, holosphere, writes } = fakeStores();
     let offer: any = stockOffer();
     db.get.mockImplementation(async (_h: string, lens: string, key?: string | number) => {
@@ -320,8 +282,6 @@ describe('settleNeedHandoff with a standing offer', () => {
       mirrorToProvider: false,
     });
 
-    expect(out.mintedOfferId).toBeNull();
-    expect(writes.some((w) => w.value?.id === mintedOfferId('need-1'))).toBe(false);
     expect(out.offerSettled).toMatchObject({ offerId: 'offer-stock-flour', offerHolonId: 'prov-holon', wroteBoth: true });
 
     // The offer record shrank: 5 delivered, 3 still free.
@@ -339,13 +299,5 @@ describe('settleNeedHandoff with a standing offer', () => {
       'prov-holon',
     );
     expect(levels.find((l) => l.itemId === 'flour')?.onhand).toBe(3);
-  });
-
-  it('still mints when the response was ad hoc', async () => {
-    const { db, holosphere, writes } = fakeStores();
-    const out = await settleNeedHandoff({ holosphere, db }, 'owner-h', claimedNeed(), { now: 1, mirrorToProvider: false });
-    expect(out.mintedOfferId).toBe(mintedOfferId('need-1'));
-    expect(out.offerSettled).toBeNull();
-    expect(writes.some((w) => w.value?.id === mintedOfferId('need-1'))).toBe(true);
   });
 });

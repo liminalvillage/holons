@@ -33,12 +33,14 @@
   import { getFederationSnapshot, readSettingsHex } from "$lib/holosphere/publish";
     import {
     acceptMatch,
+    answerNeed,
     createOffer,
     editOffer,
     publishOfferNearby,
     readAutoOfferSetting,
     readCellMarket,
     refreshPublishedOffer,
+    releaseNeedReservations,
     syncSurplusFromShelf,
     withdrawPublishedOffer,
     ownerRef,
@@ -52,7 +54,6 @@
     foldHandoffConfirmations,
     normalizeNeed,
     refreshPublishedNeed,
-    respondToNeed,
     settleNeedHandoff,
   } from "@holons/core/needs";
   import type { PartnerGraph } from "@holons/core/inventory";
@@ -607,30 +608,39 @@
   // ── Need actions (carried over; the detail modal drives them) ───────────
   let handoffNotice = "";
 
+  // The provider's one move (core answerNeed): an offer is raised for exactly
+  // this need on our holon and reserved for it; the response names it.
   async function respondToNeedItem(item: unknown, message: string, price: number | null) {
     const id = holonID;
     const who = requireSelf();
     if (!id || !who) return;
     const need = normalizeNeed(item);
     if (!need) return;
-    const result = respondToNeed(need, {
-      responder: { id: who.id, name: `${who.firstName} ${who.lastName}`.trim() || who.username, holonId: id },
-      message: message || undefined,
-      price: price ?? undefined,
-    });
-    if (!result.ok) {
-      say(result.reason === "own_need" ? "That's your own need." : "That need is closed.");
-      return;
-    }
     const ref = ownerRef(item, id, String(need.id));
     const target = ref?.holon ?? id;
-    const { _hologram, _federation, key: _k, ...record } = result.need as Record<string, unknown>;
-    if (ref?.key) record.id = ref.key;
     try {
-      await holosphere.put(target, "quests", record);
-      notifyNeedBot("responded", target, String(record.id));
-      if (openNeed && String(openNeed.need.id) === String(need.id)) openNeed = { ...openNeed, need: result.need, raw: { ...(openNeed.raw as object), status: result.need.status, responses: result.need.responses } };
-      say("Response sent.");
+      const out = await answerNeed(
+        { holosphere },
+        {
+          need,
+          needHolonId: target,
+          needKey: ref?.key,
+          holonId: id,
+          initiator: who,
+          actor: { id: who.id, name: `${who.firstName ?? ""} ${who.lastName ?? ""}`.trim() || who.username },
+          message: message || undefined,
+          price: price ?? undefined,
+        },
+      );
+      if (!out.ok) {
+        say(out.reason === "own_need" ? "That's your own need." : out.reason === "closed" ? "That need is closed." : "Couldn't respond.");
+        return;
+      }
+      if (holonID !== id) return;
+      upsertLocal(out.offer);
+      notifyNeedBot("responded", target, String(ref?.key ?? need.id));
+      if (openNeed && String(openNeed.need.id) === String(need.id)) openNeed = { ...openNeed, need: out.need, raw: { ...(openNeed.raw as object), status: out.need.status, responses: out.need.responses } };
+      say("Response sent — listed as an offer for this need.");
     } catch (err) {
       fail(err, "Couldn't respond.");
     }
@@ -658,6 +668,12 @@
       if (!ref?.holon) upsertLocal(result.need);
       if (openNeed && String(openNeed.need.id) === String(need.id)) openNeed = { ...openNeed, need: result.need, raw: { ...(openNeed.raw as object), ...result.need } };
       say(`Accepted. Handoff code: ${result.need.handoff?.code ?? ""}`);
+      // The losers' reservations go back; offers raised just for this need are withdrawn.
+      void releaseNeedReservations(holosphere, result.need, { except: responseId }).then((freed) => {
+        if (holonID !== id) return;
+        for (const o of [...freed.released, ...freed.withdrawn]) upsertLocal(o);
+        if (freed.errors.length) console.warn("[offers] release", freed.errors);
+      });
     } catch (err) {
       fail(err, "Couldn't accept.");
     }

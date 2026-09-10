@@ -48,6 +48,8 @@ export { cellLabel, readCellMarket, scaleChain } from './cell.js';
 export type { CellMarket, ReadCellMarketOptions } from './cell.js';
 export { acceptMatch } from './accept.js';
 export type { AcceptDeps, AcceptMatchInput, AcceptMatchOutcome } from './accept.js';
+export { answerNeed, offerForNeed, releaseNeedReservations } from './answer.js';
+export type { AnswerNeedInput, AnswerNeedOutcome, OfferForNeedInput, ReleaseNeedOptions, ReleaseNeedOutcome } from './answer.js';
 export { checkRequestOffer, needFromOffer, requestOffer } from './request.js';
 export type { NeedFromOfferInput, RequestOfferCheck, RequestOfferInput, RequestOfferOutcome, RequestOfferReason } from './request.js';
 export { buildOfferDelivery, offerDeliveryEventId, settleOfferReservation } from './settle.js';

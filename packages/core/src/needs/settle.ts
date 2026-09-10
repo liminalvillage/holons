@@ -16,21 +16,15 @@
  *     fulfilled quest. Without the mirror a provider who answered a
  *     federated need earns hours and karma only on someone else's holon —
  *     invisible in their own wallet, score, and record,
- *   - and MINT the flywheel offer (docs/needs-offers-network.md §6): a
- *     fulfilled need is proof of capability, so a standing `type:'offer'`
- *     attributed to the provider lands on THEIR holon's board. Providers
- *     accrue a discoverable catalog by fulfilling, not by listing. Consent
- *     stays theirs: the minted offer never leaves their holon unless they
- *     later share it.
+ *   - and settle the offer the winning response drew on: every response
+ *     carries one (`@holons/core/offers` answerNeed raises it when nothing
+ *     stood), so its reservation closes and the movement lands on both
+ *     ledgers. The fulfilled offer on the provider's holon IS the proof of
+ *     capability (docs/needs-offers-network.md §6); nothing extra is minted.
  */
 
 import type { HoloSphere } from 'holosphere';
-import {
-  planTaskCompletion,
-  executeCompletionPlan,
-  createMarketItem,
-  type ExecuteOutcome,
-} from '../tasks/index.js';
+import { planTaskCompletion, executeCompletionPlan, type ExecuteOutcome } from '../tasks/index.js';
 import { DEFAULT_EQUATION, type ScoreEquation } from '../scoring/index.js';
 import { REAEventStore, REAEventFactory } from '../rea/index.js';
 import { createExpense } from '../expenses/index.js';
@@ -58,11 +52,6 @@ export function handoffFeeExpenseId(needId: string | number): string {
   return `wq-${needId}-handoff-fee`;
 }
 
-/** Stable id of the flywheel offer minted from a fulfilled need. */
-export function mintedOfferId(needId: string | number): string {
-  return `offer-from-${needId}`;
-}
-
 /** Identity-attributed store surface (holosphere, or a putAs wrapper). */
 export interface SettleStoreLike {
   put(holonId: string, lens: string, value: unknown): Promise<unknown>;
@@ -88,13 +77,6 @@ export interface SettleNeedOptions {
   /** Check the originating shopping-list item off. Default true. */
   checkOffShoppingItem?: boolean;
   /**
-   * Mint the flywheel offer — a standing `type:'offer'` attributed to the
-   * provider on their own holon (see module doc). Default true. Skipped
-   * when the winning response drew on a standing offer: that offer IS the
-   * provider's catalog entry, and its reservation settles instead.
-   */
-  mintProviderOffer?: boolean;
-  /**
    * Settle the standing offer the winning response drew on (its reservation
    * closes and the movement is recorded as an REA event on both holons —
    * `@holons/core/offers`). Default true.
@@ -119,8 +101,6 @@ export interface SettleNeedOutcome {
   requesterId: string | null;
   /** Hours withheld into the owner coop's treasury (0 without a voted rate). */
   treasuryFee: number;
-  /** Id of the flywheel offer minted for the provider, when one was. */
-  mintedOfferId: string | null;
   /** The standing offer settled against, when the response drew on one. */
   offerSettled: { offerId: string; offerHolonId: string; eventId: string | null; wroteBoth: boolean } | null;
   completion: ExecuteOutcome;
@@ -296,10 +276,6 @@ export async function settleNeedHandoff(
     }
   }
 
-  // The flywheel (§6): mint a standing offer attributed to the provider on
-  // THEIR holon's board — proof of capability, earned by delivering. Stable
-  // id per need, so a double settle upserts. Never pushed to hex or
-  // partners here: sharing further stays the provider's explicit act.
   // A response that drew on a standing offer settles that offer's
   // reservation: the offer shrinks (or closes) and the movement is recorded
   // on both ledgers — a stock-sourced offer as `stock:transferred`, so the
@@ -331,39 +307,6 @@ export async function settleNeedHandoff(
     }
   }
 
-  let minted: string | null = null;
-  if (opts.mintProviderOffer !== false && providerId != null && !drewOnOffer) {
-    const offerHolon = providerHolonId ?? ownerHolonId;
-    const base = createMarketItem({
-      holonId: offerHolon,
-      initiator: { id: providerId, username: accepted?.responder?.name } as never,
-      kind: 'offer',
-      title: String(final.title ?? ''),
-      ...(final.category ? { category: String(final.category) } : {}),
-      itemType: (final as { item_type?: string }).item_type === 'service' ? 'service' : 'good',
-      ...(Array.isArray((final as { transaction_type?: string[] }).transaction_type)
-        ? { transactionTypes: (final as { transaction_type?: string[] }).transaction_type }
-        : {}),
-      now,
-    });
-    const offer = {
-      ...base,
-      id: mintedOfferId(String(final.id)),
-      // Provenance: which fulfilled need earned this offer, and where.
-      mintedFrom: {
-        needId: String(final.id),
-        holonId: ownerHolonId,
-        at: new Date(now).toISOString(),
-      },
-    };
-    try {
-      await db.put(offerHolon, NEED_RECORD_LENS, offer);
-      minted = offer.id;
-    } catch (err) {
-      errors.push(`mint offer: ${(err as Error).message ?? String(err)}`);
-    }
-  }
-
   return {
     need: asTask,
     hours,
@@ -371,7 +314,6 @@ export async function settleNeedHandoff(
     providerHolonId,
     requesterId,
     treasuryFee: toTreasury,
-    mintedOfferId: minted,
     offerSettled,
     completion,
     errors,

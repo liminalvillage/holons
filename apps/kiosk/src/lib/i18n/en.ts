@@ -1413,7 +1413,8 @@ export const en = {
   "offers.responseGone": "That response is gone.",
   "offers.acceptFailed": "Couldn't accept.",
   "offers.respond": "Respond",
-  "offers.respondLead": "Tell the requester what you can do.",
+  "offers.respondLead":
+    "Promise it: an offer for exactly this is listed on your holon and held for them until they choose.",
   "offers.respondPlaceholder": "Message (optional)",
   "offers.responded": "Response sent.",
   "offers.respondFailed": "Couldn't respond.",

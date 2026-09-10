@@ -1447,7 +1447,8 @@ export const it: Record<MessageKey, Msg> = {
   "offers.responseGone": "Quella risposta non c'è più.",
   "offers.acceptFailed": "Impossibile accettare.",
   "offers.respond": "Rispondi",
-  "offers.respondLead": "Di' a chi lo chiede cosa puoi fare.",
+  "offers.respondLead":
+    "Promettilo: sul tuo holon viene pubblicata un'offerta proprio per questo, riservata finché non scelgono.",
   "offers.respondPlaceholder": "Messaggio (facoltativo)",
   "offers.responded": "Risposta inviata.",
   "offers.respondFailed": "Impossibile rispondere.",

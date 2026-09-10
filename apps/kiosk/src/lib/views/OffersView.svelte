@@ -43,13 +43,14 @@
     readSettingsHex,
   } from "@holons/core/federation";
   import {
-    acceptMatch,
+    answerNeed,
     createOffer,
     editOffer,
     publishOfferNearby,
     readAutoOfferSetting,
     readCellMarket,
     refreshPublishedOffer,
+    releaseNeedReservations,
     requestOffer,
     scaleChain,
     syncSurplusFromShelf,
@@ -69,7 +70,6 @@
     readAutoNeedSetting,
     refreshPublishedNeed,
     syncNeedsFromShopping,
-    respondToNeed,
     settleNeedHandoff,
     type PublishedNeed,
   } from "@holons/core/needs";
@@ -761,32 +761,35 @@
   // ── Matches: one tap ────────────────────────────────────────────────────
   let accepting: string | null = null;
 
-  async function offerIt(m: MatchCard) {
+  // The provider's one move (core answerNeed): answer a need from a standing
+  // offer, or raise an offer for exactly that need and answer from it. Both
+  // the Matches row ("Offer it") and the need sheet ("Respond") land here.
+  async function answer(
+    needCard: NeedCard,
+    offerCard: OfferCard | null,
+    quantity?: number,
+    message?: string,
+  ): Promise<boolean> {
     const holon = hid;
     const hs = hsRef;
     const who = initiator;
-    if (
-      !holon ||
-      !hs ||
-      !m.offer ||
-      !m.need ||
-      accepting ||
-      !requireUser() ||
-      !who
-    )
-      return;
-    accepting = m.key;
+    if (!holon || !hs || !who || busy || !requireUser()) return false;
+    busy = true;
     try {
-      const ref = ownerRef(m.need.raw, holon, String(m.need.need.id));
-      const out = await acceptMatch(
+      const ref = ownerRef(needCard.raw, holon, String(needCard.need.id));
+      const out = await answerNeed(
         { holosphere: hs },
         {
-          offer: m.offer.offer,
-          offerHolonId: m.offer.ownerHolonId,
-          need: m.need.need,
-          needHolonId: ref?.holon ?? m.need.ownerHolonId,
+          need: needCard.need,
+          needHolonId: ref?.holon ?? needCard.ownerHolonId,
           needKey: ref?.key,
-          quantity: m.leg.quantity,
+          holonId: holon,
+          initiator: who,
+          offer: offerCard
+            ? { record: offerCard.offer, holonId: offerCard.ownerHolonId }
+            : undefined,
+          quantity,
+          message: message?.trim() || undefined,
           actor: {
             id: who.id,
             name:
@@ -795,7 +798,7 @@
           },
         },
       );
-      if (hid !== holon) return;
+      if (hid !== holon) return false;
       if (!out.ok) {
         showNotice(
           $t(
@@ -808,17 +811,32 @@
                   : "offers.offerFailed",
           ),
         );
-        return;
+        return false;
       }
       upsertLocal(out.offer);
-      if (m.need.own) upsertLocal(out.need);
+      if (needCard.own) upsertLocal(out.need);
       showNotice(
         $t("offers.offered", {
-          q: fmtQty(m.leg.quantity, m.offer.offer.supply.unit),
+          q: fmtQty(
+            out.offer.reservations.at(-1)?.quantity ?? quantity ?? 1,
+            out.offer.supply.unit,
+          ),
         }),
       );
+      return true;
     } catch (err) {
       fail(err, "offers.offerFailed");
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function offerIt(m: MatchCard) {
+    if (!m.offer || !m.need || accepting) return;
+    accepting = m.key;
+    try {
+      await answer(m.need, m.offer, m.leg.quantity);
     } finally {
       accepting = null;
     }
@@ -932,48 +950,7 @@
     : {};
 
   async function respond(card: NeedCard) {
-    const holon = hid;
-    const hs = hsRef;
-    const who = initiator;
-    if (!holon || !hs || !who || busy || !requireUser()) return;
-    const result = respondToNeed(card.need, {
-      responder: {
-        id: who.id,
-        name:
-          `${who.firstName ?? ""} ${who.lastName ?? ""}`.trim() || who.username,
-        holonId: holon,
-      },
-      message: rMessage.trim() || undefined,
-    });
-    if (!result.ok) {
-      showNotice(
-        $t(
-          result.reason === "own_need" ? "offers.ownNeed" : "offers.needClosed",
-        ),
-      );
-      return;
-    }
-    busy = true;
-    try {
-      const ref = ownerRef(card.raw, holon, String(card.need.id));
-      const {
-        _hologram,
-        _federation,
-        key: _k,
-        ...record
-      } = result.need as Record<string, unknown>;
-      if (ref?.key) record.id = ref.key;
-      const store = await getLensStore();
-      await store.put(ref?.holon ?? holon, "quests", record);
-      if (hid !== holon) return;
-      if (!ref) upsertLocal(result.need);
-      rMessage = "";
-      showNotice($t("offers.responded"));
-    } catch (err) {
-      fail(err, "offers.respondFailed");
-    } finally {
-      busy = false;
-    }
+    if (await answer(card, null, undefined, rMessage)) rMessage = "";
   }
 
   async function claimResponse(card: NeedCard, responseId: string) {
@@ -1014,6 +991,16 @@
       showNotice(
         $t("offers.accepted", { code: result.need.handoff?.code ?? "" }),
       );
+      // The losers' reservations go back; offers raised just for this
+      // need are withdrawn (core releaseNeedReservations).
+      void releaseNeedReservations(hs, result.need, {
+        except: responseId,
+      }).then((freed) => {
+        if (hid !== holon) return;
+        for (const o of [...freed.released, ...freed.withdrawn]) upsertLocal(o);
+        if (freed.errors.length)
+          console.warn("[kiosk] offers: release", freed.errors);
+      });
     } catch (err) {
       fail(err, "offers.acceptFailed");
     } finally {

@@ -12,7 +12,6 @@ import {
   createNeed,
   needFromShoppingItem,
   normalizeNeed,
-  respondToNeed,
   claimNeed,
   closeNeed,
   confirmNeedHandoff,
@@ -30,6 +29,7 @@ import {
   CHECKLISTS_COLLECTION,
   SHOPPING_KEY,
 } from '@holons/core/shopping';
+import { answerNeed, releaseNeedReservations } from '@holons/core/offers';
 import type { ToolDeps } from './index.js';
 
 function ok(payload: unknown) {
@@ -225,17 +225,15 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
     'need_respond',
     {
       description:
-        "Respond to a published need as a provider: appends a response (message + optional price) on the need record and flips its status to 'offered'. Write goes to the holon that owns the need (pass the owner holon id — for a foreign need use its _federation.origin / _hologram source).",
+        "Answer a published need as a provider (@holons/core/offers answerNeed): raises an offer for exactly what the need asks on the provider's holon (source kind 'need'), reserves it for the need, and appends a response naming it on the need record, whose status flips to 'offered'. To answer from a standing offer use offer_accept_match. The need write goes to the holon that owns it (pass the owner holon id — for a foreign need use its _federation.origin / _hologram source).",
       inputSchema: {
         holon: z.string().describe('Holon id that OWNS the need record.'),
         needId: z.string().describe("Need id under (holon, 'quests')."),
+        responderHolon: z.string().describe("The provider's own holon id — where the raised offer lives."),
+        quantity: z.number().positive().optional().describe("Units promised, in the need's unit. Default: what the need asks for."),
         message: z.string().optional().describe('What the provider can supply, and when.'),
         price: z.number().optional().describe('Offered price (market price).'),
         currency: z.string().optional().describe("Currency code for the price, e.g. 'EUR'."),
-        responderHolon: z
-          .string()
-          .optional()
-          .describe("The provider's own holon id, for follow-up."),
       },
     },
     async (args) => {
@@ -245,21 +243,32 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
         if (!need) return fail(`Need ${args.needId} not found on holon ${args.holon}.`);
 
         const actor = deps.resolveActor();
-        const result = respondToNeed(need, {
-          responder: {
-            id: actor.id,
-            name: actor.username,
-            ...(args.responderHolon ? { holonId: args.responderHolon } : {}),
+        const out = await answerNeed(
+          { holosphere: hs },
+          {
+            need,
+            needHolonId: args.holon,
+            holonId: args.responderHolon,
+            initiator: { id: actor.id, username: actor.username },
+            actor: { id: actor.id, name: actor.username },
+            quantity: args.quantity,
+            message: args.message,
+            price: args.price,
+            currency: args.currency,
           },
-          message: args.message,
-          price: args.price,
-          currency: args.currency,
-        });
-        if (!result.ok) {
-          return fail(`Cannot respond: ${result.reason}`, { status: need.status });
+        );
+        if (!out.ok) {
+          return fail(`Cannot respond: ${out.reason}`, { status: need.status, errors: out.errors });
         }
-        await hs.put(args.holon, NEED_RECORD_LENS, result.need);
-        return ok({ success: true, need: result.need, response: result.response });
+        return ok({
+          success: true,
+          need: out.need,
+          offer: out.offer,
+          responseId: out.responseId,
+          reservationId: out.reservationId,
+          raised: out.raised,
+          errors: out.errors,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -291,11 +300,15 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
           });
         }
         const refreshed = await refreshPublishedNeed(hs, args.holon, result.need);
+        // The losers' reservations go back; offers raised just for this need are withdrawn.
+        const freed = await releaseNeedReservations(hs, result.need, { except: args.responseId });
         return ok({
           success: true,
           need: refreshed.need,
           handoffCode: result.need.handoff?.code,
-          errors: refreshed.errors,
+          released: freed.released.map((o) => o.id),
+          withdrawn: freed.withdrawn.map((o) => o.id),
+          errors: [...refreshed.errors, ...freed.errors],
         });
       } catch (err) {
         return fail((err as Error).message);
