@@ -38,9 +38,10 @@
   // A tile that fails (offline kiosk, bad token) falls back to the tint.
   let brokenUrl = "";
   $: mapShown = mapUrl && mapUrl !== brokenUrl ? mapUrl : "";
+  // Cell stops are labelled by their width already; say it once.
   $: caption =
     activeLevel >= 0 && active
-      ? `${activeLabel} · ${formatAcross(active.acrossKm)}`
+      ? activeLabel || formatAcross(active.acrossKm)
       : picture
         ? $t("offers.ringHome", {
             d: formatAcross(picture.rings[0].acrossKm),

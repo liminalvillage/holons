@@ -44,7 +44,7 @@ export { UNMET_COST, WANTS_PENALTY, dedupeMarket, matchOffersToNeeds, matchesFor
 export type { CategoryContention, MarketNeed, MarketOffer, MatchLeg, MatchOptions, MatchPlan } from './match.js';
 export { publishOfferNearby, refreshPublishedOffer, withdrawPublishedOffer } from './publish.js';
 export type { PublishOfferOptions, PublishOfferOutcome, WithdrawOfferOutcome } from './publish.js';
-export { cellLabel, readCellMarket, scaleChain } from './cell.js';
+export { SCALE_LADDER, cellAcrossKm, cellLabel, formatAcross, readCellMarket, scaleChain, scaleLadder } from './cell.js';
 export type { CellMarket, ReadCellMarketOptions } from './cell.js';
 export { acceptMatch } from './accept.js';
 export type { AcceptDeps, AcceptMatchInput, AcceptMatchOutcome } from './accept.js';

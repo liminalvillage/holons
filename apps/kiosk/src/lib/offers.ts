@@ -18,7 +18,9 @@ import {
   matchOffersToNeeds,
   normalizeOffer,
   remainingSupply,
-  scaleChain,
+  cellAcrossKm,
+  formatAcross,
+  scaleLadder,
   stockOfferId,
   toMarketNeeds,
   toMarketOffers,
@@ -53,28 +55,29 @@ export interface ScaleOption {
   scale: Scale;
 }
 
-const CELL_LABELS = ["My cell", "Around", "Wider", "Region"];
-
-/** The scale control's options: this holon, its partners, then the home cell and its parents. */
+/**
+ * The scale control's options: this holon, its federation, then the home
+ * cell and the ladder rungs above it (core `scaleLadder`), each labelled
+ * by its width so a stop means the same distance on every holon.
+ */
 export function scaleOptions(
   homeHex: string | null,
   partnerCount: number,
-  levels = 3,
 ): ScaleOption[] {
   const out: ScaleOption[] = [
     { id: "holon", label: "This holon", glyph: "⌂", scale: { kind: "holon" } },
     {
       id: "partners",
-      label: partnerCount ? `Partners (${partnerCount})` : "Partners",
+      label: partnerCount ? `Federation (${partnerCount})` : "Federation",
       glyph: "⇄",
       scale: { kind: "partners" },
     },
   ];
   if (homeHex) {
-    scaleChain(homeHex, levels).forEach((cell, level) => {
+    scaleLadder(homeHex).forEach((cell, level) => {
       out.push({
         id: `cell:${level}`,
-        label: CELL_LABELS[level] ?? `+${level}`,
+        label: formatAcross(cellAcrossKm(cell)),
         glyph: "⬡",
         scale: { kind: "cell", cell, level },
       });

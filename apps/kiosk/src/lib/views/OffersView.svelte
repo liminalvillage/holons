@@ -53,7 +53,7 @@
     refreshPublishedOffer,
     releaseNeedReservations,
     requestOffer,
-    scaleChain,
+    scaleLadder,
     syncSurplusFromShelf,
     withdrawPublishedOffer,
     ownerRef,
@@ -204,7 +204,7 @@
     : "partners";
   $: activeScale = scaleById(options, activeScaleId) as Scale;
   $: void watchCell(activeScale, hid);
-  $: chain = homeHex ? scaleChain(homeHex, 3) : [];
+  $: chain = homeHex ? scaleLadder(homeHex) : [];
   $: activeIndex = Math.max(
     0,
     options.findIndex((o) => o.id === activeScaleId),
@@ -219,22 +219,15 @@
     const o = options[index];
     if (o) pickScale(o.id);
   }
+  // Cell stops keep their width label ("≈ 6 km"); the two named stops are
+  // translated.
   function scaleLabel(id: string, fallback: string): string {
-    const key = (
-      id === "holon"
-        ? "offers.scale.holon"
-        : id === "partners"
-          ? "offers.scale.partners"
-          : `offers.scale.${id.replace(":", "")}`
-    ) as MessageKey;
-    try {
-      const s = $t(key);
-      if (id === "partners" && federated.length)
-        return `${s} (${federated.length})`;
-      return s === key ? fallback : s;
-    } catch {
-      return fallback;
+    if (id === "holon") return $t("offers.scale.holon");
+    if (id === "partners") {
+      const s = $t("offers.scale.partners");
+      return federated.length ? `${s} (${federated.length})` : s;
     }
+    return fallback;
   }
 
   let cellKey = "";

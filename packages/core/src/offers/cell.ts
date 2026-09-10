@@ -8,7 +8,7 @@
  */
 
 import type { HoloSphere } from 'holosphere';
-import { cellToParent, getResolution, isValidCell } from 'h3-js';
+import { cellToParent, getHexagonEdgeLengthAvg, getResolution, isValidCell } from 'h3-js';
 import { NEEDS_LENS, OPEN_NEED_STATUSES, type PublishedNeed } from '../needs/types.js';
 import { normalizeNeed } from '../needs/transform.js';
 import { holonOf } from './supply.js';
@@ -79,6 +79,43 @@ export function scaleChain(homeCell: string, levels: number): string[] {
     chain.push(cur);
   }
   return chain;
+}
+
+/**
+ * The fixed rungs of the scale ladder, as H3 resolutions: roughly a
+ * kilometre, ten, sixty, and a few hundred across. Every holon climbs the
+ * same rungs, so a stop means the same distance everywhere — a holon
+ * placed at a coarse cell simply starts higher up.
+ */
+export const SCALE_LADDER: readonly number[] = [8, 6, 4, 2];
+
+/**
+ * The home cell, then its ancestors on the ladder rungs coarser than it,
+ * nearest first. A holon at res 9 climbs 9 → 8 → 6 → 4 → 2; one at res 6
+ * climbs 6 → 4 → 2. Empty without a valid home cell.
+ */
+export function scaleLadder(homeCell: string, rungs: readonly number[] = SCALE_LADDER): string[] {
+  if (!homeCell || !isValidCell(homeCell)) return [];
+  const home = getResolution(homeCell);
+  const out = [homeCell];
+  for (const res of [...rungs].sort((a, b) => b - a)) {
+    if (res < home) out.push(cellToParent(homeCell, res));
+  }
+  return out;
+}
+
+/** Across-corners width of a cell at its resolution, in km. */
+export function cellAcrossKm(cell: string): number {
+  if (!cell || !isValidCell(cell)) return 0;
+  return 2 * getHexagonEdgeLengthAvg(getResolution(cell), 'km');
+}
+
+/** "≈ 350 m" / "≈ 1.2 km" / "≈ 45 km" — a cell's width as a scale label. */
+export function formatAcross(km: number): string {
+  if (!(km > 0)) return '';
+  if (km < 1) return `≈ ${Math.round(km * 100) * 10} m`;
+  if (km < 10) return `≈ ${km.toFixed(1)} km`;
+  return `≈ ${Math.round(km)} km`;
 }
 
 /** A short label for a cell on a scale control: its resolution and a prefix. */

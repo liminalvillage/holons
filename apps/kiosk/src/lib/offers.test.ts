@@ -62,17 +62,26 @@ const base = {
 };
 
 describe("scaleOptions", () => {
-  it("lists the holon, partners, then the home cell and its parents", () => {
-    const opts = scaleOptions(HEX, 2, 2);
+  it("lists the holon, the federation, then the home cell and the ladder rungs above it, labelled by width", () => {
+    const opts = scaleOptions(HEX, 2);
     expect(opts.map((o) => o.id)).toEqual([
       "holon",
       "partners",
       "cell:0",
       "cell:1",
       "cell:2",
+      "cell:3",
+      "cell:4",
     ]);
-    expect(opts[1].label).toBe("Partners (2)");
+    expect(opts[1].label).toBe("Federation (2)");
     expect(opts[2].scale).toEqual({ kind: "cell", cell: HEX, level: 0 });
+    expect(opts.slice(2).map((o) => o.label)).toEqual([
+      "≈ 400 m",
+      "≈ 1.1 km",
+      "≈ 7.4 km",
+      "≈ 52 km",
+      "≈ 365 km",
+    ]);
     expect(scaleOptions(null, 0).map((o) => o.id)).toEqual([
       "holon",
       "partners",

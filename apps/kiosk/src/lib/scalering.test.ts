@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { scaleChain } from "@holons/core/offers";
+import { scaleLadder } from "@holons/core/offers";
 import {
   cellAcrossKm,
   formatAcross,
@@ -13,7 +13,7 @@ const HOME = "891f1d48b4bffff"; // res 9, ~350 m across
 
 describe("scaleRingPicture", () => {
   it("nests the chain around the home centre, innermost first, fitted to the chosen level", () => {
-    const chain = scaleChain(HOME, 3);
+    const chain = scaleLadder(HOME);
     const pic = scaleRingPicture(chain, 2, 100)!;
     expect(pic).not.toBeNull();
     expect(pic.rings.map((r) => r.id)).toEqual([
@@ -21,6 +21,7 @@ describe("scaleRingPicture", () => {
       "cell:1",
       "cell:2",
       "cell:3",
+      "cell:4",
     ]);
     const extent = (points: string) =>
       Math.max(
@@ -41,7 +42,7 @@ describe("scaleRingPicture", () => {
   });
 
   it("covers the fitted ring's ground in its bbox, centred on the home cell", () => {
-    const chain = scaleChain(HOME, 3);
+    const chain = scaleLadder(HOME);
     const pic = scaleRingPicture(chain, 2, 100)!;
     const [w, s, e, n] = pic.bbox;
     const [lat, lng] = cellToLatLng(HOME);
@@ -61,7 +62,7 @@ describe("scaleRingPicture", () => {
   });
 
   it("builds a square static-map url for the bbox, none without a token", () => {
-    const pic = scaleRingPicture(scaleChain(HOME, 3), 1, 100)!;
+    const pic = scaleRingPicture(scaleLadder(HOME), 1, 100)!;
     expect(scaleRingMapUrl(pic, "")).toBe("");
     const url = scaleRingMapUrl(pic, "pk.test", 80);
     expect(url).toContain("/static/[");

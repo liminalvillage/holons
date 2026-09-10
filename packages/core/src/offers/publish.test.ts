@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it, vi } from 'vitest';
 import type { HoloSphere } from 'holosphere';
-import { cellLabel, readCellMarket, scaleChain } from './cell.js';
+import { getResolution } from 'h3-js';
+import { cellAcrossKm, cellLabel, formatAcross, readCellMarket, scaleChain, scaleLadder } from './cell.js';
 import { reserveOffer } from './lifecycle.js';
 import { publishOfferNearby, refreshPublishedOffer, withdrawPublishedOffer } from './publish.js';
 import { createOffer } from './transform.js';
@@ -124,6 +125,28 @@ describe('readCellMarket', () => {
     (m.holosphere as any).getAll = vi.fn(async () => { throw new Error('offline'); });
     const market = await readCellMarket(m.holosphere, HEX);
     expect(market).toEqual({ cell: HEX, offers: [], needs: [], holons: [] });
+  });
+});
+
+describe('scaleLadder', () => {
+  it('climbs the same rungs from any home resolution, nearest first', () => {
+    const fromVillage = scaleLadder(HEX); // res 9
+    expect(fromVillage).toHaveLength(5);
+    expect(fromVillage.map((c) => getResolution(c))).toEqual([9, 8, 6, 4, 2]);
+    const region = fromVillage[2]; // res 6
+    expect(scaleLadder(region).map((c) => getResolution(c))).toEqual([6, 4, 2]);
+    // A holon already on a rung does not repeat it.
+    expect(scaleLadder(fromVillage[1]).map((c) => getResolution(c))).toEqual([8, 6, 4, 2]);
+    expect(scaleLadder('nope')).toEqual([]);
+  });
+
+  it('labels a cell by its width', () => {
+    expect(cellAcrossKm(HEX)).toBeGreaterThan(0.3);
+    expect(cellAcrossKm(HEX)).toBeLessThan(0.5);
+    expect(formatAcross(0.35)).toBe('≈ 350 m');
+    expect(formatAcross(1.23)).toBe('≈ 1.2 km');
+    expect(formatAcross(45.4)).toBe('≈ 45 km');
+    expect(formatAcross(0)).toBe('');
   });
 });
 

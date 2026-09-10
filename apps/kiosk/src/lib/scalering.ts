@@ -5,13 +5,8 @@
 // projected flat around the home cell's centre. Pure geometry: the component
 // only paints what this returns.
 
-import {
-  cellToBoundary,
-  cellToLatLng,
-  getHexagonEdgeLengthAvg,
-  getResolution,
-  isValidCell,
-} from "h3-js";
+import { cellToBoundary, cellToLatLng, isValidCell } from "h3-js";
+import { cellAcrossKm, formatAcross } from "@holons/core/offers";
 
 export interface RingShape {
   /** The scale option id this ring stands for (`cell:<level>`). */
@@ -40,19 +35,9 @@ export interface ScaleRingPicture {
 
 const KM_PER_DEG = 111.32;
 
-/** Across-corners width of a cell at this resolution, in km. */
-export function cellAcrossKm(cell: string): number {
-  if (!isValidCell(cell)) return 0;
-  return 2 * getHexagonEdgeLengthAvg(getResolution(cell), "km");
-}
-
-/** "≈ 1.2 km" / "≈ 45 km" / "≈ 350 m" — the label under the picture. */
-export function formatAcross(km: number): string {
-  if (!(km > 0)) return "";
-  if (km < 1) return `≈ ${Math.round(km * 100) * 10} m`;
-  if (km < 10) return `≈ ${km.toFixed(1)} km`;
-  return `≈ ${Math.round(km)} km`;
-}
+// The width helpers are core's (`@holons/core/offers`); re-exported so the
+// ring and its tests read from one place.
+export { cellAcrossKm, formatAcross };
 
 /**
  * Nest the chain's cells around the home centre and fit the picture so the

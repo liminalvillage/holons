@@ -932,7 +932,7 @@
       {#if card.auto}<li>Kept in step with the shelf — it follows what is on hand above the keep-back.</li>{/if}
       {#if card.offer.source?.kind === "minted"}<li>Earned by fulfilling a need.</li>{/if}
       {#if !card.own}<li>Listed by {nameOf(card.ownerHolonId)}.</li>{/if}
-      {#if card.offer.published}<li>Shared {card.offer.published.toPartners ? "with partners" : ""}{card.offer.published.toPartners && card.offer.published.toHex ? " and " : ""}{card.offer.published.toHex ? "on the map" : ""}{!card.offer.published.toPartners && !card.offer.published.toHex ? "nowhere yet" : ""}.</li>{/if}
+      {#if card.offer.published}<li>Shared {card.offer.published.toPartners ? "with the federation" : ""}{card.offer.published.toPartners && card.offer.published.toHex ? " and " : ""}{card.offer.published.toHex ? "on the map" : ""}{!card.offer.published.toPartners && !card.offer.published.toHex ? "nowhere yet" : ""}.</li>{/if}
       {#if card.offer.expires_at}<li>Until {new Date(card.offer.expires_at).toLocaleDateString()}</li>{/if}
     </ul>
 
