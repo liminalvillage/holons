@@ -148,6 +148,26 @@ export function stampNeedId(
   };
 }
 
+/**
+ * Give every id-less row an id. Rows written through the generic checklists
+ * domain (a kiosk Lists tab, a plain `appendItems`) carry only text and a
+ * tick; the shopping vocabulary — stamps, needs, stock references — keys on
+ * the id, so such rows get one the first time a shopping operation sees
+ * them. Returns the same object when nothing was missing.
+ */
+export function withItemIds(raw: unknown, now: number = Date.now()): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const d = raw as { items?: unknown };
+  if (!Array.isArray(d.items)) return raw;
+  let changed = false;
+  const items = d.items.map((i, index) => {
+    if (!i || typeof i !== 'object' || (i as { id?: unknown }).id != null) return i;
+    changed = true;
+    return { ...(i as object), id: `${now}-${index}-${Math.random().toString(36).slice(2, 8)}` };
+  });
+  return changed ? { ...(raw as object), items } : raw;
+}
+
 /** The need id an item was published as, if any. */
 export function needIdOf(item: ShoppingItem | null | undefined): string | null {
   const needId = item?.needId;

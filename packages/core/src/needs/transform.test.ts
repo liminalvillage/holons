@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { needFromShoppingItem, normalizeNeed, stockRefOf } from './transform.js';
+import { createNeed, needFromShoppingItem, normalizeNeed, stockRefOf } from './transform.js';
 import type { ShoppingItem } from '../shopping/types.js';
 
 const initiator = { id: 42, username: 'roberto' };
@@ -44,12 +44,67 @@ describe('needFromShoppingItem', () => {
     expect(need.id).toMatch(/^need-/);
   });
 
+  it('carries the requester’s own demand when given, in the stock unit by default', () => {
+    const plain = needFromShoppingItem(item, { holonId: 'h1', initiator, demand: { quantity: 3, unit: 'kg' } });
+    expect(plain.demand).toEqual({ quantity: 3, unit: 'kg' });
+    const stocked = needFromShoppingItem(
+      { ...item, stock: { itemId: 'flour', quantity: 5, unit: 'kg' } } as ShoppingItem,
+      { holonId: 'h1', initiator, demand: { quantity: 2 } }
+    );
+    expect(stocked.demand).toEqual({ quantity: 2, unit: 'kg' });
+    expect(needFromShoppingItem(item, { holonId: 'h1', initiator }).demand).toBeUndefined();
+  });
+
   it('stringifies numeric legacy shopping-item ids in the back-link', () => {
     const need = needFromShoppingItem(
       { ...item, id: 1700000000123 },
       { holonId: 'h1', initiator, id: 'need-1' }
     );
     expect(need.source?.itemId).toBe('1700000000123');
+  });
+});
+
+describe('createNeed', () => {
+  it('builds a requested need with demand in the asked unit, no shopping back-link', () => {
+    const need = createNeed({
+      holonId: 'h1',
+      initiator,
+      title: '  learn guitar ',
+      category: 'skills',
+      demand: { quantity: 5, unit: 'hour' },
+      id: 'need-1',
+      now: 1700000000000,
+    });
+    expect(need.type).toBe('need');
+    expect(need.status).toBe('requested');
+    expect(need.title).toBe('learn guitar');
+    expect(need.category).toBe('skills');
+    expect(need.demand).toEqual({ quantity: 5, unit: 'hour' });
+    expect(need.source).toBeUndefined();
+    expect(need.responses).toEqual([]);
+    expect(need.exchange_type).toBe('want');
+    expect(need.created).toBe(new Date(1700000000000).toISOString());
+  });
+
+  it('infers a service from a time unit and a good otherwise; explicit itemType wins', () => {
+    expect(createNeed({ holonId: 'h1', initiator, title: 'guitar lessons', demand: { unit: 'hour' } }).item_type).toBe('service');
+    expect(createNeed({ holonId: 'h1', initiator, title: 'a ladder' }).item_type).toBe('good');
+    expect(
+      createNeed({ holonId: 'h1', initiator, title: 'babysitting', demand: { unit: 'one' }, itemType: 'service' }).item_type,
+    ).toBe('service');
+  });
+
+  it('defaults demand to one unit and rejects an empty title', () => {
+    const need = createNeed({ holonId: 'h1', initiator, title: 'a ride to town' });
+    expect(need.demand).toEqual({ quantity: 1, unit: 'one' });
+    expect(need.id).toMatch(/^need-/);
+    expect(() => createNeed({ holonId: 'h1', initiator, title: '   ' })).toThrow();
+  });
+
+  it('stamps hex and urgency when given', () => {
+    const need = createNeed({ holonId: 'h1', initiator, title: 'insulin', hex: '8928308280fffff', urgency: 'urgent' });
+    expect(need.hex).toBe('8928308280fffff');
+    expect(need.urgency).toBe('urgent');
   });
 });
 

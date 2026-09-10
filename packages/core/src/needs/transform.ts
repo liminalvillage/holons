@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Shopping item → published need. Pure transforms; storage is the caller's
- * responsibility (the publish orchestrator persists to the `quests` lens).
+ * Building needs: from a shopping-list item, or directly (`createNeed`).
+ * Pure transforms; storage is the caller's responsibility (the publish
+ * orchestrator persists to the `quests` lens).
  */
 
 import { createMarketItem } from '../tasks/marketplace.js';
@@ -27,6 +28,11 @@ export interface NeedFromShoppingOptions {
   tags?: string[];
   /** Expiry as ms since epoch. */
   expiresAt?: number;
+  /**
+   * How much, in what unit, when the requester says so. Otherwise the
+   * item's stock reference (if any) speaks, else the matcher counts one.
+   */
+  demand?: { quantity?: number; unit?: string };
   /** Override the creation timestamp (ms since epoch). Mostly for tests. */
   now?: number;
 }
@@ -79,8 +85,83 @@ export function needFromShoppingItem(
   need.source = { kind: 'shopping', itemId: String(item.id) };
   const stock = stockRefOf(item);
   if (stock) need.stock = stock;
+  const q = opts.demand?.quantity;
+  if (typeof q === 'number' && Number.isFinite(q) && q > 0) {
+    const unit = typeof opts.demand?.unit === 'string' && opts.demand.unit.trim() ? opts.demand.unit.trim() : stock?.unit ?? 'one';
+    need.demand = { quantity: q, unit };
+  }
   need.responses = [];
   if (opts.hex) need.hex = opts.hex;
+  return need;
+}
+
+export interface CreateNeedInput {
+  holonId: string | number;
+  initiator: QuestInitiator;
+  /** What is asked for, in the requester's words: "learn guitar", "a ladder". */
+  title: string;
+  /** What kind of thing; matching and contention are per category. */
+  category?: string;
+  /** How much, in what unit ('one', 'kg', 'hour', …). Default one unit. */
+  demand?: { quantity?: number; unit?: string };
+  /** A good, or a service measured in time. Default: 'service' when the unit is time, else 'good'. */
+  itemType?: 'good' | 'service';
+  description?: string;
+  tags?: string[];
+  /** Expiry as ms since epoch. */
+  expiresAt?: number;
+  /** H3 cell the need will be published to (stamped for provenance). */
+  hex?: string;
+  /** Emergency mode: renders with priority and cross-posts to announcements. */
+  urgency?: 'urgent';
+  /** The standing offer this need asks for, when raised from one. */
+  wants?: { offerId: string; holonId: string };
+  /** Override the generated id. Mostly for tests and bots. */
+  id?: string;
+  /** Override the creation timestamp (ms since epoch). Mostly for tests. */
+  now?: number;
+}
+
+const TIME_UNITS: ReadonlySet<string> = new Set(['hour', 'hours', 'h', 'minute', 'minutes', 'min', 'day', 'days']);
+
+/**
+ * Build a need directly — the demand-first entry point, for what nobody
+ * would put on a shopping list ("learn guitar", "a ride to town on Friday").
+ * Same record as a shopping-born need, minus the `source` back-link, plus
+ * `demand` so the matcher knows how much and in what unit. Storage is the
+ * caller's (`publishNeedNearby`, or a plain put on the `quests` lens).
+ */
+export function createNeed(input: CreateNeedInput): PublishedNeed {
+  const title = String(input.title ?? '').trim();
+  if (!title) throw new Error('A need must say what is asked for.');
+  const now = input.now ?? Date.now();
+  const rawQty = input.demand?.quantity;
+  const quantity = typeof rawQty === 'number' && Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
+  const unit = typeof input.demand?.unit === 'string' && input.demand.unit.trim() ? input.demand.unit.trim() : 'one';
+  const itemType = input.itemType ?? (TIME_UNITS.has(unit.toLowerCase()) ? 'service' : 'good');
+  const category = typeof input.category === 'string' && input.category.trim() ? input.category.trim() : undefined;
+  const need = createMarketItem({
+    holonId: input.holonId,
+    initiator: input.initiator,
+    kind: 'need',
+    title,
+    description: input.description,
+    itemType,
+    tags: input.tags,
+    expiresAt: input.expiresAt,
+    category,
+    now,
+  }) as PublishedNeed;
+
+  need.id = input.id ?? `need-${now}-${Math.random().toString(36).slice(2, 8)}`;
+  need.status = 'requested';
+  need.demand = { quantity, unit };
+  need.responses = [];
+  if (input.hex) need.hex = input.hex;
+  if (input.urgency === 'urgent') need.urgency = 'urgent';
+  if (input.wants?.offerId && input.wants.holonId) {
+    need.wants = { offerId: String(input.wants.offerId), holonId: String(input.wants.holonId) };
+  }
   return need;
 }
 

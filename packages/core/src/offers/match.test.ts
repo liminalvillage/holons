@@ -37,6 +37,15 @@ const need = (id: string, holonId: string, quantity: number, category = 'food', 
   }) as PublishedNeed;
 
 describe('supply is the dual of demand', () => {
+  it('a direct need (no stock reference) is demand in its own unit', () => {
+    const n = toMarketNeeds(
+      [{ id: 'g', type: 'need', status: 'requested', title: 'learn guitar', category: 'skills', holonId: 'b', demand: { quantity: 5, unit: 'hour' }, responses: [] }],
+      'b',
+    );
+    expect(n).toHaveLength(1);
+    expect(n[0]).toMatchObject({ needId: 'g', holonId: 'b', category: 'skills', quantity: 5, unit: 'hour' });
+  });
+
   it('reads the same quantity a need asks for, keyed by category', () => {
     const o = createOffer({ holonId: 'a', initiator, title: 'Flour', category: 'food', supply: { itemId: 'flour', quantity: 5, unit: 'kg' }, id: 'o' });
     const s = supplyOf(o, 'a')!;

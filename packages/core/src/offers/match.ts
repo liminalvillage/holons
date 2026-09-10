@@ -18,7 +18,7 @@
  * demand nobody can cover that `inventory/scarcity` reports for shelves.
  */
 
-import { demandOf } from '../inventory/scarcity.js';
+import { demandOf, demandUnit } from '../inventory/scarcity.js';
 import { solveTransport, type TransportCost } from '../inventory/transport.js';
 import { OPEN_NEED_STATUSES, type PublishedNeed } from '../needs/types.js';
 import { normalizeNeed } from '../needs/transform.js';
@@ -46,8 +46,16 @@ export interface MarketNeed {
   /** Units still unserved. */
   quantity: number;
   unit?: string;
+  /** The offer this need was raised for (`need.wants`), if any. */
+  wantsOfferId?: string;
   need: PublishedNeed;
 }
+
+/**
+ * What every other offer costs extra against a need that names one: enough
+ * to win a tie, never enough to beat a nearer source outright.
+ */
+export const WANTS_PENALTY = 0.5;
 
 export interface MatchLeg {
   offerId: string;
@@ -180,7 +188,8 @@ export function toMarketNeeds(records: unknown[], fallbackHolon: string): Market
       ...(need.hex ? { hex: need.hex } : {}),
       category: d.category,
       quantity: d.quantity,
-      ...(need.stock?.unit ? { unit: need.stock.unit } : {}),
+      ...(demandUnit(need) ? { unit: demandUnit(need) } : {}),
+      ...(need.wants?.offerId ? { wantsOfferId: String(need.wants.offerId) } : {}),
       need,
     });
   }
@@ -250,10 +259,15 @@ export function matchOffersToNeeds(
   for (const [category, group] of [...byCategory].sort(([a], [b]) => a.localeCompare(b))) {
     const holonOfOffer = new Map(group.offers.map((o) => [o.offerId, o.holonId]));
     const holonOfNeed = new Map(group.needs.map((n) => [n.needId, n.holonId]));
+    const wants = new Map(group.needs.filter((n) => n.wantsOfferId).map((n) => [n.needId, n.wantsOfferId!]));
     const sol = solveTransport(
       group.offers.map((o) => ({ id: o.offerId, supply: o.quantity })),
       group.needs.map((n) => ({ id: n.needId, demand: n.quantity })),
-      (from, to) => cost(holonOfOffer.get(from)!, holonOfNeed.get(to)!),
+      (from, to) => {
+        const c = cost(holonOfOffer.get(from)!, holonOfNeed.get(to)!);
+        const wanted = wants.get(to);
+        return wanted && wanted !== from && Number.isFinite(c) ? c + WANTS_PENALTY : c;
+      },
       { unmetCost },
     );
     for (const leg of sol.legs) {

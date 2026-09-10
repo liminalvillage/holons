@@ -21,6 +21,17 @@ produces. It already exists; nobody has to fill in a form or "join a
 marketplace." This network publishes that signal — **by consent, to a chosen
 radius** — and lets nearby producers answer it directly.
 
+Not every need is groceries. "Learn guitar", "a ladder for a week", "a ride
+to town on Friday" never reach a shopping list, so the network is
+**demand-first**: a need can be asked for directly (`createNeed` in
+`@holons/core/needs`, the kiosk's *Ask for something*, the MCP `need_create`
+tool), carrying `demand: {quantity, unit}` in the requester's own measure. A
+time unit makes it a service. The shopping list remains the zero-effort
+source: behind a per-holon switch (`settings.shopping.autoNeed`, on by
+default, the twin of the shelf's surplus offers) whatever is still to buy
+stands as a need, fulfilled when the row is checked off, taken back when the
+row leaves the list before anyone answered (`syncNeedsFromShopping`).
+
 The economics are deliberately simple: a published need is a **commitment to
 purchase at market price**. The buyer pays what they would have paid at the
 store; the producer earns the retail price instead of the farm-gate price.

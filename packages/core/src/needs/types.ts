@@ -79,8 +79,27 @@ export interface PublishedNeed extends Quest {
   status: NeedStatus;
   /** H3 cell this need was published to, when shared on the public map. */
   hex?: string;
-  /** Back-link to the originating record (phase 1: a shopping-list item). */
-  source?: { kind: 'shopping'; itemId: string };
+  /**
+   * Back-link to the originating record (phase 1: a shopping-list item).
+   * `auto` marks a need the shopping sync raised by itself (`needs/auto.ts`),
+   * the one it may also take back when the switch goes off.
+   */
+  source?: { kind: 'shopping'; itemId: string; auto?: boolean };
+  /**
+   * What the need asks for, in the requester's own words of measure: a
+   * quantity and a unit ('one', 'kg', 'hour', …). The demand side's twin of
+   * an offer's `supply`. Needs from the shopping list carry it through
+   * `stock` instead; the matcher reads `demand` first, then `stock`, then
+   * counts one unit.
+   */
+  demand?: { quantity: number; unit?: string };
+  /**
+   * The standing offer this need was raised for (`@holons/core/offers`
+   * `requestOffer`): a tap on someone's offer asks for it by publishing a
+   * need that names it, and the matcher leans that way so the provider's
+   * one tap ("Offer it") answers it. The lifecycle is unchanged.
+   */
+  wants?: { offerId: string; holonId: string };
   /**
    * The stock item this need asks for, when it came from the inventory
    * reorder (`@holons/core/inventory`): lets the shelf reserve for it and

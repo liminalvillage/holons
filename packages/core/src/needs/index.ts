@@ -4,8 +4,9 @@
 /**
  * @holons/core/needs
  *
- * Geolocated needs: shopping-list items published as marketplace needs on the
- * `quests` lens, optionally projected to the holon's H3 hex cell (`needs`
+ * Geolocated needs: what people ask for — built directly (`createNeed`) or
+ * from a shopping-list item — published as marketplace needs on the `quests`
+ * lens, optionally projected to the holon's H3 hex cell (`needs`
  * lens) so they light the public map, with provider responses embedded on the
  * record. See docs/needs-offers-network.md for the concept.
  */
@@ -23,9 +24,11 @@ export {
 } from './types.js';
 
 export {
+  createNeed,
   needFromShoppingItem,
   stockRefOf,
   normalizeNeed,
+  type CreateNeedInput,
   type NeedFromShoppingOptions,
 } from './transform.js';
 
@@ -114,3 +117,14 @@ export {
   type PublishNeedOptions,
   type PublishNeedOutcome,
 } from './publish.js';
+
+export {
+  shoppingNeeds,
+  shoppingNeedId,
+  syncNeedsFromShopping,
+  readAutoNeedSetting,
+  type ShoppingNeedsInput,
+  type ShoppingNeedsPlan,
+  type SyncShoppingNeedsOptions,
+  type SyncShoppingNeedsOutcome,
+} from './auto.js';

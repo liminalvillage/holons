@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  createNeed,
   needFromShoppingItem,
   normalizeNeed,
   respondToNeed,
@@ -19,6 +20,7 @@ import {
   settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
+  syncNeedsFromShopping,
   NEED_RECORD_LENS,
   NEEDS_LENS,
 } from '@holons/core/needs';
@@ -61,6 +63,102 @@ async function loadNeed(hs: any, holon: string, needId: string) {
 }
 
 export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
+  server.registerTool(
+    'need_create',
+    {
+      description:
+        "Ask for something directly — the demand-first entry point, for what nobody would put on a shopping list ('learn guitar', 'a ride to town on Friday', 'a ladder for a week'). Builds a need (type:'need', status:'requested') with a quantity and unit the matcher counts in, persists it at (holon, 'quests'), and shares it nearby: copies to federation partners (toPartners, default true) and/or a live hologram at the holon's settings.hex cell under the 'needs' lens so the map lights (toHex, default false). Set toPartners false and toHex false to keep it on the holon until need_publish.",
+      inputSchema: {
+        holon: z.string().describe('Holon id the need belongs to.'),
+        title: z.string().describe('What is asked for, in the requester’s words.'),
+        category: z
+          .string()
+          .optional()
+          .describe('What kind of thing; matching and contention are per category. Needs without one are listed but never matched.'),
+        quantity: z.number().positive().optional().describe('How much. Default 1.'),
+        unit: z.string().optional().describe("e.g. 'one', 'kg', 'hour'. Default 'one'. A time unit makes it a service."),
+        itemType: z.enum(['good', 'service']).optional(),
+        description: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        expiresAt: z.number().optional().describe('ms since epoch'),
+        urgent: z.boolean().optional().describe('Emergency mode: rendered with priority.'),
+        toPartners: z.boolean().optional().describe('Publish standalone copies to federation partners. Default true.'),
+        toHex: z
+          .boolean()
+          .optional()
+          .describe("Publish a hologram to the holon's settings.hex cell so the map's needs layer lights. Requires a valid hex address in settings. Default false."),
+        id: z.string().optional().describe('Override the generated id.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const actor = deps.resolveActor();
+        const need = createNeed({
+          holonId: args.holon,
+          initiator: { id: actor.id, username: actor.username },
+          title: args.title,
+          category: args.category,
+          demand: { quantity: args.quantity, unit: args.unit },
+          itemType: args.itemType,
+          description: args.description,
+          tags: args.tags,
+          expiresAt: args.expiresAt,
+          urgency: args.urgent ? 'urgent' : undefined,
+          id: args.id,
+        });
+        const toPartners = args.toPartners !== false;
+        const toHex = args.toHex === true;
+        if (!toPartners && !toHex) {
+          await hs.put(args.holon, NEED_RECORD_LENS, need);
+          return ok({ success: true, need, publishedToPartners: 0, publishedToHex: [] });
+        }
+        const outcome = await publishNeedNearby(hs, args.holon, need, { toPartners, toHex });
+        return ok({
+          success: true,
+          need: outcome.need,
+          publishedToPartners: outcome.partners?.publishedTo ?? 0,
+          publishedToHex: outcome.hexCell?.destinations ?? [],
+          errors: outcome.errors,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'need_sync_shopping',
+    {
+      description:
+        "Bring the holon's automatic needs in step with its shopping list (the twin of offer_sync_surplus): one standing need per item still to buy, shared with partners and the map; fulfilled when the item is checked off; cancelled when the item leaves the list before anyone answered. Honours settings.shopping.autoNeed unless `enabled` is given — false takes back only what the sync raised and nobody answered.",
+      inputSchema: {
+        holon: z.string(),
+        enabled: z.boolean().optional().describe('Force the switch; false takes back only.'),
+        toHex: z.boolean().optional().describe("Also hologram new needs at the holon's settings.hex cell. Default true."),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const actor = deps.resolveActor();
+        const out = await syncNeedsFromShopping(hs, args.holon, {
+          initiator: { id: actor.id, username: actor.username },
+          enabled: args.enabled,
+          toHex: args.toHex,
+        });
+        return ok({
+          success: true,
+          created: out.created.map((n) => ({ id: n.id, title: n.title, demand: n.demand })),
+          closed: out.closed.map((c) => ({ id: c.need.id, outcome: c.outcome })),
+          errors: out.errors,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
   server.registerTool(
     'need_publish_from_shopping_item',
     {

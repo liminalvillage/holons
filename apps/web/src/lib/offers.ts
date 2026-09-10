@@ -26,7 +26,12 @@ import {
   type MatchLeg,
   type OfferRecord,
 } from "@holons/core/offers";
-import { federationCost, type PartnerGraph } from "@holons/core/inventory";
+import {
+  demandQuantity,
+  demandUnit,
+  federationCost,
+  type PartnerGraph,
+} from "@holons/core/inventory";
 import { normalizeNeed, type PublishedNeed } from "@holons/core/needs";
 import { classifyMarketItem } from "@holons/core/tasks";
 
@@ -335,9 +340,8 @@ export function buildOfferBoard(input: BuildOfferBoardInput): OfferBoard {
           String(viewerId),
       matchable: !legacy && (status === "requested" || status === "offered"),
       legacy,
-      quantity:
-        typeof need.stock?.quantity === "number" ? need.stock.quantity : 1,
-      unit: need.stock?.unit ?? "one",
+      quantity: demandQuantity(need),
+      unit: demandUnit(need) ?? "one",
       statusLabel: legacy ? "Request" : (NEED_STATUS_LABELS[status] ?? status),
       source:
         sources.get(`${ownerHolonId}::${id}`) ?? (own ? "own" : "partner"),
