@@ -84,14 +84,17 @@ export const COMMUNITY_URL = "https://t.me/HolonicDAO";
 export const SOURCE_URL = "https://github.com/HolonicLabs/holons";
 
 /**
- * The Telegram bot a holon is started with. Public by design (it ends up in
- * every deep link on the landing page); override per-deploy with
- * `VITE_TELEGRAM_BOT_USERNAME` when a fork runs its own bot.
+ * The Telegram bot a hub is started with — @HubsNetwork_bot, the hubs
+ * network's own. Public by design (it ends up in every deep link on the
+ * about page); override per-deploy with `VITE_TELEGRAM_BOT_USERNAME` when a
+ * fork runs its own bot.
  */
+export const DEFAULT_BOT_USERNAME = "HubsNetwork_bot";
+
 export function resolveBotUsername(): string {
   const env = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined;
   const v = (env && String(env).trim().replace(/^@/, "")) || "";
-  return /^[A-Za-z0-9_]{3,}$/.test(v) ? v : "HolonsBot";
+  return /^[A-Za-z0-9_]{3,}$/.test(v) ? v : DEFAULT_BOT_USERNAME;
 }
 
 /**
