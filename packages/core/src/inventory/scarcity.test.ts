@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
-import { demandOf, demandsOf, positions, reserve, scarcity } from './scarcity.js';
+import { demandOf, demandQuantity, demandUnit, demandsOf, keepBack, positions, reserve, scarcity } from './scarcity.js';
 import type { StockItemSpec, StockLevel } from './types.js';
 
 const H = 'holon-a';
@@ -38,6 +38,18 @@ describe('demandOf', () => {
       itemId: 'flour',
       quantity: 3,
     });
+  });
+
+  it("reads a direct need's own demand before its stock reference", () => {
+    const direct = { status: 'requested', category: 'skills', demand: { quantity: 5, unit: 'hour' } };
+    expect(demandOf(direct, H)).toEqual({ holonId: H, category: 'skills', quantity: 5 });
+    expect(demandUnit(direct)).toBe('hour');
+    const both = { status: 'requested', category: 'food', demand: { quantity: 2 }, stock: { itemId: 'flour', quantity: 3, unit: 'kg' } };
+    expect(demandQuantity(both)).toBe(2);
+    expect(demandUnit(both)).toBe('kg');
+    expect(demandOf(both, H)?.itemId).toBe('flour');
+    expect(demandQuantity({ status: 'requested', demand: { quantity: 0 } })).toBe(1);
+    expect(demandUnit({ status: 'requested' })).toBeUndefined();
   });
 
   it('reads the needs domain statuses: requested and offered count, fulfilled does not', () => {
@@ -101,11 +113,26 @@ describe('scarcity with reservations', () => {
   });
 });
 
+describe('keepBack', () => {
+  it('is min alone — the restock target is not a hold — never negative, zero without a spec', () => {
+    expect(keepBack(specs[0])).toBe(5);
+    expect(keepBack({ id: 'x', name: 'x', category: 'c', unit: 'kg', target: 20 })).toBe(0);
+    expect(keepBack({ id: 'x', name: 'x', category: 'c', unit: 'kg', min: -2 })).toBe(0);
+    expect(keepBack(undefined)).toBe(0);
+  });
+});
+
 describe('positions', () => {
   it('surplus is what is above local demand and the keep-back floor', () => {
     // food: 10 flour + 2 rice = 12 available, floor 5 (flour min), demand 3 → surplus 4
     const out = positions([level('flour', 10), level('rice', 2)], [{ holonId: H, category: 'food', quantity: 3 }], specs);
     expect(out).toEqual([{ holonId: H, category: 'food', surplus: 4, deficit: 0 }]);
+  });
+
+  it('an item between its keep and its restock target is spare (and on the reorder list)', () => {
+    // 3 flour, keep 2 (target 20 ignored) → 1 spare
+    const out = positions([level('flour', 3)], [], [{ ...specs[0], min: 2 }]);
+    expect(out).toEqual([{ holonId: H, category: 'food', surplus: 1, deficit: 0 }]);
   });
 
   it('deficit is the shortage, and a balanced category does not appear', () => {

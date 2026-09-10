@@ -209,7 +209,7 @@ export function registerOffersTools(server: McpServer, deps: ToolDeps): void {
     'offer_sync_surplus',
     {
       description:
-        "Bring the holon's automatic surplus offers in step with its shelf (@holons/core/inventory): one standing offer per stock item for what is on hand above the keep-back (max of min and target), shared with partners and the map; withdrawn when the surplus is gone and nothing is promised. Honours settings.stock.autoOffer unless `enabled` is given.",
+        "Bring the holon's automatic surplus offers in step with its shelf (@holons/core/inventory): one standing offer per stock item for what is on hand above the keep-back (the item's min; the restock target is not a hold), shared with partners and the map; withdrawn when the surplus is gone and nothing is promised. Honours settings.stock.autoOffer unless `enabled` is given.",
       inputSchema: {
         holon: z.string(),
         enabled: z.boolean().optional().describe('Force the switch; false withdraws only.'),

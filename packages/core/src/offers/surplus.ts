@@ -7,10 +7,11 @@
  * item (`offer-stock-<itemId>`), its free quantity equal to the surplus,
  * withdrawn when the surplus is gone and nobody is counting on it.
  *
- * Keep-back is the larger of the item's `min` and `target`: stock the holon
- * means to hold for itself is never offered. Reservations already made stay
- * whatever the shelf does — they are promises — so a held offer shrinks to
- * its promises rather than vanishing.
+ * Keep-back is the item's `min` (`keepBack` in `inventory/scarcity`, the
+ * same floor the shelf's surplus badge uses; the restock `target` is not a
+ * hold): stock the holon keeps for itself is never offered. Reservations
+ * already made stay whatever the shelf does — they are promises — so a held
+ * offer shrinks to its promises rather than vanishing.
  *
  * Decided 2026-09-08: this is automatic (a per-holon switch turns it off,
  * `settings.stock.autoOffer`), the one place the system publishes outward
@@ -19,7 +20,7 @@
 
 import type { HoloSphere } from 'holosphere';
 import { foldStock } from '../inventory/fold.js';
-import { demandsOf, reserve } from '../inventory/scarcity.js';
+import { demandsOf, keepBack, reserve } from '../inventory/scarcity.js';
 import { readStockItemSpecs } from '../inventory/specs.js';
 import { STOCK_LENS, type StockItemSpec, type StockLevel } from '../inventory/types.js';
 import type { QuestInitiator } from '../tasks/types.js';
@@ -53,10 +54,8 @@ export interface SurplusPlan {
   keep: OfferRecord[];
 }
 
-/** What each item keeps back: the larger of min and target, never negative. */
-export function keepBack(spec: StockItemSpec): number {
-  return Math.max(0, spec.min ?? 0, spec.target ?? 0);
-}
+/** What each item keeps back — the shelf's own rule (`inventory/scarcity`), re-exported for callers here. */
+export { keepBack };
 
 /** Units the shelf can spare for an item: on hand, minus reservations and keep-back. */
 export function itemSurplus(level: StockLevel, spec: StockItemSpec): number {
@@ -131,6 +130,13 @@ export function surplusOffers(input: SurplusInput, enabled = true): SurplusPlan 
 export interface SyncSurplusOptions extends Pick<PublishOfferOptions, 'federationSourceId' | 'onWriteDenied' | 'upcastLevels' | 'now'> {
   /** The per-holon switch. Default true. */
   enabled?: boolean;
+  /**
+   * Catch-up mode, for a sync that runs from a read rather than a write:
+   * only lists surplus that is missing or has grown, never withdraws or
+   * shrinks. A cold local cache can read an empty ledger, and that must not
+   * take live offers off the market — the next shelf write squares them.
+   */
+  growOnly?: boolean;
   /** Where new auto offers go. Both default true. */
   toPartners?: boolean;
   toHex?: boolean;
@@ -150,6 +156,15 @@ export async function syncSurplusOffers(
   opts: SyncSurplusOptions = {},
 ): Promise<SyncSurplusOutcome> {
   const plan = surplusOffers(input, opts.enabled !== false);
+  if (opts.growOnly) {
+    plan.withdraw = [];
+    const before = new Map<string, number>();
+    for (const raw of input.offers ?? []) {
+      const o = normalizeOffer(raw, opts.now ?? input.now);
+      if (o) before.set(String(o.id), o.supply.quantity);
+    }
+    plan.update = plan.update.filter((o) => o.supply.quantity > (before.get(String(o.id)) ?? 0) + EPS);
+  }
   const out: SyncSurplusOutcome = { created: [], updated: [], withdrawn: [], errors: [] };
   const common = { federationSourceId: opts.federationSourceId, onWriteDenied: opts.onWriteDenied };
   for (const offer of plan.create) {

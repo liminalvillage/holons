@@ -11,14 +11,17 @@ const initiator = { id: 7, username: 'ada' };
 const level = (itemId: string, onhand: number, reserved = 0): StockLevel => ({
   itemId, holonId: 'a', unit: 'kg', onhand, confirmed: onhand, pending: 0, reserved, incoming: 0, available: onhand - reserved, updatedAt: 0,
 });
-const flour: StockItemSpec = { id: 'flour', name: 'Flour', category: 'food', unit: 'kg', min: 2, target: 5 };
+const flour: StockItemSpec = { id: 'flour', name: 'Flour', category: 'food', unit: 'kg', min: 5, target: 8 };
 const nails: StockItemSpec = { id: 'nails', name: 'Nails', category: 'workshop', unit: 'one' };
 const input = (levels: StockLevel[], offers: unknown[] = [], specs = [flour, nails]) => ({ holonId: 'a', levels, specs, offers, initiator, now: 100 });
 
 describe('keepBack / itemSurplus', () => {
-  it('keeps the larger of min and target; surplus nets reservations', () => {
+  it('keeps min, not the restock target; surplus nets reservations', () => {
     expect(keepBack(flour)).toBe(5);
+    expect(keepBack({ ...flour, min: 2 })).toBe(2);
     expect(keepBack(nails)).toBe(0);
+    // 3 on hand, keep 2, restock to 5: the litre above keep is spare.
+    expect(itemSurplus(level('milk', 3), { ...flour, id: 'milk', min: 2, target: 5 })).toBe(1);
     expect(itemSurplus(level('flour', 12, 3), flour)).toBe(4);
     expect(itemSurplus(level('flour', 4), flour)).toBe(0);
   });
@@ -112,6 +115,22 @@ describe('syncSurplusOffers / readAutoOfferSetting', () => {
     expect(put).not.toHaveBeenCalled();
     const less = await syncSurplusOffers(holosphere, input([level('flour', 5)], out.created));
     expect(less.withdrawn.map((o) => o.status)).toEqual(['withdrawn']);
+  });
+
+  it('growOnly (a catch-up from a read) creates and grows, never withdraws or shrinks', async () => {
+    const { holosphere, put } = fake({ hex: '891f1d48b4bffff' });
+    const out = await syncSurplusOffers(holosphere, input([level('flour', 12)]), { now: 100, growOnly: true });
+    expect(out.created.map((o) => o.id)).toEqual([stockOfferId('flour')]);
+    put.mockClear();
+    // An empty (cold) ledger: nothing happens to the standing offer.
+    const cold = await syncSurplusOffers(holosphere, input([], out.created), { growOnly: true });
+    expect(cold).toMatchObject({ created: [], updated: [], withdrawn: [] });
+    expect(put).not.toHaveBeenCalled();
+    // Less on the shelf: still left alone; more: the offer grows.
+    const less = await syncSurplusOffers(holosphere, input([level('flour', 8)], out.created), { growOnly: true });
+    expect(less.updated).toEqual([]);
+    const more = await syncSurplusOffers(holosphere, input([level('flour', 20)], out.created), { growOnly: true });
+    expect(more.updated.map((o) => o.supply.quantity)).toEqual([15]);
   });
 
   it('the per-holon switch defaults on and reads settings.stock.autoOffer', async () => {

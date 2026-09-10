@@ -18,7 +18,17 @@ export {
   stockUnitOf,
 } from './fold.js';
 export type { StockEventLike } from './fold.js';
-export { STOCK_DEMAND_STATUSES, demandOf, demandsOf, positions, reserve, scarcity } from './scarcity.js';
+export {
+  STOCK_DEMAND_STATUSES,
+  demandOf,
+  demandQuantity,
+  demandUnit,
+  demandsOf,
+  positions,
+  keepBack,
+  reserve,
+  scarcity,
+} from './scarcity.js';
 export type { DemandSourceLike, ScarcityEntry } from './scarcity.js';
 export {
   SHOPPING_CHECKLIST_ID,

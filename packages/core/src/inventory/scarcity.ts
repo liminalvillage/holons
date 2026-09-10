@@ -20,6 +20,8 @@ export interface DemandSourceLike {
   holonId?: string | number;
   /** Stock reference a need may carry; forward-compatible, optional. */
   stock?: { itemId?: string; quantity?: number } | null;
+  /** What the need asks for in its own unit (`@holons/core/needs`); wins over `stock`. */
+  demand?: { quantity?: number; unit?: string } | null;
   [key: string]: unknown;
 }
 
@@ -43,10 +45,25 @@ export function demandOf(need: DemandSourceLike, holonId: string): StockDemand |
   if (!need || !STOCK_DEMAND_STATUSES.has(String(need.status ?? ''))) return null;
   const category = typeof need.category === 'string' ? need.category.trim() : '';
   if (!category) return null;
-  const raw = need.stock?.quantity;
-  const quantity = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 1;
+  const quantity = demandQuantity(need);
   const itemId = need.stock?.itemId;
   return { holonId, category, ...(itemId ? { itemId } : {}), quantity };
+}
+
+/** Units a need asks for: its own `demand`, else its stock reference, else one. */
+export function demandQuantity(need: DemandSourceLike): number {
+  for (const raw of [need.demand?.quantity, need.stock?.quantity]) {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  }
+  return 1;
+}
+
+/** The unit a need counts in: its own `demand.unit`, else its stock reference's. */
+export function demandUnit(need: DemandSourceLike): string | undefined {
+  const own = need.demand?.unit;
+  if (typeof own === 'string' && own.trim()) return own.trim();
+  const stock = (need.stock as { unit?: unknown } | null | undefined)?.unit;
+  return typeof stock === 'string' && stock.trim() ? stock.trim() : undefined;
 }
 
 export function demandsOf(needs: DemandSourceLike[], holonId: string): StockDemand[] {
@@ -137,10 +154,22 @@ export function scarcity(
 }
 
 /**
+ * What an item keeps back: its `min`, the level the holon holds for itself
+ * ("Keep" on the shelf), never negative. `target` is only the level it
+ * restocks up to — a reorder hint, not a hold — so an item between the two
+ * is both on the shopping list and spare. The one definition behind the
+ * shelf's surplus badge and the auto offers (`@holons/core/offers`);
+ * settled 2026-09-10 after max(min, target) hid every item under its target.
+ */
+export function keepBack(spec: StockItemSpec | undefined): number {
+  return Math.max(0, spec?.min ?? 0);
+}
+
+/**
  * A holon's surplus and deficit per category, the inputs the transport plan
  * moves between. Surplus is what is left above local demand AND above the
- * keep-back floor from the item specs; deficit is local demand the holon
- * cannot cover.
+ * keep-back floor from the item specs (`keepBack`); deficit is local demand
+ * the holon cannot cover.
  */
 export function positions(
   levels: StockLevel[],
@@ -150,9 +179,8 @@ export function positions(
   const specMap = new Map(specs.map((s) => [s.id, s]));
   const floor = new Map<string, number>();
   for (const level of levels ?? []) {
-    const min = specMap.get(level.itemId)?.min ?? 0;
     const cat = categoryOf(level.itemId, specMap);
-    floor.set(cat, (floor.get(cat) ?? 0) + Math.max(0, min));
+    floor.set(cat, (floor.get(cat) ?? 0) + keepBack(specMap.get(level.itemId)));
   }
   return scarcity(levels, demands, specs)
     .map((e) => ({
