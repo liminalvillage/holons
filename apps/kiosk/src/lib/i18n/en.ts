@@ -1338,7 +1338,11 @@ export const en = {
   "offers.autoFact":
     "Kept in step with the shelf — it follows what is on hand above the keep-back.",
   "offers.mintedFact": "Earned by fulfilling a need.",
-  "offers.listedBy": "Listed by {name}.",
+  "offers.listedBy": "Listed by {name} · {holon}.",
+  "offers.listedOn": "Listed {date}.",
+  "offers.askedBy": "Asked by {name} · {holon}.",
+  "offers.askedOn": "Asked {date}.",
+  "offers.wantsOffer": "Asked for a specific offer from {holon}.",
   "offers.sharedPartners": "Shared with partners.",
   "offers.sharedMap": "Shared on the map.",
   "offers.sharedBoth": "Shared with partners and on the map.",

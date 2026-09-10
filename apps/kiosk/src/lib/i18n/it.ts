@@ -1370,7 +1370,11 @@ export const it: Record<MessageKey, Msg> = {
   "offers.autoFact":
     "Segue lo scaffale — riflette ciò che c'è oltre la scorta.",
   "offers.mintedFact": "Guadagnata soddisfacendo un bisogno.",
-  "offers.listedBy": "Pubblicata da {name}.",
+  "offers.listedBy": "Pubblicata da {name} · {holon}.",
+  "offers.listedOn": "Pubblicata il {date}.",
+  "offers.askedBy": "Chiesto da {name} · {holon}.",
+  "offers.askedOn": "Chiesto il {date}.",
+  "offers.wantsOffer": "Chiede un'offerta precisa di {holon}.",
   "offers.sharedPartners": "Condivisa con i partner.",
   "offers.sharedMap": "Condivisa sulla mappa.",
   "offers.sharedBoth": "Condivisa con i partner e sulla mappa.",

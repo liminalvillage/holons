@@ -278,7 +278,7 @@ export interface BacklogTask {
  * snake_case participants (`first_name`) and the quest initiator's camelCase
  * (`firstName`), so either shape resolves to a real name.
  */
-function personName(p: any): string {
+export function personName(p: any): string {
   const full = [p?.first_name ?? p?.firstName, p?.last_name ?? p?.lastName]
     .filter(Boolean)
     .join(" ")

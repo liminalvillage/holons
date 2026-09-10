@@ -34,7 +34,8 @@
     showNotice,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
-  import { getHolosphere, getLensStore } from "$lib/holosphere";
+  import { getHolonName, getHolosphere, getLensStore } from "$lib/holosphere";
+  import { personName } from "$lib/data";
   import { t, type MessageKey } from "$lib/i18n";
   import { resolveOffersScale, setOffersScale } from "$lib/config";
   import type { HoloSphere } from "holosphere";
@@ -83,6 +84,7 @@
     scaleOptions,
     type MatchCard,
     type NeedCard,
+    type OfferBoard,
     type OfferCard,
     type Scale,
   } from "$lib/offers";
@@ -290,8 +292,41 @@
       )
     : [];
   $: handoffConfirmations = foldHandoffConfirmations($rawQuests as never[]);
+  // Holon names: partners come with the federation snapshot; anyone else on
+  // the board (cell records, strangers) is resolved once and cached.
+  let holonNames: Record<string, string> = {};
   $: nameOf = (id: string) =>
-    id === hid ? $t("offers.here") : ($partnerNames[id] ?? id);
+    id === hid
+      ? $t("offers.here")
+      : ($partnerNames[id] ?? holonNames[id] ?? id);
+  $: void resolveNames(fullBoard, hsRef);
+  async function resolveNames(b: OfferBoard | null, hs: HoloSphere | null) {
+    if (!b || !hs) return;
+    const ids = new Set<string>();
+    for (const c of [...b.supply, ...b.demand])
+      if (c.ownerHolonId !== hid && !$partnerNames[c.ownerHolonId])
+        ids.add(c.ownerHolonId);
+    for (const id of ids) {
+      if (holonNames[id] !== undefined) continue;
+      holonNames = { ...holonNames, [id]: "" };
+      const name = await getHolonName(hs, id);
+      if (name) holonNames = { ...holonNames, [id]: name };
+    }
+  }
+  /** "Ada · Liminal" — who, and where when it is not here. */
+  const whoWhere = (
+    person: unknown,
+    holon: string,
+    own: boolean,
+    onMap = false,
+  ): string =>
+    [
+      personName(person),
+      own ? null : nameOf(holon),
+      onMap ? $t("offers.onMap") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   $: matchGroups = board
     ? (["provider", "requester", "observer"] as const)
         .map((role) => ({
@@ -1174,11 +1209,14 @@
                       <span class="rtype">{$t(MODE_KEY[card.offer.mode])}</span>
                       {#if card.auto}<span class="tag">{$t("offers.auto")}</span
                         >{/if}
-                      {#if !card.own}<span class="basis"
-                          >{nameOf(card.ownerHolonId)}{card.source === "cell"
-                            ? ` · ${$t("offers.onMap")}`
-                            : ""}</span
-                        >{/if}
+                      <span class="basis"
+                        >{whoWhere(
+                          card.offer.initiator,
+                          card.ownerHolonId,
+                          card.own,
+                          card.source === "cell",
+                        )}</span
+                      >
                       {#if card.offer.price != null}<span class="basis"
                           >{card.offer.price} {card.offer.currency ?? ""}</span
                         >{/if}
@@ -1248,11 +1286,14 @@
                     {#if card.need.category}<span class="rtype"
                         >{card.need.category}</span
                       >{/if}
-                    {#if !card.own}<span class="basis"
-                        >{nameOf(card.ownerHolonId)}{card.source === "cell"
-                          ? ` · ${$t("offers.onMap")}`
-                          : ""}</span
-                      >{/if}
+                    <span class="basis"
+                      >{whoWhere(
+                        card.need.initiator,
+                        card.ownerHolonId,
+                        card.own,
+                        card.source === "cell",
+                      )}</span
+                    >
                     {#if (card.need.responses ?? []).length}<span class="basis"
                         >{$t("offers.responses", {
                           n: card.need.responses!.length,
@@ -1486,8 +1527,16 @@
         {#if card.offer.source?.kind === "minted"}<li>
             {$t("offers.mintedFact")}
           </li>{/if}
-        {#if !card.own}<li>
-            {$t("offers.listedBy", { name: nameOf(card.ownerHolonId) })}
+        <li>
+          {$t("offers.listedBy", {
+            name: personName(card.offer.initiator),
+            holon: nameOf(card.ownerHolonId),
+          })}{card.source === "cell" ? ` · ${$t("offers.onMap")}` : ""}
+        </li>
+        {#if card.offer.created}<li>
+            {$t("offers.listedOn", {
+              date: new Date(card.offer.created).toLocaleDateString(),
+            })}
           </li>{/if}
         {#if card.own}
           <li>
@@ -1607,11 +1656,7 @@
       <div class="head">
         <div>
           <h3>{card.need.title}</h3>
-          <span class="rtype"
-            >{card.need.category ?? ""}{!card.own
-              ? ` · ${nameOf(card.ownerHolonId)}`
-              : ""}</span
-          >
+          <span class="rtype">{card.need.category ?? ""}</span>
         </div>
       </div>
       <div class="level">
@@ -1622,9 +1667,25 @@
           >{$t(needStatusKey(card))}</span
         >
       </div>
-      {#if card.need.description}<p class="lead">
-          {card.need.description}
-        </p>{/if}
+      <ul class="facts">
+        <li>
+          {$t("offers.askedBy", {
+            name: personName(card.need.initiator),
+            holon: nameOf(card.ownerHolonId),
+          })}{card.source === "cell" ? ` · ${$t("offers.onMap")}` : ""}
+        </li>
+        {#if card.need.created}<li>
+            {$t("offers.askedOn", {
+              date: new Date(card.need.created).toLocaleDateString(),
+            })}
+          </li>{/if}
+        {#if card.need.wants}<li>
+            {$t("offers.wantsOffer", {
+              holon: nameOf(card.need.wants.holonId),
+            })}
+          </li>{/if}
+        {#if card.need.description}<li>{card.need.description}</li>{/if}
+      </ul>
 
       {#if needResponses.length}
         <h4>{$t("offers.responsesTitle")}</h4>
