@@ -21,11 +21,13 @@
   // (npub, Ethereum address), a pasted link, or any bare name
   // (parseHolonAdd accepts anything people actually copy or type).
   import { onMount, tick } from "svelte";
+  import { goto } from "$app/navigation";
   import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
   import {
     beaconPath,
     beaconTangents,
     boundsPath,
+    broughtInBy,
     dockEntries,
     dockView,
     forgetBoard,
@@ -45,6 +47,8 @@
     type Vec,
   } from "$lib/dock";
   import { getHolonName, getHolosphere, getWriter } from "$lib/holosphere";
+  import { dockPartnersOf } from "$lib/dockfed";
+  import { returningFromBot } from "$lib/config";
   import { showNotice } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getFederationSnapshot } from "@holons/core/federation";
@@ -162,6 +166,27 @@
   let fedPair: { home: string; partner: string } | null = null;
   /** A drop on a hexagon, waiting to be confirmed as that board's new home. */
   let homeDrop: { holon: string; hex: string } | null = null;
+  /**
+   * The ✕ tapped in edit mode on a hub whose federation brought other hubs
+   * onto this dock: the sheet asks whether those go too. A hub that brought
+   * nothing in is simply removed — there is nothing to ask.
+   */
+  let forgetTarget: string | null = null;
+  $: forgetRetinue = forgetTarget
+    ? broughtInBy($dockEntries, forgetTarget)
+    : [];
+
+  function askForget(id: string) {
+    if (broughtInBy($dockEntries, id).length === 0) {
+      forgetBoard(id);
+      return;
+    }
+    forgetTarget = id;
+  }
+  function confirmForget(id: string, withDependents: boolean) {
+    forgetTarget = null;
+    forgetBoard(id, { withDependents });
+  }
 
   /**
    * Take the confirm sheet's answer. The cell and the board come in as
@@ -572,11 +597,21 @@
       // instead of the board's window opening over it.
       if (await claimHome(id, cell, { onlyWhenHomeless: true }))
         void noteHolonInCell(cell, id);
+      // Docked without opening, so the layout's on-show hook never runs:
+      // bring its federation along from here.
+      void dockPartnersOf(id);
       return;
     }
     await tick();
     requestOpen(id);
   }
+
+  // Back from Telegram with nothing docked yet: the bot's reply is in their
+  // clipboard, so open the add line ready for the paste instead of making
+  // them find the "+".
+  onMount(() => {
+    if ($dockEntries.length === 0 && returningFromBot()) void startAdd();
+  });
 
   /**
    * Say in the cell itself that this holon lives here: a record under the
@@ -808,7 +843,7 @@
                   class="forget"
                   aria-label={$t("dock.delete", { name: e.name })}
                   title={$t("dock.delete", { name: e.name })}
-                  on:click|stopPropagation={() => forgetBoard(e.id)}
+                  on:click|stopPropagation={() => askForget(e.id)}
                   >&times;</button
                 >
               {/if}
@@ -818,6 +853,15 @@
         {/each}
       {/if}
     </div>
+    {#if $dockEntries.length === 0 && !adding}
+      <!-- A bare sky: nothing docked yet. Say what this is and where to
+           start; the "+" in the tray is the other way in. -->
+      <div class="empty" role="note">
+        <h2>{$t("dock.emptyTitle")}</h2>
+        <p>{$t("dock.emptyBody")}</p>
+        <a class="start" href="/about">{$t("dock.emptyStart")}</a>
+      </div>
+    {/if}
   </div>
 
   <!-- The top bar hovers over the sky, in three slots: the sky/earth switch
@@ -865,6 +909,16 @@
           {locating ? "◌" : "◎"}
         </button>
       {/if}
+      <!-- The reading page: what a hub is and how to start one. -->
+      <button
+        type="button"
+        class="locate about"
+        on:click={() => goto("/about")}
+        aria-label={$t("dock.about")}
+        title={$t("dock.about")}
+      >
+        ⓘ
+      </button>
     </div>
   </div>
 
@@ -957,6 +1011,48 @@
           on:click={() => confirmHome(drop.holon, drop.hex)}
         >
           {$t("hex.moveConfirm")}
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
+
+<!-- Removing a hub that brought its federation partners onto this dock:
+     the partners the person never opened can go with it, or stay. Local
+     either way — the holon and its links on the network are untouched. -->
+{#if forgetTarget}
+  {@const target = forgetTarget}
+  <Modal on:close={() => (forgetTarget = null)}>
+    <div class="home-confirm">
+      <span
+        class="orb-chip"
+        style="--c: {holonColor(target, $holonColors)}"
+        aria-hidden="true">{initialOf(nameOf(target))}</span
+      >
+      <h3>{$t("dock.removeTitle", { name: nameOf(target) })}</h3>
+      <p>{$t("dock.removeBody", { n: forgetRetinue.length })}</p>
+      <code>{forgetRetinue.map((e) => e.name).join(" · ")}</code>
+      <div class="acts acts--stack">
+        <button
+          type="button"
+          class="go"
+          on:click={() => confirmForget(target, true)}
+        >
+          {$t("dock.removeWith", { n: forgetRetinue.length })}
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          on:click={() => confirmForget(target, false)}
+        >
+          {$t("dock.removeOnly")}
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          on:click={() => (forgetTarget = null)}
+        >
+          {$t("common.cancel")}
         </button>
       </div>
     </div>
@@ -1252,6 +1348,57 @@
     background: var(--teal);
     color: #fff;
   }
+  .home-confirm .acts--stack {
+    flex-direction: column;
+  }
+
+  /* The bare sky's note: a small card mid-field, above the earth, saying
+     what this is and where to start. Clears the tray like everything else. */
+  .empty {
+    position: absolute;
+    left: 50%;
+    top: calc((100% - var(--dock-tray)) / 2);
+    transform: translate(-50%, -50%);
+    z-index: 3;
+    width: min(22rem, 84vw);
+    padding: 1.3rem 1.4rem;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(8px);
+    text-align: center;
+    text-transform: none;
+    letter-spacing: 0;
+    pointer-events: auto;
+    animation: dock-pop 0.4s ease both;
+  }
+  .empty h2 {
+    margin: 0 0 0.4rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .empty p {
+    margin: 0 0 0.9rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+  .empty .start {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0 1.2rem;
+    border-radius: 12px;
+    background: var(--teal);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+  }
 
   @keyframes dock-pop {
     from {
@@ -1423,6 +1570,10 @@
   }
   .locate:active {
     transform: scale(0.92);
+  }
+  .locate.about {
+    margin-left: 0.5rem;
+    font-size: 1.15rem;
   }
   .locate:disabled {
     opacity: 0.6;

@@ -437,6 +437,16 @@ export const es: Record<MessageKey, Msg> = {
     "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para abrir sus flujos.",
   "dock.deck": "Holosfera",
   "dock.map": "Geosfera",
+  "dock.about": "Qué son los hubs",
+  "dock.emptyTitle": "Aún no hay hubs aquí",
+  "dock.emptyBody":
+    "Esta es la red de hubs. Añade un hub con el + de abajo, o inicia uno.",
+  "dock.emptyStart": "¿Qué es un hub? Inicia uno",
+  "dock.removeTitle": "¿Quitar {name}?",
+  "dock.removeBody":
+    "Trajo a esta pantalla {n} hubs asociados que nunca abriste. En la red no cambia nada en ningún caso.",
+  "dock.removeWith": "Quitar con sus {n} asociados",
+  "dock.removeOnly": "Quitar solo este hub",
   "dock.mapUnavailable":
     "Mostrar la tierra necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para activarla.",
 
@@ -987,6 +997,7 @@ export const es: Record<MessageKey, Msg> = {
   "home.fedP3":
     "No podemos depender del sistema que cuestionamos. Elegimos depender los unos de los otros. Como red.",
 
+  "home.backToMap": "Volver al mapa",
   "home.backTitle": "Bienvenida de vuelta.",
   "home.backLead":
     "En cuanto el bot entra en tu chat, publica un enlace directo a este hub. Si te lo perdiste, lanza el comando de abajo en ese chat y pega aquí su respuesta.",

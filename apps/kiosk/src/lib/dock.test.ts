@@ -4,6 +4,7 @@ import {
   beaconPath,
   beaconTangents,
   boundsPath,
+  broughtInBy,
   convexHull,
   hueFor,
   labelFor,
@@ -44,6 +45,17 @@ describe("parseDock", () => {
     ]);
     expect(parseDock(raw)).toEqual([
       { id: "-1003864542239", name: "Liminal", at: 5 },
+    ]);
+  });
+
+  it("keeps a via tag and drops a malformed one", () => {
+    const raw = JSON.stringify([
+      { id: "-1", name: "One", at: 5, via: "-2" },
+      { id: "-3", name: "Three", at: 5, via: "" },
+      { id: "-4", name: "Four", at: 5, via: 7 },
+    ]);
+    expect(parseDock(raw)).toEqual([
+      { id: "-1", name: "One", at: 5, via: "-2" },
     ]);
   });
 });
@@ -120,6 +132,60 @@ describe("removeEntry", () => {
   it("returns the same reference when the board isn't listed", () => {
     const list = [entry("-1")];
     expect(removeEntry(list, "-9")).toBe(list);
+  });
+
+  it("leaves the boards a hub brought in unless asked to take them", () => {
+    const list = [
+      entry("-1"),
+      { ...entry("-2"), via: "-1" },
+      { ...entry("-3"), via: "-1" },
+      { ...entry("-4"), via: "-9" },
+      entry("-5"),
+    ];
+    expect(removeEntry(list, "-1").map((e) => e.id)).toEqual([
+      "-2",
+      "-3",
+      "-4",
+      "-5",
+    ]);
+    expect(
+      removeEntry(list, "-1", { withDependents: true }).map((e) => e.id),
+    ).toEqual(["-4", "-5"]);
+  });
+});
+
+describe("via — a hub's federation partners on the dock", () => {
+  it("tags a new board with the hub that brought it in", () => {
+    const next = upsertEntry([], "-2", "Two", 9, { via: "-1" });
+    expect(next).toEqual([{ id: "-2", name: "Two", at: 9, via: "-1" }]);
+  });
+
+  it("never tags a board with itself", () => {
+    expect(upsertEntry([], "-1", "", 9, { via: "-1" })[0].via).toBeUndefined();
+  });
+
+  it("a person's own add or open makes the board theirs", () => {
+    const list = [{ ...entry("-2", "Two", 1), via: "-1" }];
+    const next = upsertEntry(list, "-2", "", 9);
+    expect(next[0]).toEqual({ id: "-2", name: "Two", at: 9 });
+    expect(next).not.toBe(list);
+  });
+
+  it("a partner cannot demote a board the person added", () => {
+    const list = [entry("-2", "Two", 1)];
+    expect(upsertEntry(list, "-2", "", 1, { via: "-1" })).toBe(list);
+    const tagged = [{ ...entry("-2", "Two", 1), via: "-1" }];
+    expect(upsertEntry(tagged, "-2", "", 1, { via: "-9" })).toBe(tagged);
+  });
+
+  it("broughtInBy lists exactly the boards tagged with that hub", () => {
+    const list = [
+      entry("-1"),
+      { ...entry("-2"), via: "-1" },
+      { ...entry("-3"), via: "-9" },
+    ];
+    expect(broughtInBy(list, "-1").map((e) => e.id)).toEqual(["-2"]);
+    expect(broughtInBy(list, "-2")).toEqual([]);
   });
 });
 

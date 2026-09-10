@@ -426,6 +426,18 @@ export const en = {
     "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
   "dock.map": "Geosphere",
+  // The front door is the map: a bare sky says so and points at /about.
+  "dock.about": "About hubs",
+  "dock.emptyTitle": "No hubs here yet",
+  "dock.emptyBody":
+    "This is the hubs network. Add a hub with the + below, or start one.",
+  "dock.emptyStart": "What is a hub? Start one",
+  // Removing a hub that brought its federation partners onto this dock.
+  "dock.removeTitle": "Remove {name}?",
+  "dock.removeBody":
+    "It brought {n} partner hubs onto this screen that you never opened. Nothing changes on the network either way.",
+  "dock.removeWith": "Remove it and its {n} partners",
+  "dock.removeOnly": "Remove only this hub",
   "dock.mapUnavailable":
     "Showing the earth needs a Mapbox token — set VITE_MAPBOX_TOKEN to turn it on.",
 
@@ -970,6 +982,7 @@ export const en = {
   "home.fedP3":
     "We cannot depend on the system we disrupt. We choose to depend on each other instead. As a network.",
 
+  "home.backToMap": "Back to the map",
   "home.backTitle": "Welcome back.",
   "home.backLead":
     "Once the bot is in your chat it posts a link straight to this hub. If you missed it, run the command below in that chat and paste its answer here.",

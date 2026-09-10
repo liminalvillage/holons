@@ -104,6 +104,7 @@
     touchBoard,
     segmentFor,
   } from "$lib/dock";
+  import { dockPartnersOf } from "$lib/dockfed";
   import { initAuth, loginOpen } from "$lib/auth";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
@@ -112,7 +113,6 @@
   import type { Role } from "@holons/core/roles";
   import type { Checklist } from "@holons/core/checklists";
   import { keyLinkOpen } from "$lib/sessionKey";
-  import HomeView from "$lib/views/HomeView.svelte";
   import DockView from "$lib/components/DockView.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
@@ -538,7 +538,12 @@
   }
 
   onMount(() => {
-    holonIdStore.set(resolveHolonId());
+    const bootHolon = resolveHolonId();
+    holonIdStore.set(bootHolon);
+    // No holon named: the front door is the dock with the earth showing (the
+    // map), not an empty board window. Set before `mounted` so the window
+    // is never painted for a beat first.
+    if (!bootHolon) dockState.set("dock");
     // A deep-linked tab (`/tasks`, `/liminal/calendar`) opens that view. It
     // only picks the starting tab — it is not a pin, so a wall display's
     // rotation and idle snap-back behave exactly as configured. A
@@ -614,10 +619,36 @@
   // kiosk chrome, just the route.
   $: isMiniApp = $page.url.pathname.replace(/\/+$/, "") === "/key";
 
+  // The about page (routes/about): what a hub is and how to start one — the
+  // reading page the map links to. It is a page, not a board: no dock, no
+  // tab chrome, though the Settings/login sheets stay reachable from it.
+  $: isAbout = $page.url.pathname.replace(/\/+$/, "") === "/about";
+
   // No holon resolved and nothing left to wait for → this isn't a board, it's
-  // the front door: show the landing page (HomeView) instead of the kiosk
-  // chrome, with the board-only overlays stood down.
-  $: isHome = !isMiniApp && !booting && !$holonIdStore;
+  // the front door: the dock (the map, by default) with this device's hubs
+  // on it, and the board-only overlays stood down.
+  $: isHome = !isMiniApp && !isAbout && !booting && !$holonIdStore;
+
+  // The dock/window state follows a CHANGE of holon made outside the morphs:
+  // a board named without one (the about page's paste field, Settings)
+  // brings the window up; losing the holon (unpinning, "show the home page")
+  // drops back to the dock. Keyed on the change, not the value — a docked
+  // board keeps its holon while its circle sits on the dock, and an orb tap
+  // switches the holon mid-"opening", which is the morph's own business.
+  let followedHolon: string | null | undefined;
+  $: if (mounted && !isMiniApp && $holonIdStore !== followedHolon) {
+    const first = followedHolon === undefined;
+    followedHolon = $holonIdStore;
+    if (!first) {
+      if ($holonIdStore && $dockState === "dock") dockState.set("window");
+      if (!$holonIdStore && $dockState === "window") dockState.set("dock");
+    }
+  }
+
+  // Each shown board brings its federation partners onto the dock (tagged
+  // `via` this board) — the bot's link, an orb tap, the paste field alike.
+  $: if (mounted && !isMiniApp && $holonIdStore)
+    void dockPartnersOf($holonIdStore);
 
   // Reflect tab switches in the address bar — shallow, no navigation, so the
   // showing view is always shareable (`/tasks`, `/liminal/calendar`). Seeded
@@ -873,7 +904,9 @@
        kiosk.hubs.network is not a holon called "Kiosk". The landing page
        titles itself (HomeView), so stand aside there rather than racing it
        for the same tag. -->
-  {#if !isHome}
+  {#if isHome}
+    <title>hubs network</title>
+  {:else if !isAbout}
     <title>{$brandName || $holonName || $holonIdStore || "Holons"}</title>
   {/if}
 </svelte:head>
@@ -890,17 +923,19 @@
   <!-- Telegram Mini App route: no board, no chrome — the page is the app. -->
   <slot />
 {:else}
-  {#if isHome}
-    <!-- Front door: what Holons is, and the button that starts one. -->
-    <HomeView />
+  {#if isAbout}
+    <!-- The reading page: what a hub is, and the buttons that start one. -->
+    <slot />
   {:else}
     <!-- The dock sits beneath the board window during the morph frames and
-         alone once the window has fully closed into its circle. -->
+         alone once the window has fully closed into its circle — and it IS
+         the front door: with no holon named, the map with this device's
+         hubs is what a bare visit shows. -->
     {#if $dockState !== "window"}
       <DockView />
     {/if}
 
-    {#if $dockState !== "dock"}
+    {#if $dockState !== "dock" && $holonIdStore}
       <div class="kiosk" class:idle={$idle} bind:this={windowEl}>
         <!-- The whole tab interface is one card floating in the space — the
              same sky the dock shows — so closing it into a circle reads as
@@ -940,8 +975,8 @@
   {/if}
 
   <!-- Board-only companions: they all act on the displayed holon, and the
-       landing page has none. -->
-  {#if !isHome}
+       front door and the about page have none. -->
+  {#if !isHome && !isAbout}
     <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
     {#if $keyLinkOpen}
       <Modal on:close={() => keyLinkOpen.set(false)}>

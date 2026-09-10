@@ -1,11 +1,10 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The front door. When this screen isn't pointed at a holon yet — a fresh
-  // visitor on the bare domain, a caretaker unboxing a display — this is what
-  // the kiosk shows instead of a board: what a hub is, the two ways to start
-  // one, and how hubs connect. Short on purpose; the long read lives at
-  // docs.holons.io. It wears the kiosk's own skin (paper, ink, a little teal,
+  // The reading page (routes/about). The front door is the map now — the
+  // dock with the earth showing, and this device's hubs on it — and the map
+  // links here: what a hub is, the two ways to start one, and how hubs
+  // connect. Short on purpose; the long read lives at docs.holons.io. It wears the kiosk's own skin (paper, ink, a little teal,
   // the same tokens as the board behind it) so the door and the room match.
   //
   // Both paths lead into Telegram, because the chat IS the hub:
@@ -266,6 +265,7 @@
 <div class="home">
   <!-- ── Hero + the two paths ───────────────────────────────────────────── -->
   <header class="hero" id="start">
+    <a class="back" href="/">← {$t("home.backToMap")}</a>
     <div class="wordmark">hubs network</div>
     <h1>{$t("home.heroTitle")}</h1>
     <p class="lead">{$t("home.heroLead")}</p>
@@ -426,6 +426,19 @@
     margin: 0 auto;
     padding: clamp(2.6rem, 10vh, 6rem) 0 clamp(2rem, 6vh, 4rem);
     text-align: center;
+  }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.6rem;
+    margin-bottom: 1rem;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .back:hover {
+    color: var(--teal);
   }
   .wordmark {
     font-family: var(--font-logo);

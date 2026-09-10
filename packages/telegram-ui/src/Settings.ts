@@ -40,6 +40,28 @@ const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.ho
  */
 const KIOSK_ADDRESS = process.env.KIOSK_ADDRESS || 'https://hubs.network';
 
+/** The kiosk link for a holon — its own board, docked on sight there. */
+function boardUrl(holonId: string | number): string {
+    return `${KIOSK_ADDRESS}/${encodeURIComponent(String(holonId ?? '').trim())}`;
+}
+
+/**
+ * The welcome, and the whole of it: the holon's id and the link that opens
+ * its board. The bot is the on-ramp, the board is the place — a group that
+ * just added the bot needs the way there, not a manual (that is /help).
+ * Opening the link docks the holon on that device's map, so from then on it
+ * is loaded there by default.
+ */
+function welcomeText(holonId: string | number, language: string): string {
+    const id = String(holonId ?? '').trim();
+    return i18next.t('holonWelcome', {
+        lng: language,
+        id,
+        url: boardUrl(id),
+        defaultValue: `🔑 Holon ID: \`${id}\`\n🌱 Open its board: ${boardUrl(id)}\n\nType /help for the guide.`,
+    });
+}
+
 /**
  * The buttons that close the loop for someone who started here from the web:
  * they tapped "Start a holon" on the landing page, Telegram took over, and
@@ -57,7 +79,7 @@ function boardButtons(holonId: string | number, language: string) {
             [
                 {
                     text: `🌱 ${i18next.t('openBoard', { lng: language, defaultValue: 'Open this holon\'s board' })}`,
-                    url: `${KIOSK_ADDRESS}/${id}`,
+                    url: boardUrl(raw),
                 },
             ],
             [
@@ -196,13 +218,9 @@ export default class Settings {
                     return;
                 }
 
-                // Use personalWelcome for private chats, groupWelcome for groups
-                const welcomeKey = chatType === 'private' ? 'personalWelcome' : 'groupWelcome';
-                const welcomeMessage = i18next.t(welcomeKey, { lng: language });
-
                 // Every holon — a group, or the private chat that IS someone's
-                // personal holon — gets its board link with the welcome.
-                await ctx.reply(welcomeMessage, {
+                // personal holon — gets its id and its board link, nothing more.
+                await ctx.reply(welcomeText(holonId, language), {
                     parse_mode: 'Markdown',
                     reply_markup: boardButtons(holonId, language),
                 });
@@ -210,6 +228,19 @@ export default class Settings {
                 console.error('Error sending welcome message:', error);
                 // Fallback to simple message if translation fails
                 ctx.reply('Welcome! Type / for a list of commands.');
+            }
+        });
+
+        // /help — the guide the welcome used to be: what a holon is, the
+        // commands, and the test-network disclaimer.
+        this.bot.command('help', async (ctx) => {
+            try {
+                const holonId = utils.getholonId(ctx);
+                const language = await this.getLanguage(holonId);
+                await ctx.reply(i18next.t('guide', { lng: language }), { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error('Error sending help:', error);
+                ctx.reply('Type / for a list of commands.');
             }
         });
 
@@ -249,11 +280,10 @@ export default class Settings {
 
                     const holonId = update.chat.id;
                     const language = await this.getLanguage(holonId);
-                    const welcomeMessage = i18next.t('groupWelcome', { lng: language });
 
                     // This is the moment someone who came from the landing
                     // page arrives: hand them the way back to their board.
-                    await ctx.telegram.sendMessage(holonId, welcomeMessage, {
+                    await ctx.telegram.sendMessage(holonId, welcomeText(holonId, language), {
                         parse_mode: 'Markdown',
                         reply_markup: boardButtons(holonId, language),
                     });
@@ -490,19 +520,18 @@ export default class Settings {
             }
         })
 
+        // /id — the same two lines as the welcome: the chat id is what the
+        // board and the dashboard key on, and the link opens it.
         this.bot.command('id', async (ctx) => {
             const holonId = utils.getholonId(ctx);
-            const keyManager = this.db.keyManager;
-
-            if (keyManager) {
-                try {
-                    const publicKey = await keyManager.getPublicKey(holonId);
-                    ctx.reply(`🔑 Holon ID: ${publicKey}`);
-                } catch (err) {
-                    console.warn('Failed to get public key for holon:', err.message);
-                    ctx.reply('This holon ID is ' + holonId);
-                }
-            } else {
+            try {
+                const language = await this.getLanguage(holonId);
+                await ctx.reply(welcomeText(holonId, language), {
+                    parse_mode: 'Markdown',
+                    reply_markup: boardButtons(holonId, language),
+                });
+            } catch (error) {
+                console.error('Error handling /id:', error);
                 ctx.reply('This holon ID is ' + holonId);
             }
         })

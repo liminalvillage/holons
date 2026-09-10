@@ -85,14 +85,19 @@ matter.
   time to the next flip. Rotation freezes while a detail card is open.
 - **PWA:** installable, fullscreen, portrait-locked, with an offline app shell.
 - **Home page:** a screen with no holon (the bare domain, an unboxed display)
-  shows the landing page instead of a board — what Holons is, what it's for,
-  and one button that starts a holon. See below.
+  shows the map — the dock with the earth beneath it and every hub this
+  device has opened on it — instead of a board. A hub brings its federation
+  partners onto the dock with it (tagged `via` in `kiosk_dock`); removing it
+  asks whether they go too. The reading page (what Holons is, how to start a
+  hub) lives at `/about`, linked from the map. See below.
 
 ## The home page
 
-`src/lib/views/HomeView.svelte` is the front door: the layout renders it in
-place of the kiosk chrome whenever no holon resolves. It closes a round trip
-that leaves the web entirely:
+The map is the front door: with no holon resolved the layout renders the dock
+(`DockView`, map mode by default) in place of the board. A `/<id>` link from
+the bot, or a display pinned in Settings, opens that board directly and
+docks it; closing the board lands on the map. `src/lib/views/HomeView.svelte`
+is the `/about` page. It closes a round trip that leaves the web entirely:
 
 1. **Out.** "Start a holon" deep-links to `t.me/<bot>?startgroup=hub` —
    Telegram's own group chooser, with "create a new group" right there. The

@@ -19,6 +19,14 @@ export type DockEntry = {
   name: string;
   /** When this board was last opened (ms epoch). Order stays stable anyway. */
   at: number;
+  /**
+   * The hub whose federation brought this one onto the dock, when it was
+   * not added or opened by the person themselves. Docking a hub also docks
+   * its partners (dockfed.ts), each tagged with the hub it came in with, so
+   * removing that hub can offer to take its retinue along. Cleared the
+   * moment the person adds or opens the board: from then on it is theirs.
+   */
+  via?: string;
 };
 
 /**
@@ -40,7 +48,8 @@ function isEntry(e: unknown): e is DockEntry {
     typeof c.id === "string" &&
     c.id.trim() !== "" &&
     typeof c.name === "string" &&
-    typeof c.at === "number"
+    typeof c.at === "number" &&
+    (c.via === undefined || (typeof c.via === "string" && c.via !== ""))
   );
 }
 
@@ -55,24 +64,51 @@ export function parseDock(raw: string | null): DockEntry[] {
   }
 }
 
+/** How a board came to be docked — see {@link DockEntry.via}. */
+export type DockOrigin = {
+  /** The hub whose federation brought it in; omit for the person's own add. */
+  via?: string;
+};
+
 /**
  * Add or refresh a board in the list. Positions are STABLE — a circle never
  * jumps around the dock — so an existing entry is updated in place and a new
  * one appended. An empty `name` never clobbers a name already learned.
+ *
+ * `origin.via` tags a board a federation brought in. Without it the call is
+ * the person's own (an add, an open): a new entry has no `via`, and an
+ * existing one LOSES its tag — the board is theirs now. With it, an entry
+ * already docked keeps whatever tag it has (a partner cannot demote a board
+ * the person added).
  */
 export function upsertEntry(
   list: DockEntry[],
   id: string,
   name: string,
   at = Date.now(),
+  origin: DockOrigin = {},
 ): DockEntry[] {
   const clean = name.trim();
   const i = list.findIndex((e) => e.id === id);
-  if (i < 0) return [...list, { id, name: clean || labelFor(id), at }];
+  if (i < 0) {
+    const fresh: DockEntry = { id, name: clean || labelFor(id), at };
+    if (origin.via && origin.via !== id) fresh.via = origin.via;
+    return [...list, fresh];
+  }
   const cur = list[i];
-  const next = { ...cur, name: clean || cur.name, at };
-  if (next.name === cur.name && next.at === cur.at) return list;
+  const next: DockEntry = { ...cur, name: clean || cur.name, at };
+  if (!origin.via) delete next.via;
+  if (next.name === cur.name && next.at === cur.at && next.via === cur.via)
+    return list;
   return [...list.slice(0, i), next, ...list.slice(i + 1)];
+}
+
+/**
+ * The boards a hub's federation brought onto the dock and the person never
+ * made their own — what removing that hub can offer to take along.
+ */
+export function broughtInBy(list: DockEntry[], id: string): DockEntry[] {
+  return list.filter((e) => e.via === id);
 }
 
 /**
@@ -100,9 +136,22 @@ export function renameEntry(
   ];
 }
 
-/** Remove a board from the list (a no-op when it isn't there). */
-export function removeEntry(list: DockEntry[], id: string): DockEntry[] {
-  return list.some((e) => e.id === id) ? list.filter((e) => e.id !== id) : list;
+/**
+ * Remove a board from the list (a no-op when it isn't there). With
+ * `withDependents`, the boards its federation brought in ({@link broughtInBy})
+ * go too; the ones the person made their own stay.
+ */
+export function removeEntry(
+  list: DockEntry[],
+  id: string,
+  opts: { withDependents?: boolean } = {},
+): DockEntry[] {
+  const gone = new Set([id]);
+  if (opts.withDependents)
+    for (const e of broughtInBy(list, id)) gone.add(e.id);
+  return list.some((e) => gone.has(e.id))
+    ? list.filter((e) => !gone.has(e.id))
+    : list;
 }
 
 /**
@@ -686,7 +735,8 @@ export const dockEntries = writable<DockEntry[]>(load());
 /**
  * What lies beneath the orbs: "deck" is the sky alone, "map" shows the earth
  * under it — each placed orb then hovers over its hexagon, tied to it by a
- * beacon. The orbs themselves are always there.
+ * beacon. The orbs themselves are always there. The earth is the default:
+ * the map is the kiosk's front door, the first thing a bare visit shows.
  */
 export type DockViewMode = "deck" | "map";
 
@@ -694,9 +744,9 @@ const VIEW_KEY = "kiosk_dock_view";
 
 function loadView(): DockViewMode {
   try {
-    return localStorage.getItem(VIEW_KEY) === "map" ? "map" : "deck";
+    return localStorage.getItem(VIEW_KEY) === "deck" ? "deck" : "map";
   } catch {
-    return "deck";
+    return "map";
   }
 }
 
@@ -717,10 +767,24 @@ export const dockState = writable<DockState>("window");
 /** The circle whose board is being opened — the morph animates from it. */
 export const dockOpenTarget = writable<string | null>(null);
 
-/** Record that this device is showing `id` (name is best-effort, may be ""). */
-export function rememberBoard(id: string, name: string): void {
+/**
+ * Record that this device is showing `id` (name is best-effort, may be "").
+ * Plain, the board becomes the person's own; with `origin.via` it is docked
+ * as a hub's federation partner (see {@link upsertEntry}).
+ */
+export function rememberBoard(
+  id: string,
+  name: string,
+  origin: DockOrigin = {},
+): void {
   const cur = get(dockEntries);
-  const next = upsertEntry(cur, id, name, cur.find((e) => e.id === id)?.at);
+  const next = upsertEntry(
+    cur,
+    id,
+    name,
+    cur.find((e) => e.id === id)?.at,
+    origin,
+  );
   if (next !== cur) {
     dockEntries.set(next);
     save(next);
@@ -741,17 +805,26 @@ export function nameBoard(id: string, name: string): void {
   }
 }
 
-/** Bump a board's last-opened time (called when a circle is opened). */
+/**
+ * Bump a board's last-opened time (called when a circle is opened). Opening
+ * is the person's own act, so a partner-docked board becomes theirs here.
+ */
 export function touchBoard(id: string): void {
   const next = upsertEntry(get(dockEntries), id, "");
   dockEntries.set(next);
   save(next);
 }
 
-/** Delete a circle. Forgetting is local — the holon itself is untouched. */
-export function forgetBoard(id: string): void {
+/**
+ * Delete a circle, and with `withDependents` the circles its federation
+ * brought in. Forgetting is local — the holon and its links are untouched.
+ */
+export function forgetBoard(
+  id: string,
+  opts: { withDependents?: boolean } = {},
+): void {
   const cur = get(dockEntries);
-  const next = removeEntry(cur, id);
+  const next = removeEntry(cur, id, opts);
   if (next !== cur) {
     dockEntries.set(next);
     save(next);
