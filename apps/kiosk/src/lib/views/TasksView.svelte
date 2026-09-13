@@ -38,6 +38,7 @@
     noteRiseDelay,
     noteRiseRot,
     sourceRef,
+    isHologram,
     type BacklogTask,
     holoSeed,
   } from "$lib/data";
@@ -510,11 +511,16 @@
     if (!task || !hid) return;
     deleting = true;
     try {
-      // A federated/hologram card lives in its owner's graph — delete the
-      // source there (cascading over its forwards); deleting the local pointer
-      // would only orphan it. Own items delete in place.
+      // WHERE the delete lands (same rule as DetailModal):
+      //   - a hologram (a joined task mirrored into this holon as a pointer)
+      //     is deleted HERE — our mirror goes, the source holon's task stays.
+      //     `sourceRef` would otherwise route this to the original and delete
+      //     it for everyone.
+      //   - a federation-aggregated card has no local node; its owner holon
+      //     is the only place a delete can land.
+      //   - our own task: deleted in place.
       const q = get(rawQuests).find((x) => String(x.id ?? x.title) === task.id);
-      const ref = q ? sourceRef(q, task.id) : undefined;
+      const ref = q && !isHologram(q) ? sourceRef(q, task.id) : undefined;
       const hs = await getHolosphere();
       const result = await deleteTaskWithCascade(
         hs as any,
