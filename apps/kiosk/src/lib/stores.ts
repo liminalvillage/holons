@@ -22,6 +22,7 @@ import {
   categoryColorMap,
 } from "./data";
 import type { SearchSuggestions, TaskSort } from "./data";
+import type { LinkedCard } from "./cardlink";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
@@ -413,16 +414,21 @@ export const completionRequest = writable<CompletionRequest>(null);
 /** When true, the next quest opened in the DetailModal starts in edit mode. */
 export const editOnOpen = writable<boolean>(false);
 
-/** Open a quest (calendar event or backlog task) by id, looked up live. */
-export function openQuest(id: string, kind: "event" | "task"): void {
+/**
+ * Open a quest (calendar event or backlog task) by id, looked up live.
+ * Returns whether the record was known (a deep link retries until it is).
+ */
+export function openQuest(id: string, kind: "event" | "task"): boolean {
   const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
   if (q) selection.set({ kind, quest: q });
+  return !!q;
 }
 
-/** Open a library thing by id, looked up live. */
-export function openThing(id: string): void {
+/** Open a library thing by id, looked up live. Returns whether it was known. */
+export function openThing(id: string): boolean {
   const item = get(rawLibrary).find((x) => String(x.id ?? "") === id);
   if (item) selection.set({ kind: "thing", item });
+  return !!item;
 }
 
 export function closeDetail(): void {
@@ -672,6 +678,14 @@ export const activeTab = writable<TabId>(initialPin ?? DEFAULT_TAB);
  * choice wins over the URL's ask).
  */
 export const requestedTab = writable<TabId | null>(null);
+
+/**
+ * A deep-linked card (`?task=`, `?event=`, `?thing=`, see cardlink.ts) whose
+ * record hasn't streamed in yet. Held until the quests/library lens delivers
+ * it, which then opens it in the DetailModal and spends the ask; a human tap
+ * on any card clears it instead (their choice wins over the URL's).
+ */
+export const pendingCard = writable<LinkedCard | null>(null);
 
 /**
  * The tab the kiosk is pinned to, or null to auto-rotate. While pinned the
