@@ -775,6 +775,8 @@ export const en = {
   "detail.onLoanTo": "On loan to {who}",
   "detail.bookAhead": "Book ahead",
   "detail.edit": "Edit",
+  "detail.copyLink": "Copy the link to this card",
+  "detail.linkCopied": "Link copied",
   "detail.enlargePicture": "Tap to see the whole picture",
   "detail.loginBorrowEdit": "Log in with Telegram to borrow or edit",
   "detail.loginEdit": "Log in with Telegram to edit",

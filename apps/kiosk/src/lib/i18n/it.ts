@@ -792,6 +792,8 @@ export const it: Record<MessageKey, Msg> = {
   "detail.onLoanTo": "In prestito a {who}",
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",
+  "detail.copyLink": "Copia il link a questa scheda",
+  "detail.linkCopied": "Link copiato",
   "detail.enlargePicture": "Tocca per vedere l'immagine intera",
   "detail.loginBorrowEdit":
     "Accedi con Telegram per prendere in prestito o modificare",

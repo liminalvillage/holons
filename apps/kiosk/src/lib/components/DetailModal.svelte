@@ -18,8 +18,11 @@
     completionRequest,
     editOnOpen,
     partnerNames,
+    showNotice,
   } from "$lib/stores";
   import { holonColors } from "$lib/palette";
+  import { selectionCardUrl } from "$lib/cardlink";
+  import { segmentFor } from "$lib/dock";
   import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
@@ -580,6 +583,28 @@
     loginOpen.set(true);
   }
 
+  // ── Share ────────────────────────────────────────────────────────────────
+  // The link that opens this very card (`/<holon>/tasks?task=<id>`, see
+  // cardlink.ts) from wherever the board is served — the same URL the
+  // address bar mirrors while the card is up. A local draft has none yet.
+  $: linkUrl =
+    sel && $holonId && typeof location !== "undefined"
+      ? selectionCardUrl(location.origin, segmentFor($holonId), sel)
+      : null;
+  let copied = false;
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  async function copyLink() {
+    if (!linkUrl) return;
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      copied = true;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1800);
+    } catch {
+      showNotice($t("clipboard.writeFailed"));
+    }
+  }
+
   async function saveQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
     saving = true;
@@ -955,6 +980,16 @@
 
 {#if sel}
   <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
+    {#if linkUrl && !editing}
+      <button
+        class="share"
+        class:done={copied}
+        on:click={copyLink}
+        aria-label={$t("detail.copyLink")}
+        title={$t(copied ? "detail.linkCopied" : "detail.copyLink")}
+        >{copied ? "✓" : "⛓"}</button
+      >
+    {/if}
     {#if isThing && item}
       <!-- ── Library thing ─────────────────────────────────────────────── -->
       <!-- A thing's photo stands in for the type icon when it has one: the
@@ -1592,6 +1627,24 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+  /* Copy-link, mirroring Modal's own ✕ on the opposite corner. */
+  .share {
+    position: absolute;
+    top: 0.8rem;
+    left: 0.8rem;
+    z-index: 2;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    background: rgba(255, 255, 255, 0.55);
+    display: grid;
+    place-items: center;
+  }
+  .share.done {
+    color: var(--teal);
   }
   /* Where a foreign card came from — coloured with the source holon's glow
      hue, matching the wall's source chips and the hologram projection. */

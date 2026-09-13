@@ -92,11 +92,18 @@ export async function initAuth(): Promise<void> {
   currentUser.set(null);
 }
 
-/** Begin the Telegram OIDC login (full-page redirect via our /login endpoint). */
+/**
+ * Begin the Telegram OIDC login (full-page redirect via our /login endpoint).
+ * The current location rides along as `returnTo` so the round-trip lands back
+ * on the same board, tab and card (`/liminal/tasks?task=…`) — not the root.
+ */
 export function login(): void {
   if (typeof window === "undefined") return;
   loginOpen.set(false);
-  window.location.href = "/api/auth/telegram/login";
+  const returnTo =
+    window.location.pathname + window.location.search + window.location.hash;
+  window.location.href =
+    "/api/auth/telegram/login?returnTo=" + encodeURIComponent(returnTo);
 }
 
 /**

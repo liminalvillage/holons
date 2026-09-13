@@ -5,7 +5,8 @@
 // flow. Multi-tenant: the round-trip always uses ONE canonical callback origin
 // (TELEGRAM_OIDC_CALLBACK_ORIGIN, e.g. https://hubs.network) so only that single
 // redirect_uri must be registered in BotFather. We remember the originating
-// subdomain so the callback can send the user back there afterwards. The
+// subdomain AND path (a deep link into a board, tab or card) so the callback
+// can send the user back there afterwards. The
 // transient cookies are scoped to .hubs.network so the canonical callback host
 // can read them.
 
@@ -41,8 +42,18 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     });
   cookies.set("tg_oidc_verifier", verifier, opts);
   cookies.set("tg_oidc_state", state, opts);
-  // Where to return the user after the canonical callback completes.
-  cookies.set("tg_oidc_return", url.origin, opts);
+  // Where to return the user after the canonical callback completes: this
+  // origin plus the path login started on. Only a same-origin relative path
+  // is accepted — a leading "/" but not "//" (protocol-relative) or a
+  // backslash — so the cookie can never become an open redirect.
+  const returnTo = url.searchParams.get("returnTo") ?? "";
+  const path =
+    returnTo.startsWith("/") &&
+    !returnTo.startsWith("//") &&
+    !returnTo.includes("\\")
+      ? returnTo
+      : "/";
+  cookies.set("tg_oidc_return", url.origin + path, opts);
 
   const callbackOrigin = cfg.callbackOrigin || url.origin;
   redirect(

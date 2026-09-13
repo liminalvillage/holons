@@ -7,6 +7,7 @@ import {
   verifySession,
   mintKeySession,
   verifySessionIdentity,
+  returnDestination,
 } from "./telegramAuth";
 
 const JWT_SECRET = "a".repeat(48);
@@ -51,5 +52,29 @@ describe("key sessions", () => {
     );
     expect(await verifySessionIdentity(token, "b".repeat(48))).toBeNull();
     expect(await verifySessionIdentity("not.a.jwt", JWT_SECRET)).toBeNull();
+  });
+});
+
+describe("returnDestination", () => {
+  it("keeps the path and query of a hubs.network deep link", () => {
+    expect(
+      returnDestination("https://liminal.hubs.network/liminal/tasks?task=t1"),
+    ).toBe("https://liminal.hubs.network/liminal/tasks?task=t1");
+  });
+  it("normalises a bare origin to its root", () => {
+    expect(returnDestination("https://hubs.network")).toBe(
+      "https://hubs.network/",
+    );
+  });
+  it("allows localhost in dev", () => {
+    expect(returnDestination("http://localhost:5173/x?event=e")).toBe(
+      "http://localhost:5173/x?event=e",
+    );
+  });
+  it("falls back to the root for a foreign origin, garbage, or nothing", () => {
+    expect(returnDestination("https://evil.example/liminal")).toBe("/");
+    expect(returnDestination("http://hubs.network/")).toBe("/");
+    expect(returnDestination("not a url")).toBe("/");
+    expect(returnDestination(undefined)).toBe("/");
   });
 });

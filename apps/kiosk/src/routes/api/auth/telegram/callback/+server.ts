@@ -15,7 +15,7 @@ import {
   mintSession,
   sessionCookieOptions,
   cookieDomain,
-  isAllowedReturnOrigin,
+  returnDestination,
   SESSION_COOKIE,
   type TelegramProfile,
 } from "$lib/server/telegramAuth";
@@ -93,8 +93,8 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     sessionCookieOptions(url.protocol === "https:", domain),
   );
 
-  // Send the user back to the subdomain they started on (the session cookie is
-  // .hubs.network-wide, so it's visible there). Fall back to this host's root.
-  const dest = isAllowedReturnOrigin(returnTo) ? `${returnTo}/` : "/";
-  redirect(303, dest);
+  // Send the user back to where they started — subdomain, path and card (the
+  // session cookie is .hubs.network-wide, so it's visible there). Fall back
+  // to this host's root.
+  redirect(303, returnDestination(returnTo));
 };

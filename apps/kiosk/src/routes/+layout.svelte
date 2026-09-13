@@ -93,9 +93,19 @@
     activeTab,
     requestedTab,
     visibleTabs,
+    pendingCard,
+    selection,
+    openQuest,
+    openThing,
     type TabId,
   } from "$lib/stores";
   import { pathForTab, tabForPath } from "$lib/tabroute";
+  import {
+    linkedCardFromSearch,
+    searchWithCard,
+    selectionCard,
+    withoutSelectionCard,
+  } from "$lib/cardlink";
   import {
     dockState,
     dockOpenTarget,
@@ -105,7 +115,7 @@
     segmentFor,
   } from "$lib/dock";
   import { dockPartnersOf } from "$lib/dockfed";
-  import { initAuth, loginOpen } from "$lib/auth";
+  import { initAuth, loginOpen, currentUser } from "$lib/auth";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
   import type { Quest } from "@holons/core/tasks";
@@ -551,11 +561,17 @@
     // data is still streaming in: register the ask so the tab claims the
     // screen the moment it appears instead of being reset to the fallback.
     const urlTab = tabForPath(location.pathname);
-    if (urlTab) {
-      activeTab.set(urlTab);
-      if (!get(visibleTabs).some((t) => t.id === urlTab))
-        requestedTab.set(urlTab);
+    // A deep-linked card (`?task=`, `?event=`, `?thing=`, `?item=`, `?offer=`,
+    // see cardlink.ts) opens that card once its record streams in — and, when
+    // the path names no tab, picks the card's tab as the starting view.
+    const card = bootHolon ? linkedCardFromSearch(location.search) : null;
+    const startTab = urlTab ?? card?.tab ?? null;
+    if (startTab) {
+      activeTab.set(startTab);
+      if (!get(visibleTabs).some((t) => t.id === startTab))
+        requestedTab.set(startTab);
     }
+    if (card) pendingCard.set(card);
     lastSyncedTab = get(activeTab);
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
@@ -583,7 +599,14 @@
     accent.set(resolveAccent());
     themeMode.set(resolveThemeMode());
     langMode.set(resolveLangMode());
-    initAuth();
+    // Someone following a link to one card is most likely here to act on it:
+    // with nobody signed in, raise the login sheet over the opened card. It is
+    // an ask, not a gate — closing it leaves the card readable — and it is made
+    // once per boot, so a login that came back around (Telegram returns to the
+    // same URL) or a dismissed ask isn't repeated.
+    void initAuth().then(() => {
+      if (card && !isMiniApp && !get(currentUser)) loginOpen.set(true);
+    });
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
     window.addEventListener("kiosk:federation-changed", onFederationChanged);
@@ -672,6 +695,38 @@
     const path = pathForTab(location.pathname, $activeTab);
     if (path !== location.pathname)
       replaceState(path + location.search + location.hash, {});
+  }
+
+  // A deep-linked card opens the moment its lens delivers the record — the
+  // quests or library lens may still be streaming in at boot. Reading the raw
+  // stores here re-runs this on every delivery until the card is found; a tap
+  // on any card in the meantime spends the ask (their choice wins).
+  $: if (mounted && $pendingCard && ($rawQuests, $rawLibrary, true)) {
+    const { kind, id } = $pendingCard;
+    const found =
+      kind === "thing"
+        ? openThing(id)
+        : kind === "task" || kind === "event"
+          ? openQuest(id, kind)
+          : // Stock and Offers consume their own param (StockView/OffersView).
+            true;
+    if (found) pendingCard.set(null);
+  }
+  $: if ($selection && $pendingCard) pendingCard.set(null);
+
+  // Reflect the open DetailModal card in the address bar — shallow, like the
+  // tab sync below — so the showing card is always shareable (`?task=<id>`),
+  // and drop the pointer when it closes so a reload shows the plain board.
+  // Same router-ready gate: replaceState before router init throws.
+  // While a linked card is still pending its pointer stays put — the ask is
+  // still live and a reload must repeat it.
+  $: if (routerReady && mounted && !isMiniApp && !isHome && !$pendingCard) {
+    const card = selectionCard($selection);
+    const search = card
+      ? searchWithCard(location.search, card.param, card.id)
+      : withoutSelectionCard(location.search);
+    if (search !== location.search)
+      replaceState(location.pathname + search + location.hash, {});
   }
 
   // ── Board window ↔ dock morph ───────────────────────────────────────────--

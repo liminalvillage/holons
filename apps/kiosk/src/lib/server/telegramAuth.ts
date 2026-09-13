@@ -98,6 +98,21 @@ export function isAllowedReturnOrigin(
   }
 }
 
+/**
+ * Where the callback sends the user after login: the full URL the login
+ * endpoint remembered (origin + path + query, so a deep link into a card
+ * survives the round-trip) when its origin is allowed, else this host's root.
+ * A bare origin normalises to `origin/`.
+ */
+export function returnDestination(returnTo: string | undefined | null): string {
+  if (!isAllowedReturnOrigin(returnTo)) return "/";
+  try {
+    return new URL(returnTo as string).href;
+  } catch {
+    return "/";
+  }
+}
+
 // --- PKCE + authorization request ---
 
 export function generatePkce(): { verifier: string; challenge: string } {
