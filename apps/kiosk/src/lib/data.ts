@@ -27,7 +27,12 @@ import type {
   ExternalCalendarEvent,
   ImportedCalendar,
 } from "@holons/core/calendar";
-import { recordKey, sourceHolonId, sourceRef } from "@holons/core/holosphere";
+import {
+  recordKey,
+  sourceHolonId,
+  sourceRef,
+  deleteRef,
+} from "@holons/core/holosphere";
 import type { Translator } from "./i18n";
 import {
   holonColor,
@@ -118,7 +123,7 @@ type Names = Record<string, string>;
 // actually lives in, and where a write on it must land). The rule moved to
 // `@holons/core/holosphere` so every surface shares it; these re-exports keep
 // the kiosk's existing call sites stable.
-export { sourceHolonId, sourceRef, recordKey };
+export { sourceHolonId, sourceRef, deleteRef, recordKey };
 
 /**
  * Resolve a foreign item's source holon to a friendly label — the partner's

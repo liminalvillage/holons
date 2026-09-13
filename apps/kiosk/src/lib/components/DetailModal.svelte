@@ -32,6 +32,7 @@
     noteColor,
     toPeople,
     sourceRef,
+    deleteRef,
     isHologram,
     sourceGlow,
     sourceLabel,
@@ -682,12 +683,15 @@
       return;
     }
     const localId = String(sel.quest.id ?? sel.quest.title);
-    const mirrored = isHologram(sel.quest);
-    const ref = mirrored ? undefined : sourceRef(sel.quest, localId);
+    // Core decides where a delete lands (`deleteRef`): a hologram loses only
+    // our local mirror, a federation-aggregated card resolves to its owner
+    // holon, our own task deletes in place.
+    const ref = deleteRef(sel.quest, $holonId, localId);
+    const foreign = ref.kind === "federated";
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        $t(ref ? "detail.hideConfirm" : "detail.deleteConfirm", {
+        $t(foreign ? "detail.hideConfirm" : "detail.deleteConfirm", {
           title: quest?.title ?? $t("detail.thisTask"),
         }),
       )
@@ -701,7 +705,7 @@
     // `hidden` lens (core owns the shape; +layout filters the quests feed
     // against it). The original stays untouched for its holon, and un-hiding
     // is possible because nothing was destroyed.
-    if (ref) {
+    if (foreign) {
       const writer = await getWriter($holonId, (m) => (message = m));
       const ok = await writer.put(
         HIDDEN_LENS,
@@ -723,27 +727,21 @@
     // tombstone is a stable object that both `isDone` and the lens aggregator
     // drop cleanly, so the card just leaves.
     //
-    // WHERE it lands:
-    //   - a hologram (a joined task mirrored into this holon as a pointer) is
-    //     deleted HERE — dropping our mirror, not the source holon's task. The
-    //     write must say so: HoloSphere otherwise follows the pointer, so the
-    //     tombstone would soft-delete the original for everyone while our
-    //     pointer — and the card — stayed exactly where it was.
-    //   - our own task: written in place, as before.
+    // WHERE it lands: `ref` is local for both a hologram (our mirror goes, the
+    // source holon's task stays) and our own task. HoloSphere itself never
+    // follows a pointer for a `_deleted: true` payload, so this tombstone
+    // cannot reach the original.
     const tombstone: Record<string, unknown> = {
       ...sel.quest,
-      id: localId,
+      id: ref.key,
       _deleted: true,
     };
-    // Read-side provenance tags — never persist them (and `_hologram` would
-    // re-route this very write to the source holon).
+    // Read-side provenance tags — never persist them.
     delete tombstone._holon;
     delete tombstone._hologram;
     delete tombstone._federation;
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", tombstone, {
-      disableHologramRedirection: mirrored,
-    });
+    const writer = await getWriter(ref.holon, (m) => (message = m));
+    const ok = await writer.put("quests", tombstone);
     saving = false;
     if (ok) closeDetail();
     else if (!message) message = $t("detail.deleteFailed");

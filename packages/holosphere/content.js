@@ -190,6 +190,13 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
     const isGlobal = isGlobalHolon(holon);
     const { disableHologramRedirection = false } = options;
+    // A tombstone never follows a hologram. "Delete a mirrored record" means
+    // dropping THIS holon's pointer; the original stays for its owner. Both
+    // redirects below are therefore off for a `_deleted: true` payload — a
+    // caller that really means to delete the source addresses it directly.
+    // (An edit or completion of the same record still follows the pointer.)
+    const isTombstone = data._deleted === true;
+    const followHolograms = !disableHologramRedirection && !isTombstone;
 
     let targetHolon = holon;
     let targetLens = lens;
@@ -216,7 +223,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
     // envelope itself is stripped from the stored value further below, so the
     // source item is written clean.
     let redirectedBySourceEnvelope = false;
-    if (!isGlobal && !disableHologramRedirection && data._hologram?.sourceHolon) {
+    if (!isGlobal && followHolograms && data._hologram?.sourceHolon) {
         const env = data._hologram;
         const soulInfo = env.soul ? holoInstance.parseSoulPath(env.soul) : null;
         targetHolon = env.sourceHolon ?? soulInfo?.holon ?? targetHolon;
@@ -238,7 +245,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         // Get the item at the original target path, WITHOUT resolving holograms
         const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, null, { resolveHolograms: false });
 
-        if (!disableHologramRedirection && existingItemAtPath && holoInstance.isHologram(existingItemAtPath)) {
+        if (followHolograms && existingItemAtPath && holoInstance.isHologram(existingItemAtPath)) {
             const soulInfo = holoInstance.parseSoulPath(existingItemAtPath.soul);
             if (soulInfo) {
                 if (soulInfo.appname !== holoInstance.appname) {

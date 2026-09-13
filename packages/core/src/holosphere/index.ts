@@ -32,7 +32,7 @@ export {
   type NostrSigner,
   type SignableTemplate,
 } from './signers.js';
-export { sourceHolonId, sourceRef, recordKey } from './provenance.js';
+export { sourceHolonId, sourceRef, deleteRef, recordKey, type DeleteRef } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,

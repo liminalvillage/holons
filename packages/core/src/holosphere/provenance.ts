@@ -44,6 +44,39 @@ export function sourceRef(
   return { holon, key: sourceKey || localId };
 }
 
+/** Where a delete lands, and why. */
+export interface DeleteRef {
+  holon: string;
+  key: string;
+  /**
+   * `own`       — the holon's own record: delete it in place.
+   * `mirror`    — a hologram (a record mirrored into this holon as a pointer):
+   *               delete the LOCAL pointer; the source holon's record stays.
+   * `federated` — a partner-published copy with no local node: the owner's
+   *               holon is the only place a delete can land (UIs may prefer to
+   *               mute it locally instead — see `@holons/core/hidden`).
+   */
+  kind: 'own' | 'mirror' | 'federated';
+}
+
+/**
+ * Where a delete of `rec` lands. The default every surface shares:
+ * **deleting a mirrored record drops this holon's mirror, never the original.**
+ *
+ * This deliberately diverges from {@link sourceRef}, which routes edits,
+ * joins and completions to the source. HoloSphere's put enforces the same
+ * rule for `_deleted: true` payloads (a tombstone never follows a hologram),
+ * so a UI that resolves the target through this helper and one that writes a
+ * tombstone at the local path agree.
+ */
+export function deleteRef(rec: unknown, localHolon: string, localId: string): DeleteRef {
+  const r = rec as { _hologram?: { isHologram?: boolean } } | null | undefined;
+  if (r?._hologram?.isHologram) return { holon: localHolon, key: localId, kind: 'mirror' };
+  const origin = sourceHolonId(rec);
+  if (origin) return { holon: origin, key: localId, kind: 'federated' };
+  return { holon: localHolon, key: localId, kind: 'own' };
+}
+
 /**
  * A key that stays unique when records from several holons are shown together.
  *
