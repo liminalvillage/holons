@@ -122,11 +122,9 @@
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
   import type { Checklist } from "@holons/core/checklists";
-  import { keyLinkOpen } from "$lib/sessionKey";
   import DockView from "$lib/components/DockView.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
-  import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import LoginCard from "$lib/components/LoginCard.svelte";
   import UserMenu from "$lib/components/UserMenu.svelte";
@@ -605,7 +603,7 @@
     // once per boot, so a login that came back around (Telegram returns to the
     // same URL) or a dismissed ask isn't repeated.
     void initAuth().then(() => {
-      if (card && !isMiniApp && !get(currentUser)) loginOpen.set(true);
+      if (card && !get(currentUser)) loginOpen.set(true);
     });
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
@@ -637,11 +635,6 @@
     };
   });
 
-  // The signing-key vault (routes/key) is a Telegram Mini App — a phone-sized
-  // page with its own life. It must not boot the board: no subscriptions, no
-  // kiosk chrome, just the route.
-  $: isMiniApp = $page.url.pathname.replace(/\/+$/, "") === "/key";
-
   // The about page (routes/about): what a hub is and how to start one — the
   // reading page the map links to. It is a page, not a board: no dock, no
   // tab chrome, though the Settings/login sheets stay reachable from it.
@@ -650,7 +643,7 @@
   // No holon resolved and nothing left to wait for → this isn't a board, it's
   // the front door: the dock (the map, by default) with this device's hubs
   // on it, and the board-only overlays stood down.
-  $: isHome = !isMiniApp && !isAbout && !booting && !$holonIdStore;
+  $: isHome = !isAbout && !booting && !$holonIdStore;
 
   // The dock/window state follows a CHANGE of holon made outside the morphs:
   // a board named without one (the about page's paste field, Settings)
@@ -659,7 +652,7 @@
   // board keeps its holon while its circle sits on the dock, and an orb tap
   // switches the holon mid-"opening", which is the morph's own business.
   let followedHolon: string | null | undefined;
-  $: if (mounted && !isMiniApp && $holonIdStore !== followedHolon) {
+  $: if (mounted && $holonIdStore !== followedHolon) {
     const first = followedHolon === undefined;
     followedHolon = $holonIdStore;
     if (!first) {
@@ -670,8 +663,7 @@
 
   // Each shown board brings its federation partners onto the dock (tagged
   // `via` this board) — the bot's link, an orb tap, the paste field alike.
-  $: if (mounted && !isMiniApp && $holonIdStore)
-    void dockPartnersOf($holonIdStore);
+  $: if (mounted && $holonIdStore) void dockPartnersOf($holonIdStore);
 
   // Reflect tab switches in the address bar — shallow, no navigation, so the
   // showing view is always shareable (`/tasks`, `/liminal/calendar`). Seeded
@@ -684,13 +676,7 @@
   let lastSyncedTab: TabId | null = null;
   let routerReady = false;
   afterNavigate(() => (routerReady = true));
-  $: if (
-    routerReady &&
-    mounted &&
-    !isMiniApp &&
-    !isHome &&
-    $activeTab !== lastSyncedTab
-  ) {
+  $: if (routerReady && mounted && !isHome && $activeTab !== lastSyncedTab) {
     lastSyncedTab = $activeTab;
     const path = pathForTab(location.pathname, $activeTab);
     if (path !== location.pathname)
@@ -720,7 +706,7 @@
   // Same router-ready gate: replaceState before router init throws.
   // While a linked card is still pending its pointer stays put — the ask is
   // still live and a reload must repeat it.
-  $: if (routerReady && mounted && !isMiniApp && !isHome && !$pendingCard) {
+  $: if (routerReady && mounted && !isHome && !$pendingCard) {
     const card = selectionCard($selection);
     const search = card
       ? searchWithCard(location.search, card.param, card.id)
@@ -891,12 +877,11 @@
   // stamp the previous holon's name on the new board — the id changes a tick
   // before the async bind clears the name, and a holon that resolves no name
   // of its own would then keep that borrowed one forever.
-  $: if (mounted && !isMiniApp && $holonIdStore)
-    rememberBoard($holonIdStore, "");
+  $: if (mounted && $holonIdStore) rememberBoard($holonIdStore, "");
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
-  $: if (mounted && !isMiniApp)
+  $: if (mounted)
     refresh(
       $holonIdStore,
       $federated,
@@ -974,85 +959,73 @@
   on:pointermove|capture={onMove}
 />
 
-{#if isMiniApp}
-  <!-- Telegram Mini App route: no board, no chrome — the page is the app. -->
+{#if isAbout}
+  <!-- The reading page: what a hub is, and the buttons that start one. -->
   <slot />
 {:else}
-  {#if isAbout}
-    <!-- The reading page: what a hub is, and the buttons that start one. -->
-    <slot />
-  {:else}
-    <!-- The dock sits beneath the board window during the morph frames and
-         alone once the window has fully closed into its circle — and it IS
-         the front door: with no holon named, the map with this device's
-         hubs is what a bare visit shows. -->
-    {#if $dockState !== "window"}
-      <DockView />
-    {/if}
+  <!-- The dock sits beneath the board window during the morph frames and
+       alone once the window has fully closed into its circle — and it IS
+       the front door: with no holon named, the map with this device's
+       hubs is what a bare visit shows. -->
+  {#if $dockState !== "window"}
+    <DockView />
+  {/if}
 
-    {#if $dockState !== "dock" && $holonIdStore}
-      <div class="kiosk" class:idle={$idle} bind:this={windowEl}>
-        <!-- The whole tab interface is one card floating in the space — the
-             same sky the dock shows — so closing it into a circle reads as
-             the card shrinking into its place among the others. -->
-        <div class="card" class:idle={$idle}>
-          <TabBar />
-          <main class="stage">
-            <slot />
-          </main>
-        </div>
+  {#if $dockState !== "dock" && $holonIdStore}
+    <div class="kiosk" class:idle={$idle} bind:this={windowEl}>
+      <!-- The whole tab interface is one card floating in the space — the
+           same sky the dock shows — so closing it into a circle reads as
+           the card shrinking into its place among the others. -->
+      <div class="card" class:idle={$idle}>
+        <TabBar />
+        <main class="stage">
+          <slot />
+        </main>
       </div>
+    </div>
 
-      <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
-      <DetailModal />
-    {/if}
+    <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
+    <DetailModal />
   {/if}
+{/if}
 
-  <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
-  {#if $loginOpen}
-    <Modal on:close={() => loginOpen.set(false)}>
-      <LoginCard />
-    </Modal>
-  {/if}
+<!-- Login overlay, raised from the header chip or an "edit" prompt. -->
+{#if $loginOpen}
+  <Modal on:close={() => loginOpen.set(false)}>
+    <LoginCard />
+  </Modal>
+{/if}
 
-  <!-- User menu: identity, federated toggle, dashboard, settings. -->
-  {#if $userMenuOpen}
-    <Modal on:close={() => userMenuOpen.set(false)}>
-      <UserMenu />
-    </Modal>
-  {/if}
+<!-- User menu: identity, federated toggle, dashboard, settings. -->
+{#if $userMenuOpen}
+  <Modal on:close={() => userMenuOpen.set(false)}>
+    <UserMenu />
+  </Modal>
+{/if}
 
-  <!-- Caretaker settings: holon, name, logo, accent. -->
-  {#if $settingsOpen}
-    <Modal on:close={() => settingsOpen.set(false)}>
-      <Settings />
-    </Modal>
-  {/if}
+<!-- Caretaker settings: holon, name, logo, accent. -->
+{#if $settingsOpen}
+  <Modal on:close={() => settingsOpen.set(false)}>
+    <Settings />
+  </Modal>
+{/if}
 
-  <!-- Board-only companions: they all act on the displayed holon, and the
-       front door and the about page have none. -->
-  {#if !isHome && !isAbout}
-    <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
-    {#if $keyLinkOpen}
-      <Modal on:close={() => keyLinkOpen.set(false)}>
-        <KeyLinkModal />
-      </Modal>
-    {/if}
+<!-- Board-only companions: they all act on the displayed holon, and the
+     front door and the about page have none. -->
+{#if !isHome && !isAbout}
+  <!-- Participant confirmation before a completion records REA. -->
+  <CompleteConfirm />
 
-    <!-- Participant confirmation before a completion records REA. -->
-    <CompleteConfirm />
+  <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
+     Sends the displayed holon + active view + open record as turn context. -->
+  <VoiceWidget />
+  <!-- Changes the voice agent proposed, awaiting the user's Apply. -->
+  <VoiceDrawer />
+{/if}
 
-    <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
-       Sends the displayed holon + active view + open record as turn context. -->
-    <VoiceWidget />
-    <!-- Changes the voice agent proposed, awaiting the user's Apply. -->
-    <VoiceDrawer />
-  {/if}
-
-  <!-- Transient one-line feedback for taps that can't proceed. -->
-  {#if $notice}
-    <div class="notice" role="status">{$notice}</div>
-  {/if}
+<!-- Transient one-line feedback for taps that can't proceed. -->
+{#if $notice}
+  <div class="notice" role="status">{$notice}</div>
 {/if}
 
 <style>

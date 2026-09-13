@@ -22,7 +22,7 @@ describe("tabForPath", () => {
     expect(tabForPath("")).toBeNull();
     expect(tabForPath("/liminal")).toBeNull();
     expect(tabForPath("/liminal/nope")).toBeNull();
-    expect(tabForPath("/key")).toBeNull();
+    expect(tabForPath("/about")).toBeNull();
   });
 });
 

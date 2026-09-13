@@ -3,11 +3,10 @@
 //
 // The user's own signing identity for this kiosk session.
 //
-// The key arrives via the E2E pairing flow (see pairing.ts): generated
-// client-side in our Telegram Mini App, held in the user's Telegram
-// CloudStorage, and sealed to this kiosk's ephemeral key for the hop. It is
-// adopted AMBIENTLY on the live HoloSphere instance (`hs.login`) so every
-// subsequent write is signed as the user — and it lives in memory only.
+// The key arrives from a key login (nsec import, passkey, wallet — see
+// auth.ts) and is adopted AMBIENTLY on the live HoloSphere instance
+// (`hs.login`) so every subsequent write is signed as the user — and it
+// lives in memory only.
 // A kiosk is a shared device: the key is never persisted here, and logging
 // out (or reloading) drops it, reverting writes to the device key identity.
 
@@ -29,9 +28,6 @@ export function getSessionSecret(): string | null {
   return sessionSecret;
 }
 
-/** Whether the key-link pairing modal is open. */
-export const keyLinkOpen = writable<boolean>(false);
-
 // The ambient-identity API exists on the instance but isn't in
 // holosphere.d.ts yet; keep the cast in one place.
 type SigningIdentity = {
@@ -40,7 +36,7 @@ type SigningIdentity = {
 };
 
 /**
- * Adopt a paired secret key as this session's signing identity. Returns the
+ * Adopt a secret key as this session's signing identity. Returns the
  * pubkey, or null when the key is unusable.
  */
 export async function adoptSessionKey(

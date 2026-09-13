@@ -909,6 +909,27 @@ export const en = {
   "voice.plan.done": "Applied",
   "voice.plan.failed": "Failed",
 
+  // ── Add a hub — the sheet behind the dock's "+" ─────────────────────────
+  "hub.addTitle": "Add a hub",
+  "hub.addHereTitle": "Add a hub here",
+  "hub.haveTitle": "I already have a hub",
+  "hub.haveBody": "Paste its link or its id.",
+  "hub.newTitle": "Start a new hub",
+  "hub.newBody": "For yourself, or for a group — through Telegram.",
+  "hub.newLead":
+    "A hub is a Telegram chat. Pick which: Telegram opens, the bot answers there, and the hub appears here by itself.",
+  "hub.personal": "A hub for me",
+  "hub.personalHint": "A private chat with the bot",
+  "hub.group": "A hub for a group",
+  "hub.groupHint": "Add the bot to a group, or create one",
+  "hub.waiting": "Waiting for the bot…",
+  "hub.waitingBody":
+    "Once the bot has answered in Telegram, come back to this tab: the hub opens on its own.",
+  "hub.orPaste": "Or paste what the bot answered",
+  "hub.pasteHint": "Run /id in the hub's chat if you need it again.",
+  "hub.open": "Add it",
+  "hub.back": "Back",
+
   // Home / landing page — the front door. Short on purpose: what a hub is, the
   // two ways to start one, and how hubs connect. The long read lives at
   // docs.holons.io. The bot is never named here — a fork points

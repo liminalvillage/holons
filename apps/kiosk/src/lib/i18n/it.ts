@@ -930,6 +930,27 @@ export const it: Record<MessageKey, Msg> = {
   "voice.plan.done": "Applicata",
   "voice.plan.failed": "Non riuscita",
 
+  // ── Aggiungi un hub — la scheda dietro il "+" del dock ─────────────────
+  "hub.addTitle": "Aggiungi un hub",
+  "hub.addHereTitle": "Aggiungi un hub qui",
+  "hub.haveTitle": "Ho già un hub",
+  "hub.haveBody": "Incolla il suo link o il suo id.",
+  "hub.newTitle": "Avvia un nuovo hub",
+  "hub.newBody": "Per te, o per un gruppo — tramite Telegram.",
+  "hub.newLead":
+    "Un hub è una chat Telegram. Scegli quale: si apre Telegram, il bot risponde lì e l'hub compare qui da solo.",
+  "hub.personal": "Un hub per me",
+  "hub.personalHint": "Una chat privata con il bot",
+  "hub.group": "Un hub per un gruppo",
+  "hub.groupHint": "Aggiungi il bot a un gruppo, o creane uno",
+  "hub.waiting": "In attesa del bot…",
+  "hub.waitingBody":
+    "Quando il bot ha risposto su Telegram, torna in questa scheda: l'hub si apre da solo.",
+  "hub.orPaste": "Oppure incolla quello che ha risposto il bot",
+  "hub.pasteHint": "Scrivi /id nella chat dell'hub se ti serve di nuovo.",
+  "hub.open": "Aggiungilo",
+  "hub.back": "Indietro",
+
   // Home / landing page
   "home.metaTitle": "Hubs Network — un hub per ogni gruppo",
   "home.metaDescription":

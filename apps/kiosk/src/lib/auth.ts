@@ -15,10 +15,11 @@
 // By default we never hold a Telegram user's signing key — writes are signed
 // by the kiosk's own device key (see holosphere.ts) and record the user as the
 // actor via `actingAs`, mirroring how the bot writes on behalf of chat
-// members. A Telegram user CAN adopt their own Telegram-held key for the
-// session via the E2E pairing flow (sessionKey.ts / pairing.ts). Adopted keys
-// live in memory only and are dropped on logout — key users fall back to the
-// device key + `actingAs` after a reload, same as everyone else.
+// members. A key login (nsec, passkey, wallet) adopts the user's own key for
+// the session (sessionKey.ts); a person's several keys are tied together by
+// kind-31926 attestations, never by a server-held vault. Adopted keys live in
+// memory only and are dropped on logout — key users fall back to the device
+// key + `actingAs` after a reload, same as everyone else.
 
 import { writable, derived, get } from "svelte/store";
 import { signAuthEvent } from "@holons/core/auth";
