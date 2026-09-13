@@ -41,6 +41,58 @@ describe('iCal generation', () => {
         expect(ical).not.toContain('BEGIN:VEVENT');
     });
 
+    it('skips entries whose `when` does not parse instead of emitting an invalid DTSTART', () => {
+        const ical = generateICalFeed(
+            [
+                // `{}` is what an old migration left on unscheduled bot quests;
+                // `null` is the web board's "unscheduled" write.
+                { id: 'obj', title: 'Object', when: {} as unknown as string },
+                { id: 'nul', title: 'Null', when: null as unknown as string },
+                { id: 'txt', title: 'Text', when: 'next thursday' },
+                { id: 'ok', title: 'Real', when: '2026-09-10T16:30:00.000Z' },
+            ],
+            'H',
+            'h1'
+        );
+        expect(ical).not.toMatch(/NaN/);
+        expect(ical.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+        expect(ical).toContain('UID:ok@h1.holons.io');
+        expect(ical).toContain('DTSTART:20260910T163000Z');
+    });
+
+    it('emits a bare-date `when` as an all-day DATE with an exclusive end', () => {
+        const ical = generateICalFeed(
+            [
+                { id: 'day', title: 'Market', when: '2026-09-20' },
+                { id: 'span', title: 'Retreat', when: '2026-09-21', ends: '2026-09-23' },
+            ],
+            'H',
+            'h1'
+        );
+        expect(ical).toContain('DTSTART;VALUE=DATE:20260920');
+        expect(ical).toContain('DTEND;VALUE=DATE:20260921');
+        expect(ical).toContain('DTSTART;VALUE=DATE:20260921');
+        expect(ical).toContain('DTEND;VALUE=DATE:20260924');
+    });
+
+    it('defaults a timed entry with no (or an inverted) end to one hour', () => {
+        const ical = generateICalFeed(
+            [
+                { id: 'a', title: 'A', when: '2026-09-10T16:30:00.000Z' },
+                { id: 'b', title: 'B', when: '2026-09-10T16:30:00.000Z', ends: '2026-09-10T10:00:00.000Z' },
+            ],
+            'H',
+            'h1'
+        );
+        expect(ical.match(/DTEND:20260910T173000Z/g)).toHaveLength(2);
+    });
+
+    it('asks subscribers to re-read the feed hourly', () => {
+        const ical = generateICalFeed([], 'H', 'h1');
+        expect(ical).toContain('REFRESH-INTERVAL;VALUE=DURATION:PT1H');
+        expect(ical).toContain('X-PUBLISHED-TTL:PT1H');
+    });
+
     it('exposes generateICal and toICalendar aliases', () => {
         expect(generateICal).toBe(generateICalFeed);
         expect(toICalendar).toBe(generateICalFeed);

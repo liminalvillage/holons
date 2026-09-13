@@ -28,6 +28,34 @@ function getHolosphere() {
   return holosphere;
 }
 
+/** Upper bound on the per-request relay catch-up (see `catchUp`). */
+const RESYNC_TIMEOUT_MS = 4000;
+
+/**
+ * Re-read every lens this instance already follows before answering. A lens
+ * is caught up from the relays only the first time it is read; afterwards the
+ * in-memory store is fed by a live subscription that a frozen serverless
+ * function may have lost. Without this, the request that thaws the instance
+ * answers from the store as it stood at freeze time — and a calendar app that
+ * only re-reads every several hours keeps a moved date stale for another
+ * whole cycle. Bounded so an unreachable relay never blocks the feed.
+ */
+async function catchUp(holo: HoloSphere): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      holo.resyncSubscriptions(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RESYNC_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    /* relay unreachable — read local */
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const GET: RequestHandler = async ({ params }) => {
   const holonId = params.id;
 
@@ -37,6 +65,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
   try {
     const holo = getHolosphere();
+    await catchUp(holo);
 
     // Fetch holon data to get the name
     const holonData = await holo.get(holonId, "profile", holonId);

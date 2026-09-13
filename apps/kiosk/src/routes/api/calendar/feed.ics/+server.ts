@@ -45,6 +45,38 @@ function getHolosphere(): HoloSphere {
 /** How long a calendar app may reuse the feed before re-reading it. */
 const CACHE_SECONDS = 900;
 
+/** Upper bound on the per-request relay catch-up (see `catchUp`). */
+const RESYNC_TIMEOUT_MS = 4000;
+
+/**
+ * Re-read every lens this instance already follows before answering.
+ *
+ * A lens is caught up from the relays only the FIRST time it is read; after
+ * that the in-memory store is fed by a live subscription. A serverless
+ * function is frozen between invocations, so that socket may have been dropped
+ * while nobody was looking — the request that thaws it would then answer from
+ * the store as it stood at freeze time, and a calendar app that only re-reads
+ * every several hours keeps a moved date stale for another whole cycle.
+ * Bounded: an unreachable relay never blocks the feed, the read proceeds with
+ * what is local. On a cold instance there is nothing to re-read yet and the
+ * first `getAll` does the full backfill itself.
+ */
+async function catchUp(hs: HoloSphere): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      hs.resyncSubscriptions(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RESYNC_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    /* relay unreachable — read local */
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** A quest becomes a VEVENT only once it is scheduled. */
 function toEvents(quests: unknown[]): HolonEvent[] {
   return (quests ?? [])
@@ -70,6 +102,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
   try {
     const hs = getHolosphere();
+    await catchUp(hs);
     // The holon's own settings record is where every surface reads its name
     // (see `resolveHolonName` in $lib/holosphere); it may come back as an
     // array of entries on older writes.
