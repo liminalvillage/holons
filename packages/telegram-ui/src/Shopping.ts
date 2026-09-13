@@ -17,12 +17,9 @@ import {
   addItems as coreAddItems,
   toggleItem as coreToggleItem,
   removeChecked as coreRemoveChecked,
-  stampNeedId,
-  needIdOf,
   type ShoppingChecklist,
   type ShoppingItem as CoreShoppingItem,
 } from '@holons/core/shopping';
-import { needFromShoppingItem, publishNeedNearby } from '@holons/core/needs';
 
 // ----------------------------------------------------------------------------
 // Local types
@@ -117,18 +114,22 @@ class LocalShoppingService implements ShoppingServiceLike {
 // Telegraf adapter: ctx in, replies out.
 // ----------------------------------------------------------------------------
 
+/** The parts of a Telegram message that tell us which forum topic it lives in. */
+interface TopicMessage {
+  message_thread_id?: number;
+  is_topic_message?: boolean;
+  reply_to_message?: {
+    forum_topic_created?: { name?: string };
+  };
+}
+
 interface AnyCtx {
   chat?: { id: number | string };
   match?: RegExpMatchArray;
   from?: { id: number; username?: string; first_name?: string };
-  message?: {
-    text: string;
-    message_thread_id?: number;
-    is_topic_message?: boolean;
-    reply_to_message?: {
-      forum_topic_created?: { name?: string };
-    };
-  };
+  message?: TopicMessage & { text: string };
+  /** Present on inline-button taps; `message` is the bot's list message. */
+  callbackQuery?: { message?: TopicMessage };
   scene?: { enter: (name: string, state?: unknown) => unknown };
   reply: (text: string, extra?: unknown) => Promise<unknown>;
   editMessageText: (text: string, extra?: unknown) => Promise<unknown>;
@@ -167,18 +168,18 @@ class Shopping {
     this.bot.action(/shopping_category_.+/, (ctx) =>
       (ctx as unknown as AnyCtx).answerCbQuery?.().catch(() => {}),
     );
-    this.bot.action(/share_need_(.+)/, (ctx) =>
-      this.shareAsNeed(ctx as unknown as AnyCtx),
-    );
   }
 
   /**
-   * Derive a category for an incoming command from the Telegram forum topic
-   * it was sent into. Mirrors Quests.getCategory so /buy and /task agree on
-   * how topics map to categories.
+   * Derive a category from the Telegram forum topic the update lives in.
+   * Mirrors Quests.getCategory so /buy and /task agree on how topics map to
+   * categories. For a command that is the user's message; for an inline
+   * button tap it is the bot's own list message (`callbackQuery.message`),
+   * which Telegram stamps with the same topic fields — without this, every
+   * tap inside a topic re-rendered the general list.
    */
   getCategory(ctx: AnyCtx): string {
-    const msg = ctx.message;
+    const msg: TopicMessage | undefined = ctx.message ?? ctx.callbackQuery?.message;
     if (!msg) return '';
     if (msg.message_thread_id && msg.reply_to_message?.forum_topic_created?.name) {
       return msg.reply_to_message.forum_topic_created.name;
@@ -297,55 +298,6 @@ class Shopping {
       });
   }
 
-  /**
-   * Publish a list item as a geolocated need (see @holons/core/needs and
-   * docs/needs-offers-network.md): partners get standalone copies, the
-   * holon's settings.hex cell gets a live hologram, and the item is stamped
-   * with the needId so checking it off fulfils the need everywhere.
-   */
-  async shareAsNeed(ctx: AnyCtx) {
-    await ctx.answerCbQuery?.().catch(() => {});
-    const holonId = String(ctx.chat!.id);
-    const language = await this.settings.getLanguage(holonId);
-    const itemId = ctx.match![1];
-
-    const list = await this.service.getList(holonId);
-    const item = list?.items.find((i) => String(i.id) === String(itemId));
-    if (!list || !item || needIdOf(item)) return; // gone or already shared
-
-    const from = ctx.from;
-    const need = needFromShoppingItem(item, {
-      holonId,
-      initiator: {
-        id: from?.id ?? holonId,
-        username: from?.username || from?.first_name || String(from?.id ?? ''),
-      },
-    });
-
-    try {
-      // this.db IS the holosphere instance (see HolonsMultiBot/services).
-      const outcome = await publishNeedNearby(this.db as never, holonId, need, {
-        toPartners: true,
-        toHex: true,
-      });
-      const stamped = stampNeedId(list, item.id, String(need.id));
-      if (stamped) await this.db.put(holonId, 'checklists', stamped);
-
-      const missedMap = outcome.errors.some((e) => /hex address/i.test(e));
-      await ctx.reply(
-        utils.i18next.t(missedMap ? 'needsharedpartial' : 'needshared', {
-          item: item.text,
-          lng: language,
-        }),
-      );
-    } catch (error) {
-      console.log('[Shopping] shareAsNeed failed:', error);
-      await ctx
-        .reply(utils.i18next.t('needsharefailed', { lng: language }))
-        .catch(() => {});
-    }
-  }
-
   async addItem(ctx: AnyCtx) {
     await ctx.answerCbQuery?.().catch(() => {});
     const holonId = String(ctx.chat!.id);
@@ -382,32 +334,22 @@ class Shopping {
     });
   }
 
-  /**
-   * Build the inline keyboard for a shopping list. When `showCategoryHeaders`
-   * is true (the unscoped /shopping view), items are grouped under a non-
-   * clickable header row per category — uncategorized items appear first.
-   */
-  /**
-   * One keyboard row per item: the toggle, plus a 📡 share-as-need button for
-   * items that are still wanted and not yet published (shared ones show 🛰).
-   */
+  /** One keyboard row per item: the toggle. Sharing is a federation setting,
+   *  not a per-item action — a federated checklist lens travels on its own. */
   private itemRow(item: ShoppingItem): any[] {
-    const row = [
+    return [
       Markup.button.callback(
         (item.checked ? '✅ ' : '☑️ ') + item.text,
         `toggle_shopping_${item.id}`,
       ),
     ];
-    if (!item.checked) {
-      row.push(
-        needIdOf(item)
-          ? Markup.button.callback('🛰', `shopping_category_shared`)
-          : Markup.button.callback('📡', `share_need_${item.id}`),
-      );
-    }
-    return row;
   }
 
+  /**
+   * Build the inline keyboard for a shopping list. When `showCategoryHeaders`
+   * is true (the unscoped /shopping view), items are grouped under a non-
+   * clickable header row per category — uncategorized items appear first.
+   */
   getShoppingListKeyboard(
     items: ShoppingItem[],
     language: string,
