@@ -18,6 +18,10 @@
 // A holon can also be picked by URL *path* — `site.com/<holon id>` or
 // `site.com/<registered label>` (see `holonForPath`) — which wins over the
 // subdomain, so one host can still deep-link any holon.
+//
+// The names themselves are data: edit `hubs.json` next to this file.
+
+import hubs from "./hubs.json";
 
 /** Base domain the kiosk is served under; subdomains of it select a holon. */
 export const BASE_DOMAIN = "hubs.network";
@@ -27,21 +31,16 @@ export const BASE_DOMAIN = "hubs.network";
  * (Holon ids are the negative chat-id strings, e.g. "-1001234567890".)
  * Optional — an unlisted holon is still reachable at `<id>.hubs.network` —
  * but an entry here takes precedence over that fall-through.
+ *
+ * The entries live in `hubs.json` next to this file so naming a hub is a
+ * one-line data edit, no code. Labels are lowercased here so an entry typed
+ * in any case still matches a hostname (DNS is case-insensitive).
  */
-export const SUBDOMAIN_HOLONS: Record<string, string> = {
-  residence: "-1001652773351",
-  lauro: "-1001652773351",
-  liminal: "-1003864542239",
-  akasha: "-1003958094547",
-  casaselva: "-1002964866719",
-  refactory: "-1003943146280",
-  civic: "-5349529224",
-  lunation80: "-1003711659317",
-  lunation83: "-1004318065568",
-  armoniaduale: "-1004310409791",
-  commons: "-1003691108237",
-  valley: "-1003691108237",
-};
+export const SUBDOMAIN_HOLONS: Record<string, string> = Object.fromEntries(
+  Object.entries(hubs as Record<string, string>)
+    .filter(([label, id]) => label.trim() && String(id ?? "").trim())
+    .map(([label, id]) => [label.trim().toLowerCase(), String(id).trim()]),
+);
 
 /**
  * The holon-selecting subdomain label of a host, or null when the host is not a

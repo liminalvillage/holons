@@ -12,7 +12,9 @@ import {
   parseHolonPaste,
   parseHolonRef,
   subdomainOf,
+  SUBDOMAIN_HOLONS,
 } from "./holons";
+import hubs from "./hubs.json";
 
 // A holon can be keyed by any of a person's identities, not only a chat id.
 const ETH = "0x52908400098527886E0F7030069857D2E4169EE7";
@@ -106,6 +108,17 @@ describe("parseHolonRef", () => {
 });
 
 describe("holonForHost", () => {
+  spec("the names come from hubs.json, one line per hub", () => {
+    // Naming a hub is a data edit: every entry in the file is served, keyed
+    // by its lowercased label, and nothing else is.
+    for (const [label, id] of Object.entries(hubs)) {
+      expect(SUBDOMAIN_HOLONS[label.toLowerCase()]).toBe(id);
+      expect(holonForHost(`${label}.hubs.network`)).toBe(id);
+    }
+    expect(Object.keys(SUBDOMAIN_HOLONS).length).toBe(Object.keys(hubs).length);
+    expect(holonForHost("lunation83.hubs.network")).toBe("-1004318065568");
+  });
+
   spec("a declared mapping wins", () => {
     expect(holonForHost("akasha.hubs.network")).toBe("-1003958094547");
     expect(holonForHost("liminal.hubs.network")).toBe("-1003864542239");
