@@ -26,6 +26,7 @@ import {
   deriveIdentityProviderKey,
   deriveTelegramNostrKey,
 } from '@holons/core/auth';
+import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -203,6 +204,16 @@ function buildProjectionOptions(appName, privateKey, lenses) {
     Uint8Array.from(Buffer.from(privateKey, 'hex'))
   );
   const trust = createTrustCache(holonPubkey, secret);
+  // A member's linked keys (personal-holon `users` record) for the kind-31926
+  // attestation companion; `invalidateLinkedKeys` after /key link|unlink.
+  linkedKeys = createLinkedKeysResolver({
+    get: (holon, lens, key) => {
+      const hs = projectionHost.instance;
+      if (!hs || typeof hs.get !== 'function')
+        return Promise.reject(new Error('projection host not ready'));
+      return hs.get(String(holon), lens, String(key));
+    },
+  });
   const tzCache = new Map();
   const timezoneFor = holon => {
     if (tzCache.has(holon)) return tzCache.get(holon) || undefined;
@@ -226,6 +237,7 @@ function buildProjectionOptions(appName, privateKey, lenses) {
     pubkeyFor,
     userIdFor: trust.userIdFor,
     providerPubkey,
+    linkedKeysFor: linkedKeys.linkedKeysFor,
   });
   console.log(
     `[holosphere] projections on → ${lenses.join(', ')}${signerFor ? ' (+ per-user signer)' : ''}${providerKey ? ' (+ identity provider)' : ''}`
@@ -242,10 +254,15 @@ function buildProjectionOptions(appName, privateKey, lenses) {
  * Who may edit a holon's records over Nostr, and who a pubkey is.
  *
  * Per holon: the holon signer, every member's derived key (from the `users`
- * lens, via NOSTR_DERIVATION_SECRET) and `settings.nostrTrustedPubkeys`.
- * Cached 5 minutes; the reverse sync asks on every accepted event, so a new
- * member is trusted within that window. Without the secret only the holon
- * key is trusted (RSVPs / kind 0 cannot be attributed to anyone).
+ * lens, via NOSTR_DERIVATION_SECRET), every key a member LINKED to
+ * themselves (`linkedKeys` on their record here or on their personal-holon
+ * record — `/key link`, proof-verified) and `settings.nostrTrustedPubkeys`.
+ * A linked key resolves to its member like the derived one does, so a
+ * profile edit or a shift signup from the member's own Nostr client folds
+ * back as theirs. Cached 5 minutes; the reverse sync asks on every accepted
+ * event, so a new member or link is trusted within that window. Without the
+ * secret only the holon key is trusted (RSVPs / kind 0 cannot be attributed
+ * to anyone).
  *
  * @param {string} holonPubkey
  * @param {string} secret NOSTR_DERIVATION_SECRET ('' = none)
@@ -293,6 +310,7 @@ export function createTrustCache(
       } catch {
         users = [];
       }
+      const derived = new Set();
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
         memberIds.push(u.id);
@@ -300,8 +318,31 @@ export function createTrustCache(
           const pk = deriveTelegramNostrKey(u.id, secret).publicKey;
           byPubkey.set(pk, u.id);
           list.add(pk);
+          derived.add(pk);
         } catch {
           /* skip */
+        }
+      }
+      // Linked keys, second pass: a derived key always outranks a link, and a
+      // key two members both claim stays with whoever mapped it first
+      // (mirrors the read-side attestation guard — never remapped).
+      for (const u of users) {
+        if (!u || u.id === undefined || u.id === null) continue;
+        let personal = null;
+        try {
+          personal = await hs.get(String(u.id), 'users', String(u.id));
+        } catch {
+          /* no personal record */
+        }
+        for (const pk of new Set([
+          ...linkedKeysOf(u),
+          ...linkedKeysOf(personal),
+        ])) {
+          if (derived.has(pk)) continue;
+          const owner = byPubkey.get(pk);
+          if (owner !== undefined && String(owner) !== String(u.id)) continue;
+          byPubkey.set(pk, u.id);
+          list.add(pk);
         }
       }
     } else if (!warned) {
@@ -352,6 +393,17 @@ const projectionHost = { instance: null, notifier: null };
 /** Test seam: point the projection host at a fake instance. */
 export function setProjectionHostForTests(instance) {
   projectionHost.instance = instance;
+}
+
+let linkedKeys = null;
+
+/**
+ * Drop the cached linked-key list for a member (or everyone) so the next
+ * profile projection attests the new key set at once.
+ * @param {string|number} [userId]
+ */
+export function invalidateLinkedKeys(userId) {
+  linkedKeys?.invalidate(userId);
 }
 
 /**

@@ -23,6 +23,8 @@ import Users from '../src/Users.js';
 import Tags from '../src/Tags.js';
 import Participation from '../src/RSVP.js';
 import Shifts from '../src/Shifts.js';
+import Keys from '../src/Keys.js';
+import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
 import OneOnOne from '../src/OneOnOne.js';
 import Announcements from '../src/Announcements.js';
@@ -547,6 +549,17 @@ export const serviceDefinitions = {
 
   shifts: {
     factory: ({ telebot, database }) => new Shifts(telebot, database),
+    singleton: true,
+    dependencies: ['telebot', 'database'],
+  },
+
+  // /key: the member's Nostr identity — export the derived nsec, link/unlink
+  // their own keys (kind-31926), private chat only.
+  keys: {
+    factory: ({ telebot, database }) =>
+      new Keys(telebot, database, {
+        onLinkedKeysChanged: invalidateLinkedKeys,
+      }),
     singleton: true,
     dependencies: ['telebot', 'database'],
   },

@@ -25,6 +25,8 @@ export interface UserRecord {
   bio?: string;
   picture?: string;
   photo_url?: string;
+  /** Keys linked beside the derived one (see `@holons/core/users` keys). */
+  linkedKeys?: string[];
   [key: string]: unknown;
 }
 
@@ -45,24 +47,41 @@ export function profileContent(user: UserRecord): Record<string, string> {
 /** Telegram ids are numeric; only those may carry a `telegram:` identity. */
 const isTelegramId = (id: string | number) => /^\d+$/.test(String(id));
 
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * The member's complete key set: the derived key plus every linked key the
+ * record carries or the host knows (union — an omitted key would be
+ * UNLINKED, so neither source may shrink the other). Junk entries are dropped.
+ */
+function memberKeySet(ctx: ProjectionCtx, id: string | number, item: UserRecord, derived: string): string[] {
+  const own = Array.isArray(item.linkedKeys) ? item.linkedKeys : [];
+  const hosted = ctx.linkedKeysFor?.(id) ?? [];
+  const extra = [...own, ...hosted]
+    .map((k) => String(k).toLowerCase())
+    .filter((k) => HEX64.test(k) && k !== derived);
+  return [derived, ...new Set(extra)].sort();
+}
+
 /**
  * Kind-31926 identity attestation (Elinor's Telegram↔npub directory), signed
  * by the service-level identity provider. Replaceable per (provider, d):
  * the `p` list must always be the member's COMPLETE current key set — a key
- * omitted here is thereby UNLINKED. Today that set is the one derived key;
- * a future multi-key linker must extend this list, never fork the event.
+ * omitted here is thereby UNLINKED — so it is the derived key plus the
+ * linked ones (`memberKeySet`), never the derived key alone.
  */
 function attestationCompanion(
-  ctx: ProjectionCtx, id: string | number, content: Record<string, string>,
+  ctx: ProjectionCtx, id: string | number, item: UserRecord, content: Record<string, string>,
 ): Companion[] {
   if (!ctx.providerPubkey || !isTelegramId(id)) return [];
   const pk = ctx.pubkeyFor?.(id);
   if (!pk) return [];
   const name = content.display_name ?? content.name;
+  const pubkeys = memberKeySet(ctx, id, item, pk);
   return [{
-    template: buildAttestationTemplate({ telegramId: id, pubkeys: [pk], name, now: nowOf(ctx) }),
+    template: buildAttestationTemplate({ telegramId: id, pubkeys, name, now: nowOf(ctx) }),
     authorHint: { role: 'provider' },
-    dedupe: { key: `attest|${telegramIdentifier(id)}`, state: `${pk}|${name ?? ''}` },
+    dedupe: { key: `attest|${telegramIdentifier(id)}`, state: `${pubkeys.join(',')}|${name ?? ''}` },
   }];
 }
 
@@ -98,7 +117,7 @@ export const profileCodec: LensCodec<UserRecord> = {
       },
       companions: [
         ...membershipCompanions(ctx, holon, item.id),
-        ...attestationCompanion(ctx, item.id, content),
+        ...attestationCompanion(ctx, item.id, item, content),
       ],
     };
   },

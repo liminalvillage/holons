@@ -43,6 +43,14 @@ export interface ProjectionCtx {
   /** Reverse lookup for ingest: hex pubkey → the member it belongs to. */
   userIdFor?: (pubkey: string) => string | number | undefined;
   /**
+   * The member's OTHER keys (64-hex), linked by proof and canonical on their
+   * personal-holon `users` record (`@holons/core/users` `linkUserKey`). The
+   * kind-31926 attestation lists them beside the derived key; a host that
+   * cannot answer (yet) returns undefined and the record's own `linkedKeys`
+   * still count, so a group-holon re-projection never unlinks a key.
+   */
+  linkedKeysFor?: (userId: string | number) => readonly string[] | undefined;
+  /**
    * Pubkey of the service-level identity provider (kind-31926 author).
    * Unset → the host cannot sign as the provider, so codecs must not emit
    * provider-hinted companions.

@@ -32,6 +32,14 @@ Shifts are read from a Nostr relay in the [Elinor](https://elinor.commonshub.dev
   - Example: `/shifts tomorrow`
 - `/myshifts` - Lists the shifts you are signed up for in the next two weeks
 
+## Your key (private chat only)
+Every member has a Nostr key the service derives for them; whoever holds the
+service secret can sign as it. `/key` is the way to hold a key of your own.
+- `/key` - Shows your public key (npub) and the keys linked to you, with buttons to export the secret key and to link one you hold
+- `/key link <npub|hex>` - Links a key after you prove you hold it: post the one-time code the bot gives you as a note from that key, then tap ✅ Verify
+- `/key unlink <npub|hex>` - Unlinks a key
+Linked keys are published in the kind-31926 attestation for `telegram:<your id>`, so a signup from any of them counts as you on every board (bot, kiosk, Elinor).
+
 ## Role Management
 - `/assignroles` - Assigns roles to members of the community based on their actions
 - `/setroles [roles]` - Defines roles within the community

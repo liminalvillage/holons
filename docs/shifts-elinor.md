@@ -176,6 +176,7 @@ SHIFTS_COORDINATOR_PUBKEY=<hex>          # trust only this author's 31923s
 NOSTR_DERIVATION_SECRET=<same as web>    # required for signups + attestations
 SHIFTS_IDENTITY_BLACKLIST=               # optional: 31926 providers to ignore
 KIOSK_SHIFT_MANAGERS=                    # optional: Telegram ids allowed to publish/retract occurrences
+KEY_LINK_RELAYS=                         # optional: where /key link looks for the proof note (default: ours + damus/nos.lol/nostr.band)
 ```
 
 Without `NOSTR_DERIVATION_SECRET` the bot can still list shifts but refuses
@@ -218,6 +219,21 @@ How Holons plays both sides:
   coordinator key is never claimable, a key linked to one person is never
   remapped: coordinator outranks, then earliest link wins) — which both
   boards pass into RSVP resolution so one person's keys count as one signup.
+
+- **Linking a member's own key (`/key`, private chat)** — the member proves
+  control of a key by posting a one-time code from it (any Nostr client);
+  the bot finds the note on `KEY_LINK_RELAYS` and `@holons/core/users`
+  `linkUserKey` records it on the member's personal-holon `users` record
+  (`linkedKeys`, canonical). The profile codec then attests the derived key
+  PLUS every linked key (union of the record's own list and the host's
+  `linkedKeysFor`, a lazy reader of that personal record — so a group-holon
+  re-projection never shrinks the set), and `attestationIdentityMap`
+  collapses signups from any of them into one person. The derived key can
+  also be exported (`/key` → Export) as an nsec into the private chat; the
+  web dashboard's key menu exports the same key. Linked keys are trusted
+  authors for the bot's reverse sync too (`createTrustCache`, 5-minute
+  cache) and resolve to their member, so a profile edit or a signup from the
+  member's own client folds back into the lens as theirs.
 
 **Relay overlap matters**: attestations and kind-0 claims ride the projection
 publishers, i.e. `HOLOSPHERE_RELAYS` — that list must include the shifts

@@ -63,3 +63,39 @@ describe('createTrustCache', () => {
     expect(trust.userIdFor('b'.repeat(64))).toBeUndefined();
   });
 });
+
+describe('createTrustCache — linked keys', () => {
+  it('trusts a member’s linked keys and resolves them to the member; derived keys outrank, first claim wins', async () => {
+    const { deriveTelegramNostrKey } = await import('@holons/core/auth');
+    const { setProjectionHostForTests } =
+      await import('../src/createHoloSphere.js');
+    const LINK_A = 'a'.repeat(64);
+    const LINK_B = 'b'.repeat(64);
+    const LINK_C = 'c'.repeat(64);
+    const bobDerived = deriveTelegramNostrKey(2, 'secret').publicKey;
+    const users = [
+      // Alice links A on the group record and B on her personal record;
+      // she also lists Bob's derived key, which must not be remapped.
+      { id: 1, first_name: 'Alice', linkedKeys: [LINK_A, bobDerived] },
+      // Bob claims A too (second claim loses) and C.
+      { id: 2, first_name: 'Bob', linkedKeys: [LINK_A, LINK_C] },
+    ];
+    const personal = { 1: { id: 1, linkedKeys: [LINK_B] } };
+    setProjectionHostForTests({
+      getAll: async () => users,
+      get: async (holon, lens, key) =>
+        lens === 'users' ? (personal[key] ?? null) : null,
+    });
+    const holonPk = 'f'.repeat(64);
+    const trust = createTrustCache(holonPk, 'secret', 0);
+    const aliceDerived = deriveTelegramNostrKey(1, 'secret').publicKey;
+    const list = await trust.trustedAuthors('-1');
+    expect(new Set(list)).toEqual(
+      new Set([holonPk, aliceDerived, bobDerived, LINK_A, LINK_B, LINK_C])
+    );
+    expect(trust.userIdFor(LINK_A)).toBe(1);
+    expect(trust.userIdFor(LINK_B)).toBe(1);
+    expect(trust.userIdFor(LINK_C)).toBe(2);
+    expect(trust.userIdFor(bobDerived)).toBe(2);
+  });
+});

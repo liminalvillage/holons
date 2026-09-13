@@ -275,7 +275,8 @@ stays canonical.
 | identity | held where | signs |
 |---|---|---|
 | service key (`HOLOSPHERE_NSEC`) | bot, discord, mcp, scripts | 30078 records, holon-level projections; its public half is `VITE_HOLOSPHERE_NPUB` (the web HNS registry id) |
-| member key | derived server-side from the Telegram identity + `NOSTR_DERIVATION_SECRET` (load-bearing: changing it changes every member's pubkey) | kind 0, RSVPs, reactions, join requests, Elinor signups |
+| member key | derived server-side from the Telegram identity + `NOSTR_DERIVATION_SECRET` (load-bearing: changing it changes every member's pubkey); custodial — the secret holder can sign as any member. Exportable by the member (`/key` in the bot, key menu on the web) | kind 0, RSVPs, reactions, join requests, Elinor signups |
+| member's own keys | the member's device / Nostr client; linked to their `telegram:<id>` via `/key link` after a proof-of-control note, stored as `linkedKeys` on their personal-holon `users` record and listed in the 31926 attestation | anything the member signs elsewhere — counted as the same person |
 | identity-provider key | derived, service-level | kind-31926 attestations linking one person's several keys |
 | kiosk device key | the browser's localStorage, generated once | the kiosk's own writes; the logged-in user is recorded as `actingAs` |
 | browser own key | user's device (nsec import, passkey, Ethereum wallet → all end in a Nostr keypair) | the user's writes from web/kiosk when they log in with a key |

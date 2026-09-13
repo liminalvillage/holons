@@ -167,6 +167,28 @@ describe('profile codec', () => {
     expect(att.dedupe).toEqual({ key: 'attest|telegram:42', state: `${'b'.repeat(64)}|Ann Lee` });
   });
 
+  it('attests the derived key plus every linked key, from the record and the host, deduped and sorted', () => {
+    const codec = PROJECTION_CODECS.users;
+    const derived = 'b'.repeat(64);
+    const providerCtx: ProjectionCtx = {
+      ...ctx,
+      providerPubkey: 'f'.repeat(64),
+      linkedKeysFor: (id) => (String(id) === '42' ? ['a'.repeat(64), derived] : undefined),
+    };
+    const out = codec.project(HOLON, {
+      id: 42, username: 'ann', linkedKeys: ['C'.repeat(64), 'a'.repeat(64), 'junk'],
+    }, providerCtx)!;
+    const att = out.companions!.find((c) => c.template.kind === 31926)!;
+    const keys = [ 'a'.repeat(64), derived, 'c'.repeat(64) ];
+    expect(att.template.tags).toEqual([['d', 'telegram:42'], ...keys.map((k) => ['p', k])]);
+    expect(att.dedupe).toEqual({ key: 'attest|telegram:42', state: `${keys.join(',')}|ann` });
+    // The record alone (host silent) and the host alone (record bare) both keep a link.
+    const fromRecord = codec.project(HOLON, { id: 42, username: 'ann', linkedKeys: ['a'.repeat(64)] }, { ...ctx, providerPubkey: 'f'.repeat(64) })!;
+    expect(fromRecord.companions!.find((c) => c.template.kind === 31926)!.template.tags.filter((t) => t[0] === 'p')).toHaveLength(2);
+    const fromHost = codec.project(HOLON, { id: 42, username: 'ann' }, providerCtx)!;
+    expect(fromHost.companions!.find((c) => c.template.kind === 31926)!.template.tags.filter((t) => t[0] === 'p')).toHaveLength(2);
+  });
+
   it('emits no claim or attestation for non-telegram ids or without a provider', () => {
     const codec = PROJECTION_CODECS.users;
     // No providerPubkey in ctx → no attestation companion.
