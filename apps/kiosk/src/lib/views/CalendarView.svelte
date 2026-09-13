@@ -335,19 +335,41 @@
     await saveQuest(q, updated, "cal.verbUnschedule");
   }
 
-  // ── Long-press / + to create ──────────────────────────────────────────────-
+  // ── Hold, then drag for the length; + to create ───────────────────────────
   // Holding still on an empty hour, day cell or week row for ~half a second
-  // drops a fresh draft task there and opens the detail card in edit mode. A
-  // bare day (no time component) becomes an all-day task; the hour timeline
-  // also carries the pressed time. New cards are plain tasks (not pure events)
-  // so they show on both the Tasks wall and here. The draft is only written on
-  // Save, so a cancel leaves no trace. Moving past a small threshold (a
-  // scroll/drag) or lifting early aborts, and presses that land on an existing
-  // card are ignored.
+  // lifts a fresh draft there (a haptic tick marks the moment) and the finger
+  // then DRAWS ITS LENGTH: on the hour timeline dragging down or up stretches
+  // a ghost block in 15-minute steps, on a day cell dragging across the cells
+  // makes a multi-day span. Lifting drops the draft into the detail card in
+  // edit mode with its start and end filled in. A bare day (no time
+  // component) becomes an all-day task; the hour timeline also carries the
+  // pressed time. New cards are plain tasks (not pure events) so they show on
+  // both the Tasks wall and here. The draft is only written on Save, so a
+  // cancel leaves no trace. Moving past a small threshold BEFORE the hold
+  // fires (a scroll/drag) or lifting early aborts, and presses that land on
+  // an existing card are ignored.
   const LONG_PRESS_MS = 500;
+  const STRETCH_SLOP = 6;
+  const DEFAULT_DUR_MIN = 60;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let pressX = 0;
   let pressY = 0;
+
+  /** The draft being drawn — from the hold firing to the finger lifting. */
+  let stretch: {
+    /** The day pressed (ISO), the span's first day on a day cell. */
+    day: string;
+    /** Minutes from midnight on the hour timeline, null on a day cell. */
+    min: number | null;
+    /** Timed: the length drawn so far. */
+    durMin: number;
+    /** All-day: the cell the finger is over — the span's other end. */
+    endDay: string;
+    /** Pointer y when the hold fired: length is the drag from here. */
+    y0: number;
+    /** The finger travelled: the length is the person's, not the default. */
+    moved: boolean;
+  } | null = null;
 
   function newId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -398,17 +420,127 @@
       } catch {
         /* haptics are best-effort */
       }
-      void createAt(day, min);
+      stretch = {
+        day,
+        min,
+        durMin: min == null ? 0 : Math.min(DEFAULT_DUR_MIN, windowEndMin - min),
+        endDay: day,
+        y0: y,
+        moved: false,
+      };
+      window.addEventListener("pointermove", onStretchMove);
+      window.addEventListener("pointerup", onStretchUp);
+      window.addEventListener("pointercancel", onStretchCancel);
+      // The finger is still down on a scrolling surface: once it moves the
+      // browser would take the gesture as a pan and cancel our pointer.
+      // Swallowing touchmoves keeps the drag ours (same trick as the tab
+      // strip's reorder).
+      window.addEventListener("touchmove", onStretchTouch, { passive: false });
     }, LONG_PRESS_MS);
     window.addEventListener("pointermove", onPressMove);
     window.addEventListener("pointerup", clearPress);
     window.addEventListener("pointercancel", clearPress);
   }
 
+  function onStretchTouch(e: TouchEvent) {
+    if (stretch) e.preventDefault();
+  }
+
+  function unbindStretch() {
+    window.removeEventListener("pointermove", onStretchMove);
+    window.removeEventListener("pointerup", onStretchUp);
+    window.removeEventListener("pointercancel", onStretchCancel);
+    window.removeEventListener("touchmove", onStretchTouch);
+  }
+
+  function onStretchMove(e: PointerEvent) {
+    if (!stretch) return;
+    e.preventDefault();
+    const moved =
+      stretch.moved || Math.abs(e.clientY - stretch.y0) > STRETCH_SLOP;
+    if (stretch.min != null) {
+      // Like the resize grip: the length follows the drag from where the
+      // hold fired, starting from the default hour, snapped to the quarter.
+      const delta = ((e.clientY - stretch.y0) / HOUR_PX) * 60;
+      let dur = Math.round((DEFAULT_DUR_MIN + delta) / 15) * 15;
+      dur = Math.max(15, Math.min(windowEndMin - stretch.min, dur));
+      if (dur !== stretch.durMin || moved !== stretch.moved)
+        stretch = { ...stretch, durMin: dur, moved };
+    } else {
+      // Across day cells: the cell under the finger is the span's other end
+      // (either direction — the span is normalised on release). The hour
+      // timeline's columns don't count: an all-day draft stays all-day.
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el?.closest<HTMLElement>("[data-day]");
+      const d = cell && cell.dataset.hours == null ? cell.dataset.day : null;
+      const endDay = d ?? stretch.endDay;
+      if (endDay !== stretch.endDay || moved !== stretch.moved)
+        stretch = { ...stretch, endDay, moved };
+    }
+  }
+
+  function onStretchCancel() {
+    unbindStretch();
+    stretch = null;
+  }
+
+  function onStretchUp() {
+    unbindStretch();
+    const s = stretch;
+    stretch = null;
+    if (!s) return;
+    justDragged = true; // a card under the lifted finger must not open
+    setTimeout(() => (justDragged = false), 0);
+    if (s.min != null) {
+      // Untouched, the draft keeps no explicit end (it renders at the default
+      // length and the card's form leaves the end open); drawn, it keeps
+      // the length drawn.
+      const ends = s.moved
+        ? toStoredInstant(
+            new Date(
+              localDateTime(
+                s.day,
+                Math.floor(s.min / 60),
+                s.min % 60,
+              ).getTime() +
+                s.durMin * 60000,
+            ),
+          )
+        : undefined;
+      void createAt(s.day, s.min, ends);
+    } else {
+      // ISO days sort as strings, so the span's ends order themselves.
+      const [first, last] =
+        s.day <= s.endDay ? [s.day, s.endDay] : [s.endDay, s.day];
+      void createAt(first, null, first === last ? undefined : last);
+    }
+  }
+
+  /** Does the span being drawn cover this (all-day) cell? */
+  function stretchCovers(iso: string, s: typeof stretch): boolean {
+    if (!s || s.min != null) return false;
+    const [first, last] =
+      s.day <= s.endDay ? [s.day, s.endDay] : [s.endDay, s.day];
+    return iso >= first && iso <= last;
+  }
+
+  function fmtMin(min: number): string {
+    return localDateTime(
+      "2000-01-01",
+      Math.floor(min / 60),
+      min % 60,
+    ).toLocaleTimeString($locale, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function fmtDur(min: number): string {
+    return `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
+  }
+
   // Build a draft task for `day` (and, on the hour timeline, `min` minutes from
-  // midnight) and open it in the detail modal's edit mode. Login-gated, like the
-  // other writes in this view.
-  async function createAt(day: string, min: number | null) {
+  // midnight; `ends` is the stored end, when a length was drawn) and open it
+  // in the detail modal's edit mode. Login-gated, like the other writes in
+  // this view.
+  async function createAt(day: string, min: number | null, ends?: string) {
     const hid = get(holonId);
     if (!hid) return;
     const user = get(currentUser);
@@ -431,6 +563,7 @@
       min != null
         ? toStoredInstant(localDateTime(day, Math.floor(min / 60), min % 60))
         : day;
+    if (ends) draft.ends = ends;
     editOnOpen.set(true); // open straight in edit mode
     selection.set({ kind: "task", quest: draft, isNew: true });
   }
@@ -977,6 +1110,7 @@
             class:dim={!inMonth}
             class:today={isToday}
             class:drop={dropDay === iso}
+            class:stretch={stretchCovers(iso, stretch)}
             data-day={iso}
             on:pointerdown={beginCreatePress}
           >
@@ -1027,6 +1161,7 @@
             class="row"
             class:today={isToday}
             class:drop={dropDay === iso}
+            class:stretch={stretchCovers(iso, stretch)}
             data-day={iso}
             on:pointerdown={beginCreatePress}
           >
@@ -1102,6 +1237,7 @@
               <div
                 class="allday"
                 class:drop={dropDay === col.iso && dropMin === null}
+                class:stretch={stretchCovers(col.iso, stretch)}
                 data-day={col.iso}
                 on:pointerdown={beginCreatePress}
               >
@@ -1161,6 +1297,29 @@
                   class="slot-hint"
                   style="top: {yForMin(dropMin, HOUR_PX)}px;"
                 ></div>
+              {/if}
+
+              {#if stretch && stretch.min != null && stretch.day === col.iso}
+                <!-- The draft being drawn: its bottom edge follows the finger. -->
+                <div
+                  class="stretch-ghost"
+                  class:gutter={col.primary}
+                  style="top: {yForMin(
+                    stretch.min,
+                    HOUR_PX,
+                  )}px; height: {(stretch.durMin / 60) * HOUR_PX}px;"
+                  aria-hidden="true"
+                >
+                  <span class="stretch-when"
+                    >{fmtMin(stretch.min)}–{fmtMin(
+                      stretch.min + stretch.durMin,
+                    )}</span
+                  >
+                  <span class="stretch-dur">{fmtDur(stretch.durMin)}</span>
+                  {#if !stretch.moved}
+                    <span class="stretch-hint">{$t("cal.stretchHint")}</span>
+                  {/if}
+                </div>
               {/if}
 
               {#each col.timed as ev (ev.id)}
@@ -2026,6 +2185,52 @@
      tappable to open. */
   .day-event.compact .resize-handle {
     height: 0.45rem;
+  }
+  /* A span being drawn across day cells / week rows / the all-day row. */
+  .stretch {
+    outline: 2px solid var(--teal);
+    outline-offset: -2px;
+    background: color-mix(in srgb, var(--teal) 14%, var(--card)) !important;
+  }
+  /* The draft being drawn on the hour timeline — a teal block whose bottom
+     edge follows the finger, reading its start–end and length. */
+  .stretch-ghost {
+    position: absolute;
+    left: 0.15rem;
+    right: 0.3rem;
+    z-index: 7;
+    box-sizing: border-box;
+    border-radius: 4px 12px 12px 12px;
+    border: 2px solid var(--teal);
+    background: color-mix(in srgb, var(--teal) 22%, var(--card));
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+    padding: 0.2rem 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 0.15rem 0.5rem;
+    overflow: hidden;
+    pointer-events: none;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    color: var(--teal-deep);
+  }
+  .stretch-ghost.gutter {
+    left: 3.2rem;
+  }
+  .stretch-when {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .stretch-dur {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .stretch-hint {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    color: var(--muted);
   }
   .slot-hint {
     position: absolute;

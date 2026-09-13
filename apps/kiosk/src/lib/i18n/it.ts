@@ -411,6 +411,8 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.removeTab": "Togli la scheda {tab}",
   "tabbar.addTab": "Aggiungi una scheda",
   "tabbar.addMenu": "Schede che puoi aggiungere",
+  "tabbar.addHint": "Tocca qui per aggiungere strumenti di comunità",
+  "cal.stretchHint": "Trascina per impostare la durata",
   "tabbar.unpinTab": "Sblocca {tab}",
   "tabbar.pinTab": "Fissa su {tab}",
   "tabbar.unpinView": "Sblocca questa vista",

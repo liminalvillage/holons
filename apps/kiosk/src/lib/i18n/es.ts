@@ -413,6 +413,8 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.removeTab": "Quitar la pestaña {tab}",
   "tabbar.addTab": "Añadir una pestaña",
   "tabbar.addMenu": "Pestañas que puedes añadir",
+  "tabbar.addHint": "Toca aquí para añadir herramientas comunitarias",
+  "cal.stretchHint": "Arrastra para fijar la duración",
   "tabbar.unpinTab": "Soltar {tab}",
   "tabbar.pinTab": "Fijar en {tab}",
   "tabbar.unpinView": "Soltar esta vista",

@@ -26,6 +26,7 @@
   import { moveId } from "$lib/taborder";
   import { currentUser, displayName } from "$lib/auth";
   import { requestClose } from "$lib/dock";
+  import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import { onMount, tick } from "svelte";
   import { flip } from "svelte/animate";
@@ -60,6 +61,24 @@
   // it. Status passes through its framing modal first, like in Settings.
   let addOpen = false;
   let statusConfirmOpen = false;
+
+  // ── First-visit callout for the "+" ──────────────────────────────────────
+  // Nothing on the board says what the "+" is for, so the first board a
+  // device shows carries a small bubble under it: this is where you add the
+  // hub's community tools. It appears once the strip has painted (a beat
+  // after mount, so it rises rather than pops), goes on the first tap
+  // anywhere — the "+" itself included — and is then remembered as seen, so
+  // it never comes back on that device. Only offered while there IS a "+"
+  // (some tab is hidden) and the kiosk is awake.
+  let addTip = false;
+  let addTipTimer: ReturnType<typeof setTimeout> | null = null;
+  function dismissAddTip() {
+    if (addTipTimer) clearTimeout(addTipTimer);
+    addTipTimer = null;
+    if (!addTip) return;
+    addTip = false;
+    markAddTipSeen();
+  }
 
   function haptic() {
     try {
@@ -189,7 +208,9 @@
   }
 
   // A press anywhere off the strip leaves edit mode and closes the "+" menu.
+  // Any press at all retires the first-visit callout.
   function onWindowDown(e: PointerEvent) {
+    dismissAddTip();
     if (!editing && !addOpen) return;
     if (strip?.contains(e.target as Node)) return;
     editing = false;
@@ -198,6 +219,9 @@
   $: if ($idle) {
     editing = false;
     addOpen = false;
+    // A callout nobody was there to read is not spent: it waits for the
+    // next visit rather than being marked seen.
+    addTip = false;
   }
 
   // ── Fit: names when they fit, glyphs alone when they don't, then scroll ──
@@ -221,7 +245,16 @@
       if (nav && nav.clientWidth !== fitWidth) void fit();
     });
     ro.observe(nav);
-    return () => ro.disconnect();
+    if (!resolveAddTipSeen()) {
+      addTipTimer = setTimeout(() => {
+        addTipTimer = null;
+        if ($hiddenTabs.length && !$idle) addTip = true;
+      }, 900);
+    }
+    return () => {
+      ro.disconnect();
+      if (addTipTimer) clearTimeout(addTipTimer);
+    };
   });
 
   // The active tab always stays in view on an overflowing strip.
@@ -288,7 +321,7 @@
 <header
   class="bar"
   class:idle={$idle}
-  class:suggest-open={suggestOpen || addOpen}
+  class:suggest-open={suggestOpen || addOpen || addTip}
   aria-hidden={$idle}
 >
   <div class="top">
@@ -548,13 +581,28 @@
           aria-label={$t("tabbar.addTab")}
           title={$t("tabbar.addTab")}
           aria-expanded={addOpen}
+          aria-describedby={addTip ? "addtip" : undefined}
           on:click={() => {
+            dismissAddTip();
             addOpen = !addOpen;
             editing = false;
           }}>+</button
         >
       {/if}
     </nav>
+
+    {#if addTip && $hiddenTabs.length}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="addtip"
+        id="addtip"
+        role="tooltip"
+        on:pointerdown={dismissAddTip}
+      >
+        <span class="addtip__plus" aria-hidden="true">+</span>
+        <span>{$t("tabbar.addHint")}</span>
+      </div>
+    {/if}
 
     {#if addOpen && $hiddenTabs.length}
       <div class="addmenu" role="menu" aria-label={$t("tabbar.addMenu")}>
@@ -609,8 +657,9 @@
     pointer-events: none;
   }
   /* The bar clips (overflow hidden) so it can collapse when idle; while the
-     suggestion panel is open it must be allowed to hang below the header.
-     Going idle blurs the field first, so the collapse always clips again. */
+     suggestion panel, the "+" menu or its first-visit callout is open it must
+     be allowed to hang below the header. Going idle blurs the field and
+     drops the callout first, so the collapse always clips again. */
   .bar.suggest-open {
     overflow: visible;
   }
@@ -1042,6 +1091,62 @@
   }
   .add:active {
     transform: scale(0.9);
+  }
+  /* First-visit callout: a bubble under the "+", its beak pointing up at it. */
+  .addtip {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    z-index: 40;
+    max-width: min(18rem, calc(100vw - 2rem));
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 14px;
+    background: var(--teal-deep);
+    color: #fff;
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.3;
+    box-shadow:
+      var(--shadow-soft),
+      0 12px 32px rgba(0, 0, 0, 0.18);
+    animation: kiosk-rise 0.35s ease both;
+    cursor: pointer;
+  }
+  .addtip::before {
+    content: "";
+    position: absolute;
+    top: -0.45rem;
+    right: 0.7rem;
+    width: 0.9rem;
+    height: 0.9rem;
+    background: inherit;
+    transform: rotate(45deg);
+    border-radius: 2px;
+  }
+  .addtip__plus {
+    flex: 0 0 auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.22);
+    font-size: 1.25rem;
+    line-height: 1;
+    font-weight: 700;
+    animation: addtip-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes addtip-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.15);
+    }
   }
   .addmenu {
     position: absolute;

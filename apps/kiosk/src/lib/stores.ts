@@ -654,8 +654,15 @@ const initialPin: TabId | null = TABS.some((t) => t.id === savedPin)
   ? (savedPin as TabId)
   : null;
 
-/** The active view — the kiosk opens on its pinned tab, else Tasks. */
-export const activeTab = writable<TabId>(initialPin ?? "tasks");
+/**
+ * The view a board rests on when nothing picked one: no pin, no deep link,
+ * or the active tab just vanished. The calendar — what a hub's members and
+ * visitors most want at a glance — rather than the first tab on the strip.
+ */
+export const DEFAULT_TAB: TabId = "calendar";
+
+/** The active view — the kiosk opens on its pinned tab, else the Calendar. */
+export const activeTab = writable<TabId>(initialPin ?? DEFAULT_TAB);
 
 /**
  * A deep-linked tab (URL path) whose view is content-driven and not visible
@@ -858,7 +865,7 @@ export const flipProgress: Readable<number> = derived(
 // Keep it coherent: a pinned tab that (re)appears reclaims an unattended
 // screen (a pinned kiosk must not be stranded on the boot fallback once its
 // view's data arrives), and an active tab that vanished falls back to the pin
-// or the first visible tab. Module-lifetime subscription — these are app
+// (else the default view, else the first visible tab). Module-lifetime subscription — these are app
 // singletons, so it is never torn down. (Declared last: the callback runs
 // synchronously on subscribe and reads stores defined above.)
 visibleTabs.subscribe((tabs) => {
@@ -876,6 +883,12 @@ visibleTabs.subscribe((tabs) => {
   if (pin && has(pin) && cur !== pin && get(rotating)) {
     activeTab.set(pin);
   } else if (!has(cur)) {
-    activeTab.set(pin && has(pin) ? pin : (tabs[0]?.id ?? "tasks"));
+    activeTab.set(
+      pin && has(pin)
+        ? pin
+        : has(DEFAULT_TAB)
+          ? DEFAULT_TAB
+          : (tabs[0]?.id ?? DEFAULT_TAB),
+    );
   }
 });

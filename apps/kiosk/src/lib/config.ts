@@ -154,6 +154,24 @@ function forget(key: string): void {
 // making them find it again. The note expires so a screen someone poked at
 // last month doesn't greet the next visitor with it.
 
+// ── First-visit hint for the strip's "+" ──────────────────────────────────
+// The "+" at the end of the tab strip is where a hub adds its community
+// tools, and nothing else on the board says so. The first time a device shows
+// a board, a small callout points at it; one tap anywhere and it never comes
+// back on that device.
+
+const ADD_TIP_KEY = "kiosk_add_tip";
+
+/** Has this device already been shown the "+" callout? */
+export function resolveAddTipSeen(): boolean {
+  return persisted(ADD_TIP_KEY) === "1";
+}
+
+/** Record that the "+" callout has been shown and dismissed here. */
+export function markAddTipSeen(): void {
+  persist(ADD_TIP_KEY, "1");
+}
+
 const BOT_HANDOFF_KEY = "kiosk_bot_handoff_at";
 const BOT_HANDOFF_TTL_MS = 6 * 60 * 60 * 1000;
 

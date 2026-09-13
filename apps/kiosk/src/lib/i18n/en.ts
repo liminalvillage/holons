@@ -400,6 +400,8 @@ export const en = {
   "tabbar.removeTab": "Remove the {tab} tab",
   "tabbar.addTab": "Add a tab",
   "tabbar.addMenu": "Tabs you can add",
+  "tabbar.addHint": "Tap here to add community tools",
+  "cal.stretchHint": "Drag to set the length",
   "tabbar.unpinTab": "Unpin {tab}",
   "tabbar.pinTab": "Pin to {tab}",
   "tabbar.unpinView": "Unpin this view",
