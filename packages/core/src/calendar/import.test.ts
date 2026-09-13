@@ -7,6 +7,7 @@ import {
     normalizeICalUrl,
     toWebcalUrl,
     readImportedCalendars,
+    importedCalendarColor,
 } from './index.js';
 
 /** Minimal well-formed feed builder — VEVENT bodies are passed in. */
@@ -146,8 +147,37 @@ describe('readImportedCalendars', () => {
             })
         ).toEqual([
             { id: 'cal_0', url: 'https://a.example/c.ics', name: 'Imported Calendar', enabled: true },
-            { id: 'b', url: 'https://b.example/c.ics', name: 'B', enabled: false, color: '#123' },
+            { id: 'b', url: 'https://b.example/c.ics', name: 'B', enabled: false, color: '#112233' },
         ]);
+    });
+
+    it('keeps only a plain hex colour, normalised', () => {
+        const [plain, junk, none] = readImportedCalendars({
+            calendars: [
+                { id: 'a', url: 'https://a.example/c.ics', color: ' #ABCDEF ' },
+                { id: 'b', url: 'https://b.example/c.ics', color: 'red; background: url(x)' },
+                { id: 'c', url: 'https://c.example/c.ics' },
+            ],
+        });
+        expect(plain.color).toBe('#abcdef');
+        expect(junk.color).toBeUndefined();
+        expect(none.color).toBeUndefined();
+    });
+});
+
+describe('importedCalendarColor', () => {
+    const palette = ['sun', 'mint', 'sky'];
+
+    it('is the chosen colour when one is set', () => {
+        expect(importedCalendarColor({ id: 'cal_1', color: '#ffe79a' }, palette)).toBe('#ffe79a');
+        expect(importedCalendarColor({ id: 'cal_1', color: 'FFE79A' }, palette)).toBe('#ffe79a');
+    });
+
+    it('falls back to a stable palette entry hashed from the id', () => {
+        const a = importedCalendarColor({ id: 'cal_1' }, palette);
+        expect(palette).toContain(a);
+        expect(importedCalendarColor({ id: 'cal_1' }, palette)).toBe(a);
+        expect(importedCalendarColor({ id: 'cal_1', color: 'not a colour' }, palette)).toBe(a);
     });
 });
 

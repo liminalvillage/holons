@@ -14,6 +14,7 @@
 // {@link parseICalText}.
 
 import ICAL from 'ical.js';
+import { normalizeHolonColor, pickColor } from '../settings/color.js';
 
 // `console` is universally present (browser, Node, workers); declared here so
 // this module doesn't pull `dom`/`node` lib types into the base tsconfig.
@@ -62,7 +63,11 @@ export interface ImportedCalendar {
     url: string;
     name: string;
     enabled: boolean;
-    /** Optional display colour; surfaces fall back to their own palette. */
+    /**
+     * The colour chosen for this feed (`#rrggbb`), if any. Absent, a surface
+     * colours the feed by hashing its id into the surface's own palette — see
+     * {@link importedCalendarColor}.
+     */
     color?: string;
 }
 
@@ -261,7 +266,24 @@ export function readImportedCalendars(record: unknown): ImportedCalendar[] {
             name: typeof c.name === 'string' && c.name ? c.name : 'Imported Calendar',
             // Absent `enabled` means an older write — treat it as on.
             enabled: c.enabled !== false,
-            ...(typeof c.color === 'string' ? { color: c.color } : {}),
+            // Only a plain hex colour survives the read: the record is shared
+            // by several surfaces and must never carry an arbitrary CSS string.
+            ...(normalizeHolonColor(c.color) ? { color: normalizeHolonColor(c.color) } : {}),
         }))
         .filter((c) => !!c.url);
+}
+
+/**
+ * The colour a followed calendar is drawn with: the colour chosen for it when
+ * one is set, else the palette entry its id hashes to — the same rule a
+ * holon's identity colour follows, so a feed keeps one colour across sessions
+ * with no configuration and every surface agrees on which feed is which.
+ * `palette` is the surface's own (the kiosk's post-it notes, the dashboard's
+ * hues).
+ */
+export function importedCalendarColor(
+    calendar: Pick<ImportedCalendar, 'id' | 'color'>,
+    palette: readonly string[]
+): string {
+    return pickColor(calendar.id, palette, calendar.color);
 }

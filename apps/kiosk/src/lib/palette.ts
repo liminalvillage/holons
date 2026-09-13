@@ -66,6 +66,23 @@ export function resolveCssColor(color: string): string {
   return v || color;
 }
 
+/**
+ * The ink that reads on a literal `#rrggbb` background: the board's dark ink
+ * over a light colour, white over a dark one. `undefined` for anything else
+ * (a `var(--note-*)` reference is theme-tuned already and keeps the default
+ * ink). Plain relative luminance — enough to keep a chosen colour legible.
+ */
+export function inkOn(color: string | undefined): string | undefined {
+  const m = /^#([0-9a-f]{6})$/i.exec(color?.trim() ?? "");
+  if (!m) return undefined;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.4 ? "rgba(32, 48, 47, 0.92)" : "rgba(255, 255, 255, 0.94)";
+}
+
 /** Record (or clear) an override locally — the Settings panel does this on save. */
 export function setHolonColor(id: string, color: string): void {
   holonColors.update((cur) => {

@@ -22,7 +22,7 @@ import {
 } from "@holons/core/checklists";
 import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
-import { occurrenceSpan } from "@holons/core/calendar";
+import { importedCalendarColor, occurrenceSpan } from "@holons/core/calendar";
 import type {
   ExternalCalendarEvent,
   ImportedCalendar,
@@ -229,6 +229,12 @@ export interface CalendarEvent {
    * drag, resize or open it — it is something the holon watches, not owns.
    */
   external?: { calendarName: string; url: string };
+  /**
+   * The note colour to draw this event in, when it isn't the category's: an
+   * external calendar's colour (see {@link externalEventColor}), so every
+   * entry of one feed reads as one colour on the board.
+   */
+  color?: string;
 }
 
 export interface TaskPerson {
@@ -672,6 +678,7 @@ export function toExternalEvents(
   occurrences: ExternalCalendarEvent[],
   calendar: ImportedCalendar,
 ): CalendarEvent[] {
+  const color = externalEventColor(calendar);
   return occurrences.map((ev) => {
     const { end, days, multiDay } = occurrenceSpan(ev);
     return {
@@ -688,8 +695,20 @@ export function toExternalEvents(
       people: [],
       appreciation: 0,
       external: { calendarName: calendar.name, url: calendar.url },
+      color,
     };
   });
+}
+
+/**
+ * The colour a followed calendar's events are drawn in: the colour a
+ * caretaker chose for the feed, else the post-it note its id hashes to (core
+ * owns the rule — `importedCalendarColor` — this supplies the kiosk palette).
+ */
+export function externalEventColor(
+  calendar: Pick<ImportedCalendar, "id" | "color">,
+): string {
+  return importedCalendarColor(calendar, NOTE_COLORS);
 }
 
 /**

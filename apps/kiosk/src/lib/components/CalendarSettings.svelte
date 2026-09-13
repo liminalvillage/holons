@@ -20,9 +20,12 @@
     holonFeedUrl,
     importedCalendars,
     isValidICalUrl,
+    recolorImportedCalendar,
     removeImportedCalendar,
     toggleImportedCalendar,
   } from "$lib/calendars";
+  import { externalEventColor } from "$lib/data";
+  import { NOTE_COLORS, resolveCssColor } from "$lib/palette";
   import { toWebcalUrl } from "@holons/core/calendar";
   import Modal from "./Modal.svelte";
 
@@ -86,6 +89,26 @@
       error = $t("cal.set.saveFailed");
     busy = false;
   }
+
+  // ── Colouring a followed calendar ───────────────────────────────────────
+  // Tapping a feed's swatch unfolds a palette row under it: the board's six
+  // post-it notes, a custom colour, and "Automatic" (back to the hashed note)
+  // once a colour is chosen. Every pick writes at once, like everything else
+  // on this sheet, and the board recolours the feed's events on the spot.
+  let pickingId: string | null = null;
+
+  async function recolor(id: string, color: string) {
+    const holon = $holonId;
+    if (!holon || busy) return;
+    busy = true;
+    if (!(await recolorImportedCalendar(holon, id, color)))
+      error = $t("cal.set.saveFailed");
+    busy = false;
+    pickingId = null;
+  }
+
+  /** A palette note as the literal hex it stands for in the current theme. */
+  const noteHex = (note: string): string => resolveCssColor(note).toLowerCase();
 
   /** A feed URL reads as its host and last path segment, never a wall of query. */
   function shortUrl(url: string): string {
@@ -163,6 +186,17 @@
               >
                 <span class="knob"></span>
               </button>
+              <button
+                type="button"
+                class="swatch feedswatch"
+                class:auto={!cal.color}
+                class:open={pickingId === cal.id}
+                style="background: {externalEventColor(cal)};"
+                aria-label={$t("cal.set.colorFeed", { name: cal.name })}
+                aria-expanded={pickingId === cal.id}
+                on:click={() =>
+                  (pickingId = pickingId === cal.id ? null : cal.id)}
+              ></button>
               <span class="feedwho">
                 <span class="feedname">{cal.name}</span>
                 <span class="feedurl">{shortUrl(cal.url)}</span>
@@ -173,6 +207,47 @@
                 aria-label={$t("cal.set.removeFeed", { name: cal.name })}
                 on:click={() => remove(cal.id)}>✕</button
               >
+              {#if pickingId === cal.id}
+                <div class="palette">
+                  {#each NOTE_COLORS as note (note)}
+                    <button
+                      type="button"
+                      class="swatch"
+                      class:sel={!!cal.color && cal.color === noteHex(note)}
+                      style="background: {note};"
+                      disabled={busy}
+                      aria-label={$t("cal.set.colorAria", {
+                        color: noteHex(note),
+                      })}
+                      on:click={() => recolor(cal.id, noteHex(note))}
+                    ></button>
+                  {/each}
+                  <label
+                    class="swatch custom"
+                    style="background: {resolveCssColor(
+                      externalEventColor(cal),
+                    )};"
+                  >
+                    <input
+                      type="color"
+                      value={resolveCssColor(externalEventColor(cal))}
+                      disabled={busy}
+                      on:change={(e) => recolor(cal.id, e.currentTarget.value)}
+                      aria-label={$t("cal.set.colorCustom")}
+                    />
+                  </label>
+                  {#if cal.color}
+                    <button
+                      type="button"
+                      class="autopick"
+                      disabled={busy}
+                      on:click={() => recolor(cal.id, "")}
+                    >
+                      {$t("cal.set.colorAuto")}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -357,12 +432,77 @@
   }
   .feed {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto auto 1fr auto;
     align-items: center;
     gap: 0.7rem;
     padding: 0.5rem 0.6rem;
     border-radius: 12px;
     background: var(--paper);
+  }
+
+  /* The feed's colour and the palette that unfolds under the row.
+     Same swatch shape as the Settings panel's accent row. */
+  .swatch {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    box-shadow: var(--shadow-soft);
+    position: relative;
+    transition: transform 0.1s ease;
+  }
+  .swatch:active {
+    transform: scale(0.9);
+  }
+  .swatch.sel {
+    outline: 3px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .swatch:disabled {
+    opacity: 0.5;
+  }
+  /* The feed's own swatch: a solid rim, dashed while its colour is automatic. */
+  .feedswatch {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+  .feedswatch.auto {
+    border-style: dashed;
+  }
+  .feedswatch.open {
+    outline: 3px solid var(--teal);
+    outline-offset: 2px;
+  }
+  .palette {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0 0.2rem;
+  }
+  .swatch.custom {
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    border: 2px dashed rgba(255, 255, 255, 0.7);
+  }
+  .swatch.custom input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .autopick {
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .autopick:disabled {
+    opacity: 0.5;
   }
   .feed.off .feedwho {
     opacity: 0.5;

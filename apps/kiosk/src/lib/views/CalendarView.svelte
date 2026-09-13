@@ -38,6 +38,7 @@
   } from "$lib/data";
   import { personalEvents, personalTasks } from "$lib/personal";
   import { externalEvents, refreshExternalCalendars } from "$lib/calendars";
+  import { inkOn } from "$lib/palette";
   import Avatars from "$lib/components/Avatars.svelte";
   import CalendarSettings from "$lib/components/CalendarSettings.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -720,6 +721,15 @@
   const noteColorFor = (category: string | undefined): string =>
     (category ? $categoryColors.get(category) : undefined) ??
     noteColor(category);
+  // An event's own colour (a followed calendar's) wins over its category's.
+  const noteBg = (ev: CalendarEvent): string =>
+    ev.color ?? noteColorFor(ev.category);
+  // A chosen literal colour brings its own readable ink (see palette.inkOn);
+  // the theme's notes keep the default. Dropped into `--ev-ink` as a style.
+  const inkStyle = (ev: CalendarEvent): string => {
+    const ink = inkOn(ev.color);
+    return ink ? ` --ev-ink: ${ink};` : "";
+  };
 
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
   $: anchorDay = addDays(startOfDay($now), view === "day" ? offset : 0);
@@ -939,7 +949,7 @@
       `top: ${top}px; height: ${height}px;` +
       ` left: calc(${pad} + (100% - ${inner}) * ${lay.col} / ${lay.cols});` +
       ` width: calc((100% - ${inner}) / ${lay.cols} - 0.2rem);` +
-      ` background: ${noteColorFor(ev.category)};`
+      ` background: ${noteBg(ev)};`
     );
   }
 
@@ -1126,10 +1136,11 @@
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
                     style:--holo-seed={holoSeed(ev.id)}
+                    class:tinted={!!inkOn(ev.color)}
                     style="{tiltStyle(
                       ev.id,
-                      noteColorFor(ev.category),
-                    )} --glow: {ev.sourceColor ?? 'transparent'};"
+                      noteBg(ev),
+                    )} --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(ev)}"
                     title={ev.title}
                     role="button"
                     tabindex="0"
@@ -1183,10 +1194,13 @@
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
+                      class:tinted={!!inkOn(ev.color)}
                       style="{tiltStyle(
                         ev.id,
-                        noteColorFor(ev.category),
-                      )} --glow: {ev.sourceColor ?? 'transparent'};"
+                        noteBg(ev),
+                      )} --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(
+                        ev,
+                      )}"
                       role="button"
                       tabindex="0"
                       on:pointerdown={(e) =>
@@ -1252,9 +1266,12 @@
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
                       style:--holo-seed={holoSeed(ev.id)}
-                      style="background: {noteColorFor(
-                        ev.category,
-                      )}; --glow: {ev.sourceColor ?? 'transparent'};"
+                      class:tinted={!!inkOn(ev.color)}
+                      style="background: {noteBg(
+                        ev,
+                      )}; --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(
+                        ev,
+                      )}"
                       role="button"
                       tabindex="0"
                       title={ev.title}
@@ -1336,6 +1353,7 @@
                   class="day-event"
                   class:draggable={!readonly && !ev.external}
                   class:ext={!!ev.external}
+                  class:tinted={!!inkOn(ev.color)}
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
@@ -1348,7 +1366,9 @@
                     col.primary,
                     HOUR_PX,
                   )} --glow: {ev.sourceColor ??
-                    'transparent'}; --ev-font: {compactFont(heightPx)}px;"
+                    'transparent'}; --ev-font: {compactFont(
+                    heightPx,
+                  )}px;{inkStyle(ev)}"
                   role="button"
                   tabindex="0"
                   on:pointerdown={(e) =>
@@ -1621,6 +1641,12 @@
   .ext {
     outline: 1.5px dashed var(--muted);
     outline-offset: -3px;
+  }
+  /* A note in a chosen literal colour (a followed calendar's): its text takes
+     the ink that reads on that colour, whatever the theme (see inkStyle). */
+  .tinted,
+  .tinted :is(.ttl, .when, .where, .src, .dur, .spanb, .cline) {
+    color: var(--ev-ink);
   }
   .draggable {
     touch-action: none;

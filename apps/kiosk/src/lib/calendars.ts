@@ -24,7 +24,12 @@ import {
   type ImportedCalendar,
 } from "@holons/core/calendar";
 import { getHolosphere, getWriter } from "./holosphere";
-import { toExternalEvents, type CalendarEvent } from "./data";
+import { normalizeHolonColor } from "@holons/core/settings";
+import {
+  externalEventColor,
+  toExternalEvents,
+  type CalendarEvent,
+} from "./data";
 
 export { isValidICalUrl, type ImportedCalendar };
 
@@ -210,6 +215,35 @@ export async function toggleImportedCalendar(
   const ok = await saveImportedCalendars(holon, calendars);
   await refreshExternalCalendars(holon, true);
   return ok;
+}
+
+/**
+ * Give a feed a colour (`#rrggbb`), or `""` to go back to the automatic one.
+ * The feed's events on the board take the new colour at once — nothing is
+ * refetched, the occurrences haven't changed. `false` when the save failed
+ * (the colour still shows; the next successful write carries it).
+ */
+export async function recolorImportedCalendar(
+  holon: string,
+  id: string,
+  color: string,
+): Promise<boolean> {
+  const clean = normalizeHolonColor(color);
+  const calendars = get(importedCalendars).map((c) => {
+    if (c.id !== id) return c;
+    const { color: _, ...rest } = c;
+    return clean ? { ...rest, color: clean } : rest;
+  });
+  importedCalendars.set(calendars);
+  const changed = calendars.find((c) => c.id === id);
+  if (changed) {
+    const next = externalEventColor(changed);
+    const prefix = `ext:${id}:`;
+    externalEvents.update((evs) =>
+      evs.map((e) => (e.id.startsWith(prefix) ? { ...e, color: next } : e)),
+    );
+  }
+  return saveImportedCalendars(holon, calendars);
 }
 
 /**

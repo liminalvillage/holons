@@ -281,7 +281,7 @@
 
     // Imported calendar state
     let showCalendarSettings = false;
-    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean; color?: string }> = [];
     let externalEvents: ExternalCalendarEvent[] = [];
     // Hidden imported calendars (persisted across sessions)
     const HIDDEN_CALENDARS_KEY = 'calendar_hidden_imports';
@@ -919,7 +919,11 @@
     }
 
     // Deterministic per-calendar color (HSL, keyed by calendar id)
+    // A colour chosen for the feed (on any surface — the record is shared)
+    // wins; otherwise a stable hue hashed from the feed id.
     function getCalendarColor(id: string): string {
+        const chosen = importedCalendars.find((c) => c.id === id)?.color;
+        if (chosen) return chosen;
         let hash = 0;
         for (let i = 0; i < id.length; i++) {
             hash = id.charCodeAt(i) + ((hash << 5) - hash);

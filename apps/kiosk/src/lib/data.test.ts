@@ -8,6 +8,7 @@ import {
   toChecklists,
   toEvents,
   toExternalEvents,
+  externalEventColor,
   toRoles,
   toThings,
   toSuggestions,
@@ -580,5 +581,25 @@ describe("toExternalEvents — a calendar the holon follows", () => {
     expect(ev.allDay).toBe(true);
     expect(ev.days).toBe(1);
     expect(ev.end?.getDate()).toBe(1);
+  });
+
+  it("paints every entry of a feed in the feed's colour", () => {
+    const chosen = { ...feed, color: "#ffe79a" };
+    const [a, b] = toExternalEvents(
+      [occurrence(), occurrence({ id: "uid-2" })],
+      chosen,
+    );
+    expect(a.color).toBe("#ffe79a");
+    expect(b.color).toBe("#ffe79a");
+    expect(externalEventColor(chosen)).toBe("#ffe79a");
+  });
+
+  it("falls back to a stable post-it note hashed from the feed id", () => {
+    const [ev] = toExternalEvents([occurrence()], feed);
+    expect(ev.color).toMatch(/^var\(--note-/);
+    expect(ev.color).toBe(externalEventColor(feed));
+    expect(externalEventColor({ ...feed, id: "cal_2" })).toBe(
+      externalEventColor({ id: "cal_2" }),
+    );
   });
 });
