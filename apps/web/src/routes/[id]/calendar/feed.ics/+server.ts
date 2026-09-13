@@ -6,6 +6,7 @@ import type { RequestHandler } from "./$types";
 import { generateICalFeed } from "$lib/services/icalGenerator";
 import type { HoloSphere } from "holosphere";
 import { createHoloSphere, resolveRelays } from "@holons/core/holosphere";
+import { resolveFeedAppName } from "$lib/server/feedEnv";
 
 // Lazy-initialized HoloSphere instance to avoid running during SvelteKit build analysis
 let holosphere: HoloSphere;
@@ -13,12 +14,13 @@ let holosphere: HoloSphere;
 function getHolosphere() {
   if (!holosphere) {
     // Single source of truth: HOLONS_APP / HOLOSPHERE_RELAYS from the monorepo
-    // root .env. A serverless function has no durable disk, so the store is
-    // in memory and each cold start catches the holon's lenses up from the
-    // relays (bounded by the sync timeout).
-    const appName = process.env.HOLONS_APP || "HolonsDebug";
+    // root .env, defaulting the way the web client does (production → Holons)
+    // so a deployed function never reads an empty debug namespace. A
+    // serverless function has no durable disk, so the store is in memory and
+    // each cold start catches the holon's lenses up from the relays (bounded
+    // by the sync timeout).
     holosphere = createHoloSphere({
-      appName,
+      appName: resolveFeedAppName(process.env),
       relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
       store: { adapter: "memory" },
     });

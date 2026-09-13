@@ -17,21 +17,25 @@ import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { env } from "$env/dynamic/private";
 import type { HoloSphere } from "holosphere";
-import { createHoloSphere, resolveRelays } from "@holons/core/holosphere";
+import { createHoloSphere } from "@holons/core/holosphere";
+import { resolveFeedAppName, resolveFeedRelays } from "$lib/server/feedEnv";
 import { loadSettings } from "@holons/core/settings";
 import { generateICalFeed, type HolonEvent } from "@holons/core/calendar";
 
 /**
  * One lazily-built HoloSphere for the whole function instance. A serverless
  * function has no durable disk, so the store is in memory and each cold start
- * catches the holon's lenses up from the relays.
+ * catches the holon's lenses up from the relays. The namespace and relays
+ * resolve exactly as the screens do (`$lib/server/feedEnv`), so the feed says
+ * what the kiosk's Calendar board shows even on a site that only set the
+ * client's VITE_* variables.
  */
 let holosphere: HoloSphere | null = null;
 function getHolosphere(): HoloSphere {
   if (!holosphere) {
     holosphere = createHoloSphere({
-      appName: env.HOLONS_APP || "HolonsDebug",
-      relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+      appName: resolveFeedAppName(env),
+      relays: resolveFeedRelays(env),
       store: { adapter: "memory" },
     });
   }
