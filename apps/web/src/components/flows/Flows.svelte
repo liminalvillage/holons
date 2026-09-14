@@ -46,7 +46,10 @@
     segmentTotal,
     buildFundUsage,
     buildLedger,
+    buildPeopleFlows,
     buildValueFlows,
+    chordBreakdown,
+    layoutChord,
     DEFAULT_ALLOCATION_CONFIG,
     HUB_ID,
     layoutSankey,
@@ -63,7 +66,9 @@
     usageUnits,
     type AllocationSlice,
     type BreakdownRow,
+    type ChordGroup,
     type FundUsageParty,
+    type PeopleFlowTrack,
     type LedgerEntry,
     type LedgerSource,
     type OpenCollectiveSnapshot,
@@ -80,6 +85,7 @@
     type Expense,
   } from "@holons/core/expenses";
   import SankeyChart from "./SankeyChart.svelte";
+  import ChordChart from "./ChordChart.svelte";
   import AllocationEditor from "./AllocationEditor.svelte";
   import PillSwitch from "./PillSwitch.svelte";
   import Sheet from "./Sheet.svelte";
@@ -95,9 +101,10 @@
     { id: "all", label: "All time", days: null },
   ] as const;
 
-  type Panel = "movement" | "balances" | "allocation" | "ledger";
+  type Panel = "movement" | "people" | "balances" | "allocation" | "ledger";
   const PANELS: { id: Panel; label: string; glyph: string }[] = [
     { id: "movement", label: "Movement", glyph: "⇄" },
+    { id: "people", label: "Between people", glyph: "◎" },
     { id: "balances", label: "Balances", glyph: "⚖" },
     { id: "allocation", label: "Fund allocation rights", glyph: "◔" },
     { id: "ledger", label: "Ledger", glyph: "☰" },
@@ -191,6 +198,32 @@
   $: activeTrack = tracks.find((t) => trackKey(t) === trackId) ?? null;
   $: movementLayout = activeTrack ? layoutSankey(activeTrack) : null;
   $: formatMovement = formatter(activeTrack);
+
+  // ---- Between people ---------------------------------------------------------
+  //
+  // The same records with both ends kept: who gave what to whom, one matrix
+  // per unit, drawn as a directed chord.
+  $: peopleTracks = buildPeopleFlows(flowInput);
+  let peopleTrackId = "";
+  const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
+  $: if (peopleTracks.length && !peopleTracks.some((p) => peopleKey(p) === peopleTrackId)) {
+    peopleTrackId = peopleKey(peopleTracks[0]);
+  }
+  $: activePeople = peopleTracks.find((p) => peopleKey(p) === peopleTrackId) ?? null;
+  /** Stock and lends carry their own unit (kg, pack, lends). */
+  const peopleLabel = (p: PeopleFlowTrack) =>
+    p.id !== "items" ? trackLabel({ id: p.id, unit: p.unit }) : p.unit === "lends" ? "Lends" : p.unit;
+  $: formatPeople =
+    activePeople?.id === "items"
+      ? ((unit: string) => (v: number) => `${Math.round(v * 10) / 10} ${unit}`)(activePeople.unit)
+      : formatter(activePeople ? { id: activePeople.id as ValueFlowTrack["id"], unit: activePeople.unit } : null);
+
+  let selectedParty: ChordGroup | null = null;
+  // Who is rolled into whom does not depend on the radius, so any will do.
+  $: partyBreakdown =
+    selectedParty && activePeople
+      ? chordBreakdown(layoutChord(activePeople, { innerRadius: 100, othersLabel: "Others" }), selectedParty.id)
+      : null;
 
   $: entries = buildLedger(flowInput).entries;
 
@@ -1032,6 +1065,60 @@
         <p class="note">Tap a bar to see what is inside it.</p>
       {/if}
     </section>
+  {:else if panel === "people"}
+    <section class="panel">
+      <header class="head">
+        <div class="titles">
+          <h2>Between people</h2>
+          <p class="sub">Who gave what to whom — each arrow points at the person who received it.</p>
+        </div>
+        <div class="controls">
+          {#if peopleTracks.length > 1}
+            <PillSwitch
+              options={peopleTracks.map((p) => ({
+                id: peopleKey(p),
+                label: peopleLabel(p),
+              }))}
+              value={peopleTrackId}
+              onChange={(id) => (peopleTrackId = id)}
+              label="Which unit to show"
+            />
+          {/if}
+          <PillSwitch
+            options={WINDOWS.map((w) => ({ id: w.id, label: w.label }))}
+            value={prefs.window}
+            onChange={(id) => (prefs.window = id)}
+            label="Over what period"
+          />
+        </div>
+      </header>
+
+      {#if !activePeople}
+        <p class="empty">Nothing passed between people in this window.</p>
+      {:else}
+        <div class="stats">
+          <div class="stat">
+            <span class="k">Moved between people</span>
+            <span class="v">{formatPeople(activePeople.total)}</span>
+          </div>
+          <div class="stat">
+            <span class="k">People</span>
+            <span class="v">{activePeople.parties.length}</span>
+          </div>
+        </div>
+        <div class="chart round">
+          <ChordChart
+            track={activePeople}
+            format={formatPeople}
+            onSelect={(g) => (selectedParty = g)}
+            hint="Click for who, and how much"
+          >
+            <p slot="empty" class="empty">Nothing passed between people in this window.</p>
+          </ChordChart>
+        </div>
+        <p class="note">Hover an arrow to see who gave to whom; click a person for the list.</p>
+      {/if}
+    </section>
   {:else if panel === "balances"}
     <BalancesPanel
       holonId={holonID}
@@ -1150,6 +1237,32 @@
     <p class="note warn">{collectiveError}</p>
   {/if}
 </div>
+
+{#if selectedParty}
+  {@const party = selectedParty}
+  <Sheet title={party.label} on:close={() => (selectedParty = null)}>
+    <dl class="detail">
+      <div class="drow"><dt>Gave</dt><dd>{formatPeople(party.given)}</dd></div>
+      <div class="drow"><dt>Received</dt><dd>{formatPeople(party.received)}</dd></div>
+    </dl>
+    {#each [{ caption: "Gave to", rows: partyBreakdown?.given ?? [], total: party.given }, { caption: "Received from", rows: partyBreakdown?.received ?? [], total: party.received }] as side (side.caption)}
+      {#if side.rows.length}
+        <table class="who">
+          <caption>{side.caption}</caption>
+          <tbody>
+            {#each side.rows as row (row.id)}
+              <tr>
+                <th scope="row">{row.label}</th>
+                <td class="share">{side.total > 0 ? `${Math.round((row.value / side.total) * 100)}%` : ""}</td>
+                <td class="amt">{formatPeople(row.value)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    {/each}
+  </Sheet>
+{/if}
 
 {#if selected}
   {@const node = selected.node}
@@ -1321,6 +1434,20 @@
 
   .chart > :global(*) {
     min-width: 32rem;
+  }
+
+  /* A chord is round and sizes itself to the card; it never scrolls. */
+  .chart.round > :global(*) {
+    min-width: 0;
+  }
+
+  .who caption {
+    text-align: left;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+    padding: 0.6rem 0 0.3rem;
   }
 
   .editor {

@@ -1099,6 +1099,17 @@ export const en = {
   "flows.accountOverBy": "Over by",
   "flows.accountVia": "Through",
   "flows.accountNoPot": "Amounts appear once a collective is connected.",
+  "flows.peopleTitle": "Between people",
+  "flows.peopleAbout":
+    "Who gave what to whom — each arrow points at the person who received it.",
+  "flows.emptyPeople": "Nothing passed between people in this window.",
+  "flows.given": "Gave",
+  "flows.received": "Received",
+  "flows.others": "Others",
+  "flows.trackLends": "Lends",
+  "flows.unitLends": "lends",
+  "flows.whoGaveTo": "Gave to",
+  "flows.whoReceivedFrom": "Received from",
   "balances.title": "Who owes whom",
   "balances.about":
     "Everyone's balance in the shared tab. Hover a person for the detail, tap to settle up.",

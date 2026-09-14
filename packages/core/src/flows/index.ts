@@ -70,6 +70,21 @@ export {
 } from './layout.js';
 
 export {
+  CHORD_OTHERS_ID,
+  buildPeopleFlows,
+  chordBreakdown,
+  layoutChord,
+  type BuildPeopleFlowsInput,
+  type ChordGroup,
+  type ChordLayout,
+  type ChordOptions,
+  type ChordRibbon,
+  type PeopleFlowParty,
+  type PeopleFlowTrack,
+  type PeopleFlowTrackId,
+} from './chord.js';
+
+export {
   DEFAULT_ALLOCATION_CONFIG,
   allocate,
   calculateZonePercentages,

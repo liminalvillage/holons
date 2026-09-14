@@ -72,7 +72,10 @@
     buildFundUsage,
     buildLedger,
     fundAccount,
+    buildPeopleFlows,
     buildValueFlows,
+    chordBreakdown,
+    layoutChord,
     filterLedger,
     layoutSankey,
     nodeBreakdown,
@@ -90,8 +93,10 @@
     type FundUsage,
     type FundUsageParty,
     type BreakdownRow,
+    type ChordGroup,
     type LedgerEntry,
     type OpenCollectiveSnapshot,
+    type PeopleFlowTrack,
     type SankeyLayoutLink,
     type SankeyLayoutNode,
     type ValueFlowTrack,
@@ -110,6 +115,7 @@
   import { get } from "svelte/store";
   import AllocationSettings from "$lib/components/AllocationSettings.svelte";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
+  import ChordChart from "$lib/components/ChordChart.svelte";
   import PillSwitch from "$lib/components/PillSwitch.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import BalancesView from "./BalancesView.svelte";
@@ -502,6 +508,67 @@
   }
 
   $: formatMovement = formatter(activeTrack);
+
+  // ── Derived: between people ─────────────────────────────────────────────
+  // The same records with both ends kept: who gave what to whom, one matrix
+  // per unit, drawn as a directed chord. Personal narrows to the flows the
+  // viewer gave or received, not every flow on a record they are named on.
+  $: peopleTracks = buildPeopleFlows({
+    ...flowsInput,
+    involving: $scope === "personal" ? selfId : null,
+  });
+  let peopleTrackId = "";
+  const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
+  $: if (
+    peopleTracks.length &&
+    !peopleTracks.some((p) => peopleKey(p) === peopleTrackId)
+  ) {
+    peopleTrackId = peopleKey(peopleTracks[0]);
+  }
+  $: activePeople =
+    peopleTracks.find((p) => peopleKey(p) === peopleTrackId) ?? null;
+  // Stock and lends carry their own unit (kg, pack, lends); everything else
+  // reads the way the movement pills do.
+  $: peopleOptions = peopleTracks.map((p) => ({
+    id: peopleKey(p),
+    label:
+      p.id !== "items"
+        ? trackLabel({ id: p.id, unit: p.unit } as ValueFlowTrack, $t)
+        : p.unit === "lends"
+          ? $t("flows.trackLends")
+          : p.unit,
+  }));
+  $: itemsFormatter = (unit: string) => {
+    const nf = new Intl.NumberFormat($locale, { maximumFractionDigits: 1 });
+    const name = unit === "lends" ? $t("flows.unitLends") : unit;
+    return (v: number) => `${nf.format(v)} ${name}`;
+  };
+  $: formatPeople =
+    activePeople?.id === "items"
+      ? itemsFormatter(activePeople.unit)
+      : formatter(
+          activePeople
+            ? ({ id: activePeople.id, unit: activePeople.unit } as ValueFlowTrack)
+            : null,
+        );
+  $: chordLabels = {
+    given: $t("flows.given"),
+    received: $t("flows.received"),
+    others: $t("flows.others"),
+  };
+
+  let selectedParty: ChordGroup | null = null;
+  // Who is rolled into whom does not depend on the radius, so any will do.
+  $: partyBreakdown =
+    selectedParty && activePeople
+      ? chordBreakdown(
+          layoutChord(activePeople, {
+            innerRadius: 100,
+            othersLabel: chordLabels.others,
+          }),
+          selectedParty.id,
+        )
+      : null;
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency } as ValueFlowTrack)
     : (v: number) => `${Math.round(v)}%`;
@@ -1007,7 +1074,9 @@
 
   // Suspend auto-rotation while the detail sheet is open so the screen cannot
   // flip away mid-read.
-  $: rotationHold.set(selected != null || allocationOpen);
+  $: rotationHold.set(
+    selected != null || selectedParty != null || allocationOpen,
+  );
 </script>
 
 <div class="board">
@@ -1137,7 +1206,7 @@
       />
     {:else}
       <!-- ── Graph ──────────────────────────────────────────────────────── -->
-      {#if !tracks.length && !hasAllocation}
+      {#if !tracks.length && !peopleTracks.length && !hasAllocation}
         <p class="empty">{$t("flows.empty")}</p>
       {/if}
       <!-- Movement -->
@@ -1202,6 +1271,50 @@
               <p slot="empty" class="empty">{$t("flows.emptyTrack")}</p>
             </SankeyChart>
           {/if}
+        </section>
+      {/if}
+
+      <!-- Between people: who gave what to whom. -->
+      {#if peopleTracks.length}
+        <section>
+          <header class="head">
+            <div class="titles">
+              <h2>{$t("flows.peopleTitle")}</h2>
+              <p class="sub">{$t("flows.peopleAbout")}</p>
+            </div>
+            <div class="controls">
+              {#if peopleOptions.length > 1}
+                <PillSwitch
+                  options={peopleOptions}
+                  value={peopleTrackId}
+                  onChange={(id) => (peopleTrackId = id)}
+                  label={$t("flows.trackLabel")}
+                  showText
+                />
+              {/if}
+              {#if !tracks.length}
+                <PillSwitch
+                  options={WINDOWS.map((w) => ({
+                    id: w.id,
+                    label: $t(w.labelKey),
+                  }))}
+                  value={windowId}
+                  onChange={(id) => (windowId = id)}
+                  label={$t("flows.windowLabel")}
+                  showText
+                />
+              {/if}
+            </div>
+          </header>
+
+          <ChordChart
+            track={activePeople}
+            format={formatPeople}
+            labels={chordLabels}
+            onSelect={(g) => (selectedParty = g)}
+          >
+            <p slot="empty" class="empty">{$t("flows.emptyPeople")}</p>
+          </ChordChart>
         </section>
       {/if}
 
@@ -1309,6 +1422,44 @@
     on:close={() => (allocationOpen = false)}
     on:saved={() => void afterAllocationSave()}
   />
+{/if}
+
+{#if selectedParty}
+  <Modal on:close={() => (selectedParty = null)}>
+    <div class="detail">
+      <h3>{selectedParty.label}</h3>
+      <dl class="detail-rows">
+        <div class="detail-row">
+          <dt>{$t("flows.given")}</dt>
+          <dd>{formatPeople(selectedParty.given)}</dd>
+        </div>
+        <div class="detail-row">
+          <dt>{$t("flows.received")}</dt>
+          <dd>{formatPeople(selectedParty.received)}</dd>
+        </div>
+      </dl>
+      {#each [{ caption: $t("flows.whoGaveTo"), rows: partyBreakdown?.given ?? [], total: selectedParty.given }, { caption: $t("flows.whoReceivedFrom"), rows: partyBreakdown?.received ?? [], total: selectedParty.received }] as side (side.caption)}
+        {#if side.rows.length}
+          <table class="who">
+            <caption>{side.caption}</caption>
+            <tbody>
+              {#each side.rows as row (row.id)}
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  <td class="share"
+                    >{side.total > 0
+                      ? `${Math.round((row.value / side.total) * 100)}%`
+                      : ""}</td
+                  >
+                  <td class="amt">{formatPeople(row.value)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/each}
+    </div>
+  </Modal>
 {/if}
 
 {#if selected}

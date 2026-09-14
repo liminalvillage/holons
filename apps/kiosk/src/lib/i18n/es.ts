@@ -1118,6 +1118,17 @@ export const es: Record<MessageKey, Msg> = {
   "flows.accountOverBy": "Excedido por",
   "flows.accountVia": "A través de",
   "flows.accountNoPot": "Los importes aparecen cuando se conecta un colectivo.",
+  "flows.peopleTitle": "Entre personas",
+  "flows.peopleAbout":
+    "Quién dio qué a quién — cada flecha apunta a quien lo recibió.",
+  "flows.emptyPeople": "Nada pasó entre personas en este periodo.",
+  "flows.given": "Dio",
+  "flows.received": "Recibió",
+  "flows.others": "Otros",
+  "flows.trackLends": "Préstamos",
+  "flows.unitLends": "préstamos",
+  "flows.whoGaveTo": "Dio a",
+  "flows.whoReceivedFrom": "Recibió de",
   "balances.title": "Quién debe a quién",
   "balances.about":
     "El saldo de cada uno en la cuenta compartida. Pasa el cursor sobre una persona para el detalle, toca para saldar.",
