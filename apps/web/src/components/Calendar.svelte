@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher,getContext, onMount, onDestroy } from 'svelte';
+    import { createEdgeScroll } from '$lib/util/edgeScroll';
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
@@ -471,6 +472,7 @@
 
         // Tear down any in-flight touch drag (ghost element + body styles).
         if (touchDrag) cancelTouchDrag();
+        stopDragScroll();
         document.removeEventListener('click', suppressClickIfRecentDrop, true);
     });
 
@@ -1107,6 +1109,24 @@
         selectedTask = { id: newTask.id, task: newTask };
     }
 
+    // Holding a dragged task at the top/bottom edge scrolls the calendar that
+    // way. HTML5 drag re-fires dragover on whatever slides under the pointer;
+    // the touch drag hit-tests by hand, so re-aim it as the grid glides.
+    const edgeScroll = createEdgeScroll({
+        onScroll: () => {
+            if (touchDrag?.started) updateTouchDropTarget(touchDrag.lastX, touchDrag.lastY);
+        },
+    });
+
+    function onDocDragOver(e: DragEvent) {
+        if (draggedTask) edgeScroll.move(e.clientX, e.clientY);
+    }
+
+    function stopDragScroll() {
+        document.removeEventListener('dragover', onDocDragOver);
+        edgeScroll.stop();
+    }
+
     // Drag and drop handlers
     function handleDragStart(event: DragEvent, key: string, task: any) {
         if (readOnly) {
@@ -1114,6 +1134,7 @@
             return;
         }
         if (!event.dataTransfer) return;
+        document.addEventListener('dragover', onDocDragOver);
 
         // For recurring-instance rows, drag moves the underlying base series.
         const originalKey = resolveOriginalKey(key, task);
@@ -1129,6 +1150,7 @@
     }
 
     function handleDragEnd(event: DragEvent) {
+        stopDragScroll();
         // Reset visual state
         if (event.target instanceof HTMLElement) {
             event.target.style.opacity = '1';
@@ -1260,6 +1282,8 @@
     }
 
     async function performDrop(date: Date, hour?: number) {
+        // The source tile may re-render before dragend reaches it.
+        stopDragScroll();
         if (!draggedTask || !$ID) {
             draggedTask = null;
             dragOverDate = null;
@@ -1338,6 +1362,7 @@
     // back to the unassigned list. `when: null` + status 'ongoing' matches
     // the TaskModal unschedule convention.
     async function performUnschedule() {
+        stopDragScroll();
         if (!draggedTask || !$ID) {
             draggedTask = null;
             dragOverDate = null;
@@ -1483,7 +1508,12 @@
             touchDrag.ghostEl.style.left = e.clientX + 'px';
             touchDrag.ghostEl.style.top = e.clientY + 'px';
         }
-        const target = elementUnderPoint(e.clientX, e.clientY);
+        updateTouchDropTarget(e.clientX, e.clientY);
+        edgeScroll.move(e.clientX, e.clientY);
+    }
+
+    function updateTouchDropTarget(x: number, y: number) {
+        const target = elementUnderPoint(x, y);
         if (target?.hasAttribute('data-drop-unschedule')) {
             dragOverDrawer = true;
             dragOverDate = null;
@@ -1571,6 +1601,7 @@
 
     function cleanupTouchDragVisual(td: NonNullable<typeof touchDrag>) {
         if (td.timerId != null) clearTimeout(td.timerId);
+        edgeScroll.stop();
         if (td.ghostEl) td.ghostEl.remove();
         document.body.style.userSelect = '';
         document.body.style.touchAction = '';

@@ -1,8 +1,9 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
+  import { createEdgeScroll } from "$lib/edgescroll";
   import {
     events as questEvents,
     backlog,
@@ -182,6 +183,17 @@
   let startY = 0;
   let pendingId: string | null = null;
   let pendingTitle = "";
+  // Holding a card at the top/bottom edge scrolls the calendar that way; the
+  // slot under a still pointer changes as it glides, so re-aim the drop.
+  const edgeScroll = createEdgeScroll({
+    onScroll: () => {
+      if (drag) computeDrop(drag.x, drag.y);
+    },
+  });
+  onDestroy(() => {
+    unbind();
+    edgeScroll.stop();
+  });
 
   function pad2(n: number): string {
     return String(n).padStart(2, "0");
@@ -242,6 +254,7 @@
 
   function onPointerCancel() {
     unbind();
+    edgeScroll.stop();
     drag = null;
     dropDay = null;
     dropMin = null;
@@ -258,10 +271,12 @@
     e.preventDefault();
     drag = { ...drag, x: e.clientX, y: e.clientY };
     computeDrop(e.clientX, e.clientY);
+    edgeScroll.move(e.clientX, e.clientY);
   }
 
   function onPointerUp() {
     unbind();
+    edgeScroll.stop();
     const id = drag?.id ?? null;
     const day = dropDay;
     const min = dropMin;
