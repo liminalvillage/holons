@@ -183,6 +183,10 @@
   let startY = 0;
   let pendingId: string | null = null;
   let pendingTitle = "";
+  let dragArmed = false; // drag allowed: at once for mouse, after a hold for touch
+  let dragHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let panX = true; // the pressed card lets the browser pan this way (touch-action)
+  let panY = true;
   // Holding a card at the top/bottom edge scrolls the calendar that way; the
   // slot under a still pointer changes as it glides, so re-aim the drop.
   const edgeScroll = createEdgeScroll({
@@ -241,15 +245,34 @@
     pendingTitle = title;
     startX = e.clientX;
     startY = e.clientY;
+    // Mouse: drag on move. Touch: long-press to arm, so a swipe that starts
+    // on a card scrolls the calendar instead of lifting the card.
+    dragArmed = e.pointerType === "mouse";
+    if (!dragArmed) dragHoldTimer = setTimeout(() => (dragArmed = true), 280);
+    const ta = getComputedStyle(e.currentTarget as HTMLElement).touchAction;
+    panX = !/pan-y|none/.test(ta) || /pan-x/.test(ta);
+    panY = !/pan-x|none/.test(ta) || /pan-y/.test(ta);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("touchmove", onDragTouch, { passive: false });
+  }
+
+  // Once the hold has armed, the browser would take the finger's move as a
+  // pan and cancel our pointer; swallowing touchmoves keeps the drag ours
+  // (same trick as the Tasks wall).
+  function onDragTouch(e: TouchEvent) {
+    if (dragArmed || drag) e.preventDefault();
   }
 
   function unbind() {
+    if (dragHoldTimer) clearTimeout(dragHoldTimer);
+    dragHoldTimer = null;
+    dragArmed = false;
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", onPointerUp);
     window.removeEventListener("pointercancel", onPointerCancel);
+    window.removeEventListener("touchmove", onDragTouch);
   }
 
   function onPointerCancel() {
@@ -264,8 +287,22 @@
 
   function onPointerMove(e: PointerEvent) {
     if (!drag) {
+      if (pendingId == null) return;
       const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (moved < 8 || pendingId == null) return;
+      // Not yet armed (touch, before the hold): a real move along an axis
+      // the card lets the browser pan is a scroll. Along the other axis (a
+      // drawer chip's lift) nothing scrolls, so it drags straight away.
+      if (!dragArmed) {
+        if (moved <= 10) return;
+        const horizontal =
+          Math.abs(e.clientX - startX) > Math.abs(e.clientY - startY);
+        if (horizontal ? panX : panY) {
+          onPointerCancel();
+          return;
+        }
+        dragArmed = true;
+      }
+      if (moved < 8) return;
       drag = { id: pendingId, title: pendingTitle, x: e.clientX, y: e.clientY };
     }
     e.preventDefault();
@@ -1664,7 +1701,8 @@
     color: var(--ev-ink);
   }
   .draggable {
-    touch-action: none;
+    /* Pans stay the browser's until a hold arms the drag (see beginDrag). */
+    touch-action: manipulation;
     cursor: grab;
   }
   .drop {
