@@ -645,8 +645,12 @@
       ? itemsFormatter(p.unit)
       : formatter({ id: p.id, unit: p.unit } as ValueFlowTrack);
   }
+  // A combined chord's numbers are shares of everything that moved between
+  // people, each unit counted equally, so they read as percentages.
   $: formatPeople =
-    activePeople?.id === "combined" ? () => "" : peopleFormat(activePeople);
+    activePeople?.id === "combined"
+      ? (v: number) => `${Math.round(v)}%`
+      : peopleFormat(activePeople);
   $: chordLabels = {
     given: $t("flows.given"),
     received: $t("flows.received"),
@@ -910,6 +914,9 @@
     return node ? allocationDetails(node) : [];
   }
 
+  /** A combined ribbon is a share of its own unit, and must say so. */
+  $: unitShareLine = (pct: number, unit: string) =>
+    $t("flows.shareOfUnit", { pct: String(pct), unit });
   $: shareLine = (pct: number) =>
     $t("flows.tipShareShown", { pct: String(pct) });
 
@@ -1375,6 +1382,8 @@
               layout={movementLayout}
               format={formatMovement}
               {shareLine}
+              {unitShareLine}
+              legendLabel={$t("flows.unitsLegend")}
               onSelect={(n) => {
                 selectedFormat = formatMovement;
                 selectedChart = "movement";
@@ -1600,6 +1609,22 @@
       <p class="amount">
         {selected.display ?? selectedFormat(selected.value)}
       </p>
+      {#if selected.segments?.length && selected.segments[0].unit}
+        <!-- A bar on the combined chart: what it is made of, unit by unit,
+             with each unit's share of its OWN flow beside the amount. -->
+        <table class="who units">
+          <caption>{$t("flows.unitsLegend")}</caption>
+          <tbody>
+            {#each selected.segments as seg (seg.label)}
+              <tr>
+                <th scope="row">{seg.label}</th>
+                <td class="share">{Math.round(seg.value)}%</td>
+                <td class="amt">{seg.display ?? String(seg.value)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
       {#if selectedChart === "allocation"}
         <dl class="detail-rows">
           {#each allocationDetails(selected) as row (row.label)}

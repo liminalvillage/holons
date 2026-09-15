@@ -165,6 +165,7 @@ export const es: Record<MessageKey, Msg> = {
   "cal.dropUnschedule": "Suelta aquí para quitar la fecha",
   "cal.unscheduledTray": "Sin fecha — arrastra a un día",
   "cal.fromCalendar": "{title} — de {name}",
+  "cal.repeatsTitle": "Se repite · {cadence}",
   // The Calendar board's settings sheet: this holon's own feed to
   // subscribe to, and the calendars it follows (see CalendarSettings).
   "cal.set.title": "Ajustes del calendario",
@@ -811,6 +812,20 @@ export const es: Record<MessageKey, Msg> = {
   "detail.endDateAria": "Fecha de fin",
   "detail.endTimeAria": "Hora de fin",
   "detail.dayCount": { one: "{n} día", other: "{n} días" },
+  // Recurrencia
+  "detail.repeats": "Se repite",
+  "detail.freqNever": "Nunca",
+  "detail.freq.daily": "Cada día",
+  "detail.freq.weekly": "Cada semana",
+  "detail.freq.biweekly": "Cada 2 semanas",
+  "detail.freq.monthly": "Cada mes",
+  "detail.freq.quarterly": "Cada 3 meses",
+  "detail.freq.sixmonths": "Cada 6 meses",
+  "detail.freq.yearly": "Cada año",
+  "detail.repeatsLine": "↻ {cadence} · desde el {start}",
+  "detail.occurrenceDone": "hecho esta vez ✓",
+  "detail.markDoneOnce": "Hecho esta vez",
+  "detail.undoDoneOnce": "No hecho esta vez",
   "detail.noCategory": "Sin categoría",
   "detail.location": "Lugar",
   "detail.create": "Crear",
@@ -1078,6 +1093,8 @@ export const es: Record<MessageKey, Msg> = {
   "flows.balance": "Saldo",
   "flows.trackLabel": "Qu\u00e9 unidad mostrar",
   "flows.trackAll": "Todo",
+  "flows.shareOfUnit": "{pct}% de todo el {unit} que se movió",
+  "flows.unitsLegend": "Unidades en este diagrama",
   "flows.allAbout":
     "Todas las unidades juntas. El ancho de una cinta es su parte del flujo de su propia unidad — pasa por encima para ver los importes reales.",
   "flows.trackTime": "Horas",

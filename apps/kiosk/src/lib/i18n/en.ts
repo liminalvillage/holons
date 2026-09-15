@@ -162,6 +162,7 @@ export const en = {
   "cal.dropUnschedule": "Drop here to unschedule",
   "cal.unscheduledTray": "Unscheduled — drag onto a day",
   "cal.fromCalendar": "{title} — from {name}",
+  "cal.repeatsTitle": "Repeats · {cadence}",
   // The Calendar board's settings sheet: this holon's own feed to
   // subscribe to, and the calendars it follows (see CalendarSettings).
   "cal.set.title": "Calendar settings",
@@ -793,6 +794,20 @@ export const en = {
   "detail.endDateAria": "End date",
   "detail.endTimeAria": "End time",
   "detail.dayCount": { one: "{n} day", other: "{n} days" },
+  // Recurrence — the cadence chips and the lines a repeating card shows.
+  "detail.repeats": "Repeats",
+  "detail.freqNever": "Never",
+  "detail.freq.daily": "Every day",
+  "detail.freq.weekly": "Every week",
+  "detail.freq.biweekly": "Every 2 weeks",
+  "detail.freq.monthly": "Every month",
+  "detail.freq.quarterly": "Every 3 months",
+  "detail.freq.sixmonths": "Every 6 months",
+  "detail.freq.yearly": "Every year",
+  "detail.repeatsLine": "↻ {cadence} · since {start}",
+  "detail.occurrenceDone": "done this time ✓",
+  "detail.markDoneOnce": "Done this time",
+  "detail.undoDoneOnce": "Not done this time",
   "detail.noCategory": "No category",
   "detail.location": "Location",
   "detail.create": "Create",
@@ -1060,6 +1075,8 @@ export const en = {
   "flows.balance": "Balance",
   "flows.trackLabel": "Which unit to show",
   "flows.trackAll": "All",
+  "flows.shareOfUnit": "{pct}% of all the {unit} that moved",
+  "flows.unitsLegend": "Units in this diagram",
   "flows.allAbout":
     "Every unit together. A ribbon's width is its share of its own unit's flow — hover for the real amounts.",
   "flows.trackTime": "Hours",

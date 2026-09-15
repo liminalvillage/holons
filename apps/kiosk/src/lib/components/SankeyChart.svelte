@@ -46,6 +46,11 @@
     | null = null;
   /** "{pct}% of the flow shown" line, pre-translated by the parent. */
   export let shareLine: ((pct: number) => string) | null = null;
+  /** Share line for a combined ribbon, which is a share of its own unit. */
+  export let unitShareLine: ((pct: number, unit: string) => string) | null =
+    null;
+  /** Accessible name for the unit legend, when one is drawn. */
+  export let legendLabel: string | null = null;
 
   /** Measured container width; the fallback only applies before first layout. */
   let boxWidth = 960;
@@ -324,6 +329,33 @@
   }
 
   /**
+   * A hue per unit, for a track that carries several.
+   *
+   * Units are whatever a holon actually uses — euro, kudos, kg, lends — so
+   * they cannot be styled by class the way the fixed `kind` values are. The
+   * palette is assigned in first-seen order, which is stable for a given
+   * board because the tracks are.
+   */
+  const UNIT_HUES = [
+    "#0f766e",
+    "#3b82f6",
+    "#f59e0b",
+    "#8b5cf6",
+    "#10b981",
+    "#ef4444",
+    "#06b6d4",
+    "#d946ef",
+    "#84cc16",
+    "#f97316",
+  ];
+  $: unitsShown = [
+    ...new Set(links.map((l) => l.unit).filter((u): u is string => !!u)),
+  ];
+  $: unitHue = new Map(
+    unitsShown.map((u, i) => [u, UNIT_HUES[i % UNIT_HUES.length]] as const),
+  );
+
+  /**
    * What a bar or ribbon SAYS, as opposed to how wide it is.
    *
    * A combined track carries every unit at once, so its widths are shares and
@@ -365,7 +397,8 @@
       <g class="ribbons">
         {#each links as link (link.id)}
           <path
-            class="ribbon {link.kind ?? ''}"
+            class="ribbon {link.unit ? '' : (link.kind ?? '')}"
+            style:fill={link.unit ? unitHue.get(link.unit) : undefined}
             class:lit={litLinks?.has(link.id)}
             class:dim={litLinks && !litLinks.has(link.id)}
             d={scalePath(link.path, VW, VH)}
@@ -497,6 +530,16 @@
       </g>
     </svg>
 
+    {#if unitsShown.length > 1}
+      <ul class="legend" aria-label={legendLabel ?? undefined}>
+        {#each unitsShown as unit (unit)}
+          <li>
+            <i class="swatch" style:background={unitHue.get(unit)}></i>{unit}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
     {#if hoverNode || hoverLink}
       <div
         class="tip"
@@ -509,7 +552,31 @@
           <span class="tip-title">{title}</span>
           <span class="tip-value">{hoveredDisplay}</span>
         </div>
-        {#if share != null && shareLine}
+        {#if hoverLink?.unit}
+          <!-- A combined ribbon's width is its share of ITS OWN unit, so the
+               share line has to name that unit or it reads as a share of a
+               total that was never computed. -->
+          <div class="tip-share">
+            <i class="swatch" style:background={unitHue.get(hoverLink.unit)}
+            ></i>
+            {unitShareLine
+              ? unitShareLine(Math.round(hoverLink.value), hoverLink.unit)
+              : `${Math.round(hoverLink.value)}% · ${hoverLink.unit}`}
+          </div>
+        {:else if hoverNode?.segments?.length && hoverNode.segments[0].unit}
+          <!-- A bar on a combined track: what it is made of, unit by unit. -->
+          <dl class="tip-units">
+            {#each hoverNode.segments as seg (seg.label)}
+              <div class="tip-row">
+                <dt>
+                  <i class="swatch" style:background={unitHue.get(seg.label)}
+                  ></i>{seg.label}
+                </dt>
+                <dd>{seg.display ?? format(seg.value)}</dd>
+              </div>
+            {/each}
+          </dl>
+        {:else if share != null && shareLine}
           <div class="tip-share">{shareLine(share)}</div>
         {/if}
         {#if rows.length}
@@ -531,6 +598,38 @@
   .chart {
     width: 100%;
     position: relative;
+  }
+
+  /* One hue per unit, named once, so the ribbons read without hovering. */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.9rem;
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .legend li {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 0.62em;
+    height: 0.62em;
+    border-radius: 999px;
+    margin-right: 0.4em;
+    vertical-align: 0.02em;
+    flex: 0 0 auto;
+  }
+
+  .tip-units {
+    margin: 0.35rem 0 0;
+    display: grid;
+    gap: 0.15rem;
   }
 
   svg {
