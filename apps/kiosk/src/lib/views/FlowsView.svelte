@@ -658,6 +658,16 @@
   };
 
   let selectedParty: ChordGroup | null = null;
+  /**
+   * The party behind a tapped arc, for its per-unit make-up.
+   *
+   * A rollup arc ("+n more") stands for several parties and has no single
+   * breakdown, so it simply finds nothing and the popup keeps its shares.
+   */
+  $: selectedPartyUnits =
+    selectedParty && activePeople
+      ? (activePeople.parties.find((p) => p.id === selectedParty!.id) ?? null)
+      : null;
   // Who is rolled into whom does not depend on the radius, so any will do.
   $: partyBreakdown =
     selectedParty && activePeople
@@ -1578,6 +1588,25 @@
           <dd>{formatPeople(selectedParty.received)}</dd>
         </div>
       </dl>
+
+      <!-- The currencies behind those numbers: what this party gave and took
+           in each unit, with its share of that unit's own flow. -->
+      {#each [{ caption: $t("flows.given"), units: selectedPartyUnits?.givenUnits ?? [] }, { caption: $t("flows.received"), units: selectedPartyUnits?.receivedUnits ?? [] }] as side (side.caption)}
+        {#if side.units.length}
+          <table class="who units">
+            <caption>{side.caption}</caption>
+            <tbody>
+              {#each side.units as u (u.unit)}
+                <tr>
+                  <th scope="row">{u.unit}</th>
+                  <td class="share">{Math.round(u.share)}%</td>
+                  <td class="amt">{u.display}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/each}
       {#each [{ caption: $t("flows.whoGaveTo"), rows: partyBreakdown?.given ?? [], total: selectedParty.given }, { caption: $t("flows.whoReceivedFrom"), rows: partyBreakdown?.received ?? [], total: selectedParty.received }] as side (side.caption)}
         {#if side.rows.length}
           <table class="who">

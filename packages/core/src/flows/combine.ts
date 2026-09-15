@@ -21,7 +21,11 @@
  * shows all three.
  */
 
-import type { PeopleFlowParty, PeopleFlowTrack } from './chord.js';
+import type {
+  PeopleFlowParty,
+  PeopleFlowTrack,
+  PeopleFlowUnitShare,
+} from './chord.js';
 import type {
   ValueFlowLink,
   ValueFlowNode,
@@ -202,23 +206,50 @@ export function combinePeopleTracks(
 
   const n = parties.length;
   const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+  const givenUnits: PeopleFlowUnitShare[][] = Array.from({ length: n }, () => []);
+  const receivedUnits: PeopleFlowUnitShare[][] = Array.from({ length: n }, () => []);
   let count = 0;
   let total = 0;
 
   for (const track of usable) {
+    const label = options.labelOf(track);
+    const format = options.formatOf(track);
+    // What each party gave and received IN THIS TRACK, in its own unit, so the
+    // percentages a combined chord shows can be opened up into real amounts.
+    const gaveRaw = new Array(n).fill(0);
+    const gotRaw = new Array(n).fill(0);
+
     for (let i = 0; i < track.parties.length; i++) {
       const from = index.get(track.parties[i].id);
       if (from == null) continue;
       for (let j = 0; j < track.parties.length; j++) {
         const to = index.get(track.parties[j].id);
         if (to == null || from === to) continue;
-        const share = shareOf(track.matrix[i][j] ?? 0, track.total);
+        const raw = track.matrix[i][j] ?? 0;
+        const share = shareOf(raw, track.total);
         if (share <= 0) continue;
         matrix[from][to] += share;
         parties[from].given += share;
         parties[to].received += share;
+        gaveRaw[from] += raw;
+        gotRaw[to] += raw;
         total += share;
       }
+    }
+
+    for (let i = 0; i < n; i++) {
+      if (gaveRaw[i] > 0)
+        givenUnits[i].push({
+          unit: label,
+          share: shareOf(gaveRaw[i], track.total),
+          display: withUnit(format(gaveRaw[i]), label),
+        });
+      if (gotRaw[i] > 0)
+        receivedUnits[i].push({
+          unit: label,
+          share: shareOf(gotRaw[i], track.total),
+          display: withUnit(format(gotRaw[i]), label),
+        });
     }
     count += track.count;
   }
@@ -237,7 +268,11 @@ export function combinePeopleTracks(
   return {
     id: 'combined' as PeopleFlowTrack['id'],
     unit: options.unit ?? '',
-    parties,
+    parties: parties.map((party, i) => ({
+      ...party,
+      ...(givenUnits[i].length ? { givenUnits: givenUnits[i] } : {}),
+      ...(receivedUnits[i].length ? { receivedUnits: receivedUnits[i] } : {}),
+    })),
     matrix,
     total: total > 0 ? SHARE_BASIS : 0,
     count,

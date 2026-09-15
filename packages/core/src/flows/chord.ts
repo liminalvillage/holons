@@ -63,6 +63,16 @@ export type PeopleFlowTrackId =
 /** A person, or a holon — this one or a partner a record names. */
 export type PeopleFlowPartyKind = 'person' | 'holon';
 
+/** What one unit contributed to a party's side of a combined chord. */
+export interface PeopleFlowUnitShare {
+  /** The unit's short name, as the caller labels it. */
+  unit: string;
+  /** Share of that unit's own flow between people, 0-100. */
+  share: number;
+  /** The real amount, formatted in that unit. */
+  display: string;
+}
+
 /** One party in a track, with what they gave and received in it. */
 export interface PeopleFlowParty {
   id: string;
@@ -70,6 +80,13 @@ export interface PeopleFlowParty {
   kind: PeopleFlowPartyKind;
   given: number;
   received: number;
+  /**
+   * What this party gave and received, unit by unit — the detail behind a
+   * combined chord's percentages. Only `combinePeopleTracks` sets these; a
+   * unit-coherent track needs no breakdown, it IS one unit.
+   */
+  givenUnits?: PeopleFlowUnitShare[];
+  receivedUnits?: PeopleFlowUnitShare[];
 }
 
 /** One unit-coherent matrix of flows between parties. */

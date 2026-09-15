@@ -140,6 +140,26 @@ describe('combinePeopleTracks', () => {
     expect(combined.matrix[0][2]).toBeCloseTo(50, 8);
   });
 
+  it('opens each party up unit by unit', () => {
+    // The percentages a combined chord shows have to be explainable: Ada gave
+    // all of the euro and all of the kilograms, and the popup must say so in
+    // real amounts, not only as a share.
+    const combined = combinePeopleTracks([people('eur', 900), people('kg', 3)], opts)!;
+    const [ada, bob] = combined.parties;
+    expect(ada.givenUnits).toEqual([
+      { unit: 'EUR', share: 100, display: '900€ EUR' },
+      { unit: 'KG', share: 100, display: '3 KG' },
+    ]);
+    expect(ada.receivedUnits).toBeUndefined();
+    expect(bob.receivedUnits?.map((u) => u.display)).toEqual(['900€ EUR', '3 KG']);
+    expect(bob.givenUnits).toBeUndefined();
+  });
+
+  it('leaves a unit-coherent track without a breakdown — it is one unit', () => {
+    const one = people('eur', 5);
+    expect(combinePeopleTracks([one], opts)!.parties[0].givenUnits).toBeUndefined();
+  });
+
   it('returns a lone track untouched and null for nothing', () => {
     const one = people('eur', 5);
     expect(combinePeopleTracks([one], opts)).toBe(one);
