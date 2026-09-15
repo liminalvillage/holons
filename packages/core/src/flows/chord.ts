@@ -52,7 +52,13 @@ const EPSILON = 1e-6;
 export const CHORD_OTHERS_ID = '__others';
 
 /** Which kind of resource a people-flow track carries. */
-export type PeopleFlowTrackId = 'money' | 'time' | 'appreciation' | 'items';
+export type PeopleFlowTrackId =
+  | 'money'
+  | 'time'
+  | 'appreciation'
+  | 'items'
+  /** Every unit at once, on the share basis — see `combinePeopleTracks`. */
+  | 'combined';
 
 /** A person, or a holon — this one or a partner a record names. */
 export type PeopleFlowPartyKind = 'person' | 'holon';

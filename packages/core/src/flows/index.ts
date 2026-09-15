@@ -102,6 +102,12 @@ export {
 } from './allocation.js';
 
 export {
+  combinePeopleTracks,
+  combineTracks,
+  type CombineOptions,
+} from './combine.js';
+
+export {
   UNATTRIBUTED_ID,
   USAGE_SEGMENT_KINDS,
   allocationToGraph,

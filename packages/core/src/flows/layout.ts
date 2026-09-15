@@ -30,6 +30,8 @@ export interface SankeyLayoutNode {
   value: number;
   depth: number;
   kind?: string;
+  /** A ready-made label, when `value` is a share rather than the amount. */
+  display?: string;
   /** Stacked make-up of the bar, top to bottom, when it has one. Sums to `value`. */
   segments?: ValueFlowSegment[];
   x: number;
@@ -44,6 +46,8 @@ export interface SankeyLayoutLink {
   target: string;
   value: number;
   kind?: string;
+  /** A ready-made label, when `value` is a share rather than the amount. */
+  display?: string;
   /** SVG path `d` for a closed ribbon, ready for `<path d={...} />`. */
   path: string;
 }
@@ -134,6 +138,7 @@ export function layoutSankey(
         value: n.value,
         depth,
         kind: n.kind,
+        ...(n.display ? { display: n.display } : {}),
         ...(n.segments?.length ? { segments: n.segments } : {}),
         x: 0,
         y: 0,
@@ -181,6 +186,7 @@ export function layoutSankey(
         target,
         value: link.value,
         kind: link.kind,
+        ...(link.display ? { display: link.display } : {}),
       });
   }
   const links = [...merged.values()];
@@ -298,6 +304,7 @@ export function layoutSankey(
       target: link.target,
       value: link.value,
       kind: link.kind,
+      ...(link.display ? { display: link.display } : {}),
       path:
         `M${r(x0)},${r(y0t)}` +
         `C${r(xm)},${r(y0t)} ${r(xm)},${r(y1t)} ${r(x1)},${r(y1t)}` +
