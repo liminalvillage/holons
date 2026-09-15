@@ -5,8 +5,16 @@
   // dashboard's AllocationEditor. Move a slider, place a partner — or a
   // person — on a ring, point the holon at its OpenCollective collective; Save writes the settings
   // lens through core (`saveAllocationConfig` / `saveCollectiveSlug`), which
-  // is exactly what the Flows board and Flow Management read back. No wallet
-  // here: pushing the split on-chain stays with Flow Management.
+  // is exactly what the Flows board and Flow Management read back.
+  //
+  // Every change is also dispatched as a `draft`, so the board behind the
+  // sheet redraws as the sliders move — nothing is written until Save.
+  //
+  // Two ways out, deliberately separate: Save writes the off-chain mirror
+  // (no wallet; what every wallet-less surface reads at once), and — only
+  // when this holon has a deployed bundle — "Update on chain" sends the
+  // Bundle contract's `syncAll` through a browser wallet and THEN writes the
+  // same mirror, so chain and mirror cannot disagree.
   //
   // Writes go through `getReaStore`, so the acting identity is the logged-in
   // user, signed by the device key — the caller gates on login first.
@@ -18,9 +26,21 @@
     allocate,
     saveAllocationConfig,
     saveCollectiveSlug,
+    sharesFromMembers,
     type AllocationConfig,
+    type AllocationMember,
+    type HolonBundleRecord,
+    type InteriorMode,
+    type InteriorShares,
   } from "@holons/core/flows";
-  import Modal from "./Modal.svelte";
+  import {
+    ChainError,
+    isWalletAvailable,
+    syncAllocationOnChainAndMirror,
+  } from "$lib/chain";
+  import type { AllocationDraft } from "$lib/allocation";
+  import SidePanel from "./SidePanel.svelte";
+  import ValueEquation from "./ValueEquation.svelte";
 
   export let holonId = "";
   export let config: AllocationConfig;
@@ -30,9 +50,19 @@
   export let zonePeople: Record<string, number> = {};
   /** Everyone who could be placed: the holon's roster, the holon itself excluded. */
   export let candidates: { id: string; name: string }[] = [];
+  /** The equation's split today — the starting point a custom split copies. */
+  export let scored: AllocationMember[] = [];
+  /** The hand-set split as saved (settings `allocation.shares`). */
+  export let shares: InteriorShares = {};
   export let collectiveSlug = "";
+  /** The holon's deployed Bundle contract, when there is one. */
+  export let bundle: HolonBundleRecord | null = null;
 
-  const dispatch = createEventDispatcher<{ close: void; saved: void }>();
+  const dispatch = createEventDispatcher<{
+    close: void;
+    saved: { onChain: boolean };
+    draft: AllocationDraft;
+  }>();
 
   // A draft, so Cancel costs nothing and Save writes once.
   let interiorPercent = config.interiorPercent;
@@ -40,11 +70,106 @@
   let nzones = config.nzones;
   let zoneOf: Record<string, number> = { ...zones };
   let personZone: Record<string, number> = { ...zonePeople };
+  let interiorMode: InteriorMode = config.interiorMode ?? "equation";
+  let shareOf: InteriorShares = { ...shares };
+  // What each share BOX shows, kept apart from the number it holds.
+  //
+  // The stored share is the value equation's own figure, in full precision, so
+  // a copied split pays exactly what the equation paid. Rounding that for the
+  // box would change the split; rounding it on every keystroke would fight the
+  // typist. So the box owns a string, the split owns the number, and they part
+  // company only in the digits nobody was going to type.
+  let shareText: Record<string, string> = {};
+  // The custom-split picker's choice.
+  let sharePick = "";
   // The picker's choice; placing it moves the person into the list below.
   let pick = "";
+  // The value-equation editor is folded away: it is a long list of weights,
+  // and most visits here are about the split, not the scoring behind it.
+  let eqOpen = false;
+
+  // ── Tabs ────────────────────────────────────────────────────────────────
+  // Four questions, one screen each, instead of nine sections in one scroll.
+  // Each tab carries its current value in the strip, so the state of the whole
+  // sheet is readable without opening anything.
+  type TabId = "split" | "contributors" | "zones" | "fund";
+  let tab: TabId = "split";
+  let tabEls: Record<string, HTMLButtonElement | undefined> = {};
+
+  $: tabs = [
+    {
+      id: "split" as const,
+      label: $t("alloc.tabSplit"),
+      summary: `${interiorPercent}/${exteriorPercent}`,
+    },
+    {
+      id: "contributors" as const,
+      label: $t("alloc.tabContributors"),
+      summary:
+        interiorMode === "custom"
+          ? $t("alloc.splitCustom")
+          : $t("alloc.splitEquation"),
+    },
+    {
+      id: "zones" as const,
+      label: $t("alloc.tabZones"),
+      summary: $t("alloc.tabZonesSummary", { n: String(nzones) }),
+    },
+    {
+      id: "fund" as const,
+      label: $t("alloc.tabFund"),
+      summary: slug.trim() || $t("alloc.tabFundEmpty"),
+    },
+  ];
+
+  /** A tab list is one stop on the Tab key; the arrows move between tabs. */
+  function onTabKey(e: KeyboardEvent) {
+    const order = tabs.map((x) => x.id);
+    const i = order.indexOf(tab);
+    let next = i;
+    if (e.key === "ArrowRight") next = (i + 1) % order.length;
+    else if (e.key === "ArrowLeft")
+      next = (i - 1 + order.length) % order.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = order.length - 1;
+    else return;
+    e.preventDefault();
+    tab = order[next];
+    tabEls[tab]?.focus();
+  }
+
+  /**
+   * Arrow keys inside a ring picker, so a zone can be chosen without a mouse.
+   * `set` receives the ring number, 1-based, exactly as a tap would give it.
+   */
+  function onRingKey(
+    e: KeyboardEvent,
+    current: number,
+    set: (z: number) => void,
+  ) {
+    let next = current;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = current + 1;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = current - 1;
+    else if (e.key === "Home") next = 1;
+    else if (e.key === "End") next = nzones;
+    else return;
+    e.preventDefault();
+    set(Math.min(nzones, Math.max(1, next)));
+  }
   let slug = collectiveSlug;
   let busy = false;
+  let syncing = false;
   let error = "";
+  let notice = "";
+  const hasWallet = isWalletAvailable();
+
+  // The board behind the sheet follows every change.
+  $: dispatch("draft", {
+    config: { interiorPercent, steepness, nzones, interiorMode },
+    zones: zoneOf,
+    people: personZone,
+    shares: shareOf,
+  });
 
   $: exteriorPercent = 100 - interiorPercent;
   // A partner on a ring the count no longer reaches falls to the outermost.
@@ -94,6 +219,72 @@
   $: rings = Array.from({ length: nzones }, (_, i) => i + 1);
   const pct = (v: number) => `${Math.round(v * 10) / 10}`;
 
+  // The custom split as rows, named from the roster (then the scored roster),
+  // with the equation's share beside each for comparison.
+  $: scoredOf = new Map(scored.map((m) => [m.id, m]));
+  $: shareRows = Object.keys(shareOf).map((id) => ({
+    id,
+    name: nameOfPerson.get(id) ?? scoredOf.get(id)?.name ?? id,
+    scored: scoredOf.get(id)?.percentage,
+    text: shareText[id] ?? pct(shareOf[id]),
+  }));
+  $: sharesTotal = Object.values(shareOf).reduce(
+    (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
+    0,
+  );
+  $: shareable = [
+    ...new Map(
+      [...candidates, ...scored.map((m) => ({ id: m.id, name: m.name }))].map(
+        (p) => [p.id, p],
+      ),
+    ).values(),
+  ]
+    .filter((p) => !(p.id in shareOf))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $: equationShares = sharesFromMembers(scored);
+
+  function setMode(mode: InteriorMode) {
+    interiorMode = mode;
+    // Custom starts from the equation, unless a split was already entered.
+    if (mode === "custom" && Object.keys(shareOf).length === 0) copyEquation();
+  }
+
+  function copyEquation() {
+    shareOf = { ...equationShares };
+    // The boxes show the same rounded figure as the equation hint beside them,
+    // while the split keeps the exact number underneath.
+    shareText = Object.fromEntries(
+      Object.entries(shareOf).map(([id, value]) => [id, pct(value)]),
+    );
+  }
+
+  function setShare(id: string, raw: string) {
+    const value = Number(raw);
+    // The box keeps what was typed; only the split rounds. Without this the
+    // field rewrites itself mid-keystroke.
+    shareText = { ...shareText, [id]: raw };
+    shareOf = {
+      ...shareOf,
+      [id]: Number.isFinite(value) && value >= 0 ? value : 0,
+    };
+  }
+
+  function removeShare(id: string) {
+    const next = { ...shareOf };
+    delete next[id];
+    shareOf = next;
+    const text = { ...shareText };
+    delete text[id];
+    shareText = text;
+  }
+
+  function addShare() {
+    if (!sharePick) return;
+    shareOf = { ...shareOf, [sharePick]: 0 };
+    shareText = { ...shareText, [sharePick]: "0" };
+    sharePick = "";
+  }
+
   function place(id: string, zone: number) {
     zoneOf = { ...zoneOf, [id]: zoneOf[id] === zone ? 0 : zone };
   }
@@ -115,8 +306,65 @@
     pick = "";
   }
 
+  function failed(err: any) {
+    const denied =
+      err?.name === "AuthorizationError" ||
+      /denied|unauthori[sz]ed|permission/i.test(String(err?.message ?? ""));
+    error = denied ? $t("alloc.errDenied") : $t("alloc.errSave");
+    if (!denied) console.error("[kiosk] allocation save failed", err);
+  }
+
+  /** The contract first, then the same mirror Save writes. */
+  async function updateOnChain() {
+    if (busy || syncing || !bundle) return;
+    syncing = true;
+    error = "";
+    notice = $t("alloc.chainConfirm");
+    try {
+      const store = await getReaStore();
+      const hash = await syncAllocationOnChainAndMirror(
+        store,
+        holonId,
+        {
+          bundleAddress: bundle.address,
+          config: { interiorPercent, steepness, nzones, interiorMode },
+          scored,
+          shares: shareOf,
+          placed: [
+            ...partners.map((p) => ({ id: p.id, zone: zoneOf[p.id] ?? 0 })),
+            ...placedPeople.map((p) => ({ id: p.id, zone: personZone[p.id] })),
+          ],
+        },
+        zoneOf,
+        personZone,
+      );
+      if (slug.trim() !== collectiveSlug) {
+        await saveCollectiveSlug(store, holonId, slug.trim());
+      }
+      notice = $t("alloc.chainDone", { hash: hash.slice(0, 10) });
+      dispatch("saved", { onChain: true });
+      dispatch("close");
+    } catch (err: any) {
+      notice = "";
+      if (err instanceof ChainError) {
+        error =
+          err.kind === "rejected"
+            ? $t("alloc.chainRejected")
+            : err.kind === "no-contract"
+              ? $t("alloc.chainNoContract")
+              : err.kind === "no-wallet"
+                ? $t("alloc.chainNoWallet")
+                : $t("alloc.chainFailed", { reason: err.message });
+      } else {
+        failed(err);
+      }
+    } finally {
+      syncing = false;
+    }
+  }
+
   async function save() {
-    if (busy) return;
+    if (busy || syncing) return;
     busy = true;
     error = "";
     try {
@@ -124,242 +372,488 @@
       await saveAllocationConfig(
         store,
         holonId,
-        { interiorPercent, steepness, nzones },
+        { interiorPercent, steepness, nzones, interiorMode },
         zoneOf,
         personZone,
+        shareOf,
       );
       if (slug.trim() !== collectiveSlug) {
         await saveCollectiveSlug(store, holonId, slug.trim());
       }
-      dispatch("saved");
+      dispatch("saved", { onChain: false });
       dispatch("close");
     } catch (err: any) {
-      const denied =
-        err?.name === "AuthorizationError" ||
-        /denied|unauthori[sz]ed|permission/i.test(String(err?.message ?? ""));
-      error = denied ? $t("alloc.errDenied") : $t("alloc.errSave");
-      if (!denied) console.error("[kiosk] allocation save failed", err);
+      failed(err);
     } finally {
       busy = false;
     }
   }
 </script>
 
-<Modal on:close={() => dispatch("close")}>
-  <div class="sheet">
-    <h3>{$t("alloc.settings")}</h3>
+<SidePanel title={$t("alloc.settings")} on:close={() => dispatch("close")}>
+  <!-- The four questions this panel answers, each carrying its current value
+       so the whole state reads at a glance without opening anything. -->
+  <div
+    slot="tabs"
+    class="tabs"
+    role="tablist"
+    aria-label={$t("alloc.settings")}
+  >
+    {#each tabs as item (item.id)}
+      <button
+        bind:this={tabEls[item.id]}
+        role="tab"
+        id="alloc-tab-{item.id}"
+        aria-selected={tab === item.id}
+        aria-controls="alloc-panel-{item.id}"
+        tabindex={tab === item.id ? 0 : -1}
+        class="tab"
+        class:on={tab === item.id}
+        on:click={() => (tab = item.id)}
+        on:keydown={onTabKey}
+      >
+        <span class="tname">{item.label}</span>
+        <span class="tsum">{item.summary}</span>
+      </button>
+    {/each}
+  </div>
 
-    <label class="field">
-      <span class="k">{$t("alloc.collective")}</span>
-      <input
-        type="text"
-        autocapitalize="none"
-        placeholder={$t("alloc.collectiveHint")}
-        bind:value={slug}
-      />
-    </label>
-
-    <div class="control">
-      <label for="alloc-interior" class="k">
-        {$t("alloc.interior")}
-        <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
-      </label>
-      <input
-        id="alloc-interior"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        bind:value={interiorPercent}
-      />
-      <div class="ends">
-        <span>{$t("alloc.allExterior")}</span>
-        <span>{$t("alloc.allInterior")}</span>
-      </div>
-    </div>
-
-    <div class="control">
-      <label for="alloc-steep" class="k">
-        {$t("alloc.sharing")}
-        <span class="value">{steepness}%</span>
-      </label>
-      <input
-        id="alloc-steep"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        bind:value={steepness}
-      />
-      <div class="ends">
-        <span>{$t("alloc.steep")}</span>
-        <span>{$t("alloc.even")}</span>
-      </div>
-    </div>
-
-    <div class="control">
-      <div class="k">
-        {$t("alloc.zones")}
-        <span class="value">{nzones}</span>
-      </div>
-      <p class="sub">
-        {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
-      </p>
-      <div class="stepper">
-        <button
-          on:click={() => (nzones = Math.max(1, nzones - 1))}
-          disabled={nzones <= 1}
-          aria-label={$t("alloc.fewer")}>−</button
-        >
-        <!-- The zones, each as tall as its share of the whole fund, scaled to
-             the biggest so a flat spread still reads. -->
-        <div class="rings">
-          {#each zoneShares as share, i (i)}
-            <div
-              class="ring"
-              class:empty={share <= 0}
-              title={$t("alloc.zoneShare", { pct: pct(share) })}
-            >
-              <span class="rs">{pct(share)}%</span>
-              <div
-                class="fill"
-                style="height: {maxZoneShare > 0
-                  ? Math.max(4, (share / maxZoneShare) * 100)
-                  : 4}%"
-              ></div>
-              <span class="rn">{i + 1}</span>
-            </div>
-          {/each}
+  <div
+    role="tabpanel"
+    id="alloc-panel-{tab}"
+    aria-labelledby="alloc-tab-{tab}"
+    tabindex="0"
+    class="tabpanel"
+  >
+    {#if tab === "split"}
+      <!-- ── How much goes to each side ─────────────────────────────────── -->
+      <div class="control">
+        <label for="alloc-interior" class="k">
+          {$t("alloc.interior")}
+          <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
+        </label>
+        <input
+          id="alloc-interior"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          bind:value={interiorPercent}
+        />
+        <div class="ends">
+          <span>{$t("alloc.allExterior")}</span>
+          <span>{$t("alloc.allInterior")}</span>
         </div>
-        <button
-          on:click={() => (nzones = Math.min(10, nzones + 1))}
-          disabled={nzones >= 10}
-          aria-label={$t("alloc.more")}>+</button
-        >
+        <p class="sub">{$t("alloc.splitAbout")}</p>
       </div>
-    </div>
 
-    <div class="control">
-      <div class="k">{$t("alloc.partners")}</div>
-      {#if partners.length}
-        <p class="sub">{$t("alloc.partnersAbout")}</p>
-        <ul class="partners">
-          {#each partners as p (p.id)}
-            <li>
-              <span class="pname">
-                {p.name}
-                {#if (zoneOf[p.id] ?? 0) >= 1}
+      <!-- What each half does next, and the way to go and change it. -->
+      <button class="jump" on:click={() => (tab = "contributors")}>
+        <span class="jl">{$t("alloc.tabContributors")}</span>
+        <span class="jv"
+          >{interiorMode === "custom"
+            ? $t("alloc.splitCustom")
+            : $t("alloc.splitEquation")}</span
+        >
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+      <button class="jump" on:click={() => (tab = "zones")}>
+        <span class="jl">{$t("alloc.tabZones")}</span>
+        <span class="jv"
+          >{$t("alloc.tabZonesSummary", { n: String(nzones) })}</span
+        >
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+    {:else if tab === "contributors"}
+      <!-- ── How the contributors' share is divided ─────────────────────── -->
+      <div class="control">
+        <div class="k" id="alloc-mode-label">{$t("alloc.split")}</div>
+        <div class="mode" role="radiogroup" aria-labelledby="alloc-mode-label">
+          <button
+            role="radio"
+            aria-checked={interiorMode === "equation"}
+            class="seg"
+            class:on={interiorMode === "equation"}
+            on:click={() => setMode("equation")}
+            >{$t("alloc.splitEquation")}</button
+          >
+          <button
+            role="radio"
+            aria-checked={interiorMode === "custom"}
+            class="seg"
+            class:on={interiorMode === "custom"}
+            on:click={() => setMode("custom")}>{$t("alloc.splitCustom")}</button
+          >
+        </div>
+        <p class="sub">
+          {interiorMode === "custom"
+            ? $t("alloc.splitCustomAbout")
+            : $t("alloc.splitEquationAbout")}
+        </p>
+      </div>
+
+      {#if interiorMode === "custom"}
+        {#if shareRows.length}
+          <ul class="parties shares">
+            {#each shareRows as row (row.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{row.name}</span>
+                  {#if row.scored != null}
+                    <span class="pshare"
+                      >{$t("alloc.splitScored", { pct: pct(row.scored) })}</span
+                    >
+                  {/if}
+                </div>
+                <div class="sharebox">
+                  <input
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.1"
+                    value={row.text}
+                    on:input={(e) => setShare(row.id, e.currentTarget.value)}
+                    aria-label={row.name}
+                  />
+                  <span class="unit" aria-hidden="true">%</span>
+                  <button
+                    class="drop"
+                    on:click={() => removeShare(row.id)}
+                    aria-label={$t("alloc.removePerson", { name: row.name })}
+                    >✕</button
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+          <div class="totalrow">
+            <span>{$t("alloc.splitTotal")}</span>
+            <span class="sum" class:off={Math.abs(sharesTotal - 100) > 0.05}
+              >{pct(sharesTotal)}%</span
+            >
+          </div>
+        {:else}
+          <p class="sub">{$t("alloc.splitEmpty")}</p>
+        {/if}
+        <div class="rowactions">
+          {#if shareable.length}
+            <div class="picker">
+              <select bind:value={sharePick} aria-label={$t("alloc.addPerson")}>
+                <option value="">{$t("alloc.addPerson")}</option>
+                {#each shareable as c (c.id)}
+                  <option value={c.id}>{c.name}</option>
+                {/each}
+              </select>
+              <button class="add" disabled={!sharePick} on:click={addShare}
+                >＋</button
+              >
+            </div>
+          {/if}
+          <button
+            class="wide-ghost"
+            disabled={!Object.keys(equationShares).length}
+            on:click={copyEquation}>{$t("alloc.splitCopy")}</button
+          >
+        </div>
+      {/if}
+
+      <!-- The weights behind the equation split. Under "by value equation"
+           they ARE the split; under a custom split they still drive the hint
+           beside each share and what Copy hands over. -->
+      <button
+        class="disclose"
+        on:click={() => (eqOpen = !eqOpen)}
+        aria-expanded={eqOpen}
+      >
+        <span>{$t("settings.valueEquation")}</span>
+        <span class="chev" aria-hidden="true">{eqOpen ? "▾" : "▸"}</span>
+      </button>
+      {#if eqOpen}
+        <div class="eqbox"><ValueEquation holon={holonId} /></div>
+      {/if}
+    {:else if tab === "zones"}
+      <!-- ── Who is on which ring ───────────────────────────────────────── -->
+      <div class="control">
+        <label for="alloc-steep" class="k">
+          {$t("alloc.sharing")}
+          <span class="value">{steepness}%</span>
+        </label>
+        <input
+          id="alloc-steep"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          bind:value={steepness}
+        />
+        <div class="ends">
+          <span>{$t("alloc.steep")}</span>
+          <span>{$t("alloc.even")}</span>
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">
+          {$t("alloc.zones")}
+          <span class="value">{nzones}</span>
+        </div>
+        <p class="sub">
+          {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
+        </p>
+        <div class="stepper">
+          <button
+            on:click={() => (nzones = Math.max(1, nzones - 1))}
+            disabled={nzones <= 1}
+            aria-label={$t("alloc.fewer")}>−</button
+          >
+          <div class="rings">
+            {#each zoneShares as share, i (i)}
+              <div
+                class="ring"
+                class:empty={share <= 0}
+                title={$t("alloc.zoneShareFund", { pct: pct(share) })}
+              >
+                <span class="rs">{pct(share)}%</span>
+                <div
+                  class="fill"
+                  style="height: {maxZoneShare > 0
+                    ? Math.max(4, (share / maxZoneShare) * 100)
+                    : 4}%"
+                ></div>
+                <span class="rn">{i + 1}</span>
+              </div>
+            {/each}
+          </div>
+          <button
+            on:click={() => (nzones = Math.min(10, nzones + 1))}
+            disabled={nzones >= 10}
+            aria-label={$t("alloc.more")}>+</button
+          >
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.partners")}</div>
+        {#if partners.length}
+          <p class="sub">{$t("alloc.partnersAbout")}</p>
+          <ul class="parties">
+            {#each partners as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
+                  {#if (zoneOf[p.id] ?? 0) >= 1}
+                    <span class="pshare"
+                      >{$t("alloc.zoneShare", {
+                        pct: pct(partnerShare(p.id)),
+                      })}</span
+                    >
+                  {:else}
+                    <span class="unplaced">{$t("alloc.unplaced")}</span>
+                  {/if}
+                </div>
+                <div
+                  class="ringpick"
+                  role="radiogroup"
+                  tabindex="-1"
+                  aria-label={p.name}
+                  on:keydown={(e) =>
+                    onRingKey(e, zoneOf[p.id] ?? 0, (z) =>
+                      place(p.id, zoneOf[p.id] === z ? 0 : z),
+                    )}
+                >
+                  {#each rings as z (z)}
+                    <button
+                      role="radio"
+                      aria-checked={(zoneOf[p.id] ?? 0) === z}
+                      tabindex={(zoneOf[p.id] ?? 0) === z ||
+                      (!(zoneOf[p.id] >= 1) && z === 1)
+                        ? 0
+                        : -1}
+                      class="rp"
+                      class:on={(zoneOf[p.id] ?? 0) === z}
+                      on:click={() => place(p.id, z)}
+                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                        'alloc.zoneShareFund',
+                        { pct: pct(zoneShares[z - 1] ?? 0) },
+                      )}">{z}</button
+                    >
+                  {/each}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="sub">{$t("alloc.noPartners")}</p>
+        {/if}
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.people")}</div>
+        <p class="sub">{$t("alloc.peopleAbout")}</p>
+        {#if placedPeople.length}
+          <ul class="parties">
+            {#each placedPeople as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
                   <span class="pshare"
                     >{$t("alloc.zoneShare", {
                       pct: pct(partnerShare(p.id)),
                     })}</span
                   >
-                {/if}
-              </span>
-              <div class="ringpick" role="radiogroup" aria-label={p.name}>
-                {#each rings as z (z)}
-                  <button
-                    role="radio"
-                    aria-checked={(zoneOf[p.id] ?? 0) === z}
-                    class="rp"
-                    class:on={(zoneOf[p.id] ?? 0) === z}
-                    on:click={() => place(p.id, z)}
-                    title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
-                      'alloc.zoneShare',
-                      { pct: pct(zoneShares[z - 1] ?? 0) },
-                    )}">{z}</button
-                  >
-                {/each}
-                {#if !(zoneOf[p.id] ?? 0)}
-                  <span class="unplaced">{$t("alloc.unplaced")}</span>
-                {/if}
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="sub">{$t("alloc.noPartners")}</p>
-      {/if}
-    </div>
-
-    <div class="control">
-      <div class="k">{$t("alloc.people")}</div>
-      <p class="sub">{$t("alloc.peopleAbout")}</p>
-      {#if placedPeople.length}
-        <ul class="partners">
-          {#each placedPeople as p (p.id)}
-            <li>
-              <span class="pname">
-                {p.name}
-                <span class="pshare"
-                  >{$t("alloc.zoneShare", {
-                    pct: pct(partnerShare(p.id)),
-                  })}</span
+                </div>
+                <div
+                  class="ringpick"
+                  role="radiogroup"
+                  tabindex="-1"
+                  aria-label={p.name}
+                  on:keydown={(e) =>
+                    onRingKey(e, personZone[p.id] ?? 1, (z) =>
+                      placePerson(p.id, z),
+                    )}
                 >
-              </span>
-              <div class="ringpick" role="radiogroup" aria-label={p.name}>
-                {#each rings as z (z)}
+                  {#each rings as z (z)}
+                    <button
+                      role="radio"
+                      aria-checked={personZone[p.id] === z}
+                      tabindex={personZone[p.id] === z ? 0 : -1}
+                      class="rp"
+                      class:on={personZone[p.id] === z}
+                      on:click={() => placePerson(p.id, z)}
+                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                        'alloc.zoneShareFund',
+                        { pct: pct(zoneShares[z - 1] ?? 0) },
+                      )}">{z}</button
+                    >
+                  {/each}
                   <button
-                    role="radio"
-                    aria-checked={personZone[p.id] === z}
-                    class="rp"
-                    class:on={personZone[p.id] === z}
-                    on:click={() => placePerson(p.id, z)}
-                    title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
-                      'alloc.zoneShare',
-                      { pct: pct(zoneShares[z - 1] ?? 0) },
-                    )}">{z}</button
+                    class="rp drop"
+                    on:click={() => removePerson(p.id)}
+                    aria-label={$t("alloc.removePerson", { name: p.name })}
+                    >✕</button
                   >
-                {/each}
-                <button
-                  class="rp remove"
-                  on:click={() => removePerson(p.id)}
-                  aria-label={$t("alloc.removePerson", { name: p.name })}
-                  title={$t("alloc.removePerson", { name: p.name })}>✕</button
-                >
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      {#if unplaced.length}
-        <div class="picker">
-          <select bind:value={pick} aria-label={$t("alloc.addPerson")}>
-            <option value="">{$t("alloc.addPerson")}</option>
-            {#each unplaced as c (c.id)}
-              <option value={c.id}>{c.name}</option>
+                </div>
+              </li>
             {/each}
-          </select>
-          <button class="add" disabled={!pick} on:click={addPerson}>＋</button>
-        </div>
-      {:else if !placedPeople.length}
-        <p class="sub">{$t("alloc.noPeople")}</p>
-      {/if}
-    </div>
+          </ul>
+        {/if}
+        {#if unplaced.length}
+          <div class="picker">
+            <select bind:value={pick} aria-label={$t("alloc.addPerson")}>
+              <option value="">{$t("alloc.addPerson")}</option>
+              {#each unplaced as c (c.id)}
+                <option value={c.id}>{c.name}</option>
+              {/each}
+            </select>
+            <button class="add" disabled={!pick} on:click={addPerson}>＋</button
+            >
+          </div>
+        {:else if !placedPeople.length}
+          <p class="sub">{$t("alloc.noPeople")}</p>
+        {/if}
+      </div>
+    {:else}
+      <!-- ── Where the money is ─────────────────────────────────────────── -->
+      <label class="field">
+        <span class="k">{$t("alloc.collective")}</span>
+        <input
+          type="text"
+          autocapitalize="none"
+          placeholder={$t("alloc.collectiveHint")}
+          bind:value={slug}
+        />
+      </label>
 
-    {#if error}<p class="error">{error}</p>{/if}
+      {#if bundle}
+        <!-- A second, deliberate commit: Save writes the mirror every
+             wallet-less surface reads; this also sends it to the contract. -->
+        <div class="control">
+          <div class="k">{$t("alloc.chainUpdate")}</div>
+          <p class="sub">
+            {$t("alloc.chainAbout", {
+              address: `${bundle.address.slice(0, 6)}…${bundle.address.slice(-4)}`,
+            })}
+          </p>
+          <button
+            class="wide-ghost"
+            disabled={busy || syncing || !hasWallet}
+            on:click={updateOnChain}
+          >
+            {syncing ? $t("alloc.chainSyncing") : $t("alloc.chainUpdate")}
+          </button>
+          {#if !hasWallet}
+            <p class="sub">{$t("alloc.chainNoWallet")}</p>
+          {/if}
+        </div>
+      {/if}
+    {/if}
+  </div>
+
+  <svelte:fragment slot="footer">
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="notice" role="status">{notice}</p>{/if}
     <div class="actions">
       <button class="ghost" on:click={() => dispatch("close")}
         >{$t("common.cancel")}</button
       >
-      <button class="primary" disabled={busy} on:click={save}>
+      <button class="primary" disabled={busy || syncing} on:click={save}>
         {busy ? $t("common.saving") : $t("alloc.save")}
       </button>
     </div>
-  </div>
-</Modal>
+  </svelte:fragment>
+</SidePanel>
 
 <style>
-  .sheet {
-    padding: 0.2rem 0.1rem;
-    min-width: min(22rem, 80vw);
+  /* ── Tab strip ──────────────────────────────────────────────────────────
+     Four equal tabs, each showing its own current value so the state of the
+     whole panel reads without opening a thing. */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 0.7rem 0.6rem;
+    border-bottom: 1px solid var(--line);
   }
-  h3 {
-    margin: 0 0 0.3rem;
-    padding-right: 2.5rem;
-    font-size: 1.15rem;
+  .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 52px;
+    padding: 0.35rem 0.3rem;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--muted);
+    text-align: center;
+    touch-action: manipulation;
+  }
+  .tab.on {
+    background: var(--paper);
     color: var(--ink);
   }
+  .tname {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tsum {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab.on .tsum {
+    color: var(--teal-deep);
+  }
+  .tabpanel:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 4px;
+    border-radius: 10px;
+  }
+
+  /* ── Shared blocks ──────────────────────────────────────────────────── */
   .k {
     display: flex;
     justify-content: space-between;
@@ -379,39 +873,45 @@
     font-variant-numeric: tabular-nums;
   }
   .sub {
-    margin: 0.2rem 0 0.4rem;
-    font-size: 0.82rem;
+    margin: 0.3rem 0 0.4rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
     color: var(--muted);
+  }
+  .control {
+    margin-top: 1.2rem;
+  }
+  .control:first-child {
+    margin-top: 0.6rem;
   }
   .field {
     display: block;
-    margin: 0.8rem 0 0;
+    margin: 0.6rem 0 0;
   }
   .field input {
     display: block;
     width: 100%;
-    margin-top: 0.3rem;
-    padding: 0.7rem 0.8rem;
+    margin-top: 0.35rem;
+    padding: 0.75rem 0.8rem;
     font-size: 1rem;
     font-family: inherit;
     color: var(--ink);
     background: var(--card);
     border: 1.5px solid var(--line);
     border-radius: 12px;
-    min-height: 3rem;
+    min-height: 48px;
   }
   .field input:focus {
     outline: none;
     border-color: var(--teal);
   }
-  .control {
-    margin-top: 1.1rem;
-  }
   input[type="range"] {
     width: 100%;
-    margin: 0.5rem 0 0.1rem;
+    margin: 0.6rem 0 0.1rem;
     accent-color: var(--teal);
-    height: 2.2rem; /* a thumb a finger can find */
+    /* Absolute, not rem: the kiosk shrinks its root size on a phone, and a
+       rem-sized track quietly drops under the 44px a thumb needs. */
+    height: 44px;
   }
   .ends {
     display: flex;
@@ -420,107 +920,122 @@
     font-size: 0.72rem;
     color: var(--muted);
   }
-  .stepper {
+
+  /* ── Jump rows on the Split tab ─────────────────────────────────────── */
+  .jump {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: 0.6rem;
+    width: 100%;
+    min-height: 56px;
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 14px;
+    background: var(--paper);
+    text-align: left;
+    touch-action: manipulation;
+  }
+  .jl {
+    flex: 1;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .jv {
+    color: var(--teal-deep);
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 45%;
+  }
+  .chev {
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+
+  /* ── Mode switch ────────────────────────────────────────────────────── */
+  .mode {
+    display: flex;
+    gap: 0.4rem;
     margin-top: 0.5rem;
   }
-  .stepper > button {
-    flex: 0 0 auto;
-    width: 3rem;
-    border-radius: 12px;
+  .seg {
+    flex: 1;
+    min-height: 52px;
+    border-radius: 14px;
     background: var(--paper);
-    color: var(--ink);
-    font-size: 1.4rem;
+    color: var(--ink-soft);
     font-weight: 700;
+    touch-action: manipulation;
   }
-  .stepper > button:disabled {
-    opacity: 0.35;
-  }
-  .rings {
-    flex: 1;
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    height: 4.6rem;
-    padding: 0.2rem 0.3rem 0;
-    border-radius: 12px;
-    background: var(--paper);
-  }
-  .ring {
-    flex: 1;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 2px;
-  }
-  .fill {
-    width: 100%;
-    border-radius: 4px 4px 0 0;
+  .seg.on {
     background: var(--teal);
-    opacity: 0.85;
+    color: #fff;
   }
-  .ring.empty .fill {
-    background: var(--muted);
-    opacity: 0.25;
-  }
-  .rn {
-    font-size: 0.62rem;
-    color: var(--muted);
-  }
-  .rs {
-    font-size: 0.62rem;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .ring.empty .rs {
-    color: var(--muted);
-  }
-  .pshare {
-    margin-left: 0.4rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--teal-deep);
-    font-variant-numeric: tabular-nums;
-  }
-  .partners {
+
+  /* ── Party rows ──────────────────────────────────────────────────────
+     The name gets a line of its own and the ring picker the full width
+     below it, so a long name simply clips instead of squeezing the rings
+     into something no finger can hit. */
+  .parties {
     list-style: none;
-    margin: 0.3rem 0 0;
+    margin: 0.4rem 0 0;
     padding: 0;
     display: grid;
-    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
   }
-  .partners li {
+  .parties li {
+    min-width: 0;
+  }
+  .pline {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 0.4rem 0.8rem;
+    gap: 0.6rem;
+    min-width: 0;
+    margin-bottom: 0.35rem;
   }
   .pname {
+    flex: 1 1 auto;
+    min-width: 0;
     font-weight: 700;
     color: var(--ink);
-    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .pshare {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--teal-deep);
+    font-variant-numeric: tabular-nums;
+  }
+  .unplaced {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
   .ringpick {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    overflow-x: auto; /* only ever needed at the extreme zone counts */
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .ringpick::-webkit-scrollbar {
+    display: none;
   }
   .rp {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
+    flex: 1 1 0;
+    min-width: 44px;
+    height: 44px;
+    border-radius: 12px;
     background: var(--paper);
     color: var(--ink-soft);
+    font-size: 0.9rem;
     font-weight: 700;
     touch-action: manipulation;
   }
@@ -528,9 +1043,72 @@
     background: var(--teal);
     color: #fff;
   }
-  .rp.remove {
+  .rp.drop {
+    flex: 0 0 44px;
     color: var(--muted);
   }
+
+  /* ── Custom split rows ──────────────────────────────────────────────── */
+  .sharebox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .sharebox input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0.4rem 0.6rem;
+    font: inherit;
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+  }
+  .sharebox input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  .unit {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .drop {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--paper);
+    color: var(--muted);
+    touch-action: manipulation;
+  }
+  .totalrow {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 0.7rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--line);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .sum {
+    color: var(--teal-deep);
+    font-variant-numeric: tabular-nums;
+  }
+  .sum.off {
+    color: #b7791f;
+  }
+  .rowactions {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+
+  /* ── Pickers, disclosure, zone bars ─────────────────────────────────── */
   .picker {
     display: flex;
     gap: 0.5rem;
@@ -538,7 +1116,8 @@
   }
   .picker select {
     flex: 1;
-    min-height: 2.75rem;
+    min-width: 0;
+    min-height: 48px;
     padding: 0.4rem 0.7rem;
     font: inherit;
     color: var(--ink);
@@ -547,8 +1126,8 @@
     border-radius: 12px;
   }
   .picker .add {
-    width: 2.75rem;
-    min-height: 2.75rem;
+    flex: 0 0 48px;
+    min-height: 48px;
     border-radius: 12px;
     background: var(--teal);
     color: #fff;
@@ -558,26 +1137,107 @@
   .picker .add:disabled {
     opacity: 0.4;
   }
-  .unplaced {
-    font-size: 0.72rem;
+  .wide-ghost {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 0.9rem;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .wide-ghost:disabled {
+    opacity: 0.45;
+  }
+  .disclose {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 52px;
+    margin-top: 1.2rem;
+    padding: 0.6rem 0.2rem;
+    font: inherit;
+    font-weight: 700;
+    color: var(--ink);
+    border-top: 1px solid var(--line);
+    touch-action: manipulation;
+  }
+  .eqbox {
+    margin-bottom: 0.4rem;
+  }
+  .stepper {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+  }
+  .stepper > button {
+    flex: 0 0 52px;
+    min-height: 52px;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 1.3rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .stepper > button:disabled {
+    opacity: 0.4;
+  }
+  .rings {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 74px;
+    padding: 0.3rem 0.4rem 0;
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .ring {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    height: 100%;
+  }
+  .rs {
+    font-size: 0.6rem;
+    color: var(--teal-deep);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ring.empty .rs {
     color: var(--muted);
-    margin-left: 0.3rem;
   }
-  .error {
-    color: #c0392b;
-    font-size: 0.88rem;
-    margin: 0.6rem 0 0;
+  .fill {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: var(--teal);
+    min-height: 3px;
   }
+  .ring.empty .fill {
+    background: var(--line);
+  }
+  .rn {
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────────── */
   .actions {
     display: flex;
-    flex-wrap: wrap;
     gap: 0.6rem;
-    margin-top: 1.3rem;
   }
   .primary,
   .ghost {
     flex: 1;
-    min-width: 8rem;
     min-height: 52px;
     border-radius: 14px;
     font-size: 1rem;
@@ -590,7 +1250,7 @@
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--paper);
     color: var(--ink);
   }
   .primary:active,
@@ -599,5 +1259,22 @@
   }
   .primary:disabled {
     opacity: 0.6;
+  }
+  .error {
+    color: #c0392b;
+    font-size: 0.88rem;
+    margin: 0 0 0.6rem;
+  }
+  .notice {
+    color: var(--teal-deep);
+    font-size: 0.88rem;
+    margin: 0 0 0.6rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .primary,
+    .ghost {
+      transition: none;
+    }
   }
 </style>

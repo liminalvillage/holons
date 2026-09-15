@@ -27,10 +27,7 @@
   import {
     REAAggregator,
     computeHolonUserScores,
-    loadEquation,
     extractReaUsers,
-    DEFAULT_EQUATION,
-    type ScoreEquation,
     type ReaUser,
     type UserAggregates,
     type ScoreBreakdown,
@@ -44,6 +41,7 @@
   } from "$lib/components/Avatars.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import ValueEquation from "$lib/components/ValueEquation.svelte";
+  import { bindEquation, equation as equationStore } from "$lib/equation";
 
   type Row = {
     id: string;
@@ -70,7 +68,9 @@
   let events: any[] = [];
   // Starts as the canonical default so scoring never blocks on the settings
   // read; the holon's real equation is loaded off the critical path (see bind).
-  let equation: ScoreEquation = DEFAULT_EQUATION;
+  // The weights come from the one shared store, so an edit made here, in
+  // Settings, or in the Flows settings sheet re-ranks this board at once.
+  $: equation = $equationStore;
   // The `users` lens, when populated — used for richer display names/avatars.
   // It is NOT the roster source: many holons never write profiles here, so the
   // roster is derived from REA activity (see `buildRoster`) and merely enriched
@@ -324,7 +324,7 @@
     teardown();
     hid = holon;
     aggregator = null;
-    equation = DEFAULT_EQUATION;
+    bindEquation(holon);
     usersById = {};
     rows = [];
     loading = true;
@@ -356,18 +356,6 @@
     aggregator = new REAAggregator(
       new REAEventStore({ getAll: async () => events } as any),
     );
-
-    // Load the holon's value equation OFF the critical path — scoring starts on
-    // the default weights and re-scores when the real equation lands.
-    void loadEquation(hs, holon)
-      .then((eq) => {
-        if (hid !== holon) return;
-        equation = eq;
-        scheduleRescore();
-      })
-      .catch((err) =>
-        console.warn("[kiosk] status: equation load failed", err),
-      );
 
     // Live membership (small lens) for richer names; safe to subscribe.
     usersSub = subscribeLens(hs, holon, "users", (items) => {
@@ -417,6 +405,8 @@
   // Quest data is the name source; re-score when it streams in or changes so the
   // board upgrades usernames to real names without waiting for the 30s refresh.
   $: if ($rawQuests) scheduleRescore();
+  // Re-rank the moment the weights move — the editor writes to the same store.
+  $: if ($equationStore) scheduleRescore();
 
   /** The framing sheet the footer opens: the disclaimer in full, plus the
    * equation that produced the numbers — readable and editable by whoever is

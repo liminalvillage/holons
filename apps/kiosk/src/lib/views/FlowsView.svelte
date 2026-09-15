@@ -58,10 +58,7 @@
   import {
     REAAggregator,
     computeHolonUserScores,
-    loadEquation,
     extractReaUsers,
-    DEFAULT_EQUATION,
-    type ScoreEquation,
   } from "@holons/core/scoring";
   import {
     UNATTRIBUTED_ID,
@@ -81,6 +78,9 @@
     nodeBreakdown,
     sortLedger,
     readAllocationConfig,
+    readBundleRecord,
+    readInteriorShares,
+    resolveInteriorMembers,
     readCollectiveSlug,
     readZoneAssignments,
     readZonePeople,
@@ -114,6 +114,8 @@
   import { currentUser, displayName, loginOpen } from "$lib/auth";
   import { get } from "svelte/store";
   import AllocationSettings from "$lib/components/AllocationSettings.svelte";
+  import { bindEquation, equation as equationStore } from "$lib/equation";
+  import type { AllocationDraft } from "$lib/allocation";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
   import ChordChart from "$lib/components/ChordChart.svelte";
   import PillSwitch from "$lib/components/PillSwitch.svelte";
@@ -141,7 +143,9 @@
   let usersById: Record<string, any> = {};
   let collective: OpenCollectiveSnapshot | null = null;
   let collectiveError = "";
-  let equation: ScoreEquation = DEFAULT_EQUATION;
+  // One shared store for the weights: editing them in the settings sheet
+  // redraws this board's allocation diagram on the tap.
+  $: equation = $equationStore;
   // The federation record's partner ids; zones and names are derived below so
   // a settings doc or a resolved name arriving later still lands on the board.
   let federated: string[] = [];
@@ -214,11 +218,16 @@
   // federation record and the settings doc arrive in either order, and a
   // partner placed on a ring must not be drawn unplaced because its zones
   // were read a moment too early.
+  //
+  // While the settings sheet is open these come from its live draft instead,
+  // so dragging a partner onto a ring redraws the diagram behind it.
+  $: savedZones = readZoneAssignments(settings);
+  $: savedPeople = readZonePeople(settings);
   $: partners = toAllocationPartners(
     federated,
     partnerNameMap,
-    readZoneAssignments(settings),
-    readZonePeople(settings),
+    allocationDraft?.zones ?? savedZones,
+    allocationDraft?.people ?? savedPeople,
   ).map((p) => ({ ...p, name: nameFor(p.id) ?? p.name }));
 
   $: flowsInput = {
@@ -256,7 +265,24 @@
   // views cannot disagree about who contributed what.
   let memberShares: { id: string; name: string; percentage: number }[] = [];
 
-  $: allocationConfig = readAllocationConfig(settings);
+  // The split as saved, and — while the settings sheet is open — as it is
+  // being edited: every knob in the sheet feeds the diagram live, and only
+  // Save writes any of it.
+  $: savedConfig = readAllocationConfig(settings);
+  $: savedShares = readInteriorShares(settings);
+  $: allocationConfig = allocationDraft?.config ?? savedConfig;
+  // Who the contributors' share goes to: the scored roster under the
+  // equation, the custom shares under a custom split — the same resolver the
+  // dashboard reads with and the contract is synced by.
+  $: interiorShares = allocationDraft?.shares ?? savedShares;
+  /** The deployed Bundle contract, if this holon has one. */
+  $: bundle = readBundleRecord(settings);
+  $: interiorMembers = resolveInteriorMembers({
+    config: allocationConfig,
+    scored: memberShares,
+    shares: interiorShares,
+    nameOf: (id) => nameFor(id) ?? undefined,
+  });
 
   // ── Derived: fund usage ─────────────────────────────────────────────────
   // Every rights-holder, with the names a collective payee might carry so
@@ -277,7 +303,7 @@
   $: usageParties = [
     ...new Map(
       [
-        ...memberShares.map((m) => ({ id: m.id, name: m.name })),
+        ...interiorMembers.map((m) => ({ id: m.id, name: m.name })),
         ...partners
           .filter((p) => p.zone >= 1)
           .map((p) => ({ id: p.id, name: p.name })),
@@ -307,7 +333,7 @@
     total: collective ? rightsTotal(collective.balance, usage) : null,
     unit: collective?.currency ?? "",
     config: allocationConfig,
-    members: memberShares,
+    members: interiorMembers,
     zoned: partners,
   });
   $: allocationTrack = allocationToGraph(
@@ -367,13 +393,18 @@
   $: overTotal = segmentTotal(allocationTrack, "over");
 
   $: hasAllocation =
-    memberShares.length > 0 || partners.some((p) => p.zone >= 1);
+    interiorMembers.length > 0 || partners.some((p) => p.zone >= 1);
 
   // The ⚙ on the Allocation section: edit the split, the rings and the
   // collective in place. Login-gated like every kiosk write; after a save the
   // settings and the federation record are re-read so the board shows what
   // actually landed.
   let allocationOpen = false;
+  // The sheet's live draft: what the diagram draws from while it is open, and
+  // null the rest of the time (then the saved settings are the truth).
+  let allocationDraft: AllocationDraft | null = null;
+  let allocationReloading = false;
+
   function openAllocation() {
     if (!get(currentUser)) {
       loginOpen.set(true);
@@ -381,10 +412,27 @@
     }
     allocationOpen = true;
   }
+
+  /**
+   * Closing drops the draft — unless a save is still landing, in which case
+   * the draft holds the picture steady until the written settings arrive.
+   * Without that the board would flick back to the old split for a moment.
+   */
+  function closeAllocation() {
+    allocationOpen = false;
+    if (!allocationReloading) allocationDraft = null;
+  }
+
   async function afterAllocationSave() {
-    if (!hsRef || !hid) return;
-    await loadHolonSettings(hsRef, hid);
-    await loadFederation(hsRef, hid);
+    allocationReloading = true;
+    try {
+      if (!hsRef || !hid) return;
+      await loadHolonSettings(hsRef, hid);
+      await loadFederation(hsRef, hid);
+    } finally {
+      allocationReloading = false;
+      allocationDraft = null;
+    }
   }
 
   // ── Derived: the balances roster ────────────────────────────────────────
@@ -548,7 +596,10 @@
       ? itemsFormatter(activePeople.unit)
       : formatter(
           activePeople
-            ? ({ id: activePeople.id, unit: activePeople.unit } as ValueFlowTrack)
+            ? ({
+                id: activePeople.id,
+                unit: activePeople.unit,
+              } as ValueFlowTrack)
             : null,
         );
   $: chordLabels = {
@@ -638,6 +689,13 @@
         : [];
       rows.push(
         { label: $t("flows.interior"), value: pctOf(interiorPct) },
+        {
+          label: $t("alloc.split"),
+          value:
+            allocationConfig.interiorMode === "custom"
+              ? $t("alloc.splitCustom")
+              : $t("alloc.splitEquation"),
+        },
         { label: $t("flows.exterior"), value: pctOf(exteriorPct) },
       );
       if (usage) {
@@ -884,6 +942,7 @@
   async function bind(holon: string | null) {
     teardown();
     hid = holon;
+    bindEquation(holon);
     events = [];
     expenses = [];
     collective = null;
@@ -932,14 +991,6 @@
       }
       usersById = map;
     });
-
-    void loadEquation(hs, holon)
-      .then((eq) => {
-        if (hid !== holon) return;
-        equation = eq;
-        void rescoreMembers();
-      })
-      .catch((err) => console.warn("[kiosk] flows: equation load failed", err));
 
     void loadHolonSettings(hs, holon);
     void loadFederation(hs, holon);
@@ -1071,6 +1122,10 @@
       memberShares = [];
     }
   }
+
+  // Re-score the moment the weights move — the settings sheet edits the same
+  // store, so the diagram answers a tap on a weight.
+  $: if ($equationStore) void rescoreMembers();
 
   // Suspend auto-rotation while the detail sheet is open so the screen cannot
   // flip away mid-read.
@@ -1342,6 +1397,11 @@
             <div class="stat">
               <span class="k">{$t("flows.interior")}</span>
               <span class="v">{allocationConfig.interiorPercent}%</span>
+              <span class="k"
+                >{allocationConfig.interiorMode === "custom"
+                  ? $t("alloc.splitCustom")
+                  : $t("alloc.splitEquation")}</span
+              >
             </div>
             <div class="stat">
               <span class="k">{$t("flows.exterior")}</span>
@@ -1411,15 +1471,19 @@
 {#if allocationOpen}
   <AllocationSettings
     holonId={hid ?? ""}
-    config={allocationConfig}
-    zones={readZoneAssignments(settings)}
-    zonePeople={readZonePeople(settings)}
+    config={savedConfig}
+    zones={savedZones}
+    zonePeople={savedPeople}
     partners={partners
       .filter((p) => p.kind !== "person")
       .map((p) => ({ id: p.id, name: p.name }))}
     candidates={people.filter((p) => p.id !== hid)}
+    scored={memberShares}
+    shares={savedShares}
+    {bundle}
     collectiveSlug={readCollectiveSlug(settings)}
-    on:close={() => (allocationOpen = false)}
+    on:draft={(e) => (allocationDraft = e.detail)}
+    on:close={closeAllocation}
     on:saved={() => void afterAllocationSave()}
   />
 {/if}

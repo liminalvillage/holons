@@ -1251,7 +1251,8 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.removePerson": "Rimuovi {name}",
   "alloc.noPeople": "Nessuno da collocare ancora.",
   "alloc.unplaced": "Non collocato",
-  "alloc.zoneShare": "{pct}% del fondo",
+  "alloc.zoneShare": "{pct}%",
+  "alloc.zoneShareFund": "{pct}% del fondo",
   "alloc.zonesAbout":
     "Quanto riceve davvero ogni zona, come quota dell'intero fondo.",
   "alloc.zonesPreview":
@@ -1259,6 +1260,37 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.save": "Salva",
   "alloc.errSave": "Salvataggio della ripartizione non riuscito. Riprova.",
   "alloc.errDenied": "Non puoi cambiare le impostazioni di questo holon.",
+  "alloc.split": "Quota dei contributori divisa",
+  "alloc.splitEquation": "Per equazione del valore",
+  "alloc.splitCustom": "Divisione personalizzata",
+  "alloc.splitEquationAbout":
+    "Divisa per punteggio di contributo, come l'equazione del valore ordina oggi i membri.",
+  "alloc.splitCustomAbout":
+    "La quota di ogni membro sulla parte dei contributori. Le quote contano in proporzione tra loro, non devono sommare a 100.",
+  "alloc.splitScored": "equazione {pct}%",
+  "alloc.splitTotal": "Totale",
+  "alloc.splitEmpty":
+    "Nessuno nella divisione — resta valida l'equazione finché non inserisci qualcuno.",
+  "alloc.splitCopy": "Copia dall'equazione del valore",
+  "alloc.chainAbout":
+    "Questo holon ha un contratto Bundle a {address}. Salva scrive qui; l'aggiornamento on-chain manda la stessa divisione al contratto.",
+  "alloc.chainUpdate": "Aggiorna on-chain",
+  "alloc.chainSyncing": "Conferma nel portafoglio…",
+  "alloc.chainConfirm": "Conferma la transazione nel portafoglio…",
+  "alloc.chainDone": "Aggiornato on-chain — {hash}…",
+  "alloc.chainRejected": "Transazione rifiutata.",
+  "alloc.chainNoWallet": "Nessun portafoglio Ethereum in questo browser.",
+  "alloc.chainNoContract":
+    "Nessun contratto a quell'indirizzo sulla rete del portafoglio — cambia rete e riprova.",
+  "alloc.chainFailed": "Aggiornamento on-chain non riuscito: {reason}",
+  "alloc.tabSplit": "Divisione",
+  "alloc.tabContributors": "Contributori",
+  "alloc.tabZones": "Zone",
+  "alloc.tabZonesSummary": "{n} zone",
+  "alloc.tabFund": "Fondo",
+  "alloc.tabFundEmpty": "non collegato",
+  "alloc.splitAbout":
+    "I contributori sono le persone che hanno fatto il lavoro. Le zone di reciprocità sono i gruppi e le persone con cui questo holon condivide in relazione.",
   // Stock board (the `stock` lens + REA stock events)
   "tabs.stock": "Scorte",
   "pills.shelf": "Scaffale",

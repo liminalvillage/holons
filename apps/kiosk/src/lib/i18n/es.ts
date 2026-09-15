@@ -1243,7 +1243,8 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.removePerson": "Quitar a {name}",
   "alloc.noPeople": "Nadie a quien colocar todavía.",
   "alloc.unplaced": "Sin colocar",
-  "alloc.zoneShare": "{pct}% del fondo",
+  "alloc.zoneShare": "{pct}%",
+  "alloc.zoneShareFund": "{pct}% del fondo",
   "alloc.zonesAbout":
     "Lo que recibe realmente cada zona, como parte del fondo entero.",
   "alloc.zonesPreview":
@@ -1251,6 +1252,37 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.save": "Guardar",
   "alloc.errSave": "No se pudo guardar el reparto. Inténtalo de nuevo.",
   "alloc.errDenied": "No puedes cambiar los ajustes de este holon.",
+  "alloc.split": "Parte de los contribuidores dividida",
+  "alloc.splitEquation": "Por ecuación de valor",
+  "alloc.splitCustom": "Reparto personalizado",
+  "alloc.splitEquationAbout":
+    "Dividida por puntuación de contribución, como la ecuación de valor ordena hoy a los miembros.",
+  "alloc.splitCustomAbout":
+    "La parte de cada miembro del fondo de los contribuidores. Las partes cuentan en proporción entre sí, no tienen que sumar 100.",
+  "alloc.splitScored": "ecuación {pct}%",
+  "alloc.splitTotal": "Total",
+  "alloc.splitEmpty":
+    "Nadie en el reparto todavía — la ecuación sigue vigente hasta que añadas a alguien.",
+  "alloc.splitCopy": "Copiar de la ecuación de valor",
+  "alloc.chainAbout":
+    "Este holon tiene un contrato Bundle en {address}. Guardar escribe aquí; actualizar en cadena envía el mismo reparto al contrato.",
+  "alloc.chainUpdate": "Actualizar en cadena",
+  "alloc.chainSyncing": "Confirma en tu monedero…",
+  "alloc.chainConfirm": "Confirma la transacción en tu monedero…",
+  "alloc.chainDone": "Actualizado en cadena — {hash}…",
+  "alloc.chainRejected": "Transacción rechazada.",
+  "alloc.chainNoWallet": "No hay monedero Ethereum en este navegador.",
+  "alloc.chainNoContract":
+    "No hay contrato en esa dirección en la red de tu monedero — cambia de red e inténtalo de nuevo.",
+  "alloc.chainFailed": "No se pudo actualizar en cadena: {reason}",
+  "alloc.tabSplit": "Reparto",
+  "alloc.tabContributors": "Contribuidores",
+  "alloc.tabZones": "Zonas",
+  "alloc.tabZonesSummary": "{n} zonas",
+  "alloc.tabFund": "Fondo",
+  "alloc.tabFundEmpty": "sin vincular",
+  "alloc.splitAbout":
+    "Los contribuidores son las personas que hicieron el trabajo. Las zonas de reciprocidad son los grupos y personas con quienes este holon comparte en relación.",
   // Stock board (the `stock` lens + REA stock events)
   "tabs.stock": "Existencias",
   "pills.shelf": "Estante",

@@ -1223,13 +1223,45 @@ export const en = {
   "alloc.removePerson": "Remove {name}",
   "alloc.noPeople": "Nobody to place yet.",
   "alloc.unplaced": "Not placed",
-  "alloc.zoneShare": "{pct}% of the fund",
+  "alloc.zoneShare": "{pct}%",
+  "alloc.zoneShareFund": "{pct}% of the fund",
   "alloc.zonesAbout":
     "What each zone actually receives, as a share of the whole fund.",
   "alloc.zonesPreview": "Nobody placed yet — the shape the zones would take.",
   "alloc.save": "Save",
   "alloc.errSave": "Couldn't save the split. Try again.",
   "alloc.errDenied": "You can't change this holon's settings.",
+  "alloc.split": "Contributors share divided",
+  "alloc.splitEquation": "By value equation",
+  "alloc.splitCustom": "Custom split",
+  "alloc.splitEquationAbout":
+    "Divided by contribution score, as the value equation ranks members today.",
+  "alloc.splitCustomAbout":
+    "Each member's share of the contributors' pot. Shares are read in proportion to each other, so they need not sum to 100.",
+  "alloc.splitScored": "equation {pct}%",
+  "alloc.splitTotal": "Total",
+  "alloc.splitEmpty":
+    "Nobody in the split yet — the equation split stands until someone is entered.",
+  "alloc.splitCopy": "Copy from value equation",
+  "alloc.chainAbout":
+    "This holon has a Bundle contract at {address}. Saving writes here; updating on chain sends the same split to the contract.",
+  "alloc.chainUpdate": "Update on chain",
+  "alloc.chainSyncing": "Confirm in your wallet…",
+  "alloc.chainConfirm": "Confirm the transaction in your wallet…",
+  "alloc.chainDone": "Updated on chain — {hash}…",
+  "alloc.chainRejected": "Transaction rejected.",
+  "alloc.chainNoWallet": "No Ethereum wallet in this browser.",
+  "alloc.chainNoContract":
+    "No contract at that address on your wallet's network — switch networks and try again.",
+  "alloc.chainFailed": "Couldn't update on chain: {reason}",
+  "alloc.tabSplit": "Split",
+  "alloc.tabContributors": "Contributors",
+  "alloc.tabZones": "Zones",
+  "alloc.tabZonesSummary": "{n} zones",
+  "alloc.tabFund": "Fund",
+  "alloc.tabFundEmpty": "not linked",
+  "alloc.splitAbout":
+    "Contributors are the people who did the work. Reciprocity zones are the groups and people this holon shares with in relationship.",
   // Stock board (the `stock` lens + REA stock events)
   "tabs.stock": "Stock",
   "pills.shelf": "Shelf",
