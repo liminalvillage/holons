@@ -3,6 +3,7 @@ import {
   DEFAULT_ALLOCATION_CONFIG,
   readAllocationConfig,
   readCollectiveSlug,
+  readInteriorShares,
   readZoneAssignments,
   readZonePeople,
   saveAllocationConfig,
@@ -110,7 +111,7 @@ describe('readAllocationConfig', () => {
   it('reads a stored split', () => {
     expect(
       readAllocationConfig({ allocation: { interiorPercent: 70, steepness: 30, nzones: 4 } }),
-    ).toEqual({ interiorPercent: 70, steepness: 30, nzones: 4 });
+    ).toEqual({ interiorPercent: 70, steepness: 30, nzones: 4, interiorMode: 'equation' });
   });
 
   it('repairs nonsense rather than propagating it', () => {
@@ -213,6 +214,45 @@ describe('saveAllocationConfig', () => {
   it('carries unspecified knobs over from what was stored', async () => {
     const hs = fakeHolosphere({ allocation: { interiorPercent: 80, steepness: 20, nzones: 3 } });
     const saved = await saveAllocationConfig(hs as any, 'h1', { nzones: 5 });
-    expect(saved).toEqual({ interiorPercent: 80, steepness: 20, nzones: 5 });
+    expect(saved).toEqual({
+      interiorPercent: 80,
+      steepness: 20,
+      nzones: 5,
+      interiorMode: 'equation',
+    });
+  });
+
+  it('stores the interior mode and the custom shares, and keeps the shares through a mode flip', async () => {
+    const hs = fakeHolosphere(existingDoc);
+    await saveAllocationConfig(
+      hs as any,
+      'h1',
+      { interiorMode: 'custom' },
+      undefined,
+      undefined,
+      { u1: 70, u2: 30, u3: 0 },
+    );
+    expect(hs.current.allocation.interiorMode).toBe('custom');
+    expect(hs.current.allocation.shares).toEqual({ u1: 70, u2: 30 });
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+
+    // Back to the equation: the numbers stay, ready to be switched on again.
+    await saveAllocationConfig(hs as any, 'h1', { interiorMode: 'equation' });
+    expect(readAllocationConfig(hs.current).interiorMode).toBe('equation');
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+
+    // A partner-zone sync leaves the split alone.
+    await saveAllocationConfig(hs as any, 'h1', {}, { p1: 1 });
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+  });
+});
+
+describe('readInteriorShares', () => {
+  it('is empty when unset and drops unusable entries', () => {
+    expect(readInteriorShares(null)).toEqual({});
+    expect(readInteriorShares({ allocation: {} })).toEqual({});
+    expect(readInteriorShares({ allocation: { shares: { a: 10, b: 'x', c: -2 } } })).toEqual({
+      a: 10,
+    });
   });
 });

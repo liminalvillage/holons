@@ -89,11 +89,16 @@ export {
   allocate,
   calculateZonePercentages,
   normalizeAllocationConfig,
+  normalizeInteriorShares,
+  resolveInteriorMembers,
+  sharesFromMembers,
   type AllocationConfig,
   type AllocationMember,
   type AllocationPartner,
   type AllocationResult,
   type AllocationSlice,
+  type InteriorMode,
+  type InteriorShares,
 } from './allocation.js';
 
 export {
@@ -137,6 +142,19 @@ export {
 } from './opencollective.js';
 
 export {
+  BUNDLE_SYNC_ALL_ABI,
+  WAD,
+  bundleSyncArgList,
+  bundleSyncArgs,
+  sharesToBasisPoints,
+  steepnessFromContract,
+  steepnessToContract,
+  type BundleMember,
+  type BundlePartner,
+  type BundleSyncArgs,
+} from './contract.js';
+
+export {
   BUNDLE_KEY,
   migrateLegacyBundleRecord,
   readBundleRecord,
@@ -150,6 +168,7 @@ export {
   COLLECTIVE_KEY,
   readAllocationConfig,
   readCollectiveSlug,
+  readInteriorShares,
   readZoneAssignments,
   readZonePeople,
   saveAllocationConfig,

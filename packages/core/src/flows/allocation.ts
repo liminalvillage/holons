@@ -25,14 +25,29 @@
  * the chain would pay (pinned by the Sepolia-parity cases in the spec).
  */
 
-/** The three knobs that shape the split. */
+/**
+ * How the contributors' share is divided among members.
+ *
+ *   equation — by contribution score, as the holon's value equation ranks
+ *              them (the default, and the only way it used to work)
+ *   custom   — by a hand-set share per member (`interiorShares`), with the
+ *              equation split offered as the starting point to copy from
+ */
+export type InteriorMode = 'equation' | 'custom';
+
+/** The knobs that shape the split. */
 export interface AllocationConfig {
   /** 0..100. The exterior gets whatever is left. */
   interiorPercent: number;
   /** 0..100 UI scale. Higher means a flatter spread across zones. */
   steepness: number;
   nzones: number;
+  /** Absent means `equation`. */
+  interiorMode?: InteriorMode;
 }
+
+/** A custom interior split: member id → share weight (0..100, need not sum). */
+export type InteriorShares = Record<string, number>;
 
 export interface AllocationSlice {
   id: string;
@@ -79,6 +94,7 @@ export const DEFAULT_ALLOCATION_CONFIG: AllocationConfig = {
   interiorPercent: 50,
   steepness: 50,
   nzones: 6,
+  interiorMode: 'equation',
 };
 
 /**
@@ -134,7 +150,73 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
     0,
     Math.floor(num(doc.nzones, DEFAULT_ALLOCATION_CONFIG.nzones)),
   );
-  return { interiorPercent, steepness, nzones };
+  const interiorMode: InteriorMode = doc.interiorMode === 'custom' ? 'custom' : 'equation';
+  return { interiorPercent, steepness, nzones, interiorMode };
+}
+
+/** Only members with a usable positive share survive; anything else is "not in". */
+export function normalizeInteriorShares(raw: unknown): InteriorShares {
+  const shares: InteriorShares = {};
+  for (const [id, value] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
+    const share = Number(value);
+    if (id && Number.isFinite(share) && share > 0) shares[id] = share;
+  }
+  return shares;
+}
+
+/**
+ * The equation split as a custom one — what "copy from the value equation"
+ * hands the editor.
+ *
+ * The percentages are carried over EXACTLY as `normalizeShares` produced
+ * them, with no rounding and no renormalizing of its own. That is the whole
+ * point: a copied split has to draw the same diagram and pay the same shares
+ * as the equation it came from, and an editor that rounded here would show a
+ * member 4.1% beside an equation hint reading 4.2%. Shares are read in
+ * proportion to each other (`allocate` normalizes them against their own sum),
+ * so they need no tidying to be a valid split — only the display rounds, and
+ * it rounds the equation figure and the copied one the same way.
+ *
+ * Members with no positive share are left out: a split is a list of who gets
+ * something.
+ */
+export function sharesFromMembers(members: AllocationMember[]): InteriorShares {
+  const shares: InteriorShares = {};
+  for (const member of uniqueById(members ?? [])) {
+    if (Number.isFinite(member.percentage) && member.percentage > 0) {
+      shares[member.id] = member.percentage;
+    }
+  }
+  return shares;
+}
+
+/**
+ * The members the contributors' share is divided among, by the configured mode.
+ *
+ * `equation` returns the scored roster as is. `custom` builds the roster from
+ * the shares map, naming each member from the scored roster when it is there
+ * and through `nameOf` otherwise (someone hand-added who has no score yet).
+ * A custom split with nobody in it is not a split: the equation stands until
+ * someone is entered, so a half-configured holon never pays its interior to
+ * no one — on the mirror or on the chain, which reads the same roster.
+ */
+export function resolveInteriorMembers(input: {
+  config: Pick<AllocationConfig, 'interiorMode'>;
+  scored: AllocationMember[];
+  shares?: InteriorShares | null;
+  nameOf?: (id: string) => string | undefined;
+}): AllocationMember[] {
+  const scored = uniqueById(input.scored ?? []);
+  if (input.config?.interiorMode !== 'custom') return scored;
+  const shares = normalizeInteriorShares(input.shares);
+  const ids = Object.keys(shares);
+  if (ids.length === 0) return scored;
+  const named = new Map(scored.map((m) => [m.id, m.name]));
+  return ids.map((id) => ({
+    id,
+    name: named.get(id) || input.nameOf?.(id) || id,
+    percentage: shares[id],
+  }));
 }
 
 /**

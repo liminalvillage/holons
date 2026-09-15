@@ -4,6 +4,9 @@ import {
   allocate,
   calculateZonePercentages,
   normalizeAllocationConfig,
+  normalizeInteriorShares,
+  resolveInteriorMembers,
+  sharesFromMembers,
 } from './allocation.js';
 import { allocationToGraph, partyIdOf, partyNodeId, segmentTotal } from './allocation-graph.js';
 
@@ -534,5 +537,115 @@ describe('allocationToGraph with fund usage', () => {
     const plain = allocationToGraph(result);
     expect(plain.nodes.some((n) => n.depth > 3)).toBe(false);
     expect(plain.nodes.some((n) => n.segments)).toBe(false);
+  });
+});
+
+describe('interior mode', () => {
+  const scored = [
+    { id: 'a', name: 'Ada', percentage: 60 },
+    { id: 'b', name: 'Bob', percentage: 40 },
+  ];
+
+  it('defaults to the equation and only recognises custom', () => {
+    expect(normalizeAllocationConfig({}).interiorMode).toBe('equation');
+    expect(normalizeAllocationConfig({ interiorMode: 'custom' }).interiorMode).toBe('custom');
+    expect(normalizeAllocationConfig({ interiorMode: 'whatever' }).interiorMode).toBe('equation');
+  });
+
+  it('normalizeInteriorShares keeps only positive, finite shares', () => {
+    expect(
+      normalizeInteriorShares({ a: 50, b: '25', c: 0, d: -1, e: 'x', '': 10 }),
+    ).toEqual({ a: 50, b: 25 });
+    expect(normalizeInteriorShares(null)).toEqual({});
+  });
+
+  it('sharesFromMembers copies the equation percentages exactly', () => {
+    // Not rounded, not renormalized: the copy has to BE the equation split,
+    // or the editor shows a number the equation hint beside it contradicts.
+    const equation = [
+      { id: 'a', name: 'Ada', percentage: 100 / 24 },
+      { id: 'b', name: 'Bob', percentage: 100 / 24 },
+      { id: 'c', name: 'Cy', percentage: 200 / 24 },
+    ];
+    expect(sharesFromMembers(equation)).toEqual({
+      a: 100 / 24,
+      b: 100 / 24,
+      c: 200 / 24,
+    });
+    expect(sharesFromMembers([])).toEqual({});
+    expect(sharesFromMembers([{ id: 'a', name: 'Ada', percentage: 0 }])).toEqual({});
+  });
+
+  it('a copied split allocates identically to the equation it came from', () => {
+    const scoredRoster = [
+      { id: 'a', name: 'Ada', percentage: 100 / 24 },
+      { id: 'b', name: 'Bob', percentage: 100 / 24 },
+      { id: 'c', name: 'Cy', percentage: 200 / 24 },
+    ];
+    const config = { interiorPercent: 80, steepness: 45, nzones: 5 };
+    const byEquation = allocate({
+      total: 1000,
+      config: { ...config, interiorMode: 'equation' as const },
+      members: resolveInteriorMembers({ config: { interiorMode: 'equation' }, scored: scoredRoster }),
+      zoned: [],
+    });
+    const copied = sharesFromMembers(scoredRoster);
+    const byCustom = allocate({
+      total: 1000,
+      config: { ...config, interiorMode: 'custom' as const },
+      members: resolveInteriorMembers({
+        config: { interiorMode: 'custom' },
+        scored: scoredRoster,
+        shares: copied,
+      }),
+      zoned: [],
+    });
+    expect(byCustom.interior.map((s) => [s.id, s.percentage, s.amount])).toEqual(
+      byEquation.interior.map((s) => [s.id, s.percentage, s.amount]),
+    );
+  });
+
+  it('resolveInteriorMembers returns the scored roster in equation mode', () => {
+    expect(
+      resolveInteriorMembers({ config: { interiorMode: 'equation' }, scored, shares: { z: 100 } }),
+    ).toEqual(scored);
+    expect(resolveInteriorMembers({ config: {}, scored })).toEqual(scored);
+  });
+
+  it('resolveInteriorMembers builds the roster from the shares in custom mode', () => {
+    const members = resolveInteriorMembers({
+      config: { interiorMode: 'custom' },
+      scored,
+      shares: { b: 70, z: 30 },
+      nameOf: (id) => (id === 'z' ? 'Zed' : undefined),
+    });
+    expect(members).toEqual([
+      { id: 'b', name: 'Bob', percentage: 70 },
+      { id: 'z', name: 'Zed', percentage: 30 },
+    ]);
+  });
+
+  it('a custom split with nobody in it leaves the equation standing', () => {
+    expect(
+      resolveInteriorMembers({ config: { interiorMode: 'custom' }, scored, shares: {} }),
+    ).toEqual(scored);
+  });
+
+  it('allocate divides the interior by the custom shares', () => {
+    const result = allocate({
+      total: 1000,
+      config: { interiorPercent: 50, steepness: 50, nzones: 2, interiorMode: 'custom' },
+      members: resolveInteriorMembers({
+        config: { interiorMode: 'custom' },
+        scored,
+        shares: { a: 25, b: 75 },
+      }),
+      zoned: [],
+    });
+    expect(result.config.interiorMode).toBe('custom');
+    expect(result.interior.map((s) => [s.id, s.amount])).toEqual([
+      ['a', 125],
+      ['b', 375],
+    ]);
   });
 });

@@ -15,8 +15,10 @@
 import {
   DEFAULT_ALLOCATION_CONFIG,
   normalizeAllocationConfig,
+  normalizeInteriorShares,
   type AllocationConfig,
   type AllocationPartner,
+  type InteriorShares,
 } from './allocation.js';
 import { normalizeCollectiveSlug } from './opencollective.js';
 
@@ -40,6 +42,15 @@ const LEGACY_ZONES_KEY = 'federationZones';
  * their map is authoritative on its own.
  */
 const PEOPLE_KEY = 'people';
+
+/**
+ * Field under `allocation` holding the CUSTOM contributors' split, by user id.
+ *
+ * Only read when `allocation.interiorMode` is `custom`; kept through a switch
+ * back to `equation` so a caretaker can flip between the two without losing
+ * the hand-set numbers.
+ */
+const SHARES_KEY = 'shares';
 
 /** The holon's collective slug, or '' when unset. */
 export function readCollectiveSlug(settings: unknown): string {
@@ -114,6 +125,16 @@ export function readZonePeople(settings: unknown): Record<string, number> {
   return cleanZoneMap(allocation[PEOPLE_KEY]);
 }
 
+/**
+ * The hand-set contributors' split, by user id — meaningful only when the
+ * config's `interiorMode` is `custom`. Empty when never set.
+ */
+export function readInteriorShares(settings: unknown): InteriorShares {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const allocation = (doc[ALLOCATION_KEY] ?? {}) as Record<string, unknown>;
+  return normalizeInteriorShares(allocation[SHARES_KEY]);
+}
+
 /** Only ids placed on a real ring survive; anything else is "not placed". */
 function cleanZoneMap(raw: unknown): Record<string, number> {
   const zones: Record<string, number> = {};
@@ -165,9 +186,9 @@ export function toAllocationPartners(
 /**
  * Persist the allocation split (and optionally zone assignments) off-chain.
  *
- * `zones` and `people` each replace their map only when given; a caller that
- * syncs partner zones (Flow Management) leaves the people placements alone,
- * and vice versa.
+ * `zones`, `people` and `shares` each replace their map only when given; a
+ * caller that syncs partner zones (Flow Management) leaves the people
+ * placements and the custom split alone, and vice versa.
  */
 export async function saveAllocationConfig(
   holosphere: any,
@@ -175,6 +196,7 @@ export async function saveAllocationConfig(
   config: Partial<AllocationConfig>,
   zones?: Record<string, number>,
   people?: Record<string, number>,
+  shares?: InteriorShares,
 ): Promise<AllocationConfig> {
   let existing: any = null;
   try {
@@ -187,6 +209,7 @@ export async function saveAllocationConfig(
   const clean = normalizeAllocationConfig({ ...current, ...config });
   const existingZones = readZoneAssignments(existing);
   const existingPeople = readZonePeople(existing);
+  const existingShares = readInteriorShares(existing);
 
   await holosphere.put(String(holonId), 'settings', {
     ...(existing ?? {}),
@@ -195,6 +218,7 @@ export async function saveAllocationConfig(
       ...clean,
       zones: zones ?? existingZones,
       [PEOPLE_KEY]: cleanZoneMap(people ?? existingPeople),
+      [SHARES_KEY]: normalizeInteriorShares(shares ?? existingShares),
     },
   });
 
