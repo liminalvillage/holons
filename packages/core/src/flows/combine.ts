@@ -208,6 +208,7 @@ export function combinePeopleTracks(
   const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
   const givenUnits: PeopleFlowUnitShare[][] = Array.from({ length: n }, () => []);
   const receivedUnits: PeopleFlowUnitShare[][] = Array.from({ length: n }, () => []);
+  const unitsByPair: Record<string, PeopleFlowUnitShare[]> = {};
   let count = 0;
   let total = 0;
 
@@ -234,6 +235,13 @@ export function combinePeopleTracks(
         gaveRaw[from] += raw;
         gotRaw[to] += raw;
         total += share;
+        const pair = `${parties[from].id}>${parties[to].id}`;
+        (unitsByPair[pair] ??= []).push({
+          unit: label,
+          share,
+          amount: raw,
+          display: withUnit(format(raw), label),
+        });
       }
     }
 
@@ -242,12 +250,14 @@ export function combinePeopleTracks(
         givenUnits[i].push({
           unit: label,
           share: shareOf(gaveRaw[i], track.total),
+          amount: gaveRaw[i],
           display: withUnit(format(gaveRaw[i]), label),
         });
       if (gotRaw[i] > 0)
         receivedUnits[i].push({
           unit: label,
           share: shareOf(gotRaw[i], track.total),
+          amount: gotRaw[i],
           display: withUnit(format(gotRaw[i]), label),
         });
     }
@@ -274,6 +284,7 @@ export function combinePeopleTracks(
       ...(receivedUnits[i].length ? { receivedUnits: receivedUnits[i] } : {}),
     })),
     matrix,
+    unitsByPair,
     total: total > 0 ? SHARE_BASIS : 0,
     count,
   };

@@ -28,6 +28,14 @@
   /** The chart never grows past this, however wide the screen. */
   export let maxSize = 560;
   export let onSelect: ((group: ChordGroup) => void) | null = null;
+  /**
+   * Extra rows for a hovered ribbon — the currencies behind its share, on a
+   * combined chord. Given the two ends by id, because a ribbon may touch the
+   * rolled-up arc and only the caller knows who that stands for.
+   */
+  export let ribbonDetails:
+    | ((source: string, target: string) => { label: string; value: string }[])
+    | null = null;
 
   /** Room outside the ring for the names. */
   const LABEL_ROOM = 92;
@@ -66,6 +74,10 @@
     ]),
   );
   $: labelOf = new Map(layout.groups.map((g) => [g.id, g.label]));
+
+  $: ribbonRows = hoverRibbon
+    ? (ribbonDetails?.(hoverRibbon.source, hoverRibbon.target) ?? [])
+    : [];
 
   let box: HTMLDivElement | undefined;
   let hoverGroup: ChordGroup | null = null;
@@ -185,7 +197,11 @@
               }
             }}
           >
-            <path class="arc" d={group.path} style:fill={colorOf.get(group.id)} />
+            <path
+              class="arc"
+              d={group.path}
+              style:fill={colorOf.get(group.id)}
+            />
             <text
               transform={group.labelTransform}
               text-anchor={group.labelAnchor}
@@ -225,6 +241,16 @@
             >
             <span class="tip-value">{format(hoverRibbon.value)}</span>
           </div>
+          {#if ribbonRows.length}
+            <dl>
+              {#each ribbonRows as row (row.label)}
+                <div class="tip-row">
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </div>
+              {/each}
+            </dl>
+          {/if}
         {/if}
       </div>
     {/if}

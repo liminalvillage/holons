@@ -77,6 +77,7 @@
     layoutSankey,
     nodeBreakdown,
     sortLedger,
+    CHORD_OTHERS_ID,
     combinePeopleTracks,
     combineTracks,
     readAllocationConfig,
@@ -664,6 +665,54 @@
    * A rollup arc ("+n more") stands for several parties and has no single
    * breakdown, so it simply finds nothing and the popup keeps its shares.
    */
+  /**
+   * The currencies behind one ribbon of the combined chord.
+   *
+   * A ribbon may end on the rolled-up arc, which stands for every party the
+   * layout did not keep — so each end is expanded to the set it represents and
+   * the per-pair slices core recorded are summed over that set. Amounts add
+   * because they are in one unit; shares add because each is a share of that
+   * same unit's own flow.
+   */
+  $: chordGroupIds = new Set(
+    activePeople
+      ? layoutChord(activePeople, {
+          innerRadius: 100,
+          othersLabel: chordLabels.others,
+        }).groups.map((g) => g.id)
+      : [],
+  );
+  $: peopleUnitFormat = new Map(
+    peopleTracks.map(
+      (p) => [combineOptions.labelOf(p), peopleFormat(p)] as const,
+    ),
+  );
+  $: ribbonDetails = (source: string, target: string) => {
+    const pairs = activePeople?.unitsByPair;
+    if (!pairs) return [];
+    const expand = (id: string): string[] =>
+      id === CHORD_OTHERS_ID
+        ? (activePeople?.parties ?? [])
+            .map((p) => p.id)
+            .filter((pid) => !chordGroupIds.has(pid))
+        : [id];
+    const totals = new Map<string, { amount: number; share: number }>();
+    for (const from of expand(source)) {
+      for (const to of expand(target)) {
+        for (const slice of pairs[`${from}>${to}`] ?? []) {
+          const seen = totals.get(slice.unit) ?? { amount: 0, share: 0 };
+          seen.amount += slice.amount;
+          seen.share += slice.share;
+          totals.set(slice.unit, seen);
+        }
+      }
+    }
+    return [...totals.entries()].map(([unit, t]) => ({
+      label: unit,
+      value: `${peopleUnitFormat.get(unit)?.(t.amount) ?? Math.round(t.amount)} · ${Math.round(t.share)}%`,
+    }));
+  };
+
   $: selectedPartyUnits =
     selectedParty && activePeople
       ? (activePeople.parties.find((p) => p.id === selectedParty!.id) ?? null)
@@ -1449,6 +1498,7 @@
             <p class="unit-caption">{$t("flows.allAbout")}</p>
           {/if}
           <ChordChart
+            {ribbonDetails}
             track={activePeople}
             format={formatPeople}
             labels={chordLabels}

@@ -147,12 +147,21 @@ describe('combinePeopleTracks', () => {
     const combined = combinePeopleTracks([people('eur', 900), people('kg', 3)], opts)!;
     const [ada, bob] = combined.parties;
     expect(ada.givenUnits).toEqual([
-      { unit: 'EUR', share: 100, display: '900€ EUR' },
-      { unit: 'KG', share: 100, display: '3 KG' },
+      { unit: 'EUR', share: 100, amount: 900, display: '900€ EUR' },
+      { unit: 'KG', share: 100, amount: 3, display: '3 KG' },
     ]);
     expect(ada.receivedUnits).toBeUndefined();
     expect(bob.receivedUnits?.map((u) => u.display)).toEqual(['900€ EUR', '3 KG']);
     expect(bob.givenUnits).toBeUndefined();
+  });
+
+  it('records what each pair moved, unit by unit', () => {
+    const combined = combinePeopleTracks([people('eur', 900), people('kg', 3)], opts)!;
+    expect(combined.unitsByPair?.['ada>bob']).toEqual([
+      { unit: 'EUR', share: 100, amount: 900, display: '900€ EUR' },
+      { unit: 'KG', share: 100, amount: 3, display: '3 KG' },
+    ]);
+    expect(combined.unitsByPair?.['bob>ada']).toBeUndefined();
   });
 
   it('leaves a unit-coherent track without a breakdown — it is one unit', () => {

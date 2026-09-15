@@ -69,6 +69,8 @@ export interface PeopleFlowUnitShare {
   unit: string;
   /** Share of that unit's own flow between people, 0-100. */
   share: number;
+  /** The real amount, unformatted — so slices can still be added together. */
+  amount: number;
   /** The real amount, formatted in that unit. */
   display: string;
 }
@@ -98,6 +100,13 @@ export interface PeopleFlowTrack {
   parties: PeopleFlowParty[];
   /** `matrix[i][j]` is what `parties[i]` gave `parties[j]`. Diagonal is 0. */
   matrix: number[][];
+  /**
+   * What each ordered pair moved, unit by unit, keyed `\`${giver}>${taker}\``
+   * by ORIGINAL party id. Only `combinePeopleTracks` sets it; a unit-coherent
+   * track needs no breakdown. A caller that rolls parties up (as `layoutChord`
+   * does) sums the entries of the members it rolled together.
+   */
+  unitsByPair?: Record<string, PeopleFlowUnitShare[]>;
   /** Everything that moved between two parties in this track. */
   total: number;
   /** How many flows fed it. */
