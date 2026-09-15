@@ -6,17 +6,21 @@ import {
   calculateScoreFromUserData,
   calculateTaskCompletionScores,
   calculateUserScore,
+  computeHolonUserScores,
   extractReaUsers,
   getActionScore,
   getCachedEquation,
   getScoreBreakdown,
+  loadHolonUserData,
   migrateEquation,
   normalizeShares,
   parseCurrencyCodes,
   saveEquation,
   scoreHolonUsers,
   toAggregates,
+  ZERO_USER_AGGREGATES,
   type REAEventStoreLike,
+  type ScoreEquation,
   type UserAggregates,
 } from './index.js';
 
@@ -730,5 +734,84 @@ describe('parseCurrencyCodes', () => {
   it('returns nothing for an empty or absent entry', () => {
     expect(parseCurrencyCodes('   ')).toEqual([]);
     expect(parseCurrencyCodes(undefined as any)).toEqual([]);
+  });
+});
+
+describe('the holon is not a member of itself', () => {
+  const HOLON = '-1003864542239';
+
+  /** An aggregator with a per-id aggregate/balance table. */
+  function fakeAggregator(
+    table: Record<string, { agg?: Partial<UserAggregates>; euro?: number }>,
+  ) {
+    return {
+      async getUserAggregates(_h: string, userId: string) {
+        return { ...ZERO_USER_AGGREGATES, ...(table[userId]?.agg ?? {}) };
+      },
+      async getCurrencyBalance(_h: string, userId: string, code: string) {
+        return code === 'euro' ? (table[userId]?.euro ?? 0) : 0;
+      },
+    };
+  }
+
+  it('drops the holon when it only carries a balance and a group footprint', async () => {
+    const loaded = await loadHolonUserData(
+      fakeAggregator({
+        [HOLON]: { agg: { activity: 199 }, euro: -241.33 },
+        alice: { agg: { completed: 4 } },
+        bob: { agg: { completed: 1 } },
+      }),
+      HOLON,
+      [{ id: HOLON }, { id: 'alice' }, { id: 'bob' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['alice', 'bob']);
+  });
+
+  it('keeps a personal holon, whose id is its owner and who does the work', async () => {
+    // A personal holon's id IS the member's id; dropping it would rank nobody.
+    const loaded = await loadHolonUserData(
+      fakeAggregator({ '235114395': { agg: { completed: 7 }, euro: -900 } }),
+      '235114395',
+      [{ id: '235114395' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['235114395']);
+  });
+
+  it('leaves every other party alone, in debt or not', async () => {
+    const loaded = await loadHolonUserData(
+      fakeAggregator({
+        debtor: { agg: { completed: 1 }, euro: -500 },
+        idle: {},
+      }),
+      HOLON,
+      [{ id: 'debtor' }, { id: 'idle' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['debtor', 'idle']);
+  });
+
+  it("restores shares that track the members' points", async () => {
+    // Liminal's shape: the holon's -241 euro at a weight of 10 scored -2413 and
+    // became the minimum every member was lifted by, so 0 points and 67 points
+    // came out within 0.2% of each other.
+    const equation: ScoreEquation = {
+      ...DEFAULT_EQUATION,
+      completed: 1,
+      currencies: { euro: 10 },
+    };
+    const roster = [{ id: HOLON }, { id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const aggregator = fakeAggregator({
+      [HOLON]: { agg: { activity: 199 }, euro: -241.33 },
+      a: { agg: { completed: 60 } },
+      b: { agg: { completed: 30 } },
+      c: { agg: { completed: 10 } },
+    });
+
+    const scored = await computeHolonUserScores(aggregator, HOLON, roster, equation);
+    expect(scored.map((s) => s.userId)).toEqual(['a', 'b', 'c']);
+    // No negative score left, so shares are exactly proportional to points.
+    expect(scored.map((s) => Math.round(s.percentage * 10) / 10)).toEqual([60, 30, 10]);
   });
 });

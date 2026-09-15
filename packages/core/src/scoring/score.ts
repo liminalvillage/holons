@@ -429,9 +429,64 @@ export interface ScoredHolonUser extends HolonUserData {
 }
 
 /**
+ * The aggregates that record a CONTRIBUTION — something a party did.
+ *
+ * `activity`, `groupSize` and `variance` are deliberately absent: they measure
+ * the group's shape, not anyone's work, and a holon carries them for itself.
+ */
+const CONTRIBUTION_MEASURES = [
+  'initiated',
+  'completed',
+  'sent',
+  'received',
+  'hours',
+  'collaboration',
+  'participation',
+  'coParticipants',
+] as const;
+
+/** True when this party did nothing — only a balance and a group footprint. */
+function contributedNothing(aggregates: UserAggregates): boolean {
+  return CONTRIBUTION_MEASURES.every((key) => !(Number(aggregates[key]) > 0));
+}
+
+/**
+ * Drop the holon's own id from its roster — unless the holon is a person.
+ *
+ * A holon is a party to its own economic events: it pays an expense, it
+ * settles a debt. So every roster drawn from the REA stream picks up the
+ * holon's own id beside its members, and it is then scored as if it were one.
+ *
+ * It is not one. It does no tasks, and it cannot hold a share of its own fund.
+ * Worse, its balance is typically the LOWEST score in the holon, and
+ * {@link normalizeShares} lifts every member by that minimum before dividing —
+ * so one holon in debt flattens the whole leaderboard. Liminal Village showed
+ * this plainly: a holon balance of -241 euro at a weight of 10 scored -2413,
+ * and 23 members whose points ranged from 0 to 67 all landed within 0.2% of
+ * each other while their points said otherwise.
+ *
+ * The exception is a PERSONAL holon, whose id *is* its owner's id. There the
+ * id belongs to someone who really does the work, so the test is not "is this
+ * the holon's id" but "did this party contribute anything": a group holon
+ * carries only a balance and a group footprint, a person carries tasks.
+ */
+function dropUncontributingSelf(
+  hid: string,
+  loaded: HolonUserData[],
+): HolonUserData[] {
+  const self = loaded.find((d) => d.userId === hid);
+  if (!self || !contributedNothing(self.aggregates)) return loaded;
+  return loaded.filter((d) => d.userId !== hid);
+}
+
+/**
  * Async: pull each user's scoring inputs from the REA store — aggregates plus
  * the balance of every code in `currencyCodes` (money; `hour` is skipped, the
  * scorer derives it from aggregates.hours).
+ *
+ * The holon's own id is dropped from the result when it turns out to be a
+ * group rather than a person — see {@link dropUncontributingSelf} for why a
+ * roster that keeps it mis-ranks every member.
  *
  * Kept separate from {@link scoreHolonUsers} so UIs with a live equation
  * editor can re-score (pure, sync) without re-fetching on every weight tweak.
@@ -444,7 +499,7 @@ export async function loadHolonUserData(
 ): Promise<HolonUserData[]> {
   const hid = String(holonId);
   const money = currencyCodes.filter((c) => c && c !== 'hour');
-  return Promise.all(
+  const loaded = await Promise.all(
     users.map(async (u) => {
       const userId = String(u.id);
       let aggregates: UserAggregates;
@@ -466,6 +521,7 @@ export async function loadHolonUserData(
       return { userId, aggregates, balances };
     }),
   );
+  return dropUncontributingSelf(hid, loaded);
 }
 
 /**
