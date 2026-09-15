@@ -18,7 +18,12 @@
     saveBundleRecord,
     readBundleRecord,
     readZoneAssignments,
-    migrateLegacyBundleRecord
+    readAllocationConfig,
+    readInteriorShares,
+    resolveInteriorMembers,
+    migrateLegacyBundleRecord,
+    type InteriorMode,
+    type InteriorShares
   } from '@holons/core/flows';
 
   import FlowHeader from './FlowHeader.svelte';
@@ -49,6 +54,11 @@
   let interiorPercent = 50;
   let steepness = 50; // UI value 0-100
   let nzones = 6;
+  // How the contributors' share is divided. Chosen (and, for a custom split,
+  // edited) on the Flows board; honoured here so the chart and the sync push
+  // the same roster the wallet-less surfaces read.
+  let interiorMode: InteriorMode = 'equation';
+  let interiorShares: InteriorShares = {};
 
   // Track original values for change detection
   let originalInteriorPercent = 50;
@@ -62,8 +72,12 @@
   // Federation data
   let federatedHolons: ZonedHolon[] = [];
 
-  // Interior members data
+  // Interior members data (what the chart shows)
   let interiorMembers: InteriorMember[] = [];
+  // The equation's roster, kept apart so a sync sends fresh scores under the
+  // equation and the custom shares under a custom split — never whatever the
+  // contract happened to hold from the last sync.
+  let scoredMembers: InteriorMember[] = [];
 
 
   // Users from holosphere for score calculation
@@ -206,6 +220,8 @@
 
           const settings = await holosphere.get(holonId, 'settings', holonId);
           const bundleSettings = readBundleRecord(settings);
+          interiorMode = readAllocationConfig(settings).interiorMode ?? 'equation';
+          interiorShares = readInteriorShares(settings);
 
           if (bundleSettings) {
             const contractSteepness = BigInt(bundleSettings.steepness || '500000000000000000');
@@ -410,7 +426,7 @@
     for (const s of scored) aggMap[s.userId] = s.aggregates;
     aggregatesByUser = aggMap;
 
-    interiorMembers = scored.map((s, i) => {
+    scoredMembers = scored.map((s, i) => {
       const user = holosphereUsers.find((u) => String(u.id) === s.userId);
       return {
         userId: s.userId,
@@ -419,6 +435,26 @@
         percentage: s.percentage,
         color: COLOR_PALETTE[i % COLOR_PALETTE.length],
         breakdown: { ...s.aggregates },
+      };
+    });
+
+    // Under a custom split the chart shows the hand-set shares; a member the
+    // equation also scores keeps their breakdown, a hand-added one has none.
+    const resolved = resolveInteriorMembers({
+      config: { interiorMode },
+      scored: scoredMembers.map((m) => ({ id: m.userId, name: m.username, percentage: m.percentage })),
+      shares: interiorShares,
+      nameOf: (id) => holosphereUsers.find((u) => String(u.id) === id)?.username,
+    });
+    interiorMembers = resolved.map((m, i) => {
+      const scoredMember = scoredMembers.find((s) => s.userId === m.id);
+      return {
+        userId: m.id,
+        username: m.name,
+        score: scoredMember?.score ?? m.percentage,
+        percentage: m.percentage,
+        color: COLOR_PALETTE[i % COLOR_PALETTE.length],
+        breakdown: scoredMember?.breakdown,
       };
     });
   }
@@ -535,8 +571,9 @@
       syncing = true;
       showNotification('Please confirm the transaction in your wallet...', 'info');
 
-      // Prepare interior members data
-      const interiorMembersData = interiorMembers.map(m => ({
+      // The scored roster; `syncAllocation` swaps in the custom shares when
+      // the split is custom, by the same rule every reader resolves it with.
+      const interiorMembersData = scoredMembers.map(m => ({
         userId: m.userId,
         percentage: m.percentage
       }));
@@ -557,6 +594,8 @@
         steepness,
         contractSteepness: contractSteepness.toString(),
         nzones,
+        interiorMode,
+        interiorShares,
         interiorMembers: interiorMembersData,
         exteriorMembers: exteriorMembersData
       });
@@ -569,9 +608,10 @@
         holosphere,
         holonId,
         bundleAddress: existingBundle.address,
-        draft: { interiorPercent, steepness, nzones },
+        draft: { interiorPercent, steepness, nzones, interiorMode },
         members: interiorMembersData,
-        partners: federatedHolons.map(h => ({ id: h.id, zone: h.zone }))
+        partners: federatedHolons.map(h => ({ id: h.id, zone: h.zone })),
+        shares: interiorShares
       });
 
       // Update original values after successful sync
@@ -734,6 +774,14 @@
     <div class="main-content">
       <!-- Chart area -->
       <div class="chart-area">
+        <p class="split-mode">
+          {#if interiorMode === 'custom'}
+            Contributors share divided by a <strong>custom split</strong>
+          {:else}
+            Contributors share divided <strong>by the value equation</strong>
+          {/if}
+          — change it on the <a href="/{holonId}/flows">Flows board</a>.
+        </p>
         <ConcentricZoneChart
           {interiorMembers}
           {federatedHolons}
@@ -757,6 +805,17 @@
 </div>
 
 <style>
+  .split-mode {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    color: #94a3b8;
+  }
+
+  .split-mode a {
+    color: #5eead4;
+    text-decoration: underline;
+  }
+
   .flow-management {
     display: flex;
     flex-direction: column;

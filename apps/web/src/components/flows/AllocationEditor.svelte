@@ -32,9 +32,17 @@
     type SyncMember,
     type SyncPartner,
   } from "../../lib/holons/allocationSync";
-  import { allocate } from "@holons/core/flows";
+  import {
+    allocate,
+    normalizeInteriorShares,
+    sharesFromMembers,
+  } from "@holons/core/flows";
   import { ZONE_COLORS } from "../flow/types";
-  import type { HolonBundleRecord } from "@holons/core/flows";
+  import type {
+    HolonBundleRecord,
+    InteriorMode,
+    InteriorShares,
+  } from "@holons/core/flows";
 
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
@@ -45,17 +53,25 @@
   export let nzones = 6;
   /** Partner id → ring. 0 means "not placed in any zone". */
   export let zoneOf: Record<string, number> = {};
+  /** How the contributors' share is divided: by the equation, or by hand. */
+  export let interiorMode: InteriorMode = "equation";
+  /** The hand-set split, member id → share. Bound; read under `custom`. */
+  export let shares: InteriorShares = {};
 
   /** Federated partners available to place, names already resolved. */
   export let partners: { id: string; name: string }[] = [];
   /** Interior shares from the contribution scoring, for the on-chain sync. */
   export let members: SyncMember[] = [];
+  /** Everyone a custom split could name, the roster with names resolved. */
+  export let people: { id: string; name: string }[] = [];
   /** What is currently saved, so "changed" means changed from the record. */
   export let saved: {
     interiorPercent: number;
     steepness: number;
     nzones: number;
     zones: Record<string, number>;
+    interiorMode?: InteriorMode;
+    shares?: InteriorShares;
   } = { interiorPercent: 50, steepness: 50, nzones: 6, zones: {} };
 
   const dispatch = createEventDispatcher<{
@@ -95,11 +111,91 @@
   $: partnersIn = (zone: number): string[] =>
     (draft.exterior[zone - 1]?.members ?? []).map((m) => m.label);
   const pct = (v: number) => `${Math.round(v * 10) / 10}%`;
+  /** The same rounding as `pct`, bare — a number box holds no percent sign. */
+  const num = (v: number) => String(Math.round(v * 10) / 10);
+
+  // The custom split as rows: everyone named in the shares map, with the
+  // scored share beside each so the caretaker can see what the equation
+  // would have given. Someone in the map the roster no longer knows keeps
+  // their id, so they can still be removed.
+  $: nameOf = new Map<string, string>(people.map((p) => [p.id, p.name]));
+  $: scoredOf = new Map<string, number>(
+    members.map((m) => [String(m.userId), m.percentage]),
+  );
+  let shareText: Record<string, string> = {};
+  // The box shows a rounded figure; the split keeps the value equation's exact
+  // one underneath, so a copied split pays exactly what the equation paid and
+  // the number never jumps while it is being typed.
+  $: shareRows = Object.keys(shares).map((id) => ({
+    id,
+    name: nameOf.get(id) ?? id,
+    scored: scoredOf.get(id),
+    text: shareText[id] ?? num(shares[id]),
+  }));
+  $: sharesTotal = Object.values(shares).reduce(
+    (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
+    0,
+  );
+  $: addable = people
+    .filter((p) => !(p.id in shares))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  let pick = "";
+
+  /** The equation's split, as it would be copied. */
+  $: equationShares = sharesFromMembers(
+    members.map((m) => ({ id: String(m.userId), name: "", percentage: m.percentage })),
+  );
+
+  function setMode(mode: InteriorMode) {
+    interiorMode = mode;
+    // Custom starts from the equation, unless a split was already entered.
+    if (mode === "custom" && Object.keys(shares).length === 0) copyEquation();
+  }
+
+  function copyEquation() {
+    shares = { ...equationShares };
+    shareText = Object.fromEntries(
+      Object.entries(shares).map(([id, value]) => [id, num(value)]),
+    );
+  }
+
+  function setShare(id: string, raw: string) {
+    const value = Number(raw);
+    shareText = { ...shareText, [id]: raw };
+    shares = {
+      ...shares,
+      [id]: Number.isFinite(value) && value >= 0 ? value : 0,
+    };
+  }
+
+  function removeShare(id: string) {
+    const next = { ...shares };
+    delete next[id];
+    shares = next;
+    const text = { ...shareText };
+    delete text[id];
+    shareText = text;
+  }
+
+  function addShare() {
+    if (!pick) return;
+    shares = { ...shares, [pick]: 0 };
+    shareText = { ...shareText, [pick]: "0" };
+    pick = "";
+  }
+
+  function sameShares(a: InteriorShares, b: InteriorShares): boolean {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+  }
 
   $: changed =
     interiorPercent !== saved.interiorPercent ||
     steepness !== saved.steepness ||
     nzones !== saved.nzones ||
+    interiorMode !== (saved.interiorMode ?? "equation") ||
+    !sameShares(normalizeInteriorShares(shares), saved.shares ?? {}) ||
     partners.some((p) => (zoneOf[p.id] ?? 0) !== (saved.zones[p.id] ?? 0));
 
   $: connected = !!$walletAddress && !!manager;
@@ -171,8 +267,9 @@
       await mirrorAllocation(
         holosphere,
         holonId,
-        { interiorPercent, steepness, nzones },
+        { interiorPercent, steepness, nzones, interiorMode },
         partnersForSync(),
+        shares,
       );
       say("Saved. Every wallet-less surface reads this.", "success");
       dispatch("saved", { onChain: false });
@@ -194,9 +291,10 @@
         holosphere,
         holonId,
         bundleAddress: bundle.address,
-        draft: { interiorPercent, steepness, nzones },
+        draft: { interiorPercent, steepness, nzones, interiorMode },
         members,
         partners: partnersForSync(),
+        shares,
       });
       say(`Submitted — ${tx.hash.slice(0, 10)}… Waiting for confirmation.`);
       const receipt = await tx.wait();
@@ -222,6 +320,9 @@
     steepness = saved.steepness;
     nzones = saved.nzones;
     zoneOf = { ...saved.zones };
+    interiorMode = saved.interiorMode ?? "equation";
+    shares = { ...(saved.shares ?? {}) };
+    shareText = {};
     say("");
     dispatch("reset");
   }
@@ -335,6 +436,100 @@
             >
           </div>
         </div>
+      </div>
+
+      <!-- How the contributors' share is divided among members: by the value
+           equation (the scoring every board ranks with), or by hand. A custom
+           split starts as a copy of the equation and can be re-copied at any
+           time; the same rows go to the Bundle contract on sync. -->
+      <div class="split">
+        <div class="split-head">
+          <span>Contributors share divided</span>
+          <div class="mode" role="radiogroup" aria-label="How the contributors share is divided">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={interiorMode === "equation"}
+              class:on={interiorMode === "equation"}
+              on:click={() => setMode("equation")}>By value equation</button
+            >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={interiorMode === "custom"}
+              class:on={interiorMode === "custom"}
+              on:click={() => setMode("custom")}>Custom split</button
+            >
+          </div>
+        </div>
+        {#if interiorMode === "custom"}
+          <p class="muted">
+            Each member's share of the contributors' pot. Shares are read in
+            proportion to each other, so they need not sum to 100.
+          </p>
+          {#if shareRows.length}
+            <div class="shares">
+              {#each shareRows as row (row.id)}
+                <div class="share">
+                  <span class="share-name"
+                    >{row.name}
+                    {#if row.scored != null}
+                      <span class="muted">equation {pct(row.scored)}</span>
+                    {/if}</span
+                  >
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={row.text}
+                    on:input={(e) => setShare(row.id, (e.currentTarget as HTMLInputElement).value)}
+                    aria-label="{row.name} share"
+                  />
+                  <span class="share-unit">%</span>
+                  <button
+                    type="button"
+                    class="share-remove"
+                    on:click={() => removeShare(row.id)}
+                    aria-label="Remove {row.name} from the split">✕</button
+                  >
+                </div>
+              {/each}
+              <div class="share total">
+                <span class="share-name">Total</span>
+                <span class="share-sum" class:off={Math.abs(sharesTotal - 100) > 0.05}
+                  >{pct(sharesTotal)}</span
+                >
+              </div>
+            </div>
+          {:else}
+            <p class="muted empty">
+              Nobody in the split yet — the equation split stands until someone is entered.
+            </p>
+          {/if}
+          <div class="share-actions">
+            {#if addable.length}
+              <select bind:value={pick} aria-label="Add a member to the split">
+                <option value="">Add a member…</option>
+                {#each addable as person (person.id)}
+                  <option value={person.id}>{person.name}</option>
+                {/each}
+              </select>
+              <button type="button" class="btn ghost" on:click={addShare} disabled={!pick}>Add</button>
+            {/if}
+            <button
+              type="button"
+              class="btn ghost"
+              on:click={copyEquation}
+              disabled={!Object.keys(equationShares).length}
+              title="Replace the split with what the value equation gives today"
+              >Copy from value equation</button
+            >
+          </div>
+        {:else}
+          <p class="muted">
+            Divided by contribution score, as the value equation ranks members today.
+          </p>
+        {/if}
       </div>
 
       <!-- What each zone actually receives, as a share of the whole fund, and
@@ -738,6 +933,133 @@
   .ring-picker button.on {
     background: #0f766e;
     color: #f0fdfa;
+  }
+
+  .split {
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .split-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .mode {
+    display: flex;
+    gap: 0.2rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .mode button {
+    padding: 0.25rem 0.6rem;
+    border-radius: 0.35rem;
+    background: #1e293b;
+    color: #94a3b8;
+    font-size: 0.78rem;
+  }
+
+  .mode button.on {
+    background: #0f766e;
+    color: #f0fdfa;
+  }
+
+  .split .muted {
+    margin: 0;
+  }
+
+  .shares {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .share {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: 0.4rem;
+    background: #0f172a;
+  }
+
+  .share-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .share-name .muted {
+    margin-left: 0.4rem;
+    font-size: 0.72rem;
+  }
+
+  .share input {
+    width: 5rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.35rem;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 0.82rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .share-unit {
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+
+  .share-remove {
+    width: 26px;
+    height: 26px;
+    border-radius: 0.35rem;
+    background: #1e293b;
+    color: #94a3b8;
+    font-size: 0.75rem;
+  }
+
+  .share.total {
+    background: transparent;
+    border-top: 1px solid #1e293b;
+    border-radius: 0;
+  }
+
+  .share-sum {
+    font-size: 0.85rem;
+    color: #5eead4;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .share-sum.off {
+    color: #f59e0b;
+  }
+
+  .share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .share-actions select {
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.4rem;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 0.82rem;
+    max-width: 14rem;
   }
 
   .muted {

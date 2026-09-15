@@ -55,10 +55,13 @@
     layoutSankey,
     ledgerTrackKey,
     nodeBreakdown,
+    normalizeInteriorShares,
     readAllocationConfig,
+    readInteriorShares,
     readCollectiveSlug,
     readZoneAssignments,
     readZonePeople,
+    resolveInteriorMembers,
     rightsTotal,
     toAllocationPartners,
     usageOf,
@@ -69,6 +72,7 @@
     type ChordGroup,
     type FundUsageParty,
     type PeopleFlowTrack,
+    type InteriorShares,
     type LedgerEntry,
     type LedgerSource,
     type OpenCollectiveSnapshot,
@@ -274,15 +278,26 @@
   // moves the Sankey immediately — nothing is written until Save.
   let allocationConfig = { ...DEFAULT_ALLOCATION_CONFIG };
   let zoneOf: Record<string, number> = {};
+  // The hand-set contributors' split, read under `interiorMode: custom`.
+  let interiorShares: InteriorShares = {};
   let savedAllocation = {
     ...DEFAULT_ALLOCATION_CONFIG,
     zones: {} as Record<string, number>,
+    shares: {} as InteriorShares,
   };
+
+  function sameShares(a: InteriorShares, b: InteriorShares): boolean {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+  }
 
   $: allocationDirty =
     allocationConfig.interiorPercent !== savedAllocation.interiorPercent ||
     allocationConfig.steepness !== savedAllocation.steepness ||
     allocationConfig.nzones !== savedAllocation.nzones ||
+    (allocationConfig.interiorMode ?? "equation") !== (savedAllocation.interiorMode ?? "equation") ||
+    !sameShares(normalizeInteriorShares(interiorShares), savedAllocation.shares) ||
     partners.some((p) => (zoneOf[p.id] ?? 0) !== (savedAllocation.zones[p.id] ?? 0));
 
   /**
@@ -294,16 +309,28 @@
   function seedAllocation(doc: unknown) {
     const config = readAllocationConfig(doc);
     const zones = readZoneAssignments(doc);
+    const shares = readInteriorShares(doc);
     const wasDirty = allocationDirty;
-    savedAllocation = { ...config, zones };
+    savedAllocation = { ...config, zones, shares };
     if (!wasDirty) {
       allocationConfig = { ...config };
       zoneOf = { ...zones };
+      interiorShares = { ...shares };
     }
   }
 
   /** Partners carry the draft's rings, not the saved ones. */
   $: zonedPartners = partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 }));
+
+  // Who the contributors' share goes to: the scored roster under the
+  // equation, the draft's hand-set shares under a custom split — the same
+  // resolver the kiosk reads with and the contract is synced by.
+  $: interiorMembers = resolveInteriorMembers({
+    config: allocationConfig,
+    scored: memberShares,
+    shares: interiorShares,
+    nameOf: (id) => nameMap.get(id) ?? usersById[id]?.first_name,
+  });
 
   // ---- Fund usage --------------------------------------------------------------
   //
@@ -323,7 +350,7 @@
     ].filter(Boolean);
   }
   $: usageParties = [
-    ...memberShares.map((m) => ({ id: m.id, name: m.name, aliases: aliasesFor(usersById, m.id) })),
+    ...interiorMembers.map((m) => ({ id: m.id, name: m.name, aliases: aliasesFor(usersById, m.id) })),
     ...zonedPartners
       .filter((p) => p.zone >= 1)
       .map((p) => ({ id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) })),
@@ -348,7 +375,7 @@
     total: collective ? rightsTotal(collective.balance, usage) : null,
     unit: collective?.currency ?? "",
     config: allocationConfig,
-    members: memberShares,
+    members: interiorMembers,
     zoned: zonedPartners,
   });
   $: allocationTrack = allocationToGraph(
@@ -370,7 +397,7 @@
   // taken beyond any right — both read off the same stacked bars.
   $: availableTotal = segmentTotal(allocationTrack, "available");
   $: overTotal = segmentTotal(allocationTrack, "over");
-  $: hasAllocation = memberShares.length > 0 || partners.length > 0;
+  $: hasAllocation = interiorMembers.length > 0 || partners.length > 0;
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency })
     : (v: number) => `${Math.round(v)}%`;
@@ -544,6 +571,10 @@
         : [{ label: "Pot", value: "No collective configured yet" }];
       rows.push(
         { label: "Contributors share", value: `${allocationConfig.interiorPercent}%` },
+        {
+          label: "Divided",
+          value: allocationConfig.interiorMode === "custom" ? "Custom split" : "By value equation",
+        },
         { label: "Reciprocity zones", value: `${100 - allocationConfig.interiorPercent}%` },
       );
       if (usage) {
@@ -1151,6 +1182,7 @@
           <div class="stat">
             <span class="k">Contributors share</span>
             <span class="v">{allocationConfig.interiorPercent}%</span>
+            <span class="k sub">{allocationConfig.interiorMode === "custom" ? "custom split" : "by value equation"}</span>
           </div>
           <div class="stat">
             <span class="k">Reciprocity zones</span>
@@ -1205,12 +1237,19 @@
             bind:interiorPercent={allocationConfig.interiorPercent}
             bind:steepness={allocationConfig.steepness}
             bind:nzones={allocationConfig.nzones}
+            bind:interiorMode={allocationConfig.interiorMode}
+            bind:shares={interiorShares}
             bind:zoneOf
             partners={partners.map((p) => ({ id: p.id, name: p.name }))}
             members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
+            {people}
             saved={savedAllocation}
             on:saved={() => {
-              savedAllocation = { ...allocationConfig, zones: { ...zoneOf } };
+              savedAllocation = {
+                ...allocationConfig,
+                zones: { ...zoneOf },
+                shares: normalizeInteriorShares(interiorShares),
+              };
             }}
           />
         </div>

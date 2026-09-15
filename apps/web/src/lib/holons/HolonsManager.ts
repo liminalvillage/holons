@@ -1,6 +1,7 @@
 import EventEmitter from "eventemitter3";
 import { ethers } from "ethers";
 import type { HoloSphere } from "holosphere";
+import { bundleSyncArgs } from "@holons/core/flows";
 import {
   HolonsContract,
   type HolonBundle,
@@ -648,52 +649,26 @@ export class HolonsManager extends EventEmitter {
       exteriorMembers: Array<{ userId: string; zone: number }>;
     },
   ): Promise<ethers.TransactionResponse> {
-    const exteriorPercent = 100 - params.interiorPercent;
-
-    // Filter out members with 0 or negative percentage
-    const validInteriorMembers = params.interiorMembers.filter(
-      (m) => m.percentage > 0,
-    );
-
-    // Convert interior percentages to basis points (must sum to 10000)
-    let interiorUserIds: string[] = [];
-    let interiorPercentages: number[] = [];
-
-    if (validInteriorMembers.length > 0) {
-      // Normalize percentages to sum to 10000 basis points
-      const totalPercentage = validInteriorMembers.reduce(
-        (sum, m) => sum + m.percentage,
-        0,
-      );
-      if (totalPercentage > 0) {
-        interiorUserIds = validInteriorMembers.map((m) => m.userId);
-        interiorPercentages = validInteriorMembers.map((m, i, arr) => {
-          if (i === arr.length - 1) {
-            // Last one gets the remainder to ensure exact sum of 10000
-            const sumSoFar = arr
-              .slice(0, i)
-              .reduce(
-                (sum, _, j) =>
-                  sum +
-                  Math.round(
-                    (validInteriorMembers[j].percentage / totalPercentage) *
-                      10000,
-                  ),
-                0,
-              );
-            return 10000 - sumSoFar;
-          }
-          return Math.round((m.percentage / totalPercentage) * 10000);
-        });
-      }
-    }
-
-    // Filter out exterior members with invalid zones
-    const validExteriorMembers = params.exteriorMembers.filter(
-      (m) => m.zone >= 1,
-    );
-    const exteriorUserIds = validExteriorMembers.map((m) => m.userId);
-    const exteriorZones = validExteriorMembers.map((m) => m.zone);
+    // One encoder for every surface (core flows/contract.ts): basis points
+    // summing to exactly 10000, placed partners only. The kiosk's bare wallet
+    // call encodes through the same function, so both send identical numbers.
+    const args = bundleSyncArgs({
+      config: {
+        interiorPercent: params.interiorPercent,
+        steepness: 0, // overridden below: the caller already has the WAD value
+        nzones: params.nzones,
+      },
+      members: params.interiorMembers,
+      partners: params.exteriorMembers.map((m) => ({
+        id: m.userId,
+        zone: m.zone,
+      })),
+    });
+    const exteriorPercent = Number(args.exteriorBps) / 100;
+    const interiorUserIds = args.interiorUserIds;
+    const interiorPercentages = args.interiorPercentages.map((v) => Number(v));
+    const exteriorUserIds = args.exteriorUserIds;
+    const exteriorZones = args.exteriorZones.map((v) => Number(v));
 
     const tx = await this.contract.syncAll(bundleAddress, {
       interiorPercent: params.interiorPercent,

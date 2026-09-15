@@ -19,8 +19,18 @@
 import type { ethers } from "ethers";
 import type { HoloSphere } from "holosphere";
 import type { HolonsManager } from "./HolonsManager";
-import { readBundleRecord, saveAllocationConfig } from "@holons/core/flows";
-import type { HolonBundleRecord } from "@holons/core/flows";
+import {
+  readBundleRecord,
+  resolveInteriorMembers,
+  saveAllocationConfig,
+  steepnessFromContract,
+  steepnessToContract,
+} from "@holons/core/flows";
+import type {
+  HolonBundleRecord,
+  InteriorMode,
+  InteriorShares,
+} from "@holons/core/flows";
 
 /** The split as the UI holds it: percentages and a count, no WAD anywhere. */
 export interface AllocationDraft {
@@ -29,6 +39,8 @@ export interface AllocationDraft {
   /** 0-100 UI scale. Higher is a flatter spread across zones. */
   steepness: number;
   nzones: number;
+  /** How the contributors' share is divided; absent means by the equation. */
+  interiorMode?: InteriorMode;
 }
 
 /** An interior member's share, as the contribution scoring yields it. */
@@ -38,28 +50,37 @@ export interface SyncMember {
   percentage: number;
 }
 
+/**
+ * The interior roster the contract is sent: the scored members under the
+ * equation, the custom shares under `custom` — one resolver, shared with every
+ * wallet-less reader through core, so the chain pays exactly what the mirror
+ * shows.
+ */
+export function membersForSync(
+  draft: Pick<AllocationDraft, "interiorMode">,
+  scored: SyncMember[],
+  shares?: InteriorShares,
+): SyncMember[] {
+  return resolveInteriorMembers({
+    config: { interiorMode: draft.interiorMode },
+    scored: scored.map((m) => ({
+      id: String(m.userId),
+      name: String(m.userId),
+      percentage: m.percentage,
+    })),
+    shares,
+  }).map((m) => ({ userId: m.id, percentage: m.percentage }));
+}
+
 /** A federated partner's ring. Zone < 1 means unplaced. */
 export interface SyncPartner {
   id: string;
   zone: number;
 }
 
-/** Convert steepness from UI value (0-100) to contract value (BigInt). */
-export function steepnessToContract(uiValue: number): bigint {
-  // Contract expects 0 < s < 1e18 (WAD scale, strictly between)
-  // Clamp to valid range: 1 to 999999999999999999 (just under 1e18)
-  const minValue = 1n;
-  const maxValue = BigInt(1e18) - 1n;
-  const scaled = BigInt(Math.floor((uiValue / 100) * 1e18));
-  if (scaled <= 0n) return minValue;
-  if (scaled >= BigInt(1e18)) return maxValue;
-  return scaled;
-}
-
-/** Convert steepness from contract value (BigInt) to UI value (0-100). */
-export function steepnessFromContract(contractValue: bigint): number {
-  return Number((contractValue * 100n) / BigInt(1e18));
-}
+// The steepness scale lives in core now (flows/contract.ts) so the kiosk's
+// wallet call and this manager agree; re-exported for the callers here.
+export { steepnessFromContract, steepnessToContract };
 
 /** Zone assignments as the settings mirror stores them, unplaced included. */
 function zoneMap(partners: SyncPartner[]): Record<string, number> {
@@ -79,8 +100,16 @@ export async function mirrorAllocation(
   holonId: string,
   draft: AllocationDraft,
   partners: SyncPartner[] = [],
+  shares?: InteriorShares,
 ): Promise<void> {
-  await saveAllocationConfig(holosphere, holonId, draft, zoneMap(partners));
+  await saveAllocationConfig(
+    holosphere,
+    holonId,
+    draft,
+    zoneMap(partners),
+    undefined,
+    shares,
+  );
 }
 
 /**
@@ -90,6 +119,11 @@ export async function mirrorAllocation(
  * surfaces read is what was actually sent. Unplaced partners (`zone < 1`) are
  * mirrored but not sent: the contract only knows about placed ones, while the
  * settings lens has to remember that somebody deliberately left one out.
+ *
+ * `members` are the SCORED shares; under a custom split the contract is sent
+ * the `shares` instead, resolved by the same rule the mirror is read with.
+ * The shares are mirrored either way, so a later flip back to custom finds
+ * them again.
  */
 export async function syncAllocation(params: {
   manager: HolonsManager;
@@ -99,6 +133,7 @@ export async function syncAllocation(params: {
   draft: AllocationDraft;
   members: SyncMember[];
   partners: SyncPartner[];
+  shares?: InteriorShares;
 }): Promise<ethers.TransactionResponse> {
   const {
     manager,
@@ -108,13 +143,14 @@ export async function syncAllocation(params: {
     draft,
     members,
     partners,
+    shares,
   } = params;
 
   const tx = await manager.syncAll(bundleAddress, {
     interiorPercent: draft.interiorPercent,
     steepness: steepnessToContract(draft.steepness),
     nzones: draft.nzones,
-    interiorMembers: members.map((m) => ({
+    interiorMembers: membersForSync(draft, members, shares).map((m) => ({
       userId: String(m.userId),
       percentage: m.percentage,
     })),
@@ -124,7 +160,7 @@ export async function syncAllocation(params: {
   });
 
   if (holosphere) {
-    await mirrorAllocation(holosphere, holonId, draft, partners);
+    await mirrorAllocation(holosphere, holonId, draft, partners, shares);
   }
 
   return tx;
