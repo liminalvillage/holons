@@ -365,17 +365,13 @@
     } else if (dragged && id && day) {
       justDragged = true; // swallow the click that follows this pointerup
       setTimeout(() => (justDragged = false), 0);
-      // The year window has no clock: a card dropped there becomes a day task.
-      void applyDrop(id, day, min, view === "year");
+      // The year window has no clock, so it works like a month cell: the day
+      // changes, a time the card already had stays.
+      void applyDrop(id, day, min);
     }
   }
 
-  async function applyDrop(
-    id: string,
-    day: string,
-    min: number | null,
-    allDay = false,
-  ) {
+  async function applyDrop(id: string, day: string, min: number | null) {
     const hid = get(holonId);
     if (!hid) return;
     const card = resolveCard(id);
@@ -392,8 +388,9 @@
       when = toStoredInstant(
         localDateTime(day, Math.floor(min / 60), min % 60),
       );
-    } else if (!allDay && q.when && /T\d\d:/.test(String(q.when))) {
-      // Dropped on a day cell, but it already had a time → keep the time.
+    } else if (q.when && /T\d\d:/.test(String(q.when))) {
+      // Dropped on a day cell (or the year window), but it already had a
+      // time → keep the time.
       when = toStoredInstant(
         localDateTime(day, oldStart.getHours(), oldStart.getMinutes()),
       );
@@ -773,6 +770,9 @@
   // day offset is written BEFORE the mode flips (with `lastMode` pre-set so
   // the mode-change reaction above doesn't reset it back to today).
   function gotoDay(date: Date) {
+    // The click that ends a card's drag lands on the timeline too — that
+    // was a move, not a tap on the day underneath.
+    if (justDragged) return;
     const days = Math.round(
       (startOfDay(date).getTime() - startOfDay(get(now)).getTime()) / 86400000,
     );
@@ -1355,6 +1355,7 @@
         {noteColorFor}
         onOpen={open}
         onSelectDay={gotoDay}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
         {dropDay}
       />
     {:else}

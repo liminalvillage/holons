@@ -34,6 +34,14 @@
    * container's `data-view-from`/`data-view-to` (the ms the viewport spans).
    */
   export let dropDay: string | null = null;
+  /**
+   * A press on a card is the card's, not the timeline's: the board takes the
+   * pointer for its drag (move to another day, or into the drawer) instead
+   * of a pan starting under it. Null leaves cards tap-only.
+   */
+  export let onDragStart:
+    | ((e: PointerEvent, ev: CalendarEvent) => void)
+    | null = null;
 
   // Layout constants (rem, so the timeline scales with the kiosk's fluid
   // root font) — keep in sync with the stacking styles below.
@@ -515,6 +523,11 @@
     e.stopPropagation(); // don't also jump the day underneath
     onOpen(ev);
   }
+  function liftEv(e: PointerEvent, ev: CalendarEvent) {
+    if (!onDragStart) return;
+    e.stopPropagation(); // the timeline must not start panning under it
+    onDragStart(e, ev);
+  }
 
   // ── Toolbar: zoom buttons + the overview strip ────────────────────────────
   // The strip is the whole year in miniature with the viewport as a window;
@@ -606,7 +619,7 @@
     hover = null;
   }
 
-  // ── Drop target: the day a dragged card would become a day task on ───────
+  // ── Drop target: the day a dragged card would land on ─────────────────────
   $: viewFromMs = yearStart + ((yearEnd - yearStart) * viewStart) / 100;
   $: viewToMs =
     yearStart + ((yearEnd - yearStart) * (viewStart + viewSpan)) / 100;
@@ -801,6 +814,7 @@
               ev.category,
             )}; --glow: {ev.sourceColor ?? 'transparent'};"
             aria-label={dotTitle(ev)}
+            on:pointerdown={(e) => liftEv(e, ev)}
             on:click={(e) => openEv(e, ev)}
           >
             {#if lw !== null}
@@ -829,6 +843,7 @@
         s.ev.category,
       )}; --glow: {s.ev.sourceColor ?? 'transparent'};"
       aria-label={spanTitle(s.ev)}
+      on:pointerdown={(e) => liftEv(e, s.ev)}
       on:click={(e) => openEv(e, s.ev)}
     >
       {#if s.labeled}
@@ -1143,6 +1158,9 @@
     transform: translateX(-50%);
     pointer-events: auto;
     cursor: pointer;
+    /* A finger moving sideways from a card lifts it (the board's drag);
+       moving up or down still scrolls the page (see beginDrag there). */
+    touch-action: pan-y;
     box-shadow: var(--shadow-soft);
     transition: transform 0.12s ease;
   }
@@ -1175,6 +1193,7 @@
     border-radius: 999px;
     pointer-events: auto;
     cursor: pointer;
+    touch-action: pan-y;
     box-shadow: var(--shadow-soft);
   }
   .yt-span.labeled {
