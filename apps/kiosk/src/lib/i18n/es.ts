@@ -805,6 +805,13 @@ export const es: Record<MessageKey, Msg> = {
   "detail.regenerate": "Regenerar",
   "detail.title": "Título",
   "detail.titlePlaceholder": "¿Qué hay que hacer?",
+  // The card's type switch: is this work to do, or something happening?
+  "detail.kind": "Tipo",
+  "detail.kindTask": "Tarea",
+  "detail.kindEvent": "Evento",
+  "detail.kindTaskHint": "En el tablero de tareas",
+  "detail.kindEventHint": "Solo en el calendario",
+  "detail.kindNeedsDate": "Ponle una fecha para convertirlo en evento",
   "detail.starts": "Empieza",
   "detail.ends": "Termina",
   "detail.startDateAria": "Fecha de inicio",

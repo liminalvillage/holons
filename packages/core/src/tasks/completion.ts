@@ -12,6 +12,11 @@
 //   - Telegram message editing, reminder cancellation, federation propagation.
 
 import type { Quest } from './types.js';
+import {
+  isOccurrenceCompleted,
+  isRecurring,
+  markOccurrenceCompleted,
+} from './recurrence.js';
 
 export interface CompleteTaskOptions {
   /** ISO timestamp for `completed_at`. Defaults to new Date().toISOString(). */
@@ -56,4 +61,40 @@ export function applyTaskCompletion(
   } as Quest;
 
   return { ok: true, task: updated, releasedHolograms };
+}
+
+export type CompleteOccurrenceResult =
+  | { ok: true; task: Quest; occurrence: string }
+  | {
+      ok: false;
+      reason: 'already-completed' | 'stopped' | 'forbidden' | 'not-recurring';
+    };
+
+/**
+ * Complete ONE occurrence of a recurring quest — the same guards as
+ * {@link applyTaskCompletion}, but the series stays open: only
+ * `completedOccurrences` gains `occurrence` (its stored start, see
+ * `questOccurrences`). Credits are planned by `planOccurrenceCompletion`.
+ */
+export function applyOccurrenceCompletion(
+  task: Quest,
+  occurrence: string,
+  completerId: string | number,
+  options: CompleteTaskOptions = {},
+): CompleteOccurrenceResult {
+  if (!isRecurring(task)) return { ok: false, reason: 'not-recurring' };
+  if (task.status === 'stopped') return { ok: false, reason: 'stopped' };
+  if (isOccurrenceCompleted(task, occurrence)) {
+    return { ok: false, reason: 'already-completed' };
+  }
+  const allowed = options.isAdmin === true
+    || isInitiator(task, completerId)
+    || isParticipant(task, completerId);
+  if (!allowed) return { ok: false, reason: 'forbidden' };
+
+  const updated: Quest = {
+    ...task,
+    completedOccurrences: markOccurrenceCompleted(task, occurrence),
+  };
+  return { ok: true, task: updated, occurrence };
 }

@@ -42,8 +42,13 @@
         applyBreakdownProposal,
         saveTasksToHolon,
         BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
+        QUEST_FREQUENCIES,
+        applyOccurrenceCompletion,
+        planOccurrenceCompletion,
+        setQuestFrequency,
         type ApplyBreakdownResult,
         type BreakdownStep,
+        type QuestFrequency,
     } from "@holons/core/tasks";
     import {
         parseInstant,
@@ -122,25 +127,30 @@
     let recurringStatus = quest.status || 'ongoing';
     let frequency: string | null = quest.frequency ?? null;
 
-    type FrequencyOption = { value: string | null; label: string };
+    // The cadence vocabulary is core's (@holons/core/tasks recurrence) — the
+    // same set the kiosk offers, so a cadence picked on either surface reads
+    // on the other.
+    type FrequencyOption = { value: QuestFrequency | null; label: string };
+    const FREQUENCY_LABELS: Record<QuestFrequency, string> = {
+        daily: 'Daily',
+        weekly: 'Weekly',
+        biweekly: 'Every 2 weeks',
+        monthly: 'Monthly',
+        quarterly: 'Quarterly',
+        sixmonths: 'Every 6 months',
+        yearly: 'Yearly',
+    };
     const frequencyOptions: FrequencyOption[] = [
         { value: null, label: 'Never' },
-        { value: 'daily', label: 'Daily' },
-        { value: 'weekly', label: 'Weekly' },
-        { value: 'monthly', label: 'Monthly' },
-        { value: 'quarterly', label: 'Quarterly' },
-        { value: 'yearly', label: 'Yearly' },
+        ...QUEST_FREQUENCIES.map((value) => ({ value, label: FREQUENCY_LABELS[value] })),
     ];
 
-    async function updateFrequency(newFrequency: string | null) {
+    async function updateFrequency(newFrequency: QuestFrequency | null) {
         if ((frequency ?? null) === (newFrequency ?? null)) return;
         frequency = newFrequency;
-        const updates: any = { frequency: newFrequency };
-        // When clearing frequency, also drop the recurringTaskId so the scheduler stops it.
-        if (newFrequency === null && quest.recurringTaskId) {
-            updates.recurringTaskId = null;
-        }
-        await updateQuest(updates);
+        // Core also drops the recurringTaskId when the cadence is cleared, so
+        // the scheduler stops it.
+        await updateQuest(setQuestFrequency(quest, newFrequency));
     }
 
     let editingTitle = false;
@@ -471,12 +481,13 @@
         });
     })();
 
-    // Toggle completion. For recurring occurrences, only this occurrence is
-    // toggled (no accounting is recorded, so no picker); otherwise the series
-    // completion opens the participant picker first.
+    // Toggle completion. Completing credits contributions — for a one-off
+    // quest and for one occurrence of a recurring series alike — so the
+    // participant picker opens first either way. Un-completing skips it.
     function handleCompleteClick() {
         if (isOccurrenceView) {
-            toggleOccurrenceCompleted();
+            if (isOccurrenceCompleted) toggleOccurrenceCompleted();
+            else showCompleterModal = true;
             return;
         }
         completeQuest();
@@ -500,6 +511,7 @@
         recordCompletion(participants);
     }
 
+    /** Un-tick this occurrence (ticking goes through the picker + credits). */
     async function toggleOccurrenceCompleted() {
         if (!occurrenceWhen) return;
         const current: string[] = Array.isArray(quest.completedOccurrences) ? quest.completedOccurrences : [];
@@ -523,6 +535,10 @@
 
     /** Record the completion crediting exactly the confirmed participants. */
     async function recordCompletion(participants: any[]) {
+        if (isOccurrenceView) {
+            await recordOccurrenceCompletion(participants);
+            return;
+        }
         // The confirmed set replaces the task's participants — unticking someone
         // both drops their credit and takes them off the record.
         const questToComplete = { ...quest, participants };
@@ -556,6 +572,40 @@
         quest = result.task;
         dispatch("updated", { questId, quest: result.task });
         dispatch("taskCompleted", { questId });
+        dispatch("close");
+    }
+
+    /**
+     * One occurrence of a recurring series: the series stays open and only
+     * gets this occurrence ticked off, while the confirmed participants are
+     * credited exactly as for a one-off — same events, same equation, keyed
+     * under the occurrence so each one counts on its own. The confirmed set
+     * shapes the credits only; the series' roster is not rewritten.
+     */
+    async function recordOccurrenceCompletion(participants: any[]) {
+        if (!occurrenceWhen) return;
+        const result = applyOccurrenceCompletion(quest, occurrenceWhen, currentUserId(), { isAdmin: true });
+        if (!result.ok) {
+            console.warn('[TaskModal] applyOccurrenceCompletion blocked:', result.reason);
+            return;
+        }
+        const plan = planOccurrenceCompletion(result.task, occurrenceWhen, equation, {
+            holonId,
+            now: Date.now(),
+            credited: participants,
+        });
+        try {
+            await executeCompletionPlan(holosphere as any, getEventStore(holosphere), holonId, plan);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+                return;
+            }
+            console.error('[TaskModal] executeCompletionPlan (occurrence) failed:', error);
+        }
+        quest = result.task;
+        dispatch("updated", { questId, quest: result.task });
+        dispatch("taskCompleted", { questId, occurrenceWhen });
         dispatch("close");
     }
 

@@ -58,6 +58,114 @@ describe("toEvents — spans", () => {
   });
 });
 
+describe("toEvents — recurring series", () => {
+  const now = new Date(2026, 8, 10, 12); // 10 Sep 2026
+
+  it("draws one event per occurrence, keyed to the series", () => {
+    const evs = toEvents(
+      [quest("standup", { when: "2026-09-01", frequency: "weekly" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    // A season back → a year and a half ahead: Sep 1 is the first in view.
+    expect(evs[0].id).toBe("standup::2026-09-01");
+    expect(evs[0].date).toEqual(new Date(2026, 8, 1));
+    expect(evs[1].date).toEqual(new Date(2026, 8, 8));
+    expect(evs[0].occurrence).toEqual({
+      seriesId: "standup",
+      when: "2026-09-01",
+      completed: false,
+      frequency: "weekly",
+    });
+    // Ids stay unique across the run so view keys never collide.
+    expect(new Set(evs.map((e) => e.id)).size).toBe(evs.length);
+    // No card for the series record itself.
+    expect(evs.some((e) => e.id === "standup")).toBe(false);
+  });
+
+  it("carries the series' span and flags ticked-off occurrences", () => {
+    const evs = toEvents(
+      [
+        quest("retreat", {
+          when: "2026-09-04",
+          ends: "2026-09-06",
+          frequency: "monthly",
+          completedOccurrences: ["2026-10-04"],
+        }),
+      ],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(evs[0].days).toBe(3);
+    expect(evs[0].end).toEqual(new Date(2026, 8, 6));
+    expect(evs[1].occurrence?.completed).toBe(true);
+  });
+
+  it("draws a series that starts beyond the window as its own start", () => {
+    const [ev] = toEvents(
+      [quest("far", { when: "2030-01-01", frequency: "weekly" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(ev.id).toBe("far");
+    expect(ev.occurrence).toBeUndefined();
+  });
+
+  it("leaves a one-off alone", () => {
+    const [ev] = toEvents(
+      [quest("once", { when: "2026-09-12" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(ev.id).toBe("once");
+    expect(ev.occurrence).toBeUndefined();
+  });
+});
+
+describe("toBacklog — recurring tasks", () => {
+  const now = new Date(2026, 8, 10, 12);
+
+  it("is due on the next open occurrence, and says it repeats", () => {
+    const [task] = toBacklog(
+      [
+        quest("bins", {
+          when: "2026-09-01",
+          frequency: "weekly",
+          completedOccurrences: ["2026-09-15"],
+        }),
+      ],
+      undefined,
+      "loved",
+      undefined,
+      undefined,
+      now,
+    );
+    expect(task.frequency).toBe("weekly");
+    expect(task.due).toEqual(new Date(2026, 8, 22));
+  });
+
+  it("keeps a one-off's own date and no cadence", () => {
+    const [task] = toBacklog(
+      [quest("once", { when: "2026-09-01" })],
+      undefined,
+      "loved",
+      undefined,
+      undefined,
+      now,
+    );
+    expect(task.frequency).toBeNull();
+    expect(task.due).toEqual(new Date(2026, 8, 1));
+  });
+});
+
 describe("toBacklog — dependency-aware ordering", () => {
   it("marks self-standing tasks and current leaves as unblocked", () => {
     const out = toBacklog([
@@ -601,5 +709,51 @@ describe("toExternalEvents — a calendar the holon follows", () => {
     expect(externalEventColor({ ...feed, id: "cal_2" })).toBe(
       externalEventColor({ id: "cal_2" }),
     );
+  });
+});
+
+describe("the two boards stay separate", () => {
+  // The `quests` lens is shared: offers, needs and whatever a future domain
+  // parks there arrive in the same subscription as tasks and events. Core's
+  // `questKind` draws the line; these lock in what each board shows.
+  const mixed: Quest[] = [
+    quest("chore", { when: "2026-08-20" }),
+    quest("standup", { type: "event", when: "2026-08-20" }),
+    quest("flour", { type: "offer", when: "2026-08-20" }),
+    quest("wanted-flour", { type: "need", when: "2026-08-20" }),
+    quest("borrow-drill", { type: "request", when: "2026-08-20" }),
+    quest("some-resource", { type: "resource", when: "2026-08-20" }),
+  ];
+
+  it("keeps the backlog to tasks alone", () => {
+    expect(toBacklog(mixed).map((t) => t.id)).toEqual(["chore"]);
+  });
+
+  it("keeps offers, needs and unknown records off the calendar too", () => {
+    expect(
+      toEvents(mixed)
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual(["chore", "standup"]);
+  });
+
+  it("still calls an untyped record a task — the historical default", () => {
+    const legacy = [quest("old", { type: undefined })];
+    expect(toBacklog(legacy).map((t) => t.id)).toEqual(["old"]);
+  });
+
+  it("folds the legacy task spellings onto the wall", () => {
+    const out = toBacklog([
+      quest("a", { type: "quest" }),
+      quest("b", { type: "recurring" }),
+      quest("c", { type: "Task" }),
+    ]);
+    expect(out.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves an undated event off the calendar without adding it to the wall", () => {
+    const orphan = [quest("someday", { type: "event" })];
+    expect(toEvents(orphan)).toEqual([]);
+    expect(toBacklog(orphan)).toEqual([]);
   });
 });

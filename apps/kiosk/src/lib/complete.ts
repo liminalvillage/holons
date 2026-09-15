@@ -17,10 +17,15 @@
 
 import {
   applyTaskCompletion,
+  applyOccurrenceCompletion,
+  isOccurrenceCompleted,
   planTaskCompletion,
+  planOccurrenceCompletion,
   executeCompletionPlan,
   type Quest,
+  type QuestParticipant,
   type CompleteTaskResult,
+  type CompleteOccurrenceResult,
 } from "@holons/core/tasks";
 import { loadEquation, DEFAULT_EQUATION } from "@holons/core/scoring";
 import { REAEventStore } from "@holons/core/rea";
@@ -77,6 +82,65 @@ export async function recordCompletion(
   const plan = planTaskCompletion(completedTask, equation, {
     holonId,
     now: Date.now(),
+  });
+  const eventStore = new REAEventStore(store as never);
+  const outcome = await executeCompletionPlan(
+    store as never,
+    eventStore,
+    holonId,
+    plan,
+  );
+  return {
+    ok: outcome.taskSaved,
+    actions: outcome.savedActions,
+    expenses: outcome.savedExpenses,
+  };
+}
+
+/** Status pre-check for ticking off one occurrence of a recurring task. */
+export function checkOccurrenceComplete(
+  task: Quest,
+  occurrence: string,
+): CompletePrecheck {
+  if (isOccurrenceCompleted(task, occurrence))
+    return { ok: false, reason: "already-completed" };
+  if (task.status === "stopped") return { ok: false, reason: "stopped" };
+  return { ok: true };
+}
+
+/**
+ * Record the completion of ONE occurrence of a recurring task: the series
+ * gets the occurrence ticked off (it stays open), and the people confirmed in
+ * CompleteConfirm are credited exactly as for a one-off task — the same REA
+ * events and hour expenses, keyed under the occurrence so each week counts
+ * on its own. `credited` is who took part THIS time; the series' roster is
+ * left as it is.
+ */
+export async function recordOccurrenceCompletion(
+  holonId: string,
+  task: Quest,
+  occurrence: string,
+  credited: QuestParticipant[],
+  completerId: string | number,
+): Promise<CompletionRecord> {
+  const applied: CompleteOccurrenceResult = applyOccurrenceCompletion(
+    task,
+    occurrence,
+    completerId,
+    { isAdmin: true },
+  );
+  if (!applied.ok) return { ok: false, actions: 0, expenses: 0 };
+  const store = await getReaStore();
+  let equation = DEFAULT_EQUATION;
+  try {
+    equation = await loadEquation(store, holonId);
+  } catch {
+    /* fall back to the default value equation */
+  }
+  const plan = planOccurrenceCompletion(applied.task, occurrence, equation, {
+    holonId,
+    now: Date.now(),
+    credited,
   });
   const eventStore = new REAEventStore(store as never);
   const outcome = await executeCompletionPlan(

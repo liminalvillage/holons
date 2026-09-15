@@ -167,8 +167,11 @@
     if (task) void doAppreciate(task);
   }
 
+  // A recurring task's chip leads with ↻: its due date is the next occurrence
+  // (see toBacklog), and the glyph says there will be another after it.
   function dueLabel(task: BacklogTask): string | null {
-    return dueLabelFor(task.due, $now, $t, $locale);
+    const label = dueLabelFor(task.due, $now, $t, $locale);
+    return label && task.frequency ? `↻ ${label}` : label;
   }
 
   // ── Drag-to-reorder ───────────────────────────────────────────────────────-

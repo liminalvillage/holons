@@ -120,3 +120,41 @@ export function planTaskCompletion(
 
   return { task, actions, expenses, releasedHolograms };
 }
+
+/**
+ * The quest id one occurrence of a series is credited under. The REA event
+ * ids are keyed on the quest id, so this is what keeps each occurrence's
+ * credits apart — the Telegram scheduler spawns every occurrence as a fresh
+ * quest for the same reason; this is the read-side twin of that.
+ */
+export function occurrenceQuestId(taskId: string | number, when: string): string {
+  return `${taskId}::${when}`;
+}
+
+/**
+ * Plan the credits for completing ONE occurrence of a recurring quest: the
+ * very same actions a one-off quest earns (initiated, completed per
+ * participant, appreciation exchanges, hours) priced by the same equation,
+ * keyed under {@link occurrenceQuestId} so this week's credits never collide
+ * with last week's. The plan's `task` is the series as `applyOccurrenceCompletion`
+ * returned it — that is what gets saved, not a quest per occurrence.
+ *
+ * `credited` is the confirmed participant set (who actually showed up this
+ * time); it only shapes the credits, the series' own roster is untouched.
+ */
+export function planOccurrenceCompletion(
+  task: Quest,
+  when: string,
+  equation: ScoreEquation,
+  options: { now?: number; holonId?: string | number; credited?: QuestParticipant[] } = {},
+): CompletionPlan {
+  const { credited, ...rest } = options;
+  const occurrence: Quest = {
+    ...task,
+    id: occurrenceQuestId(task.id ?? '', when),
+    participants: credited ?? task.participants ?? [],
+    activeHolograms: [],
+  };
+  const plan = planTaskCompletion(occurrence, equation, rest);
+  return { ...plan, task, releasedHolograms: [] };
+}

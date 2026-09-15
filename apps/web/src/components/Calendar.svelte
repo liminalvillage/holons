@@ -21,6 +21,7 @@
     import { buildBookingSpans, type BookableItem } from '$lib/util/libraryBookings';
     import { questColor } from '$lib/util/questColors';
     import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
+    import { advanceOccurrence, questFrequency } from '@holons/core/tasks';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -168,18 +169,11 @@
     }
 
     // --- Recurring task expansion ---
+    // Core owns the cadence vocabulary and the step (@holons/core/tasks
+    // recurrence) so the kiosk and this calendar draw the same occurrences.
     function advanceDate(date: Date, frequency: string): Date | null {
-        const d = new Date(date);
-        switch (String(frequency).toLowerCase()) {
-            case 'daily':     d.setDate(d.getDate() + 1); return d;
-            case 'weekly':    d.setDate(d.getDate() + 7); return d;
-            case 'biweekly':  d.setDate(d.getDate() + 14); return d;
-            case 'monthly':   d.setMonth(d.getMonth() + 1); return d;
-            case 'quarterly': d.setMonth(d.getMonth() + 3); return d;
-            case 'sixmonths': d.setMonth(d.getMonth() + 6); return d;
-            case 'yearly':    d.setFullYear(d.getFullYear() + 1); return d;
-        }
-        return null;
+        const f = questFrequency({ frequency });
+        return f ? advanceOccurrence(date, f) : null;
     }
 
     type TaskEntry = { key: string; originalKey: string; task: any; isInstance: boolean };

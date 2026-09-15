@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // View-model normalisation. The kiosk reads two lenses:
-//   - `quests`  → calendar events (dated) + the task backlog (open, undated)
+//   - `quests`  → the task backlog and the calendar. The lens is shared with
+//     other domains (offers, needs, …), so core's `questKind` decides which
+//     records reach which board — see `@holons/core/tasks/kind`.
 //   - `library` → the library of things
 // Core owns the meaning of these records; here we only shape them for display.
 
 import {
+  isAgendaQuest,
   isQuestSettled,
+  isRecurring,
+  isTaskQuest,
+  nextOpenOccurrence,
+  questFrequency,
+  questOccurrences,
   questSchedule,
   unmetDependencies,
 } from "@holons/core/tasks";
-import type { Quest } from "@holons/core/tasks";
+import type { Quest, QuestFrequency } from "@holons/core/tasks";
 import { dayKey, getDisplayBookings } from "@holons/core/library";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
@@ -235,6 +243,19 @@ export interface CalendarEvent {
    * entry of one feed reads as one colour on the board.
    */
   color?: string;
+  /**
+   * Set on one occurrence of a recurring series (see `questOccurrences` in
+   * @holons/core/tasks). `id` is then unique to the occurrence; the quest a
+   * tap opens and a gesture writes is `seriesId`, and `when` is this
+   * occurrence's stored start — what ticking it off records. The series'
+   * own record is never drawn as a card of its own.
+   */
+  occurrence?: {
+    seriesId: string;
+    when: string;
+    completed: boolean;
+    frequency: QuestFrequency;
+  };
 }
 
 export interface TaskPerson {
@@ -269,6 +290,11 @@ export interface BacklogTask {
   orderIndex?: number;
   /** Creation instant (epoch ms; 0 unknown), for the newest-first default. */
   created: number;
+  /**
+   * The cadence of a recurring task, or null for a one-off. When set, `due`
+   * is the NEXT occurrence still to do, not the day the series began.
+   */
+  frequency: QuestFrequency | null;
   /**
    * How many of this task's dependencies are still open. 0 ⇒ a current leaf
    * of the graph (self-standing, or every predecessor completed): actionable
@@ -350,41 +376,104 @@ export function dueLabelFor(
   return due.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
-/** Dated, still-open quests → calendar events, soonest first. */
+/**
+ * The span recurring series are drawn across: a season back, so a ticked-off
+ * occurrence stays visible for a while, and a year and a half ahead — as far
+ * as anyone pages the year view. The web dashboard uses the same reach.
+ */
+export function occurrenceWindow(now: Date): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setMonth(start.getMonth() - 3);
+  const end = new Date(now);
+  end.setMonth(end.getMonth() + 18);
+  return { start, end };
+}
+
+/**
+ * Dated, still-open quests → calendar events, soonest first. A recurring
+ * series contributes one event per occurrence inside {@link occurrenceWindow}
+ * around `now` (core expands the cadence), each tagged with `occurrence` so a
+ * tap or a drag reaches the series behind it.
+ */
 export function toEvents(
   quests: Quest[],
   names?: Names,
   t?: Translator,
   colors?: HolonColors,
+  now: Date = new Date(),
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
+  const window = occurrenceWindow(now);
   for (const q of quests) {
     if (isDone(q)) continue;
+    // Tasks and events only. Offers, needs and whatever else a domain parks on
+    // the `quests` lens have their own boards — core draws that line
+    // (`isAgendaQuest`), so an offer's expiry never lands on the calendar.
+    if (!isAgendaQuest(q)) continue;
     // Core owns what a schedule means: all-day vs timed, and the inclusive
     // span of days a multi-day card covers.
-    const { start: date, end, allDay, days, multiDay } = questSchedule(q);
-    if (!date) continue;
+    if (!questSchedule(q).start) continue;
     const id = String(q.id ?? q.title);
     // Federation shares quests, so the same id can arrive from several holons —
     // keep the first (the kiosk's own copy) so view keys stay unique.
     if (seen.has(id)) continue;
     seen.add(id);
-    out.push({
-      id,
+    const common = {
       title: q.title || (t ? t("common.untitled") : "Untitled"),
-      date,
-      end: end ?? undefined,
-      days,
-      multiDay,
       category: q.category,
       location: q.location,
-      allDay,
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
       sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
+    };
+    const frequency = questFrequency(q);
+    // A series whose every occurrence lies beyond the window (it starts more
+    // than a season ahead) falls through and draws as its own start instead.
+    const occurrences =
+      frequency && isRecurring(q) ? questOccurrences(q, window) : [];
+    if (frequency && occurrences.length) {
+      for (const occ of occurrences) {
+        const {
+          start: date,
+          end,
+          allDay,
+          days,
+          multiDay,
+        } = questSchedule(occ.schedule);
+        if (!date) continue;
+        out.push({
+          ...common,
+          // `::` matches the dashboard's instance keys; nothing parses it —
+          // the series id rides along explicitly.
+          id: `${id}::${occ.when}`,
+          date,
+          end: end ?? undefined,
+          days,
+          multiDay,
+          allDay,
+          occurrence: {
+            seriesId: id,
+            when: occ.when,
+            completed: occ.completed,
+            frequency,
+          },
+        });
+      }
+      continue;
+    }
+    const { start: date, end, allDay, days, multiDay } = questSchedule(q);
+    if (!date) continue;
+    out.push({
+      ...common,
+      id,
+      date,
+      end: end ?? undefined,
+      days,
+      multiDay,
+      allDay,
     });
   }
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -397,13 +486,18 @@ export function toEvents(
  */
 export type TaskSort = "loved" | "new" | "manual";
 
-/** Open quests → the backlog wall. Excludes pure calendar events. */
+/**
+ * Open tasks → the backlog wall. The `quests` lens is shared, so this keeps
+ * only what core calls a task: calendar events, marketplace offers/requests/
+ * needs and any other domain's records stay off the wall.
+ */
 export function toBacklog(
   quests: Quest[],
   names?: Names,
   sort: TaskSort = "loved",
   t?: Translator,
   colors?: HolonColors,
+  now: Date = new Date(),
 ): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
@@ -418,17 +512,28 @@ export function toBacklog(
     // a phantom "Untitled" card that flips with the real one and re-triggers the
     // FLIP reshuffle endlessly.
     if (q.id == null && !q.title) continue;
-    if (String(q.type ?? "").toLowerCase() === "event") continue;
+    // The backlog is tasks and nothing else. Events belong to the calendar,
+    // offers/needs to their own board, and an unknown type to whichever
+    // domain wrote it — core's `isTaskQuest` is the single rule (see
+    // `@holons/core/tasks/kind`), so nothing new leaks onto the wall.
+    if (!isTaskQuest(q)) continue;
     const id = String(q.id ?? q.title);
     if (seen.has(id)) continue; // dedupe federated copies of the same quest
     seen.add(id);
+    // A recurring task is due when its next open occurrence is, not on the
+    // day the series began (core walks the cadence past the ticked-off ones).
+    const frequency = isRecurring(q) ? questFrequency(q) : null;
+    const due = frequency
+      ? (nextOpenOccurrence(q, now)?.start ?? parseWhen(q.when))
+      : parseWhen(q.when);
     out.push({
       id,
       title: q.title || (t ? t("common.untitled") : "Untitled"),
       category: q.category,
       description: q.description || undefined,
       picture: q.picture ?? null,
-      due: parseWhen(q.when),
+      due,
+      frequency,
       participants: countOf(q.participants),
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),

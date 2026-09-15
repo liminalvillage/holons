@@ -25,6 +25,8 @@
   import {
     createTask,
     localDayNumber,
+    moveOccurrence,
+    setQuestFrequency,
     shiftSchedule,
     type Quest,
   } from "@holons/core/tasks";
@@ -150,7 +152,24 @@
       return;
     }
     if (onOpen) onOpen(ev);
-    else openQuest(ev.id, "event");
+    // An occurrence opens its series, remembering which date was tapped so
+    // the card can tick off just that one.
+    else
+      openQuest(ev.occurrence?.seriesId ?? ev.id, "event", ev.occurrence?.when);
+  }
+
+  /**
+   * The quest behind a card on this board, by the card's view id — for an
+   * occurrence of a recurring series that is the series' record, with the
+   * occurrence alongside so a gesture can say WHICH date it started from.
+   */
+  function resolveCard(
+    id: string,
+  ): { q: Quest; occurrence?: CalendarEvent["occurrence"] } | null {
+    const ev = baseEvents.find((e) => e.id === id);
+    const questId = ev?.occurrence?.seriesId ?? id;
+    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === questId);
+    return q ? { q, occurrence: ev?.occurrence } : null;
   }
   function openTask(id: string) {
     if (justDragged) return;
@@ -359,8 +378,9 @@
   ) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-    if (!q) return;
+    const card = resolveCard(id);
+    if (!card) return;
+    const { q, occurrence } = card;
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
       return;
@@ -383,8 +403,14 @@
 
     // Moving the whole card shifts the start — core carries the end along so
     // the span keeps its length AND its form (an all-day range stays bare
-    // dates; only a timed one becomes instants).
-    const updated = { ...q, ...shiftSchedule(q, when) };
+    // dates; only a timed one becomes instants). Dragging one occurrence of a
+    // recurring series moves the SERIES by that much: the meeting moved, not
+    // just this week's.
+    const timing = occurrence
+      ? moveOccurrence(q, occurrence.when, when)
+      : shiftSchedule(q, when);
+    if (!timing) return;
+    const updated = { ...q, ...timing };
     await saveQuest(q, updated, "cal.verbMove");
   }
 
@@ -397,8 +423,9 @@
   async function applyUnschedule(id: string) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-    if (!q) return;
+    const card = resolveCard(id);
+    if (!card) return;
+    const { q, occurrence } = card;
     if (!q.when) return; // already unscheduled — nothing to clear
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
@@ -406,6 +433,9 @@
     }
     const updated: Quest = { ...q, when: "", ends: "", until: "" };
     if (String(q.type ?? "").toLowerCase() === "event") updated.type = "task";
+    // An undated series can't repeat — dropping an occurrence in the drawer
+    // stops the whole series, cadence included.
+    if (occurrence) Object.assign(updated, setQuestFrequency(q, null));
     await saveQuest(q, updated, "cal.verbUnschedule");
   }
 
@@ -610,10 +640,12 @@
     return `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
   }
 
-  // Build a draft task for `day` (and, on the hour timeline, `min` minutes from
-  // midnight; `ends` is the stored end, when a length was drawn) and open it
-  // in the detail modal's edit mode. Login-gated, like the other writes in
-  // this view.
+  // Build a draft EVENT for `day` (and, on the hour timeline, `min` minutes
+  // from midnight; `ends` is the stored end, when a length was drawn) and open
+  // it in the detail modal's edit mode. Drawn on the calendar means it belongs
+  // to the calendar: a tentative date shouldn't also turn up as a chore on the
+  // backlog wall. The card's type switch turns it into a task if it is one.
+  // Login-gated, like the other writes in this view.
   async function createAt(day: string, min: number | null, ends?: string) {
     const hid = get(holonId);
     if (!hid) return;
@@ -631,6 +663,7 @@
         lastName: user.last_name,
       },
       title: "",
+      type: "event",
     });
     draft.id = newId();
     draft.when =
@@ -642,8 +675,9 @@
     selection.set({ kind: "task", quest: draft, isNew: true });
   }
 
-  // The + button prefills the draft with the current date and time, so a task
-  // added on the spot starts as "now" and the user only adjusts if needed.
+  // The + button prefills the draft with the current date and time, so an
+  // event added on the spot starts as "now" and the user only adjusts if
+  // needed.
   function openCreate() {
     const t = get(now);
     void createAt(isoDay(t), t.getHours() * 60 + t.getMinutes());
@@ -703,7 +737,9 @@
   async function applyResize(id: string, durMin: number) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
+    // Stretching one occurrence sets the length of the series: `ends` is
+    // computed from the series' own start below, so every occurrence follows.
+    const q = resolveCard(id)?.q;
     if (!q) return;
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
@@ -799,6 +835,13 @@
     ev.color ?? noteColorFor(ev.category);
   // A chosen literal colour brings its own readable ink (see palette.inkOn);
   // the theme's notes keep the default. Dropped into `--ev-ink` as a style.
+  /** The ↻ glyph's tooltip: which cadence this occurrence belongs to. */
+  const repeatsTitle = (ev: CalendarEvent): string =>
+    ev.occurrence
+      ? $t("cal.repeatsTitle", {
+          cadence: $t(`detail.freq.${ev.occurrence.frequency}` as MessageKey),
+        })
+      : "";
   const inkStyle = (ev: CalendarEvent): string => {
     const ink = inkOn(ev.color);
     return ink ? ` --ev-ink: ${ink};` : "";
@@ -1208,6 +1251,7 @@
                     class:ext={!!ev.external}
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
+                    class:done={!!ev.occurrence?.completed}
                     style:--holo-seed={holoSeed(ev.id)}
                     class:tinted={!!inkOn(ev.color)}
                     style="{tiltStyle(
@@ -1223,6 +1267,9 @@
                     on:keydown={(e) => onKey(e, ev)}
                     >{#if ev.multiDay}<span class="spanb"
                         >{spanLabel(ev, day)}</span
+                      >{/if}{#if ev.occurrence}<span
+                        class="rec"
+                        title={repeatsTitle(ev)}>↻</span
                       >{/if}{ev.title}</span
                   >
                 </span>
@@ -1266,6 +1313,7 @@
                       class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
+                      class:done={!!ev.occurrence?.completed}
                       style:--holo-seed={holoSeed(ev.id)}
                       class:tinted={!!inkOn(ev.color)}
                       style="{tiltStyle(
@@ -1281,7 +1329,12 @@
                       on:click={() => open(ev)}
                       on:keydown={(e) => onKey(e, ev)}
                     >
-                      <span class="when">{timeLabel(ev, day)}</span>
+                      <span class="when"
+                        >{timeLabel(ev, day)}{#if ev.occurrence}<span
+                            class="rec"
+                            title={repeatsTitle(ev)}>↻</span
+                          >{/if}</span
+                      >
                       <span class="ttl">{ev.title}</span>
                     </article>
                   </span>
@@ -1339,6 +1392,7 @@
                       class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
+                      class:done={!!ev.occurrence?.completed}
                       style:--holo-seed={holoSeed(ev.id)}
                       class:tinted={!!inkOn(ev.color)}
                       style="background: {noteBg(
@@ -1355,6 +1409,9 @@
                       on:keydown={(e) => onKey(e, ev)}
                       >{#if ev.multiDay}<span class="spanb"
                           >{spanLabel(ev, col.date)}</span
+                        >{/if}{#if ev.occurrence}<span
+                          class="rec"
+                          title={repeatsTitle(ev)}>↻</span
                         >{/if}{ev.title}</span
                     >
                   {/each}
@@ -1431,6 +1488,7 @@
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
+                  class:done={!!ev.occurrence?.completed}
                   style:--holo-seed={holoSeed(ev.id)}
                   class:compact
                   style="{eventBox(
@@ -1474,6 +1532,9 @@
                           class="dur"
                         >
                           · {durLabel}</span
+                        >{/if}{#if ev.occurrence}<span
+                          class="rec"
+                          title={repeatsTitle(ev)}>↻</span
                         >{/if}</span
                     >
                     <span class="ttl">{ev.title}</span>
@@ -2429,5 +2490,30 @@
       0 0 0 2px var(--glow),
       0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
       var(--shadow-soft);
+  }
+
+  /* Occurrences of a recurring series carry a small ↻ ahead of the title (or
+     beside the hour), and one that has been ticked off fades and strikes
+     through — it stays on the board so the week still reads as it went. */
+  .rec {
+    display: inline-block;
+    margin-right: 0.25em;
+    font-weight: 700;
+    opacity: 0.75;
+  }
+  .when .rec {
+    margin: 0 0 0 0.35em;
+  }
+  .chip.done,
+  .note.done,
+  .allday-chip.done,
+  .day-event.done {
+    opacity: 0.55;
+  }
+  .chip.done,
+  .allday-chip.done,
+  .note.done .ttl,
+  .day-event.done .ttl {
+    text-decoration: line-through;
   }
 </style>

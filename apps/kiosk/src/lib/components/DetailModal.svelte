@@ -27,7 +27,12 @@
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
   import { toggleJoin, toggleAppreciate } from "$lib/membership";
-  import { checkComplete, recordCompletion } from "$lib/complete";
+  import {
+    checkComplete,
+    checkOccurrenceComplete,
+    recordCompletion,
+    recordOccurrenceCompletion,
+  } from "$lib/complete";
   import {
     noteColor,
     toPeople,
@@ -56,16 +61,28 @@
     LIBRARY_TYPES,
   } from "@holons/core/library";
   import {
+    QUEST_FREQUENCIES,
     applyBreakdownProposal,
     buildScheduleFields,
+    isAgendaQuest,
+    isOccurrenceCompleted,
+    isRecurring,
+    questFrequency,
+    questKind,
     questSchedule,
     scheduleToFields,
+    setQuestFrequency,
+    setQuestKind,
+    shiftSchedule,
+    toggleOccurrenceCompleted,
     type ApplyBreakdownResult,
     type BreakdownStep,
     type Quest,
+    type QuestFrequency,
+    type SwitchableKind,
   } from "@holons/core/tasks";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
-  import { t, locale } from "$lib/i18n";
+  import { t, locale, type MessageKey } from "$lib/i18n";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -96,6 +113,21 @@
   $: isNew = !!(sel && sel.kind !== "thing" && sel.isNew);
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
+
+  // ── Recurrence ────────────────────────────────────────────────────────────
+  // Core owns what repeating means (@holons/core/tasks recurrence): the card
+  // only says which cadence, and — when it was opened from one occurrence on
+  // the calendar — shows THAT date and ticks off just that occurrence. The
+  // series itself is never completed from here: it keeps going.
+  $: frequency = questFrequency(quest);
+  $: occurrenceWhen =
+    sel && sel.kind !== "thing" && isRecurring(sel.quest)
+      ? sel.occurrence
+      : undefined;
+  $: occurrenceDone =
+    !!occurrenceWhen && isOccurrenceCompleted(quest, occurrenceWhen);
+  const freqLabel = (f: QuestFrequency | null): string =>
+    f ? $t(`detail.freq.${f}` as MessageKey) : $t("detail.freqNever");
 
   // A hologram opens as a hologram: the zoomed card keeps the projection
   // style in the source holon's hue, and any foreign record (hologram or
@@ -142,7 +174,7 @@
       ? null
       : sel.kind === "thing"
         ? `thing:${sel.item.id}`
-        : `quest:${sel.quest.id ?? sel.quest.title}`;
+        : `quest:${sel.quest.id ?? sel.quest.title}@${sel.occurrence ?? ""}`;
     if (k !== selKey) {
       selKey = k;
       editing = false;
@@ -417,6 +449,16 @@
   let fDescription = "";
   let fType = "other";
   let fValue = 0;
+  let fFrequency: QuestFrequency | null = null;
+  // Task or event — the switch that moves a card between the two boards.
+  let fKind: SwitchableKind = "task";
+  // A cadence counts from the start date; without one there is nothing to
+  // repeat, so clearing the date clears the cadence too (the chips disable).
+  $: if (!fDate && fFrequency) fFrequency = null;
+  // An event is a moment; an undated one would fall off the calendar without
+  // landing anywhere else, so clearing the date makes it a task again (and the
+  // Event chip disables, exactly like the cadence chips).
+  $: if (!fDate && fKind === "event") fKind = "task";
 
   // Category is a real <select> dropdown over existing categories, with a
   // sentinel entry that swaps in a free-text input so a brand-new category can
@@ -547,8 +589,26 @@
       : `${day} · ${clock(s.start)}`;
   }
 
+  // The date line: for an occurrence, THAT occurrence's schedule (core shifts
+  // the series' span onto it); otherwise the series' — or the one-off's — own.
   function whenText(loc: string): string {
-    return quest ? summarize(quest, loc) : $t("detail.noDate");
+    if (!quest) return $t("detail.noDate");
+    return summarize(
+      occurrenceWhen
+        ? { ...quest, ...shiftSchedule(quest, occurrenceWhen) }
+        : quest,
+      loc,
+    );
+  }
+  // "↻ every week · since 1 Sep" — the series' own start, whichever
+  // occurrence the card was opened from.
+  function repeatsText(loc: string): string {
+    const start = questSchedule(quest).start;
+    if (!frequency || !start) return "";
+    return $t("detail.repeatsLine", {
+      cadence: freqLabel(frequency),
+      start: start.toLocaleDateString(loc, SPAN_DAY),
+    });
   }
 
   function startEdit() {
@@ -576,6 +636,11 @@
         endDate: fEndDate,
         endTime: fEndTime,
       } = scheduleToFields(q));
+      fFrequency = questFrequency(q);
+      // Core names the kind; legacy spellings ('quest', 'meeting') fold into
+      // the two the switch offers. A marketplace card never reaches the
+      // switch, so the fallback is harmless.
+      fKind = questKind(q) === "event" ? "event" : "task";
     }
     editing = true;
   }
@@ -627,12 +692,83 @@
       category: fCategory.trim() || undefined,
       description: fDescription.trim() || undefined,
       ...timing,
+      // The cadence (core also drops the bot scheduler's handle when it is
+      // cleared, so the bot stops spawning occurrences). Only a dated card
+      // can repeat — the form guard above already blanked it otherwise.
+      ...setQuestFrequency(sel.quest, timing.when ? fFrequency : null),
+      // Task ↔ event. Core refuses to retype a marketplace item, so an offer
+      // that somehow reached this form keeps its own lifecycle.
+      ...setQuestKind(sel.quest, timing.when ? fKind : "task"),
     };
     const writer = await getWriter($holonId, (m) => (message = m));
     const ok = await writer.put("quests", updated);
     saving = false;
     if (ok) closeDetail();
     else if (!message) message = $t("detail.saveFailed");
+  }
+
+  /**
+   * Tick this occurrence off, or back on. Ticking it off credits the people
+   * who took part THIS time exactly like a one-off task — the same confirm
+   * dialog, the same REA events priced by the holon's equation (see
+   * `recordOccurrenceCompletion`) — while the series itself stays open.
+   * Un-ticking is a plain edit, as for a one-off marked ongoing again.
+   */
+  async function toggleOccurrence() {
+    if (!sel || sel.kind === "thing" || !$holonId || !occurrenceWhen) return;
+    const user = $currentUser;
+    if (!user) {
+      loginOpen.set(true);
+      return;
+    }
+    saving = true;
+    message = "";
+    const fresh = await freshQuest(sel.quest);
+    const when = occurrenceWhen;
+    if (isOccurrenceCompleted(fresh, when)) {
+      const updated = {
+        ...fresh,
+        completedOccurrences: toggleOccurrenceCompleted(fresh, when),
+      };
+      const writer = await getWriter($holonId, (m) => (message = m));
+      const ok = await writer.put("quests", updated);
+      saving = false;
+      if (ok) closeDetail();
+      else if (!message) message = $t("detail.couldNotSave");
+      return;
+    }
+    const result = checkOccurrenceComplete(fresh, when);
+    if (!result.ok) {
+      saving = false;
+      message =
+        result.reason === "already-completed"
+          ? $t("tasks.alreadyCompleted")
+          : $t("tasks.stopped");
+      return;
+    }
+    saving = false;
+    const hid = $holonId;
+    // Confirm who was there this time (for honest REA), then record + celebrate.
+    completionRequest.set({
+      task: fresh,
+      onConfirm: async (adjusted) => {
+        try {
+          const { ok } = await recordOccurrenceCompletion(
+            hid,
+            fresh,
+            when,
+            adjusted.participants ?? [],
+            user.id,
+          );
+          if (ok) {
+            closeDetail();
+            setTimeout(party, 180);
+          } else message = $t("detail.couldNotSave");
+        } catch (err) {
+          message = (err as Error)?.message || $t("detail.completeFailed");
+        }
+      },
+    });
   }
 
   async function completeQuest() {
@@ -1216,7 +1352,14 @@
           </div>
         {/if}
         <h2>{@html linkify(quest.title)}</h2>
-        <p class="when">{whenText($locale)}</p>
+        <p class="when" class:done={occurrenceDone}>{whenText($locale)}</p>
+        {#if frequency}
+          <p class="repeats">
+            {repeatsText($locale)}{#if occurrenceDone}{" · "}{$t(
+                "detail.occurrenceDone",
+              )}{/if}
+          </p>
+        {/if}
         {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
         {#if quest.description}<p class="desc">
             {@html linkify(quest.description)}
@@ -1279,11 +1422,30 @@
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
-            <button
-              class={amParticipant ? "primary" : "ghost"}
-              on:click={completeQuest}
-              disabled={saving}>{$t("tasks.markComplete")}</button
-            >
+            {#if occurrenceWhen}
+              <!-- Opened from one date of a repeating series: done means done
+                   THIS time. The series lives on. -->
+              <button
+                class={occurrenceDone
+                  ? "ghost"
+                  : amParticipant
+                    ? "primary"
+                    : "ghost"}
+                on:click={toggleOccurrence}
+                disabled={saving}
+                >{$t(
+                  occurrenceDone
+                    ? "detail.undoDoneOnce"
+                    : "detail.markDoneOnce",
+                )}</button
+              >
+            {:else}
+              <button
+                class={amParticipant ? "primary" : "ghost"}
+                on:click={completeQuest}
+                disabled={saving}>{$t("tasks.markComplete")}</button
+              >
+            {/if}
             <button class="ghost" on:click={startEdit} disabled={saving}
               >{$t("detail.edit")}</button
             >
@@ -1459,7 +1621,78 @@
         </div>
         <!-- What the fields add up to, in the same words the card will use
              once saved. -->
-        {#if scheduleSummary}<p class="sched-sum">{scheduleSummary}</p>{/if}
+        {#if scheduleSummary}<p class="sched-sum">
+            {scheduleSummary}{#if fFrequency}{" · ↻ "}{freqLabel(
+                fFrequency,
+              )}{/if}
+          </p>{/if}
+
+        <!-- Task or event? A task is work to do and lives on the task board;
+             an event is something happening and lives on the calendar only.
+             One tap moves the card between the two. An event needs a date —
+             it IS a moment — so the chip waits for one, and clearing the date
+             turns the card back into a task. -->
+        {#if isAgendaQuest(quest)}
+          <div class="kind" role="radiogroup" aria-label={$t("detail.kind")}>
+            <span class="elab">{$t("detail.kind")}</span>
+            <div class="freq-chips">
+              <button
+                type="button"
+                class="chip"
+                class:on={fKind === "task"}
+                role="radio"
+                aria-checked={fKind === "task"}
+                on:click={() => (fKind = "task")}
+                >{$t("detail.kindTask")}</button
+              >
+              <button
+                type="button"
+                class="chip"
+                class:on={fKind === "event"}
+                role="radio"
+                aria-checked={fKind === "event"}
+                disabled={!fDate}
+                on:click={() => (fKind = "event")}
+                >{$t("detail.kindEvent")}</button
+              >
+            </div>
+            <p class="kind-hint">
+              {#if !fDate}{$t(
+                  "detail.kindNeedsDate",
+                )}{:else if fKind === "event"}{$t(
+                  "detail.kindEventHint",
+                )}{:else}{$t("detail.kindTaskHint")}{/if}
+            </p>
+          </div>
+        {/if}
+
+        <!-- Repeats: one tap picks the cadence, the same choices as the web
+             dashboard's task modal. Greyed until the card has a start date. -->
+        <div class="freq" role="radiogroup" aria-label={$t("detail.repeats")}>
+          <span class="elab">↻ {$t("detail.repeats")}</span>
+          <div class="freq-chips">
+            <button
+              type="button"
+              class="chip"
+              class:on={fFrequency === null}
+              role="radio"
+              aria-checked={fFrequency === null}
+              disabled={!fDate}
+              on:click={() => (fFrequency = null)}>{freqLabel(null)}</button
+            >
+            {#each QUEST_FREQUENCIES as f (f)}
+              <button
+                type="button"
+                class="chip"
+                class:on={fFrequency === f}
+                role="radio"
+                aria-checked={fFrequency === f}
+                disabled={!fDate}
+                on:click={() => (fFrequency = f)}>{freqLabel(f)}</button
+              >
+            {/each}
+          </div>
+        </div>
 
         <label
           >{$t("detail.category")}
@@ -1687,6 +1920,16 @@
     color: var(--ink);
     margin: 0 0 0.5rem;
   }
+  /* An occurrence already ticked off reads as such at a glance. */
+  .when.done {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+  .repeats {
+    color: var(--ink-soft);
+    font-weight: 600;
+    margin: -0.2rem 0 0.5rem;
+  }
   .where {
     color: var(--ink-soft);
     margin: 0 0 0.5rem;
@@ -1908,6 +2151,29 @@
     font-size: 0.9rem;
     font-weight: 700;
     color: var(--ink-soft);
+  }
+  /* The cadence chips under the schedule — the booking sheet's chips, one
+     row that wraps, greyed out while the card has no date to count from. */
+  .freq {
+    margin-top: 0.9rem;
+  }
+  /* The task/event switch, above the cadence and sharing its chip row. */
+  .kind {
+    margin-top: 0.9rem;
+  }
+  .kind-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .freq-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
+  }
+  .chip:disabled {
+    opacity: 0.45;
   }
 
   /* The booking sheet's from/until pair: each side can shrink (min-width: 0 —

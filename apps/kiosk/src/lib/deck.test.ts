@@ -14,6 +14,7 @@ function task(id: string, unmetDeps = 0): BacklogTask {
     appreciation: 0,
     appreciatedBy: [],
     created: 0,
+    frequency: null,
     unmetDeps,
     dependencies: [],
   };

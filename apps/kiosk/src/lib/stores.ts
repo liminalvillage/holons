@@ -392,8 +392,11 @@ export type Selection =
   // `isNew` marks a draft built locally (e.g. long-press on the calendar) that
   // hasn't been written to Holosphere yet — the detail modal opens straight in
   // edit mode and Cancel discards it instead of leaving a phantom card.
-  | { kind: "event"; quest: Quest; isNew?: boolean }
-  | { kind: "task"; quest: Quest; isNew?: boolean }
+  // `occurrence` is the stored start of the one occurrence of a recurring
+  // series that was tapped (see `CalendarEvent.occurrence`): the card shows
+  // that date and "done" ticks off just that occurrence.
+  | { kind: "event"; quest: Quest; isNew?: boolean; occurrence?: string }
+  | { kind: "task"; quest: Quest; isNew?: boolean; occurrence?: string }
   | { kind: "thing"; item: LibraryItem }
   | null;
 
@@ -418,9 +421,16 @@ export const editOnOpen = writable<boolean>(false);
  * Open a quest (calendar event or backlog task) by id, looked up live.
  * Returns whether the record was known (a deep link retries until it is).
  */
-export function openQuest(id: string, kind: "event" | "task"): boolean {
+export function openQuest(
+  id: string,
+  kind: "event" | "task",
+  occurrence?: string,
+): boolean {
   const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-  if (q) selection.set({ kind, quest: q });
+  if (q)
+    selection.set(
+      occurrence ? { kind, quest: q, occurrence } : { kind, quest: q },
+    );
   return !!q;
 }
 

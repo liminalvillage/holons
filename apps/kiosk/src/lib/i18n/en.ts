@@ -787,6 +787,13 @@ export const en = {
   "detail.regenerate": "Regenerate",
   "detail.title": "Title",
   "detail.titlePlaceholder": "What needs doing?",
+  // The card's type switch: is this work to do, or something happening?
+  "detail.kind": "Kind",
+  "detail.kindTask": "Task",
+  "detail.kindEvent": "Event",
+  "detail.kindTaskHint": "On the task board",
+  "detail.kindEventHint": "On the calendar only",
+  "detail.kindNeedsDate": "Give it a date to make it an event",
   "detail.starts": "Starts",
   "detail.ends": "Ends",
   "detail.startDateAria": "Start date",
