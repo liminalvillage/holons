@@ -1059,6 +1059,9 @@ export const en = {
   "flows.out": "Out",
   "flows.balance": "Balance",
   "flows.trackLabel": "Which unit to show",
+  "flows.trackAll": "All",
+  "flows.allAbout":
+    "Every unit together. A ribbon's width is its share of its own unit's flow — hover for the real amounts.",
   "flows.trackTime": "Hours",
   "flows.trackAppreciation": "Kudos",
   "flows.trackCredits": "Credits",

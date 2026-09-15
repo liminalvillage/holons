@@ -95,6 +95,9 @@
       : "";
 
   $: hoveredValue = hoverNode?.value ?? hoverLink?.value ?? 0;
+  // The tooltip prints the real amounts on a combined track, the value on any
+  // other; the share line underneath keeps working either way.
+  $: hoveredDisplay = (hoverNode ?? hoverLink)?.display ?? format(hoveredValue);
 
   $: share =
     shownTotal > 0 ? Math.round((hoveredValue / shownTotal) * 100) : null;
@@ -320,12 +323,23 @@
     });
   }
 
+  /**
+   * What a bar or ribbon SAYS, as opposed to how wide it is.
+   *
+   * A combined track carries every unit at once, so its widths are shares and
+   * only `display` holds the truth ("€1,108 EUR · 4 kg"). Everything else has
+   * no `display` and reads straight off the value.
+   */
+  function shown(item: { value: number; display?: string }): string {
+    return item.display ?? format(item.value);
+  }
+
   /** The bar for a screen reader: its value, then its stack if it has one. */
   function stackLabel(node: SankeyLayoutNode): string {
-    const head = `${node.label}: ${format(node.value)}`;
+    const head = `${node.label}: ${shown(node)}`;
     const segments = node.segments ?? [];
     if (!segments.length) return head;
-    return `${head} (${segments.map((s) => `${s.label} ${format(s.value)}`).join(", ")})`;
+    return `${head} (${segments.map((s) => `${s.label} ${shown(s)}`).join(", ")})`;
   }
 
   /** A vertical label sits on the same side as a horizontal one would. */
@@ -358,7 +372,7 @@
             role="img"
             aria-label="{nodeById.get(link.source)?.label ??
               link.source} to {nodeById.get(link.target)?.label ??
-              link.target}: {format(link.value)}"
+              link.target}: {shown(link)}"
             on:mouseenter={(e) => {
               hoverNode = null;
               hoverLink = link;
@@ -493,7 +507,7 @@
       >
         <div class="tip-head">
           <span class="tip-title">{title}</span>
-          <span class="tip-value">{format(hoveredValue)}</span>
+          <span class="tip-value">{hoveredDisplay}</span>
         </div>
         {#if share != null && shareLine}
           <div class="tip-share">{shareLine(share)}</div>

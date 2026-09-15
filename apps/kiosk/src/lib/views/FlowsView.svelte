@@ -77,6 +77,8 @@
     layoutSankey,
     nodeBreakdown,
     sortLedger,
+    combinePeopleTracks,
+    combineTracks,
     readAllocationConfig,
     readBundleRecord,
     readInteriorShares,
@@ -151,8 +153,19 @@
   let federated: string[] = [];
 
   let windowId: string = "90";
-  let trackId = "";
+  /**
+   * The unit both the movement Sankey and the people chord are drawn in.
+   *
+   * One selector governs the two: they are the same records seen from two
+   * sides, and picking euro in one and hours in the other only ever produced
+   * two graphs nobody was comparing. `ALL_TRACKS` shows every unit at once,
+   * one chart each — never summed, because there are no exchange rates here.
+   */
+  const ALL_TRACKS = "all";
+  let trackId = ALL_TRACKS;
   let selected: SankeyLayoutNode | null = null;
+  /** The track a tapped movement bar belongs to; "all" draws several. */
+  let selectedTrackKey = "";
   // Which chart the tap came from: node ids repeat across the two ("+n more"
   // rollups above all), so the sheet must not look a movement bar up in the
   // allocation graph.
@@ -247,18 +260,33 @@
 
   $: tracks = graph.tracks;
 
-  // Keep the selected track valid as data streams in and tracks appear.
-  $: if (tracks.length && !tracks.some((t) => trackKey(t) === trackId)) {
-    trackId = trackKey(tracks[0]);
-  }
-
-  $: activeTrack = tracks.find((t) => trackKey(t) === trackId) ?? null;
+  // Under "All" the units are merged into ONE diagram: each track is scaled to
+  // its own total first, so the widths are shares that can honestly be added,
+  // and every label still prints the real amount in its own unit.
+  // `$t` is read here, at the top level, not inside the closures below: a
+  // store cannot be subscribed to from a nested scope.
+  $: tr = $t;
+  $: combineOptions = {
+    labelOf: (t: { id: string; unit: string }) =>
+      t.id === "items"
+        ? t.unit === "lends"
+          ? tr("flows.trackLends")
+          : t.unit
+        : trackLabel(t as ValueFlowTrack, tr),
+    formatOf: (t: { id: string; unit: string }) =>
+      t.id === "items"
+        ? itemsFormatter(t.unit)
+        : formatter(t as ValueFlowTrack),
+  };
+  $: activeTrack =
+    trackId === ALL_TRACKS
+      ? combineTracks(tracks, combineOptions)
+      : (tracks.find((t) => trackKey(t) === trackId) ?? null);
   $: movementLayout = activeTrack ? layoutSankey(activeTrack) : null;
-
-  $: trackOptions = tracks.map((track) => ({
-    id: trackKey(track),
-    label: trackLabel(track, $t),
-  }));
+  // A combined bar's number is a share of each unit's own flow, so it reads as
+  // a percentage; the real amounts ride on each node's and link's `display`.
+  $: formatMovement =
+    activeTrack?.id === "combined" ? () => "" : formatter(activeTrack);
 
   // ── Derived: the allocation graph ───────────────────────────────────────
   // Scores come from the same pipeline the Status board ranks with, so the two
@@ -555,7 +583,41 @@
     return (v) => `${nf.format(v)} ${unit}`;
   }
 
-  $: formatMovement = formatter(activeTrack);
+  /**
+   * One pill row for both graphs: "All" first, then every unit either graph
+   * knows, in movement order with the people-only units appended.
+   */
+  $: trackOptions = (() => {
+    const seen = new Map<string, string>();
+    for (const track of tracks)
+      seen.set(trackKey(track), trackLabel(track, $t));
+    for (const p of peopleTracks) {
+      const key = peopleKey(p);
+      if (seen.has(key)) continue;
+      seen.set(
+        key,
+        p.id !== "items"
+          ? trackLabel({ id: p.id, unit: p.unit } as ValueFlowTrack, $t)
+          : p.unit === "lends"
+            ? $t("flows.trackLends")
+            : p.unit,
+      );
+    }
+    return [
+      { id: ALL_TRACKS, label: $t("flows.trackAll") },
+      ...[...seen.entries()].map(([id, label]) => ({ id, label })),
+    ];
+  })();
+
+  // A unit that has gone (the window moved, the scope changed) falls back to
+  // showing everything rather than to an empty board.
+  $: if (
+    trackId !== ALL_TRACKS &&
+    trackOptions.length > 1 &&
+    !trackOptions.some((o) => o.id === trackId)
+  ) {
+    trackId = ALL_TRACKS;
+  }
 
   // ── Derived: between people ─────────────────────────────────────────────
   // The same records with both ends kept: who gave what to whom, one matrix
@@ -565,43 +627,26 @@
     ...flowsInput,
     involving: $scope === "personal" ? selfId : null,
   });
-  let peopleTrackId = "";
   const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
-  $: if (
-    peopleTracks.length &&
-    !peopleTracks.some((p) => peopleKey(p) === peopleTrackId)
-  ) {
-    peopleTrackId = peopleKey(peopleTracks[0]);
-  }
+  // Driven by the same pill as the movement Sankey, and merged the same way.
   $: activePeople =
-    peopleTracks.find((p) => peopleKey(p) === peopleTrackId) ?? null;
-  // Stock and lends carry their own unit (kg, pack, lends); everything else
-  // reads the way the movement pills do.
-  $: peopleOptions = peopleTracks.map((p) => ({
-    id: peopleKey(p),
-    label:
-      p.id !== "items"
-        ? trackLabel({ id: p.id, unit: p.unit } as ValueFlowTrack, $t)
-        : p.unit === "lends"
-          ? $t("flows.trackLends")
-          : p.unit,
-  }));
+    trackId === ALL_TRACKS
+      ? combinePeopleTracks(peopleTracks, combineOptions)
+      : (peopleTracks.find((p) => peopleKey(p) === trackId) ?? null);
   $: itemsFormatter = (unit: string) => {
     const nf = new Intl.NumberFormat($locale, { maximumFractionDigits: 1 });
     const name = unit === "lends" ? $t("flows.unitLends") : unit;
     return (v: number) => `${nf.format(v)} ${name}`;
   };
+  /** Stock and lends carry their own unit; everything else formats as money. */
+  function peopleFormat(p: PeopleFlowTrack | null): (v: number) => string {
+    if (!p) return (v) => String(Math.round(v));
+    return p.id === "items"
+      ? itemsFormatter(p.unit)
+      : formatter({ id: p.id, unit: p.unit } as ValueFlowTrack);
+  }
   $: formatPeople =
-    activePeople?.id === "items"
-      ? itemsFormatter(activePeople.unit)
-      : formatter(
-          activePeople
-            ? ({
-                id: activePeople.id,
-                unit: activePeople.unit,
-              } as ValueFlowTrack)
-            : null,
-        );
+    activePeople?.id === "combined" ? () => "" : peopleFormat(activePeople);
   $: chordLabels = {
     given: $t("flows.given"),
     received: $t("flows.received"),
@@ -905,7 +950,10 @@
   $: selectedEntries =
     selected && selectedChart === "movement" && breakdown.rows.length === 0
       ? sortLedger(
-          filterLedger(ledger, { track: trackId, nodeId: selected.id }),
+          filterLedger(ledger, {
+            track: selectedTrackKey,
+            nodeId: selected.id,
+          }),
         )
       : ([] as LedgerEntry[]);
 
@@ -1273,7 +1321,8 @@
               <p class="sub">{$t("flows.movementAbout")}</p>
             </div>
             <div class="controls">
-              {#if trackOptions.length > 1}
+              <!-- One unit selector for this Sankey AND the chord below. -->
+              {#if trackOptions.length > 2}
                 <PillSwitch
                   options={trackOptions}
                   value={trackId}
@@ -1296,22 +1345,31 @@
           </header>
 
           {#if activeTrack}
-            <div class="stats">
-              <div class="stat">
-                <span class="k">{$t("flows.in")}</span>
-                <span class="v">{formatMovement(activeTrack.totalIn)}</span>
-              </div>
-              <div class="stat">
-                <span class="k">{$t("flows.out")}</span>
-                <span class="v">{formatMovement(activeTrack.totalOut)}</span>
-              </div>
-              {#if activeTrack.balance != null}
+            {#if activeTrack.id === "combined"}
+              <!-- Every unit in one diagram. Each was scaled to its own total
+                   first, so a ribbon's width is its share of its own unit and
+                   nothing is summed across units; the labels carry the real
+                   amounts. -->
+              <p class="unit-caption">{$t("flows.allAbout")}</p>
+            {/if}
+            {#if activeTrack.id !== "combined"}
+              <div class="stats">
                 <div class="stat">
-                  <span class="k">{$t("flows.balance")}</span>
-                  <span class="v">{formatMovement(activeTrack.balance)}</span>
+                  <span class="k">{$t("flows.in")}</span>
+                  <span class="v">{formatMovement(activeTrack.totalIn)}</span>
                 </div>
-              {/if}
-            </div>
+                <div class="stat">
+                  <span class="k">{$t("flows.out")}</span>
+                  <span class="v">{formatMovement(activeTrack.totalOut)}</span>
+                </div>
+                {#if activeTrack.balance != null}
+                  <div class="stat">
+                    <span class="k">{$t("flows.balance")}</span>
+                    <span class="v">{formatMovement(activeTrack.balance)}</span>
+                  </div>
+                {/if}
+              </div>
+            {/if}
 
             <SankeyChart
               layout={movementLayout}
@@ -1320,11 +1378,14 @@
               onSelect={(n) => {
                 selectedFormat = formatMovement;
                 selectedChart = "movement";
+                selectedTrackKey = trackId;
                 selected = n;
               }}
             >
               <p slot="empty" class="empty">{$t("flows.emptyTrack")}</p>
             </SankeyChart>
+          {:else}
+            <p class="empty">{$t("flows.emptyTrack")}</p>
           {/if}
         </section>
       {/if}
@@ -1337,17 +1398,20 @@
               <h2>{$t("flows.peopleTitle")}</h2>
               <p class="sub">{$t("flows.peopleAbout")}</p>
             </div>
-            <div class="controls">
-              {#if peopleOptions.length > 1}
-                <PillSwitch
-                  options={peopleOptions}
-                  value={peopleTrackId}
-                  onChange={(id) => (peopleTrackId = id)}
-                  label={$t("flows.trackLabel")}
-                  showText
-                />
-              {/if}
-              {#if !tracks.length}
+            <!-- No unit pills here: the movement header's selector drives
+                 this chord too. They only appear here when there is no
+                 movement section above to carry them. -->
+            {#if !tracks.length}
+              <div class="controls">
+                {#if trackOptions.length > 2}
+                  <PillSwitch
+                    options={trackOptions}
+                    value={trackId}
+                    onChange={(id) => (trackId = id)}
+                    label={$t("flows.trackLabel")}
+                    showText
+                  />
+                {/if}
                 <PillSwitch
                   options={WINDOWS.map((w) => ({
                     id: w.id,
@@ -1358,10 +1422,13 @@
                   label={$t("flows.windowLabel")}
                   showText
                 />
-              {/if}
-            </div>
+              </div>
+            {/if}
           </header>
 
+          {#if activePeople?.id === "combined"}
+            <p class="unit-caption">{$t("flows.allAbout")}</p>
+          {/if}
           <ChordChart
             track={activePeople}
             format={formatPeople}
@@ -1530,7 +1597,9 @@
   <Modal on:close={() => (selected = null)}>
     <div class="detail">
       <h3>{selected.label}</h3>
-      <p class="amount">{selectedFormat(selected.value)}</p>
+      <p class="amount">
+        {selected.display ?? selectedFormat(selected.value)}
+      </p>
       {#if selectedChart === "allocation"}
         <dl class="detail-rows">
           {#each allocationDetails(selected) as row (row.label)}
@@ -1702,6 +1771,14 @@
   }
   .swatch.over {
     background: #dc2626;
+  }
+
+  /* Explains what the widths mean when every unit shares one diagram. */
+  .unit-caption {
+    margin: 0.5rem 0 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--muted);
   }
 
   .empty {

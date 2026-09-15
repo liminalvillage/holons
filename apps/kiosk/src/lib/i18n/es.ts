@@ -1077,6 +1077,9 @@ export const es: Record<MessageKey, Msg> = {
   "flows.out": "Salidas",
   "flows.balance": "Saldo",
   "flows.trackLabel": "Qu\u00e9 unidad mostrar",
+  "flows.trackAll": "Todo",
+  "flows.allAbout":
+    "Todas las unidades juntas. El ancho de una cinta es su parte del flujo de su propia unidad — pasa por encima para ver los importes reales.",
   "flows.trackTime": "Horas",
   "flows.trackAppreciation": "Kudos",
   "flows.trackCredits": "Cr\u00e9ditos",

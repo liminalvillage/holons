@@ -1084,6 +1084,9 @@ export const it: Record<MessageKey, Msg> = {
   "flows.out": "Uscite",
   "flows.balance": "Saldo",
   "flows.trackLabel": "Quale unit\u00e0 mostrare",
+  "flows.trackAll": "Tutto",
+  "flows.allAbout":
+    "Tutte le unità insieme. La larghezza di un nastro è la sua quota del flusso della propria unità — passa sopra per gli importi reali.",
   "flows.trackTime": "Ore",
   "flows.trackAppreciation": "Kudos",
   "flows.trackCredits": "Crediti",
