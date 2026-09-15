@@ -521,38 +521,39 @@
   // Two rows, no modes: a start (date + optional clock) and an end. An end date
   // on a later day is what makes the card a multi-day event — there is nothing
   // extra to learn or switch on. Core owns what the fields mean once stored
-  // (`buildScheduleFields`); these guards only keep the pair coherent.
+  // (`buildScheduleFields`); the rules below only keep the pair coherent.
   //
-  // Clearing the start date clears the rest: an undated card is a backlog task.
-  $: if (!fDate && (fTime || fEndDate || fEndTime))
-    fTime = fEndDate = fEndTime = "";
-  // An end that fell behind the start is dragged along rather than stored
-  // backwards. (ISO day and HH:MM strings both compare correctly as text.)
-  $: if (fEndDate && fDate && fEndDate < fDate) fEndDate = fDate;
-  // Within one day an end before the start is no end at all; across days the
-  // two clocks are independent, so leave them be.
-  $: if (
-    fEndTime &&
-    fTime &&
-    (!fEndDate || fEndDate === fDate) &&
-    fEndTime <= fTime
-  )
-    fEndTime = "";
-  // An all-day card has no clock, so an end time can't outlive the start time
-  // (core ignores one; the form shouldn't pretend otherwise).
-  $: if (!fTime && fEndTime) fEndTime = "";
+  // They shape what is summarized and saved, never the inputs themselves: a
+  // date/time input reads "" (or an early clock) while one of its parts is
+  // being typed, and wiping a field on that passing value made the end time
+  // vanish under the user's fingers.
+  $: schedule = coherentSchedule(fDate, fTime, fEndDate, fEndTime);
+  function coherentSchedule(
+    startDate: string,
+    startTime: string,
+    endDate: string,
+    endTime: string,
+  ) {
+    // An undated card is a backlog task: no clock, no end.
+    if (!startDate)
+      return { startDate, startTime: "", endDate: "", endTime: "" };
+    // An end that fell behind the start is dragged along rather than stored
+    // backwards. (ISO day and HH:MM strings both compare correctly as text.)
+    if (endDate && endDate < startDate) endDate = startDate;
+    // An all-day card has no clock, so an end time can't outlive the start
+    // time. Within one day an end before the start is no end at all; across
+    // days the two clocks are independent.
+    if (
+      !startTime ||
+      ((!endDate || endDate === startDate) && endTime <= startTime)
+    )
+      endTime = "";
+    return { startDate, startTime, endDate, endTime };
+  }
 
   /** What the two rows currently add up to; blank while the card is undated. */
   $: scheduleSummary = fDate
-    ? summarize(
-        buildScheduleFields({
-          startDate: fDate,
-          startTime: fTime,
-          endDate: fEndDate,
-          endTime: fEndTime,
-        }),
-        $locale,
-      )
+    ? summarize(buildScheduleFields(schedule), $locale)
     : "";
 
   // One sentence for a stored schedule, used both on the card and live under
@@ -679,12 +680,9 @@
     // for a timed card, bare dates for an all-day one, and an inclusive end
     // date for a span. Cleared fields are blanked, never deleted (older readers expect them),
     // on `ends` and its legacy `until` alias alike.
-    const timing: Partial<Quest> = buildScheduleFields({
-      startDate: fDate,
-      startTime: fTime,
-      endDate: fEndDate,
-      endTime: fEndTime,
-    });
+    const timing: Partial<Quest> = buildScheduleFields(
+      coherentSchedule(fDate, fTime, fEndDate, fEndTime),
+    );
     const updated = {
       ...sel.quest,
       title: fTitle.trim() || sel.quest.title,

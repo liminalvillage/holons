@@ -206,6 +206,9 @@
   let dragHoldTimer: ReturnType<typeof setTimeout> | null = null;
   let panX = true; // the pressed card lets the browser pan this way (touch-action)
   let panY = true;
+  let lastX = 0; // where the pressed pointer is now (the hold checks it stayed)
+  let lastY = 0;
+  const HOLD_SLOP_PX = 8; // a finger moving further than this is scrolling
   // Holding a card at the top/bottom edge scrolls the calendar that way; the
   // slot under a still pointer changes as it glides, so re-aim the drop.
   const edgeScroll = createEdgeScroll({
@@ -279,17 +282,39 @@
     pendingTitle = title;
     startX = e.clientX;
     startY = e.clientY;
-    // Mouse: drag on move. Touch: long-press to arm, so a swipe that starts
-    // on a card scrolls the calendar instead of lifting the card.
+    lastX = e.clientX;
+    lastY = e.clientY;
+    // Mouse: drag on move. Touch: a still long-press arms it, so a swipe that
+    // starts on a card scrolls the calendar instead of lifting the card — a
+    // finger that crept or anything that scrolled meanwhile never arms.
     dragArmed = e.pointerType === "mouse";
-    if (!dragArmed) dragHoldTimer = setTimeout(() => (dragArmed = true), 280);
-    const ta = getComputedStyle(e.currentTarget as HTMLElement).touchAction;
+    if (!dragArmed)
+      dragHoldTimer = setTimeout(() => {
+        dragHoldTimer = null;
+        if (Math.hypot(lastX - startX, lastY - startY) > HOLD_SLOP_PX)
+          onPointerCancel();
+        else dragArmed = true;
+      }, 280);
+    // Only a drawer chip lifts straight away across its scroll axis; every
+    // other card is dragged by a hold alone (a sideways swipe on the year
+    // window pans it).
+    const target = e.currentTarget as HTMLElement;
+    const ta = target.closest(".tray")
+      ? getComputedStyle(target).touchAction
+      : "auto";
     panX = !/pan-y|none/.test(ta) || /pan-x/.test(ta);
     panY = !/pan-x|none/.test(ta) || /pan-y/.test(ta);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerCancel);
     window.addEventListener("touchmove", onDragTouch, { passive: false });
+    document.addEventListener("scroll", onPendingScroll, true);
+  }
+
+  // A scroll anywhere while the press is still undecided means the finger is
+  // scrolling, not lifting (the browser doesn't always cancel the pointer).
+  function onPendingScroll() {
+    if (!drag && !dragArmed) onPointerCancel();
   }
 
   // Once the hold has armed, the browser would take the finger's move as a
@@ -307,6 +332,7 @@
     window.removeEventListener("pointerup", onPointerUp);
     window.removeEventListener("pointercancel", onPointerCancel);
     window.removeEventListener("touchmove", onDragTouch);
+    document.removeEventListener("scroll", onPendingScroll, true);
   }
 
   function onPointerCancel() {
@@ -322,12 +348,14 @@
   function onPointerMove(e: PointerEvent) {
     if (!drag) {
       if (pendingId == null) return;
+      lastX = e.clientX;
+      lastY = e.clientY;
       const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
       // Not yet armed (touch, before the hold): a real move along an axis
       // the card lets the browser pan is a scroll. Along the other axis (a
       // drawer chip's lift) nothing scrolls, so it drags straight away.
       if (!dragArmed) {
-        if (moved <= 10) return;
+        if (moved <= HOLD_SLOP_PX) return;
         const horizontal =
           Math.abs(e.clientX - startX) > Math.abs(e.clientY - startY);
         if (horizontal ? panX : panY) {
@@ -1356,6 +1384,7 @@
         onOpen={open}
         onSelectDay={gotoDay}
         onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        lifting={dragArmed || drag != null}
         {dropDay}
       />
     {:else}

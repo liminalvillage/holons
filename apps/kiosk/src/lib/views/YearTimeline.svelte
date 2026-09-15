@@ -42,6 +42,8 @@
   export let onDragStart:
     | ((e: PointerEvent, ev: CalendarEvent) => void)
     | null = null;
+  /** The board has lifted a card: the timeline must not pan under the drag. */
+  export let lifting = false;
 
   // Layout constants (rem, so the timeline scales with the kiosk's fluid
   // root font) — keep in sync with the stacking styles below.
@@ -413,6 +415,7 @@
       const dx = e.clientX - gesture.x;
       if (
         !gesture.active &&
+        !lifting &&
         Math.abs(dx) > DRAG_SLOP_PX &&
         Math.abs(dx) > Math.abs(e.clientY - gesture.y)
       ) {
@@ -525,7 +528,10 @@
   }
   function liftEv(e: PointerEvent, ev: CalendarEvent) {
     if (!onDragStart) return;
-    e.stopPropagation(); // the timeline must not start panning under it
+    // A mouse press is the card's at once, so the timeline must not start
+    // panning under it. A finger only lifts the card after a still hold, so
+    // a sideways swipe from it still pans the timeline (see `lifting`).
+    if (e.pointerType === "mouse") e.stopPropagation();
     onDragStart(e, ev);
   }
 
@@ -1158,8 +1164,8 @@
     transform: translateX(-50%);
     pointer-events: auto;
     cursor: pointer;
-    /* A finger moving sideways from a card lifts it (the board's drag);
-       moving up or down still scrolls the page (see beginDrag there). */
+    /* A still hold on a card lifts it (the board's drag); moving sideways
+       pans the timeline, up or down scrolls the page (see beginDrag there). */
     touch-action: pan-y;
     box-shadow: var(--shadow-soft);
     transition: transform 0.12s ease;
