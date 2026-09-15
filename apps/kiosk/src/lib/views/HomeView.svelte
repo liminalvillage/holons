@@ -11,9 +11,11 @@
   //   personal  a private chat with the bot (`?start=`) — the visitor's own hub
   //   group     the add-to-group chooser (`?startgroup=`) — the group is the hub
   // Either way the bot answers with a link straight back to this board. This
-  // page holds the two ends of that loop together — it marks the hand-off on
-  // the way out (config.markBotHandoff) and, when the visitor returns to the
-  // tab, opens the "your hub is ready" step without making them find it again.
+  // page holds the two ends of that loop together — it sends a claim token
+  // out in the deep link and notes the hand-off (lib/hubclaim.ts), and when
+  // the visitor returns to the tab it opens the "your hub is ready" step
+  // without making them find it again — or, once the bot has redeemed the
+  // token on the relay, opens the new hub itself with nothing to paste.
   //
   // The bot is never named in the copy: a fork running its own bot re-points
   // VITE_TELEGRAM_BOT_USERNAME and every deep link follows, with no string to
@@ -29,11 +31,20 @@
     COMMUNITY_URL,
     DASHBOARD_BASE,
     DOCS_URL,
-    markBotHandoff,
     returningFromBot,
     SOURCE_URL,
   } from "$lib/config";
   import { parseHolonPaste } from "$lib/holons";
+  import { newClaimToken } from "@holons/core/onboarding";
+  import { getHolosphere } from "$lib/holosphere";
+  import { labelFor, rememberBoard } from "$lib/dock";
+  import {
+    beginHubClaim,
+    clearHubClaim,
+    hubClaimUrls,
+    pendingClaim,
+    watchHubClaim,
+  } from "$lib/hubclaim";
 
   // ── The return leg ────────────────────────────────────────────────────────
   // Telegram can't hand anything back to this tab, so the hand-off note left
@@ -47,6 +58,7 @@
   function checkReturn() {
     if (!returningFromBot()) return;
     returning = true;
+    watchClaim();
     if (scrolledToOpen) return;
     scrolledToOpen = true;
     // Wait a frame so the panel has rendered its returning state.
@@ -61,20 +73,46 @@
   }
 
   onMount(() => {
+    token = pendingClaim()?.token ?? newClaimToken();
     returning = returningFromBot();
+    if (returning) watchClaim();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", checkReturn);
   });
 
   onDestroy(() => {
+    stopWatch?.();
     if (typeof document === "undefined") return;
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("focus", checkReturn);
   });
 
+  // ── The claim token ───────────────────────────────────────────────────────
+  // Both buttons carry one token out, so the bot can say which chat it was
+  // added to. Minted on mount so the anchors are real hrefs; persisted (with
+  // the hand-off note) only when a button is actually tapped. A token still
+  // pending on this device is reused, so the wait resumes on return.
+  let token = "";
+  $: urls = token ? hubClaimUrls(token) : null;
+  let stopWatch: (() => void) | null = null;
+
   /** Leaving for Telegram — leave the note that starts the return leg. */
   function handOff() {
-    markBotHandoff();
+    beginHubClaim(token);
+  }
+
+  /** Back in the tab with a token out: watch for the bot to redeem it. */
+  function watchClaim() {
+    if (stopWatch) return;
+    const pending = pendingClaim();
+    if (!pending) return;
+    stopWatch = watchHubClaim(getHolosphere(), pending.token, (claim) => {
+      // Unlike a pasted board, a hub they just STARTED from this screen is
+      // theirs: dock it here too, then open it.
+      rememberBoard(claim.holon, claim.name?.trim() || labelFor(claim.holon));
+      holonRef = claim.holon;
+      void openBoard();
+    });
   }
 
   // ── "Already have a hub?" ─────────────────────────────────────────────────
@@ -89,6 +127,7 @@
     }
     refError = false;
     clearBotHandoff();
+    clearHubClaim();
     // Deliberately NOT persisted: the URL is the shareable thing, and a phone
     // opening someone's board must not re-point this device forever (that is
     // what Settings is for). The store set makes the layout rebind now; the
@@ -280,7 +319,7 @@
         <p>{$t("home.personalBody")}</p>
         <a
           class="btn primary"
-          href={botChatUrl()}
+          href={urls?.personal ?? botChatUrl()}
           target="_blank"
           rel="noopener"
           on:click={handOff}
@@ -297,7 +336,7 @@
         <p>{$t("home.groupBody")}</p>
         <a
           class="btn primary"
-          href={addToGroupUrl()}
+          href={urls?.group ?? addToGroupUrl()}
           target="_blank"
           rel="noopener"
           on:click={handOff}

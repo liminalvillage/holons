@@ -27,6 +27,7 @@ import {
 } from '@holons/core/scoring';
 import { REAEventStore } from '@holons/core/rea';
 import { registerHolon } from '@holons/core/holosphere';
+import { parseClaimPayload, recordHubClaim } from '@holons/core/onboarding';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -218,9 +219,20 @@ export default class Settings {
                     return;
                 }
 
+                // A screen that started this hub sent a claim token out in
+                // the deep link (`?start=` / `?startgroup=`); redeeming it on
+                // the relay is what lets that screen dock the hub by itself.
+                const claimed = await this._redeemHubClaim(ctx, payload);
+
                 // Every holon — a group, or the private chat that IS someone's
                 // personal holon — gets its id and its board link, nothing more.
-                await ctx.reply(welcomeText(holonId, language), {
+                const text = claimed
+                    ? `${i18next.t('hubClaimed', {
+                          lng: language,
+                          defaultValue: '✅ Linked to the screen you started from — this hub is opening there now.',
+                      })}\n\n${welcomeText(holonId, language)}`
+                    : welcomeText(holonId, language);
+                await ctx.reply(text, {
                     parse_mode: 'Markdown',
                     reply_markup: boardButtons(holonId, language),
                 });
@@ -4171,6 +4183,26 @@ export default class Settings {
      * Handle join deeplink from Shopfront widget.
      * Payload format: join_{holonId}_{lens}_{itemId}
      */
+
+    /**
+     * Redeem a hub-claim token carried by a `/start` payload (see
+     * `@holons/core/onboarding`): record `<token> → this chat` so the screen
+     * that minted it docks this hub without anyone copying an id. Returns
+     * true when a claim was written. Never throws — the welcome must post
+     * regardless.
+     */
+    async _redeemHubClaim(ctx, payload) {
+        const token = parseClaimPayload(payload);
+        if (!token) return false;
+        try {
+            const claim = await recordHubClaim(this.db, token, ctx.chat ?? { id: utils.getholonId(ctx) });
+            return !!claim;
+        } catch (error) {
+            console.error('Error redeeming hub claim:', error);
+            return false;
+        }
+    }
+
     async _handleJoinDeeplink(ctx, payload, language) {
         try {
             const parts = payload.substring(5);

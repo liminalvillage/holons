@@ -99,18 +99,25 @@ the bot, or a display pinned in Settings, opens that board directly and
 docks it; closing the board lands on the map. `src/lib/views/HomeView.svelte`
 is the `/about` page. It closes a round trip that leaves the web entirely:
 
-1. **Out.** "Start a holon" deep-links to `t.me/<bot>?startgroup=hub` —
-   Telegram's own group chooser, with "create a new group" right there. The
-   group _is_ the holon, so there is nothing to sign up for.
-2. **Over.** The bot joins and posts its group welcome, now carrying an
+1. **Out.** "Start a hub" deep-links to `t.me/<bot>?startgroup=claim_<token>`
+   (Telegram's own group chooser, with "create a new group" right there) or
+   `t.me/<bot>?start=claim_<token>` (a private chat: a personal hub). The
+   group _is_ the holon, so there is nothing to sign up for. The token is a
+   one-time claim minted by the screen (`@holons/core/onboarding`); the same
+   two links sit behind the dock's **+** → **Start a new hub**.
+2. **Over.** Telegram delivers the payload to the bot as the chat's first
+   `/start claim_<token>`. The bot records `<token> → this chat` on the relay
+   (namespace `hubclaims`, lens `claims`) and posts its welcome, carrying an
    **Open this holon's board** button pointing at `KIOSK_ADDRESS/<holon id>`
-   (`packages/telegram-ui/src/Settings.ts`). That button is the way back.
+   (`packages/telegram-ui/src/Settings.ts`).
 3. **Back.** Telegram can't hand anything to the tab that was left behind, so
-   the page notes the hand-off in `localStorage` on the way out and re-checks it
-   when the tab regains focus. A visitor who returns lands on a highlighted
-   "welcome back" step whose field takes whatever they happen to have copied —
-   a holon id, a `t.me/c/…` message link, a `/dashboard` link, a hub address
-   (`parseHolonRef` in `src/lib/holons.ts`, spec'd in `holons.test.ts`).
+   the screen keeps the pending token and the hand-off note in `localStorage`
+   and watches the relay for the claim (`src/lib/hubclaim.ts`): the moment
+   the bot redeems it, the new hub docks and opens by itself. Should the loop
+   not close — an older bot, a relay hiccup — a paste line still takes
+   whatever they happen to have copied: a holon id, a `t.me/c/…` message
+   link, a `/dashboard` link, a hub address (`parseHolonRef` in
+   `src/lib/holons.ts`, spec'd in `holons.test.ts`).
 
 Opening a board from that field navigates to `/<holon id>` and is deliberately
 **not** remembered on the device — the URL is the shareable thing, and only

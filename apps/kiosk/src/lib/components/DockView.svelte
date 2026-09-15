@@ -48,16 +48,17 @@
   } from "$lib/dock";
   import { getHolonName, getHolosphere, getWriter } from "$lib/holosphere";
   import { dockPartnersOf } from "$lib/dockfed";
-  import { returningFromBot } from "$lib/config";
+  import { clearBotHandoff, returningFromBot } from "$lib/config";
+  import { clearHubClaim, pendingClaim } from "$lib/hubclaim";
   import { showNotice } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { isValidCell } from "h3-js";
-  import { parseHolonAdd } from "$lib/holons";
   import { canAddToCell, newLensItem, type LensId } from "$lib/maplens";
   import LensForm from "./LensForm.svelte";
   import { t, tr, type MessageKey } from "$lib/i18n";
   import Modal from "./Modal.svelte";
+  import AddHubSheet from "./AddHubSheet.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
   import PlaceSearch from "./PlaceSearch.svelte";
@@ -72,7 +73,7 @@
   /**
    * What the earth has selected, when it is showing: the tapped cell and the
    * chosen lens. It is what turns the tray's "+" from "add a hub" into "add
-   * one of these, here" — see `submitAdd`.
+   * one of these, here" — see `addHub`.
    */
   let mapSel: { cell: string; lens: LensId | null } | null = null;
   /** The cell an add would land in, or null when the earth is off/unselected. */
@@ -80,7 +81,7 @@
   /**
    * The lens an add would write into that cell. The `holons` lens is NOT one
    * of these: adding a holon is adding a hub, and the cell becomes its home
-   * (see `submitAdd`), which is what puts it on the map in the first place.
+   * (see `addHub`), which is what puts it on the map in the first place.
    */
   $: addLens =
     addCell &&
@@ -550,10 +551,9 @@
   // depends on what the earth has selected: with a cell AND an addable lens
   // in hand it is a record written into that pair; otherwise it names a hub,
   // and a selected cell becomes that hub's home.
-  let adding = false;
-  let draft = "";
-  let addError = "";
-  let addInput: HTMLInputElement;
+  /** The add-a-hub sheet, when open, and the step it is on. */
+  let addSheet: { step: "choose" | "existing" | "new" } | null = null;
+  $: adding = addSheet !== null;
   $: addLabel = addLens
     ? $t("dock.addTo", { lens: lensName(addLens) })
     : addCell
@@ -574,23 +574,20 @@
       formFor = { cell: addCell, lens: addLens };
       return;
     }
-    adding = true;
-    addError = "";
-    await tick();
-    addInput?.focus();
+    // A wait already pending on this device (they left for Telegram and
+    // came back) resumes on the Telegram step; otherwise ask which way in.
+    addSheet = { step: pendingClaim() ? "new" : "choose" };
   }
-  async function submitAdd() {
+  /** The sheet named a hub — pasted, or claimed back from the bot. */
+  async function addHub(hub: { id: string; name?: string }) {
     const cell = addCell;
-    const id = parseHolonAdd(draft);
-    if (!id) {
-      addError = $t("dock.addInvalid");
-      return;
-    }
-    adding = false;
-    draft = "";
-    addError = "";
+    const id = hub.id;
+    addSheet = null;
+    // Whichever way it came, the round trip is over.
+    clearHubClaim();
+    clearBotHandoff();
     // The circle must exist before the open morph can animate from it.
-    rememberBoard(id, labelFor(id));
+    rememberBoard(id, hub.name?.trim() || labelFor(id));
     if (cell) {
       // Added while a cell was selected: that cell is where this hub lives.
       // The map keeps the sky, so the new orb is seen landing on its hexagon
@@ -606,11 +603,14 @@
     requestOpen(id);
   }
 
-  // Back from Telegram with nothing docked yet: the bot's reply is in their
-  // clipboard, so open the add line ready for the paste instead of making
-  // them find the "+".
+  // Back from Telegram: with a claim token out, the Telegram step picks the
+  // wait back up (the bot's answer docks the hub by itself). With nothing
+  // docked and no token — an older link — the bot's reply is in their
+  // clipboard, so open the paste line instead of making them find the "+".
   onMount(() => {
-    if ($dockEntries.length === 0 && returningFromBot()) void startAdd();
+    if (!returningFromBot()) return;
+    if (pendingClaim()) addSheet = { step: "new" };
+    else if ($dockEntries.length === 0) addSheet = { step: "existing" };
   });
 
   /**
@@ -634,9 +634,7 @@
   }
 
   function cancelAdd() {
-    adding = false;
-    draft = "";
-    addError = "";
+    addSheet = null;
   }
 
   // A tap on empty space stands down edit mode and the add form. The field
@@ -923,30 +921,9 @@
   </div>
 
   <div class="tray" class:onmap={mapOn}>
-    {#if adding}
-      <form class="add" on:submit|preventDefault={submitAdd}>
-        <input
-          type="text"
-          bind:value={draft}
-          bind:this={addInput}
-          placeholder={$t("dock.addPlaceholder")}
-          aria-label={addLabel}
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-          on:keydown={(e) => e.key === "Escape" && cancelAdd()}
-        />
-        <button type="submit" class="go" aria-label={addLabel}>→</button>
-        {#if addError}
-          <span class="err" role="alert">{addError}</span>
-        {/if}
-      </form>
-    {:else}
-      <button class="plus" class:here={!!addCell} on:click={startAdd}>
-        <span class="plus__sign">+</span>{addLabel}
-      </button>
-    {/if}
+    <button class="plus" class:here={!!addCell} on:click={startAdd}>
+      <span class="plus__sign">+</span>{addLabel}
+    </button>
     {#if !mapOn}
       <p class="hint">{$t("dock.hint")}</p>
     {/if}
@@ -970,6 +947,20 @@
       lens={formFor.lens}
       on:saved={() => dockMap?.reloadPanel()}
       on:close={() => (formFor = null)}
+    />
+  </Modal>
+{/if}
+
+<!-- Adding a hub: which way in — paste one they already have, or start a
+     new one through Telegram and let the bot's answer dock it here by
+     itself. The sheet names the hub; `addHub` does the docking. -->
+{#if addSheet}
+  <Modal on:close={cancelAdd}>
+    <AddHubSheet
+      step={addSheet.step}
+      cell={addCell}
+      on:add={(e) => addHub(e.detail)}
+      on:close={cancelAdd}
     />
   </Modal>
 {/if}
@@ -1683,52 +1674,6 @@
   .plus.here .plus__sign {
     background: color-mix(in srgb, var(--paper) 22%, transparent);
     border-color: color-mix(in srgb, var(--paper) 55%, transparent);
-  }
-
-  .add {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .add input {
-    width: 15rem;
-    height: 2.6rem;
-    padding: 0 0.9rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--teal);
-    background: var(--card);
-    color: var(--ink);
-    font-size: 0.95rem;
-    font-family: inherit;
-  }
-  .add input:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 20%, transparent);
-  }
-  .add .go {
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 1.2rem;
-    background: var(--teal);
-    color: #fff;
-  }
-  .add .go:active {
-    transform: scale(0.92);
-  }
-  .add .err {
-    position: absolute;
-    bottom: calc(100% + 0.45rem);
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--note-coral);
-    white-space: nowrap;
   }
 
   .hint {
