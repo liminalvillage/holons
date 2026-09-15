@@ -47,6 +47,19 @@ function shareOf(value: number, total: number): number {
   return total > 0 ? (value / total) * SHARE_BASIS : 0;
 }
 
+/**
+ * Name the unit, unless the formatted amount already does.
+ *
+ * Money comes back as "€106" and needs its code; a stock or an appreciation
+ * comes back as "4 kg" or "27 kudos" and would otherwise read "4 kg KG".
+ */
+function withUnit(amount: string, label: string): string {
+  const a = amount.trim().toLowerCase();
+  const l = label.trim().toLowerCase();
+  if (!l || a === l || a.endsWith(` ${l}`) || a.endsWith(l)) return amount.trim();
+  return `${amount.trim()} ${label}`;
+}
+
 /** Join per-unit strings the way a label reads them: "€120 · 4 kg". */
 function joinDisplay(parts: string[]): string {
   return parts.join(' · ');
@@ -70,7 +83,10 @@ export function combineTracks(
     string,
     ValueFlowNode & { segments: ValueFlowSegment[]; parts: string[] }
   >();
-  const links = new Map<string, ValueFlowLink & { parts: string[] }>();
+  // Keyed by unit as well as by ends: a pair of parties who trade in two
+  // currencies gets one ribbon each, so the diagram shows WHICH unit moved
+  // between them and not merely that something did.
+  const links = new Map<string, ValueFlowLink & { raw: number }>();
   let totalIn = 0;
   let totalOut = 0;
 
@@ -87,12 +103,13 @@ export function combineTracks(
     for (const link of track.links) {
       const share = shareOf(link.value, total);
       if (share <= 0) continue;
-      const key = `${link.source}->${link.target}`;
+      const key = `${link.source}->${link.target}->${label}`;
       const existing = links.get(key);
-      const shown = `${format(link.value)} ${label}`;
       if (existing) {
+        // The same pair can appear twice within one track (two expenses, say).
         existing.value += share;
-        existing.parts.push(shown);
+        existing.raw += link.value;
+        existing.display = withUnit(format(existing.raw), label);
       } else {
         links.set(key, {
           id: key,
@@ -100,7 +117,9 @@ export function combineTracks(
           target: link.target,
           value: share,
           kind: link.kind,
-          parts: [shown],
+          unit: label,
+          display: withUnit(format(link.value), label),
+          raw: link.value,
         });
       }
     }
@@ -108,12 +127,19 @@ export function combineTracks(
     for (const node of track.nodes) {
       const share = shareOf(node.value, total);
       if (share <= 0) continue;
-      const shown = `${format(node.value)} ${label}`;
+      const shown = withUnit(format(node.value), label);
       const existing = nodes.get(node.id);
+      const slice: ValueFlowSegment = {
+        kind: label,
+        label,
+        unit: label,
+        value: share,
+        display: shown,
+      };
       if (existing) {
         existing.value += share;
         // One slice per unit, so a bar shows what it is made of.
-        existing.segments.push({ kind: label, label, value: share, display: shown });
+        existing.segments.push(slice);
         existing.parts.push(shown);
       } else {
         nodes.set(node.id, {
@@ -122,7 +148,7 @@ export function combineTracks(
           depth: node.depth,
           kind: node.kind,
           value: share,
-          segments: [{ kind: label, label, value: share, display: shown }],
+          segments: [slice],
           parts: [shown],
         });
       }
@@ -141,10 +167,8 @@ export function combineTracks(
       segments: segments.length > 1 ? segments : undefined,
       display: joinDisplay(parts),
     })),
-    links: [...links.values()].map(({ parts, ...link }) => ({
-      ...link,
-      display: joinDisplay(parts),
-    })),
+    // `raw` was only ever scratch for accumulating the real amount.
+    links: [...links.values()].map(({ raw: _raw, ...link }) => link),
     totalIn,
     totalOut,
     balance: null,
@@ -199,12 +223,23 @@ export function combinePeopleTracks(
     count += track.count;
   }
 
+  // Rescale the whole matrix to itself, so the combined chord's numbers are
+  // shares of everything that moved between people, counting each unit
+  // equally. Without this last pass they would be sums of per-unit shares,
+  // which can run past 100 and read as a percentage of nothing.
+  const scale = total > 0 ? SHARE_BASIS / total : 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) matrix[i][j] *= scale;
+    parties[i].given *= scale;
+    parties[i].received *= scale;
+  }
+
   return {
     id: 'combined' as PeopleFlowTrack['id'],
     unit: options.unit ?? '',
     parties,
     matrix,
-    total,
+    total: total > 0 ? SHARE_BASIS : 0,
     count,
   };
 }

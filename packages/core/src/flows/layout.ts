@@ -46,6 +46,8 @@ export interface SankeyLayoutLink {
   target: string;
   value: number;
   kind?: string;
+  /** The unit this ribbon measures, when the track carries several. */
+  unit?: string;
   /** A ready-made label, when `value` is a share rather than the amount. */
   display?: string;
   /** SVG path `d` for a closed ribbon, ready for `<path d={...} />`. */
@@ -176,7 +178,9 @@ export function layoutSankey(
     const target = resolve(link.target);
     if (source === target) continue; // one rollup swallowed both ends
     if (!kept.has(source) || !kept.has(target)) continue;
-    const key = `${source} ${target}`;
+    // The unit is part of the key: on a combined track two parties trading in
+    // two currencies must keep one ribbon each, not be melted into one.
+    const key = `${source} ${target} ${link.unit ?? ''}`;
     const seen = merged.get(key);
     if (seen) seen.value += link.value;
     else
@@ -186,6 +190,7 @@ export function layoutSankey(
         target,
         value: link.value,
         kind: link.kind,
+        ...(link.unit ? { unit: link.unit } : {}),
         ...(link.display ? { display: link.display } : {}),
       });
   }
@@ -304,6 +309,7 @@ export function layoutSankey(
       target: link.target,
       value: link.value,
       kind: link.kind,
+      ...(link.unit ? { unit: link.unit } : {}),
       ...(link.display ? { display: link.display } : {}),
       path:
         `M${r(x0)},${r(y0t)}` +

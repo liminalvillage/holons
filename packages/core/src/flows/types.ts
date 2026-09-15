@@ -64,6 +64,8 @@ export interface ValueFlowSegment {
 	label: string;
 	/** Always > 0. */
 	value: number;
+	/** The unit this slice measures, on a track that carries several. */
+	unit?: string;
 	/**
 	 * A ready-made label for this slice, when `value` is not the thing to show.
 	 * A combined track scales every unit to its own total so the widths are
@@ -81,6 +83,12 @@ export interface ValueFlowLink {
 	/** Always > 0. */
 	value: number;
 	kind?: string;
+	/**
+	 * The unit this ribbon measures, on a track that carries several. Ribbons
+	 * are kept apart by it, so a pair of parties trading in two currencies gets
+	 * one ribbon each rather than a single bar of mixed provenance.
+	 */
+	unit?: string;
 	/** See `ValueFlowSegment.display`. */
 	display?: string;
 }
