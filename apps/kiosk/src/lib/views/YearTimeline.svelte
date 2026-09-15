@@ -28,6 +28,12 @@
   export let noteColorFor: (category: string | undefined) => string;
   export let onOpen: (ev: CalendarEvent) => void;
   export let onSelectDay: ((date: Date) => void) | null = null;
+  /**
+   * "YYYY-MM-DD" a card being dragged (from CalendarView's drawer) would land
+   * on, to highlight it. CalendarView reads the day off the pointer via the
+   * container's `data-view-from`/`data-view-to` (the ms the viewport spans).
+   */
+  export let dropDay: string | null = null;
 
   // Layout constants (rem, so the timeline scales with the kiosk's fluid
   // root font) — keep in sync with the stacking styles below.
@@ -599,6 +605,29 @@
   function onPointerLeave() {
     hover = null;
   }
+
+  // ── Drop target: the day a dragged card would become a day task on ───────
+  $: viewFromMs = yearStart + ((yearEnd - yearStart) * viewStart) / 100;
+  $: viewToMs =
+    yearStart + ((yearEnd - yearStart) * (viewStart + viewSpan)) / 100;
+  $: dropBand = (() => {
+    if (!dropDay) return null;
+    const [y, m, d] = dropDay.split("-").map(Number);
+    const start = new Date(y, m - 1, d);
+    const from = positionInYear(start);
+    const to = positionInYear(new Date(y, m - 1, d + 1));
+    if (!inView(from, to)) return null;
+    const left = toX(from);
+    return {
+      left,
+      width: Math.max(toX(to) - left, 0),
+      label: start.toLocaleDateString($locale, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }),
+    };
+  })();
 </script>
 
 <div class="yt-bar">
@@ -662,6 +691,8 @@
   class:panning={gesture?.kind === "pinch" ||
     (gesture?.kind === "pan" && gesture.active)}
   style="height: {heightRem}rem;"
+  data-view-from={viewFromMs}
+  data-view-to={viewToMs}
   bind:this={container}
   bind:clientWidth={width}
   use:wheel
@@ -814,8 +845,20 @@
     </div>
   {/if}
 
+  <!-- Drop target while a card is dragged over the timeline -->
+  {#if dropBand}
+    <div
+      class="yt-drop"
+      class:flip={dropBand.left > 70}
+      style="left: {dropBand.left}%; width: {dropBand.width}%"
+      aria-hidden="true"
+    >
+      <span class="yt-drop-label">{dropBand.label}</span>
+    </div>
+  {/if}
+
   <!-- Hover readout: hairline + sky statistics for the date under the cursor -->
-  {#if hover}
+  {#if hover && !dropDay}
     {@const moon = moonStats(hover.date)}
     {@const sun = nextSolar(hover.date)}
     <div class="yt-cursor" style="left: {hover.pct}%" aria-hidden="true"></div>
@@ -1222,6 +1265,36 @@
   .yt-span:hover,
   .yt-sky:hover {
     z-index: 35;
+  }
+
+  /* The day a dragged card would land on: a teal column (at least a hairline
+     wide at year scale) with the date pinned to its top. */
+  .yt-drop {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 3px;
+    background: color-mix(in srgb, var(--teal) 22%, transparent);
+    border-inline: 1.5px solid var(--teal);
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 45;
+  }
+  .yt-drop-label {
+    position: absolute;
+    top: 0.4rem;
+    left: calc(100% + 0.35rem);
+    padding: 0.25rem 0.55rem;
+    border-radius: 8px;
+    background: var(--teal);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .yt-drop.flip .yt-drop-label {
+    left: auto;
+    right: calc(100% + 0.35rem);
   }
 
   /* Cursor hairline + the date/sky readout card that follows it. */

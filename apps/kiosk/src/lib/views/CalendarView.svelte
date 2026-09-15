@@ -219,10 +219,16 @@
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
     // Over the drawer (or its drag-time drop hint) → unschedule, not reschedule.
     dropOnTray = el?.closest(".tray, .unschedule-zone") != null;
-    const dayEl = dropOnTray
+    // The year timeline has no per-day cells: it publishes the stretch of
+    // time it shows, and the pointer's x picks the day within it.
+    const yearEl = dropOnTray
       ? null
-      : (el?.closest<HTMLElement>("[data-day]") ?? null);
-    dropDay = dayEl?.dataset.day ?? null;
+      : (el?.closest<HTMLElement>("[data-view-from]") ?? null);
+    const dayEl =
+      dropOnTray || yearEl
+        ? null
+        : (el?.closest<HTMLElement>("[data-day]") ?? null);
+    dropDay = yearEl ? yearDayAt(yearEl, x) : (dayEl?.dataset.day ?? null);
     if (dayEl && dayEl.dataset.hours != null) {
       const rect = dayEl.getBoundingClientRect();
       const min = Math.round(minForY(y - rect.top) / 15) * 15;
@@ -230,6 +236,15 @@
     } else {
       dropMin = null;
     }
+  }
+
+  /** The day under `x` on the year timeline (see its `data-view-*`). */
+  function yearDayAt(el: HTMLElement, x: number): string {
+    const rect = el.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (x - rect.left) / rect.width));
+    const from = Number(el.dataset.viewFrom);
+    const to = Number(el.dataset.viewTo);
+    return isoDay(new Date(Math.min(to - 1, from + (to - from) * frac)));
   }
 
   function beginDrag(
@@ -331,11 +346,17 @@
     } else if (dragged && id && day) {
       justDragged = true; // swallow the click that follows this pointerup
       setTimeout(() => (justDragged = false), 0);
-      void applyDrop(id, day, min);
+      // The year window has no clock: a card dropped there becomes a day task.
+      void applyDrop(id, day, min, view === "year");
     }
   }
 
-  async function applyDrop(id: string, day: string, min: number | null) {
+  async function applyDrop(
+    id: string,
+    day: string,
+    min: number | null,
+    allDay = false,
+  ) {
     const hid = get(holonId);
     if (!hid) return;
     const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
@@ -351,7 +372,7 @@
       when = toStoredInstant(
         localDateTime(day, Math.floor(min / 60), min % 60),
       );
-    } else if (q.when && /T\d\d:/.test(String(q.when))) {
+    } else if (!allDay && q.when && /T\d\d:/.test(String(q.when))) {
       // Dropped on a day cell, but it already had a time → keep the time.
       when = toStoredInstant(
         localDateTime(day, oldStart.getHours(), oldStart.getMinutes()),
@@ -1281,6 +1302,7 @@
         {noteColorFor}
         onOpen={open}
         onSelectDay={gotoDay}
+        {dropDay}
       />
     {:else}
       <!-- day timeline — one column, or two (with the next day) when wide -->
