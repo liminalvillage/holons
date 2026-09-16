@@ -453,13 +453,18 @@
   let fFrequency: QuestFrequency | null = null;
   // Task or event — the switch that moves a card between the two boards.
   let fKind: SwitchableKind = "task";
+  // Both of these hang off the start date, and — like the schedule rules
+  // further down — they shape what is shown and saved rather than the fields
+  // themselves, so a date that reads empty for a keystroke doesn't throw the
+  // choice away: it comes back with the date.
+  //
   // A cadence counts from the start date; without one there is nothing to
-  // repeat, so clearing the date clears the cadence too (the chips disable).
-  $: if (!fDate && fFrequency) fFrequency = null;
+  // repeat (and the chips disable).
+  $: effectiveFrequency = fDate ? fFrequency : null;
   // An event is a moment; an undated one would fall off the calendar without
-  // landing anywhere else, so clearing the date makes it a task again (and the
-  // Event chip disables, exactly like the cadence chips).
-  $: if (!fDate && fKind === "event") fKind = "task";
+  // landing anywhere else, so it reads as a task until the date is there
+  // (and the Event chip disables, exactly like the cadence chips).
+  $: effectiveKind = fDate ? fKind : "task";
 
   // Category is a real <select> dropdown over existing categories, with a
   // sentinel entry that swaps in a free-text input so a brand-new category can
@@ -693,7 +698,7 @@
       ...timing,
       // The cadence (core also drops the bot scheduler's handle when it is
       // cleared, so the bot stops spawning occurrences). Only a dated card
-      // can repeat — the form guard above already blanked it otherwise.
+      // can repeat, so an undated one is saved without a cadence.
       ...setQuestFrequency(sel.quest, timing.when ? fFrequency : null),
       // Task ↔ event. Core refuses to retype a marketplace item, so an offer
       // that somehow reached this form keeps its own lifecycle.
@@ -1636,9 +1641,9 @@
         <!-- What the fields add up to, in the same words the card will use
              once saved. -->
         {#if scheduleSummary}<p class="sched-sum">
-            {scheduleSummary}{#if fFrequency}{" · "}<Icon
+            {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
                 name="repeat"
-              />{" "}{freqLabel(fFrequency)}{/if}
+              />{" "}{freqLabel(effectiveFrequency)}{/if}
           </p>{/if}
 
         <!-- Task or event? A task is work to do and lives on the task board;
@@ -1653,18 +1658,18 @@
               <button
                 type="button"
                 class="chip"
-                class:on={fKind === "task"}
+                class:on={effectiveKind === "task"}
                 role="radio"
-                aria-checked={fKind === "task"}
+                aria-checked={effectiveKind === "task"}
                 on:click={() => (fKind = "task")}
                 >{$t("detail.kindTask")}</button
               >
               <button
                 type="button"
                 class="chip"
-                class:on={fKind === "event"}
+                class:on={effectiveKind === "event"}
                 role="radio"
-                aria-checked={fKind === "event"}
+                aria-checked={effectiveKind === "event"}
                 disabled={!fDate}
                 on:click={() => (fKind = "event")}
                 >{$t("detail.kindEvent")}</button
@@ -1673,7 +1678,7 @@
             <p class="kind-hint">
               {#if !fDate}{$t(
                   "detail.kindNeedsDate",
-                )}{:else if fKind === "event"}{$t(
+                )}{:else if effectiveKind === "event"}{$t(
                   "detail.kindEventHint",
                 )}{:else}{$t("detail.kindTaskHint")}{/if}
             </p>
@@ -1689,9 +1694,9 @@
             <button
               type="button"
               class="chip"
-              class:on={fFrequency === null}
+              class:on={effectiveFrequency === null}
               role="radio"
-              aria-checked={fFrequency === null}
+              aria-checked={effectiveFrequency === null}
               disabled={!fDate}
               on:click={() => (fFrequency = null)}>{freqLabel(null)}</button
             >
@@ -1699,9 +1704,9 @@
               <button
                 type="button"
                 class="chip"
-                class:on={fFrequency === f}
+                class:on={effectiveFrequency === f}
                 role="radio"
-                aria-checked={fFrequency === f}
+                aria-checked={effectiveFrequency === f}
                 disabled={!fDate}
                 on:click={() => (fFrequency = f)}>{freqLabel(f)}</button
               >
