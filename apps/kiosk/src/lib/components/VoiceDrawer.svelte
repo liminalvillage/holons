@@ -1,5 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import type { IconName } from "$lib/icons";
   //
   // The voice agent's review drawer: every change the agent proposed sits
   // here as a row — what it targets, what would change — and NOTHING is
@@ -38,11 +40,11 @@
   const fieldLabel = (field: string): string =>
     field in FIELD_KEY ? $t(FIELD_KEY[field as FieldName]) : field;
 
-  const KIND_GLYPH: Record<StagedChange["kind"], string> = {
-    create: "＋",
-    update: "✎",
-    participants: "👥",
-    complete: "✓",
+  const KIND_ICON: Record<StagedChange["kind"], IconName> = {
+    create: "plus",
+    update: "pencil",
+    participants: "users",
+    complete: "check",
   };
 
   /** The live record moved, where this change touches it, since previewed. */
@@ -83,7 +85,7 @@
         class="close"
         aria-label={$t("common.close")}
         title={$t("common.close")}
-        on:click={() => drawerOpen.set(false)}>✕</button
+        on:click={() => drawerOpen.set(false)}><Icon name="close" /></button
       >
     </header>
     {#if plan.utterances.length}
@@ -108,7 +110,8 @@
           <div class="body">
             <div class="head">
               <span class="kind"
-                >{KIND_GLYPH[c.kind]} {$t(`voice.plan.kind.${c.kind}`)}</span
+                ><Icon name={KIND_ICON[c.kind]} />
+                {$t(`voice.plan.kind.${c.kind}`)}</span
               >
               <span class="title">{c.title}</span>
               {#if c.holon !== $holonId}
@@ -129,16 +132,19 @@
               {/each}
             </dl>
             {#each c.warnings as w}
-              <p class="warn">⚠ {w}</p>
+              <p class="warn"><Icon name="warning" /> {w}</p>
             {/each}
             {#if editedSince(c)}
-              <p class="warn">⚠ {$t("voice.plan.changedSince")}</p>
+              <p class="warn">
+                <Icon name="warning" />
+                {$t("voice.plan.changedSince")}
+              </p>
             {/if}
             {#if outcome}
               <p class="outcome" class:bad={!outcome.ok}>
-                {outcome.ok
-                  ? `✓ ${$t("voice.plan.done")}`
-                  : `⚠ ${$t("voice.plan.failed")}: ${outcome.error ?? ""}`}
+                {#if outcome.ok}<Icon name="check" />
+                  {$t("voice.plan.done")}{:else}<Icon name="warning" />
+                  {$t("voice.plan.failed")}: {outcome.error ?? ""}{/if}
               </p>
             {/if}
           </div>

@@ -11,6 +11,9 @@
 </script>
 
 <script lang="ts">
+  import Icon from "$lib/components/Icon.svelte";
+  import { ICONS } from "$lib/icons";
+  const LENS_ICON = 16;
   // The dock: the space the board's card floats in. Each board this device
   // has opened is a circle in a little gravity field (see orbLayout): every
   // orb repels every other, federation links pull their orbs together, so
@@ -798,12 +801,18 @@
               {@const vesica = lensPath(pa, pb, ORB / 2)}
               {#if vesica}
                 <path class="vesica" d={vesica} />
-                <text
+                <svg
                   class="vesica-glyph"
-                  x={(pa.x + pb.x) / 2}
-                  y={(pa.y + pb.y) / 2}
-                  dominant-baseline="central">⇅</text
+                  x={(pa.x + pb.x) / 2 - LENS_ICON / 2}
+                  y={(pa.y + pb.y) / 2 - LENS_ICON / 2}
+                  width={LENS_ICON}
+                  height={LENS_ICON}
+                  viewBox="0 0 24 24"
                 >
+                  {#each ICONS["swap-vertical"].paths as p, i (i)}<path
+                      d={p.d}
+                    />{/each}
+                </svg>
               {/if}
             {/if}
           {/each}
@@ -880,7 +889,7 @@
         aria-checked={$dockView === "deck"}
         on:click={() => setDockView("deck")}
       >
-        <span aria-hidden="true">◉</span>{$t("dock.deck")}
+        <span aria-hidden="true"><Icon name="disc" /></span>{$t("dock.deck")}
       </button>
       <button
         type="button"
@@ -890,7 +899,7 @@
         aria-checked={$dockView === "map"}
         on:click={() => setDockView("map")}
       >
-        <span aria-hidden="true">⬡</span>{$t("dock.map")}
+        <span aria-hidden="true"><Icon name="hexagon" /></span>{$t("dock.map")}
       </button>
     </div>
     <div class="topbar__right">
@@ -904,7 +913,7 @@
           aria-label={locating ? $t("hex.locating") : $t("hex.myLocation")}
           title={locating ? $t("hex.locating") : $t("hex.myLocation")}
         >
-          {locating ? "◌" : "◎"}
+          <Icon name="locate" />
         </button>
       {/if}
       <!-- The reading page: what a hub is and how to start one. -->
@@ -915,7 +924,7 @@
         aria-label={$t("dock.about")}
         title={$t("dock.about")}
       >
-        ⓘ
+        <Icon name="info" />
       </button>
     </div>
   </div>
@@ -987,7 +996,7 @@
       <span
         class="orb-chip"
         style="--c: {holonColor(drop.holon, $holonColors)}"
-        aria-hidden="true">⬡</span
+        aria-hidden="true"><Icon name="hexagon" /></span
       >
       <h3>{$t("hex.moveTitle", { name: nameOf(drop.holon) })}</h3>
       <p>{$t("hex.moveBody")}</p>
@@ -1221,10 +1230,12 @@
     stroke-width: 1.5;
   }
   .vesica-glyph {
-    fill: color-mix(in srgb, var(--teal) 80%, var(--ink));
-    font-size: 0.95rem;
-    font-weight: 700;
-    text-anchor: middle;
+    fill: none;
+    stroke: color-mix(in srgb, var(--teal) 80%, var(--ink));
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    overflow: visible;
   }
 
   .slot {

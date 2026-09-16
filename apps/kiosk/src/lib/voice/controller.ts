@@ -246,7 +246,7 @@ function onBackendEvent(ev: BackendEvent) {
       break;
     case "error":
       activeTool.set(null);
-      holonsSaid.set(`⚠ ${ev.message}`);
+      holonsSaid.set(ev.message);
       status.set("ready");
       showBubble();
       armBubbleFade();
@@ -266,7 +266,7 @@ export async function startRecording(): Promise<void> {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      holonsSaid.set("⚠ Microphone unavailable");
+      holonsSaid.set("Microphone unavailable");
       showBubble();
       armBubbleFade();
       return;

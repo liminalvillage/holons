@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The allocation split, editable where it is read — the kiosk's take on the
   // dashboard's AllocationEditor. Move a slider, place a partner — or a
@@ -92,8 +93,8 @@
   // Four questions, one screen each, instead of nine sections in one scroll.
   // Each tab carries its current value in the strip, so the state of the whole
   // sheet is readable without opening anything.
-  type TabId = "split" | "contributors" | "zones" | "fund";
-  let tab: TabId = "split";
+  type TabId = "view" | "split" | "contributors" | "zones" | "fund";
+  let tab: TabId = "view";
   let tabEls: Record<string, HTMLButtonElement | undefined> = {};
 
   $: tabs = [
@@ -520,7 +521,7 @@
                     class="drop"
                     on:click={() => removeShare(row.id)}
                     aria-label={$t("alloc.removePerson", { name: row.name })}
-                    >✕</button
+                    ><Icon name="close" /></button
                   >
                 </div>
               </li>
@@ -566,7 +567,11 @@
         aria-expanded={eqOpen}
       >
         <span>{$t("settings.valueEquation")}</span>
-        <span class="chev" aria-hidden="true">{eqOpen ? "▾" : "▸"}</span>
+        <span class="chev" aria-hidden="true"
+          >{#if eqOpen}<Icon name="chevron-down" />{:else}<Icon
+              name="chevron-right"
+            />{/if}</span
+        >
       </button>
       {#if eqOpen}
         <div class="eqbox"><ValueEquation holon={holonId} /></div>
@@ -730,7 +735,7 @@
                     class="rp drop"
                     on:click={() => removePerson(p.id)}
                     aria-label={$t("alloc.removePerson", { name: p.name })}
-                    >✕</button
+                    ><Icon name="close" /></button
                   >
                 </div>
               </li>

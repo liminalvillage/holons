@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The sheet behind the dock's "+": which way in?
   //
@@ -124,7 +125,8 @@
     <h3>{cell ? $t("hub.addHereTitle") : $t("hub.addTitle")}</h3>
     <div class="opts">
       <button type="button" class="opt" on:click={() => (step = "existing")}>
-        <span class="opt__icon" aria-hidden="true">⬡</span>
+        <span class="opt__icon" aria-hidden="true"><Icon name="hexagon" /></span
+        >
         <span class="opt__text">
           <b>{$t("hub.haveTitle")}</b>
           <small>{$t("hub.haveBody")}</small>
@@ -147,7 +149,8 @@
     <p class="hint"><code>/id</code> <span>{$t("hub.pasteHint")}</span></p>
     {@render pasteForm()}
     <button type="button" class="back" on:click={() => (step = "choose")}>
-      ← {$t("hub.back")}
+      <Icon name="arrow-left" />
+      {$t("hub.back")}
     </button>
   {:else}
     <h3>{$t("hub.newTitle")}</h3>
@@ -192,7 +195,8 @@
       {@render pasteForm()}
     </details>
     <button type="button" class="back" on:click={() => (step = "choose")}>
-      ← {$t("hub.back")}
+      <Icon name="arrow-left" />
+      {$t("hub.back")}
     </button>
   {/if}
 </div>

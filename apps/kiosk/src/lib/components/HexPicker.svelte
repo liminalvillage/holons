@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Claim-your-cell overlay on the real map, ported from wequest's HexPicker.
   // Mapbox basemap (shared root-.env VITE_MAPBOX_TOKEN), H3 grid overlay that
   // follows the zoom, tap to pick the cell — persisted as the holon's
@@ -439,7 +440,7 @@
       on:click={() => dispatch("close")}
       aria-label={$t("common.close")}
     >
-      ✕
+      <Icon name="close" />
     </button>
   </header>
   <p class="hint">{$t("hex.hint")}</p>
@@ -475,7 +476,8 @@
 
   <div class="row">
     <button type="button" class="chip" on:click={locate} disabled={locating}>
-      {locating ? $t("hex.locating") : `◎ ${$t("hex.myLocation")}`}
+      {#if locating}{$t("hex.locating")}{:else}<Icon name="locate" />
+        {$t("hex.myLocation")}{/if}
     </button>
     <div class="readout">
       {selected ? `${selected} · res ${resolution}` : $t("hex.nothingSelected")}

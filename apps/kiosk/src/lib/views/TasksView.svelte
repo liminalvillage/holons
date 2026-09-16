@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
   import { onMount } from "svelte";
@@ -167,11 +168,11 @@
     if (task) void doAppreciate(task);
   }
 
-  // A recurring task's chip leads with ↻: its due date is the next occurrence
-  // (see toBacklog), and the glyph says there will be another after it.
+  // A recurring task's due date is the next occurrence (see toBacklog); its
+  // chip leads with a repeat icon (in the markup) to say there will be
+  // another after it.
   function dueLabel(task: BacklogTask): string | null {
-    const label = dueLabelFor(task.due, $now, $t, $locale);
-    return label && task.frequency ? `↻ ${label}` : label;
+    return dueLabelFor(task.due, $now, $t, $locale);
   }
 
   // ── Drag-to-reorder ───────────────────────────────────────────────────────-
@@ -861,7 +862,7 @@
                       aria-label={$t("tasks.deleteTask")}
                       title={$t("tasks.deleteTask")}
                     >
-                      ✕
+                      <Icon name="close" />
                     </button>
                   </div>
                   <div class="tools">
@@ -872,7 +873,7 @@
                       aria-label={$t("tasks.markComplete")}
                       title={$t("tasks.markComplete")}
                     >
-                      ✓
+                      <Icon name="check" />
                     </button>
                   </div>
                   <h3>{task.title}</h3>
@@ -883,7 +884,9 @@
                         name: task.initiator.name,
                       })}
                     >
-                      <span class="bulb" aria-hidden="true">💡</span>
+                      <span class="bulb" aria-hidden="true"
+                        ><Icon name="bulb" /></span
+                      >
                       <Avatars people={[task.initiator]} size="1.3rem" />
                       <span class="iname">{task.initiator.name}</span>
                     </div>
@@ -900,14 +903,18 @@
                   <div class="meta">
                     {#if task.category}<span class="tag">{task.category}</span
                       >{/if}
-                    {#if task.source}<span class="src">⇄ {task.source}</span
+                    {#if task.source}<span class="src"
+                        ><Icon name="swap" /> {task.source}</span
                       >{/if}
-                    {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
+                    {#if dueLabel(task)}<span class="due"
+                        >{#if task.frequency}<Icon name="repeat" />
+                        {/if}{dueLabel(task)}</span
                       >{/if}
                     {#if task.unmetDeps > 0}<span
                         class="waits"
                         title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
-                        >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
+                        ><Icon name="link" />
+                        {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                       >{/if}
                   </div>
                   <div class="cardfoot">
@@ -920,7 +927,9 @@
                       aria-pressed={amAppreciating(task)}
                       title={$t("tasks.appreciate")}
                     >
-                      <span class="glyph" aria-hidden="true">♥</span>
+                      <span class="glyph" aria-hidden="true"
+                        ><Icon name="heart" /></span
+                      >
                       {#if task.appreciation}
                         <span class="count">{task.appreciation}</span>
                       {/if}
@@ -965,7 +974,9 @@
 {#if confirmDrop}
   <Modal on:close={() => (confirmDrop = null)}>
     <div class="add">
-      <div class="glyph heart-glyph" aria-hidden="true">♥</div>
+      <div class="glyph heart-glyph" aria-hidden="true">
+        <Icon name="heart" />
+      </div>
       <h3>{$t("tasks.appreciateInstead")}</h3>
       <p class="lead">
         {$t("tasks.appreciateLead", { title: confirmDrop.title })}
@@ -985,7 +996,9 @@
 {#if confirmDelete}
   <Modal on:close={() => (confirmDelete = null)}>
     <div class="add">
-      <div class="glyph del-glyph" aria-hidden="true">✕</div>
+      <div class="glyph del-glyph" aria-hidden="true">
+        <Icon name="close" />
+      </div>
       <h3>{$t("tasks.deleteTitle")}</h3>
       <p class="lead">
         {$t("tasks.deleteLead", { title: confirmDelete.title })}
@@ -1045,7 +1058,7 @@
         <span class="rowside">
           {#if drag.task.appreciation}
             <span class="rowheart" aria-hidden="true"
-              >♥ {drag.task.appreciation}</span
+              ><Icon name="heart" /> {drag.task.appreciation}</span
             >
           {/if}
           {#if drag.task.people.length}
@@ -1066,12 +1079,15 @@
         <div class="meta">
           {#if drag.task.category}<span class="tag">{drag.task.category}</span
             >{/if}
-          {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span
+          {#if drag.task.source}<span class="src"
+              ><Icon name="swap" /> {drag.task.source}</span
             >{/if}
-          {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
+          {#if dueLabel(drag.task)}<span class="due"
+              >{#if drag.task.frequency}<Icon name="repeat" />
+              {/if}{dueLabel(drag.task)}</span
             >{/if}
           {#if drag.task.unmetDeps > 0}<span class="waits"
-              >⛓ waits on {drag.task.unmetDeps}</span
+              ><Icon name="link" /> waits on {drag.task.unmetDeps}</span
             >{/if}
         </div>
         <div class="cardfoot">
@@ -1080,7 +1096,7 @@
             class:on={amAppreciating(drag.task)}
             aria-hidden="true"
           >
-            <span class="glyph">♥</span>
+            <span class="glyph"><Icon name="heart" /></span>
             {#if drag.task.appreciation}
               <span class="count">{drag.task.appreciation}</span>
             {/if}

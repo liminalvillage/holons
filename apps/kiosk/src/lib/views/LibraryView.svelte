@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   import { get } from "svelte/store";
   import {
     things,
@@ -236,7 +237,9 @@
               {/if}
               <h3>{thing.title}</h3>
               <span class="type">{typeName($t, thing.type)}</span>
-              {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+              {#if thing.source}<span class="src"
+                  ><Icon name="swap" /> {thing.source}</span
+                >{/if}
               <span class="status" class:available={thing.available}>
                 {statusLabel(thing, $scope, $now, $t, $locale)}
               </span>
@@ -293,7 +296,9 @@
                 {/if}
                 <h3>{thing.title}</h3>
                 <span class="type">{typeName($t, thing.type)}</span>
-                {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+                {#if thing.source}<span class="src"
+                    ><Icon name="swap" /> {thing.source}</span
+                  >{/if}
                 <span class="status" class:available={thing.available}>
                   {thing.available
                     ? $t("library.available")
@@ -341,7 +346,8 @@
                   <h3>{thing.title}</h3>
                   <div class="meta">
                     <span class="rtype">{typeName($t, thing.type)}</span>
-                    {#if thing.source}<span class="src">⇄ {thing.source}</span
+                    {#if thing.source}<span class="src"
+                        ><Icon name="swap" /> {thing.source}</span
                       >{/if}
                   </div>
                 </div>

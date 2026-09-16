@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // The sign-in card. Telegram is the suggested path (full-page OIDC redirect,
   // see src/lib/server/telegramAuth.ts); your own Nostr key and an Ethereum
   // wallet are equal secondary options that resolve a key client-side and land
@@ -48,7 +49,7 @@
 
 <div class="login">
   {#if $currentUser}
-    <div class="glyph" aria-hidden="true">✓</div>
+    <div class="glyph" aria-hidden="true"><Icon name="check" /></div>
     <h3>{$t("login.loggedIn")}</h3>
     <p>
       {$t("login.signedInAs", { name: displayName($currentUser) })}
@@ -63,7 +64,7 @@
       }}
     />
   {:else}
-    <div class="glyph" aria-hidden="true">✦</div>
+    <div class="glyph" aria-hidden="true"><Icon name="star" /></div>
     <h3>{$t("login.title")}</h3>
     <p>{$t("login.lead")}</p>
 

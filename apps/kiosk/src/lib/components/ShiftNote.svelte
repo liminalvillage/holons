@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // One shift on the wall: a post-it tinted by its shift code, carrying its
   // time, place, who is on it and — the point of a wall display — how many
@@ -102,7 +103,8 @@
 >
   <span class="when"
     >{when}{#if running}<span class="live">{$t("shifts.now")}</span
-      >{/if}{#if mine}<span class="you">✓ {$t("shifts.youAreOn")}</span
+      >{/if}{#if mine}<span class="you"
+        ><Icon name="check" /> {$t("shifts.youAreOn")}</span
       >{/if}{#if ghost}<span class="flag ghostflag"
         >{$t("shifts.unpublished")}</span
       >{:else if stale}<span class="flag staleflag">{$t("shifts.stale")}</span
@@ -111,7 +113,8 @@
       >{/if}</span
   >
   <span class="ttl">{title}</span>
-  {#if location}<span class="where">⌖ {location}</span>{/if}
+  {#if location}<span class="where"><Icon name="locate" /> {location}</span
+    >{/if}
   {#if taken > 0}
     <span class="who"
       >{who.shown.join(", ")}{#if who.more > 0}
@@ -154,7 +157,8 @@
             class="rsvp take"
             disabled={busy}
             on:click={() => expected && dispatch("publish", expected)}
-            >{busy ? "…" : `↑ ${$t("shifts.publish")}`}</button
+            >{#if busy}…{:else}<Icon name="arrow-up" />
+              {$t("shifts.publish")}{/if}</button
           >
         {:else if occ}
           {#if drifted && expected}
@@ -162,7 +166,8 @@
               class="rsvp take"
               disabled={busy}
               on:click={() => expected && dispatch("republish", expected)}
-              >{busy ? "…" : `↻ ${$t("shifts.republish")}`}</button
+              >{#if busy}…{:else}<Icon name="repeat" />
+                {$t("shifts.republish")}{/if}</button
             >
           {/if}
           <button
@@ -170,7 +175,8 @@
             disabled={busy}
             aria-label={$t("shifts.retract")}
             on:click={() => occ && dispatch("retract", occ)}
-            >{busy ? "…" : `✕ ${$t("shifts.retract")}`}</button
+            >{#if busy}…{:else}<Icon name="close" />
+              {$t("shifts.retract")}{/if}</button
           >
         {/if}
       </span>
@@ -183,14 +189,16 @@
           class="rsvp drop"
           disabled={busy}
           on:click={() => occ && dispatch("drop", occ)}
-          >{busy ? "…" : `✕ ${$t("shifts.drop")}`}</button
+          >{#if busy}…{:else}<Icon name="close" />
+            {$t("shifts.drop")}{/if}</button
         >
       {:else if capacity === undefined || cov.missing > 0}
         <button
           class="rsvp take"
           disabled={busy}
           on:click={() => occ && dispatch("take", occ)}
-          >{busy ? "…" : `✋ ${$t("shifts.take")}`}</button
+          >{#if busy}…{:else}<Icon name="hand" />
+            {$t("shifts.take")}{/if}</button
         >
       {/if}
     {/if}

@@ -36,6 +36,7 @@ import {
   type PartnerGraph,
 } from "@holons/core/inventory";
 import { normalizeNeed, type PublishedNeed } from "@holons/core/needs";
+import type { IconName } from "./icons";
 import { classifyMarketItem } from "@holons/core/tasks";
 
 export { fmtQty } from "./stock";
@@ -51,7 +52,7 @@ export type Scale =
 export interface ScaleOption {
   id: string;
   label: string;
-  glyph?: string;
+  icon?: IconName;
   scale: Scale;
 }
 
@@ -65,11 +66,16 @@ export function scaleOptions(
   partnerCount: number,
 ): ScaleOption[] {
   const out: ScaleOption[] = [
-    { id: "holon", label: "This holon", glyph: "⌂", scale: { kind: "holon" } },
+    {
+      id: "holon",
+      label: "This holon",
+      icon: "home",
+      scale: { kind: "holon" },
+    },
     {
       id: "partners",
       label: partnerCount ? `Federation (${partnerCount})` : "Federation",
-      glyph: "⇄",
+      icon: "swap",
       scale: { kind: "partners" },
     },
   ];
@@ -78,7 +84,7 @@ export function scaleOptions(
       out.push({
         id: `cell:${level}`,
         label: formatAcross(cellAcrossKm(cell)),
-        glyph: "⬡",
+        icon: "hexagon",
         scale: { kind: "cell", cell, level },
       });
     });

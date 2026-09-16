@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Calendar board's own settings sheet — the two ways a board and the
   // world outside it meet:
@@ -205,7 +206,7 @@
                 type="button"
                 class="drop"
                 aria-label={$t("cal.set.removeFeed", { name: cal.name })}
-                on:click={() => remove(cal.id)}>✕</button
+                on:click={() => remove(cal.id)}><Icon name="close" /></button
               >
               {#if pickingId === cal.id}
                 <div class="palette">

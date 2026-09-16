@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The coordinator's shift plan, editable where it is read. Left: the
   // catalog — add, edit, disable, remove shifts (code, title, times, people
@@ -338,7 +339,8 @@
                   class="x"
                   aria-label={$t("shifts.remove")}
                   title={$t("shifts.remove")}
-                  on:click={() => remove(def.code)}>✕</button
+                  on:click={() => remove(def.code)}
+                  ><Icon name="close" /></button
                 >
               </div>
               <div class="line">

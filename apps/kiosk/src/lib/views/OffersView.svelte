@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Needs & Offers board: the market, read demand first — what people
   // ask for, and the resources that can answer it.
@@ -1111,7 +1112,11 @@
       />
       <div class="scaleslide">
         <div class="scalehead">
-          <span class="g">{activeOption?.glyph ?? ""}</span>
+          <span class="g"
+            >{#if activeOption?.icon}<Icon
+                name={activeOption.icon}
+              />{/if}</span
+          >
           <strong>{activeScaleLabel}</strong>
           {#if cellLoading}<span class="basis">{$t("offers.cellReading")}</span
             >{/if}
@@ -1137,7 +1142,9 @@
               tabindex="-1"
               on:click={() => pickScale(o.id)}
             >
-              <span class="g">{o.glyph}</span>
+              <span class="g"
+                >{#if o.icon}<Icon name={o.icon} />{/if}</span
+              >
               <span class="tl">{o.label}</span>
             </button>
           {/each}
@@ -1420,7 +1427,7 @@
                     >{$t("offers.handoff")}</button
                   >
                 {:else if m.state === "settled"}
-                  <span class="status st-ok">✓</span>
+                  <span class="status st-ok"><Icon name="check" /></span>
                 {:else if m.need}
                   <button
                     type="button"
@@ -1478,14 +1485,17 @@
             aria-label={$t("offers.copyLink")}
             title={$t(copied ? "offers.linkCopied" : "offers.copyLink")}
             on:click={() => copyLink(String(card.offer.id))}
-            >{copied ? "✓" : "⛓"}</button
+            >{#if copied}<Icon name="check" />{:else}<Icon
+                name="link"
+              />{/if}</button
           >
           {#if card.own && !card.auto && (card.offer.status === "open" || card.offer.status === "reserved")}
             <button
               class="icon-btn"
               aria-label={$t("offers.edit")}
               title={$t("offers.edit")}
-              on:click={() => openEdit(card.offer)}>✎</button
+              on:click={() => openEdit(card.offer)}
+              ><Icon name="pencil" /></button
             >
           {/if}
         </div>
@@ -1702,7 +1712,7 @@
                   >{$t("offers.acceptResponse")}</button
                 >
               {:else if card.need.claimedResponseId === r.id}
-                <span class="status st-ok">✓</span>
+                <span class="status st-ok"><Icon name="check" /></span>
               {/if}
             </li>
           {/each}
@@ -1765,7 +1775,9 @@
 {#if formOpen}
   <Modal on:close={() => (formOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">{editing ? "✎" : "＋"}</div>
+      <div class="glyph" aria-hidden="true">
+        {#if editing}<Icon name="pencil" />{:else}＋{/if}
+      </div>
       <h3>{$t(editing ? "offers.editOffer" : "offers.addOffer")}</h3>
       {#if !editing}<p class="lead">{$t("offers.addLead")}</p>{/if}
       <input
@@ -1867,7 +1879,7 @@
 {#if askOpen}
   <Modal on:close={() => (askOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">◎</div>
+      <div class="glyph" aria-hidden="true"><Icon name="target" /></div>
       <h3>{$t("offers.ask")}</h3>
       <p class="lead">{$t("offers.askLead")}</p>
       <input
@@ -1941,7 +1953,7 @@
 {#if shareOpen && shareTarget}
   <Modal on:close={() => (shareOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">⇄</div>
+      <div class="glyph" aria-hidden="true"><Icon name="swap" /></div>
       <h3>{$t("offers.share")}</h3>
       <p class="lead">
         {$t(shareKind === "need" ? "offers.shareNeedLead" : "offers.shareLead")}

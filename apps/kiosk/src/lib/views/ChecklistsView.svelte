@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Lists tab — the holon's shared checklists (agenda, shopping, ad-hoc
   // lists), mirroring the holons dashboard's Checklists feature. Core owns
@@ -310,7 +311,9 @@
           >
             ‹
           </button>
-          <span class="picon" aria-hidden="true">{openCard?.icon ?? "📋"}</span>
+          <span class="picon" aria-hidden="true"
+            ><Icon name={openCard?.icon ?? "check-square"} /></span
+          >
           <div class="ptext">
             <h2>{openCard?.title ?? openRaw?.id ?? ""}</h2>
             <span class="count">
@@ -318,7 +321,8 @@
                 done: openDone,
                 total: openItems.length,
               })}
-              {#if openCard?.source}· ⇄ {openCard.source}{/if}
+              {#if openCard?.source}· <Icon name="swap" />
+                {openCard.source}{/if}
             </span>
           </div>
           <button
@@ -327,7 +331,8 @@
             disabled={!openItems.length}
             title={$t("lists.clearTicked")}
           >
-            ↺ {$t("lists.clear")}
+            <Icon name="undo" />
+            {$t("lists.clear")}
           </button>
           {#if openCard && !openCard.special}
             <button
@@ -337,7 +342,9 @@
               on:blur={() => (confirmDelete = false)}
               title={$t("lists.deleteList")}
             >
-              {confirmDelete ? $t("lists.tapConfirm") : "🗑"}
+              {#if confirmDelete}{$t("lists.tapConfirm")}{:else}<Icon
+                  name="trash"
+                />{/if}
             </button>
           {/if}
         </header>
@@ -362,7 +369,7 @@
                     (e.preventDefault(), toggle(index))}
                 >
                   <span class="tick" aria-hidden="true">
-                    {item.checked ? "✓" : ""}
+                    {#if item.checked}<Icon name="check" />{/if}
                   </span>
                   <span class="itext">{item.text}</span>
                   <button
@@ -370,7 +377,7 @@
                     on:click|stopPropagation={() => removeItem(index)}
                     aria-label={$t("lists.removeItemAria", { item: item.text })}
                   >
-                    ✕
+                    <Icon name="close" />
                   </button>
                 </div>
               </li>
@@ -406,9 +413,11 @@
             on:click={() => openList(list.key)}
             on:keydown={(e) => onKey(e, list.key)}
           >
-            <div class="icon">{list.icon}</div>
+            <div class="icon"><Icon name={list.icon} /></div>
             <h3>{list.title}</h3>
-            {#if list.source}<span class="src">⇄ {list.source}</span>{/if}
+            {#if list.source}<span class="src"
+                ><Icon name="swap" /> {list.source}</span
+              >{/if}
             <span
               class="status"
               class:cleared={list.total > 0 && list.done === list.total}
@@ -443,7 +452,7 @@
 {#if addOpen}
   <Modal on:close={() => (addOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">☑</div>
+      <div class="glyph" aria-hidden="true"><Icon name="check-square" /></div>
       <h3>{$t("lists.startList")}</h3>
       <p class="lead">{$t("lists.startLead")}</p>
       <input

@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The reading page (routes/about). The front door is the map now — the
   // dock with the earth showing, and this device's hubs on it — and the map
@@ -304,7 +305,9 @@
 <div class="home">
   <!-- ── Hero + the two paths ───────────────────────────────────────────── -->
   <header class="hero" id="start">
-    <a class="back" href="/">← {$t("home.backToMap")}</a>
+    <a class="back" href="/"
+      ><Icon name="arrow-left" /> {$t("home.backToMap")}</a
+    >
     <div class="wordmark">hubs network</div>
     <h1>{$t("home.heroTitle")}</h1>
     <p class="lead">{$t("home.heroLead")}</p>

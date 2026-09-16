@@ -526,7 +526,7 @@ describe("toChecklists — list card mapping", () => {
     expect(build.total).toBe(2);
     expect(build.special).toBe(false);
     expect(out[0].special).toBe(true);
-    expect(out[0].icon).toBe("🛒");
+    expect(out[0].icon).toBe("cart");
   });
 
   it("types legacy records so agenda/shopping ids read as special", () => {
@@ -534,7 +534,7 @@ describe("toChecklists — list card mapping", () => {
       { id: "agenda", items: [] },
     ] as unknown as Checklist[]);
     expect(out[0].special).toBe(true);
-    expect(out[0].icon).toBe("📅");
+    expect(out[0].icon).toBe("calendar");
   });
 
   it("drops blank ids, and dedupes on the origin-qualified key", () => {

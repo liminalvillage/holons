@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The flow editor for ONE pair of holons — what pops up when two circles are
   // dropped together, when their overlap is tapped, or when a federated
@@ -262,7 +263,9 @@
   </div>
   <div class="names">
     <span class="name">{nameA()}</span>
-    <span class="join" class:live={linked}>{linked ? "⇄" : "·"}</span>
+    <span class="join" class:live={linked}
+      >{#if linked}<Icon name="swap" />{:else}·{/if}</span
+    >
     <span class="name">{nameB()}</span>
   </div>
   <p class="status" class:idle={!linked}>

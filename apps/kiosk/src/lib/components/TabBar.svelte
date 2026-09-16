@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   import {
     visibleTabs,
     activeTab,
@@ -437,7 +438,9 @@
           {/if}
           <span class="who">{displayName($currentUser)}</span>
         {:else}
-          <span class="tg">✦</span><span class="who">{$t("tabbar.login")}</span>
+          <span class="tg"><Icon name="star" /></span><span class="who"
+            >{$t("tabbar.login")}</span
+          >
         {/if}
       </button>
       <div class="clock">
@@ -527,7 +530,7 @@
               }}>&times;</span
             >
           {/if}
-          <span class="glyph">{tab.glyph}</span>
+          <span class="glyph"><Icon name={tab.icon} /></span>
           <span class="label">{$t(tab.labelKey)}</span>
           <!-- Pin affordance: the active tab always shows a pin — muted while
              unpinned (tap to park the kiosk here), accent once pinned. A
@@ -614,7 +617,7 @@
             role="menuitem"
             on:click={() => addTab(tab.id)}
           >
-            <span class="glyph">{tab.glyph}</span>
+            <span class="glyph"><Icon name={tab.icon} /></span>
             <span>{$t(tab.labelKey)}</span>
           </button>
         {/each}
@@ -1187,7 +1190,8 @@
   .addmenu__item .glyph {
     font-size: 1.1rem;
     width: 1.4rem;
-    text-align: center;
+    display: inline-flex;
+    justify-content: center;
   }
   .addmenu__item:hover {
     background: var(--paper);
@@ -1198,6 +1202,7 @@
   .tab .glyph {
     font-size: 1.05rem;
     line-height: 1;
+    display: inline-flex;
   }
   .tab .label {
     font-size: 0.9rem;

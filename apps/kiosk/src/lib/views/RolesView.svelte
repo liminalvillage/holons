@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The optional Roles board. Two views, switched like the dashboard:
   //   • Cards — one card per role, featuring TODAY's holder (the kiosk shows the
@@ -400,7 +401,7 @@
                     <span class="hname">{holderName(holder).split(" ")[0]}</span
                     >
                     {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
-                        >🔒</span
+                        ><Icon name="lock" /></span
                       >{/if}
                   {:else}
                     <span class="open">{$t("rolesv.open")}</span>
@@ -423,9 +424,10 @@
                     on:click={() => takeDay(card, raw, todayCell, card.id)}
                     disabled={busy === card.id}
                     aria-pressed={mineToday}
-                    >{mineToday
-                      ? `✓ ${$t("rolesv.drop")}`
-                      : $t("rolesv.takeToday")}</button
+                    >{#if mineToday}<Icon name="check" />
+                      {$t("rolesv.drop")}{:else}{$t(
+                        "rolesv.takeToday",
+                      )}{/if}</button
                   >
                 {/if}
                 {#if $isLoggedIn}
@@ -433,7 +435,7 @@
                     class="tool rowtool"
                     on:click={() => openEdit(card)}
                     aria-label={$t("rolesv.editAria")}
-                    title={$t("rolesv.edit")}>✎</button
+                    title={$t("rolesv.edit")}><Icon name="pencil" /></button
                   >
                 {/if}
               </div>
@@ -471,7 +473,7 @@
                     class="tool"
                     on:click={() => openEdit(card)}
                     aria-label={$t("rolesv.editAria")}
-                    title={$t("rolesv.edit")}>✎</button
+                    title={$t("rolesv.edit")}><Icon name="pencil" /></button
                   >
                 {/if}
                 <h3>{card.title}</h3>
@@ -502,7 +504,8 @@
                       >
                       {#if fixed}<span
                           class="lock"
-                          title={$t("rolesv.fixedRole")}>🔒</span
+                          title={$t("rolesv.fixedRole")}
+                          ><Icon name="lock" /></span
                         >{/if}
                     </span>
                   {:else}
@@ -518,7 +521,7 @@
                         on:click={() => releaseFixed(card, raw)}
                         disabled={busy === `fix:${card.id}`}
                         title={$t("rolesv.releaseFixed")}
-                        >🔒 {$t("rolesv.release")}</button
+                        ><Icon name="lock" /> {$t("rolesv.release")}</button
                       >
                     {:else}
                       <span class="fixednote">{$t("rolesv.fixedRole")}</span>
@@ -530,9 +533,10 @@
                       on:click={() => takeDay(card, raw, todayCell, card.id)}
                       disabled={busy === card.id}
                       aria-pressed={mineToday}
-                      >{mineToday
-                        ? `✓ ${$t("rolesv.todayDrop")}`
-                        : $t("rolesv.takeToday")}</button
+                      >{#if mineToday}<Icon name="check" />
+                        {$t("rolesv.todayDrop")}{:else}{$t(
+                          "rolesv.takeToday",
+                        )}{/if}</button
                     >
                   {/if}
                 </div>
@@ -563,7 +567,7 @@
             <div class="wtitle" title={card.title}>
               <span class="wtitle-text">{card.title}</span>
               {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
-                  >🔒</span
+                  ><Icon name="lock" /></span
                 >{/if}
             </div>
             {#each days as d (isoDateOf(d))}
@@ -652,7 +656,7 @@
 {#if editCard}
   <Modal on:close={() => (editCard = null)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">✎</div>
+      <div class="glyph" aria-hidden="true"><Icon name="pencil" /></div>
       <h3>{$t("rolesv.editAria")}</h3>
       <input
         class="line"
@@ -672,7 +676,8 @@
         {#if editRaw && hasPermanent(editRaw)}
           <div class="fixrow">
             <span class="fxname"
-              >🔒 {holderName(permanentHolders(editRaw)[0])}</span
+              ><Icon name="lock" />
+              {holderName(permanentHolders(editRaw)[0])}</span
             >
             <button class="linkbtn" on:click={clearFixed} disabled={fixedBusy}
               >{$t("rolesv.clearFixed")}</button

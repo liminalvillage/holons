@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Stock board: what the place keeps, in quantity.
   //
@@ -1040,13 +1041,16 @@
             class:done={copied}
             aria-label={$t("stock.copyLink")}
             title={$t(copied ? "stock.linkCopied" : "stock.copyLink")}
-            on:click={() => copyLink(row.spec.id)}>{copied ? "✓" : "⛓"}</button
+            on:click={() => copyLink(row.spec.id)}
+            >{#if copied}<Icon name="check" />{:else}<Icon
+                name="link"
+              />{/if}</button
           >
           <button
             class="icon-btn"
             aria-label={$t("stock.editItem")}
             title={$t("stock.editItem")}
-            on:click={() => openEdit(row.spec)}>✎</button
+            on:click={() => openEdit(row.spec)}><Icon name="pencil" /></button
           >
         </div>
       </div>
@@ -1154,7 +1158,9 @@
             ><span class="g">+</span>{$t("stock.add")}</button
           >
           <button class="mv" on:click={() => openMove("count")}
-            ><span class="g">≡</span>{$t("stock.count")}</button
+            ><span class="g"><Icon name="list" /></span>{$t(
+              "stock.count",
+            )}</button
           >
         </div>
       {/if}
@@ -1205,7 +1211,9 @@
 {#if formOpen}
   <Modal on:close={() => (formOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">{editing ? "✎" : "＋"}</div>
+      <div class="glyph" aria-hidden="true">
+        {#if editing}<Icon name="pencil" />{:else}＋{/if}
+      </div>
       <h3>{$t(editing ? "stock.editItem" : "stock.addItem")}</h3>
       {#if !editing}<p class="lead">{$t("stock.addLead")}</p>{/if}
       <input

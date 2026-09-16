@@ -164,7 +164,7 @@ describe("personalChecklists", () => {
       id,
       key: id,
       title: id.toUpperCase(),
-      icon: "📋",
+      icon: "check-square",
       done: 0,
       total: 0,
       special,

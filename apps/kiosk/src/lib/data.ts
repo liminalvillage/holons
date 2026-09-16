@@ -19,6 +19,7 @@ import {
   unmetDependencies,
 } from "@holons/core/tasks";
 import type { Quest, QuestFrequency } from "@holons/core/tasks";
+import type { IconName } from "./icons";
 import { dayKey, getDisplayBookings } from "@holons/core/library";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
@@ -666,8 +667,9 @@ export interface ChecklistCard {
    */
   key: string;
   title: string;
-  /** Core's emoji for the list kind (📅 agenda, 🛒 shopping, 📋 …). */
-  icon: string;
+  /** The list kind's icon: the calendar for the agenda, the cart for
+   *  shopping, a ticked list for everything else. */
+  icon: IconName;
   /** Items done / total, for the progress chip. */
   done: number;
   total: number;
@@ -687,6 +689,18 @@ export interface ChecklistCard {
  * then alphabetical. Legacy records are run through core's type migration so
  * the icon/special rules see a typed list.
  */
+/** The list kind's icon — core's emoji for the kind, mapped to the catalog. */
+function checklistIcon(list: Checklist): IconName {
+  switch (getChecklistIcon(list)) {
+    case "📅":
+      return "calendar";
+    case "🛒":
+      return "cart";
+    default:
+      return "check-square";
+  }
+}
+
 export function toChecklists(
   lists: Checklist[],
   names?: Names,
@@ -702,7 +716,7 @@ export function toChecklists(
         id: String(typed.id),
         key: recordKey(c, String(typed.id)),
         title: getChecklistDisplayTitle(typed),
-        icon: getChecklistIcon(typed),
+        icon: checklistIcon(typed),
         done: items.filter((i) => i?.checked).length,
         total: items.length,
         special: isSpecialChecklist(typed),

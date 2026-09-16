@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Flows board's Balances layout: the holon's mutual credit, read the
   // way a phone reads it.
@@ -593,7 +594,11 @@
       {#if square.length && active.length}
         <button class="link" on:click={() => (showSquare = !showSquare)}>
           {$t("balances.squareCount", { n: square.length })}
-          <span aria-hidden="true">{showSquare ? "▴" : "▾"}</span>
+          <span aria-hidden="true"
+            >{#if showSquare}<Icon name="chevron-up" />{:else}<Icon
+                name="chevron-down"
+              />{/if}</span
+          >
         </button>
         {#if showSquare}
           <ul class="chips">
@@ -825,7 +830,10 @@
         {#if (e as any)._federation?.sourceHolonId}
           <div class="drow">
             <dt>{$t("balances.from")}</dt>
-            <dd>⇄ {nameOf((e as any)._federation.sourceHolonId)}</dd>
+            <dd>
+              <Icon name="swap" />
+              {nameOf((e as any)._federation.sourceHolonId)}
+            </dd>
           </div>
         {/if}
       </dl>

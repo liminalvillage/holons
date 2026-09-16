@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Caretaker settings for the kiosk: choose which holon the screen shows, set a
   // display name, logo, and accent colour. Everything is persisted (see
   // config.ts) and applied reactively — no reload needed. (The dashboard link
@@ -222,9 +223,9 @@
   }
 
   const THEMES = [
-    { id: "auto", labelKey: "common.auto", glyph: "◑" },
-    { id: "light", labelKey: "settings.light", glyph: "☀" },
-    { id: "dark", labelKey: "settings.dark", glyph: "☾" },
+    { id: "auto", labelKey: "common.auto", icon: "contrast" },
+    { id: "light", labelKey: "settings.light", icon: "sun" },
+    { id: "dark", labelKey: "settings.dark", icon: "moon" },
   ] as const;
 
   // Language names are endonyms — deliberately not translated.
@@ -462,7 +463,7 @@
 </script>
 
 <div class="settings">
-  <div class="glyph" aria-hidden="true">⚙</div>
+  <div class="glyph" aria-hidden="true"><Icon name="gear" /></div>
   <h3>{$t("settings.title")}</h3>
 
   <label class="field"
@@ -561,7 +562,9 @@
           aria-pressed={$themeMode === th.id}
           on:click={() => commitTheme(th.id)}
         >
-          <span class="theme-glyph" aria-hidden="true">{th.glyph}</span>
+          <span class="theme-glyph" aria-hidden="true"
+            ><Icon name={th.icon} /></span
+          >
           {$t(th.labelKey)}
         </button>
       {/each}
@@ -729,7 +732,9 @@
           >{$t("settings.valueEquation")}
           <span class="sub">{$t("settings.valueEquationSub")}</span></span
         >
-        <span class="chev" class:open={eqOpen} aria-hidden="true">▾</span>
+        <span class="chev" class:open={eqOpen} aria-hidden="true"
+          ><Icon name="chevron-down" /></span
+        >
       </button>
       {#if eqOpen}
         <ValueEquation holon={$holonId} />
@@ -836,7 +841,8 @@
           class="hex-pick"
           on:click={() => (hexPickerOpen = true)}
         >
-          ⬡ {$t("settings.setLocation")}
+          <Icon name="hexagon" />
+          {$t("settings.setLocation")}
         </button>
       {/if}
     </div>
@@ -859,7 +865,8 @@
           disabled={mapBusy}
           on:click={linkMap}
         >
-          ⬡ {$t("settings.onMapLink")}
+          <Icon name="hexagon" />
+          {$t("settings.onMapLink")}
         </button>
       {:else}
         <div class="reach">
@@ -895,7 +902,8 @@
                 aria-pressed={mapLink.inbound.includes(lens)}
                 aria-label={$t("settings.onMapReceive", { lens })}
                 disabled={mapBusy || !!mapPlacing}
-                on:click={() => toggleMapLens(lens, "in")}>↓</button
+                on:click={() => toggleMapLens(lens, "in")}
+                ><Icon name="arrow-down" /></button
               >
               <button
                 type="button"
@@ -904,7 +912,8 @@
                 aria-pressed={mapLink.outbound.includes(lens)}
                 aria-label={$t("settings.onMapSend", { lens })}
                 disabled={mapBusy || !!mapPlacing}
-                on:click={() => toggleMapLens(lens, "out")}>↑</button
+                on:click={() => toggleMapLens(lens, "out")}
+                ><Icon name="arrow-up" /></button
               >
             </div>
           </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // Voice overlay: owns the WS session lifecycle (via the controller) and
   // renders the transcript bubble + paste-a-transcript panel above the views'
@@ -77,7 +78,7 @@
             title={$t("common.close")}
             on:click={closeBubble}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         {#if $youSaid}<p class="you">“{$youSaid}”</p>{/if}
@@ -85,11 +86,9 @@
           <p class="tool">{$t("voice.listening")}</p>
         {:else if $status === "thinking"}
           <p class="tool">
-            {$activeTool
-              ? `⚙ ${$activeTool}`
-              : $youSaid
+            {#if $activeTool}<Icon name="gear" /> {$activeTool}{:else}{$youSaid
                 ? $t("voice.thinking")
-                : $t("voice.transcribing")}
+                : $t("voice.transcribing")}{/if}
             <span class="dots"><i></i><i></i><i></i></span>
           </p>
         {:else if $status === "speaking" && !$holonsSaid}

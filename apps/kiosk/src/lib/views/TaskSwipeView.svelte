@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Swipe mode for the Tasks view: one big card at a time, Tinder-style.
   // Swipe right to JOIN (participate), up to LIKE (appreciate), left to SKIP.
   // Geometry/ordering is pure logic in lib/deck.ts; the writes come in through
@@ -302,7 +303,9 @@
                 {$t("swipe.skip")}
               </div>
             {:else}
-              <div class="stamp like" style="opacity: 1;">♥ LIKE</div>
+              <div class="stamp like" style="opacity: 1;">
+                <Icon name="heart" /> LIKE
+              </div>
             {/if}
             <h3>{leaving.task.title}</h3>
           </article>
@@ -342,12 +345,13 @@
                 {$t("swipe.skip")}
               </div>
               <div class="stamp like" style="opacity: {badges.like};">
-                ♥ LIKE
+                <Icon name="heart" /> LIKE
               </div>
             {/if}
             {#if participating(task)}
               <div class="ribbon" aria-label={$t("swipe.joinedRibbonAria")}>
-                {$t("swipe.joined")} ✓
+                {$t("swipe.joined")}
+                <Icon name="check" />
               </div>
             {/if}
             <h3>{task.title}</h3>
@@ -356,7 +360,7 @@
                 class="initiator"
                 title={$t("tasks.proposedBy", { name: task.initiator.name })}
               >
-                <span aria-hidden="true">💡</span>
+                <span aria-hidden="true"><Icon name="bulb" /></span>
                 <span class="iname">{task.initiator.name}</span>
               </div>
             {/if}
@@ -374,12 +378,19 @@
             {/if}
             <div class="meta">
               {#if task.category}<span class="tag">{task.category}</span>{/if}
-              {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if task.source}<span class="src"
+                  ><Icon name="swap" /> {task.source}</span
+                >{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
             </div>
             <div class="cardfoot">
               <span class="heart" class:on={appreciating(task)}>
-                <span class="glyph" aria-hidden="true">♥</span>
+                <span class="glyph" aria-hidden="true"
+                  ><Icon name="heart" /></span
+                >
                 {#if task.appreciation}
                   <span class="count">{task.appreciation}</span>
                 {/if}
@@ -392,7 +403,7 @@
         </div>
       {:else}
         <div class="alldone">
-          <div class="star" aria-hidden="true">✶</div>
+          <div class="star" aria-hidden="true"><Icon name="star" /></div>
           <h3>{$t("swipe.allCaughtUp")}</h3>
           <p>
             {$t("swipe.roundSummary", {
@@ -417,13 +428,13 @@
       {/each}
 
       {#if heartPop}
-        <div class="heartpop" aria-hidden="true">♥</div>
+        <div class="heartpop" aria-hidden="true"><Icon name="heart" /></div>
       {/if}
     </div>
 
     {#if undo}
       <button class="undo" on:click={doUndo}>
-        ↺ Undo {undo.kind === "join"
+        <Icon name="undo" /> Undo {undo.kind === "join"
           ? "join"
           : undo.kind === "like"
             ? "like"

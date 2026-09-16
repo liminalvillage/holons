@@ -25,12 +25,12 @@
           {
             id: "personal",
             label: $t("scope.personal"),
-            svgIcon: "person" as const,
+            icon: "person" as const,
           },
         ]
       : []),
-    { id: "all", label: $t("scope.local"), glyph: "⌂" },
-    { id: "networked", label: $t("scope.global"), svgIcon: "globe" as const },
+    { id: "all", label: $t("scope.local"), icon: "home" as const },
+    { id: "networked", label: $t("scope.global"), icon: "globe" as const },
   ];
 
   function onChange(id: string) {

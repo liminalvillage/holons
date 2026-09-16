@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
@@ -120,7 +121,7 @@
 {#if $completionRequest}
   <Modal on:close={cancel}>
     <div class="confirm">
-      <div class="glyph" aria-hidden="true">🎉</div>
+      <div class="glyph" aria-hidden="true"><Icon name="party" /></div>
       <h3>{$t("complete.title")}</h3>
       <p class="lead">{$t("complete.lead")}</p>
 
@@ -148,7 +149,9 @@
                 {/if}
               </span>
               <span class="nm">{r.name}</span>
-              <span class="box">{r.on ? "✓" : ""}</span>
+              <span class="box"
+                >{#if r.on}<Icon name="check" />{/if}</span
+              >
             </button>
           </li>
         {/each}

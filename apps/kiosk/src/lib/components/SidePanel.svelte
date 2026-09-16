@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
   //
   // A settings panel that does not cover what it edits.
@@ -117,7 +118,7 @@
     <header class="head">
       <h2 id={titleId}>{title}</h2>
       <button class="x" on:click={close} aria-label={$t("common.close")}
-        >✕</button
+        ><Icon name="close" /></button
       >
     </header>
     <slot name="tabs" />

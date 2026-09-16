@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The optional Status board: a simplified, read-only contribution leaderboard.
   // A trimmed cousin of the web dashboard's Status view — same numbers (it scores
@@ -13,9 +14,9 @@
   // replication race) and refreshes on an interval — deliberately NOT a live
   // subscription: a live watch on that large lens re-renders on every event.
   // Those events feed an in-memory store so all scoring runs offline/locally.
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
-  import { holonId, rawQuests, rotationHold } from "$lib/stores";
+  import { holonId, rawQuests, rotationHold, offerSettings } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
     getHolosphere,
@@ -414,13 +415,17 @@
   let framingOpen = false;
   /**
    * The sheet opens at the top from the footer — the framing is meant to be
-   * read — but the gear is a settings button, so it lands on the weights.
+   * read — but the gear (in the pills band, offered while this board is
+   * mounted) is a settings button, so it lands on the weights.
    */
   let framingFocus: "top" | "equation" = "top";
   function openSettings() {
     framingFocus = "equation";
     framingOpen = true;
   }
+  onDestroy(
+    offerSettings({ labelKey: "status.settingsAria", open: openSettings }),
+  );
   function openFraming() {
     framingFocus = "top";
     framingOpen = true;
@@ -458,18 +463,6 @@
 </script>
 
 <div class="board">
-  <!-- The same sheet the footer opens, reachable from the top of the board
-       too: the value equation is a setting, and a group retuning it shouldn't
-       have to scroll past everyone's score to find it. -->
-  <div class="top">
-    <button
-      class="gear"
-      on:click={openSettings}
-      aria-label={$t("status.settingsAria")}
-      title={$t("status.settingsAria")}>⚙</button
-    >
-  </div>
-
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("status.tallying")}</p>
@@ -486,8 +479,13 @@
               title={$t("status.seeScore", { name: row.name })}
             >
               <span class="place">
-                {#if i === 0}🏆{:else if i === 1}🥈{:else if i === 2}🥉{:else}{i +
-                    1}{/if}
+                {#if i === 0}<Icon name="trophy" />{:else if i === 1}<Icon
+                    name="medal"
+                    class="silver"
+                  />{:else if i === 2}<Icon
+                    name="medal"
+                    class="bronze"
+                  />{:else}{i + 1}{/if}
               </span>
               <span class="av">
                 <span class="ini">{avatarInitial(row.name)}</span>
@@ -611,7 +609,9 @@
             {#each ledger as e (e.id)}
               <li class="lrow">
                 <span class="licon" class:in={e.incoming}
-                  >{e.incoming ? "↓" : "↑"}</span
+                  >{#if e.incoming}<Icon name="arrow-down" />{:else}<Icon
+                      name="arrow-up"
+                    />{/if}</span
                 >
                 <span class="ltext">
                   <span class="llabel">{e.label}</span>
@@ -639,30 +639,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-  .top {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: flex-end;
-    padding: 0.5rem 1rem 0;
-  }
-  .gear {
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: 50%;
-    font-size: 1.25rem;
-    line-height: 1;
-    color: var(--teal-deep);
-    background: var(--paper);
-    display: grid;
-    place-items: center;
-    transition:
-      background 0.2s ease,
-      transform 0.1s ease;
-  }
-  .gear:active {
-    transform: scale(0.92);
-    background: var(--paper-deep);
   }
   .scrollarea {
     flex: 1;
@@ -711,6 +687,16 @@
     font-weight: 800;
     text-align: center;
     color: var(--ink-soft);
+  }
+  /* The podium: gold for the trophy, then the two medals in their metals. */
+  .rank.top .place {
+    color: #c9971c;
+  }
+  .place :global(.silver) {
+    color: #8e98a3;
+  }
+  .place :global(.bronze) {
+    color: #b07a45;
   }
 
   .av {

@@ -13,7 +13,7 @@
   // key logins sign right here. The ⚙ opens the coordinator's plan — add,
   // edit, remove shifts and publish or retract occurrences — login-gated
   // like every kiosk write.
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
@@ -25,7 +25,7 @@
     searchQuery,
     holonId,
   } from "$lib/stores";
-  import { showNotice } from "$lib/stores";
+  import { showNotice, offerSettings } from "$lib/stores";
   import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
   import type { ShiftOccurrence } from "@holons/core/shifts";
@@ -111,9 +111,11 @@
     }
   }
 
-  // ── The coordinator's ⚙ ──────────────────────────────────────────────---
-  // Login-gated like every kiosk write; the sheet itself tells a logged-in
-  // user who may not publish (no derivation secret, not a manager) why.
+  // ── The coordinator's settings ───────────────────────────────────────---
+  // Reached from the gear in the pills band (offered while this board is
+  // mounted). Login-gated like every kiosk write; the sheet itself tells a
+  // logged-in user who may not publish (no derivation secret, not a
+  // manager) why.
   let settingsOpen = false;
   function openSettings() {
     if (!get(currentUser)) {
@@ -122,6 +124,9 @@
     }
     settingsOpen = true;
   }
+  onDestroy(
+    offerSettings({ labelKey: "shifts.configure", open: openSettings }),
+  );
 
   let scrollEl: HTMLElement;
   onMount(() => {
@@ -152,13 +157,6 @@
         <span class="sub">{$t("shifts.subtitle")}</span>
       {/if}
     </div>
-    <button
-      class="gear"
-      type="button"
-      aria-label={$t("shifts.configure")}
-      title={$t("shifts.configure")}
-      on:click={openSettings}>⚙</button
-    >
   </header>
 
   <div class="scrollarea scroll" bind:this={scrollEl}>
@@ -244,24 +242,9 @@
     flex-direction: column;
     align-items: center;
     gap: 0.15rem;
-    /* Centred under the whole header, the gear notwithstanding. */
+    /* Centred under the whole header. */
     grid-column: 1 / -1;
     grid-row: 1;
-  }
-  .gear {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    font-size: 1.2rem;
-    color: var(--ink-soft);
-    background: var(--paper);
-    box-shadow: var(--shadow-soft);
-  }
-  .gear:active {
-    transform: scale(0.92);
   }
   .sub.gap {
     font-weight: 700;

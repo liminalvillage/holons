@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // Inline voice controls, rendered by each view INSIDE its fab row so the
   // cluster reads [⌨] [🎤] [＋]. Renders nothing unless a voice server is
@@ -25,7 +26,7 @@
     title={$t("voice.typeAria")}
     on:click={() => typeOpen.update((v) => !v)}
   >
-    ⌨
+    <Icon name="keyboard" />
   </button>
   <button
     class="fab-btn mic"

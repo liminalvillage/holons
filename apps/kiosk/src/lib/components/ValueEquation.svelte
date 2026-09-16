@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The value-equation editor: the weights the Status board scores with,
   // editable by the group that reads the board. Shown in two places — folded
@@ -264,7 +265,7 @@
             (eqInfo = {
               title: $t("settings.eqAbout", { section: $t(section.headKey) }),
               rows: section.rows,
-            })}>ⓘ</button
+            })}><Icon name="info" /></button
         >
       </div>
       {#each section.rows as row (row.key)}

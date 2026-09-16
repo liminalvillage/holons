@@ -56,6 +56,7 @@ import { shelfCategories, splitSpecs } from "./stock";
 import { applyTabOrder, mergeTabOrder } from "./taborder";
 import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
+import type { IconName } from "./icons";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -451,20 +452,20 @@ export function closeDetail(): void {
 // switch re-labels the tabs live (a module const must never freeze a
 // translated string).
 export const TABS = [
-  { id: "tasks", labelKey: "tabs.tasks", glyph: "✎" },
-  { id: "calendar", labelKey: "tabs.calendar", glyph: "▦" },
-  { id: "shifts", labelKey: "tabs.shifts", glyph: "⧖" },
-  { id: "library", labelKey: "tabs.library", glyph: "❖" },
-  { id: "checklists", labelKey: "tabs.checklists", glyph: "☑" },
-  { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
-  { id: "status", labelKey: "tabs.status", glyph: "♛" },
-  { id: "flows", labelKey: "tabs.flows", glyph: "⇄" },
-  { id: "stock", labelKey: "tabs.stock", glyph: "▥" },
-  { id: "offers", labelKey: "tabs.offers", glyph: "◎" },
+  { id: "tasks", labelKey: "tabs.tasks", icon: "pencil" },
+  { id: "calendar", labelKey: "tabs.calendar", icon: "calendar" },
+  { id: "shifts", labelKey: "tabs.shifts", icon: "hourglass" },
+  { id: "library", labelKey: "tabs.library", icon: "box" },
+  { id: "checklists", labelKey: "tabs.checklists", icon: "check-square" },
+  { id: "roles", labelKey: "tabs.roles", icon: "badge" },
+  { id: "status", labelKey: "tabs.status", icon: "crown" },
+  { id: "flows", labelKey: "tabs.flows", icon: "swap" },
+  { id: "stock", labelKey: "tabs.stock", icon: "shelf" },
+  { id: "offers", labelKey: "tabs.offers", icon: "target" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
-  glyph: string;
+  icon: IconName;
 }[];
 
 export type TabId = (typeof TABS)[number]["id"];
@@ -764,6 +765,29 @@ export const rotationHold = writable<boolean>(false);
  */
 export const pillsSuppressed = writable<boolean>(false);
 
+/**
+ * The active view's settings, offered to the pills band (GlobalPills) as
+ * one gear: a view that has something to set registers its opener while it
+ * is mounted and clears it on the way out (see `offerSettings`). The view
+ * keeps the sheet itself and any gate in front of it (a login prompt, say);
+ * the band only offers the tap.
+ */
+export interface ViewSettings {
+  labelKey: MessageKey;
+  open: () => void;
+}
+export const viewSettings = writable<ViewSettings | null>(null);
+
+/**
+ * Register `entry` as the active view's settings for as long as the caller
+ * is mounted. Returns the teardown, which clears the band only if the entry
+ * is still ours — the next view may already have registered its own.
+ */
+export function offerSettings(entry: ViewSettings): () => void {
+  viewSettings.set(entry);
+  return () => viewSettings.update((v) => (v === entry ? null : v));
+}
+
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -842,6 +866,11 @@ export function startRotation(): () => void {
   };
 }
 
+function armChromeHide() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
+}
+
 /**
  * Call on any user interaction: pause rotation and arm the rotation-resume
  * timer so the screen self-advances again once everyone walks away. It does
@@ -876,11 +905,6 @@ export function selectTab(id: TabId) {
  * Long-press handler: pin the kiosk to a tab (parking it there, no rotation) or
  * unpin if it's already the pinned one. Persisted so the park survives a reload.
  */
-function armChromeHide() {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
-}
-
 export function togglePin(id: TabId) {
   const next = get(pinnedTab) === id ? null : id;
   pinnedTab.set(next);

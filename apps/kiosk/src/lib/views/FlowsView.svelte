@@ -44,8 +44,15 @@
   //     mid-load cannot paint the previous holon's numbers.
   // `expenses` is small enough to subscribe to normally.
 
-  import { onMount } from "svelte";
-  import { holonId, rotationHold, flowsViewMode, scope } from "$lib/stores";
+  import { onDestroy, onMount } from "svelte";
+  import {
+    holonId,
+    rotationHold,
+    flowsViewMode,
+    scope,
+    now,
+    offerSettings,
+  } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
     getHolonName,
@@ -1509,8 +1516,9 @@
         </section>
       {/if}
 
-      <!-- Allocation. The header (and its ⚙) is always there: somebody has
-           to be able to place the first partner or name the collective. -->
+      <!-- Allocation. The header is always there, and its settings sit in
+           the pills band's gear: somebody has to be able to place the first
+           partner or name the collective. -->
       <section>
         <header class="head">
           <div class="titles">

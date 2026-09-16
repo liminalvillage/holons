@@ -9,15 +9,17 @@
   // collapses into a single cycling toggle — tap it to step through the
   // options — on small screens, or whenever the parent forces `compact` (the
   // global band does, to keep every pill on one row). Positioning is the
-  // parent's job (see GlobalPills); this renders in flow.
+  // parent's job (see GlobalPills); this renders in flow. Every icon is a
+  // catalog name (`$lib/icons`), drawn inline: the same on every device.
   import { tick } from "svelte";
+  import Icon from "./Icon.svelte";
+  import type { IconName } from "$lib/icons";
 
   export let options: {
     id: string;
     label: string;
-    glyph?: string;
-    /** Named SVG segment icon (crisper than a text glyph): person / globe. */
-    svgIcon?: "person" | "globe";
+    /** Segment icon (catalog name); text-only segments leave it out. */
+    icon?: IconName;
   }[];
   export let value: string;
   export let onChange: (id: string) => void;
@@ -27,47 +29,13 @@
   export let icon: "filter" | "eye" | "sort" | "" = "";
   /** Category title next to the icon, shown on big screens only. */
   export let title = "";
-  /** Render glyph + label text in each segment instead of the glyph alone. */
+  /** Render icon + label text in each segment instead of the icon alone. */
   export let showText = false;
   /** Force the small cycling toggle regardless of screen width. */
   export let compact = false;
   /** Force the full segmented control regardless of screen width (the
    *  parent measured that it fits — see GlobalPills' unpacked tier). */
   export let expanded = false;
-
-  // Stroke paths (24×24) for the identity icons.
-  const ICONS: Record<string, string[]> = {
-    filter: ["M4 5h16l-6 7v5l-4 2v-7L4 5Z"],
-    eye: [
-      "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z",
-      "M12 9.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z",
-    ],
-    sort: [
-      "M4 6h12",
-      "M4 12h9",
-      "M4 18h6",
-      "M19 7v10",
-      "M16.5 14.5 19 17l2.5-2.5",
-    ],
-  };
-  $: iconPaths = icon ? (ICONS[icon] ?? []) : [];
-
-  // Per-segment SVG icons; person is a filled silhouette, globe is stroked.
-  const SEGMENT_ICONS: Record<string, { paths: string[]; stroke?: boolean }> = {
-    person: {
-      paths: [
-        "M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Zm0 2.25c-3.9 0-7.5 2-7.5 4.75V21h15v-2c0-2.75-3.6-4.75-7.5-4.75Z",
-      ],
-    },
-    globe: {
-      stroke: true,
-      paths: [
-        "M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z",
-        "M3.6 9h16.8M3.6 15h16.8",
-        "M12 3c2.7 2.3 4.2 5.5 4.2 9s-1.5 6.7-4.2 9c-2.7-2.3-4.2-5.5-4.2-9s1.5-6.7 4.2-9Z",
-      ],
-    },
-  };
 
   $: current = options.find((m) => m.id === value) ?? options[0];
 
@@ -101,11 +69,9 @@
     aria-label={label}
     bind:this={switchEl}
   >
-    {#if iconPaths.length}
+    {#if icon}
       <span class="ident" aria-hidden="true">
-        <svg class="isvg" viewBox="0 0 24 24">
-          {#each iconPaths as d (d)}<path {d} />{/each}
-        </svg>
+        <Icon name={icon} class="isvg" />
         {#if title}<span class="ptitle">{title}</span>{/if}
       </span>
     {/if}
@@ -121,51 +87,25 @@
         aria-label={m.label}
         title={m.label}
       >
-        {#if m.svgIcon && SEGMENT_ICONS[m.svgIcon]}
-          <svg
-            class="picon"
-            class:stroked={SEGMENT_ICONS[m.svgIcon].stroke}
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            {#each SEGMENT_ICONS[m.svgIcon].paths as d (d)}<path {d} />{/each}
-          </svg>
-        {:else if m.glyph}
-          <span class="glyph" aria-hidden="true">{m.glyph}</span>
-        {/if}
+        {#if m.icon}<Icon name={m.icon} class="picon" />{/if}
         {#if showText}<span class="txt">{m.label}</span>{/if}
       </button>
     {/each}
   </div>
 
   <!-- Cycling toggle — small screens. One tap steps to the next option; the
-       identity icon says what the toggle controls, the glyph what's current
-       (no names — the full state lives in the accessible label). -->
+       identity icon says what the toggle controls, the segment icon what's
+       current (no names — the full state lives in the accessible label). -->
   <button
     class="cycler"
     on:click={cycle}
     aria-label="{label}: {current?.label} — tap for next"
     title="{title || label}: {current?.label}"
   >
-    {#if iconPaths.length}
-      <svg class="isvg" viewBox="0 0 24 24" aria-hidden="true">
-        {#each iconPaths as d (d)}<path {d} />{/each}
-      </svg>
-    {/if}
-    {#if current?.svgIcon && SEGMENT_ICONS[current.svgIcon]}
-      <svg
-        class="picon"
-        class:stroked={SEGMENT_ICONS[current.svgIcon].stroke}
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-      >
-        {#each SEGMENT_ICONS[current.svgIcon].paths as d (d)}<path {d} />{/each}
-      </svg>
-    {:else if current?.glyph}
-      <span class="glyph" aria-hidden="true">{current.glyph}</span>
-    {/if}
+    {#if icon}<Icon name={icon} class="isvg" />{/if}
+    {#if current?.icon}<Icon name={current.icon} class="picon" />{/if}
     {#if showText}
-      <!-- Text segments (currencies, windows) have no glyph to stand in for
+      <!-- Text segments (currencies, windows) have no icon to stand in for
            them, so the cycler names the current option outright. -->
       <span class="ctxt">{current?.label}</span>
     {/if}
@@ -200,15 +140,9 @@
     background: var(--paper-deep);
     color: var(--muted);
   }
-  .isvg {
+  .pill :global(.isvg) {
     width: 1.05rem;
     height: 1.05rem;
-    flex: 0 0 auto;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
   /* Category title: big screens only. */
   .ptitle {
@@ -257,17 +191,9 @@
   .viewswitch button:active {
     transform: scale(0.92);
   }
-  .picon {
+  .pill :global(.picon) {
     width: 1.1rem;
     height: 1.1rem;
-    fill: currentColor;
-  }
-  .picon.stroked {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 
   /* Small screens: the single cycling toggle replaces the segments. */
@@ -286,12 +212,8 @@
   .cycler:active {
     transform: scale(0.95);
   }
-  .cycler .glyph {
-    font-size: 1.05rem;
+  .cycler :global(.picon) {
     color: var(--ink);
-  }
-  .cycler .picon {
-    fill: var(--ink);
   }
   .cycler .ctxt {
     font-size: 0.86rem;

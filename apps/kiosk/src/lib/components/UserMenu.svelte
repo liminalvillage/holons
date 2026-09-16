@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // The single entry point behind the header account chip: identity, the
   // dashboard link, and Settings — everything that used to clutter the
   // header, now in one menu. (Federated visibility lives in each view's Show
@@ -57,7 +58,7 @@
         {#if who}<span class="sub">{who}</span>{/if}
       </div>
     {:else}
-      <span class="avatar initial">✦</span>
+      <span class="avatar initial"><Icon name="star" /></span>
       <div class="idtext">
         <span class="name">{$t("menu.notSignedIn")}</span>
         {#if who}<span class="sub">{who}</span>{/if}
@@ -66,13 +67,13 @@
   </div>
 
   <button class="row" on:click={openDashboard} disabled={!$holonId}>
-    <span class="ico">⬡</span>
+    <span class="ico"><Icon name="hexagon" /></span>
     <span class="label">{$t("menu.dashboard")}</span>
-    <span class="chev">↗</span>
+    <span class="chev"><Icon name="arrow-up-right" /></span>
   </button>
 
   <button class="row" on:click={openSettings}>
-    <span class="ico">⚙</span>
+    <span class="ico"><Icon name="gear" /></span>
     <span class="label">{$t("menu.settings")}</span>
     <span class="chev">›</span>
   </button>
@@ -80,7 +81,7 @@
   <!-- Leaving a holon is not logging out — the identity and the holon are
        separate — so this is where people look for the way back out. -->
   <button class="row" on:click={goHome} disabled={!$holonId}>
-    <span class="ico">⌂</span>
+    <span class="ico"><Icon name="home" /></span>
     <span class="label">{$t("menu.homePage")}</span>
     <span class="chev">›</span>
   </button>
@@ -88,22 +89,22 @@
   {#if $currentUser}
     {#if $sessionKeyPub}
       <button class="row" on:click={unlinkKey}>
-        <span class="ico">🔑</span>
+        <span class="ico"><Icon name="key" /></span>
         <span class="label"
           >{$t("menu.signingAs", {
             key: `${$sessionKeyPub.slice(0, 8)}…`,
           })}</span
         >
-        <span class="chev">✕</span>
+        <span class="chev"><Icon name="close" /></span>
       </button>
     {/if}
     <button class="row danger" on:click={logout}>
-      <span class="ico">⏻</span>
+      <span class="ico"><Icon name="power" /></span>
       <span class="label">{$t("menu.logout")}</span>
     </button>
   {:else}
     <button class="row primary" on:click={login}>
-      <span class="ico">✦</span>
+      <span class="ico"><Icon name="star" /></span>
       <span class="label">{$t("menu.login")}</span>
     </button>
   {/if}

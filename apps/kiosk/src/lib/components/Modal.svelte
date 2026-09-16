@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Generic "bring it forward" overlay: a dimmed backdrop and a card that zooms
   // up from the tapped element. Closes on backdrop tap, the ✕, or Escape.
   import { createEventDispatcher } from "svelte";
@@ -53,7 +54,8 @@
     role="dialog"
     aria-modal="true"
   >
-    <button class="x" on:click={close} aria-label={$t("common.close")}>✕</button
+    <button class="x" on:click={close} aria-label={$t("common.close")}
+      ><Icon name="close" /></button
     >
     <div class="body scroll">
       <slot />

@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Compact list mode for the Tasks view: one row per backlog task, same data
   // and action handlers as the post-it wall (TasksView owns those — this
   // component only renders). Rows share the wall's drag-to-reorder machinery:
@@ -76,12 +77,18 @@
             <h3>{task.title}</h3>
             <div class="meta">
               {#if task.category}<span class="tag">{task.category}</span>{/if}
-              {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if task.source}<span class="src"
+                  ><Icon name="swap" /> {task.source}</span
+                >{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
               {#if task.unmetDeps > 0}<span
                   class="waits"
                   title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
-                  >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
+                  ><Icon name="link" />
+                  {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                 >{/if}
             </div>
           </div>
@@ -94,7 +101,7 @@
             aria-pressed={amAppreciating(task)}
             title={$t("tasks.appreciate")}
           >
-            <span class="glyph" aria-hidden="true">♥</span>
+            <span class="glyph" aria-hidden="true"><Icon name="heart" /></span>
             {#if task.appreciation}
               <span class="count">{task.appreciation}</span>
             {/if}
@@ -111,7 +118,7 @@
             aria-label={$t("tasks.markComplete")}
             title={$t("tasks.markComplete")}
           >
-            ✓
+            <Icon name="check" />
           </button>
           <button
             class="tool del"
@@ -120,7 +127,7 @@
             aria-label={$t("tasks.deleteTask")}
             title={$t("tasks.deleteTask")}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       </li>

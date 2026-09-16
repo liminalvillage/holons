@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // The zoomed-forward detail card for a tapped post-it / library thing. Shows
   // full details and — when logged in with Telegram — edit fields and actions
   // (save, mark complete, borrow / return). Writes go through identity-aware
@@ -1119,7 +1120,9 @@
         on:click={copyLink}
         aria-label={$t("detail.copyLink")}
         title={$t(copied ? "detail.linkCopied" : "detail.copyLink")}
-        >{copied ? "✓" : "⛓"}</button
+        >{#if copied}<Icon name="check" />{:else}<Icon
+            name="link"
+          />{/if}</button
       >
     {/if}
     {#if isThing && item}
@@ -1150,7 +1153,9 @@
       <div class="chips">
         <span class="kind">{getTypeDisplayName(item.type)}</span>
         {#if srcName}
-          <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+          <span class="srcchip" style="--src: {srcGlow}"
+            ><Icon name="swap" /> {srcName}</span
+          >
         {/if}
       </div>
 
@@ -1168,7 +1173,8 @@
                   : $t("detail.out")}
                 {#if bookingOriginLabel(activeBooking)}
                   <span class="viachip" title={$t("detail.viaHolonTitle")}
-                    >⇄ {bookingOriginLabel(activeBooking)}</span
+                    ><Icon name="swap" />
+                    {bookingOriginLabel(activeBooking)}</span
                   >
                 {/if}
               {:else}{$t("detail.availableCap")}{/if}
@@ -1194,7 +1200,7 @@
                       : ""}{#if bookingOriginLabel(b)}<span
                         class="viachip"
                         title={$t("detail.viaHolonTitle")}
-                        >⇄ {bookingOriginLabel(b)}</span
+                        ><Icon name="swap" /> {bookingOriginLabel(b)}</span
                       >{/if}</span
                   >
                 {/each}
@@ -1345,7 +1351,9 @@
           <div class="chips">
             {#if quest.category}<span class="kind">{quest.category}</span>{/if}
             {#if srcName}
-              <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+              <span class="srcchip" style="--src: {srcGlow}"
+                ><Icon name="swap" /> {srcName}</span
+              >
             {/if}
           </div>
         {/if}
@@ -1358,7 +1366,10 @@
               )}{/if}
           </p>
         {/if}
-        {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
+        {#if quest.location}<p class="where">
+            <Icon name="pin" />
+            {quest.location}
+          </p>{/if}
         {#if quest.description}<p class="desc">
             {@html linkify(quest.description)}
           </p>{/if}
@@ -1370,7 +1381,7 @@
               >
             {/if}
             {#if appreciationCount}
-              <span>♥ {appreciationCount}</span>
+              <span><Icon name="heart" /> {appreciationCount}</span>
             {/if}
           </div>
         {/if}
@@ -1402,7 +1413,7 @@
                 on:click={joinQuest}
                 disabled={saving}
                 title={$t("detail.leaveTitle")}
-                >✓ {$t("detail.joinedLeave")}</button
+                ><Icon name="check" /> {$t("detail.joinedLeave")}</button
               >
             {:else}
               <button class="primary" on:click={joinQuest} disabled={saving}
@@ -1414,9 +1425,11 @@
               class:on={amAppreciating}
               on:click={appreciate}
               disabled={saving}
-              >{amAppreciating
-                ? `♥ ${$t("detail.appreciatedLabel")}`
-                : `♡ ${$t("tasks.appreciate")}`}{appreciationCount
+              >{#if amAppreciating}<Icon name="heart" />
+                {$t("detail.appreciatedLabel")}{:else}<Icon
+                  name="heart-outline"
+                />
+                {$t("tasks.appreciate")}{/if}{appreciationCount
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
@@ -1453,9 +1466,10 @@
                 on:click={requestBreakdown}
                 disabled={saving || breakingDown}
                 title={$t("detail.breakdownTitle")}
-                >{breakingDown
-                  ? $t("detail.breakingDown")
-                  : `✨ ${$t("detail.breakDown")}`}</button
+                >{#if breakingDown}{$t("detail.breakingDown")}{:else}<Icon
+                    name="sparkles"
+                  />
+                  {$t("detail.breakDown")}{/if}</button
               >
             {/if}
             <button
@@ -1510,7 +1524,8 @@
                           n: i + 1,
                           title: step.title,
                         })}
-                        title={$t("detail.removeStep")}>✕</button
+                        title={$t("detail.removeStep")}
+                        ><Icon name="close" /></button
                       >
                     </li>
                   {/each}
@@ -1530,7 +1545,7 @@
                 >
               </div>
               {#each breakdownPreview?.warnings ?? [] as warning}
-                <p class="bd-warn">⚠ {warning}</p>
+                <p class="bd-warn"><Icon name="warning" /> {warning}</p>
               {/each}
               <div class="actions">
                 {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
@@ -1549,9 +1564,10 @@
                   class="ghost"
                   on:click={requestBreakdown}
                   disabled={breakingDown}
-                  >{breakingDown
-                    ? $t("detail.regenerating")
-                    : `↻ ${$t("detail.regenerate")}`}</button
+                  >{#if breakingDown}{$t("detail.regenerating")}{:else}<Icon
+                      name="repeat"
+                    />
+                    {$t("detail.regenerate")}{/if}</button
                 >
                 <button class="ghost" on:click={cancelBreakdown}
                   >{$t("common.cancel")}</button
@@ -1620,9 +1636,9 @@
         <!-- What the fields add up to, in the same words the card will use
              once saved. -->
         {#if scheduleSummary}<p class="sched-sum">
-            {scheduleSummary}{#if fFrequency}{" · ↻ "}{freqLabel(
-                fFrequency,
-              )}{/if}
+            {scheduleSummary}{#if fFrequency}{" · "}<Icon
+                name="repeat"
+              />{" "}{freqLabel(fFrequency)}{/if}
           </p>{/if}
 
         <!-- Task or event? A task is work to do and lives on the task board;
@@ -1667,7 +1683,8 @@
         <!-- Repeats: one tap picks the cadence, the same choices as the web
              dashboard's task modal. Greyed until the card has a start date. -->
         <div class="freq" role="radiogroup" aria-label={$t("detail.repeats")}>
-          <span class="elab">↻ {$t("detail.repeats")}</span>
+          <span class="elab"><Icon name="repeat" /> {$t("detail.repeats")}</span
+          >
           <div class="freq-chips">
             <button
               type="button"
@@ -1769,7 +1786,7 @@
     <button
       class="lb-x"
       on:click={() => (lightbox = null)}
-      aria-label={$t("common.close")}>✕</button
+      aria-label={$t("common.close")}><Icon name="close" /></button
     >
   </div>
 {/if}

@@ -1,5 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { MOON_ICONS } from "$lib/icons";
   //
   // The year at a glance — the kiosk port of the dashboard's lunar timeline
   // (apps/web Timeline.svelte). One horizontal line is the whole year: month
@@ -579,7 +581,6 @@
   // the moon that night (phase name, illumination, lunation age) and the
   // countdown to the next solar turning point. Cards and sky markers carry
   // their own tooltips, so the readout yields while one of those is hovered.
-  const MOON_ICONS = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"];
   const MOON_NAMES: MessageKey[] = [
     "cal.newMoon",
     "cal.moonWaxingCrescent",
@@ -787,13 +788,13 @@
       <div class="yt-sky" style="left: {toX(positionInYear(m.date))}%">
         <span class="yt-moon" class:new={m.isNew}></span>
         <span class="yt-tip"
-          >{m.isNew ? `🌑 ${$t("cal.newMoon")}` : `🌕 ${$t("cal.fullMoon")}`} · {m.date.toLocaleDateString(
-            $locale,
-            {
-              day: "numeric",
-              month: "short",
-            },
-          )}</span
+          >{#if m.isNew}<Icon name="moon0" /> {$t("cal.newMoon")}{:else}<Icon
+              name="moon4"
+            />
+            {$t("cal.fullMoon")}{/if} · {m.date.toLocaleDateString($locale, {
+            day: "numeric",
+            month: "short",
+          })}</span
         >
       </div>
     {/if}
@@ -897,14 +898,15 @@
         })}
       </div>
       <div class="ro-line">
-        {moon.icon}
+        <Icon name={moon.icon} />
         {$t(moon.nameKey)} · {$t("cal.moonLit", { pct: moon.pct })} · {$t(
           "cal.moonAge",
           { n: moon.age },
         )}
       </div>
       <div class="ro-line">
-        ☀️ {sun.days === 0
+        <Icon name="sun" />
+        {sun.days === 0
           ? $t("cal.solarToday", { name: $t(sun.key) })
           : $t("cal.inDays", { name: $t(sun.key), n: sun.days })}
       </div>

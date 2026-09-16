@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Graph mode for the Tasks view: the backlog as its dependency DAG, arranged
   // automatically — predecessors above, the tasks that wait on them below, one
   // arrow per still-open dependency. Same data and open handler as the wall
@@ -640,13 +641,16 @@
                   class="waits"
                   title={$t("tasks.waitsTitle", {
                     n: task.unmetDeps,
-                  })}>⛓ {task.unmetDeps}</span
+                  })}><Icon name="link" /> {task.unmetDeps}</span
                 >
               {/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
               {#if task.appreciation}
                 <span class="heart" aria-hidden="true"
-                  >♥ {task.appreciation}</span
+                  ><Icon name="heart" /> {task.appreciation}</span
                 >
               {/if}
               {#if task.people.length}
@@ -683,7 +687,7 @@
         aria-label={$t("tasks.graphFit")}
         title={$t("tasks.graphFit")}
       >
-        ⤢
+        <Icon name="expand" />
       </button>
     {/if}
   </div>
