@@ -638,8 +638,8 @@
 <style>
   .bar {
     flex: 0 0 auto;
-    /* Sides align with the surface's frame below (the same clamp). */
-    padding: 0.7rem clamp(0.4rem, 2vw, 1.4rem) 0;
+    /* Sides align with the surface's frame below (`--frame` on .kiosk). */
+    padding: 0.7rem var(--frame, 0.4rem) 0;
     /* `max-height` (a value safely above the real header height) lets the bar
        collapse smoothly so the board reclaims the space when idle. */
     max-height: 16rem;

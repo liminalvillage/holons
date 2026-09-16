@@ -741,9 +741,12 @@ export const flipAt = writable<number | null>(null);
 export const autoRotates = writable<boolean>(true);
 
 /**
- * Whether no one has touched the screen recently — drives hiding the header
- * chrome for an immersive board. Starts true (an unattended kiosk shows the
- * board, not the chrome); any interaction clears it via `noteInteraction`.
+ * Whether the header chrome is tucked away for an immersive board. Starts
+ * true (an unattended kiosk shows the board, not the chrome). Only a
+ * deliberate reach brings it back — `revealChrome`, wired in the layout to a
+ * swipe down from the top edge or the mouse touching it — never a plain tap
+ * on the board; using the chrome while it is up keeps it up
+ * (`noteInteraction`), and IDLE_HIDE_MS of stillness tucks it away again.
  */
 export const idle = writable<boolean>(true);
 
@@ -840,16 +843,26 @@ export function startRotation(): () => void {
 }
 
 /**
- * Call on any user interaction: reveal the chrome, pause rotation, and arm both
- * the chrome-hide and rotation-resume timers so the screen returns to its
- * immersive, self-advancing state once everyone walks away.
+ * Call on any user interaction: pause rotation and arm the rotation-resume
+ * timer so the screen self-advances again once everyone walks away. It does
+ * NOT bring the chrome out — a tap on the board is about the board — but
+ * while the chrome is up, interaction keeps it up (the hide countdown
+ * restarts), so a search or a tab change never has the bar vanish mid-use.
  */
 export function noteInteraction() {
   pauseRotation();
-  idle.set(false);
   armResume();
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
+  if (!get(idle)) armChromeHide();
+}
+
+/**
+ * Bring the header chrome out — a swipe down from the top edge, or the mouse
+ * reaching it (see the layout). Counts as interaction too, and starts the
+ * countdown that tucks the chrome away again.
+ */
+export function revealChrome() {
+  idle.set(false);
+  noteInteraction();
 }
 
 /** Manually select a tab by id (also counts as an interaction). */
@@ -863,6 +876,11 @@ export function selectTab(id: TabId) {
  * Long-press handler: pin the kiosk to a tab (parking it there, no rotation) or
  * unpin if it's already the pinned one. Persisted so the park survives a reload.
  */
+function armChromeHide() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
+}
+
 export function togglePin(id: TabId) {
   const next = get(pinnedTab) === id ? null : id;
   pinnedTab.set(next);

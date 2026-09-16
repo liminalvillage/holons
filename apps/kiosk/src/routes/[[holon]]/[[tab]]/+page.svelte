@@ -59,11 +59,10 @@
     flex: 1;
     min-height: 0;
     background: var(--card);
-    /* The frame scales with the screen: a hand's width on a wall display,
-       a sliver on a phone. */
+    /* The frame (`--frame`, set on .kiosk in the layout) is thin and, on a
+       phone, all but gone: the board is the thing. */
     margin: 0 var(--frame) var(--frame);
-    --frame: clamp(0.4rem, 2vw, 1.4rem);
-    border-radius: 0 0 min(var(--radius), 2.5vw) min(var(--radius), 2.5vw);
+    border-radius: 0 0 min(var(--radius), 1.2vw) min(var(--radius), 1.2vw);
     box-shadow: var(--shadow-soft);
     overflow: hidden;
     display: flex;
