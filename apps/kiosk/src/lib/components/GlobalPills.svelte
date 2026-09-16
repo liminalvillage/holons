@@ -5,8 +5,9 @@
   // active tab's own Layout/Sort segments, and — at the right edge — the
   // active tab's settings gear. Rendered once by the page shell — outside the
   // tab-keyed view mount, so switching tabs swaps the segments without
-  // replaying the entrance animation — and collapsed together with the
-  // header chrome when the screen goes idle (same recipe as TabBar).
+  // replaying the entrance animation. Unlike the header and the tab strip it
+  // never tucks away when the screen goes idle: the filter and the gear are
+  // always on screen, whatever the board is doing.
   //
   // Settings live here, not in the boards: a view that has something to set
   // (the calendar's feeds, the allocation split, the shift plan, the value
@@ -31,7 +32,6 @@
   // packing level is measured against the band to decide.
   import {
     activeTab,
-    idle,
     settingsOpen,
     viewSettings,
     taskViewMode,
@@ -370,18 +370,9 @@
   // [Show, ...ownPills], so own pill i packs once i >= ownPills.length - k,
   // and Show (leftmost) only at k === total.
   const ownPacked = (i: number, k: number, count: number) => i >= count - k;
-
-  // The band only ever collapses with the rest of the chrome, when the
-  // screen goes idle.
-  $: hidden = $idle;
 </script>
 
-<div
-  class="gpills"
-  class:hidden
-  aria-hidden={hidden}
-  bind:clientWidth={bandWidth}
->
+<div class="gpills" bind:clientWidth={bandWidth}>
   {#if oneRow}
     <div class="row spread">
       <ScopePill compact={packCount >= total} expanded={packCount < total} />
@@ -467,22 +458,13 @@
 </div>
 
 <style>
-  /* Collapse with the header chrome: zero height when hidden so the view
-     below reclaims the band (mirrors TabBar's .bar.idle recipe). The inner
-     row owns the padding; overflow clips it during the transition. */
+  /* Always on screen — the band does not follow the header chrome into
+     hiding. The inner row owns the padding; overflow clips the invisible
+     measuring copies. */
   .gpills {
     position: relative;
     flex: 0 0 auto;
-    max-height: 12rem; /* headroom for the wrapped centred fallback */
     overflow: hidden;
-    transition:
-      opacity 0.5s ease,
-      max-height 0.5s ease;
-  }
-  .gpills.hidden {
-    opacity: 0;
-    max-height: 0;
-    pointer-events: none;
   }
   .row {
     display: flex;
