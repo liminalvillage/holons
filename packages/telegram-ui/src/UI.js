@@ -21,6 +21,9 @@ const DASHBOARD_ADDRESS =
   process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 let browser = null;
+// The word-cloud page and its vendored d3 libs live next to the bot, so the
+// render never depends on a CDN (rawgit went away and left blank clouds).
+const CLOUD_PAGE_URL = new URL('../html/cloud.html', import.meta.url).href;
 let browserAvailable = false;
 
 function escapeHtml(s) {
@@ -632,7 +635,7 @@ class UI {
       users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      values = values.concat(users[i].values);
+      values = values.concat(users[i].values || []);
     }
 
     if (!this.isBrowserAvailable()) {
@@ -649,7 +652,7 @@ class UI {
     try {
       page = await browser.newPage();
       const path = './images/valuecloud' + utils.getholonId(ctx) + '.png';
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
+      await page.goto(CLOUD_PAGE_URL, { waitUntil: 'load' });
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(values)};
@@ -657,7 +660,7 @@ class UI {
         `,
       });
 
-      await page.waitForSelector('svg');
+      await page.waitForSelector(values.length ? 'svg text' : 'svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
@@ -715,7 +718,7 @@ class UI {
       users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      needs = needs.concat(users[i].needs);
+      needs = needs.concat(users[i].needs || []);
     }
 
     if (!this.isBrowserAvailable()) {
@@ -732,14 +735,14 @@ class UI {
     try {
       page = await browser.newPage();
       const path = './images/needscloud' + utils.getholonId(ctx) + '.png';
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
+      await page.goto(CLOUD_PAGE_URL, { waitUntil: 'load' });
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(needs)};
             window.myWordCloud.update(getWords(words));
         `,
       });
-      await page.waitForSelector('svg');
+      await page.waitForSelector(needs.length ? 'svg text' : 'svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
