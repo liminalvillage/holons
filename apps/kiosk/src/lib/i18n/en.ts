@@ -273,6 +273,8 @@ export const en = {
   "shifts.loading": "Reading the shift schedule…",
   "shifts.empty": "No shifts on the schedule yet.",
   "shifts.noMatch": "No shifts match your search.",
+  "shifts.loginPersonal": "Log in to see the shifts you're on ✶",
+  "shifts.emptyPersonal": "No shifts with your name on them yet — take one ✪",
   "shifts.now": "Now",
   "shifts.full": "Full",
   "shifts.signedUp": { one: "{n} signed up", other: "{n} signed up" },
@@ -822,6 +824,8 @@ export const en = {
   // Status leaderboard
   "status.tallying": "Tallying contributions… ♛",
   "status.noActivity": "No ranked activity yet. ♛",
+  "status.loginPersonal": "Log in to see your own standing ✶",
+  "status.emptyPersonal": "Nothing ranked with your name on it yet. ♛",
   "status.seeScore": "See how {name}'s score was reached",
   // The framing the board is never shown without: it measures
   // contributions, not people — and warns against acting on the number.

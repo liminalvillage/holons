@@ -16,7 +16,6 @@
     showNotice,
     scope,
     rotationHold,
-    pillsSuppressed,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getChecklistStore, getHolosphere } from "$lib/holosphere";
@@ -62,10 +61,9 @@
 
   // Suspend auto-rotation while a list is open so the screen can't flip away
   // from under whoever is ticking it (same pattern as the Status breakdown).
-  // The shell's pills band hides too — the Show filter is meaningless while
-  // a single list fills the board.
+  // The shell's pills band stays put: the chrome reads the same on every
+  // tab, open list or not.
   $: rotationHold.set(openId != null);
-  $: pillsSuppressed.set(openId != null);
 
   function openList(id: string) {
     openId = id;
@@ -291,9 +289,8 @@
 
   onMount(() => {
     return () => {
-      // Release the holds if we unmount with a list still open.
+      // Release the hold if we unmount with a list still open.
       rotationHold.set(false);
-      pillsSuppressed.set(false);
     };
   });
 </script>

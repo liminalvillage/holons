@@ -759,13 +759,6 @@ export const idle = writable<boolean>(true);
 export const rotationHold = writable<boolean>(false);
 
 /**
- * When true, the global pills bar hides regardless of idle — a view holds
- * this while an in-view panel replaces its board (e.g. an open checklist),
- * where the filter pills would be meaningless chrome.
- */
-export const pillsSuppressed = writable<boolean>(false);
-
-/**
  * The active view's settings, offered to the pills band (GlobalPills) as
  * one gear: a view that has something to set registers its opener while it
  * is mounted and clears it on the way out (see `offerSettings`). The view

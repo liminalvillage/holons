@@ -16,7 +16,15 @@
   // Those events feed an in-memory store so all scoring runs offline/locally.
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
-  import { holonId, rawQuests, rotationHold, offerSettings } from "$lib/stores";
+  import {
+    holonId,
+    rawQuests,
+    rotationHold,
+    offerSettings,
+    scope,
+  } from "$lib/stores";
+  import { currentUser } from "$lib/auth";
+  import { sameId } from "$lib/personal";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
     getHolosphere,
@@ -59,6 +67,16 @@
   let loading = true;
   // The row whose score breakdown / ledger is open in the modal, or null.
   let selected: Row | null = null;
+  // The Show pill: Personal narrows the ranking to the viewer's own row
+  // (rank kept — it is their place in the whole holon). Local and Global
+  // read the same: the leaderboard is holon-only, federation out of scope.
+  $: personal = $scope === "personal";
+  $: myId = $currentUser?.id ?? null;
+  $: shownRows = personal
+    ? myId == null
+      ? []
+      : rows.filter((r) => sameId(r.id, myId))
+    : rows;
 
   // Per-holon scoring state. Rebound whenever the kiosk's holon changes.
   let hid: string | null = null;
@@ -466,11 +484,16 @@
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("status.tallying")}</p>
+    {:else if personal && !$currentUser}
+      <p class="empty">{$t("status.loginPersonal")}</p>
     {:else if !rows.length}
       <p class="empty">{$t("status.noActivity")}</p>
+    {:else if !shownRows.length}
+      <p class="empty">{$t("status.emptyPersonal")}</p>
     {:else}
       <ol class="ranks">
-        {#each rows as row, i (row.id)}
+        {#each shownRows as row (row.id)}
+          {@const i = rows.indexOf(row)}
           <li>
             <button
               class="rank"

@@ -277,6 +277,8 @@ export const es: Record<MessageKey, Msg> = {
   "shifts.loading": "Leyendo el calendario de turnos…",
   "shifts.empty": "Aún no hay turnos en el calendario.",
   "shifts.noMatch": "Ningún turno coincide con la búsqueda.",
+  "shifts.loginPersonal": "Inicia sesión para ver tus turnos ✶",
+  "shifts.emptyPersonal": "Aún no hay turnos a tu nombre — toma uno ✪",
   "shifts.now": "Ahora",
   "shifts.full": "Completo",
   "shifts.signedUp": { one: "{n} apuntado", other: "{n} apuntados" },
@@ -840,6 +842,8 @@ export const es: Record<MessageKey, Msg> = {
   // Status leaderboard
   "status.tallying": "Sumando contribuciones… ♛",
   "status.noActivity": "Aún no hay actividad clasificada. ♛",
+  "status.loginPersonal": "Inicia sesión para ver tu posición ✶",
+  "status.emptyPersonal": "Aún no hay nada clasificado a tu nombre. ♛",
   "status.seeScore": "Mira cómo se formó la puntuación de {name}",
   "status.disclaimerLead":
     "La tecnología recuerda. El sentido lo dan las personas.",

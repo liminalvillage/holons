@@ -24,11 +24,12 @@
     now,
     searchQuery,
     holonId,
+    scope,
   } from "$lib/stores";
   import { showNotice, offerSettings } from "$lib/stores";
   import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
-  import type { ShiftOccurrence } from "@holons/core/shifts";
+  import { isEnrolled, type ShiftOccurrence } from "@holons/core/shifts";
   import {
     boardSummary,
     groupShiftsByDay,
@@ -42,14 +43,22 @@
   import ShiftSettings from "$lib/components/ShiftSettings.svelte";
 
   $: nowSec = Math.floor($now.getTime() / 1000);
-  $: shown = upcomingShifts($rawShifts.occurrences, nowSec).filter((o) =>
-    shiftMatchesQuery(o, $searchQuery),
-  );
-  $: days = groupShiftsByDay(shown);
   $: rsvps = $rawShifts.rsvps;
   // Person-identity collapse (kind 31926): one signup per person, however
   // many keys they hold — a cancel under one key clears the person's spot.
   $: identity = $shiftIdentity;
+  // The Show pill: Personal narrows the wall to the shifts the viewer is on
+  // (under any of their keys). Local and Global read the same — the schedule
+  // is the holon's own relay feed, partners publish none of it.
+  $: personal = $scope === "personal";
+  $: shown = upcomingShifts($rawShifts.occurrences, nowSec).filter(
+    (o) =>
+      shiftMatchesQuery(o, $searchQuery) &&
+      (!personal ||
+        (!!$shiftSigner &&
+          isEnrolled(o, $shiftSigner.pubkey, rsvps, identity))),
+  );
+  $: days = groupShiftsByDay(shown);
   // The headline: what the wall is for. Counted over the whole window, not
   // the search-filtered subset, so a search never hides a gap.
   $: summary = boardSummary(
@@ -202,8 +211,12 @@
       {/if}
     {:else if !$shiftsLoaded}
       <p class="state">{$t("shifts.loading")}</p>
+    {:else if personal && !$shiftSigner}
+      <p class="state">{$t("shifts.loginPersonal")}</p>
     {:else if $searchQuery.trim()}
       <p class="state">{$t("shifts.noMatch")}</p>
+    {:else if personal}
+      <p class="state">{$t("shifts.emptyPersonal")}</p>
     {:else}
       <p class="state">
         {$t("shifts.empty")}

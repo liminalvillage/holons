@@ -13,7 +13,11 @@
   // equation) registers its opener in `viewSettings` while it is mounted,
   // and the band shows one gear for it. The view keeps the sheet itself and
   // any gate in front of it (a login prompt, say) — the band only offers
-  // the tap.
+  // the tap. A view with nothing of its own to set still gets the gear: it
+  // opens the kiosk's caretaker settings (the same sheet as the user menu),
+  // so the band reads the same on every tab — Show on the left, the tab's
+  // pills and one gear on the right — and never comes and goes between
+  // tabs or while a board opens one of its own items.
   //
   // Layout adapts to the width available, one pill at a time: every pill
   // starts unpacked — full segments, each carrying its option name — and as
@@ -28,7 +32,7 @@
   import {
     activeTab,
     idle,
-    pillsSuppressed,
+    settingsOpen,
     viewSettings,
     taskViewMode,
     taskSort,
@@ -331,12 +335,16 @@
     $calendarMode,
   );
 
-  // Status deliberately has no pills: the leaderboard is holon-only. Shifts
-  // has none either: the relay schedule knows nothing of scopes or layouts.
-  // Both still get the band for their gear.
-  $: hasPills = $activeTab !== "status" && $activeTab !== "shifts";
-  $: gear = $viewSettings;
-  $: gearLabel = gear ? $t(gear.labelKey) : "";
+  // Status and Shifts have no layout pill of their own; the Show pill still
+  // applies (Personal narrows both boards to the viewer).
+  // The gear: the view's own settings while it offers them, else the kiosk's
+  // caretaker settings, so every tab has one.
+  const kioskGear = {
+    labelKey: "menu.settings" as MessageKey,
+    open: () => settingsOpen.set(true),
+  };
+  $: gear = $viewSettings ?? kioskGear;
+  $: gearLabel = $t(gear.labelKey);
 
   // How many pills, counting from the RIGHT, collapse into the cycling
   // toggle. Level 0 is everything unpacked, level `total` everything
@@ -363,117 +371,100 @@
   // and Show (leftmost) only at k === total.
   const ownPacked = (i: number, k: number, count: number) => i >= count - k;
 
-  $: hidden = $idle || $pillsSuppressed;
+  // The band only ever collapses with the rest of the chrome, when the
+  // screen goes idle.
+  $: hidden = $idle;
 </script>
 
-{#if hasPills || gear}
-  <div
-    class="gpills"
-    class:hidden
-    aria-hidden={hidden}
-    bind:clientWidth={bandWidth}
-  >
-    {#if oneRow}
-      <div class="row spread">
-        {#if hasPills}
-          <ScopePill
-            compact={packCount >= total}
-            expanded={packCount < total}
+<div
+  class="gpills"
+  class:hidden
+  aria-hidden={hidden}
+  bind:clientWidth={bandWidth}
+>
+  {#if oneRow}
+    <div class="row spread">
+      <ScopePill compact={packCount >= total} expanded={packCount < total} />
+      <div class="own">
+        {#each ownPills as p, i (p.key)}
+          {@const packed = ownPacked(i, packCount, ownPills.length)}
+          <PillSwitch
+            compact={packed}
+            expanded={!packed}
+            options={p.options}
+            value={p.value}
+            onChange={p.onChange}
+            icon={p.icon}
+            title={p.title}
+            label={p.label}
+            showText={packed ? (p.showText ?? false) : true}
           />
-        {/if}
-        <div class="own">
-          {#if hasPills}
-            {#each ownPills as p, i (p.key)}
-              {@const packed = ownPacked(i, packCount, ownPills.length)}
-              <PillSwitch
-                compact={packed}
-                expanded={!packed}
-                options={p.options}
-                value={p.value}
-                onChange={p.onChange}
-                icon={p.icon}
-                title={p.title}
-                label={p.label}
-                showText={packed ? (p.showText ?? false) : true}
-              />
-            {/each}
-          {/if}
-          {#if gear}
-            <button
-              type="button"
-              class="gear"
-              on:click={gear.open}
-              aria-label={gearLabel}
-              title={gearLabel}
-            >
-              <Icon name="gear" />
-            </button>
-          {/if}
-        </div>
+        {/each}
+        <button
+          type="button"
+          class="gear"
+          on:click={gear.open}
+          aria-label={gearLabel}
+          title={gearLabel}
+        >
+          <Icon name="gear" />
+        </button>
       </div>
-    {:else}
-      <div class="row centered">
-        {#if hasPills}
-          <ScopePill />
-          {#each ownPills as p (p.key)}
-            <PillSwitch
-              options={p.options}
-              value={p.value}
-              onChange={p.onChange}
-              icon={p.icon}
-              title={p.title}
-              label={p.label}
-              showText={p.showText ?? false}
-            />
-          {/each}
-        {/if}
-        {#if gear}
-          <button
-            type="button"
-            class="gear"
-            on:click={gear.open}
-            aria-label={gearLabel}
-            title={gearLabel}
-          >
-            <Icon name="gear" />
-          </button>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Invisible copies, one per packing level (level k = the k rightmost
-         pills compact), measured to pick the level above. -->
-    {#each levels as k (k)}
-      <div
-        class="measure"
-        aria-hidden="true"
-        inert
-        bind:clientWidth={levelWidths[k]}
+    </div>
+  {:else}
+    <div class="row centered">
+      <ScopePill />
+      {#each ownPills as p (p.key)}
+        <PillSwitch
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={p.showText ?? false}
+        />
+      {/each}
+      <button
+        type="button"
+        class="gear"
+        on:click={gear.open}
+        aria-label={gearLabel}
+        title={gearLabel}
       >
-        {#if hasPills}
-          <ScopePill compact={k >= total} expanded={k < total} />
-          {#each ownPills as p, i (p.key)}
-            {@const packed = ownPacked(i, k, ownPills.length)}
-            <PillSwitch
-              compact={packed}
-              expanded={!packed}
-              options={p.options}
-              value={p.value}
-              onChange={p.onChange}
-              icon={p.icon}
-              title={p.title}
-              label={p.label}
-              showText={packed ? (p.showText ?? false) : true}
-            />
-          {/each}
-        {/if}
-        {#if gear}
-          <span class="gear"><Icon name="gear" /></span>
-        {/if}
-      </div>
-    {/each}
-  </div>
-{/if}
+        <Icon name="gear" />
+      </button>
+    </div>
+  {/if}
+
+  <!-- Invisible copies, one per packing level (level k = the k rightmost
+       pills compact), measured to pick the level above. -->
+  {#each levels as k (k)}
+    <div
+      class="measure"
+      aria-hidden="true"
+      inert
+      bind:clientWidth={levelWidths[k]}
+    >
+      <ScopePill compact={k >= total} expanded={k < total} />
+      {#each ownPills as p, i (p.key)}
+        {@const packed = ownPacked(i, k, ownPills.length)}
+        <PillSwitch
+          compact={packed}
+          expanded={!packed}
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={packed ? (p.showText ?? false) : true}
+        />
+      {/each}
+      <span class="gear"><Icon name="gear" /></span>
+    </div>
+  {/each}
+</div>
 
 <style>
   /* Collapse with the header chrome: zero height when hidden so the view
