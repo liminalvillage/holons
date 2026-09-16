@@ -9,10 +9,11 @@
 // that leaves deployed fixes sitting on the CDN while every screen runs
 // whatever build was current when it was last power-cycled.
 //
-// This module closes both gaps: it polls for a new service worker on an hourly
-// timer, and when one takes control it reloads the page — but only once the
-// screen is idle, so an update never yanks the board out from under someone
-// reading, editing, or mid-voice-conversation.
+// This module closes both gaps: it polls for a new service worker on a timer
+// (and whenever the screen wakes or the network comes back), and when one takes
+// control it reloads the page — but only once the screen is idle, so an update
+// never yanks the board out from under someone reading, editing, or
+// mid-voice-conversation.
 
 import { get } from "svelte/store";
 import {
@@ -29,8 +30,12 @@ import {
   typeOpen,
 } from "./voice/controller";
 
-/** How often to ask the browser to re-check the service worker script. */
-const UPDATE_CHECK_MS = 60 * 60 * 1000;
+/**
+ * How often to ask the browser to re-check the service worker script. Ten
+ * minutes is cheap — a conditional request for one small script — and it bounds
+ * how long a deployed fix can sit unseen on a wall screen.
+ */
+const UPDATE_CHECK_MS = 10 * 60 * 1000;
 /** How often to re-test "is the screen idle yet?" once an update is pending. */
 const RELOAD_RETRY_MS = 30 * 1000;
 
@@ -86,20 +91,36 @@ export function startSwAutoReload(): () => void {
 
   // A never-navigating page must poll, or the browser never fetches the new
   // service worker script and controllerchange never fires.
-  const checkTimer = setInterval(() => {
+  const checkNow = () => {
     navigator.serviceWorker
       .getRegistration()
       .then((reg) => reg?.update())
       .catch(() => {
-        /* offline or no registration — try again next hour */
+        /* offline or no registration — the next check tries again */
       });
-  }, UPDATE_CHECK_MS);
+  };
+
+  const checkTimer = setInterval(checkNow, UPDATE_CHECK_MS);
+
+  // The timer alone leaves a screen on yesterday's build for up to a full
+  // interval after it was asleep, backgrounded, or off the network — the states
+  // a kiosk spends its nights in — and the moment someone walks up is the
+  // moment the build should be current. So check on the way back from each.
+  // The reload itself still waits for `safeToReload()`, so a screen that woke
+  // because someone touched it doesn't reload under their hands.
+  const onVisible = () => {
+    if (document.visibilityState === "visible") checkNow();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("online", checkNow);
 
   return () => {
     navigator.serviceWorker.removeEventListener(
       "controllerchange",
       onControllerChange,
     );
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("online", checkNow);
     clearInterval(checkTimer);
     if (reloadTimer) clearTimeout(reloadTimer);
   };
