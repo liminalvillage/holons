@@ -28,8 +28,7 @@ import { readTreasuryRate, splitHours, TREASURY_ID } from '../governance/index.j
 import type { BuildFlowsInput } from './build.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import type { TrackId } from './types.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { resolveWindow } from './window.js';
 
 export const DEFAULT_LEDGER_WINDOW_DAYS = 90;
 
@@ -101,16 +100,14 @@ interface Collector {
  */
 export function buildLedger(input: BuildFlowsInput): LedgerResult {
 	const now = input.now ?? Date.now();
-	const windowDays =
-		input.windowDays === undefined ? DEFAULT_LEDGER_WINDOW_DAYS : input.windowDays;
-	const from = windowDays == null ? 0 : now - windowDays * DAY_MS;
+	const { from, to } = resolveWindow(input, DEFAULT_LEDGER_WINDOW_DAYS);
 	const nameOf = input.nameOf ?? (() => undefined);
 	const label = (id: string, fallback?: string) => nameOf(id) || fallback || id;
 
 	const inWindow = (ts: unknown) => {
 		const t = Number(ts);
 		if (!Number.isFinite(t)) return false;
-		return t >= from && t <= now;
+		return t >= from && t <= to;
 	};
 
 	const entries: LedgerEntry[] = [];
@@ -136,7 +133,7 @@ export function buildLedger(input: BuildFlowsInput): LedgerResult {
 	collectTime(collector, events, input.settings, label, now);
 	collectAppreciation(collector, events, label);
 
-	return { from, to: now, entries };
+	return { from, to, entries };
 }
 
 /**

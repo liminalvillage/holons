@@ -17,6 +17,11 @@
 // URL survives reloads and power-cycles of the entrance display.
 
 import { holonForHost, holonForPath } from "./holons";
+import {
+  DEFAULT_WINDOW_PRESET,
+  isWindowPreset,
+  type FlowsWindowChoice,
+} from "@holons/core/flows";
 import { resolveRelays as coreResolveRelays } from "@holons/core/holosphere";
 import type { TaskSort } from "./data";
 
@@ -46,6 +51,8 @@ const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const FLOWS_VIEW_KEY = "kiosk_flows_view";
+const FLOWS_UNIT_KEY = "kiosk_flows_unit";
+const FLOWS_WINDOW_KEY = "kiosk_flows_window";
 const STOCK_VIEW_KEY = "kiosk_stock_view";
 const OFFERS_VIEW_KEY = "kiosk_offers_view";
 const OFFERS_SCALE_KEY = "kiosk_offers_scale";
@@ -733,6 +740,47 @@ export function resolveFlowsView(): FlowsViewMode {
 /** Persist the Flows view mode. */
 export function setFlowsView(mode: FlowsViewMode): void {
   persist(FLOWS_VIEW_KEY, mode);
+}
+
+/**
+ * The unit the Flows charts are drawn in: `all` (every unit, one chart
+ * each) or a track key such as `money:eur`. Picked in the Flows settings
+ * drawer; sticks per device.
+ */
+export function resolveFlowsUnit(): string {
+  return persisted(FLOWS_UNIT_KEY) || "all";
+}
+
+/** Persist the Flows unit. */
+export function setFlowsUnit(id: string): void {
+  persist(FLOWS_UNIT_KEY, id);
+}
+
+/**
+ * The period the Flows board covers — a named preset, or custom bounds as
+ * local dates. Picked in the Flows settings drawer; sticks per device.
+ */
+export function resolveFlowsWindow(): FlowsWindowChoice {
+  const raw = persisted(FLOWS_WINDOW_KEY);
+  if (raw) {
+    try {
+      const v = JSON.parse(raw) as Partial<FlowsWindowChoice> | null;
+      if (v && isWindowPreset(v.preset))
+        return {
+          preset: v.preset,
+          from: typeof v.from === "string" ? v.from : null,
+          to: typeof v.to === "string" ? v.to : null,
+        };
+    } catch {
+      /* a stale or hand-edited value: fall back to the default */
+    }
+  }
+  return { preset: DEFAULT_WINDOW_PRESET };
+}
+
+/** Persist the Flows period. */
+export function setFlowsWindow(choice: FlowsWindowChoice): void {
+  persist(FLOWS_WINDOW_KEY, JSON.stringify(choice));
 }
 
 /**

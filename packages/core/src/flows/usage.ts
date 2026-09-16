@@ -42,8 +42,7 @@ import { expenseCurrency, normalizeCurrency } from '../expenses/index.js';
 import { foldForSearch } from './ledger.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import type { AllocationResult, AllocationSlice } from './allocation.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { resolveWindow, type FlowsWindow } from './window.js';
 
 /** Someone with a right over the fund: a scored member or a placed partner. */
 export interface FundUsageParty {
@@ -93,6 +92,8 @@ export interface BuildFundUsageInput {
   now?: number;
   /** `null` means all time. Defaults like the ledger. */
   windowDays?: number | null;
+  /** Absolute bounds; wins over `windowDays` (see `resolveWindow`). */
+  window?: FlowsWindow | null;
 }
 
 export const DEFAULT_USAGE_WINDOW_DAYS = 90;
@@ -210,11 +211,8 @@ function matchPayee(
 
 /** Read how much of every right has been spent or claimed. */
 export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
-  const now = input.now ?? Date.now();
-  const windowDays =
-    input.windowDays === undefined ? DEFAULT_USAGE_WINDOW_DAYS : input.windowDays;
-  const from = windowDays == null ? 0 : now - windowDays * DAY_MS;
-  const inWindow = (ts: number) => Number.isFinite(ts) && ts >= from && ts <= now;
+  const { from, to } = resolveWindow(input, DEFAULT_USAGE_WINDOW_DAYS);
+  const inWindow = (ts: number) => Number.isFinite(ts) && ts >= from && ts <= to;
 
   const holonId = String(input.holonId ?? '');
   const parties = (input.parties ?? []).filter((p) => p && String(p.id ?? ''));

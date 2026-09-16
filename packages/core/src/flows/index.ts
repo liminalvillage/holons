@@ -41,6 +41,22 @@ export {
 } from './build.js';
 
 export {
+  DAY_MS,
+  DEFAULT_WINDOW_PRESET,
+  FLOWS_WINDOW_PRESETS,
+  formatLocalDate,
+  isWindowPreset,
+  parseLocalDate,
+  resolveWindow,
+  windowFromChoice,
+  windowSpanDays,
+  type FlowsWindow,
+  type FlowsWindowChoice,
+  type FlowsWindowPreset,
+  type WindowedInput,
+} from './window.js';
+
+export {
   DEFAULT_LEDGER_WINDOW_DAYS,
   buildLedger,
   filterLedger,

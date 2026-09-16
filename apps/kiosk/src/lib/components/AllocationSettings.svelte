@@ -21,7 +21,20 @@
   // user, signed by the device key — the caller gates on login first.
 
   import { createEventDispatcher } from "svelte";
-  import { t } from "$lib/i18n";
+  import { t, locale } from "$lib/i18n";
+  import {
+    describeWindow,
+    describeWindowSpan,
+    WINDOW_PRESETS,
+    WINDOW_PRESET_LABELS,
+  } from "$lib/flowswindow";
+  import {
+    DEFAULT_WINDOW_PRESET,
+    formatLocalDate,
+    windowFromChoice,
+    type FlowsWindowChoice,
+    type FlowsWindowPreset,
+  } from "@holons/core/flows";
   import { getReaStore } from "$lib/holosphere";
   import {
     allocate,
@@ -58,12 +71,42 @@
   export let collectiveSlug = "";
   /** The holon's deployed Bundle contract, when there is one. */
   export let bundle: HolonBundleRecord | null = null;
+  /** The units the board can be drawn in (`all` first) and the current one. */
+  export let units: { id: string; label: string }[] = [];
+  export let unit = "all";
+  /** The period the board covers. */
+  export let period: FlowsWindowChoice = { preset: DEFAULT_WINDOW_PRESET };
 
   const dispatch = createEventDispatcher<{
     close: void;
     saved: { onChain: boolean };
     draft: AllocationDraft;
+    /** The View tab's choices apply on the tap — they are how the board is
+     *  read, not a setting to save. */
+    unit: string;
+    period: FlowsWindowChoice;
   }>();
+
+  $: unitLabel =
+    units.find((u) => u.id === unit)?.label ?? $t("flows.trackAll");
+
+  function pickPreset(preset: FlowsWindowPreset) {
+    // Custom starts from the period it replaces, so the dates are a tweak
+    // rather than two blanks.
+    if (preset === "custom" && period.preset !== "custom") {
+      const w = windowFromChoice(period);
+      dispatch("period", {
+        preset,
+        from: w.from == null ? null : formatLocalDate(w.from),
+        to: formatLocalDate(w.to ?? Date.now()),
+      });
+      return;
+    }
+    dispatch("period", { ...period, preset });
+  }
+  function setBound(end: "from" | "to", value: string) {
+    dispatch("period", { ...period, preset: "custom", [end]: value || null });
+  }
 
   // A draft, so Cancel costs nothing and Save writes once.
   let interiorPercent = config.interiorPercent;
@@ -98,6 +141,11 @@
   let tabEls: Record<string, HTMLButtonElement | undefined> = {};
 
   $: tabs = [
+    {
+      id: "view" as const,
+      label: $t("flows.tabView"),
+      summary: `${unitLabel} · ${describeWindow(period, $t, $locale)}`,
+    },
     {
       id: "split" as const,
       label: $t("alloc.tabSplit"),
@@ -391,14 +439,14 @@
   }
 </script>
 
-<SidePanel title={$t("alloc.settings")} on:close={() => dispatch("close")}>
+<SidePanel title={$t("flows.settings")} on:close={() => dispatch("close")}>
   <!-- The four questions this panel answers, each carrying its current value
        so the whole state reads at a glance without opening anything. -->
   <div
     slot="tabs"
     class="tabs"
     role="tablist"
-    aria-label={$t("alloc.settings")}
+    aria-label={$t("flows.settings")}
   >
     {#each tabs as item (item.id)}
       <button
@@ -426,7 +474,80 @@
     tabindex="0"
     class="tabpanel"
   >
-    {#if tab === "split"}
+    {#if tab === "view"}
+      <!-- ── What the board shows: one unit, one period ─────────────────── -->
+      <div class="control">
+        <span class="k" id="alloc-unit-label">{$t("flows.trackLabel")}</span>
+        <div
+          class="chips"
+          role="radiogroup"
+          tabindex="-1"
+          aria-labelledby="alloc-unit-label"
+        >
+          {#each units as u (u.id)}
+            <button
+              type="button"
+              role="radio"
+              class="chip"
+              class:on={unit === u.id}
+              aria-checked={unit === u.id}
+              on:click={() => dispatch("unit", u.id)}>{u.label}</button
+            >
+          {/each}
+        </div>
+        <p class="sub">{$t("flows.unitAbout")}</p>
+      </div>
+
+      <div class="control">
+        <span class="k" id="alloc-period-label">
+          {$t("flows.windowLabel")}
+          <span class="value">{describeWindowSpan(period, $t)}</span>
+        </span>
+        <div
+          class="chips"
+          role="radiogroup"
+          tabindex="-1"
+          aria-labelledby="alloc-period-label"
+        >
+          {#each WINDOW_PRESETS as p (p)}
+            <button
+              type="button"
+              role="radio"
+              class="chip"
+              class:on={period.preset === p}
+              aria-checked={period.preset === p}
+              on:click={() => pickPreset(p)}
+              >{$t(WINDOW_PRESET_LABELS[p])}</button
+            >
+          {/each}
+        </div>
+        {#if period.preset === "custom"}
+          <div class="dates">
+            <label class="date">
+              <span>{$t("flows.windowFrom")}</span>
+              <input
+                type="date"
+                value={period.from ?? ""}
+                max={period.to ?? undefined}
+                on:change={(e) => setBound("from", e.currentTarget.value)}
+              />
+            </label>
+            <label class="date">
+              <span>{$t("flows.windowTo")}</span>
+              <input
+                type="date"
+                value={period.to ?? ""}
+                min={period.from ?? undefined}
+                on:change={(e) => setBound("to", e.currentTarget.value)}
+              />
+            </label>
+          </div>
+        {/if}
+        <p class="sub">
+          {describeWindow(period, $t, $locale)} — {$t("flows.windowAbout")}
+        </p>
+      </div>
+    {:else if tab === "split"}
       <!-- ── How much goes to each side ─────────────────────────────────── -->
       <div class="control">
         <label for="alloc-interior" class="k">
@@ -798,12 +919,19 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
     <div class="actions">
-      <button class="ghost" on:click={() => dispatch("close")}
-        >{$t("common.cancel")}</button
-      >
-      <button class="primary" disabled={busy || syncing} on:click={save}>
-        {busy ? $t("common.saving") : $t("alloc.save")}
-      </button>
+      {#if tab === "view"}
+        <!-- The View tab applied on the tap; there is nothing to save. -->
+        <button class="primary" on:click={() => dispatch("close")}
+          >{$t("common.close")}</button
+        >
+      {:else}
+        <button class="ghost" on:click={() => dispatch("close")}
+          >{$t("common.cancel")}</button
+        >
+        <button class="primary" disabled={busy || syncing} on:click={save}>
+          {busy ? $t("common.saving") : $t("alloc.save")}
+        </button>
+      {/if}
     </div>
   </svelte:fragment>
 </SidePanel>
@@ -1236,6 +1364,56 @@
   }
 
   /* ── Footer ─────────────────────────────────────────────────────────── */
+  /* ── View tab: unit and period chips ──────────────────────────────── */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .chip {
+    min-height: 44px;
+    padding: 0 0.95rem;
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .chip.on {
+    background: var(--teal);
+    color: #fff;
+    box-shadow: var(--shadow-soft);
+  }
+  .dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
+  }
+  .date {
+    flex: 1 1 10rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .date input {
+    min-height: 44px;
+    padding: 0 0.7rem;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.95rem;
+  }
+
   .actions {
     display: flex;
     gap: 0.6rem;

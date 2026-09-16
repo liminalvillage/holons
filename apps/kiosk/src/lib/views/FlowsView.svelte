@@ -55,6 +55,13 @@
   } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
+    resolveFlowsUnit,
+    setFlowsUnit,
+    resolveFlowsWindow,
+    setFlowsWindow,
+  } from "$lib/config";
+  import { describeWindow } from "$lib/flowswindow";
+  import {
     getHolonName,
     getHolosphere,
     subscribeLens,
@@ -78,6 +85,9 @@
     fundAccount,
     buildPeopleFlows,
     buildValueFlows,
+    windowFromChoice,
+    type FlowsWindow,
+    type FlowsWindowChoice,
     chordBreakdown,
     layoutChord,
     filterLedger,
@@ -128,17 +138,28 @@
   import type { AllocationDraft } from "$lib/allocation";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
   import ChordChart from "$lib/components/ChordChart.svelte";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import BalancesView from "./BalancesView.svelte";
 
-  // Window options. 90 days is the default: long enough that a quiet month
-  // still shows structure, short enough to describe the holon as it is now.
-  const WINDOWS = [
-    { id: "30", labelKey: "flows.window30" as MessageKey, days: 30 },
-    { id: "90", labelKey: "flows.window90" as MessageKey, days: 90 },
-    { id: "all", labelKey: "flows.windowAll" as MessageKey, days: null },
-  ] as const;
+  // The period, one choice for every chart and statement on the board,
+  // picked in the settings drawer and kept per device. 90 days is the
+  // default: long enough that a quiet month still shows structure, short
+  // enough to describe the holon as it is now. A relative preset ("this
+  // month", "30 days") resolves against the clock once an hour — not every
+  // minute, since a new window object redraws every chart — so a kiosk left
+  // alone rolls over on its own.
+  let windowChoice: FlowsWindowChoice = resolveFlowsWindow();
+  function pickWindow(choice: FlowsWindowChoice) {
+    windowChoice = choice;
+    setFlowsWindow(choice);
+  }
+  $: windowHour = Math.floor($now.getTime() / 3_600_000) * 3_600_000;
+  let flowsWindow: FlowsWindow = windowFromChoice(windowChoice);
+  $: {
+    const next = windowFromChoice(windowChoice, windowHour);
+    if (next.from !== flowsWindow.from || next.to !== flowsWindow.to)
+      flowsWindow = next;
+  }
 
   let hid: string | null = null;
   let loading = true;
@@ -160,7 +181,6 @@
   // a settings doc or a resolved name arriving later still lands on the board.
   let federated: string[] = [];
 
-  let windowId: string = "90";
   /**
    * The unit both the movement Sankey and the people chord are drawn in.
    *
@@ -170,7 +190,12 @@
    * one chart each — never summed, because there are no exchange rates here.
    */
   const ALL_TRACKS = "all";
-  let trackId = ALL_TRACKS;
+  // Picked in the settings drawer; kept per device.
+  let trackId = resolveFlowsUnit();
+  function pickUnit(id: string) {
+    trackId = id;
+    setFlowsUnit(id);
+  }
   let selected: SankeyLayoutNode | null = null;
   /** The track a tapped movement bar belongs to; "all" draws several. */
   let selectedTrackKey = "";
@@ -181,8 +206,6 @@
   // The detail modal must format in the unit of the chart the tap came from —
   // an allocation node shown with the movement track's currency would lie.
   let selectedFormat: (value: number) => string = (v) => String(Math.round(v));
-
-  $: windowDays = WINDOWS.find((w) => w.id === windowId)?.days ?? 90;
 
   // ── Derived: the movement graph ─────────────────────────────────────────
   // Recomputed from in-memory arrays, so a pill tap is instant and costs no
@@ -257,7 +280,7 @@
     expenses: scopedExpenses,
     collective,
     settings,
-    windowDays,
+    window: flowsWindow,
     nameOf: nameFor,
     hubLabel: holonNames[hid ?? ""] ?? $t("flows.hub"),
   };
@@ -356,7 +379,7 @@
         parties: usageParties,
         expenses,
         collective,
-        windowDays,
+        window: flowsWindow,
       })
     : null;
   $: usageTotal = usageTotals(usage);
@@ -394,9 +417,7 @@
   // than printing zeros that look like an empty account.
   $: selfId = $currentUser ? String($currentUser.id) : null;
   $: myAccount = selfId ? fundAccount(allocationResult, usage, selfId) : null;
-  $: windowLabel = $t(
-    WINDOWS.find((w) => w.id === windowId)?.labelKey ?? "flows.window90",
-  );
+  $: windowLabel = describeWindow(windowChoice, $t, $locale, windowHour);
   // A statement shows cents; the diagram rounds to whole units.
   $: formatAccount = collective
     ? moneyFormatter(collective.currency, 2)
@@ -448,6 +469,11 @@
     }
     allocationOpen = true;
   }
+  // The allocation settings are reached from the gear in the pills band
+  // (offered while this board is mounted), not from a button in the board.
+  onDestroy(
+    offerSettings({ labelKey: "flows.settings", open: openAllocation }),
+  );
 
   /**
    * Closing drops the draft — unless a save is still landing, in which case
@@ -512,9 +538,11 @@
     ),
   ];
 
-  // The pill's choice, kept valid as currencies appear; the first in use
-  // otherwise, and USD only so a fresh holon can record its first expense.
+  // The balances' currency follows the drawer's unit when that is a money
+  // currency; the first in use otherwise, and USD only so a fresh holon can
+  // record its first expense.
   let currencyId = "";
+  $: if (trackId.startsWith("money:")) currencyId = trackId.slice(6);
   $: currency = currencies.includes(currencyId)
     ? currencyId
     : (currencies[0] ?? "usd");
@@ -617,12 +645,25 @@
     ];
   })();
 
+  // Everything the drawer can pick: the units with movement, plus any
+  // currency in use or configured that has none yet (the balances may
+  // still need it). Money first, as the tracks lay it out.
+  $: unitOptions = (() => {
+    const opts = [...trackOptions];
+    for (const c of currencies) {
+      const id = `money:${c}`;
+      if (!opts.some((o) => o.id === id))
+        opts.push({ id, label: c.toUpperCase() });
+    }
+    return opts;
+  })();
+
   // A unit that has gone (the window moved, the scope changed) falls back to
   // showing everything rather than to an empty board.
   $: if (
     trackId !== ALL_TRACKS &&
-    trackOptions.length > 1 &&
-    !trackOptions.some((o) => o.id === trackId)
+    unitOptions.length > 1 &&
+    !unitOptions.some((o) => o.id === trackId)
   ) {
     trackId = ALL_TRACKS;
   }
@@ -1366,7 +1407,7 @@
           {currencies}
           {currency}
           mine
-          onCurrency={(c) => (currencyId = c)}
+          onCurrency={(c) => pickUnit(`money:${c}`)}
         />
       {/if}
     {:else if $flowsViewMode === "balances"}
@@ -1378,7 +1419,7 @@
         {currencies}
         {currency}
         filterMine={$scope === "personal"}
-        onCurrency={(c) => (currencyId = c)}
+        onCurrency={(c) => pickUnit(`money:${c}`)}
       />
     {:else}
       <!-- ── Graph ──────────────────────────────────────────────────────── -->
@@ -1392,28 +1433,6 @@
             <div class="titles">
               <h2>{$t("flows.movementTitle")}</h2>
               <p class="sub">{$t("flows.movementAbout")}</p>
-            </div>
-            <div class="controls">
-              <!-- One unit selector for this Sankey AND the chord below. -->
-              {#if trackOptions.length > 2}
-                <PillSwitch
-                  options={trackOptions}
-                  value={trackId}
-                  onChange={(id) => (trackId = id)}
-                  label={$t("flows.trackLabel")}
-                  showText
-                />
-              {/if}
-              <PillSwitch
-                options={WINDOWS.map((w) => ({
-                  id: w.id,
-                  label: $t(w.labelKey),
-                }))}
-                value={windowId}
-                onChange={(id) => (windowId = id)}
-                label={$t("flows.windowLabel")}
-                showText
-              />
             </div>
           </header>
 
@@ -1473,32 +1492,6 @@
               <h2>{$t("flows.peopleTitle")}</h2>
               <p class="sub">{$t("flows.peopleAbout")}</p>
             </div>
-            <!-- No unit pills here: the movement header's selector drives
-                 this chord too. They only appear here when there is no
-                 movement section above to carry them. -->
-            {#if !tracks.length}
-              <div class="controls">
-                {#if trackOptions.length > 2}
-                  <PillSwitch
-                    options={trackOptions}
-                    value={trackId}
-                    onChange={(id) => (trackId = id)}
-                    label={$t("flows.trackLabel")}
-                    showText
-                  />
-                {/if}
-                <PillSwitch
-                  options={WINDOWS.map((w) => ({
-                    id: w.id,
-                    label: $t(w.labelKey),
-                  }))}
-                  value={windowId}
-                  onChange={(id) => (windowId = id)}
-                  label={$t("flows.windowLabel")}
-                  showText
-                />
-              </div>
-            {/if}
           </header>
 
           {#if activePeople?.id === "combined"}
@@ -1529,12 +1522,6 @@
                 : $t("flows.allocationAboutShares")}
             </p>
           </div>
-          <button
-            class="gear"
-            on:click={openAllocation}
-            aria-label={$t("alloc.settings")}
-            title={$t("alloc.settings")}>⚙</button
-          >
         </header>
         {#if hasAllocation}
           <div class="stats">
@@ -1626,6 +1613,11 @@
     shares={savedShares}
     {bundle}
     collectiveSlug={readCollectiveSlug(settings)}
+    units={unitOptions}
+    unit={trackId}
+    period={windowChoice}
+    on:unit={(e) => pickUnit(e.detail)}
+    on:period={(e) => pickWindow(e.detail)}
     on:draft={(e) => (allocationDraft = e.detail)}
     on:close={closeAllocation}
     on:saved={() => void afterAllocationSave()}
@@ -1815,28 +1807,6 @@
     margin: 0.15rem 0 0;
     font-size: 0.85rem;
     color: var(--muted);
-  }
-
-  .controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .gear {
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 50%;
-    background: var(--paper);
-    color: var(--ink-soft);
-    font-size: 1.25rem;
-    display: grid;
-    place-items: center;
-    touch-action: manipulation;
-  }
-
-  .gear:active {
-    transform: scale(0.92);
   }
 
   .stats {

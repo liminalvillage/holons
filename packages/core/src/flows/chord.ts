@@ -42,8 +42,7 @@ import { TREASURY_ID } from '../governance/index.js';
 import type { BuildFlowsInput } from './build.js';
 import { DEFAULT_LEDGER_WINDOW_DAYS } from './ledger.js';
 import type { BreakdownRow } from './layout.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { resolveWindow } from './window.js';
 const TAU = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 const EPSILON = 1e-6;
@@ -193,11 +192,8 @@ function recordTime(record: Record<string, unknown>): number {
  * money, then time, kudos and items.
  */
 export function buildPeopleFlows(input: BuildPeopleFlowsInput): PeopleFlowTrack[] {
-  const now = input.now ?? Date.now();
-  const windowDays =
-    input.windowDays === undefined ? DEFAULT_LEDGER_WINDOW_DAYS : input.windowDays;
-  const from = windowDays == null ? 0 : now - windowDays * DAY_MS;
-  const inWindow = (ts: number) => Number.isFinite(ts) && ts >= from && ts <= now;
+  const { from, to } = resolveWindow(input, DEFAULT_LEDGER_WINDOW_DAYS);
+  const inWindow = (ts: number) => Number.isFinite(ts) && ts >= from && ts <= to;
   const holon = String(input.holonId ?? '');
   const hubLabel = input.hubLabel ?? 'Holon';
   const nameOf = input.nameOf ?? (() => undefined);

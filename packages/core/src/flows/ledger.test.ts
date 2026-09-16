@@ -153,6 +153,21 @@ describe('buildLedger', () => {
     expect(to).toBe(NOW);
   });
 
+  it('takes an explicit window over windowDays, both ends inclusive', () => {
+    const { entries, from, to } = ledger({
+      windowDays: 30,
+      window: { from: NOW - 250 * DAY, to: NOW - 100 * DAY },
+      expenses: [
+        expense({ id: 'recent' }),
+        expense({ id: 'old', created: new Date(NOW - 200 * DAY).toISOString() }),
+        expense({ id: 'edge', created: new Date(NOW - 100 * DAY).toISOString() }),
+      ],
+    });
+    expect(new Set(entries.map((e) => e.reference))).toEqual(new Set(['old', 'edge']));
+    expect(from).toBe(NOW - 250 * DAY);
+    expect(to).toBe(NOW - 100 * DAY);
+  });
+
   it('does not double-count an expense that also exists as REA events', () => {
     const { entries } = ledger({
       expenses: [expense()],

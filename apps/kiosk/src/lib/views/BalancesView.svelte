@@ -47,7 +47,6 @@
     type CreditPair,
     type Expense,
   } from "@holons/core/expenses";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import {
     avatarInitial,
@@ -62,7 +61,9 @@
   export let people: { id: string; name: string }[] = [];
   /** Every currency in use, normalized. */
   export let currencies: string[] = [];
+  /** The currency shown — picked in the Flows settings drawer. */
   export let currency = "";
+  /** Ask for another currency: a record just landed on a sheet not shown. */
   export let onCurrency: (c: string) => void = () => {};
   /** The viewer's own tab only (the "My balance" view). */
   export let mine = false;
@@ -420,16 +421,6 @@
         {mine ? $t("balances.mineAbout") : $t("balances.about")}
       </p>
     </div>
-    {#if currencies.length}
-      <PillSwitch
-        options={currencies.map((c) => ({ id: c, label: c.toUpperCase() }))}
-        value={currency}
-        onChange={onCurrency}
-        label={$t("balances.currencyLabel")}
-        showText
-        expanded
-      />
-    {/if}
   </header>
   {#if currencies.length > 1}
     <p class="note">{$t("balances.allCurrencies")}</p>

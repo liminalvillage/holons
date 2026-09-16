@@ -29,6 +29,7 @@ import { normalizeCurrency, type Expense } from '../expenses/index.js';
 import { buildLedger, ledgerTrackKey, type LedgerEntry } from './ledger.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import type { TrackId, ValueFlowGraph, ValueFlowLink, ValueFlowNode, ValueFlowTrack } from './types.js';
+import type { FlowsWindow } from './window.js';
 
 /** The centre node every movement track fans through. */
 export const HUB_ID = '__holon';
@@ -45,8 +46,10 @@ export interface BuildFlowsInput {
   /** Resolve an agent id to a display name. */
   nameOf?: (id: string) => string | undefined;
   now?: number;
-  /** `null` means all time. */
+  /** `null` means all time. Ignored when `window` is given. */
   windowDays?: number | null;
+  /** Absolute bounds, either end open; wins over `windowDays`. */
+  window?: FlowsWindow | null;
   hubLabel?: string;
 }
 
