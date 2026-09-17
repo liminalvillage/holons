@@ -138,12 +138,16 @@
     dx = e.clientX - startX;
     dy = e.clientY - startY;
   }
+  // The id a finished press counts as a tap on, until its click arrives.
+  let tappedId: string | null = null;
+
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
     const tap = Math.hypot(dx, dy) < 6;
     const dir = swipeDecision(dx, dy, threshold);
     const id = topTask?.id;
+    tappedId = null;
     if (dir) {
       void commit(dir);
     } else {
@@ -151,11 +155,21 @@
       // move is a tap — zoom the card forward instead.
       dx = 0;
       dy = 0;
-      if (tap && id) onOpen(id);
+      if (tap && id) tappedId = id;
     }
+  }
+  // Open on the CLICK, not on pointerup. A finger's click is dispatched after
+  // pointerup and hit-tested afresh: opening the detail card on pointerup put
+  // its buttons under the finger first, so the same tap pressed whichever one
+  // was there — Delete, Mark complete, Edit (same trap as Modal's backdrop).
+  function onCardClick() {
+    const id = tappedId;
+    tappedId = null;
+    if (id) onOpen(id);
   }
   function onPointerCancel() {
     dragging = false;
+    tappedId = null;
     dx = 0;
     dy = 0;
   }
@@ -379,7 +393,8 @@
           class:front={i === 0}
           style="--depth: {i}; z-index: {8 - i};"
         >
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- Keys are handled on the deck (onDeckKey), not per card. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
           <article
             class="card"
             class:top={i === 0}
@@ -397,6 +412,7 @@
             on:pointermove={onPointerMove}
             on:pointerup={onPointerUp}
             on:pointercancel={onPointerCancel}
+            on:click={onCardClick}
           >
             {#if i === 0}
               <div class="stamp join" style="opacity: {badges.join};">

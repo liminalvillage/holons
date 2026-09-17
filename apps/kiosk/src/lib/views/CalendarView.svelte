@@ -229,6 +229,7 @@
   });
   onDestroy(() => {
     unbind();
+    unbindResize();
     edgeScroll.stop();
   });
 
@@ -736,20 +737,77 @@
     return 60;
   }
 
+  // Touch: the grip arms like the card's own drag — only after a still hold.
+  // It used to resize at once, and it is the bottom quarter of a one-hour
+  // card on a phone: a finger sliding over a card (a scroll, or a drag that
+  // didn't wait for the hold) did nothing on the body but rewrote the end
+  // time whenever it started near the lower edge.
+  let resizePending: { id: string; baseMin: number } | null = null;
+  let resizeHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeLastX = 0;
+  let resizeLastY = 0;
+
   function beginResize(e: PointerEvent, ev: CalendarEvent) {
     if (readonly) return;
     if (e.button != null && e.button !== 0) return;
     e.stopPropagation(); // a resize must not also start a move-drag
-    e.preventDefault();
     const base = eventDurationMin(ev);
-    resize = { id: ev.id, startY: e.clientY, baseMin: base, curMin: base };
+    if (e.pointerType === "mouse") {
+      e.preventDefault();
+      resize = { id: ev.id, startY: e.clientY, baseMin: base, curMin: base };
+    } else {
+      resizePending = { id: ev.id, baseMin: base };
+      resizeStartX = resizeLastX = e.clientX;
+      resizeStartY = resizeLastY = e.clientY;
+      resizeHoldTimer = setTimeout(() => {
+        resizeHoldTimer = null;
+        const p = resizePending;
+        resizePending = null;
+        const crept =
+          Math.hypot(resizeLastX - resizeStartX, resizeLastY - resizeStartY) >
+          HOLD_SLOP_PX;
+        if (!p || crept) {
+          unbindResize();
+          return;
+        }
+        // The length follows the finger from where the hold fired.
+        resize = {
+          id: p.id,
+          startY: resizeLastY,
+          baseMin: p.baseMin,
+          curMin: p.baseMin,
+        };
+      }, 280);
+    }
     window.addEventListener("pointermove", onResizeMove);
     window.addEventListener("pointerup", onResizeUp);
     window.addEventListener("pointercancel", onResizeUp);
   }
 
+  function unbindResize() {
+    if (resizeHoldTimer) clearTimeout(resizeHoldTimer);
+    resizeHoldTimer = null;
+    resizePending = null;
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", onResizeUp);
+    window.removeEventListener("pointercancel", onResizeUp);
+  }
+
   function onResizeMove(e: PointerEvent) {
-    if (!resize) return;
+    if (!resize) {
+      // Still undecided: a finger that travels before the hold is not a resize.
+      if (!resizePending) return;
+      resizeLastX = e.clientX;
+      resizeLastY = e.clientY;
+      if (
+        Math.hypot(e.clientX - resizeStartX, e.clientY - resizeStartY) >
+        HOLD_SLOP_PX
+      )
+        unbindResize();
+      return;
+    }
     e.preventDefault();
     const deltaMin = ((e.clientY - resize.startY) / HOUR_PX) * 60;
     let min = Math.round((resize.baseMin + deltaMin) / 15) * 15; // 15-min snap
@@ -758,9 +816,7 @@
   }
 
   function onResizeUp() {
-    window.removeEventListener("pointermove", onResizeMove);
-    window.removeEventListener("pointerup", onResizeUp);
-    window.removeEventListener("pointercancel", onResizeUp);
+    unbindResize();
     const r = resize;
     resize = null;
     if (r && r.curMin !== r.baseMin) {
