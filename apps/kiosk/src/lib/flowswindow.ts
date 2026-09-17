@@ -17,6 +17,7 @@ export const WINDOW_PRESETS = FLOWS_WINDOW_PRESETS;
 
 export const WINDOW_PRESET_LABELS: Record<FlowsWindowPreset, MessageKey> = {
   week: "flows.windowWeek",
+  lunation: "flows.windowLunation",
   month: "flows.windowMonth",
   "30": "flows.window30",
   "90": "flows.window90",

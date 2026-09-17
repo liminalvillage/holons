@@ -183,6 +183,10 @@
 
   // One input, every reading of it: the diagram, the ledger and the balances
   // are the same records, grouped differently.
+  // The group an expense with no split is shared by: the users lens, less
+  // the holon itself, which older bot records could carry as a member.
+  $: memberIds = Object.keys(usersById).filter((id) => id && id !== holonID);
+
   $: flowInput = {
     holonId: holonID,
     events,
@@ -190,6 +194,7 @@
     collective,
     settings,
     windowDays,
+    members: memberIds,
     nameOf: (id: string) => nameMap.get(id),
     hubLabel: "Holon",
   };
@@ -360,6 +365,7 @@
         holonId: holonID,
         unit: collective.currency,
         parties: usageParties,
+        members: memberIds,
         expenses,
         collective,
         windowDays,

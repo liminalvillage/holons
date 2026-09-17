@@ -8,6 +8,8 @@
 // millisecond bounds, either end open. A UI's named choice ("this month",
 // "custom from/to") resolves to the explicit form through `windowFromChoice`.
 
+import { lunationAt } from './lunation.js';
+
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Absolute bounds in ms, inclusive; a missing or null end is open. */
@@ -49,10 +51,19 @@ export function resolveWindow(
  * now, all time, or bounds someone typed. Relative presets resolve against
  * `now` each time, so a kiosk left on "this month" rolls over at midnight.
  */
-export type FlowsWindowPreset = 'week' | 'month' | '30' | '90' | 'year' | 'all' | 'custom';
+export type FlowsWindowPreset =
+  | 'week'
+  | 'lunation'
+  | 'month'
+  | '30'
+  | '90'
+  | 'year'
+  | 'all'
+  | 'custom';
 
 export const FLOWS_WINDOW_PRESETS: readonly FlowsWindowPreset[] = [
   'week',
+  'lunation',
   'month',
   '30',
   '90',
@@ -83,6 +94,11 @@ export function windowFromChoice(choice: FlowsWindowChoice, now = Date.now()): F
       const back = (at.getDay() + 6) % 7;
       return { from: new Date(at.getFullYear(), at.getMonth(), at.getDate() - back).getTime(), to: null };
     }
+    case 'lunation':
+      // The cycle you are standing in, new moon to new moon — the period
+      // holons keep their books by. Left open at the end like every other
+      // preset, so the board keeps filling until the next new moon closes it.
+      return { from: lunationAt(now).from, to: null };
     case 'month':
       return { from: new Date(at.getFullYear(), at.getMonth(), 1).getTime(), to: null };
     case 'year':

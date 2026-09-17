@@ -6,6 +6,7 @@ import {
   usageOf,
   usageTotals,
   usageUnits,
+  type FundUsage,
 } from './usage.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import { allocate } from './allocation.js';
@@ -101,6 +102,33 @@ describe('buildFundUsage from the expenses lens', () => {
     expect(usageOf(usage, 'bob').spent).toBe(100);
     // zed has no right; their share is not a party's.
     expect(usage.parties.zed).toBeUndefined();
+  });
+
+  it('spends a fund payment with no split on every member, the parties among them', () => {
+    const usage = buildFundUsage({
+      holonId: HOLON,
+      unit: 'EUR',
+      parties,
+      members: ['ada', 'bob', 'zed'],
+      expenses: [expense({ id: 'e1', amount: 300, paidBy: HOLON, splitWith: [] })],
+      now: NOW,
+    });
+    expect(usageOf(usage, 'ada').spent).toBe(100);
+    expect(usageOf(usage, 'bob').spent).toBe(100);
+    expect(usage.parties.zed).toBeUndefined();
+  });
+
+  it('spends an unsplit fund payment on the parties when no roster is given', () => {
+    const usage = buildFundUsage({
+      holonId: HOLON,
+      unit: 'EUR',
+      parties,
+      expenses: [expense({ id: 'e1', amount: 300, paidBy: HOLON, splitWith: [] })],
+      now: NOW,
+    });
+    expect(usageOf(usage, 'ada').spent).toBe(100);
+    expect(usageOf(usage, 'bob').spent).toBe(100);
+    expect(usageOf(usage, '-200').spent).toBe(100);
   });
 
   it('windows spending but not claims', () => {
@@ -245,6 +273,106 @@ describe('rightsTotal', () => {
 
   it('never goes below zero', () => {
     expect(rightsTotal(-10, null)).toBe(0);
+  });
+});
+
+describe('rights are accounted cumulatively, not per window', () => {
+  const members = [
+    { id: 'ada', name: 'Ada', percentage: 50 },
+    { id: 'bob', name: 'Bob', percentage: 50 },
+  ];
+  const config = { interiorPercent: 100, steepness: 50, nzones: 2 };
+
+  /** Ada was paid 200, long enough ago to fall out of any normal window. */
+  const oldPayout = collective([
+    {
+      id: 'old',
+      status: 'paid',
+      rawStatus: 'PAID',
+      amount: 200,
+      currency: 'EUR',
+      createdAt: NOW - 500 * DAY,
+      description: '',
+      payee: 'Ada',
+    },
+  ]);
+
+  const usageOver = (windowDays: number | null) =>
+    buildFundUsage({
+      holonId: HOLON,
+      unit: 'EUR',
+      parties,
+      expenses: [],
+      collective: oldPayout,
+      windowDays,
+      now: NOW,
+    });
+
+  it('keeps the pot the same however narrow the window is', () => {
+    // 800 in the bank plus the 200 Ada already drew — whether or not that
+    // payout is recent enough to still show on the movement board.
+    for (const days of [null, 90, 7]) {
+      expect(rightsTotal(800, usageOver(days))).toBe(1000);
+    }
+  });
+
+  it('does not hand a right back when its payout ages out of the window', () => {
+    const usage = usageOver(7);
+    const allocation = allocate({
+      total: rightsTotal(800, usage),
+      unit: 'eur',
+      config,
+      members,
+      zoned: [],
+    });
+    const ada = fundAccount(allocation, usage, 'ada')!;
+    expect(ada.right).toBe(500);
+    expect(ada.spent).toBe(0); // nothing moved in the last week
+    expect(ada.lifetimeSpent).toBe(200); // but the money is still gone
+    expect(ada.available).toBe(300);
+  });
+
+  it("leaves one holder's right untouched while another claims against theirs", () => {
+    const usageWith = (expenses: OpenCollectiveSnapshot['expenses']) =>
+      buildFundUsage({
+        holonId: HOLON,
+        unit: 'EUR',
+        parties,
+        expenses: [],
+        collective: collective(expenses),
+        windowDays: 90,
+        now: NOW,
+      });
+    const accountOf = (usage: FundUsage, id: string) =>
+      fundAccount(
+        allocate({ total: rightsTotal(1000, usage), unit: 'eur', config, members, zoned: [] }),
+        usage,
+        id,
+      )!;
+
+    const quiet = usageWith([]);
+    const claimed = usageWith([
+      {
+        id: 'c',
+        status: 'open',
+        rawStatus: 'APPROVED',
+        amount: 400,
+        currency: 'EUR',
+        createdAt: NOW - DAY,
+        description: '',
+        payee: 'Ada',
+      },
+    ]);
+
+    // Ada's approved expense is a claim on HER right, so Bob's does not move.
+    expect(accountOf(quiet, 'bob').right).toBe(500);
+    expect(accountOf(claimed, 'bob').right).toBe(500);
+    expect(accountOf(claimed, 'bob').available).toBe(500);
+
+    // …and on hers it is visible as claimed, not as available to ask again.
+    const ada = accountOf(claimed, 'ada');
+    expect(ada.claimed).toBe(400);
+    expect(ada.available).toBe(100);
   });
 });
 

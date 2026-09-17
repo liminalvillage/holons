@@ -139,6 +139,8 @@ export {
   DEFAULT_USAGE_WINDOW_DAYS,
   buildFundUsage,
   fundAccount,
+  lifetimeOf,
+  lifetimeTotals,
   rightsTotal,
   usageOf,
   usageTotals,
@@ -151,6 +153,8 @@ export {
   type FundUsageParty,
   type FundUse,
 } from './usage.js';
+
+export { SYNODIC_MONTH_DAYS, lunationAt, type Lunation } from './lunation.js';
 
 export {
   COLLECTIVE_OVERVIEW_QUERY,

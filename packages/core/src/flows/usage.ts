@@ -37,7 +37,7 @@
  * Everything is pure: callers hand in plain arrays.
  */
 
-import { coerceSplitWith, isSettlement, type Expense } from '../expenses/index.js';
+import { expenseSharers, isSettlement, type Expense } from '../expenses/index.js';
 import { expenseCurrency, normalizeCurrency } from '../expenses/index.js';
 import { foldForSearch } from './ledger.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
@@ -75,6 +75,16 @@ export interface FundUsage {
   unit: string;
   /** Party id → normalized unit → use. Only units with something in them. */
   parties: Record<string, Record<string, FundUse>>;
+  /**
+   * The same use, cumulative: every payout ever, whatever window is drawn.
+   *
+   * Rights are accounted against THIS, never against `parties`. A payout that
+   * has aged out of the window is still money the party took, and forgetting
+   * it would hand them their whole right a second time — and would shrink the
+   * pot under everyone else, moving rights that nobody claimed against.
+   * `parties` answers "what moved in this period"; this answers "what is gone".
+   */
+  lifetime: Record<string, Record<string, FundUse>>;
   /** Normalized unit → use, for collective payees matched to no party. */
   unattributed: Record<string, FundUse>;
   /** The unmatched payees with their amounts, largest first, so a reader can see who was missed. */
@@ -88,6 +98,11 @@ export interface BuildFundUsageInput {
   unit: string;
   parties: FundUsageParty[];
   expenses: Expense[];
+  /**
+   * Everyone in the holon: who an expense with no split is shared by. Defaults
+   * to the parties, so a fund payment nobody was named on is spent by all of them.
+   */
+  members?: readonly string[];
   collective?: OpenCollectiveSnapshot | null;
   now?: number;
   /** `null` means all time. Defaults like the ledger. */
@@ -107,6 +122,37 @@ export function usageOf(usage: FundUsage | null | undefined, partyId: string, un
   if (!usage) return { ...EMPTY_USE };
   const want = normalizeCurrency(unit ?? usage.unit);
   return { ...(usage.parties[partyId]?.[want] ?? EMPTY_USE) };
+}
+
+/**
+ * A party's CUMULATIVE use in one unit — what their right is accounted
+ * against. Unlike `usageOf`, no window narrows it: a payout from two years
+ * ago is still a payout.
+ */
+export function lifetimeOf(
+  usage: FundUsage | null | undefined,
+  partyId: string,
+  unit?: string,
+): FundUse {
+  if (!usage) return { ...EMPTY_USE };
+  const want = normalizeCurrency(unit ?? usage.unit);
+  // Tolerate a usage object built before this field existed (a hand-made
+  // fixture, a stale build across the package boundary) rather than throwing.
+  return { ...(usage.lifetime?.[partyId]?.[want] ?? EMPTY_USE) };
+}
+
+/** Cumulative totals across every rights-holder in one unit. */
+export function lifetimeTotals(usage: FundUsage | null | undefined, unit?: string): FundUse {
+  if (!usage) return { ...EMPTY_USE };
+  const want = normalizeCurrency(unit ?? usage.unit);
+  const out = { ...EMPTY_USE };
+  for (const perUnit of Object.values(usage.lifetime ?? {})) {
+    const use = perUnit[want];
+    if (!use) continue;
+    out.spent += use.spent;
+    out.claimed += use.claimed;
+  }
+  return { spent: round(out.spent), claimed: round(out.claimed) };
 }
 
 /** Every unit a party has any use in, the pot's first. */
@@ -158,10 +204,17 @@ export function usageTotals(
  * promise to outsiders is taken off, since it will never reach a
  * rights-holder. Unattributed payouts are outside the rights entirely and are
  * drawn as their own branch by `allocationToGraph`.
+ *
+ * Deliberately window-independent: the add-back reads the cumulative ledger,
+ * never the windowed one. A pot that forgot payouts older than the window
+ * would shrink whenever the period narrowed, re-cutting the rights of people
+ * who had claimed nothing — the window is a lens on movement, not a fact
+ * about how much there was to divide.
  */
 export function rightsTotal(balance: number, usage: FundUsage | null | undefined): number {
-  const totals = usageTotals(usage);
-  const total = balance + totals.attributed.spent - totals.unattributed.claimed;
+  const drawn = lifetimeTotals(usage);
+  const outside = usage ? (usage.unattributed[usage.unit] ?? EMPTY_USE) : EMPTY_USE;
+  const total = balance + drawn.spent - outside.claimed;
   return Math.max(0, round(total));
 }
 
@@ -217,10 +270,12 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
   const holonId = String(input.holonId ?? '');
   const parties = (input.parties ?? []).filter((p) => p && String(p.id ?? ''));
   const partyIds = new Set(parties.map((p) => String(p.id)));
+  const members = (input.members ?? [...partyIds]).map((id) => String(id));
 
   const usage: FundUsage = {
     unit: normalizeCurrency(input.unit),
     parties: {},
+    lifetime: {},
     unattributed: {},
     unattributedPayees: [],
   };
@@ -231,6 +286,17 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
       return (usage.unattributed[unit] ??= { spent: 0, claimed: 0 });
     }
     const perUnit = (usage.parties[partyId] ??= {});
+    return (perUnit[unit] ??= { spent: 0, claimed: 0 });
+  };
+
+  /**
+   * The cumulative bucket for a rights-holder. Money paid to someone with no
+   * right has no right to account against, so it is not tracked here — it
+   * stays in `unattributed`, where the pot already treats it as gone.
+   */
+  const touchLife = (partyId: string, unit: string): FundUse => {
+    if (!unit) return { spent: 0, claimed: 0 };
+    const perUnit = (usage.lifetime[partyId] ??= {});
     return (perUnit[unit] ??= { spent: 0, claimed: 0 });
   };
 
@@ -248,7 +314,8 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
       const unit = expenseCurrency(expense);
       if (!unit) continue;
       const payer = String(expense.paidBy ?? '');
-      const splitWith = coerceSplitWith(expense.splitWith).map((id) => String(id));
+      // An expense with no split is for the entire group.
+      const splitWith = expenseSharers(expense, members).map((id) => String(id));
       const share = amount / (splitWith.length > 0 ? splitWith.length : 1);
       const created = Date.parse(String(expense.created ?? ''));
 
@@ -262,6 +329,8 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
             const key = `${id}|${unit}`;
             settled.set(key, (settled.get(key) ?? 0) + share);
           }
+          // Cumulative always; the windowed view only when it belongs to the period.
+          touchLife(id, unit).spent += share;
           if (inWindow(created)) touch(id, unit).spent += share;
         }
         continue;
@@ -277,7 +346,10 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
   for (const [key, gross] of claimedGross) {
     const [partyId, unit] = key.split('|');
     const open = gross - (settled.get(key) ?? 0);
-    if (open > 0.005) touch(partyId, unit).claimed += open;
+    if (open > 0.005) {
+      touch(partyId, unit).claimed += open;
+      touchLife(partyId, unit).claimed += open;
+    }
   }
 
   // ── OpenCollective: the expense queue, by payee ─────────────────────────
@@ -287,11 +359,24 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
     if (!expense || !(expense.amount > 0)) continue;
     const unit = normalizeCurrency(expense.currency || input.collective?.currency || '');
     if (!unit) continue;
-    if (expense.status === 'paid' && !inWindow(expense.createdAt)) continue;
 
+    const paid = expense.status === 'paid';
     const partyId = matchPayee(index, expense.payee, expense.payeeSlug);
+
+    // Cumulative first: a payout keeps standing against the right that
+    // covered it long after it has left the window.
+    if (partyId != null) {
+      const life = touchLife(partyId, unit);
+      if (paid) life.spent += expense.amount;
+      else life.claimed += expense.amount;
+    }
+
+    // The windowed view drops old payouts. Open claims are owed today
+    // whenever they were raised, so they are never windowed out.
+    if (paid && !inWindow(expense.createdAt)) continue;
+
     const use = touch(partyId, unit);
-    if (expense.status === 'paid') use.spent += expense.amount;
+    if (paid) use.spent += expense.amount;
     else use.claimed += expense.amount;
     if (partyId == null) {
       const who = String(expense.payee || expense.payeeSlug || '').trim();
@@ -309,6 +394,12 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
 
   // Round once, at the end, so shares that split a cent do not drift.
   for (const perUnit of Object.values(usage.parties)) {
+    for (const use of Object.values(perUnit)) {
+      use.spent = round(use.spent);
+      use.claimed = round(use.claimed);
+    }
+  }
+  for (const perUnit of Object.values(usage.lifetime)) {
     for (const use of Object.values(perUnit)) {
       use.spent = round(use.spent);
       use.claimed = round(use.claimed);
@@ -344,11 +435,13 @@ export interface FundAccount {
   unit: string;
   /** The right in the pot's unit; null when the allocation is percentage-only. */
   right: number | null;
-  /** Paid out already, in the pot's unit. */
+  /** Paid out within the window, in the pot's unit — the period line. */
   spent: number;
+  /** Paid out ever, in the pot's unit. What `available` is measured against. */
+  lifetimeSpent: number;
   /** Claimed and still owed, in the pot's unit. */
   claimed: number;
-  /** right − spent − claimed, floored at zero; null without a right. */
+  /** right − lifetimeSpent − claimed, floored at zero; null without a right. */
   available: number | null;
   /** How far past the right the party has gone; 0 while within it. */
   over: number;
@@ -392,13 +485,19 @@ export function fundAccount(
 
   const unit = usage?.unit ?? normalizeCurrency(allocation.unit);
   const use = usageOf(usage, id, unit);
+  // What is left of a right is measured against everything ever drawn on it,
+  // never against the period on screen: narrowing the window must not hand
+  // someone their right a second time.
+  const drawn = lifetimeOf(usage, id, unit);
   const right =
     slice.amount == null ? null : round(slices.reduce((sum, s) => sum + (s.amount ?? 0), 0));
-  const left = right == null ? null : round(right - use.spent - use.claimed);
+  const left = right == null ? null : round(right - drawn.spent - drawn.claimed);
 
-  const otherUnits: FundAccountOtherUse[] = usageUnits(usage, id)
+  // The footnotes are part of the statement, so they are cumulative too.
+  const otherUnits: FundAccountOtherUse[] = Object.keys(usage?.lifetime?.[id] ?? {})
     .filter((u) => u !== unit)
-    .map((u) => ({ unit: u, ...usageOf(usage, id, u) }))
+    .sort()
+    .map((u) => ({ unit: u, ...lifetimeOf(usage, id, u) }))
     .filter((u) => u.spent > 0 || u.claimed > 0);
 
   return {
@@ -410,7 +509,8 @@ export function fundAccount(
     unit,
     right,
     spent: use.spent,
-    claimed: use.claimed,
+    lifetimeSpent: drawn.spent,
+    claimed: drawn.claimed,
     available: left == null ? null : Math.max(0, left),
     over: left == null || left >= 0 ? 0 : -left,
     otherUnits,

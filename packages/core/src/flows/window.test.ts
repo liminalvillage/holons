@@ -8,6 +8,7 @@ import {
   windowFromChoice,
   windowSpanDays,
 } from './window.js';
+import { lunationAt } from './lunation.js';
 
 // Wednesday 2026-09-16 15:30 local — mid-week, mid-month, mid-year.
 const NOW = new Date(2026, 8, 16, 15, 30).getTime();
@@ -43,6 +44,14 @@ describe('windowFromChoice', () => {
   it('treats a Sunday as the end of the week, not the start', () => {
     const sunday = local(2026, 9, 20, 10);
     expect(windowFromChoice({ preset: 'week' }, sunday).from).toBe(local(2026, 9, 14));
+  });
+
+  it('opens the lunation preset on the new moon that began the current cycle', () => {
+    const window = windowFromChoice({ preset: 'lunation' }, NOW);
+    expect(window).toEqual({ from: lunationAt(NOW).from, to: null });
+    // The cycle we are standing in, not the one about to begin.
+    expect(window.from!).toBeLessThanOrEqual(NOW);
+    expect(NOW - window.from!).toBeLessThan(30 * DAY_MS);
   });
 
   it('counts the day presets back from now and leaves all time open', () => {

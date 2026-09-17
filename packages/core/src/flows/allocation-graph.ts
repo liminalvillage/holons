@@ -42,7 +42,7 @@
 
 import type { AllocationResult } from './allocation.js';
 import type { ValueFlowLink, ValueFlowNode, ValueFlowSegment, ValueFlowTrack } from './types.js';
-import { usageOf, usageTotals, type FundUsage, type FundUse } from './usage.js';
+import { lifetimeOf, usageTotals, type FundUsage, type FundUse } from './usage.js';
 
 const POT_ID = '__pot';
 const INTERIOR_ID = '__interior';
@@ -259,7 +259,9 @@ export function allocationToGraph(
   // party, over the whole of their right, however many seats fed it.
   if (drawUsage) {
     for (const node of parties.values()) {
-      const stacked = stack(node.value, usageOf(usage, partyIdOf(node.id)!));
+      // Cumulative, not windowed: the bar answers "how much of this right is
+      // gone", which a narrower period does not undo.
+      const stacked = stack(node.value, lifetimeOf(usage, partyIdOf(node.id)!));
       node.value = stacked.value;
       node.segments = stacked.segments;
     }

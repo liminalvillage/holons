@@ -60,7 +60,6 @@
     resolveFlowsWindow,
     setFlowsWindow,
   } from "$lib/config";
-  import { describeWindow } from "$lib/flowswindow";
   import {
     getHolonName,
     getHolosphere,
@@ -125,7 +124,7 @@
   import { loadSettings } from "@holons/core/settings";
   import { buildNameMap } from "@holons/core/identity";
   import {
-    coerceSplitWith,
+    expenseSharers,
     expenseCurrencies,
     normalizeCurrency,
     participantIds,
@@ -136,6 +135,7 @@
   import AllocationSettings from "$lib/components/AllocationSettings.svelte";
   import { bindEquation, equation as equationStore } from "$lib/equation";
   import type { AllocationDraft } from "$lib/allocation";
+  import Icon from "$lib/components/Icon.svelte";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
   import ChordChart from "$lib/components/ChordChart.svelte";
   import Modal from "$lib/components/Modal.svelte";
@@ -274,6 +274,10 @@
     allocationDraft?.people ?? savedPeople,
   ).map((p) => ({ ...p, name: nameFor(p.id) ?? p.name }));
 
+  // The group an expense with no split is shared by: the users lens, less
+  // the holon itself, which older bot records could carry as a member.
+  $: memberIds = Object.keys(usersById).filter((id) => id && id !== hid);
+
   $: flowsInput = {
     holonId: hid ?? "",
     events: scopedEvents,
@@ -281,6 +285,7 @@
     collective,
     settings,
     window: flowsWindow,
+    members: memberIds,
     nameOf: nameFor,
     hubLabel: holonNames[hid ?? ""] ?? $t("flows.hub"),
   };
@@ -377,6 +382,7 @@
         holonId: hid ?? "",
         unit: collective.currency,
         parties: usageParties,
+        members: memberIds,
         expenses,
         collective,
         window: flowsWindow,
@@ -417,7 +423,6 @@
   // than printing zeros that look like an empty account.
   $: selfId = $currentUser ? String($currentUser.id) : null;
   $: myAccount = selfId ? fundAccount(allocationResult, usage, selfId) : null;
-  $: windowLabel = describeWindow(windowChoice, $t, $locale, windowHour);
   // A statement shows cents; the diagram rounds to whole units.
   $: formatAccount = collective
     ? moneyFormatter(collective.currency, 2)
@@ -431,7 +436,7 @@
   $: involvesMe = (e: Expense): boolean =>
     !!selfId &&
     (String(e?.paidBy) === selfId ||
-      coerceSplitWith(e?.splitWith).map(String).includes(selfId));
+      expenseSharers(e, memberIds).map(String).includes(selfId));
   $: scopedExpenses =
     $scope === "personal" && selfId ? expenses.filter(involvesMe) : expenses;
   $: scopedEvents =
@@ -1341,14 +1346,35 @@
                     )}</span
                   >
                 </div>
+                <!-- Claiming is offered only for money that is actually
+                     yours to take: a collective to claim from, and something
+                     left after everything already spent or claimed. Someone
+                     who has overrun their right sees no button at all. -->
+                {#if collective && (myAccount.available ?? 0) > 0}
+                  <a
+                    class="claim"
+                    href={`https://opencollective.com/${collective.slug}/expenses/new`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {$t("flows.claimAction")}
+                    <Icon name="external" />
+                  </a>
+                  <p class="claim-hint">{$t("flows.claimOpens")}</p>
+                {/if}
                 <dl class="statement">
                   <div>
                     <dt>{$t("flows.accountRight")}</dt>
                     <dd>{formatAccount(myAccount.right)}</dd>
                   </div>
+                  <!-- A statement is cumulative: this is everything drawn on
+                       the right, not just what moved in the period, so the
+                       four lines below actually add up to what is left. -->
                   <div>
-                    <dt>{$t("flows.spent")} · {windowLabel}</dt>
-                    <dd class="debit">−{formatAccount(myAccount.spent)}</dd>
+                    <dt>{$t("flows.spent")}</dt>
+                    <dd class="debit">
+                      −{formatAccount(myAccount.lifetimeSpent)}
+                    </dd>
                   </div>
                   <div>
                     <dt>{$t("flows.claimed")}</dt>
@@ -2063,6 +2089,31 @@
   :global(:root[data-theme="dark"]) .account.over .account-main .v,
   :global(:root[data-theme="dark"]) .statement .debit {
     color: #ff8a7a;
+  }
+
+  /* The one action on the card: take what the balance says is still yours.
+     Outlined rather than filled, so it borrows the card's own teal in both
+     themes without a second foreground token to keep legible. */
+  .claim {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    margin: 0.1rem 0 0.45rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--teal);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--teal);
+    font-size: 0.95rem;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+  .claim-hint {
+    margin: 0 0 0.7rem;
+    font-size: 0.78rem;
+    color: var(--muted);
   }
 
   .statement {
