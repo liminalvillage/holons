@@ -105,12 +105,16 @@ export const GET: RequestHandler = async ({ url }) => {
     await catchUp(hs);
     // The holon's own settings record is where every surface reads its name
     // (see `resolveHolonName` in $lib/holosphere); it may come back as an
-    // array of entries on older writes.
+    // array of entries on older writes. The generator appends "Calendar", so
+    // the fallback is bare.
     const settings = await loadSettings(hs, holon);
     const named = Array.isArray(settings)
-      ? settings.find((e: { name?: string }) => e?.name)
+      ? settings.find((e: { name?: unknown }) => e?.name)
       : settings;
-    const holonName = named?.name || "Holon Calendar";
+    const holonName =
+      typeof named?.name === "string" && named.name.trim()
+        ? named.name.trim()
+        : "Holon";
 
     // Federated reads fold in the partners that share `quests` inbound; the
     // plain read is this holon alone. Either way a quest with no date is not

@@ -3,9 +3,11 @@
 
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
+import { env } from "$env/dynamic/private";
 import { generateICalFeed } from "$lib/services/icalGenerator";
 import type { HoloSphere } from "holosphere";
 import { createHoloSphere, resolveRelays } from "@holons/core/holosphere";
+import { loadSettings } from "@holons/core/settings";
 import { resolveFeedAppName } from "$lib/server/feedEnv";
 
 // Lazy-initialized HoloSphere instance to avoid running during SvelteKit build analysis
@@ -15,13 +17,16 @@ function getHolosphere() {
   if (!holosphere) {
     // Single source of truth: HOLONS_APP / HOLOSPHERE_RELAYS from the monorepo
     // root .env, defaulting the way the web client does (production → Holons)
-    // so a deployed function never reads an empty debug namespace. A
+    // so a deployed function never reads an empty debug namespace. Read through
+    // `$env/dynamic/private`: bare `process.env` never sees the root .env under
+    // `vite dev`, which left the dev feed on a different namespace than the
+    // dev client. A
     // serverless function has no durable disk, so the store is in memory and
     // each cold start catches the holon's lenses up from the relays (bounded
     // by the sync timeout).
     holosphere = createHoloSphere({
-      appName: resolveFeedAppName(process.env),
-      relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+      appName: resolveFeedAppName(env),
+      relays: resolveRelays(env.HOLOSPHERE_RELAYS),
       store: { adapter: "memory" },
     });
   }
@@ -67,9 +72,17 @@ export const GET: RequestHandler = async ({ params }) => {
     const holo = getHolosphere();
     await catchUp(holo);
 
-    // Fetch holon data to get the name
-    const holonData = await holo.get(holonId, "profile", holonId);
-    const holonName = holonData?.name || holonData?.title || "Holon Calendar";
+    // The holon's own settings record is where every surface reads its name
+    // (see `nameResolver`); it may come back as an array of entries on older
+    // writes. The generator appends "Calendar", so the fallback is bare.
+    const settings = await loadSettings(holo, holonId);
+    const named = Array.isArray(settings)
+      ? settings.find((e: { name?: unknown }) => e?.name)
+      : settings;
+    const holonName =
+      typeof named?.name === "string" && named.name.trim()
+        ? named.name.trim()
+        : "Holon";
 
     // Fetch all quests/events from the holon
     const quests = await holo.getAll(holonId, "quests");

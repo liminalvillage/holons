@@ -6,6 +6,7 @@
 import ICAL from 'ical.js';
 import { parseInstant } from '../datetime/index.js';
 import { isTimedValue } from '../tasks/schedule.js';
+import { rsvpDisplayName } from './rsvp.js';
 
 // `console` is universally present (browser, Node, workers); declare it
 // here so we don't pull in `dom`/`node` lib types from the base tsconfig.
@@ -24,10 +25,13 @@ export interface HolonEvent {
     /** Legacy spelling of `ends`, still present on older quests. */
     until?: string;
     participants?: Array<{
-        id: string;
+        /** Telegram-sourced participants carry a numeric id. */
+        id: string | number;
         username?: string;
         firstName?: string;
         lastName?: string;
+        /** Telegram spelling, as the bot and kiosk store it. */
+        first_name?: string;
     }>;
     status?: string;
     category?: string;
@@ -84,7 +88,12 @@ export function generateICalFeed(
         // unparsable and freeze every subscriber on its last good copy.
         if (!parseInstant(event?.when)) continue;
         try {
-            cal.addSubcomponent(buildVEvent(event, holonId, uidDomain));
+            const vevent = buildVEvent(event, holonId, uidDomain);
+            // ical.js only rejects a bad value when it serializes, so prove the
+            // entry serializes before it joins the feed — one stray record must
+            // cost that entry, never the whole calendar.
+            vevent.toString();
+            cal.addSubcomponent(vevent);
         } catch (err) {
             // Skip malformed events but keep the feed valid.
             console.error?.('Error generating iCal event:', err);
@@ -107,9 +116,11 @@ function buildVEvent(
     const ievent = new ICAL.Event(vevent);
 
     ievent.uid = `${event.id}@${holonId}.${uidDomain}`;
-    ievent.summary = event.title || 'Untitled Event';
-    if (event.description) ievent.description = event.description;
-    if (event.location) ievent.location = event.location;
+    ievent.summary = text(event.title) || 'Untitled Event';
+    const description = text(event.description);
+    if (description) ievent.description = description;
+    const location = text(event.location);
+    if (location) ievent.location = location;
 
     const startDate = parseInstant(event.when) as Date;
     const rawEnd = parseInstant(event.ends ?? event.until);
@@ -132,17 +143,19 @@ function buildVEvent(
         );
     }
 
-    if (event.status) {
-        vevent.updatePropertyWithValue('status', mapStatusToICalStatus(event.status));
+    const status = text(event.status);
+    if (status) {
+        vevent.updatePropertyWithValue('status', mapStatusToICalStatus(status));
     }
-    if (event.category) {
-        vevent.updatePropertyWithValue('categories', event.category);
+    const category = text(event.category);
+    if (category) {
+        vevent.updatePropertyWithValue('categories', category);
     }
 
-    if (event.participants?.length) {
+    if (Array.isArray(event.participants)) {
         for (const participant of event.participants) {
-            const attendeeName =
-                participant.firstName || participant.username || participant.id;
+            if (participant?.id == null) continue;
+            const attendeeName = text(participant.firstName) || rsvpDisplayName(participant);
             const attendee = vevent.addPropertyWithValue(
                 'attendee',
                 `mailto:${participant.id}@${uidDomain}`
@@ -159,6 +172,14 @@ function buildVEvent(
     vevent.updatePropertyWithValue('last-modified', now);
 
     return vevent;
+}
+
+/** Stored records are untyped: ical.js throws on anything but a string, so a
+ *  number is spelled out and any other shape counts as absent. */
+function text(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return undefined;
 }
 
 /** A DATE-valued ICAL.Time for the local calendar day `d` falls on. */
