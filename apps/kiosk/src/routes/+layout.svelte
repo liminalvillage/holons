@@ -89,8 +89,6 @@
     startClock,
     startRotation,
     noteInteraction,
-    revealChrome,
-    idle,
     activeTab,
     requestedTab,
     visibleTabs,
@@ -921,56 +919,19 @@
   }
 
   // Any pointer/touch/key/scroll counts as someone using the screen → pause
-  // the auto-flip (and keep the chrome up while it is up). It never brings
-  // the chrome OUT: a tap on the board is about the board. Capture phase so
-  // it fires before view handlers.
+  // the auto-flip. Capture phase so it fires before view handlers.
   function onActivity() {
     noteInteraction();
   }
 
-  // ── Reaching for the chrome ──────────────────────────────────────────────
-  // The header hides for an immersive board and comes back only on a
-  // deliberate reach for it: the mouse touching the top edge of the screen,
-  // or a finger swiping down from it — the same gesture every phone uses
-  // for its own top bar. A touch that starts lower, or a mouse moving about
-  // the board, is left to the board.
-  const EDGE_MOUSE_PX = 4;
-  const EDGE_TOUCH_PX = 56;
-  const EDGE_SWIPE_PX = 36;
-  let edgeTouch: { id: number; y: number } | null = null;
-
   // Mouse movement (no click) also counts as presence, but fires constantly —
   // throttle it so we don't reset the stores on every pixel.
   let lastMove = 0;
-  function onMove(e: PointerEvent) {
-    if (e.pointerType === "mouse" && e.clientY <= EDGE_MOUSE_PX) {
-      if ($idle) revealChrome();
-      return;
-    }
+  function onMove() {
     const t = Date.now();
     if (t - lastMove < 400) return;
     lastMove = t;
     noteInteraction();
-  }
-  function onTouchStart(e: TouchEvent) {
-    noteInteraction();
-    const t = e.touches[0];
-    edgeTouch =
-      e.touches.length === 1 && t && t.clientY <= EDGE_TOUCH_PX
-        ? { id: t.identifier, y: t.clientY }
-        : null;
-  }
-  function onTouchMove(e: TouchEvent) {
-    if (!edgeTouch) return;
-    const t = Array.from(e.touches).find((x) => x.identifier === edgeTouch!.id);
-    if (!t) return;
-    if (t.clientY - edgeTouch.y >= EDGE_SWIPE_PX) {
-      edgeTouch = null;
-      if ($idle) revealChrome();
-    }
-  }
-  function onTouchEnd() {
-    edgeTouch = null;
   }
 </script>
 
@@ -990,10 +951,7 @@
 
 <svelte:window
   on:pointerdown|capture={onActivity}
-  on:touchstart|capture={onTouchStart}
-  on:touchmove|capture={onTouchMove}
-  on:touchend|capture={onTouchEnd}
-  on:touchcancel|capture={onTouchEnd}
+  on:touchstart|capture={onActivity}
   on:keydown|capture={onActivity}
   on:wheel|capture={onActivity}
   on:pointermove|capture={onMove}
@@ -1012,11 +970,11 @@
   {/if}
 
   {#if $dockState !== "dock" && $holonIdStore}
-    <div class="kiosk" class:idle={$idle} bind:this={windowEl}>
+    <div class="kiosk" bind:this={windowEl}>
       <!-- The whole tab interface is one card floating in the space — the
            same sky the dock shows — so closing it into a circle reads as
            the card shrinking into its place among the others. -->
-      <div class="card" class:idle={$idle}>
+      <div class="card">
         <TabBar />
         <main class="stage">
           <slot />
@@ -1090,8 +1048,7 @@
       var(--paper-deep);
     /* The sky around the card, and the frame the surface keeps inside it
        (used by TabBar and the tab page), are thin — the board is the thing —
-       and on a phone all but gone. Both close up entirely once the chrome
-       hides. */
+       and on a phone all but gone. */
     --sky: clamp(0.15rem, 0.5vw, 0.5rem);
     --frame: clamp(0.15rem, 0.8vw, 0.7rem);
     padding: calc(env(safe-area-inset-top) + var(--sky))
@@ -1099,7 +1056,6 @@
       calc(env(safe-area-inset-bottom) + var(--sky))
       calc(env(safe-area-inset-left) + var(--sky));
     overflow: hidden;
-    transition: padding 0.5s ease; /* the header's own fade timing */
   }
   @media (max-width: 560px), (max-height: 560px) {
     .kiosk {
@@ -1107,11 +1063,6 @@
       --frame: 0.1rem;
     }
   }
-  .kiosk.idle {
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-      env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-
   .card {
     flex: 1;
     min-height: 0;
@@ -1131,17 +1082,6 @@
       0 22px 54px rgba(0, 0, 0, 0.3),
       var(--shadow-soft);
     overflow: hidden;
-    transition:
-      border-radius 0.5s ease,
-      border-color 0.5s ease;
-  }
-  /* With the chrome gone (idle) the card takes the whole screen: the sky
-     around it closes up (no padding) and its corners square off, so the
-     board stands edge to edge. Any touch brings the frame back with the
-     header, on the header's own timing. */
-  .card.idle {
-    border-radius: 0;
-    border-color: transparent;
   }
 
   .stage {

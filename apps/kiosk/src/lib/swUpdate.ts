@@ -11,13 +11,13 @@
 //
 // This module closes both gaps: it polls for a new service worker on a timer
 // (and whenever the screen wakes or the network comes back), and when one takes
-// control it reloads the page — but only once the screen is idle, so an update
+// control it reloads the page — but only once the screen is unattended, so an update
 // never yanks the board out from under someone reading, editing, or
 // mid-voice-conversation.
 
 import { get } from "svelte/store";
 import {
-  idle,
+  rotating,
   selection,
   settingsOpen,
   userMenuOpen,
@@ -36,13 +36,13 @@ import {
  * how long a deployed fix can sit unseen on a wall screen.
  */
 const UPDATE_CHECK_MS = 10 * 60 * 1000;
-/** How often to re-test "is the screen idle yet?" once an update is pending. */
+/** How often to re-test "is the screen unattended yet?" once an update is pending. */
 const RELOAD_RETRY_MS = 30 * 1000;
 
 /** True when nobody is using the screen and nothing user-facing is open. */
 function safeToReload(): boolean {
   return (
-    get(idle) &&
+    get(rotating) &&
     get(selection) == null &&
     get(completionRequest) == null &&
     !get(settingsOpen) &&

@@ -901,10 +901,3 @@ export const FLIP_INTERVAL_MS = 16_000;
  * from zero when the page becomes visible again.
  */
 export const RESUME_AFTER_IDLE_MS = 300_000;
-
-/**
- * Idle grace after the last touch before the header chrome (brand, search,
- * account, clock, tabs) fades away for an unobstructed, immersive board. Any
- * interaction brings it straight back.
- */
-export const IDLE_HIDE_MS = 12_000;

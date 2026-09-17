@@ -5,9 +5,7 @@
   // active tab's own Layout/Sort segments, and — at the right edge — the
   // active tab's settings gear. Rendered once by the page shell — outside the
   // tab-keyed view mount, so switching tabs swaps the segments without
-  // replaying the entrance animation. Unlike the header and the tab strip it
-  // never tucks away when the screen goes idle: the filter and the gear are
-  // always on screen, whatever the board is doing.
+  // replaying the entrance animation.
   //
   // Settings live here, not in the boards: a view that has something to set
   // (the calendar's feeds, the allocation split, the shift plan, the value
@@ -458,9 +456,8 @@
 </div>
 
 <style>
-  /* Always on screen — the band does not follow the header chrome into
-     hiding. The inner row owns the padding; overflow clips the invisible
-     measuring copies. */
+  /* The inner row owns the padding; overflow clips the invisible measuring
+     copies. */
   .gpills {
     position: relative;
     flex: 0 0 auto;

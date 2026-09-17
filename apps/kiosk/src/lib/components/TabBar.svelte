@@ -15,9 +15,8 @@
     searchSuggestions,
     categoryColors,
     now,
-    rotating,
     autoRotates,
-    idle,
+    rotating,
     flipProgress,
     reorderTabs,
     hiddenTabs,
@@ -40,8 +39,8 @@
   // flips with it, both write `setTabShown`); a drag — straight away with a
   // mouse, after the hold on touch, so a quick swipe still scrolls the strip
   // — carries the tab to a new slot, and that order persists
-  // (`reorderTabs`). Edit mode ends on a tap anywhere else or when the kiosk
-  // goes idle. A hold or a drag swallows the click that follows, so no
+  // (`reorderTabs`). Edit mode ends on a tap anywhere else or when the screen
+  // is left unattended. A hold or a drag swallows the click that follows, so no
   // gesture both rearranges and navigates. Pinning lives on the active
   // tab's pin button.
   const LONG_PRESS_MS = 480;
@@ -217,7 +216,7 @@
     editing = false;
     addOpen = false;
   }
-  $: if ($idle) {
+  $: if ($rotating) {
     editing = false;
     addOpen = false;
     // A callout nobody was there to read is not spent: it waits for the
@@ -249,7 +248,7 @@
     if (!resolveAddTipSeen()) {
       addTipTimer = setTimeout(() => {
         addTipTimer = null;
-        if ($hiddenTabs.length && !$idle) addTip = true;
+        if ($hiddenTabs.length && !$rotating) addTip = true;
       }, 900);
     }
     return () => {
@@ -283,9 +282,9 @@
     searchFocused &&
     ($searchSuggestions.categories.length > 0 ||
       $searchSuggestions.people.length > 0);
-  // When the kiosk goes idle the chrome hides — release focus so the panel
-  // doesn't linger and the field re-opens cleanly on the next tap.
-  $: if ($idle && searchInput) searchInput.blur();
+  // Once the screen is left unattended, release focus so the panel doesn't
+  // linger and the field re-opens cleanly on the next tap.
+  $: if ($rotating && searchInput) searchInput.blur();
 
   function applySuggestion(term: string) {
     searchQuery.set(
@@ -316,15 +315,7 @@
   }
 </script>
 
-<!-- The whole header retreats when no one's touching the screen, so the board
-     stands alone; any interaction (handled at the window level) brings it back.
-     `aria-hidden` while idle keeps it out of the accessibility tree too. -->
-<header
-  class="bar"
-  class:idle={$idle}
-  class:suggest-open={suggestOpen || addOpen || addTip}
-  aria-hidden={$idle}
->
+<header class="bar" class:suggest-open={suggestOpen || addOpen || addTip}>
   <div class="top">
     <div class="brand">
       {#if $brandLogo}
@@ -643,26 +634,11 @@
     flex: 0 0 auto;
     /* Sides align with the surface's frame below (`--frame` on .kiosk). */
     padding: 0.7rem var(--frame, 0.4rem) 0;
-    /* `max-height` (a value safely above the real header height) lets the bar
-       collapse smoothly so the board reclaims the space when idle. */
-    max-height: 16rem;
     overflow: hidden;
-    transition:
-      opacity 0.5s ease,
-      max-height 0.5s ease,
-      padding 0.5s ease;
   }
-  .bar.idle {
-    opacity: 0;
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    pointer-events: none;
-  }
-  /* The bar clips (overflow hidden) so it can collapse when idle; while the
-     suggestion panel, the "+" menu or its first-visit callout is open it must
-     be allowed to hang below the header. Going idle blurs the field and
-     drops the callout first, so the collapse always clips again. */
+  /* The bar clips its contents; while the suggestion panel, the "+" menu or
+     its first-visit callout is open it must be allowed to hang below the
+     header. */
   .bar.suggest-open {
     overflow: visible;
   }

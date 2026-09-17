@@ -7,7 +7,7 @@
   // fab row. The buttons themselves live inline in each view (VoiceButtons),
   // in the same row as the ＋ fab.
   import { onDestroy, onMount } from "svelte";
-  import { holonId, idle } from "$lib/stores";
+  import { holonId } from "$lib/stores";
   import { t } from "$lib/i18n";
   import {
     initVoice,
@@ -43,10 +43,7 @@
 </script>
 
 {#if $available && $holonId}
-  <div
-    class="voice-overlay"
-    class:idle={$idle && !$recording && $status === "ready"}
-  >
+  <div class="voice-overlay">
     {#if $bubbleOpen && ($youSaid || $holonsSaid || $activeTool || $status === "thinking" || $recording)}
       <div class="bubble" role="status">
         <div class="bubble-controls">
@@ -133,11 +130,6 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 0.6rem;
-    transition: opacity 0.4s ease;
-  }
-  /* Fade with the rest of the chrome when the kiosk sits idle. */
-  .voice-overlay.idle {
-    opacity: 0.35;
   }
 
   .bubble {

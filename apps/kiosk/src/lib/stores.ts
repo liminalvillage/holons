@@ -26,7 +26,6 @@ import type { LinkedCard } from "./cardlink";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
-  IDLE_HIDE_MS,
   isPhoneDisplay,
   setPinnedTab,
   resolvePinnedTab,
@@ -729,6 +728,7 @@ export function startClock(): () => void {
 // the page is revealed. `flipAt` drives the thin progress bar so the screen
 // telegraphs the next move.
 
+/** True once the screen is unattended (also on displays that never flip). */
 export const rotating = writable<boolean>(false);
 /** Wall-clock time (ms) of the next scheduled flip, or null while paused. */
 export const flipAt = writable<number | null>(null);
@@ -742,17 +742,7 @@ export const flipAt = writable<number | null>(null);
 export const autoRotates = writable<boolean>(true);
 
 /**
- * Whether the header chrome is tucked away for an immersive board. Starts
- * true (an unattended kiosk shows the board, not the chrome). Only a
- * deliberate reach brings it back — `revealChrome`, wired in the layout to a
- * swipe down from the top edge or the mouse touching it — never a plain tap
- * on the board; using the chrome while it is up keeps it up
- * (`noteInteraction`), and IDLE_HIDE_MS of stillness tucks it away again.
- */
-export const idle = writable<boolean>(true);
-
-/**
- * When true, auto-rotation is suspended regardless of the idle/resume timers —
+ * When true, auto-rotation is suspended regardless of the resume timer —
  * a view holds this while an overlay it owns is open (e.g. the Status score
  * breakdown) so the screen can't flip out from under someone reading it.
  */
@@ -783,7 +773,6 @@ export function offerSettings(entry: ViewSettings): () => void {
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlip() {
   // A pinned kiosk or a phone never advances, so don't arm the progress bar.
@@ -852,39 +841,18 @@ export function startRotation(): () => void {
       document.removeEventListener("visibilitychange", onVisibility);
     if (tickTimer) clearInterval(tickTimer);
     if (resumeTimer) clearTimeout(resumeTimer);
-    if (idleTimer) clearTimeout(idleTimer);
     tickTimer = null;
     resumeTimer = null;
-    idleTimer = null;
   };
-}
-
-function armChromeHide() {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
 }
 
 /**
  * Call on any user interaction: pause rotation and arm the rotation-resume
- * timer so the screen self-advances again once everyone walks away. It does
- * NOT bring the chrome out — a tap on the board is about the board — but
- * while the chrome is up, interaction keeps it up (the hide countdown
- * restarts), so a search or a tab change never has the bar vanish mid-use.
+ * timer so the screen self-advances again once everyone walks away.
  */
 export function noteInteraction() {
   pauseRotation();
   armResume();
-  if (!get(idle)) armChromeHide();
-}
-
-/**
- * Bring the header chrome out — a swipe down from the top edge, or the mouse
- * reaching it (see the layout). Counts as interaction too, and starts the
- * countdown that tucks the chrome away again.
- */
-export function revealChrome() {
-  idle.set(false);
-  noteInteraction();
 }
 
 /** Manually select a tab by id (also counts as an interaction). */
