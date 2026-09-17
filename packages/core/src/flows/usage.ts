@@ -210,12 +210,110 @@ export function usageTotals(
  * would shrink whenever the period narrowed, re-cutting the rights of people
  * who had claimed nothing — the window is a lens on movement, not a fact
  * about how much there was to divide.
+ *
+ * `inbound` is what reaches this fund from rights held upstream
+ * (`inboundTotal`); it is part of what there is to divide, like the balance.
  */
-export function rightsTotal(balance: number, usage: FundUsage | null | undefined): number {
+export function rightsTotal(
+  balance: number,
+  usage: FundUsage | null | undefined,
+  inbound = 0,
+): number {
   const drawn = lifetimeTotals(usage);
   const outside = usage ? (usage.unattributed[usage.unit] ?? EMPTY_USE) : EMPTY_USE;
-  const total = balance + drawn.spent - outside.claimed;
+  const upstream = Number.isFinite(inbound) && inbound > 0 ? inbound : 0;
+  const total = balance + drawn.spent - outside.claimed + upstream;
   return Math.max(0, round(total));
+}
+
+// ── A pot fed from upstream ──────────────────────────────────────────────
+// A holon's fund is not only what sits in its own bank. A member of a
+// collective holds a right over THAT fund, and their personal holon divides
+// it again (see `cascade.ts`): the right upstream is part of the pot here.
+
+/** A right this holon holds over another holon's fund. */
+export interface InboundRight {
+  /** The holon whose fund the right is over. */
+  from: string;
+  unit: string;
+  /**
+   * The right as granted — GROSS and cumulative, never what is left of it.
+   * Feeding `available` in would shrink this pot every time the holder drew
+   * on it, re-cutting the rights of everyone downstream who drew nothing:
+   * the very thing `rightsTotal` exists to prevent.
+   */
+  right: number;
+  /** The upstream fund's usage, for accounts and bars — see `mergeInboundUsage`. */
+  usage?: FundUsage | null;
+}
+
+/** What upstream rights add to a pot in `unit`. Other units are never converted. */
+export function inboundTotal(inbound: readonly InboundRight[] | null | undefined, unit: string): number {
+  const want = normalizeCurrency(unit);
+  let total = 0;
+  for (const entry of inbound ?? []) {
+    if (normalizeCurrency(entry.unit) !== want) continue;
+    if (Number.isFinite(entry.right) && entry.right > 0) total += entry.right;
+  }
+  return round(total);
+}
+
+/**
+ * This holon's usage with the draws its parties made UPSTREAM folded in, so
+ * an account or a bar shows what is really left of a right that reaches them
+ * through here.
+ *
+ * For `fundAccount` and the diagram only — NEVER for `rightsTotal`. The
+ * upstream pot already added those draws back when it sized the inbound
+ * right; adding them back here as well would count the same money twice.
+ * Upstream outsiders stay upstream: they are not this fund's to explain.
+ *
+ * `partyIds` narrows the merge to this holon's own rights-holders; without it
+ * every upstream party comes along, which is harmless for a lookup by id.
+ */
+export function mergeInboundUsage(
+  own: FundUsage | null | undefined,
+  inbound: readonly InboundRight[] | null | undefined,
+  partyIds?: readonly string[],
+): FundUsage {
+  const unit = own?.unit ?? normalizeCurrency(inbound?.find((entry) => entry.usage)?.unit ?? '');
+  const wanted = partyIds ? new Set(partyIds.map(String)) : null;
+  const copy = (source: Record<string, Record<string, FundUse>> | undefined) => {
+    const out: Record<string, Record<string, FundUse>> = {};
+    for (const [id, perUnit] of Object.entries(source ?? {})) {
+      out[id] = {};
+      for (const [u, use] of Object.entries(perUnit)) out[id][u] = { ...use };
+    }
+    return out;
+  };
+  const fold = (
+    into: Record<string, Record<string, FundUse>>,
+    from: Record<string, Record<string, FundUse>> | undefined,
+  ) => {
+    for (const [id, perUnit] of Object.entries(from ?? {})) {
+      if (wanted && !wanted.has(id)) continue;
+      const mine = (into[id] ??= {});
+      for (const [u, use] of Object.entries(perUnit)) {
+        const sum = (mine[u] ??= { ...EMPTY_USE });
+        sum.spent = round(sum.spent + use.spent);
+        sum.claimed = round(sum.claimed + use.claimed);
+      }
+    }
+  };
+
+  const merged: FundUsage = {
+    unit,
+    parties: copy(own?.parties),
+    lifetime: copy(own?.lifetime),
+    unattributed: { ...(own?.unattributed ?? {}) },
+    unattributedPayees: [...(own?.unattributedPayees ?? [])],
+  };
+  for (const entry of inbound ?? []) {
+    if (!entry.usage) continue;
+    fold(merged.parties, entry.usage.parties);
+    fold(merged.lifetime, entry.usage.lifetime);
+  }
+  return merged;
 }
 
 /** A slug the way the platform would derive it from a name. */

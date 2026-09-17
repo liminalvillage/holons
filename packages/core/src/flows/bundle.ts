@@ -82,6 +82,26 @@ export function readBundleRecord(settings: unknown): HolonBundleRecord | null {
 }
 
 /**
+ * The deployed bundle for a holon, read from the canonical settings document.
+ *
+ * A single keyed lookup — the record lives at `settings/<holonId>`, not under a
+ * random key — so this needs no wallet and no contract call.
+ */
+export async function loadBundleRecord(
+  holosphere: any,
+  holonId: string,
+): Promise<HolonBundleRecord | null> {
+  if (!holosphere || !holonId) return null;
+  try {
+    const settings = await holosphere.get(String(holonId), 'settings', String(holonId));
+    return readBundleRecord(settings);
+  } catch {
+    // No settings document yet, or the relay is quiet: no bundle to report.
+    return null;
+  }
+}
+
+/**
  * Persist the deployed bundle, merged onto the canonical settings document.
  *
  * The `id` stamp is what keeps this from forking a new record, and the spread

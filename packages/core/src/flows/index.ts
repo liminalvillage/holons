@@ -16,6 +16,12 @@
  * mutual credit with the holon, and from the collective's expense queue — so
  * the allocation Sankey can carry that column too.
  *
+ * A recipient can be a holon with a split of its own — a member's id is their
+ * personal holon's id — and `cascade.ts` follows a share down through those
+ * splits, rail-agnostic: the same resolver mirrors what nested Bundles pay
+ * on-chain and sizes the rights held downstream off-chain. `cascade-load.ts`
+ * reads the splits it runs through off the settings lens.
+ *
  * The same walk also yields the ledger behind the picture — one dated, named
  * row per thing that happened, searchable via `filterLedger` — so a reader can
  * check the diagram against the entries it was drawn from.
@@ -125,9 +131,36 @@ export {
 } from './combine.js';
 
 export {
+  DEFAULT_CASCADE_DEPTH,
+  DEFAULT_CASCADE_NODES,
+  cascadeRights,
+  resolveCascade,
+  summarizeCascade,
+  type CascadeInputs,
+  type CascadeLeaf,
+  type CascadeLeafReason,
+  type CascadeNode,
+  type CascadeResult,
+  type CascadeSummary,
+  type ResolveChild,
+} from './cascade.js';
+
+export {
+  DEFAULT_CASCADE_CONCURRENCY,
+  DEFAULT_CASCADE_HOLONS,
+  childResolver,
+  loadCascadeChildren,
+  type LoadCascadeOptions,
+  type LoadedCascade,
+} from './cascade-load.js';
+
+export {
+  PASSED_SEGMENT,
+  RETAINED_ID,
   UNATTRIBUTED_ID,
   USAGE_SEGMENT_KINDS,
   allocationToGraph,
+  cascadeToGraph,
   partyIdOf,
   partyNodeId,
   segmentTotal,
@@ -139,8 +172,10 @@ export {
   DEFAULT_USAGE_WINDOW_DAYS,
   buildFundUsage,
   fundAccount,
+  inboundTotal,
   lifetimeOf,
   lifetimeTotals,
+  mergeInboundUsage,
   rightsTotal,
   usageOf,
   usageTotals,
@@ -152,6 +187,7 @@ export {
   type FundPayee,
   type FundUsageParty,
   type FundUse,
+  type InboundRight,
 } from './usage.js';
 
 export { SYNODIC_MONTH_DAYS, lunationAt, type Lunation } from './lunation.js';
@@ -169,10 +205,14 @@ export {
 } from './opencollective.js';
 
 export {
+  BUNDLE_BINDING_ABI,
+  BUNDLE_CLAIM_ABI,
   BUNDLE_SYNC_ALL_ABI,
   WAD,
+  bundleClaimArgs,
   bundleSyncArgList,
   bundleSyncArgs,
+  chainInteriorRoster,
   sharesToBasisPoints,
   steepnessFromContract,
   steepnessToContract,
@@ -183,6 +223,7 @@ export {
 
 export {
   BUNDLE_KEY,
+  loadBundleRecord,
   migrateLegacyBundleRecord,
   readBundleRecord,
   saveBundleRecord,
@@ -193,6 +234,7 @@ export {
 export {
   ALLOCATION_KEY,
   COLLECTIVE_KEY,
+  hasAllocationConfig,
   readAllocationConfig,
   readCollectiveSlug,
   readInteriorShares,

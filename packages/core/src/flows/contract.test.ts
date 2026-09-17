@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUNDLE_BINDING_ABI,
+  BUNDLE_CLAIM_ABI,
   BUNDLE_SYNC_ALL_ABI,
   WAD,
+  bundleClaimArgs,
+  chainInteriorRoster,
   bundleSyncArgList,
   bundleSyncArgs,
   sharesToBasisPoints,
@@ -110,5 +114,53 @@ describe('bundleSyncArgs', () => {
   it('names the one function the surfaces call', () => {
     expect(BUNDLE_SYNC_ALL_ABI).toMatch(/^function syncAll\(/);
     expect(BUNDLE_SYNC_ALL_ABI.match(/,/g)?.length).toBe(7);
+  });
+});
+
+describe('chainInteriorRoster', () => {
+  const members = [
+    { userId: 'a', percentage: 60 },
+    { userId: 'b', percentage: 40 },
+  ];
+
+  it('is the roster as given when anyone holds a share', () => {
+    expect(chainInteriorRoster('h1', members, 50)).toEqual(members);
+  });
+
+  it('seats the holon itself when nobody does, so the interior pot is never stranded', () => {
+    // The Bundle has no withdraw: an interior pot with no member is paid to
+    // no balance at all. Under the holon's own id it stays claimable.
+    expect(chainInteriorRoster('h1', [], 60)).toEqual([{ userId: 'h1', percentage: 100 }]);
+    expect(chainInteriorRoster('h1', [{ userId: 'a', percentage: 0 }], 60)).toEqual([
+      { userId: 'h1', percentage: 100 },
+    ]);
+    const { userIds, basisPoints } = sharesToBasisPoints(chainInteriorRoster('h1', [], 60));
+    expect(userIds).toEqual(['h1']);
+    expect(basisPoints).toEqual([10000n]);
+  });
+
+  it('leaves an empty roster alone when there is no interior pot to strand', () => {
+    expect(chainInteriorRoster('h1', [], 0)).toEqual([]);
+    expect(chainInteriorRoster('', [], 60)).toEqual([]);
+  });
+});
+
+describe('bundleClaimArgs', () => {
+  const address = '0x' + 'aB'.repeat(20);
+
+  it('encodes the member id and the beneficiary positionally', () => {
+    expect(bundleClaimArgs({ userId: 235114395 as unknown as string, beneficiary: address })).toEqual([
+      '235114395',
+      address,
+    ]);
+    expect(BUNDLE_CLAIM_ABI).toMatch(/^function claim\(string _userId, address _beneficiary\)/);
+    expect(BUNDLE_BINDING_ABI).toHaveLength(2);
+  });
+
+  it('rejects an empty id and a zero or malformed address', () => {
+    expect(() => bundleClaimArgs({ userId: '', beneficiary: address })).toThrow(/member/i);
+    expect(() => bundleClaimArgs({ userId: 'u1', beneficiary: '0x' + '0'.repeat(40) })).toThrow(/address/i);
+    expect(() => bundleClaimArgs({ userId: 'u1', beneficiary: '0x1234' })).toThrow(/address/i);
+    expect(() => bundleClaimArgs({ userId: 'u1', beneficiary: 'vitalik.eth' })).toThrow(/address/i);
   });
 });
