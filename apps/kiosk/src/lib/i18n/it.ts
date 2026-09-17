@@ -552,6 +552,14 @@ export const it: Record<MessageKey, Msg> = {
   "menu.signingAs": "Firmi come {key}",
   "menu.loginTelegram": "Accedi con Telegram",
   "menu.login": "Accedi",
+  "menu.install": "Aggiungi alla schermata Home",
+  "install.hint": "Apri {name} come un’app — un tocco, a schermo intero.",
+  "install.iosShare": "Tocca il pulsante Condividi nella barra del browser",
+  "install.iosAdd": "Scorri e scegli “Aggiungi alla schermata Home”",
+  "install.iosConfirm": "Tocca “Aggiungi”",
+  "install.manual":
+    "Apri il menu del browser e scegli “Installa app” o “Aggiungi a schermata Home”.",
+  "install.done": "Aggiunta alla schermata Home",
 
   // Completion confirmation
   "complete.title": "Completare questa attività?",

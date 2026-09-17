@@ -8,7 +8,11 @@
       type="image/svg+xml"
     />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
-    <link rel="apple-touch-icon" href="%sveltekit.assets%/icon-512.svg" />
+    <!-- PNG, full-bleed: iOS ignores an SVG here and screenshots the page. -->
+    <link
+      rel="apple-touch-icon"
+      href="%sveltekit.assets%/apple-touch-icon.png"
+    />
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <meta name="theme-color" content="#0e6b66" />
     <!-- Warm up the handshake to Telegram so the deferred SDK fetches sooner. -->
@@ -32,6 +36,14 @@
          (in document order) before the SvelteKit app module, so window.Telegram
          is ready at mount. -->
     <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <!-- Chromium's install event fires once, possibly before the app bundle
+         has hydrated — keep it for lib/install.ts ("Add to Home Screen"). -->
+    <script>
+      addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        window.__installPrompt = e;
+      });
+    </script>
     <!-- Restore the last day/night palette before first paint so a reload or
          power-cycle doesn't flash the wrong skin (lib/theme.ts recomputes the
          real sunset state right after mount). -->

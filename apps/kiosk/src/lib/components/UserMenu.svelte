@@ -16,6 +16,7 @@
   import { dashboardUrl } from "$lib/config";
   import { showHomePage } from "$lib/home";
   import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
+  import { installMode, promptInstall } from "$lib/install";
   import { t } from "$lib/i18n";
 
   $: who = $brandName || $holonName;
@@ -40,6 +41,15 @@
   }
   function unlinkKey() {
     void dropSessionKey();
+  }
+
+  // Add to Home Screen: where the browser lends us its install dialog, the
+  // row IS the button; everywhere else it unfolds the steps in place (iOS has
+  // no API, only Share → "Add to Home Screen").
+  let installSteps = false;
+  function install() {
+    if ($installMode === "prompt") void promptInstall();
+    else installSteps = !installSteps;
   }
 </script>
 
@@ -85,6 +95,43 @@
     <span class="label">{$t("menu.homePage")}</span>
     <span class="chev">›</span>
   </button>
+
+  {#if $installMode !== "hidden"}
+    <button
+      class="row"
+      on:click={install}
+      aria-expanded={$installMode === "prompt" ? undefined : installSteps}
+    >
+      <span class="ico"><Icon name="smartphone" /></span>
+      <span class="label">{$t("menu.install")}</span>
+      <span class="chev"
+        >{#if $installMode === "prompt"}<Icon name="plus" />{:else}›{/if}</span
+      >
+    </button>
+    {#if installSteps && $installMode !== "prompt"}
+      <div class="install">
+        <p>{$t("install.hint", { name: who || "Holons" })}</p>
+        {#if $installMode === "ios"}
+          <ol>
+            <li>
+              <span class="step-ico"><Icon name="share" /></span>
+              {$t("install.iosShare")}
+            </li>
+            <li>
+              <span class="step-ico"><Icon name="plus-square" /></span>
+              {$t("install.iosAdd")}
+            </li>
+            <li>
+              <span class="step-ico"><Icon name="check" /></span>
+              {$t("install.iosConfirm")}
+            </li>
+          </ol>
+        {:else}
+          <p>{$t("install.manual")}</p>
+        {/if}
+      </div>
+    {/if}
+  {/if}
 
   {#if $currentUser}
     {#if $sessionKeyPub}
@@ -194,6 +241,42 @@
   .row .chev {
     color: var(--muted);
     font-weight: 700;
+  }
+
+  .install {
+    padding: 0.2rem 0.9rem 0.6rem;
+    color: var(--ink);
+    font-size: 0.95rem;
+    line-height: 1.35;
+  }
+  .install p {
+    margin: 0 0 0.5rem;
+    color: var(--muted);
+  }
+  .install ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .install li {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-weight: 600;
+  }
+  .step-ico {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--paper);
+    color: var(--teal-deep);
+    font-size: 1.15rem;
   }
 
   .row.primary {

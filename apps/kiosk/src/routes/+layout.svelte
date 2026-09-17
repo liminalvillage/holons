@@ -117,6 +117,8 @@
   import { initAuth, loginOpen, currentUser } from "$lib/auth";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
+  import { startInstallWatcher } from "$lib/install";
+  import { manifestHref, startPathFor } from "$lib/manifest";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
@@ -613,6 +615,7 @@
       startTheme(),
       startI18n(),
       startSwAutoReload(),
+      startInstallWatcher(),
       // The Shifts feed follows the holonId store on its own; it reads a
       // relay, not Holosphere, so it lives outside refresh().
       startShifts(),
@@ -643,6 +646,23 @@
   // the front door: the dock (the map, by default) with this device's hubs
   // on it, and the board-only overlays stood down.
   $: isHome = !isAbout && !booting && !$holonIdStore;
+
+  // The home screen icon belongs to the board on show: named for the hub and
+  // opening on it (lib/manifest.ts), so "Add to Home Screen" — ours in the
+  // user menu or the browser's own — installs THIS hub, not the front door.
+  // The static manifest in app.html stands until a holon is known.
+  $: appName = isHome || isAbout ? "" : $brandName || $holonName || "";
+  $: if (mounted) {
+    const start = isAbout
+      ? "/"
+      : startPathFor($holonIdStore, {
+          hostname: $page.url.hostname,
+          pathname: $page.url.pathname,
+        });
+    document
+      .querySelector('link[rel="manifest"]')
+      ?.setAttribute("href", manifestHref(start, appName));
+  }
 
   // The dock/window state follows a CHANGE of holon made outside the morphs:
   // a board named without one (the about page's paste field, Settings)
@@ -947,6 +967,8 @@
   {:else if !isAbout}
     <title>{$brandName || $holonName || $holonIdStore || "Holons"}</title>
   {/if}
+  <!-- iOS labels the home screen icon from this, ahead of the manifest. -->
+  <meta name="apple-mobile-web-app-title" content={appName || "Holons"} />
 </svelte:head>
 
 <svelte:window

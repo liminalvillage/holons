@@ -544,6 +544,14 @@ export const en = {
   "menu.signingAs": "Signing as {key}",
   "menu.loginTelegram": "Log in with Telegram",
   "menu.login": "Sign in",
+  "menu.install": "Add to Home Screen",
+  "install.hint": "Open {name} like an app — one tap, full screen.",
+  "install.iosShare": "Tap the Share button in the browser’s toolbar",
+  "install.iosAdd": "Scroll down and choose “Add to Home Screen”",
+  "install.iosConfirm": "Tap “Add”",
+  "install.manual":
+    "Open your browser’s menu and choose “Install app” or “Add to Home Screen”.",
+  "install.done": "Added to your Home Screen",
 
   // Completion confirmation
   "complete.title": "Complete this task?",
