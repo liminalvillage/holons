@@ -23,6 +23,7 @@ import {
 } from "./data";
 import type { SearchSuggestions, TaskSort } from "./data";
 import type { LinkedCard } from "./cardlink";
+import type { DeckState } from "./deck";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
@@ -207,12 +208,15 @@ export const calendarMode = writable<CalendarMode>("day");
 export const libraryCalendarMode = writable<CalendarMode>("month");
 
 /**
- * Task ids the swipe deck has dealt with this session — skipped, joined, or
- * liked — so the deck strictly advances. A module store (not component state)
- * because tab auto-rotation remounts the Tasks view every flip; deliberately
- * never persisted, so skipped cards return next session.
+ * Everyone's progress through the swipe deck, keyed by `deckKey(hub, person)`
+ * ($lib/deck): which cards they dealt with — skipped, joined, or liked — and
+ * the frozen order theirs were dealt in. One entry per hub and person, so a
+ * shared screen never hands someone the previous visitor's deck and a hub
+ * switch can't hide a card over a colliding id. A module store (not component
+ * state) because tab auto-rotation remounts the Tasks view every flip;
+ * deliberately never persisted, so skipped cards return next session.
  */
-export const swipeDismissed = writable<Set<string>>(new Set());
+export const swipeDecks = writable<Map<string, DeckState>>(new Map());
 
 // ── Transient notice (toast) ───────────────────────────────────────────────
 //

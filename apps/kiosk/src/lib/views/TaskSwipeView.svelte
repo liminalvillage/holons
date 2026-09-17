@@ -9,7 +9,16 @@
   import Avatars from "$lib/components/Avatars.svelte";
   import Confetti from "$lib/components/Confetti.svelte";
   import { currentUser, loginOpen } from "$lib/auth";
-  import { swipeDismissed, showNotice, taskViewMode, scope } from "$lib/stores";
+  import {
+    holonId,
+    swipeDecks,
+    showNotice,
+    taskSort,
+    taskViewMode,
+    scope,
+  } from "$lib/stores";
+  import { get } from "svelte/store";
+  import { tick } from "svelte";
   import { setScope, setTaskView } from "$lib/config";
   import { sameId } from "$lib/personal";
   import { resolveImage } from "$lib/image";
@@ -17,8 +26,13 @@
   import {
     badgeOpacity,
     cardTransform,
+    dealOrder,
+    deckKey,
+    decksFor,
     deckTasks,
+    EMPTY_DECK,
     swipeDecision,
+    type DeckState,
     type SwipeDirection,
   } from "$lib/deck";
   import type { BacklogTask } from "$lib/data";
@@ -47,7 +61,18 @@
   }
 
   // ── Deck state ─────────────────────────────────────────────────────────────
-  $: deck = deckTasks(tasks, $swipeDismissed);
+  // A deck is personal: one per hub and per person (see DeckState in
+  // $lib/deck). Whoever is at the screen now keeps only their own decks, so
+  // the next visitor never inherits what the last one swiped away.
+  $: key = deckKey($holonId, uid);
+  $: swipeDecks.update((all) => decksFor(all, uid));
+  $: mine = $swipeDecks.get(key) ?? EMPTY_DECK;
+  // Freeze the dealing order as cards are first seen: someone else's like
+  // re-ranks the wall's "most loved" sort live, and must not reshuffle a deck
+  // a person is halfway through. (`deal` reads the store untracked, so its
+  // own write can't re-trigger it.)
+  $: deal(key, tasks);
+  $: deck = deckTasks(tasks, mine.dismissed, mine.order);
   $: topTask = deck[0] ?? null;
   // Up to three cards render as a stack; the top one is interactive.
   $: stack = deck.slice(0, 3);
@@ -55,14 +80,37 @@
   let deckW = 0;
   $: threshold = Math.min(110, (deckW || 320) * 0.35);
 
-  function dismiss(id: string) {
-    swipeDismissed.update((s) => new Set(s).add(id));
+  function patchDeck(k: string, fn: (d: DeckState) => DeckState) {
+    swipeDecks.update((all) =>
+      new Map(all).set(k, fn(all.get(k) ?? EMPTY_DECK)),
+    );
   }
-  function unDismiss(id: string) {
-    swipeDismissed.update((s) => {
-      const next = new Set(s);
-      next.delete(id);
-      return next;
+  function deal(k: string, dealt: BacklogTask[]) {
+    const prev = get(swipeDecks).get(k) ?? EMPTY_DECK;
+    const order = dealOrder(prev.order, dealt);
+    if (order !== prev.order) patchDeck(k, (d) => ({ ...d, order }));
+  }
+  // Picking another sort is asking for another order — re-deal under it. The
+  // store can notify before the re-sorted `tasks` prop lands, so freeze again
+  // only once the view has settled.
+  let dealtSort = $taskSort;
+  $: if ($taskSort !== dealtSort) {
+    dealtSort = $taskSort;
+    const k = key;
+    patchDeck(k, (d) => ({ ...d, order: [] }));
+    void tick().then(() => k === key && deal(k, tasks));
+  }
+
+  // `k` is the deck the swipe began in: a write can land after the person
+  // logged out, and must not touch whoever's deck is on screen by then.
+  function dismiss(k: string, id: string) {
+    patchDeck(k, (d) => ({ ...d, dismissed: new Set(d.dismissed).add(id) }));
+  }
+  function unDismiss(k: string, id: string) {
+    patchDeck(k, (d) => {
+      const dismissed = new Set(d.dismissed);
+      dismissed.delete(id);
+      return { ...d, dismissed };
     });
   }
 
@@ -137,12 +185,20 @@
   let sessionJoins = 0;
   let sessionLikes = 0;
 
-  let undo: { task: BacklogTask; kind: "skip" | "join" | "like" } | null = null;
+  let undo: {
+    task: BacklogTask;
+    kind: "skip" | "join" | "like";
+    deck: string;
+  } | null = null;
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function offerUndo(task: BacklogTask, kind: "skip" | "join" | "like") {
+  function offerUndo(
+    task: BacklogTask,
+    kind: "skip" | "join" | "like",
+    deck: string,
+  ) {
     if (undoTimer) clearTimeout(undoTimer);
-    undo = { task, kind };
+    undo = { task, kind, deck };
     undoTimer = setTimeout(() => (undo = null), 4000);
   }
 
@@ -151,7 +207,7 @@
     undo = null;
     if (undoTimer) clearTimeout(undoTimer);
     if (!u) return;
-    unDismiss(u.task.id); // the card returns to the front of the deck
+    unDismiss(u.deck, u.task.id); // the card returns to the front of the deck
     if (u.kind === "join") {
       sessionJoins = Math.max(0, sessionJoins - 1);
       await onRevert(u.task, "join");
@@ -198,11 +254,12 @@
       return;
     }
 
+    const k = key;
     flyOff(task, dir);
-    dismiss(task.id); // optimistic — a failed write un-dismisses below
+    dismiss(k, task.id); // optimistic — a failed write un-dismisses below
 
     if (dir === "left") {
-      offerUndo(task, "skip");
+      offerUndo(task, "skip", k);
     } else if (dir === "right") {
       if (participating(task)) {
         showNotice($t("swipe.alreadyIn"));
@@ -211,11 +268,11 @@
         if (res === "joined") {
           sessionJoins += 1;
           party();
-          offerUndo(task, "join");
+          offerUndo(task, "join", k);
         } else if (res === "already") {
           showNotice($t("swipe.alreadyIn"));
         } else {
-          unDismiss(task.id);
+          unDismiss(k, task.id);
           showNotice($t("swipe.joinFailed"));
         }
       }
@@ -227,11 +284,11 @@
         if (res === "liked") {
           sessionLikes += 1;
           pop();
-          offerUndo(task, "like");
+          offerUndo(task, "like", k);
         } else if (res === "already") {
           showNotice($t("swipe.alreadyAppreciated"));
         } else {
-          unDismiss(task.id);
+          unDismiss(k, task.id);
           showNotice($t("swipe.appreciateFailed"));
         }
       }
@@ -250,7 +307,11 @@
   }
 
   function startOver() {
-    swipeDismissed.set(new Set());
+    // A fresh round: every card back, dealt in the backlog's current order.
+    patchDeck(key, () => ({
+      dismissed: new Set(),
+      order: tasks.map((t) => t.id),
+    }));
     sessionJoins = 0;
     sessionLikes = 0;
   }

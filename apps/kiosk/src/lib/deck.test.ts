@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { badgeOpacity, cardTransform, deckTasks, swipeDecision } from "./deck";
+import {
+  badgeOpacity,
+  cardTransform,
+  dealOrder,
+  deckKey,
+  decksFor,
+  deckTasks,
+  swipeDecision,
+} from "./deck";
 import type { BacklogTask } from "./data";
 
 const T = 100; // threshold used throughout
@@ -114,5 +122,68 @@ describe("deckTasks", () => {
   it("never deals a task still blocked by open dependencies", () => {
     const tasks = [task("a"), task("b", 2), task("c")];
     expect(deckTasks(tasks, new Set()).map((t) => t.id)).toEqual(["a", "c"]);
+  });
+});
+
+describe("a deck is personal", () => {
+  it("keys one deck per hub and per person", () => {
+    expect(deckKey("hubA", 1)).not.toBe(deckKey("hubA", 2));
+    expect(deckKey("hubA", 1)).not.toBe(deckKey("hubB", 1));
+    // Telegram ids arrive as numbers or strings — same person, same deck.
+    expect(deckKey("hubA", 1)).toBe(deckKey("hubA", "1"));
+    // Nobody logged in is its own deck, not anybody's.
+    expect(deckKey("hubA", null)).not.toBe(deckKey("hubA", 1));
+  });
+
+  it("keeps only the new person's decks when the login changes", () => {
+    const all = new Map([
+      [deckKey("hubA", 1), "ann@A"],
+      [deckKey("hubB", 1), "ann@B"],
+      [deckKey("hubA", 2), "bob@A"],
+      [deckKey("hubA", null), "anon@A"],
+    ]);
+    expect([...decksFor(all, 1).values()]).toEqual(["ann@A", "ann@B"]);
+    expect([...decksFor(all, null).values()]).toEqual(["anon@A"]);
+    expect(decksFor(all, 3).size).toBe(0);
+  });
+});
+
+describe("dealing order is frozen", () => {
+  it("appends cards not dealt yet and leaves the rest alone", () => {
+    expect(dealOrder([], [task("a"), task("b")])).toEqual(["a", "b"]);
+    expect(dealOrder(["a", "b"], [task("c"), task("a"), task("b")])).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("returns the same array when nothing is new", () => {
+    const prev = ["a", "b"];
+    expect(dealOrder(prev, [task("b"), task("a")])).toBe(prev);
+  });
+
+  it("keeps the place of a card that is momentarily absent", () => {
+    const order = dealOrder(["a", "b", "c"], [task("a"), task("c")]);
+    expect(order).toEqual(["a", "b", "c"]);
+    const back = deckTasks([task("c"), task("b"), task("a")], new Set(), order);
+    expect(back.map((t) => t.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not reshuffle when someone else's like re-ranks the backlog", () => {
+    const order = ["a", "b", "c", "d"];
+    // "d" got a heart elsewhere and now leads the wall's most-loved sort.
+    const reranked = [task("d"), task("a"), task("b"), task("c")];
+    const out = deckTasks(reranked, new Set(["a"]), order);
+    expect(out.map((t) => t.id)).toEqual(["b", "c", "d"]);
+  });
+
+  it("deals a brand-new card last, in backlog order", () => {
+    const out = deckTasks(
+      [task("y"), task("a"), task("x"), task("b")],
+      new Set(),
+      ["a", "b"],
+    );
+    expect(out.map((t) => t.id)).toEqual(["a", "b", "y", "x"]);
   });
 });
