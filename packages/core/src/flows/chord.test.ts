@@ -66,6 +66,22 @@ describe('buildPeopleFlows', () => {
     expect(money.parties.find((p) => p.id === 'a')).toMatchObject({ given: 20, received: 0, kind: 'person' });
   });
 
+  it('sends an expense with no split to every other member', () => {
+    const [money] = buildPeopleFlows({
+      ...base,
+      members: ['a', 'b', 'c'],
+      events: [],
+      expenses: [expense({ splitWith: [] })],
+    });
+    expect(cell(money, 'a', 'b')).toBe(10);
+    expect(cell(money, 'a', 'c')).toBe(10);
+    expect(money.total).toBe(20);
+  });
+
+  it('draws nothing for an unsplit expense without a roster', () => {
+    expect(buildPeopleFlows({ ...base, events: [], expenses: [expense({ splitWith: [] })] })).toEqual([]);
+  });
+
   it('draws the holon as a party: what is split with it, and what the treasury pays', () => {
     const [money] = buildPeopleFlows({
       ...base,

@@ -74,6 +74,7 @@
         "stopped": "Остановлено",
         "completed": "Завершено",
         "expensemessage": "Расход: {{amount}} {{currency}} за {{description}}\nОплачено: {{paidBy}}\nРазделено с: {{splitWith}}",
+        "expensesplitEveryone": "все",
         "expenseusage": "Использование: /{{command}} [сумма] [валюта] [описание] (например, /{{command}} 100 евро обед в ресторане)",
         "expenseadded": "Расход добавлен: {{amount}} {{currency}} за {{description}}",
         "expenseempty": "Нет записанных расходов, используйте /spent, чтобы добавить расходы ",

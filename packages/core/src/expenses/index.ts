@@ -11,6 +11,7 @@ export {
   computeBalances,
   computeCreditMatrix,
   computeUserCurrencyBalance,
+  expenseSharers,
   normalizeCurrency,
 } from './balance.js';
 export {

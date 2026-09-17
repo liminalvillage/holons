@@ -92,6 +92,25 @@ describe('buildLedger', () => {
     expect(owed.every((e) => e.amount === 30)).toBe(true);
   });
 
+  it('shares an expense with no split among every member', () => {
+    const { entries } = ledger({
+      expenses: [expense({ splitWith: [] })],
+      members: ['ana', 'ben', 'cyd'],
+    });
+    const paid = entries.find((e) => e.direction === 'in')!;
+    expect(paid.amount).toBe(90);
+    expect(paid.participants).toEqual(['ana', 'ben', 'cyd']);
+    const owed = entries.filter((e) => e.direction === 'out');
+    expect(owed.map((e) => e.party)).toEqual(['ben', 'cyd']);
+    expect(owed.every((e) => e.amount === 30)).toBe(true);
+  });
+
+  it('has nobody owing an unsplit expense when no roster is given', () => {
+    const { entries } = ledger({ expenses: [expense({ splitWith: [] })] });
+    expect(entries.filter((e) => e.direction === 'out')).toHaveLength(0);
+    expect(entries.find((e) => e.direction === 'in')!.amount).toBe(90);
+  });
+
   it('gives every row a unique id', () => {
     const { entries } = ledger({
       expenses: [expense(), expense({ id: 'e2', description: 'Fuel' })],

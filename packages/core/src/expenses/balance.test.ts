@@ -3,6 +3,7 @@ import {
   coerceSplitWith,
   computeBalances,
   computeUserCurrencyBalance,
+  expenseSharers,
   normalizeCurrency,
 } from './balance.js';
 import type { Expense, User } from './types.js';
@@ -43,6 +44,22 @@ describe('coerceSplitWith', () => {
   });
 });
 
+describe('expenseSharers', () => {
+  it('is the split when one is named', () => {
+    expect(expenseSharers({ splitWith: [2] }, [1, 2, 3])).toEqual([2]);
+  });
+
+  it('is the whole group when nobody is named', () => {
+    expect(expenseSharers({ splitWith: [] }, [1, 2, 3])).toEqual([1, 2, 3]);
+    expect(expenseSharers({ splitWith: undefined as never }, [1, 2])).toEqual([1, 2]);
+    expect(expenseSharers(null, [1])).toEqual([1]);
+  });
+
+  it('is nobody when nobody is named and there is no group', () => {
+    expect(expenseSharers({ splitWith: [] }, [])).toEqual([]);
+  });
+});
+
 describe('computeBalances', () => {
   it('splits a 30 EUR dinner three ways: payer is owed 20', () => {
     const { balances } = computeBalances([baseExpense({})], users, 'eur');
@@ -73,6 +90,13 @@ describe('computeBalances', () => {
     );
     expect(result.balances.every((b) => b.net === 0)).toBe(true);
   });
+
+  it('shares an expense with no split among every user', () => {
+    const { balances } = computeBalances([baseExpense({ splitWith: [] })], users, 'eur');
+    expect(balances.find((b) => b.userId === 1)!.net).toBeCloseTo(20);
+    expect(balances.find((b) => b.userId === 2)!.net).toBeCloseTo(-10);
+    expect(balances.find((b) => b.userId === 3)!.net).toBeCloseTo(-10);
+  });
 });
 
 describe('computeUserCurrencyBalance', () => {
@@ -82,5 +106,19 @@ describe('computeUserCurrencyBalance', () => {
 
   it('returns 0 when the currency has no expenses', () => {
     expect(computeUserCurrencyBalance([baseExpense({})], 1, 'jpy')).toBe(0);
+  });
+
+  it('shares an expense with no split among the members given', () => {
+    const unsplit = [baseExpense({ splitWith: [] })];
+    const members = users.map((u) => u.id);
+    expect(computeUserCurrencyBalance(unsplit, 1, 'eur', members)).toBeCloseTo(20);
+    expect(computeUserCurrencyBalance(unsplit, 2, 'eur', members)).toBeCloseTo(-10);
+    // Someone outside the group neither owes nor is owed.
+    expect(computeUserCurrencyBalance(unsplit, 999, 'eur', members)).toBe(0);
+  });
+
+  it('has nobody owing an unsplit expense when no group is given', () => {
+    expect(computeUserCurrencyBalance([baseExpense({ splitWith: [] })], 1, 'eur')).toBe(0);
+    expect(computeUserCurrencyBalance([baseExpense({ splitWith: [] })], 2, 'eur')).toBe(0);
   });
 });

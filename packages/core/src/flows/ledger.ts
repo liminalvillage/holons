@@ -23,7 +23,7 @@
  */
 
 import type { REAEvent } from '../rea/index.js';
-import { normalizeCurrency, coerceSplitWith, type Expense } from '../expenses/index.js';
+import { normalizeCurrency, expenseSharers, type Expense } from '../expenses/index.js';
 import { readTreasuryRate, splitHours, TREASURY_ID } from '../governance/index.js';
 import type { BuildFlowsInput } from './build.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
@@ -126,7 +126,7 @@ export function buildLedger(input: BuildFlowsInput): LedgerResult {
 		},
 	};
 
-	collectExpenses(collector, input.expenses ?? [], inWindow, label);
+	collectExpenses(collector, input.expenses ?? [], input.members ?? [], inWindow, label);
 	const events = (input.events ?? []).filter((e) => e && inWindow(e.timestamp));
 	collectReaMoney(collector, events, label);
 	collectCollective(collector, input.collective ?? null, inWindow);
@@ -138,11 +138,13 @@ export function buildLedger(input: BuildFlowsInput): LedgerResult {
 
 /**
  * The expenses lens is canonical for shared money: `paidBy` funds the holon and
- * each sharer owes their split back out.
+ * each sharer owes their split back out. An expense with no split is shared by
+ * every member.
  */
 function collectExpenses(
 	out: Collector,
 	expenses: Expense[],
+	members: readonly string[],
 	inWindow: (ts: unknown) => boolean,
 	label: (id: string, fallback?: string) => string,
 ): void {
@@ -158,7 +160,7 @@ function collectExpenses(
 		const reference = String(expense.id ?? '');
 		const description = String(expense.description ?? '');
 		const payer = String(expense.paidBy ?? '');
-		const splitWith = coerceSplitWith(expense.splitWith);
+		const splitWith = expenseSharers(expense, members);
 		const isTreasury = payer === TREASURY_ID;
 		const payerName = isTreasury ? 'Treasury' : payer ? label(payer) : '';
 		// A repayment between members is a transfer, not a cost — say so.

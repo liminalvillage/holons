@@ -23,11 +23,11 @@ export interface Expense {
   /** ID of the agent who paid. */
   paidBy: AgentId;
   /**
-   * IDs of the people who share the cost — always an explicit list. A UI's
-   * "everyone" / "all" is only a shortcut that selects every member; it is
-   * never stored as a marker. Empty means nobody has been selected yet, so
-   * nobody owes anything. May arrive as a non-array from older records;
-   * consumers should normalize via `coerceSplitWith`.
+   * IDs of the people who share the cost. Empty means the expense is for the
+   * entire group: every member shares it, the payer included. A UI's
+   * "everyone" shortcut may spell the members out or leave the list empty;
+   * both read the same through `expenseSharers`. May arrive as a non-array
+   * from older records; consumers should normalize via `coerceSplitWith`.
    */
   splitWith: AgentId[];
   /** Optional Telegram file_id for an attached receipt. */

@@ -28,6 +28,7 @@
     expenseCurrency,
     isSettlement,
     coerceSplitWith,
+    expenseSharers,
     type CreditPair,
     type Expense,
   } from "@holons/core/expenses";
@@ -121,8 +122,12 @@
     return 0;
   }
 
+  // An expense with no split is for the entire group; core reads the sharers.
+  $: sharers = (e: Expense): string[] =>
+    expenseSharers(e, people.map((p) => p.id)).map(String);
+
   function share(e: Expense): number {
-    const n = coerceSplitWith(e.splitWith).length || 1;
+    const n = sharers(e).length || 1;
     return e.amount / n;
   }
 
@@ -132,14 +137,14 @@
       const to = coerceSplitWith(e.splitWith)[0];
       return `${who(e.paidBy)} paid ${who(to, false)} back`;
     }
-    const n = coerceSplitWith(e.splitWith).length;
+    const n = sharers(e).length;
     return `${who(e.paidBy)} paid · split ${n === 1 ? "1 way" : `${n} ways`}`;
   }
 
   /** The viewer's own take on a record: what it cost them, or earned them. */
   function myLine(e: Expense): { text: string; sign: "in" | "out" | "" } {
     if (!selfId) return { text: "", sign: "" };
-    const split = coerceSplitWith(e.splitWith).map(String);
+    const split = sharers(e);
     const paid = isMe(e.paidBy);
     const inSplit = split.includes(selfId);
     if (isSettlement(e)) {
@@ -592,7 +597,7 @@
         <dt>{isSettlement(e) ? "Paid to" : "Split with"}</dt>
         <dd>
           <ul class="chips">
-            {#each coerceSplitWith(e.splitWith) as id (String(id))}
+            {#each sharers(e) as id (id)}
               <li class="chip">
                 <Avatar id={String(id)} name={nameOf(id)} size={22} />
                 {who(id)}

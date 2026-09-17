@@ -37,7 +37,7 @@
  */
 
 import type { REAEvent } from '../rea/index.js';
-import { coerceSplitWith, normalizeCurrency } from '../expenses/index.js';
+import { expenseSharers, normalizeCurrency } from '../expenses/index.js';
 import { TREASURY_ID } from '../governance/index.js';
 import type { BuildFlowsInput } from './build.js';
 import { DEFAULT_LEDGER_WINDOW_DAYS } from './ledger.js';
@@ -199,6 +199,7 @@ export function buildPeopleFlows(input: BuildPeopleFlowsInput): PeopleFlowTrack[
   const nameOf = input.nameOf ?? (() => undefined);
   const label = (id: string) => (id === holon ? hubLabel : nameOf(id) || id);
   const involving = input.involving ? String(input.involving) : '';
+  const members = input.members ?? [];
 
   /** Who a record's agent is on the ring, or null for someone who is not a party. */
   const partyOf = (rawId: unknown, agent?: Agent): Party | null => {
@@ -253,7 +254,8 @@ export function buildPeopleFlows(input: BuildPeopleFlowsInput): PeopleFlowTrack[
     const amount = Number(expense.amount);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const payer = partyOf(expense.paidBy);
-    const splitWith = coerceSplitWith(expense.splitWith);
+    // An expense with no split is for the entire group.
+    const splitWith = expenseSharers(expense, members);
     if (!payer || !splitWith.length) continue;
     const unit = normalizeCurrency(expense.currency || expense.unit);
     const isTime = record.fromTimeTracking === true || unit === 'hour';

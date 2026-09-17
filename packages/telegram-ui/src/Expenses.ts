@@ -495,7 +495,8 @@ export default class Expenses {
         // Get all splitters' info and map to display names
         const splitNames = await Promise.all(coerceSplitWith(expense.splitWith).map((userId: number | string) => this.getDisplayName(holonId, userId)));
 
-        const splitWith = splitNames.length > 0 ? splitNames.join(", ") : '—';
+        // No split means the entire group shares it.
+        const splitWith = splitNames.length > 0 ? splitNames.join(", ") : i18next.t('expensesplitEveryone');
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
@@ -511,7 +512,10 @@ export default class Expenses {
     async getUserCurrencyBalance(holonId: number | string, userID: number | string, currencyName: string) {
         const expenses = await this.db.getAll(holonId.toString(), 'expenses');
         if (!expenses || expenses.length === 0) return 0;
-        return computeUserCurrencyBalance(expenses as Expense[], userID as AgentId, currencyName);
+        // An expense with no split is shared by every member of the group.
+        const users = await this.db.getAll(holonId.toString(), 'users');
+        const members = (users ?? []).map((u: any) => u?.id as AgentId).filter((id: AgentId) => id != null);
+        return computeUserCurrencyBalance(expenses as Expense[], userID as AgentId, currencyName, members);
     }
 
     // Show participant selection interface with checklist-style user selection

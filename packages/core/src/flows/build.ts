@@ -45,6 +45,11 @@ export interface BuildFlowsInput {
   settings?: unknown;
   /** Resolve an agent id to a display name. */
   nameOf?: (id: string) => string | undefined;
+  /**
+   * Everyone in the holon. An expense with no split is for the entire group,
+   * so this is who shares it; without a roster such an expense has no sharers.
+   */
+  members?: readonly string[];
   now?: number;
   /** `null` means all time. Ignored when `window` is given. */
   windowDays?: number | null;

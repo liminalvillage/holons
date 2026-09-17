@@ -4,6 +4,7 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
+	import { expenseSharers } from "@holons/core/expenses";
 	import { REAEventFactory } from "@holons/core/rea";
 	import { getEventStore } from "../lib/rea/eventStore";
 
@@ -797,7 +798,7 @@
 								</p>
 								<p class="split-with">
 									Split:
-									{#each (Array.isArray(expense.splitWith) ? expense.splitWith : []) as id}
+									{#each expenseSharers(expense, users.map((u) => String(u.id))) as id}
 										<span class="user-chip">
 											<img
 												class="user-avatar user-avatar--sm"

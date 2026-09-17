@@ -74,6 +74,7 @@
         "stopped": "Arrêté",
         "completed": "Terminé",
         "expensemessage": "Dépense : {{amount}} {{currency}} pour {{description}}\nPayé par : {{paidBy}}\nPartagé avec : {{splitWith}}",
+        "expensesplitEveryone": "tout le monde",
         "expenseusage": "Utilisation : /{{command}} [montant] [devise] [description] (ex. /{{command}} 10 EUR pour le déjeuner)",
         "expenseadded": "Dépense ajoutée : {{amount}} {{currency}} pour {{description}}",
         "expenseempty": "Il n'y a pas de dépenses enregistrées, utilisez /depenser pour ajouter des dépenses",

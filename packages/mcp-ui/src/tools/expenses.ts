@@ -72,6 +72,24 @@ async function loadExpenses(
   throw new Error('Provide either "expenses" (JSON array) or "holon"');
 }
 
+/**
+ * The group an expense with no split is shared by: the ids given, else the
+ * holon's users lens, else nobody.
+ */
+async function loadMembers(
+  deps: ToolDeps,
+  args: { members?: Array<string | number>; holon?: string }
+): Promise<AgentId[]> {
+  if (Array.isArray(args.members) && args.members.length > 0) return args.members as AgentId[];
+  if (typeof args.holon === 'string' && args.holon.length > 0) {
+    const h = await deps.getHoloSphere();
+    const raw = await h.getAll(args.holon, 'users');
+    const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw) : [];
+    return (list as Array<{ id?: AgentId }>).map((u) => u?.id).filter((id): id is AgentId => id != null);
+  }
+  return [];
+}
+
 export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     'expense_create',
@@ -182,11 +200,16 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
       holon: z.string().optional().describe('Holon id to fetch expenses from when "expenses" is omitted.'),
       userId: z.union([z.string(), z.number()]).describe('User whose net balance to compute.'),
       currency: z.string().describe('Currency code (will be normalized by core).'),
+      members: z
+        .array(z.union([z.string(), z.number()]))
+        .optional()
+        .describe('Everyone in the group; an expense with no split is shared by all of them. Defaults to the holon\'s users when "holon" is given.'),
     },
-    async ({ expenses, holon, userId, currency }) => {
+    async ({ expenses, holon, userId, currency, members }) => {
       try {
         const list = await loadExpenses(deps, { expenses, holon });
-        const net = calculateBalance(list, userId as AgentId, currency);
+        const roster = await loadMembers(deps, { members, holon });
+        const net = calculateBalance(list, userId as AgentId, currency, roster);
         return ok({ userId, currency, net, expenseCount: list.length });
       } catch (err) {
         return fail(err);
@@ -344,13 +367,17 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
         expenses: z.string().describe('JSON array of Expense objects.'),
         userId: z.union([z.string(), z.number()]).describe('User to score.'),
         currency: z.string().describe('Currency code (normalized internally).'),
+        members: z
+          .array(z.union([z.string(), z.number()]))
+          .optional()
+          .describe('Everyone in the group; an expense with no split is shared by all of them.'),
       },
     },
-    async ({ expenses, userId, currency }) => {
+    async ({ expenses, userId, currency, members }) => {
       try {
         const list = parseJson<Expense[]>(expenses, 'expenses');
         if (!Array.isArray(list)) throw new Error('"expenses" must be a JSON array');
-        const net = computeUserCurrencyBalance(list, userId as AgentId, currency);
+        const net = computeUserCurrencyBalance(list, userId as AgentId, currency, (members ?? []) as AgentId[]);
         return ok({ userId, currency, net, expenseCount: list.length });
       } catch (err) {
         return fail(err);

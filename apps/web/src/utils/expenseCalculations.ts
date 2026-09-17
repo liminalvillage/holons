@@ -64,7 +64,13 @@ export function calculateCurrencyBalance(
 ): number {
   if (!currency || !userId || users.length === 0) return 0;
   if (!users.some((u) => String(u.id) === String(userId))) return 0;
-  return computeUserCurrencyBalance(toCoreExpenses(expenses), userId, currency);
+  // An expense with no split is shared by every user.
+  return computeUserCurrencyBalance(
+    toCoreExpenses(expenses),
+    userId,
+    currency,
+    users.map((u) => u.id),
+  );
 }
 
 export function calculateCreditMatrix(

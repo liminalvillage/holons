@@ -74,6 +74,7 @@
         "stopped": "Gestoppt",
         "completed": "Abgeschlossen",
         "expensemessage": "Ausgabe: {{amount}} {{currency}} für {{description}}\nBezahlt von: {{paidBy}}\nGeteilt mit: {{splitWith}}",
+        "expensesplitEveryone": "alle",
         "expenseusage": "Verwendung: /{{command}} [Betrag] [Währung] [Beschreibung] (z.B. /{{command}} 100 Euro Mittagessen @ Restaurant)",
         "expenseadded": "Ausgabe hinzugefügt: {{amount}} {{currency}} für {{description}}",
         "expenseempty": "Es gibt keine aufgezeichneten Ausgaben, verwenden Sie /spent, um Ausgaben hinzuzufügen ",

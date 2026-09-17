@@ -36,9 +36,8 @@ function stripDescriptionPreposition(description: string): string {
  * can keep their existing reply-on-failure code paths.
  *
  * Currency is normalized here too, so callers don't have to remember to do it.
- * `splitWith` is stored as given (empty when omitted): the split is always an
- * explicit list of people, and "everyone" is a UI shortcut that selects all
- * members rather than a value of its own.
+ * `splitWith` is stored as given (empty when omitted). An empty split means
+ * the whole group shares the cost — see `expenseSharers`.
  */
 export function createExpense(input: CreateExpenseInput): Expense | null {
   const amount = Number(input.amount);
@@ -65,7 +64,7 @@ const sameId = (a: AgentId, b: AgentId): boolean => String(a) === String(b);
 
 /**
  * Toggle a single user in/out of the split. Removing the last participant
- * leaves the split empty — nobody selected, nobody owing.
+ * leaves the split empty — which reads as the whole group sharing it.
  */
 export function toggleParticipant(expense: Expense, userId: AgentId): Expense {
   const current = coerceSplitWith(expense.splitWith);

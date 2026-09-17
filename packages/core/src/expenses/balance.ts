@@ -36,6 +36,23 @@ export function coerceSplitWith(value: unknown): AgentId[] {
 }
 
 /**
+ * Who shares an expense: the people named in `splitWith`, or — when nobody is
+ * named — the whole group. An expense without a splitter is for everyone, so
+ * `members` is the roster the cost falls on in that case (the payer included,
+ * if they are a member; their own share is never owed to themselves).
+ *
+ * Callers with no roster to offer pass `[]`, and an unsplit expense then has
+ * no sharers at all.
+ */
+export function expenseSharers(
+  expense: Pick<Expense, 'splitWith'> | null | undefined,
+  members: readonly AgentId[],
+): AgentId[] {
+  const named = coerceSplitWith(expense?.splitWith);
+  return named.length > 0 ? named : [...members];
+}
+
+/**
  * Build the NxN credit matrix for `currency` over `expenses`.
  *
  * Convention: `matrix[payer][debtor] += share` and the inverse is decremented,
@@ -46,6 +63,7 @@ export function coerceSplitWith(value: unknown): AgentId[] {
  * - `allowedCurrencies`, when non-empty, gates which currencies count.
  * - Expenses whose payer is unknown are skipped.
  * - Self-shares (payer in their own splitWith) are not double-counted.
+ * - An expense with an empty split is shared by every user in `users`.
  */
 export function computeCreditMatrix(
   expenses: Expense[],
@@ -71,7 +89,7 @@ export function computeCreditMatrix(
     const payerIdx = indexById.get(String(expense.paidBy)) ?? -1;
     if (payerIdx === -1) continue;
 
-    const splitWith = coerceSplitWith(expense.splitWith);
+    const splitWith = expenseSharers(expense, userIds);
     const share = expense.amount / (splitWith.length > 0 ? splitWith.length : 1);
 
     for (const memberId of splitWith) {
@@ -109,11 +127,16 @@ export function computeBalances(
  * does not require a full user list — useful for "what do I owe?" lookups.
  *
  * Sign matches `computeBalances`: positive = user is owed; negative = owes.
+ *
+ * `members` is the whole group, which an expense with no split is shared by.
+ * Without it such an expense has no sharers: the payer is owed nothing and
+ * nobody owes them.
  */
 export function computeUserCurrencyBalance(
   expenses: Expense[],
   userId: AgentId,
-  currency: string
+  currency: string,
+  members: readonly AgentId[] = []
 ): number {
   const normalizedCurrency = normalizeCurrency(currency);
   if (!normalizedCurrency || !expenses?.length) return 0;
@@ -123,13 +146,14 @@ export function computeUserCurrencyBalance(
   for (const expense of expenses) {
     if (!expense || normalizeCurrency(expense.currency) !== normalizedCurrency) continue;
 
-    const splitWith = coerceSplitWith(expense.splitWith);
+    const splitWith = expenseSharers(expense, members);
     const share = expense.amount / (splitWith.length > 0 ? splitWith.length : 1);
     const userInSplit = splitWith.some((id) => String(id) === userKey);
     const isPayer = String(expense.paidBy) === userKey;
 
     if (isPayer) {
-      net += expense.amount;
+      // Owed by every sharer but themselves; an expense nobody shares is owed by nobody.
+      if (splitWith.length > 0) net += expense.amount;
       if (userInSplit) net -= share;
     } else if (userInSplit) {
       net -= share;

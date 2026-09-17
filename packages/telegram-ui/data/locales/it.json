@@ -148,6 +148,7 @@
         "tasklocation": "Il {{quest.type}} \"{{quest.title}}\" si trova a {{location}}!",
         "taskscheduled": "Il {{quest.type}} \"{{quest.title}}\" è programmato per {{date}}!",
         "expensemessage": "Spesa: {{amount}} {{currency}} per {{description}}\nPagato da: {{paidBy}}\nDiviso con: {{splitWith}}",
+        "expensesplitEveryone": "tutti",
         "settings_edit_purpose": "✏️ Modifica Scopo",
         "settings_exit_remove_mode": "🔙 Esci dalla Modalità Rimozione",
         "settings_add": "➕ Aggiungi",
