@@ -176,6 +176,9 @@ export class Calendar {
   // --------------------------------------------------------------------------
   // Bot-API specific adapters
   // --------------------------------------------------------------------------
+  // Adapter methods run with `this` = the Calendar. Only a parameter spelled
+  // `this` is erased by TypeScript — any other name (`_this`) is a real
+  // positional argument and shifts the caller's arguments by one.
 
   NodeTelegramBotApi: any = {
     editMessageReplyMarkupCalendar(this: Calendar, date: any, query: any) {
@@ -214,7 +217,7 @@ export class Calendar {
         query.message.message_id,
       );
     },
-    replyMarkupObject(_this: Calendar, cnk: any) {
+    replyMarkupObject(cnk: any) {
       const menu: any = {};
       menu.reply_markup = cnk;
       return menu;
@@ -377,10 +380,10 @@ export class Calendar {
           this.chats.set(msg_promise.chat.id, msg_promise.message_id),
         );
     },
-    deleteMessage(_this: Calendar, ctx: any) {
+    deleteMessage(ctx: any) {
       ctx.deleteMessage();
     },
-    replyMarkupObject(_this: Calendar, cnk: any) {
+    replyMarkupObject(cnk: any) {
       const menu: any = {};
       menu.reply_markup = cnk;
       return menu;
@@ -546,7 +549,7 @@ export class Calendar {
         query.message.message_id,
       );
     },
-    replyMarkupObject(_this: Calendar, cnk: any) {
+    replyMarkupObject(cnk: any) {
       const menu: any = {};
       menu.replyMarkup = cnk;
       return menu;
@@ -591,10 +594,10 @@ export class Calendar {
           this.chats.set(msg_promise.chat.id, msg_promise.message_id),
         );
     },
-    deleteMessage(_this: Calendar, ctx: any) {
+    deleteMessage(ctx: any) {
       ctx.deleteMessage();
     },
-    replyMarkupObject(_this: Calendar, cnk: any) {
+    replyMarkupObject(cnk: any) {
       const menu: any = {};
       menu.reply_markup = cnk;
       return menu;

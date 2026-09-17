@@ -3,7 +3,7 @@ import categoryTypes from '../data/roles.json' with { type: 'json' };
 import { createPaddedCaption } from '../src/utilities.js';
 
 import fs from 'fs';
-import { mergeDna } from '../src/dna.js';
+import { completeStep } from './flow.js';
 
 // Create a scene
 const categoriesScene = new Scenes.BaseScene('categories');
@@ -83,21 +83,10 @@ categoriesScene.action(/explain_(.+)/, ctx => {
   } else ctx.answerCbQuery(category[0].description);
 });
 
-categoriesScene.action(/category_(.+)/, ctx => {
+categoriesScene.action(/category_(.+)/, async ctx => {
+  await ctx.answerCbQuery().catch(() => {});
   ctx.session.category = ctx.callbackQuery.data.split('_')[1];
-  if (!ctx.session.wizard) {
-    // save the new data to the database
-    void mergeDna(ctx.session.db, ctx.from.id, {
-      category: ctx.session.category,
-    });
-    ctx.session.sceneStack.pop();
-    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
-    return;
-  }
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  return completeStep(ctx, { category: ctx.session.category });
 });
 
 // Export the scene

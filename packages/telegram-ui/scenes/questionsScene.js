@@ -2,7 +2,7 @@ import { Scenes, Markup } from 'telegraf';
 import { getQuestions } from '../src/AI.js';
 import questionsData from '../data/questions.json' with { type: 'json' };
 import enquiryTypes from '../data/enquiries.json' with { type: 'json' };
-import { mergeDna } from '../src/dna.js';
+import { completeStep, nextStep } from './flow.js';
 
 // Create a scene
 export const questionsScene = new Scenes.BaseScene('questions');
@@ -13,12 +13,7 @@ questionsScene.enter(ctx =>
   )
 );
 
-questionsScene.action('done', ctx => {
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-});
+questionsScene.action('done', ctx => nextStep(ctx));
 
 questionsScene.on('text', async ctx => {
   //ask ai to select questions from ctx.message.text
@@ -52,10 +47,7 @@ questionsScene.action(/explain_(.+)/, ctx => {
 
 questionsScene.action(/enquiry_(.+)/, ctx => {
   ctx.session.enquiry = ctx.callbackQuery.data.split('_')[1];
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  return nextStep(ctx);
 });
 
 export function createScenesForQuestions() {
@@ -69,12 +61,12 @@ function createScene(question) {
   const scene = new Scenes.BaseScene(`question_${question.questionID}`);
 
   scene.enter(ctx => {
-    const userId = ctx.from.id;
+    const lastAnswer = ctx.session.userResponses?.at(-1)?.answer;
     const questionDetails = question.languages.EN; // Adjust based on user's language
     // Check if the question should be enabled based on previous answers
     if (
       question.enablingAnswers.length === 0 ||
-      question.enablingAnswers.includes(this.userResponses[userId]?.lastAnswer)
+      question.enablingAnswers.includes(lastAnswer)
     ) {
       ctx.replyWithHTML(
         `<b>${questionDetails.questionTopic}</b>\n${questionDetails.questionDescription}`,
@@ -105,21 +97,7 @@ function createScene(question) {
       );
     } else {
       ctx.reply('Thank you for completing the questions!');
-      if (!ctx.session.wizard) {
-        // save the new data to the database
-        void mergeDna(ctx.session.db, ctx.from.id, {
-          questions: ctx.session.questions,
-        });
-        ctx.session.sceneStack.pop();
-        ctx.scene.enter(
-          ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-        );
-        return;
-      }
-      ctx.session.stage += 1;
-      if (ctx.session.stage === ctx.session.sequence.length)
-        ctx.scene.enter('done');
-      else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+      return completeStep(ctx, { questions: ctx.session.userResponses });
     }
   });
   return scene;

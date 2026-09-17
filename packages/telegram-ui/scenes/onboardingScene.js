@@ -1,5 +1,6 @@
 import { Scenes } from 'telegraf';
 import { onboarding } from '../src/AI.js';
+import { nextStep } from './flow.js';
 
 // Create a scene for onboarding
 const onboardingScene = new Scenes.BaseScene('onboarding');
@@ -12,36 +13,20 @@ onboardingScene.enter(ctx => {
   ctx.session.thread = null;
 });
 
-onboardingScene.command('done', async ctx => {
-  try {
-    ctx.session.stage += 1;
-    if (ctx.session.stage === ctx.session.sequence?.length) {
-      ctx.scene.enter('done');
-    } else {
-      if (ctx.session.sequence)
-        ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-      else ctx.scene.leave();
-    }
-  } catch (error) {
-    console.error('Error in summarizing:', error);
-    ctx.reply('An error occurred while summarizing.');
-  }
-});
+onboardingScene.command(['done', 'next'], ctx => nextStep(ctx));
 
 onboardingScene.on('text', async ctx => {
-  //ask ai to select questions from ctx.message.text
-  const answer = await onboarding(ctx.session.thread, ctx.message.text);
-  console.log(answer.thread, answer.text);
-  ctx.session.thread = answer.thread;
-  if (answer) ctx.reply(answer.text);
-  //ctx.scene.enter('question_' + questions.questions[0].questionID); // Transition to the first question
-});
-
-onboardingScene.command('next', ctx => {
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  try {
+    const answer = await onboarding(ctx.session.thread, ctx.message.text);
+    if (!answer) return;
+    ctx.session.thread = answer.thread;
+    await ctx.reply(answer.text);
+  } catch (error) {
+    console.error('Error answering onboarding question:', error);
+    await ctx.reply(
+      'Sorry, I could not answer that right now. Type /done to continue.'
+    );
+  }
 });
 
 // Export the scene

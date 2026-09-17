@@ -4,8 +4,10 @@
  */
 
 import h3Scene from '../scenes/h3Scene.js';
-import arrivalbookingScene from '../scenes/arrivalbookingScene.js';
-import departurebookingScene from '../scenes/departurebookingScene.js';
+import {
+  arrivalbookingScene,
+  departurebookingScene,
+} from '../scenes/bookingScenes.js';
 import videoScene from '../scenes/videoScene.js';
 import valuesScene from '../scenes/valuesScene.js';
 import categoriesScene from '../scenes/categoriesScene.js';
@@ -20,6 +22,19 @@ import summarizeScene from '../scenes/summarizeScene.js';
 import welcomeScene from '../scenes/welcomeScene.js';
 import { dnaScene, createScenesForDNA } from '../scenes/dnaScene.js';
 import done from '../scenes/doneScene.js';
+import { startSequence } from '../scenes/flow.js';
+
+/** The steps `/onboarding` walks, in order. */
+const ONBOARDING_SEQUENCE = [
+  'welcome',
+  'arrivalbooking',
+  'departurebooking',
+  'categories',
+  'values',
+  'location',
+  'saveprofile',
+  'onboarding',
+];
 
 /**
  * User onboarding system with multi-step scene flows.
@@ -32,7 +47,6 @@ import done from '../scenes/doneScene.js';
  *
  * @property {Object} bot - Telegraf bot instance
  * @property {DB} db - Database instance
- * @property {Object} userResponses - Temporary storage for user responses
  *
  * @example
  * const onboarding = new Onboarding(bot, db);
@@ -46,7 +60,6 @@ export default class Onboarding {
   constructor(bot, db) {
     this.db = db;
     this.bot = bot;
-    this.userResponses = {};
 
     const scenes = [
       welcomeScene,
@@ -72,20 +85,8 @@ export default class Onboarding {
     });
 
     bot.command('onboarding', ctx => {
-      ctx.session.stage = 0;
-      ctx.session.sequence = [
-        'welcome',
-        'arrivalbooking',
-        'departurebooking',
-        'categories',
-        'values',
-        'location',
-        'saveprofile',
-        'onboarding',
-      ];
-      ctx.session.db = this.db;
       ctx.session.userResponses = [];
-      ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+      return startSequence(ctx, ONBOARDING_SEQUENCE, this.db);
     });
 
     bot.command('summarize', ctx => {

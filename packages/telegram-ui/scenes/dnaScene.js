@@ -1,33 +1,18 @@
 import { Scenes, Markup } from 'telegraf';
 
 import dnaData from '../data/dna.json' with { type: 'json' };
-import enquiryTypes from '../data/enquiries.json' with { type: 'json' };
+import { mergeDna } from '../src/dna.js';
+import { endSequence, finishSequence } from './flow.js';
 
-// Create a scene
+// A community's DNA: the questions in data/dna.json, asked in a group chat and
+// answered from the community's perspective. The answers are the group's, so
+// they are saved in the group's own holon — and the run ends there: the steps
+// that follow in /onboarding (arrival, values, …) are a person's.
 export const dnaScene = new Scenes.BaseScene('dna');
 
 dnaScene.enter(ctx => {
-  ctx.session.dna_sequence = '';
-  ctx.session.currentdna = 0;
-  ctx.scene.enter('dna_' + ctx.session.currentdna);
-});
-
-dnaScene.action(/explain_(.+)/, ctx => {
-  const topic = ctx.callbackQuery.data.split('_')[1];
-  const enquiry = enquiryTypes.enquiries.filter(
-    enquiry => enquiry.name === topic
-  );
-  if (enquiry.length === 0) {
-    ctx.answerCbQuery('No description available');
-    return;
-  } else ctx.answerCbQuery(enquiry[0].description);
-});
-
-dnaScene.action('done', ctx => {
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  ctx.session.dnaAnswers = {};
+  return ctx.scene.enter('dna_0');
 });
 
 export function createScenesForDNA() {
@@ -40,38 +25,53 @@ export function createScenesForDNA() {
 function createScene(question, index) {
   const scene = new Scenes.BaseScene(`dna_${index}`);
 
-  scene.enter(ctx => {
+  scene.enter(ctx =>
     ctx.replyWithHTML(
       `<b>${question.description}</b>\n`,
       createOptionMarkup(question.options)
-    );
-  });
+    )
+  );
 
-  scene.action(/.*/, ctx => {
-    //should store the requirement and enter the next scene
-    const userId = ctx.from.id;
-    ctx.answerCbQuery();
-    ctx.session.userResponses[userId] = {
-      lastAnswer: ctx.match[0],
+  scene.action(/^dna_(\d+)$/, async ctx => {
+    await ctx.answerCbQuery().catch(() => {});
+    const answer = question.options[Number(ctx.match[1])];
+    if (answer === undefined) return;
+
+    ctx.session.dnaAnswers = {
+      ...ctx.session.dnaAnswers,
+      [question.id]: answer,
     };
+    await ctx
+      .editMessageText(`<b>${question.description}</b>\n${answer}`, {
+        parse_mode: 'HTML',
+      })
+      .catch(() => {});
 
-    ctx.session.currentdna += 1;
-    if (ctx.session.currentdna != ctx.session.dna_sequence.length) {
-      ctx.scene.enter(`dna_${ctx.session.currentdna}`);
-    } else {
-      ctx.reply('Thank you for completing the questions!');
-      ctx.session.stage += 1;
-      if (ctx.session.stage === ctx.session.sequence.length)
-        ctx.scene.enter('done');
-      else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+    if (index + 1 < dnaData.dna.length) {
+      return ctx.scene.enter(`dna_${index + 1}`);
     }
+
+    const saved = await mergeDna(ctx.session.db, ctx.chat.id, {
+      community: ctx.session.dnaAnswers,
+    });
+    if (!saved) {
+      endSequence(ctx);
+      await ctx.reply(
+        "Sorry, I could not save your community's DNA. Please run /onboarding again."
+      );
+      return ctx.scene.leave();
+    }
+    ctx.session.saved = 'community';
+    return finishSequence(ctx);
   });
   return scene;
 }
 
+// The button carries the option's position, not its text: Telegram caps
+// callback data at 64 bytes and the longest option is already 61.
 function createOptionMarkup(options) {
   return Markup.inlineKeyboard(
-    options.map(option => [Markup.button.callback(option, option)])
+    options.map((option, i) => [Markup.button.callback(option, `dna_${i}`)])
   );
 }
 

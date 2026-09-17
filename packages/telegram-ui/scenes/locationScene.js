@@ -1,5 +1,5 @@
 import { Scenes } from 'telegraf';
-import { mergeDna } from '../src/dna.js';
+import { backToMenu, completeStep } from './flow.js';
 
 // Create a scene for location input - using InputScene pattern
 const locationScene = new Scenes.BaseScene('location');
@@ -14,45 +14,9 @@ locationScene.enter(ctx => {
     showCancelButton: true,
     onComplete: async (ctx, location) => {
       ctx.session.location = location;
-
-      if (!ctx.session.wizard) {
-        // save the new data to the database
-        void mergeDna(ctx.session.db, ctx.from.id, {
-          location: ctx.session.location,
-        });
-        if (ctx.session.sceneStack) {
-          ctx.session.sceneStack.pop();
-          if (ctx.session.sceneStack.length > 0) {
-            ctx.scene.enter(
-              ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-            );
-          }
-        }
-        return;
-      }
-
-      ctx.session.stage += 1;
-      if (!ctx.session.sequence) {
-        ctx.scene.leave();
-        return;
-      }
-      if (ctx.session.stage === ctx.session.sequence.length) {
-        ctx.scene.enter('done');
-      } else {
-        ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-      }
+      return completeStep(ctx, { location });
     },
-    onCancel: async ctx => {
-      // Handle cancellation - return to previous scene or leave
-      if (ctx.session.sceneStack && ctx.session.sceneStack.length > 0) {
-        ctx.session.sceneStack.pop();
-        if (ctx.session.sceneStack.length > 0) {
-          ctx.scene.enter(
-            ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-          );
-        }
-      }
-    },
+    onCancel: async ctx => backToMenu(ctx),
   });
 });
 

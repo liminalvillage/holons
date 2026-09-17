@@ -1,5 +1,5 @@
 import { Scenes } from 'telegraf';
-import { mergeDna } from '../src/dna.js';
+import { backToMenu, completeStep } from './flow.js';
 
 // Create a scene for video input - using InputScene pattern
 const videoScene = new Scenes.BaseScene('video');
@@ -17,41 +17,9 @@ videoScene.enter(ctx => {
     onComplete: async (ctx, media) => {
       // Store the video in session
       ctx.session.video = media.file;
-
-      if (!ctx.session.wizard) {
-        // save the new data to the database
-        void mergeDna(ctx.session.db, ctx.from.id, {
-          video: ctx.session.video,
-        });
-        if (ctx.session.sceneStack) {
-          ctx.session.sceneStack.pop();
-          if (ctx.session.sceneStack.length > 0) {
-            ctx.scene.enter(
-              ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-            );
-          }
-        }
-        return;
-      }
-
-      ctx.session.stage += 1;
-      if (ctx.session.stage === ctx.session.sequence.length) {
-        ctx.scene.enter('done');
-      } else {
-        ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-      }
+      return completeStep(ctx, { video: ctx.session.video });
     },
-    onCancel: async ctx => {
-      // Handle cancellation - return to previous scene or leave
-      if (ctx.session.sceneStack && ctx.session.sceneStack.length > 0) {
-        ctx.session.sceneStack.pop();
-        if (ctx.session.sceneStack.length > 0) {
-          ctx.scene.enter(
-            ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-          );
-        }
-      }
-    },
+    onCancel: async ctx => backToMenu(ctx),
   });
 });
 

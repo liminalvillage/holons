@@ -1,5 +1,5 @@
 import { Scenes, Markup } from 'telegraf';
-import { mergeDna } from '../src/dna.js';
+import { completeStep } from './flow.js';
 
 // Define the values that can function as the user's DNA
 const values = [
@@ -21,7 +21,7 @@ const valuesScene = new Scenes.BaseScene('values');
 // Entry point for the scene
 valuesScene.enter(ctx => {
   ctx.session.page = 0; // Initialize page number
-  ctx.session.selectedValues = []; // Initialize selected values
+  ctx.session.selectedValues = {}; // value → picked?
   ctx
     .reply(
       'Great! Now Please select the values that represent you the most:',
@@ -99,21 +99,11 @@ valuesScene.action('next_page', ctx => {
     });
 });
 
-valuesScene.action('done_picking', ctx => {
-  if (!ctx.session.wizard) {
-    // save the new data to the database
-    void mergeDna(ctx.session.db, ctx.from.id, { values: ctx.session.values });
-    valuesScene.leave();
-    ctx.session.sceneStack.pop();
-    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
-    return;
-  }
-
-  ctx.session.stage += 1;
-  ctx.session.values = Object.keys(ctx.session.selectedValues);
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+valuesScene.action('done_picking', async ctx => {
+  await ctx.answerCbQuery().catch(() => {});
+  // Only what is still ticked: a value tapped twice is in the map as `false`.
+  ctx.session.values = values.filter(v => ctx.session.selectedValues[v]);
+  return completeStep(ctx, { values: ctx.session.values });
 });
 
 // Export the scene
