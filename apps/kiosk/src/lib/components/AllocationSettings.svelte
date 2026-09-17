@@ -41,6 +41,7 @@
     saveAllocationConfig,
     saveCollectiveSlug,
     sharesFromMembers,
+    interiorSharePercentages,
     type AllocationConfig,
     type AllocationMember,
     type HolonBundleRecord,
@@ -271,11 +272,15 @@
   // The custom split as rows, named from the roster (then the scored roster),
   // with the equation's share beside each for comparison.
   $: scoredOf = new Map(scored.map((m) => [m.id, m]));
+  // The boxes hold plain numbers — 1/2/1 or 25/50/25, either is a split —
+  // and the percentage each amounts to is worked out beside it.
+  $: shareOfTotal = interiorSharePercentages(shareOf);
   $: shareRows = Object.keys(shareOf).map((id) => ({
     id,
     name: nameOfPerson.get(id) ?? scoredOf.get(id)?.name ?? id,
     scored: scoredOf.get(id)?.percentage,
     text: shareText[id] ?? pct(shareOf[id]),
+    ofTotal: shareOfTotal[id] ?? 0,
   }));
   $: sharesTotal = Object.values(shareOf).reduce(
     (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
@@ -632,12 +637,14 @@
                     type="number"
                     inputmode="decimal"
                     min="0"
-                    step="0.1"
+                    step="any"
                     value={row.text}
                     on:input={(e) => setShare(row.id, e.currentTarget.value)}
                     aria-label={row.name}
                   />
-                  <span class="unit" aria-hidden="true">%</span>
+                  <span class="unit ofTotal"
+                    >{$t("alloc.zoneShare", { pct: pct(row.ofTotal) })}</span
+                  >
                   <button
                     class="drop"
                     on:click={() => removeShare(row.id)}
@@ -650,8 +657,13 @@
           </ul>
           <div class="totalrow">
             <span>{$t("alloc.splitTotal")}</span>
-            <span class="sum" class:off={Math.abs(sharesTotal - 100) > 0.05}
-              >{pct(sharesTotal)}%</span
+            <span class="sum"
+              >{pct(sharesTotal)}
+              <span class="unit ofTotal"
+                >{$t("alloc.zoneShare", {
+                  pct: sharesTotal > 0 ? 100 : 0,
+                })}</span
+              ></span
             >
           </div>
         {:else}
@@ -1209,6 +1221,12 @@
     color: var(--muted);
     font-size: 0.9rem;
   }
+  .ofTotal {
+    flex: 0 0 auto;
+    min-width: 3.6rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
   .drop {
     flex: 0 0 44px;
     width: 44px;
@@ -1231,9 +1249,6 @@
   .sum {
     color: var(--teal-deep);
     font-variant-numeric: tabular-nums;
-  }
-  .sum.off {
-    color: #b7791f;
   }
   .rowactions {
     display: grid;

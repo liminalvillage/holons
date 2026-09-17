@@ -165,6 +165,24 @@ export function normalizeInteriorShares(raw: unknown): InteriorShares {
 }
 
 /**
+ * What each hand-set share comes to, as a percentage of the split.
+ *
+ * Shares are weights: 1/2/3, 50/25/25 or 33.3/33.3/33.3 all describe a split,
+ * and `allocate` reads them against their own sum. This is that same reading
+ * for an editor to show beside the box — so a caretaker can type plain
+ * numbers and see the percentages they amount to. Full precision; the caller
+ * rounds for display. An empty or all-zero split has no percentages.
+ */
+export function interiorSharePercentages(shares: InteriorShares | null | undefined): Record<string, number> {
+  const clean = normalizeInteriorShares(shares);
+  const total = Object.values(clean).reduce((s, v) => s + v, 0);
+  const out: Record<string, number> = {};
+  if (total <= 0) return out;
+  for (const [id, share] of Object.entries(clean)) out[id] = (share / total) * 100;
+  return out;
+}
+
+/**
  * The equation split as a custom one — what "copy from the value equation"
  * hands the editor.
  *

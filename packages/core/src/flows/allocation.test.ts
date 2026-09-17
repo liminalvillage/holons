@@ -7,6 +7,7 @@ import {
   normalizeInteriorShares,
   resolveInteriorMembers,
   sharesFromMembers,
+  interiorSharePercentages,
 } from './allocation.js';
 import { allocationToGraph, partyIdOf, partyNodeId, segmentTotal } from './allocation-graph.js';
 
@@ -435,12 +436,19 @@ describe('allocationToGraph', () => {
 });
 
 describe('allocationToGraph with fund usage', () => {
-  const usage = (parties: Record<string, { spent: number; claimed: number }>, unattributed = { spent: 0, claimed: 0 }) => ({
-    unit: 'eur',
-    parties: Object.fromEntries(Object.entries(parties).map(([id, use]) => [id, { eur: use }])),
-    unattributed: unattributed.spent + unattributed.claimed > 0 ? { eur: unattributed } : {},
-    unattributedPayees: [],
-  });
+  // `parties` is the windowed view, `lifetime` the cumulative one. The bars
+  // stack from lifetime — a right is spent for good, whatever period is on
+  // screen — so a fixture with no aged-out money gives both the same numbers.
+  const usage = (parties: Record<string, { spent: number; claimed: number }>, unattributed = { spent: 0, claimed: 0 }) => {
+    const perParty = Object.fromEntries(Object.entries(parties).map(([id, use]) => [id, { eur: use }]));
+    return {
+      unit: 'eur',
+      parties: perParty,
+      lifetime: perParty,
+      unattributed: unattributed.spent + unattributed.claimed > 0 ? { eur: unattributed } : {},
+      unattributedPayees: [],
+    };
+  };
 
   const result = allocate({
     total: 1000,
@@ -557,6 +565,26 @@ describe('interior mode', () => {
       normalizeInteriorShares({ a: 50, b: '25', c: 0, d: -1, e: 'x', '': 10 }),
     ).toEqual({ a: 50, b: 25 });
     expect(normalizeInteriorShares(null)).toEqual({});
+  });
+
+  it('interiorSharePercentages reads plain numbers as a split', () => {
+    // 1/2/1 is the same split as 25/50/25: the editor shows the percentages
+    // the weights amount to, and allocate() pays them the same way.
+    expect(interiorSharePercentages({ a: 1, b: 2, c: 1 })).toEqual({ a: 25, b: 50, c: 25 });
+    expect(interiorSharePercentages({ a: 25, b: 50, c: 25 })).toEqual({ a: 25, b: 50, c: 25 });
+    // Junk and non-positive shares are "not in", as everywhere else.
+    expect(interiorSharePercentages({ a: 3, b: 0, c: -1, d: NaN })).toEqual({ a: 100 });
+    expect(interiorSharePercentages({})).toEqual({});
+    expect(interiorSharePercentages(null)).toEqual({});
+    // The percentages shown are the ones allocate() pays.
+    const config = { interiorPercent: 100, steepness: 45, nzones: 5, interiorMode: 'custom' as const };
+    const members = resolveInteriorMembers({ config, scored: [], shares: { a: 1, b: 3 } });
+    const paid = allocate({ total: 400, config, members, zoned: [] });
+    const byId = new Map(paid.interior.map((s) => [s.id, s]));
+    expect(byId.get('a')?.percentage).toBeCloseTo(25);
+    expect(byId.get('b')?.percentage).toBeCloseTo(75);
+    expect(byId.get('a')?.amount).toBeCloseTo(100);
+    expect(byId.get('b')?.amount).toBeCloseTo(300);
   });
 
   it('sharesFromMembers copies the equation percentages exactly', () => {

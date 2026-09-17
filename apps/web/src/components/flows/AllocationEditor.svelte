@@ -36,6 +36,7 @@
     allocate,
     normalizeInteriorShares,
     sharesFromMembers,
+    interiorSharePercentages,
   } from "@holons/core/flows";
   import { ZONE_COLORS } from "../flow/types";
   import type {
@@ -126,11 +127,15 @@
   // The box shows a rounded figure; the split keeps the value equation's exact
   // one underneath, so a copied split pays exactly what the equation paid and
   // the number never jumps while it is being typed.
+  // The boxes hold plain numbers — 1/2/1 or 25/50/25, either is a split —
+  // and the percentage each amounts to is worked out beside it.
+  $: shareOfTotal = interiorSharePercentages(shares);
   $: shareRows = Object.keys(shares).map((id) => ({
     id,
     name: nameOf.get(id) ?? id,
     scored: scoredOf.get(id),
     text: shareText[id] ?? num(shares[id]),
+    ofTotal: shareOfTotal[id] ?? 0,
   }));
   $: sharesTotal = Object.values(shares).reduce(
     (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
@@ -464,8 +469,8 @@
         </div>
         {#if interiorMode === "custom"}
           <p class="muted">
-            Each member's share of the contributors' pot. Shares are read in
-            proportion to each other, so they need not sum to 100.
+            Enter any numbers — 1, 2, 3 or percentages. Each member's share is
+            their number out of the total, so they need not sum to 100.
           </p>
           {#if shareRows.length}
             <div class="shares">
@@ -480,12 +485,12 @@
                   <input
                     type="number"
                     min="0"
-                    step="0.1"
+                    step="any"
                     value={row.text}
                     on:input={(e) => setShare(row.id, (e.currentTarget as HTMLInputElement).value)}
                     aria-label="{row.name} share"
                   />
-                  <span class="share-unit">%</span>
+                  <span class="share-unit share-pct">{pct(row.ofTotal)}</span>
                   <button
                     type="button"
                     class="share-remove"
@@ -496,9 +501,9 @@
               {/each}
               <div class="share total">
                 <span class="share-name">Total</span>
-                <span class="share-sum" class:off={Math.abs(sharesTotal - 100) > 0.05}
-                  >{pct(sharesTotal)}</span
-                >
+                <span class="share-sum">{num(sharesTotal)}</span>
+                <span class="share-unit share-pct">{pct(sharesTotal > 0 ? 100 : 0)}</span>
+                <span class="share-spacer" aria-hidden="true"></span>
               </div>
             </div>
           {:else}
@@ -1021,6 +1026,12 @@
     font-size: 0.78rem;
   }
 
+  .share-pct {
+    min-width: 3.2rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
   .share-remove {
     width: 26px;
     height: 26px;
@@ -1028,6 +1039,11 @@
     background: #1e293b;
     color: #94a3b8;
     font-size: 0.75rem;
+  }
+
+  .share-spacer {
+    width: 26px;
+    flex: 0 0 26px;
   }
 
   .share.total {
@@ -1042,9 +1058,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .share-sum.off {
-    color: #f59e0b;
-  }
 
   .share-actions {
     display: flex;

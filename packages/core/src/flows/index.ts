@@ -104,6 +104,7 @@ export {
   DEFAULT_ALLOCATION_CONFIG,
   allocate,
   calculateZonePercentages,
+  interiorSharePercentages,
   normalizeAllocationConfig,
   normalizeInteriorShares,
   resolveInteriorMembers,

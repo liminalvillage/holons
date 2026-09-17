@@ -1130,6 +1130,7 @@ export const es: Record<MessageKey, Msg> = {
   "flows.unitAbout":
     "Una sola unidad para el movimiento y las personas. Una moneda también fija los saldos.",
   "flows.windowWeek": "Esta semana",
+  "flows.windowLunation": "Esta luna",
   "flows.windowMonth": "Este mes",
   "flows.windowYear": "Este año",
   "flows.windowCustom": "Personalizado",
@@ -1176,6 +1177,8 @@ export const es: Record<MessageKey, Msg> = {
   "flows.accountOverBy": "Excedido por",
   "flows.accountVia": "A través de",
   "flows.accountNoPot": "Los importes aparecen cuando se conecta un colectivo.",
+  "flows.claimAction": "Reclamar",
+  "flows.claimOpens": "Envía un gasto en OpenCollective",
   "flows.peopleTitle": "Entre personas",
   "flows.peopleAbout":
     "Quién dio qué a quién — cada flecha apunta a quien lo recibió.",
@@ -1312,7 +1315,7 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.splitEquationAbout":
     "Dividida por puntuación de contribución, como la ecuación de valor ordena hoy a los miembros.",
   "alloc.splitCustomAbout":
-    "La parte de cada miembro del fondo de los contribuidores. Las partes cuentan en proporción entre sí, no tienen que sumar 100.",
+    "Escribe cualquier número — 1, 2, 3 o porcentajes. La parte de cada uno es su número sobre el total, así que no tienen que sumar 100.",
   "alloc.splitScored": "ecuación {pct}%",
   "alloc.splitTotal": "Total",
   "alloc.splitEmpty":

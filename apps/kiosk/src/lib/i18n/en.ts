@@ -1112,6 +1112,7 @@ export const en = {
   "flows.unitAbout":
     "One unit for the movement and the people charts. A money currency also sets the balances.",
   "flows.windowWeek": "This week",
+  "flows.windowLunation": "This moon",
   "flows.windowMonth": "This month",
   "flows.windowYear": "This year",
   "flows.windowCustom": "Custom",
@@ -1157,6 +1158,8 @@ export const en = {
   "flows.accountOverBy": "Over by",
   "flows.accountVia": "Through",
   "flows.accountNoPot": "Amounts appear once a collective is connected.",
+  "flows.claimAction": "Claim",
+  "flows.claimOpens": "Submit an expense on OpenCollective",
   "flows.peopleTitle": "Between people",
   "flows.peopleAbout":
     "Who gave what to whom — each arrow points at the person who received it.",
@@ -1291,7 +1294,7 @@ export const en = {
   "alloc.splitEquationAbout":
     "Divided by contribution score, as the value equation ranks members today.",
   "alloc.splitCustomAbout":
-    "Each member's share of the contributors' pot. Shares are read in proportion to each other, so they need not sum to 100.",
+    "Enter any numbers — 1, 2, 3 or percentages. Each member's share is their number out of the total, so they need not sum to 100.",
   "alloc.splitScored": "equation {pct}%",
   "alloc.splitTotal": "Total",
   "alloc.splitEmpty":
