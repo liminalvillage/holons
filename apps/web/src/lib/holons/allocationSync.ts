@@ -20,17 +20,13 @@ import type { ethers } from "ethers";
 import type { HoloSphere } from "holosphere";
 import type { HolonsManager } from "./HolonsManager";
 import {
-  readBundleRecord,
+  chainInteriorRoster,
   resolveInteriorMembers,
   saveAllocationConfig,
   steepnessFromContract,
   steepnessToContract,
 } from "@holons/core/flows";
-import type {
-  HolonBundleRecord,
-  InteriorMode,
-  InteriorShares,
-} from "@holons/core/flows";
+import type { InteriorMode, InteriorShares } from "@holons/core/flows";
 
 /** The split as the UI holds it: percentages and a count, no WAD anywhere. */
 export interface AllocationDraft {
@@ -150,7 +146,13 @@ export async function syncAllocation(params: {
     interiorPercent: draft.interiorPercent,
     steepness: steepnessToContract(draft.steepness),
     nzones: draft.nzones,
-    interiorMembers: membersForSync(draft, members, shares).map((m) => ({
+    // An interior share with nobody in it seats the holon itself: the Bundle
+    // has no withdraw, so a pot paid to no one would be stranded.
+    interiorMembers: chainInteriorRoster(
+      holonId,
+      membersForSync(draft, members, shares),
+      draft.interiorPercent,
+    ).map((m) => ({
       userId: String(m.userId),
       percentage: m.percentage,
     })),
@@ -164,28 +166,4 @@ export async function syncAllocation(params: {
   }
 
   return tx;
-}
-
-/**
- * The deployed bundle for a holon, read from the canonical settings document.
- *
- * A single keyed lookup — the record lives at `settings/<holonId>`, not under a
- * random key — so this needs no wallet and no contract call.
- */
-export async function loadBundleRecord(
-  holosphere: HoloSphere | null,
-  holonId: string,
-): Promise<HolonBundleRecord | null> {
-  if (!holosphere || !holonId) return null;
-  try {
-    const settings = await holosphere.get(
-      String(holonId),
-      "settings",
-      String(holonId),
-    );
-    return readBundleRecord(settings);
-  } catch {
-    // No settings document yet, or the relay is quiet: no bundle to report.
-    return null;
-  }
 }

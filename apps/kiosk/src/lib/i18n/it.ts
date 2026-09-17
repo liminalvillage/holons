@@ -1165,6 +1165,18 @@ export const it: Record<MessageKey, Msg> = {
   "flows.available": "Disponibile",
   "flows.over": "Oltre",
   "flows.unattributed": "Fuori dai diritti",
+  "flows.passed": "Trasmesso",
+  "flows.retained": "Trattenuto",
+  "flows.tipRetainedAbout":
+    "Nessuno è indicato per questa parte, quindi resta all'holon.",
+  "flows.cascadeKeeps": "Trattiene",
+  "flows.cascadePassesTo": "Trasmette a",
+  "flows.cascadeFrom": "Ricevuto tramite",
+  "flows.cascadeMine":
+    "Le tue impostazioni di flusso trasmettono parte di ciò che ti arriva a {names}. Questo è ciò che trattieni.",
+  "flows.cascadeCycle":
+    "Questi flussi formano un ciclo: {names}. Il valore si ferma dove il ciclo si chiude.",
+  "flows.accountViaPassed": "Trasmesso a te",
   "flows.tipRight": "Diritto",
   "flows.tipPayees": "Pagato a",
   "flows.tipUnattributedAbout":

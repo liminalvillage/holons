@@ -42,6 +42,12 @@
     UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    cascadeToGraph,
+    childResolver,
+    hasAllocationConfig,
+    loadCascadeChildren,
+    resolveCascade,
+    type CascadeInputs,
     partyIdOf,
     segmentTotal,
     buildFundUsage,
@@ -337,6 +343,55 @@
     nameOf: (id) => nameMap.get(id) ?? usersById[id]?.first_name,
   });
 
+  // ---- Cascade -----------------------------------------------------------------
+  //
+  // A recipient can be a holon with a split of its own — a member's id is
+  // their personal holon's id. Core follows each share down through those
+  // splits; this board reads them once per saved roster and draws what core
+  // resolves. Not re-read while the draft is dirty: every edit changes the
+  // roster, and what is downstream of it does not.
+  let cascadeChildren: Record<string, CascadeInputs> = {};
+  let cascadeKey = "";
+  $: rootPartyIds = [
+    ...new Set([
+      ...interiorMembers.map((m) => m.id),
+      ...zonedPartners.filter((p) => p.zone >= 1).map((p) => p.id),
+    ]),
+  ].sort();
+  $: if (!allocationDirty) void loadCascade(holonID, rootPartyIds.join("|"));
+
+  async function loadCascade(holon: string, ids: string) {
+    const want = holosphere && holon ? `${holon}#${ids}` : "";
+    if (want === cascadeKey) return;
+    cascadeKey = want;
+    if (!want || !ids) {
+      cascadeChildren = {};
+      return;
+    }
+    try {
+      const loaded = await loadCascadeChildren(holosphere, ids.split("|"), {
+        rootId: holon,
+        nameOf: (id) => nameMap.get(id),
+      });
+      if (cascadeKey === want) cascadeChildren = loaded.children;
+    } catch (err) {
+      console.warn("[flows] cascade load failed", err);
+      if (cascadeKey === want) cascadeChildren = {};
+    }
+  }
+
+  $: cascadeRoot = { config: allocationConfig, members: interiorMembers, zoned: zonedPartners };
+  // The shape first, without a pot: who ends up holding part of the fund
+  // decides who usage is attributed to, and usage sizes the pot.
+  $: cascadeShape = Object.keys(cascadeChildren).length
+    ? resolveCascade({
+        holonId: holonID,
+        total: null,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+
   // ---- Fund usage --------------------------------------------------------------
   //
   // Every rights-holder, with the names a collective payee might carry so
@@ -359,7 +414,11 @@
     ...zonedPartners
       .filter((p) => p.zone >= 1)
       .map((p) => ({ id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) })),
-  ] as FundUsageParty[];
+    // Whoever holds part of the fund through someone else's giving.
+    ...Object.entries(cascadeShape?.leaves ?? {})
+      .filter(([id]) => id !== holonID)
+      .map(([id, leaf]) => ({ id, name: leaf.label, aliases: aliasesFor(usersById, id) })),
+  ].filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i) as FundUsageParty[];
   $: usage = collective
     ? buildFundUsage({
         holonId: holonID,
@@ -384,26 +443,39 @@
     members: interiorMembers,
     zoned: zonedPartners,
   });
-  $: allocationTrack = allocationToGraph(
-    allocationResult,
-    {
-      pot: collective ? collective.name : "Total",
-      interior: "Contributors share",
-      exterior: "Reciprocity zones",
-      spent: "Spent",
-      claimed: "Claimed",
-      available: "Available",
-      over: "Over",
-      unattributed: "Outside rights",
-    },
-    usage,
-  );
+  $: cascade = cascadeShape
+    ? resolveCascade({
+        holonId: holonID,
+        total: allocationResult.total,
+        unit: allocationResult.unit,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+  $: allocationLabels = {
+    pot: collective ? collective.name : "Total",
+    interior: "Contributors share",
+    exterior: "Reciprocity zones",
+    spent: "Spent",
+    claimed: "Claimed",
+    available: "Available",
+    over: "Over",
+    unattributed: "Outside rights",
+    passed: "Passed on",
+    retained: "Kept",
+  };
+  $: allocationTrack = cascade
+    ? cascadeToGraph(cascade, allocationLabels, usage)
+    : allocationToGraph(allocationResult, allocationLabels, usage);
   $: allocationLayout = layoutSankey(allocationTrack);
   // What is left to the rights-holders, as the diagram draws it, and what was
   // taken beyond any right — both read off the same stacked bars.
   $: availableTotal = segmentTotal(allocationTrack, "available");
   $: overTotal = segmentTotal(allocationTrack, "over");
-  $: hasAllocation = interiorMembers.length > 0 || partners.length > 0;
+  // A stored split counts on its own: a personal holon has no scored member
+  // (its owner is not a member of themselves) and may have no partners yet.
+  $: hasAllocation =
+    interiorMembers.length > 0 || partners.length > 0 || hasAllocationConfig(settings);
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency })
     : (v: number) => `${Math.round(v)}%`;
@@ -746,6 +818,8 @@
     collectiveError = "";
     memberShares = [];
     partners = [];
+    cascadeChildren = {};
+    cascadeKey = "";
     loading = true;
 
     if (!holosphere || !id) {

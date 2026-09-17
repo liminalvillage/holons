@@ -26,7 +26,6 @@
   import { walletAddress } from "../../dashboard/store";
   import { HolonsManager } from "../../lib/holons/HolonsManager";
   import {
-    loadBundleRecord,
     mirrorAllocation,
     syncAllocation,
     type SyncMember,
@@ -34,6 +33,7 @@
   } from "../../lib/holons/allocationSync";
   import {
     allocate,
+    loadBundleRecord,
     normalizeInteriorShares,
     sharesFromMembers,
     interiorSharePercentages,

@@ -546,6 +546,11 @@
     fill: #64748b;
     opacity: 0.25;
   }
+  /* What the split names nobody for: it stays with the holon. */
+  .ribbon.retained {
+    fill: #8b5cf6;
+    opacity: 0.25;
+  }
 
   .bar {
     fill: #cbd5e1;
@@ -578,6 +583,9 @@
   .bar.unattributed {
     fill: #64748b;
   }
+  .bar.retained {
+    fill: #8b5cf6;
+  }
 
   .bar-group.tappable {
     cursor: pointer;
@@ -597,6 +605,10 @@
   }
   .bar.slice.available {
     fill: #10b981;
+  }
+  /* Cascade: the part of a bar its party forwards by its own split. */
+  .bar.slice.passed {
+    fill: #94a3b8;
   }
   .bar.slice.over {
     fill: #dc2626;

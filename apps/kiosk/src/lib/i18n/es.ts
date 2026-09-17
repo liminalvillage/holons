@@ -1158,6 +1158,18 @@ export const es: Record<MessageKey, Msg> = {
   "flows.available": "Disponible",
   "flows.over": "Excedido",
   "flows.unattributed": "Fuera de los derechos",
+  "flows.passed": "Transmitido",
+  "flows.retained": "Conservado",
+  "flows.tipRetainedAbout":
+    "Nadie está nombrado para esta parte, así que se queda en el holón.",
+  "flows.cascadeKeeps": "Conserva",
+  "flows.cascadePassesTo": "Transmite a",
+  "flows.cascadeFrom": "Recibido a través de",
+  "flows.cascadeMine":
+    "Tu propia configuración de flujos transmite parte de lo que te llega a {names}. Esto es lo que conservas.",
+  "flows.cascadeCycle":
+    "Estos flujos forman un bucle: {names}. El valor se detiene donde el bucle se cierra.",
+  "flows.accountViaPassed": "Transmitido a ti",
   "flows.tipRight": "Derecho",
   "flows.tipPayees": "Pagado a",
   "flows.tipUnattributedAbout":

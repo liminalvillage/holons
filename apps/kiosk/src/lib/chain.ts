@@ -15,6 +15,7 @@ import {
   BUNDLE_SYNC_ALL_ABI,
   bundleSyncArgList,
   bundleSyncArgs,
+  chainInteriorRoster,
   resolveInteriorMembers,
   saveAllocationConfig,
   type AllocationConfig,
@@ -37,6 +38,12 @@ export class ChainError extends Error {
 
 export interface ChainSyncInput {
   bundleAddress: string;
+  /**
+   * The holon being synced. With it, a split that has an interior share but
+   * nobody in it seats the holon itself (core `chainInteriorRoster`) — the
+   * Bundle has no withdraw, so a pot paid to no one would be stranded.
+   */
+  holonId?: string;
   config: AllocationConfig;
   /** The equation's roster; swapped for `shares` under a custom split. */
   scored: AllocationMember[];
@@ -55,7 +62,11 @@ export function encodeChainSync(input: ChainSyncInput): unknown[] {
   return bundleSyncArgList(
     bundleSyncArgs({
       config: input.config,
-      members,
+      members: chainInteriorRoster(
+        input.holonId ?? "",
+        members,
+        input.config.interiorPercent,
+      ),
       partners: input.placed,
     }),
   );
@@ -131,7 +142,7 @@ export async function syncAllocationOnChainAndMirror(
   zones: Record<string, number>,
   people: Record<string, number>,
 ): Promise<string> {
-  const hash = await syncAllocationOnChain(input);
+  const hash = await syncAllocationOnChain({ ...input, holonId });
   await saveAllocationConfig(
     store,
     holonId,

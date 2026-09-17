@@ -1140,6 +1140,18 @@ export const en = {
   "flows.available": "Available",
   "flows.over": "Over",
   "flows.unattributed": "Outside rights",
+  "flows.passed": "Passed on",
+  "flows.retained": "Kept",
+  "flows.tipRetainedAbout":
+    "Nobody is named for this part, so it stays with the holon.",
+  "flows.cascadeKeeps": "Keeps",
+  "flows.cascadePassesTo": "Passes on to",
+  "flows.cascadeFrom": "Received through",
+  "flows.cascadeMine":
+    "Your own flow settings pass part of what reaches you on to {names}. This is what you keep.",
+  "flows.cascadeCycle":
+    "These flows run in a loop: {names}. The value stops where the loop closes.",
+  "flows.accountViaPassed": "Passed on to you",
   "flows.tipRight": "Right",
   "flows.tipPayees": "Paid to",
   "flows.tipUnattributedAbout":
