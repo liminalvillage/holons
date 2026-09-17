@@ -47,7 +47,7 @@
   import {
     createTask,
     deleteTaskWithCascade,
-    wouldCreateDependencyCycle,
+    moveDependency,
     type Quest,
   } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
@@ -534,24 +534,52 @@
     }
   }
 
-  // ── Graph: wire a dependency by dropping one card on another ───────────────
-  // The dragged card comes to WAIT ON the card it lands on. Core owns the rule
-  // that decides whether an edge is legal (a plan must stay a DAG); this only
-  // asks it, and writes the accepted answer.
+  // ── Graph: move a branch by dropping one card on another ──────────────────
+  // The card underneath comes to WAIT ON the dragged card, and the dragged
+  // card stops feeding whatever it fed before — the branch above it moves
+  // along. Core owns that rule (`moveDependency`: what changes, and whether
+  // the plan would loop); this only asks it and writes the accepted answer.
   function questFor(id: string): Quest | undefined {
     return get(rawQuests).find((x) => String(x.id ?? x.title) === id);
   }
   function dependencyIds(q: Quest): string[] {
     return ((q.dependencies as string[] | undefined) ?? []).map(String);
   }
+  /**
+   * A record we may write into this holon's quests. Foreign/hologram copies
+   * are not: their real graph lives in the owner holon, and writing one here
+   * would fork a stray copy (same rule as reorder above).
+   */
+  const own = (q: Quest) => !(q as any)._federation && !(q as any)._hologram;
 
   /** Live during the drag: may `taskId` be made to wait on `depId`? */
   function canLink(taskId: string, depId: string): boolean {
-    if (taskId === depId) return false;
     const q = questFor(taskId);
-    if (!q) return false;
-    if (dependencyIds(q).includes(depId)) return false; // already wired
-    return !wouldCreateDependencyCycle(get(rawQuests), taskId, depId);
+    if (!q || !own(q)) return false;
+    const move = moveDependency(get(rawQuests), depId, taskId);
+    return move.ok && move.edits.length > 0;
+  }
+
+  /**
+   * Write a set of edited quests one by one, skipping foreign records (and
+   * saying so). Resolves true when every own record went through.
+   */
+  async function writeQuestEdits(edits: Quest[]): Promise<boolean> {
+    const hid = get(holonId)!;
+    if (edits.some((q) => !own(q))) {
+      showNotice($t("tasks.linkForeign"));
+      if (edits.every((q) => !own(q))) return false;
+    }
+    const writer = await getWriter(hid, (msg) =>
+      showNotice($t("tasks.linkFailed", { reason: msg })),
+    );
+    let all = true;
+    for (const q of edits.filter(own)) {
+      const clean: Record<string, unknown> = { ...q };
+      delete clean._holon;
+      if (!(await writer.put("quests", clean))) all = false;
+    }
+    return all;
   }
 
   async function linkDependency(task: BacklogTask, dep: BacklogTask) {
@@ -563,26 +591,20 @@
     }
     const q = questFor(task.id);
     if (!q) return;
-    // The edge is stored ON the dependent card, so that card has to be one we
-    // own: writing a foreign/hologram record into this holon's quests would
-    // fork a stray copy (same rule as reorder above), and its real graph lives
-    // in the owner holon anyway.
-    if ((q as any)._federation || (q as any)._hologram) {
+    // The new edge is stored ON the dependent card, so that one has to be
+    // ours — writing only the cuts would leave the dragged card loose.
+    if (!own(q)) {
       showNotice($t("tasks.linkForeign"));
       return;
     }
-    if (wouldCreateDependencyCycle(get(rawQuests), task.id, dep.id)) {
-      showNotice($t("tasks.linkCycle"));
+    const move = moveDependency(get(rawQuests), dep.id, task.id);
+    if (!move.ok) {
+      if (move.reason === "cycle") showNotice($t("tasks.linkCycle"));
       return;
     }
-    const dependencies = [...new Set([...dependencyIds(q), dep.id])];
+    if (!move.edits.length) return; // already exactly so
     try {
-      const writer = await getWriter(hid, (msg) =>
-        showNotice($t("tasks.linkFailed", { reason: msg })),
-      );
-      const clean: Record<string, unknown> = { ...q };
-      delete clean._holon;
-      if (await writer.put("quests", { ...clean, dependencies })) {
+      if (await writeQuestEdits(move.edits)) {
         showNotice($t("tasks.linked", { task: task.title, dep: dep.title }));
       }
     } catch (err) {
@@ -610,7 +632,6 @@
       return;
     }
     const quests = get(rawQuests);
-    const own = (q: Quest) => !(q as any)._federation && !(q as any)._hologram;
     const self = questFor(task.id);
     // Every edge to cut: the card's own dependencies, plus each dependent.
     const edits: Quest[] = [];
@@ -627,21 +648,10 @@
       showNotice($t("tasks.unlinkNothing", { title: task.title }));
       return;
     }
-    if (edits.some((q) => !own(q))) {
-      showNotice($t("tasks.linkForeign"));
-      if (edits.every((q) => !own(q))) return;
-    }
     try {
-      const writer = await getWriter(hid, (msg) =>
-        showNotice($t("tasks.linkFailed", { reason: msg })),
-      );
-      let all = true;
-      for (const q of edits.filter(own)) {
-        const clean: Record<string, unknown> = { ...q };
-        delete clean._holon;
-        if (!(await writer.put("quests", clean))) all = false;
+      if (await writeQuestEdits(edits)) {
+        showNotice($t("tasks.unlinked", { title: task.title }));
       }
-      if (all) showNotice($t("tasks.unlinked", { title: task.title }));
     } catch (err) {
       console.error("[kiosk] unlink failed", err);
       showNotice(

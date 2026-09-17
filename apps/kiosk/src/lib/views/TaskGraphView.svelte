@@ -89,13 +89,18 @@
   const EDGE_SPEED = 16;
 
   // ── Arrangement ────────────────────────────────────────────────────────────
+  // The layout is a pure function of the data, in a data-derived order: goals
+  // oldest-left (`created`, then id — `created` is 0 for an unparsable date,
+  // so the id settles those), each task's dependencies in its own
+  // `dependencies` order. The wall's Sort pill never touches the board, and
+  // moving one branch leaves every other branch where it was.
   $: edges = tasks.flatMap((task) =>
     task.dependencies.map((dep) => ({ from: dep, to: task.id })),
   );
-  $: dag = layoutDag(
-    tasks.map((task) => task.id),
-    edges,
-  );
+  $: stableIds = [...tasks]
+    .sort((a, b) => a.created - b.created || a.id.localeCompare(b.id))
+    .map((task) => task.id);
+  $: dag = layoutDag(stableIds, edges);
   $: placed = placeDag(dag, {
     nodeW: NODE_W,
     nodeH: NODE_H,
@@ -110,10 +115,9 @@
     .flat()
     .map((id) => ({ task: byId.get(id)!, box: placed.nodes.get(id)! }))
     .filter((n) => n.task && n.box);
-  /** The unlinked tasks — the drawer's contents, off the canvas. */
-  $: loose = dag.free
-    .map((id) => byId.get(id)!)
-    .filter((task): task is BacklogTask => task != null);
+  /** The unlinked tasks — the drawer's contents, off the canvas, in the
+   *  wall's order (the board's own order is by age, see above). */
+  $: loose = tasks.filter((task) => !placed.nodes.has(task.id));
   /** Nothing waits on anything — say so rather than showing a bare tray. */
   $: noEdges = dag.edges.length === 0;
   /**
@@ -156,7 +160,44 @@
   };
   $: view = userView ?? fitted;
 
+  // ── Keep the drop target still ─────────────────────────────────────────────
+  // A drop re-lays the board: the new branch appears above the target and its
+  // neighbours slide over. The target itself must not move under the finger,
+  // so the drop remembers where ON SCREEN it was and, as the layout updates,
+  // re-solves the pan to keep it there (at the same scale — auto-fit is
+  // released, exactly as a pan releases it). The anchor is a screen point,
+  // not a canvas delta, because the fit itself changes with the extent and a
+  // new top row shifts every node's y. It stays armed across the move's
+  // several writes and until the next gesture, with a timeout so a drop that
+  // never landed can't hold the fit hostage.
+  const PIN_MS = 2500;
+  let pin: { id: string; sx: number; sy: number; s: number } | null = null;
+  let pinTimer = 0;
+  $: if (pin) {
+    const b = placed.nodes.get(pin.id);
+    if (b)
+      userView = {
+        s: pin.s,
+        tx: pin.sx - b.x * pin.s,
+        ty: pin.sy - b.y * pin.s,
+      };
+  }
+  function pinTarget(id: string) {
+    const b = placed.nodes.get(id);
+    if (!b) return; // not on the board (a chip) — let the fit handle it
+    const v = view;
+    pin = { id, sx: b.x * v.s + v.tx, sy: b.y * v.s + v.ty, s: v.s };
+    clearTimeout(pinTimer);
+    pinTimer = window.setTimeout(unpin, PIN_MS);
+  }
+  function unpin() {
+    pin = null;
+    clearTimeout(pinTimer);
+    pinTimer = 0;
+  }
+
   function refit() {
+    unpin();
     userView = null;
   }
 
@@ -307,6 +348,7 @@
 
   onDestroy(() => {
     if (edgeRaf) cancelAnimationFrame(edgeRaf);
+    clearTimeout(pinTimer);
   });
 
   function local(e: PointerEvent): { x: number; y: number } {
@@ -345,6 +387,7 @@
     if (e.button != null && e.button > 0) return;
     const p = local(e);
     points.set(e.pointerId, p);
+    unpin(); // a new gesture takes over the view
     // NOT captured here: while a pointer is captured the browser retargets the
     // compatibility `click` at the capturing element, so capturing on the way
     // down would swallow every tap on a node. Capture starts once the gesture
@@ -442,7 +485,10 @@
     // underneath comes to wait on the dragged one); over the drawer it cuts
     // the card loose. Anything else puts it back where the layout wants it.
     if (link?.overDrawer) onDetach(link.task);
-    else if (link?.over && link.ok) onLink(link.over, link.task);
+    else if (link?.over && link.ok) {
+      pinTarget(link.over.id);
+      onLink(link.over, link.task);
+    }
     link = null;
     grab = null;
     dragClient = null;
@@ -452,6 +498,7 @@
 
   function onWheel(e: WheelEvent) {
     e.preventDefault();
+    unpin();
     const r = vp?.getBoundingClientRect();
     // Trackpad pinch arrives as ctrl+wheel; both zoom, the gesture just scales
     // faster than a mouse notch.
@@ -524,15 +571,31 @@
     };
   }
 
+  // The chip a finished press counts as a tap on, until its click arrives.
+  let tappedChip: string | null = null;
+
   function onChipUp(e: PointerEvent) {
     if (!chip) return;
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     const dropped = chip;
     chip = null;
     dragClient = null;
-    if (dropped.travelled <= TAP_SLOP)
-      onOpen(dropped.task.id); // a tap opens
-    else if (dropped.over && dropped.ok) onLink(dropped.over, dropped.task);
+    tappedChip = null;
+    if (e.type === "pointercancel") return; // the browser took the gesture
+    if (dropped.travelled <= TAP_SLOP) tappedChip = dropped.task.id;
+    else if (dropped.over && dropped.ok) {
+      pinTarget(dropped.over.id);
+      onLink(dropped.over, dropped.task);
+    }
+  }
+
+  // A tap opens — on the CLICK, not on pointerup: a finger's click is
+  // hit-tested after pointerup, so a card opened there already had its
+  // buttons under the finger and the same tap pressed one (Delete included).
+  function onChipClick(id: string) {
+    const tapped = tappedChip === id;
+    tappedChip = null;
+    if (tapped) onOpen(id);
   }
 </script>
 
@@ -730,6 +793,7 @@
             on:pointermove={onChipMove}
             on:pointerup={onChipUp}
             on:pointercancel={onChipUp}
+            on:click={() => onChipClick(task.id)}
             on:keydown={(e) => e.key === "Enter" && onOpen(task.id)}
             >{task.title}</span
           >

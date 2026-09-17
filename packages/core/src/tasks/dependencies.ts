@@ -128,3 +128,58 @@ export function findDependencyCycle(quests: Quest[]): string[] | null {
   }
   return null;
 }
+
+/**
+ * Outcome of `moveDependency`: the quests to write, or why the move is
+ * refused. `edits: []` means the graph already looks like that (the target is
+ * the only quest waiting on the card) — nothing to write, nothing wrong.
+ */
+export type MoveDependencyResult =
+  | { ok: true; edits: Quest[] }
+  | { ok: false; reason: 'self' | 'unknown' | 'cycle' };
+
+/**
+ * Re-parent a branch: make `targetId` wait on `depId`, and stop every OTHER
+ * quest waiting on it. The card keeps its own predecessors, so the whole
+ * branch above it moves along. Pure — returns copies of the quests whose
+ * `dependencies` change, the target FIRST (so a caller writing them one by
+ * one has the card briefly shared rather than briefly loose) with `depId`
+ * appended last (a moved branch lands beside the target's existing
+ * dependencies, never between them), then the quests it leaves.
+ *
+ * Checking the cycle against the graph as it stands is sound: the edges the
+ * move removes all lie on `depId`'s successor side, and the walk that would
+ * find a loop only follows predecessors.
+ */
+export function moveDependency(
+  quests: Quest[],
+  depId: string,
+  targetId: string,
+): MoveDependencyResult {
+  const dep = String(depId);
+  const target = String(targetId);
+  if (dep === target) return { ok: false, reason: 'self' };
+  const ids = new Set(quests.map((q) => String(q.id)));
+  if (!ids.has(dep) || !ids.has(target)) return { ok: false, reason: 'unknown' };
+  if (wouldCreateDependencyCycle(quests, target, dep))
+    return { ok: false, reason: 'cycle' };
+
+  const depsOf = (q: Quest): string[] =>
+    ((q.dependencies as string[] | undefined) ?? []).map(String);
+  const edits: Quest[] = [];
+  for (const q of quests) {
+    if (String(q.id) === target) {
+      const deps = depsOf(q);
+      if (deps.includes(dep)) continue;
+      edits.push({ ...q, dependencies: [...deps, dep] });
+    }
+  }
+  for (const q of quests) {
+    const id = String(q.id);
+    if (id === target || id === dep) continue;
+    const deps = depsOf(q);
+    if (!deps.includes(dep)) continue;
+    edits.push({ ...q, dependencies: deps.filter((d) => d !== dep) });
+  }
+  return { ok: true, edits };
+}

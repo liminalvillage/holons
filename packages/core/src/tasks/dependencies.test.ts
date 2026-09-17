@@ -4,6 +4,7 @@ import {
   findDependencyCycle,
   isQuestSettled,
   unmetDependencies,
+  moveDependency,
 } from './dependencies.js';
 import type { Quest } from './types.js';
 
@@ -112,5 +113,86 @@ describe('unmetDependencies', () => {
     const unmet = unmetDependencies([q('a'), q('b', ['a']), q('c', ['b'])]);
     expect(unmet.get('b')).toEqual(['a']);
     expect(unmet.get('c')).toEqual(['b']);
+  });
+});
+
+describe('moveDependency', () => {
+  const deps = (r: ReturnType<typeof moveDependency>, id: string) =>
+    r.ok ? r.edits.find((e) => e.id === id)?.dependencies : undefined;
+
+  it('moves the card from its old dependent to the target', () => {
+    // p waits on a; dropping a on b: b waits on a, p no longer does.
+    const quests = [q('a'), q('p', ['a']), q('b')];
+    const r = moveDependency(quests, 'a', 'b');
+    expect(r.ok).toBe(true);
+    expect(deps(r, 'b')).toEqual(['a']);
+    expect(deps(r, 'p')).toEqual([]);
+    expect(r.ok && r.edits.map((e) => e.id)).toEqual(['b', 'p']); // target first
+  });
+
+  it('clears EVERY old dependent, not just one', () => {
+    const quests = [q('a'), q('p', ['a']), q('r', ['x', 'a']), q('x'), q('b')];
+    const r = moveDependency(quests, 'a', 'b');
+    expect(deps(r, 'p')).toEqual([]);
+    expect(deps(r, 'r')).toEqual(['x']);
+    expect(deps(r, 'b')).toEqual(['a']);
+  });
+
+  it('appends last and keeps the target\'s existing order', () => {
+    const quests = [q('a'), q('x'), q('y'), q('b', ['y', 'x'])];
+    expect(deps(moveDependency(quests, 'a', 'b'), 'b')).toEqual(['y', 'x', 'a']);
+  });
+
+  it('only prunes when the target already lists the card and others do too', () => {
+    const quests = [q('a'), q('b', ['a']), q('p', ['a'])];
+    const r = moveDependency(quests, 'a', 'b');
+    expect(r.ok && r.edits.map((e) => e.id)).toEqual(['p']); // no duplicate on b
+    expect(deps(r, 'p')).toEqual([]);
+  });
+
+  it('has nothing to write when the target is already the only dependent', () => {
+    const r = moveDependency([q('a'), q('b', ['a'])], 'a', 'b');
+    expect(r).toEqual({ ok: true, edits: [] });
+  });
+
+  it('lets a transitive predecessor become a direct one, pruning the middle', () => {
+    // a → x → b; dropping a on b: b waits on a AND x, x no longer waits on a.
+    const quests = [q('a'), q('x', ['a']), q('b', ['x'])];
+    const r = moveDependency(quests, 'a', 'b');
+    expect(r.ok).toBe(true);
+    expect(deps(r, 'b')).toEqual(['x', 'a']);
+    expect(deps(r, 'x')).toEqual([]);
+  });
+
+  it('refuses self, unknown ids and loops', () => {
+    const quests = [q('a'), q('b', ['a']), q('c', ['b'])];
+    expect(moveDependency(quests, 'a', 'a')).toEqual({ ok: false, reason: 'self' });
+    expect(moveDependency(quests, 'ghost', 'a')).toEqual({ ok: false, reason: 'unknown' });
+    expect(moveDependency(quests, 'a', 'ghost')).toEqual({ ok: false, reason: 'unknown' });
+    // a waits on nothing; making a wait on b closes a → b → a.
+    expect(moveDependency(quests, 'b', 'a')).toEqual({ ok: false, reason: 'cycle' });
+    // ...and transitively: c → b → a, so a waiting on c loops too.
+    expect(moveDependency(quests, 'c', 'a')).toEqual({ ok: false, reason: 'cycle' });
+  });
+
+  it('coerces numeric ids and tolerates missing dependencies', () => {
+    const quests: Quest[] = [
+      { id: 1 as unknown as string, title: 'one', status: 'ongoing', participants: [] },
+      { id: 2 as unknown as string, title: 'two', status: 'ongoing', participants: [], dependencies: [1 as unknown as string] },
+      { id: 3 as unknown as string, title: 'three', status: 'ongoing', participants: [] },
+    ];
+    const r = moveDependency(quests, '1', '3');
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.edits.map((e) => [e.id, e.dependencies])).toEqual([
+      [3, ['1']],
+      [2, []],
+    ]);
+  });
+
+  it('never mutates its input', () => {
+    const quests = [q('a'), q('p', ['a']), q('b', ['x']), q('x')];
+    const snapshot = JSON.stringify(quests);
+    moveDependency(quests, 'a', 'b');
+    expect(JSON.stringify(quests)).toBe(snapshot);
   });
 });
