@@ -165,10 +165,11 @@ export function chainInteriorRoster(
  * their share there, and when the address is another Bundle that one divides
  * it again — the on-chain cascade (`cascade.ts` is its mirror).
  *
- * Encoders only. No surface calls `claim` yet, deliberately: on the deployed
- * Bundle it is open to ANY caller and cannot be undone, so whoever calls
- * first binds a member's share for good. The binding UI waits for a Bundle
- * that gates it.
+ * Since the guarded-claim Bundle (contracts branch `bundle-guarded-claim`,
+ * 2026-09-18) `claim` may only be sent by the holon's owner wallet or by the
+ * wallet already bound to that member, and sending it again re-binds. Bundles
+ * deployed before that (the 2025-12 and 2026-08-30 ones) accept `claim` from
+ * ANY caller, once, for good — never offer binding against those addresses.
  */
 export const BUNDLE_CLAIM_ABI = 'function claim(string _userId, address _beneficiary)';
 

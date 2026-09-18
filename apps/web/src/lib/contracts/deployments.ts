@@ -212,14 +212,18 @@ export const DEPLOYMENTS: DeploymentsConfig = {
           "0xb921d31aa0a53d4801c10e421aa3756f5721c7e993feb5d5f65d975b0b2866b5",
         deployer: "0x22FCFCde1010aD545484E3D11B56E892Ba0F9A79",
       },
-      // Reconstructed Bundle with the cascadeCount fix; the 2025-12
-      // deployment (0xC2DBA11019AcE422576cE8869fdFD65C8D2fc562) predates the
-      // current ABI and always emitted cascadeCount=0.
+      // Guarded-claim Bundle (contracts branch bundle-guarded-claim,
+      // 2026-09-18): claim() only by the owner or the bound wallet, re-callable
+      // to rebind; a refused push is stored, not reverted. Child
+      // 0x9d1A39eedCd6EEF29eB341AC9AeC8464964ED9A8 is bound as member "bob".
+      // Earlier Bundles — 0x7E4a1bE888078887A83f86B17A073484A3c65067
+      // (2026-08-30) and 0xC2DBA11019AcE422576cE8869fdFD65C8D2fc562
+      // (2025-12) — accept claim() from anyone, once: never bind against them.
       Bundle: {
-        address: "0x7E4a1bE888078887A83f86B17A073484A3c65067",
-        deployedAt: 1788122868000,
+        address: "0xdA20c942FE60dC6bb7E9cfa3297bEad815ec275F",
+        deployedAt: 1789703500000,
         txHash:
-          "0x955adbaeaec41fa8f2f3a3d458a757fb09510838eaa9c9a5c10b06450b1e651f",
+          "0x7ac1b9d7c745cd4b75da90a9d93d1b4359b7ba2bf71dc54816979690b851ef15",
         deployer: "0x1CAE687b6a5F587A9936E4a4218a54da7e2FCcCf",
       },
     },
