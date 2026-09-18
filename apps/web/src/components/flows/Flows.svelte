@@ -1323,6 +1323,7 @@
             partners={partners.map((p) => ({ id: p.id, name: p.name }))}
             members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
             {people}
+            {cascade}
             saved={savedAllocation}
             on:saved={() => {
               savedAllocation = {

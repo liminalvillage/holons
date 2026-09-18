@@ -173,10 +173,12 @@ export function chainInteriorRoster(
  */
 export const BUNDLE_CLAIM_ABI = 'function claim(string _userId, address _beneficiary)';
 
-/** Read-only views of a member's binding. */
+/** Read-only views of a member's binding, and who may change it. */
 export const BUNDLE_BINDING_ABI = [
   'function userIdToAddress(string) view returns (address)',
   'function hasClaimed(string) view returns (bool)',
+  'function isBundleMember(string) view returns (bool)',
+  'function owner() view returns (address)',
 ] as const;
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;

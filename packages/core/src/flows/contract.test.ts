@@ -154,7 +154,7 @@ describe('bundleClaimArgs', () => {
       address,
     ]);
     expect(BUNDLE_CLAIM_ABI).toMatch(/^function claim\(string _userId, address _beneficiary\)/);
-    expect(BUNDLE_BINDING_ABI).toHaveLength(2);
+    expect(BUNDLE_BINDING_ABI).toHaveLength(4);
   });
 
   it('rejects an empty id and a zero or malformed address', () => {

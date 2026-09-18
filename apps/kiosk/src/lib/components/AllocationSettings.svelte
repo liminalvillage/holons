@@ -38,20 +38,29 @@
   import { getReaStore } from "$lib/holosphere";
   import {
     allocate,
+    bindingAuthority,
+    bindingPreflight,
+    loadBundleRecord,
+    resolveInteriorMembers,
     saveAllocationConfig,
     saveCollectiveSlug,
     sharesFromMembers,
     interiorSharePercentages,
     type AllocationConfig,
     type AllocationMember,
+    type CascadeResult,
     type HolonBundleRecord,
     type InteriorMode,
     type InteriorShares,
   } from "@holons/core/flows";
   import {
     ChainError,
+    bindOnChain,
+    connectedWallet,
     isWalletAvailable,
+    readBindings,
     syncAllocationOnChainAndMirror,
+    type BundleBindings,
   } from "$lib/chain";
   import type { AllocationDraft } from "$lib/allocation";
   import SidePanel from "./SidePanel.svelte";
@@ -72,6 +81,8 @@
   export let collectiveSlug = "";
   /** The holon's deployed Bundle contract, when there is one. */
   export let bundle: HolonBundleRecord | null = null;
+  /** The cascade the board resolved, for the pre-flight before a bind. */
+  export let cascade: CascadeResult | null = null;
   /** The units the board can be drawn in (`all` first) and the current one. */
   export let units: { id: string; label: string }[] = [];
   export let unit = "all";
@@ -358,6 +369,155 @@
     if (!pick) return;
     placePerson(pick, 1);
     pick = "";
+  }
+
+  // ── Bindings: who each share is paid to on chain ───────────────────────
+  // The contract pushes a member's share to the address bound to their id;
+  // bound to their own Bundle, it is divided again there. Read once when the
+  // Fund tab opens with a wallet present (reads prompt nothing), re-read after
+  // a bind. The contract decides who may bind — the owner wallet or the wallet
+  // already bound — and `bindingAuthority` is that same rule, so the sheet
+  // can say so before the chain refuses.
+  let bindings: BundleBindings | null = null;
+  let bindingsLoading = false;
+  let bindingsKey = "";
+  let wallet = "";
+  /** The party whose bind form is open. */
+  let bindFor = "";
+  let bindAddress = "";
+  /** That party's own Bundle, when their holon has one: the cascade target. */
+  let bindOwnBundle: string | null = null;
+  let bindBusy = false;
+  let bindError = "";
+  let bindNotice = "";
+
+  // Everyone the root pays, as the draft stands: the contributors the split
+  // resolves to, plus whoever is placed on a ring.
+  $: parties = [
+    ...new Map(
+      [
+        ...resolveInteriorMembers({
+          config: { interiorMode },
+          scored,
+          shares: shareOf,
+          nameOf: (id) => nameOfPerson.get(id),
+        }).map((m) => ({ id: m.id, name: m.name })),
+        ...partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1),
+        ...placedPeople,
+      ].map((p) => [p.id, p]),
+    ).values(),
+  ];
+  $: partyIds = parties
+    .map((p) => p.id)
+    .sort()
+    .join("|");
+  $: if (tab === "fund" && bundle && hasWallet)
+    void loadBindings(bundle.address, partyIds);
+
+  async function loadBindings(address: string, ids: string) {
+    const want = `${address}#${ids}`;
+    if (want === bindingsKey) return;
+    bindingsKey = want;
+    bindingsLoading = true;
+    try {
+      const read = await readBindings(address, ids ? ids.split("|") : []);
+      if (bindingsKey === want) bindings = read;
+    } catch (err) {
+      console.warn("[kiosk] bindings read failed", err);
+      if (bindingsKey === want) bindings = null;
+    } finally {
+      if (bindingsKey === want) bindingsLoading = false;
+    }
+  }
+
+  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+  // `read` is passed in, not closed over: the template only re-runs this
+  // when something it names changes, and after a bind that is the bindings.
+  function boundLabel(read: BundleBindings, id: string): string {
+    const addr = read.bound[id];
+    if (!addr && !read.member[id]) return $t("alloc.bindNotOnChain");
+    if (!addr) return $t("alloc.bindNone");
+    return read.isContract[id]
+      ? $t("alloc.bindBundle", { address: short(addr) })
+      : $t("alloc.bindWallet", { address: short(addr) });
+  }
+
+  /** Open the form for one party; their own Bundle is offered first. */
+  async function openBind(id: string) {
+    bindFor = id;
+    bindError = "";
+    bindNotice = "";
+    bindOwnBundle = null;
+    bindAddress = "";
+    try {
+      const store = await getReaStore();
+      const own = await loadBundleRecord(store, id);
+      if (bindFor !== id) return;
+      bindOwnBundle = own?.address ?? null;
+      bindAddress = bindOwnBundle ?? bindings?.bound[id] ?? "";
+    } catch {
+      // No settings for that holon: a plain address can still be typed.
+    }
+    // Who is signing decides whether this form can be sent at all.
+    try {
+      wallet = await connectedWallet();
+    } catch (err: any) {
+      if (err instanceof ChainError && err.kind === "rejected") bindFor = "";
+    }
+  }
+
+  $: bindToOwnBundle =
+    !!bindOwnBundle &&
+    bindAddress.trim().toLowerCase() === bindOwnBundle.toLowerCase();
+  $: bindPreflight = bindingPreflight(cascade, bindFor, {
+    toContract: bindToOwnBundle,
+  });
+  $: bindAuthority = bindings
+    ? bindingAuthority({
+        wallet,
+        owner: bindings.owner,
+        bound: bindings.bound[bindFor],
+      })
+    : "none";
+  $: bindValid = /^0x[0-9a-fA-F]{40}$/.test(bindAddress.trim());
+
+  async function sendBind() {
+    if (!bundle || !bindFor || bindBusy || !bindValid) return;
+    bindBusy = true;
+    bindError = "";
+    bindNotice = $t("alloc.chainConfirm");
+    try {
+      const hash = await bindOnChain({
+        bundleAddress: bundle.address,
+        userId: bindFor,
+        beneficiary: bindAddress.trim(),
+      });
+      bindNotice = $t("alloc.bindDone", { hash: hash.slice(0, 10) });
+      bindFor = "";
+      bindingsKey = "";
+      void loadBindings(bundle.address, partyIds);
+    } catch (err: any) {
+      bindNotice = "";
+      if (err instanceof ChainError) {
+        bindError =
+          err.kind === "rejected"
+            ? $t("alloc.chainRejected")
+            : err.kind === "no-contract"
+              ? $t("alloc.chainNoContract")
+              : err.kind === "no-wallet"
+                ? $t("alloc.chainNoWallet")
+                : /not authorized/i.test(err.message)
+                  ? $t("alloc.bindNotAllowed")
+                  : $t("alloc.bindFailed", { reason: err.message });
+      } else {
+        bindError = $t("alloc.bindFailed", {
+          reason: String(err?.message ?? err),
+        });
+      }
+    } finally {
+      bindBusy = false;
+    }
   }
 
   function failed(err: any) {
@@ -923,6 +1083,129 @@
             <p class="sub">{$t("alloc.chainNoWallet")}</p>
           {/if}
         </div>
+
+        <!-- ── Who each share is paid to on chain ──────────────────────── -->
+        <div class="control">
+          <div class="k">{$t("alloc.bindTitle")}</div>
+          <p class="sub">{$t("alloc.bindAbout")}</p>
+          {#if !hasWallet}
+            <p class="sub">{$t("alloc.chainNoWallet")}</p>
+          {:else if bindingsLoading && !bindings}
+            <p class="sub">{$t("alloc.bindReading")}</p>
+          {:else if !bindings}
+            <p class="sub">{$t("alloc.chainNoContract")}</p>
+          {:else if !parties.length}
+            <p class="sub">{$t("alloc.bindNobody")}</p>
+          {:else}
+            <ul class="bind-list">
+              {#each parties as p (p.id)}
+                <li class="bind-row" class:open={bindFor === p.id}>
+                  <div class="bind-head">
+                    <span class="bind-name">{p.name}</span>
+                    <span
+                      class="bind-status"
+                      class:bound={!!bindings.bound[p.id]}
+                      >{boundLabel(bindings, p.id)}</span
+                    >
+                    <button
+                      class="bind-btn"
+                      disabled={bindBusy || !bindings.member[p.id]}
+                      aria-expanded={bindFor === p.id}
+                      on:click={() =>
+                        bindFor === p.id ? (bindFor = "") : openBind(p.id)}
+                      >{bindings.bound[p.id]
+                        ? $t("alloc.rebind")
+                        : $t("alloc.bind")}</button
+                    >
+                  </div>
+                  {#if bindFor === p.id}
+                    <div class="bind-form">
+                      <label class="field">
+                        <span class="k">{$t("alloc.bindTo")}</span>
+                        <input
+                          type="text"
+                          autocapitalize="none"
+                          spellcheck="false"
+                          placeholder="0x…"
+                          bind:value={bindAddress}
+                        />
+                      </label>
+                      {#if bindOwnBundle}
+                        <button
+                          class="bind-own"
+                          class:on={bindToOwnBundle}
+                          on:click={() => (bindAddress = bindOwnBundle ?? "")}
+                        >
+                          {$t("alloc.bindOwn", {
+                            name: p.name,
+                            address: short(bindOwnBundle),
+                          })}
+                        </button>
+                      {/if}
+                      {#if bindToOwnBundle}
+                        <p class="sub">
+                          {$t("alloc.bindCascade", {
+                            n: String(bindPreflight.nodes),
+                          })}
+                        </p>
+                        {#each bindPreflight.warnings as w (w)}
+                          <p class="bind-warn">
+                            {#if w === "loop"}
+                              {$t("alloc.bindWarnLoop", {
+                                names: bindPreflight.loops[0]
+                                  .map((id) => nameOfPerson.get(id) ?? id)
+                                  .join(" → "),
+                              })}
+                            {:else if w === "large"}
+                              {$t("alloc.bindWarnLarge", {
+                                n: String(bindPreflight.nodes),
+                              })}
+                            {:else}
+                              {$t("alloc.bindWarnDeep", {
+                                n: String(bindPreflight.depth),
+                              })}
+                            {/if}
+                          </p>
+                        {/each}
+                      {/if}
+                      {#if wallet && bindAuthority === "none"}
+                        <p class="bind-warn">
+                          {$t("alloc.bindNotAllowed")}
+                          {#if bindings.owner}
+                            {$t("alloc.bindOwnerIs", {
+                              address: short(bindings.owner),
+                            })}
+                          {/if}
+                        </p>
+                      {/if}
+                      <div class="bind-actions">
+                        <button
+                          class="ghost"
+                          disabled={bindBusy}
+                          on:click={() => (bindFor = "")}
+                          >{$t("common.cancel")}</button
+                        >
+                        <button
+                          class="primary"
+                          disabled={bindBusy ||
+                            !bindValid ||
+                            bindAuthority === "none"}
+                          on:click={sendBind}
+                        >
+                          {bindBusy
+                            ? $t("alloc.chainSyncing")
+                            : $t("alloc.bindSend")}
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if bindError}<p class="error" role="alert">{bindError}</p>{/if}
+          {#if bindNotice}<p class="notice" role="status">{bindNotice}</p>{/if}
+        </div>
       {/if}
     {/if}
   </div>
@@ -1298,6 +1581,96 @@
   .wide-ghost:disabled {
     opacity: 0.45;
   }
+  /* ── Bindings ─────────────────────────────────────────────────────────
+     One row per party the root pays: name, where it goes on chain, and the
+     bind button; the form unfolds under the row it belongs to. */
+  .bind-list {
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0;
+  }
+  .bind-row {
+    border-top: 1px solid var(--line);
+    padding: 0.4rem 0;
+  }
+  .bind-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name btn"
+      "status btn";
+    align-items: center;
+    column-gap: 0.6rem;
+    min-height: 48px;
+  }
+  .bind-name {
+    grid-area: name;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bind-status {
+    grid-area: status;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .bind-status.bound {
+    color: var(--teal-deep);
+  }
+  .bind-btn {
+    grid-area: btn;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 0.9rem;
+    border-radius: 12px;
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .bind-btn:disabled {
+    opacity: 0.45;
+  }
+  .bind-form {
+    padding: 0 0 0.6rem;
+  }
+  .bind-own {
+    display: block;
+    width: 100%;
+    margin-top: 0.5rem;
+    min-height: 44px;
+    padding: 0.5rem 0.8rem;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    text-align: left;
+    font: inherit;
+    font-size: 0.9rem;
+    touch-action: manipulation;
+  }
+  .bind-own.on {
+    border-color: var(--teal);
+    color: var(--teal-deep);
+  }
+  .bind-warn {
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: #a3540d;
+  }
+  .bind-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
+  }
+  .bind-actions .primary,
+  .bind-actions .ghost {
+    min-height: 48px;
+  }
+
   .disclose {
     display: flex;
     align-items: center;

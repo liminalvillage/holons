@@ -1344,6 +1344,31 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.chainNoContract":
     "No hay contrato en esa dirección en la red de tu monedero — cambia de red e inténtalo de nuevo.",
   "alloc.chainFailed": "No se pudo actualizar en cadena: {reason}",
+  "alloc.bindTitle": "Pagado en cadena a",
+  "alloc.bindAbout":
+    "El contrato envía cada parte a la dirección vinculada a ese miembro. Vinculada a su propio Bundle, la parte se divide de nuevo allí — la cascada en cadena. Solo la wallet propietaria del holón, o la ya vinculada, puede vincular.",
+  "alloc.bindReading": "Leyendo el contrato…",
+  "alloc.bindNobody": "Nadie en el reparto todavía.",
+  "alloc.bindNotOnChain":
+    "Aún no está en el contrato — actualiza en cadena primero",
+  "alloc.bindNone": "Sin vincular — se guarda en el contrato hasta reclamarla",
+  "alloc.bindWallet": "Wallet {address}",
+  "alloc.bindBundle": "Su Bundle {address}",
+  "alloc.bind": "Vincular",
+  "alloc.rebind": "Revincular",
+  "alloc.bindTo": "Pagar a",
+  "alloc.bindOwn": "El Bundle de {name} — {address}",
+  "alloc.bindCascade": "Dividida de nuevo en cadena entre {n} holones.",
+  "alloc.bindWarnLoop":
+    "Una parte vuelve atrás: {names}. Esa parte se queda donde se cierra el bucle.",
+  "alloc.bindWarnLarge":
+    "{n} holones en un solo envío — una transacción grande.",
+  "alloc.bindWarnDeep": "{n} saltos de profundidad — una transacción grande.",
+  "alloc.bindNotAllowed": "Esta wallet no puede vincular esa parte.",
+  "alloc.bindOwnerIs": "La wallet propietaria es {address}.",
+  "alloc.bindSend": "Vincular en cadena",
+  "alloc.bindDone": "Vinculada en cadena — {hash}…",
+  "alloc.bindFailed": "No se pudo vincular: {reason}",
   "alloc.tabSplit": "Reparto",
   "alloc.tabContributors": "Contribuidores",
   "alloc.tabZones": "Zonas",

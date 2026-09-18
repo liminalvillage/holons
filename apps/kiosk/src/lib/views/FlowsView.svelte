@@ -1849,6 +1849,7 @@
     scored={memberShares}
     shares={savedShares}
     {bundle}
+    {cascade}
     collectiveSlug={readCollectiveSlug(settings)}
     units={unitOptions}
     unit={trackId}

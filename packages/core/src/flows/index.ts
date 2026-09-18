@@ -222,6 +222,17 @@ export {
 } from './contract.js';
 
 export {
+  DEEP_CASCADE_HOPS,
+  LARGE_CASCADE_NODES,
+  bindingAuthority,
+  bindingPreflight,
+  readBoundAddress,
+  type BindingAuthority,
+  type BindingPreflight,
+  type BindingWarning,
+} from './binding.js';
+
+export {
   BUNDLE_KEY,
   loadBundleRecord,
   migrateLegacyBundleRecord,
