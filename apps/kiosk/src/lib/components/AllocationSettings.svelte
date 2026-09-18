@@ -11,11 +11,12 @@
   // Every change is also dispatched as a `draft`, so the board behind the
   // sheet redraws as the sliders move — nothing is written until Save.
   //
-  // Two ways out, deliberately separate: Save writes the off-chain mirror
-  // (no wallet; what every wallet-less surface reads at once), and — only
-  // when this holon has a deployed bundle — "Update on chain" sends the
-  // Bundle contract's `syncAll` through a browser wallet and THEN writes the
-  // same mirror, so chain and mirror cannot disagree.
+  // Save goes as far as the device can: with a browser wallet it deploys the
+  // holon's Bundle contract if there is none, sends the split to it and THEN
+  // writes the off-chain mirror (what every wallet-less surface reads), so
+  // chain and mirror cannot disagree; without a wallet — most kiosks — it
+  // writes the mirror alone, and "Save off-chain only" does the same on a
+  // device that has a wallet but should not use it.
   //
   // Writes go through `getReaStore`, so the acting identity is the logged-in
   // user, signed by the device key — the caller gates on login first.
@@ -57,6 +58,7 @@
     ChainError,
     bindOnChain,
     connectedWallet,
+    deployBundleOnChain,
     isWalletAvailable,
     readBindings,
     syncAllocationOnChainAndMirror,
@@ -528,19 +530,38 @@
     if (!denied) console.error("[kiosk] allocation save failed", err);
   }
 
-  /** The contract first, then the same mirror Save writes. */
-  async function updateOnChain() {
-    if (busy || syncing || !bundle) return;
+  /**
+   * Save, on chain when there is a wallet: a holon with no Bundle yet gets
+   * one deployed (the wallet owns it), then the split is sent to it and the
+   * same mirror every wallet-less surface reads is written. Without a wallet
+   * only the mirror is written — see `saveOffChain`.
+   */
+  async function save() {
+    if (busy || syncing) return;
+    if (!hasWallet) return saveOffChain();
     syncing = true;
     error = "";
-    notice = $t("alloc.chainConfirm");
     try {
       const store = await getReaStore();
+      let target = bundle;
+      if (!target) {
+        notice = $t("alloc.deployConfirm");
+        target = await deployBundleOnChain(store, holonId, {
+          steepness,
+          nzones,
+        });
+        bundle = target;
+        notice = $t("alloc.deployDone", {
+          address: `${target.address.slice(0, 6)}…${target.address.slice(-4)}`,
+        });
+      } else {
+        notice = $t("alloc.chainConfirm");
+      }
       const hash = await syncAllocationOnChainAndMirror(
         store,
         holonId,
         {
-          bundleAddress: bundle.address,
+          bundleAddress: target.address,
           config: { interiorPercent, steepness, nzones, interiorMode },
           scored,
           shares: shareOf,
@@ -577,7 +598,8 @@
     }
   }
 
-  async function save() {
+  /** The mirror only — what a caretaker with no wallet can still save. */
+  async function saveOffChain() {
     if (busy || syncing) return;
     busy = true;
     error = "";
@@ -1062,28 +1084,24 @@
         />
       </label>
 
-      {#if bundle}
-        <!-- A second, deliberate commit: Save writes the mirror every
-             wallet-less surface reads; this also sends it to the contract. -->
-        <div class="control">
-          <div class="k">{$t("alloc.chainUpdate")}</div>
+      <!-- The contract, as it stands: Save takes the split there. -->
+      <div class="control">
+        <div class="k">{$t("alloc.chainTitle")}</div>
+        {#if bundle}
           <p class="sub">
             {$t("alloc.chainAbout", {
               address: `${bundle.address.slice(0, 6)}…${bundle.address.slice(-4)}`,
             })}
           </p>
-          <button
-            class="wide-ghost"
-            disabled={busy || syncing || !hasWallet}
-            on:click={updateOnChain}
-          >
-            {syncing ? $t("alloc.chainSyncing") : $t("alloc.chainUpdate")}
-          </button>
-          {#if !hasWallet}
-            <p class="sub">{$t("alloc.chainNoWallet")}</p>
-          {/if}
-        </div>
+        {:else}
+          <p class="sub">{$t("alloc.chainNone")}</p>
+        {/if}
+        {#if !hasWallet}
+          <p class="sub">{$t("alloc.chainNoWallet")}</p>
+        {/if}
+      </div>
 
+      {#if bundle}
         <!-- ── Who each share is paid to on chain ──────────────────────── -->
         <div class="control">
           <div class="k">{$t("alloc.bindTitle")}</div>
@@ -1224,10 +1242,23 @@
           >{$t("common.cancel")}</button
         >
         <button class="primary" disabled={busy || syncing} on:click={save}>
-          {busy ? $t("common.saving") : $t("alloc.save")}
+          {syncing
+            ? $t("alloc.chainSyncing")
+            : busy
+              ? $t("common.saving")
+              : hasWallet
+                ? $t("alloc.saveOnChain")
+                : $t("alloc.save")}
         </button>
       {/if}
     </div>
+    {#if tab !== "view" && hasWallet}
+      <button
+        class="offchain"
+        disabled={busy || syncing}
+        on:click={saveOffChain}>{$t("alloc.saveOffChain")}</button
+      >
+    {/if}
   </svelte:fragment>
 </SidePanel>
 
@@ -1830,6 +1861,20 @@
   }
   .primary:disabled {
     opacity: 0.6;
+  }
+  .offchain {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 0.3rem;
+    background: none;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    touch-action: manipulation;
+  }
+  .offchain:disabled {
+    opacity: 0.45;
   }
   .error {
     color: #c0392b;

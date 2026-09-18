@@ -1313,8 +1313,14 @@ export const en = {
     "Nobody in the split yet — the equation split stands until someone is entered.",
   "alloc.splitCopy": "Copy from value equation",
   "alloc.chainAbout":
-    "This holon has a Bundle contract at {address}. Saving writes here; updating on chain sends the same split to the contract.",
-  "alloc.chainUpdate": "Update on chain",
+    "This holon's Bundle contract is at {address}. Save sends the split there and mirrors it here.",
+  "alloc.chainTitle": "On chain",
+  "alloc.chainNone":
+    "No contract yet — Save with a wallet deploys this holon's Bundle and sends the split to it.",
+  "alloc.deployConfirm": "Deploying the Bundle — confirm in your wallet…",
+  "alloc.deployDone": "Bundle deployed at {address} — now sending the split…",
+  "alloc.saveOnChain": "Save on chain",
+  "alloc.saveOffChain": "Save off-chain only",
   "alloc.chainSyncing": "Confirm in your wallet…",
   "alloc.chainConfirm": "Confirm the transaction in your wallet…",
   "alloc.chainDone": "Updated on chain — {hash}…",

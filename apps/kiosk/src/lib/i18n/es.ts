@@ -1334,8 +1334,14 @@ export const es: Record<MessageKey, Msg> = {
     "Nadie en el reparto todavía — la ecuación sigue vigente hasta que añadas a alguien.",
   "alloc.splitCopy": "Copiar de la ecuación de valor",
   "alloc.chainAbout":
-    "Este holon tiene un contrato Bundle en {address}. Guardar escribe aquí; actualizar en cadena envía el mismo reparto al contrato.",
-  "alloc.chainUpdate": "Actualizar en cadena",
+    "El contrato Bundle de este holón está en {address}. Guardar envía el reparto allí y lo refleja aquí.",
+  "alloc.chainTitle": "En cadena",
+  "alloc.chainNone":
+    "Aún no hay contrato — Guardar con una wallet despliega el Bundle de este holón y le envía el reparto.",
+  "alloc.deployConfirm": "Desplegando el Bundle — confirma en tu wallet…",
+  "alloc.deployDone": "Bundle desplegado en {address} — enviando el reparto…",
+  "alloc.saveOnChain": "Guardar en cadena",
+  "alloc.saveOffChain": "Guardar solo fuera de cadena",
   "alloc.chainSyncing": "Confirma en tu monedero…",
   "alloc.chainConfirm": "Confirma la transacción en tu monedero…",
   "alloc.chainDone": "Actualizado en cadena — {hash}…",

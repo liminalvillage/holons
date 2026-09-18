@@ -13,17 +13,23 @@
 import { ethers } from "ethers";
 import {
   BUNDLE_BINDING_ABI,
+  BUNDLE_BYTECODE,
   BUNDLE_CLAIM_ABI,
+  BUNDLE_CONSTRUCTOR_ABI,
   BUNDLE_SYNC_ALL_ABI,
   bundleClaimArgs,
+  bundleConstructorArgList,
+  bundleConstructorArgs,
   bundleSyncArgList,
   bundleSyncArgs,
   chainInteriorRoster,
   readBoundAddress,
   resolveInteriorMembers,
   saveAllocationConfig,
+  saveBundleRecord,
   type AllocationConfig,
   type AllocationMember,
+  type HolonBundleRecord,
   type InteriorShares,
 } from "@holons/core/flows";
 import { isWalletAvailable } from "./login/ethereum";
@@ -156,6 +162,63 @@ export async function syncAllocationOnChainAndMirror(
     input.shares,
   );
   return hash;
+}
+
+// ── Deploying ────────────────────────────────────────────────────────────
+// A holon with no Bundle yet gets one from the kiosk the way the dashboard
+// makes it: the connected wallet owns it, the holon id is its creator member
+// and its name (core `bundleConstructorArgs`), and the record lands on the
+// canonical settings document through core `saveBundleRecord`.
+
+/**
+ * Deploy a Bundle for `holonId` and record it. Returns the record, which is
+ * what the split is then synced to. Gas is estimated — a deploy is not
+ * state-dependent the way a cascade is, so the estimate holds.
+ */
+export async function deployBundleOnChain(
+  store: any,
+  holonId: string,
+  config: Pick<AllocationConfig, "steepness" | "nzones">,
+): Promise<HolonBundleRecord> {
+  const owner = await connectedWallet();
+  const args = bundleConstructorArgs({ owner, holonId, config });
+  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const signer = await provider.getSigner();
+  const factory = new ethers.ContractFactory(
+    [BUNDLE_CONSTRUCTOR_ABI],
+    BUNDLE_BYTECODE,
+    signer,
+  );
+  let address = "";
+  let txHash = "";
+  try {
+    const contract = await factory.deploy(...bundleConstructorArgList(args));
+    const tx = contract.deploymentTransaction();
+    txHash = String(tx?.hash ?? "");
+    const receipt = await tx?.wait();
+    if (receipt?.status !== 1) {
+      throw new ChainError("The deployment failed on chain.", "failed");
+    }
+    address = String(receipt.contractAddress ?? (await contract.getAddress()));
+  } catch (err: any) {
+    if (err instanceof ChainError) throw err;
+    if (isRejection(err))
+      throw new ChainError("Transaction rejected.", "rejected");
+    throw new ChainError(
+      err?.shortMessage ?? err?.message ?? "Deployment failed.",
+      "failed",
+    );
+  }
+  const record: HolonBundleRecord = {
+    address,
+    creatorUserId: args.creatorUserId,
+    steepness: args.steepness.toString(),
+    nzones: Number(args.nzones),
+    deployedAt: Date.now(),
+    txHash,
+  };
+  await saveBundleRecord(store, holonId, record);
+  return record;
 }
 
 // ── Bindings ─────────────────────────────────────────────────────────────

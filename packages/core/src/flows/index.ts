@@ -255,3 +255,11 @@ export {
   saveCollectiveSlug,
   toAllocationPartners,
 } from './settings.js';
+
+export {
+  BUNDLE_BYTECODE,
+  BUNDLE_CONSTRUCTOR_ABI,
+  bundleConstructorArgList,
+  bundleConstructorArgs,
+  type BundleConstructorArgs,
+} from './bundle-artifact.js';

@@ -1342,8 +1342,15 @@ export const it: Record<MessageKey, Msg> = {
     "Nessuno nella divisione — resta valida l'equazione finché non inserisci qualcuno.",
   "alloc.splitCopy": "Copia dall'equazione del valore",
   "alloc.chainAbout":
-    "Questo holon ha un contratto Bundle a {address}. Salva scrive qui; l'aggiornamento on-chain manda la stessa divisione al contratto.",
-  "alloc.chainUpdate": "Aggiorna on-chain",
+    "Il contratto Bundle di questo holon è a {address}. Salva invia la ripartizione lì e la rispecchia qui.",
+  "alloc.chainTitle": "On-chain",
+  "alloc.chainNone":
+    "Nessun contratto, per ora — Salvare con un wallet distribuisce il Bundle di questo holon e gli invia la ripartizione.",
+  "alloc.deployConfirm": "Distribuzione del Bundle — conferma nel wallet…",
+  "alloc.deployDone":
+    "Bundle distribuito a {address} — ora invio la ripartizione…",
+  "alloc.saveOnChain": "Salva on-chain",
+  "alloc.saveOffChain": "Salva solo off-chain",
   "alloc.chainSyncing": "Conferma nel portafoglio…",
   "alloc.chainConfirm": "Conferma la transazione nel portafoglio…",
   "alloc.chainDone": "Aggiornato on-chain — {hash}…",
