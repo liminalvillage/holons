@@ -1074,6 +1074,7 @@ export const en = {
   "settings.collectivePlaceholder": "collective slug or URL",
   "settings.collectiveFailed": "Could not save the collective.",
   // Flows board
+  "flows.onChainUnknownNetwork": "Network not recorded",
   "flows.loading": "Reading the ledger\u2026",
   "flows.empty": "Nothing has moved here yet.",
   "flows.emptyTrack": "Nothing moved in this window.",
@@ -1312,8 +1313,23 @@ export const en = {
   "alloc.splitEmpty":
     "Nobody in the split yet — the equation split stands until someone is entered.",
   "alloc.splitCopy": "Copy from value equation",
-  "alloc.chainAbout":
-    "This holon's Bundle contract is at {address}. Save sends the split there and mirrors it here.",
+  "alloc.chainNetwork": "Network",
+  "alloc.chainAddress": "Contract address",
+  "alloc.chainTestnet": "test network",
+  "alloc.chainNetworkUnknown":
+    "Not recorded — this Bundle was deployed before the network was saved with it",
+  "alloc.chainCopy": "Copy address",
+  "alloc.chainCopied": "Copied",
+  "alloc.chainExplorer": "View on explorer",
+  "alloc.chainElsewhere":
+    "Your wallet is on {wallet}; this Bundle is on {bundle}. Switch the wallet to {bundle} to read or change it.",
+  "alloc.chainFoundOn": "Found on {network}, the network your wallet is on.",
+  "alloc.chainNotFoundOn":
+    "Nothing at this address on {network}, the network your wallet is on — try another network.",
+  "alloc.chainSaveHint":
+    "Save sends the split to this contract and mirrors it here.",
+  "alloc.chainWillDeployTo":
+    "Your wallet is on {network}: that is where it will be deployed.",
   "alloc.chainTitle": "On chain",
   "alloc.chainNone":
     "No contract yet — Save with a wallet deploys this holon's Bundle and sends the split to it.",

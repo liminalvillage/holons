@@ -1096,6 +1096,7 @@ export const it: Record<MessageKey, Msg> = {
   "settings.collectivePlaceholder": "slug o URL del collettivo",
   "settings.collectiveFailed": "Impossibile salvare il collettivo.",
   // Flows board
+  "flows.onChainUnknownNetwork": "Rete non registrata",
   "flows.loading": "Lettura del registro\u2026",
   "flows.empty": "Qui non si \u00e8 ancora mosso nulla.",
   "flows.emptyTrack": "Nulla si \u00e8 mosso in questo periodo.",
@@ -1341,8 +1342,23 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.splitEmpty":
     "Nessuno nella divisione — resta valida l'equazione finché non inserisci qualcuno.",
   "alloc.splitCopy": "Copia dall'equazione del valore",
-  "alloc.chainAbout":
-    "Il contratto Bundle di questo holon è a {address}. Salva invia la ripartizione lì e la rispecchia qui.",
+  "alloc.chainNetwork": "Rete",
+  "alloc.chainAddress": "Indirizzo del contratto",
+  "alloc.chainTestnet": "rete di prova",
+  "alloc.chainNetworkUnknown":
+    "Non registrata — questo Bundle è stato distribuito prima che la rete venisse salvata con esso",
+  "alloc.chainCopy": "Copia indirizzo",
+  "alloc.chainCopied": "Copiato",
+  "alloc.chainExplorer": "Vedi sull'explorer",
+  "alloc.chainElsewhere":
+    "Il tuo wallet è su {wallet}; questo Bundle è su {bundle}. Passa il wallet a {bundle} per leggerlo o modificarlo.",
+  "alloc.chainFoundOn": "Trovato su {network}, la rete del tuo wallet.",
+  "alloc.chainNotFoundOn":
+    "Niente a questo indirizzo su {network}, la rete del tuo wallet — prova un'altra rete.",
+  "alloc.chainSaveHint":
+    "Salva invia la ripartizione a questo contratto e la rispecchia qui.",
+  "alloc.chainWillDeployTo":
+    "Il tuo wallet è su {network}: verrà distribuito lì.",
   "alloc.chainTitle": "On-chain",
   "alloc.chainNone":
     "Nessun contratto, per ora — Salvare con un wallet distribuisce il Bundle di questo holon e gli invia la ripartizione.",

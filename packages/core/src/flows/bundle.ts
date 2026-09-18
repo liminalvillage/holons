@@ -46,6 +46,11 @@ export const LEGACY_ZONES_KEY = 'federationZones';
 /** The deployed Holons contract bundle for a holon. */
 export interface HolonBundleRecord {
   address: string;
+  /**
+   * The EVM chain the contract lives on. Absent on records written before
+   * 2026-09-18, which never said — `describeChain` in chain.ts names it.
+   */
+  chainId?: number;
   creatorUserId?: string;
   /** Contract steepness, WAD-scaled, kept as a string (it exceeds Number). */
   steepness?: string;
@@ -65,8 +70,10 @@ function toBundle(raw: unknown): HolonBundleRecord | null {
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
   };
+  const chainId = num(doc.chainId);
   return {
     address: doc.address,
+    ...(chainId != null && chainId > 0 ? { chainId: Math.floor(chainId) } : {}),
     creatorUserId: doc.creatorUserId != null ? String(doc.creatorUserId) : undefined,
     steepness: doc.steepness != null ? String(doc.steepness) : undefined,
     nzones: num(doc.nzones),

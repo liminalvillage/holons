@@ -35,6 +35,9 @@
     allocate,
     bindingAuthority,
     bindingPreflight,
+    bundleExplorerUrl,
+    chainStanding,
+    describeChain,
     loadBundleRecord,
     normalizeInteriorShares,
     resolveInteriorMembers,
@@ -95,7 +98,10 @@
   let bundle: HolonBundleRecord | null = null;
   let provider: ethers.BrowserProvider | null = null;
   let signer: ethers.Signer | null = null;
-  let networkName = "";
+  let walletChain: number | null = null;
+  $: bundleChain = describeChain(bundle?.chainId);
+  $: explorer = bundleExplorerUrl(bundle);
+  $: standing = chainStanding(bundle, walletChain);
   let connecting = false;
   let busy = false;
   let notice = "";
@@ -258,8 +264,7 @@
       walletAddress.set(await signer.getAddress());
 
       const network = await provider.getNetwork();
-      networkName =
-        network.name === "unknown" ? `chain ${network.chainId}` : network.name;
+      walletChain = Number(network.chainId);
 
       if (holosphere) {
         manager = new HolonsManager(provider, holosphere);
@@ -843,10 +848,24 @@
       <div class="actions">
         <div class="chain">
           {#if bundle}
-            <span class="muted"
-              >Bundle {bundle.address.slice(0, 6)}…{bundle.address.slice(-4)}
-              {#if connected && networkName}· {networkName}{/if}</span
+            <!-- Where the contract is: network first, address in full. -->
+            <span class="chain-net" class:unknown={!bundleChain}
+              >{bundleChain ? bundleChain.name : "Network not recorded"}</span
             >
+            <code class="chain-addr" title={bundle.address}>{bundle.address}</code>
+            {#if explorer}
+              <a class="chain-link" href={explorer} target="_blank" rel="noopener noreferrer"
+                >explorer ↗</a
+              >
+            {/if}
+            {#if standing.kind === "elsewhere"}
+              <span class="chain-warn"
+                >Your wallet is on {standing.wallet.name}; this Bundle is on {standing
+                  .bundle.name}.</span
+              >
+            {:else if standing.kind === "unrecorded" && connected}
+              <span class="muted">Wallet on {standing.wallet.name}.</span>
+            {/if}
           {:else}
             <span class="muted">
               Nothing deployed yet — deploy a bundle in
@@ -1335,6 +1354,40 @@
     display: flex;
     gap: 0.5rem;
     margin-left: auto;
+  }
+
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+    font-size: 0.78rem;
+  }
+  .chain-net {
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.45rem;
+    border-radius: 0.3rem;
+    background: #0f766e;
+    color: #f0fdfa;
+  }
+  .chain-net.unknown {
+    background: #92400e;
+  }
+  .chain-addr {
+    font-family: ui-monospace, monospace;
+    color: #cbd5e1;
+    word-break: break-all;
+    user-select: all;
+  }
+  .chain-link {
+    color: #5eead4;
+  }
+  .chain-warn {
+    flex-basis: 100%;
+    color: #fbbf24;
   }
 
   /* ── Bindings ───────────────────────────────────────────────────────── */

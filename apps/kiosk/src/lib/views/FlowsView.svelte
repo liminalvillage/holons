@@ -105,6 +105,7 @@
     combinePeopleTracks,
     combineTracks,
     readAllocationConfig,
+    describeChain,
     readBundleRecord,
     readInteriorShares,
     resolveInteriorMembers,
@@ -349,8 +350,9 @@
   // equation, the custom shares under a custom split — the same resolver the
   // dashboard reads with and the contract is synced by.
   $: interiorShares = allocationDraft?.shares ?? savedShares;
-  /** The deployed Bundle contract, if this holon has one. */
+  /** The deployed Bundle contract, if this holon has one — and its chain. */
   $: bundle = readBundleRecord(settings);
+  $: bundleChain = describeChain(bundle?.chainId);
   $: interiorMembers = resolveInteriorMembers({
     config: allocationConfig,
     scored: memberShares,
@@ -1364,6 +1366,11 @@
       const doc = await loadSettings(hs, holon);
       if (hid !== holon) return;
       settings = doc;
+      // A stored split is a board on its own: draw it now rather than sit on
+      // "reading the ledger" through the events read's retries — a holon
+      // with a split and no events yet would otherwise wait the whole
+      // ladder out. The movement half joins in when the events land.
+      if (hasAllocationConfig(doc)) loading = false;
       const slug = readCollectiveSlug(doc);
       if (slug) void loadCollective(slug, holon);
       else {
@@ -1745,6 +1752,20 @@
                 ? $t("flows.allocationAboutFunds", { name: collective.name })
                 : $t("flows.allocationAboutShares")}
             </p>
+            {#if bundle}
+              <!-- Where the contract is: the network first, because the
+                   address alone says nothing about which chain to look on. -->
+              <p class="chainline">
+                <span class="chain-net" class:unknown={!bundleChain}
+                  >{bundleChain
+                    ? bundleChain.name
+                    : $t("flows.onChainUnknownNetwork")}</span
+                >
+                <code class="chain-addr" title={bundle.address}
+                  >{bundle.address}</code
+                >
+              </p>
+            {/if}
           </div>
         </header>
         {#if hasAllocation}
@@ -2274,6 +2295,36 @@
     margin: 0.1rem 0 0;
     font-size: 0.82rem;
     color: var(--muted);
+  }
+
+  /* Where the Bundle is: network as a chip, address in full. */
+  .chainline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    margin: 0.4rem 0 0;
+    font-size: 0.82rem;
+  }
+  .chain-net {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    background: var(--teal);
+    color: #fff;
+  }
+  .chain-net.unknown {
+    background: #a3540d;
+  }
+  .chain-addr {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+    word-break: break-all;
+    user-select: all;
+    -webkit-user-select: all;
   }
 
   /* A loop in the cascade: said in words, above the diagram that cuts it. */

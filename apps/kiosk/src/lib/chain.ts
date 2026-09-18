@@ -209,8 +209,10 @@ export async function deployBundleOnChain(
       "failed",
     );
   }
+  const chainId = Number((await provider.getNetwork()).chainId);
   const record: HolonBundleRecord = {
     address,
+    chainId,
     creatorUserId: args.creatorUserId,
     steepness: args.steepness.toString(),
     nzones: Number(args.nzones),
@@ -228,6 +230,8 @@ export async function deployBundleOnChain(
 // the share is divided again there: the on-chain cascade.
 
 export interface BundleBindings {
+  /** The chain the wallet is on — which is the chain these were read from. */
+  chainId: number;
   owner: string | null;
   /** By member id; null when unbound. Lower-case. */
   bound: Record<string, string | null>;
@@ -254,6 +258,7 @@ export async function readBindings(
   const provider = new ethers.BrowserProvider((window as any).ethereum);
   const code = await provider.getCode(bundleAddress).catch(() => "0x");
   if (!code || code === "0x") return null;
+  const chainId = Number((await provider.getNetwork()).chainId);
   const contract = new ethers.Contract(
     bundleAddress,
     [...BUNDLE_BINDING_ABI],
@@ -277,7 +282,18 @@ export async function readBindings(
       );
     }),
   );
-  return { owner, bound, isContract, member };
+  return { chainId, owner, bound, isContract, member };
+}
+
+/** The chain the browser wallet is on, without prompting; null without one. */
+export async function walletChainId(): Promise<number | null> {
+  if (!isWalletAvailable()) return null;
+  try {
+    const provider = new ethers.BrowserProvider((window as any).ethereum);
+    return Number((await provider.getNetwork()).chainId);
+  } catch {
+    return null;
+  }
 }
 
 /** The address the wallet would sign with, asking to connect if needed. */

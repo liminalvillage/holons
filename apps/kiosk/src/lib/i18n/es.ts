@@ -1090,6 +1090,7 @@ export const es: Record<MessageKey, Msg> = {
   "settings.collectivePlaceholder": "slug o URL del colectivo",
   "settings.collectiveFailed": "No se pudo guardar el colectivo.",
   // Flows board
+  "flows.onChainUnknownNetwork": "Red no registrada",
   "flows.loading": "Leyendo el registro\u2026",
   "flows.empty": "Aqu\u00ed todav\u00eda no se ha movido nada.",
   "flows.emptyTrack": "No se movi\u00f3 nada en este periodo.",
@@ -1333,8 +1334,22 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.splitEmpty":
     "Nadie en el reparto todavía — la ecuación sigue vigente hasta que añadas a alguien.",
   "alloc.splitCopy": "Copiar de la ecuación de valor",
-  "alloc.chainAbout":
-    "El contrato Bundle de este holón está en {address}. Guardar envía el reparto allí y lo refleja aquí.",
+  "alloc.chainNetwork": "Red",
+  "alloc.chainAddress": "Dirección del contrato",
+  "alloc.chainTestnet": "red de prueba",
+  "alloc.chainNetworkUnknown":
+    "No registrada — este Bundle se desplegó antes de que se guardara la red con él",
+  "alloc.chainCopy": "Copiar dirección",
+  "alloc.chainCopied": "Copiado",
+  "alloc.chainExplorer": "Ver en el explorador",
+  "alloc.chainElsewhere":
+    "Tu wallet está en {wallet}; este Bundle está en {bundle}. Cambia la wallet a {bundle} para leerlo o modificarlo.",
+  "alloc.chainFoundOn": "Encontrado en {network}, la red de tu wallet.",
+  "alloc.chainNotFoundOn":
+    "Nada en esta dirección en {network}, la red de tu wallet — prueba otra red.",
+  "alloc.chainSaveHint":
+    "Guardar envía el reparto a este contrato y lo refleja aquí.",
+  "alloc.chainWillDeployTo": "Tu wallet está en {network}: ahí se desplegará.",
   "alloc.chainTitle": "En cadena",
   "alloc.chainNone":
     "Aún no hay contrato — Guardar con una wallet despliega el Bundle de este holón y le envía el reparto.",

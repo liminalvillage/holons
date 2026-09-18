@@ -263,3 +263,12 @@ export {
   bundleConstructorArgs,
   type BundleConstructorArgs,
 } from './bundle-artifact.js';
+
+export {
+  KNOWN_CHAINS,
+  bundleExplorerUrl,
+  chainStanding,
+  describeChain,
+  type ChainInfo,
+  type ChainStanding,
+} from './chain.js';

@@ -41,6 +41,9 @@
     allocate,
     bindingAuthority,
     bindingPreflight,
+    bundleExplorerUrl,
+    chainStanding,
+    describeChain,
     loadBundleRecord,
     resolveInteriorMembers,
     saveAllocationConfig,
@@ -62,6 +65,7 @@
     isWalletAvailable,
     readBindings,
     syncAllocationOnChainAndMirror,
+    walletChainId,
     type BundleBindings,
   } from "$lib/chain";
   import type { AllocationDraft } from "$lib/allocation";
@@ -383,6 +387,27 @@
   let bindings: BundleBindings | null = null;
   let bindingsLoading = false;
   let bindingsKey = "";
+  // The wallet's chain, read without prompting when the Fund tab opens: the
+  // Bundle's address means nothing on another network, so the tab says which
+  // one it is on and whether the wallet is there too.
+  let walletChain: number | null = null;
+  let copied = false;
+  $: if (tab === "fund" && hasWallet)
+    void walletChainId().then((id) => (walletChain = id));
+  $: standing = chainStanding(bundle, walletChain);
+  $: bundleChain = describeChain(bundle?.chainId);
+  $: explorer = bundleExplorerUrl(bundle);
+
+  async function copyAddress() {
+    if (!bundle) return;
+    try {
+      await navigator.clipboard.writeText(bundle.address);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      // No clipboard on this device: the address is selectable text anyway.
+    }
+  }
   let wallet = "";
   /** The party whose bind form is open. */
   let bindFor = "";
@@ -1084,17 +1109,71 @@
         />
       </label>
 
-      <!-- The contract, as it stands: Save takes the split there. -->
+      <!-- The contract, as it stands: where it is, and whether the wallet
+           is there too. Save takes the split there. -->
       <div class="control">
         <div class="k">{$t("alloc.chainTitle")}</div>
         {#if bundle}
-          <p class="sub">
-            {$t("alloc.chainAbout", {
-              address: `${bundle.address.slice(0, 6)}…${bundle.address.slice(-4)}`,
-            })}
-          </p>
+          <div class="chain-card">
+            <div class="chain-row">
+              <span class="chain-k">{$t("alloc.chainNetwork")}</span>
+              <span class="chain-v" class:warn={!bundleChain}>
+                {#if bundleChain}
+                  {bundleChain.name}
+                  {#if bundleChain.testnet}<span class="chain-tag"
+                      >{$t("alloc.chainTestnet")}</span
+                    >{/if}
+                {:else}
+                  {$t("alloc.chainNetworkUnknown")}
+                {/if}
+              </span>
+            </div>
+            <div class="chain-row">
+              <span class="chain-k">{$t("alloc.chainAddress")}</span>
+              <code class="chain-addr">{bundle.address}</code>
+            </div>
+            <div class="chain-actions">
+              <button class="chain-btn" on:click={copyAddress}
+                >{copied
+                  ? $t("alloc.chainCopied")
+                  : $t("alloc.chainCopy")}</button
+              >
+              {#if explorer}
+                <a
+                  class="chain-btn"
+                  href={explorer}
+                  target="_blank"
+                  rel="noopener noreferrer">{$t("alloc.chainExplorer")}</a
+                >
+              {/if}
+            </div>
+          </div>
+          {#if standing.kind === "elsewhere"}
+            <p class="bind-warn">
+              {$t("alloc.chainElsewhere", {
+                wallet: standing.wallet.name,
+                bundle: standing.bundle.name,
+              })}
+            </p>
+          {:else if standing.kind === "unrecorded" && bindings}
+            <p class="sub">
+              {$t("alloc.chainFoundOn", { network: standing.wallet.name })}
+            </p>
+          {:else if standing.kind === "unrecorded" && !bindingsLoading}
+            <p class="bind-warn">
+              {$t("alloc.chainNotFoundOn", { network: standing.wallet.name })}
+            </p>
+          {/if}
+          <p class="sub">{$t("alloc.chainSaveHint")}</p>
         {:else}
           <p class="sub">{$t("alloc.chainNone")}</p>
+          {#if hasWallet && walletChain}
+            <p class="sub">
+              {$t("alloc.chainWillDeployTo", {
+                network: describeChain(walletChain)?.name ?? "",
+              })}
+            </p>
+          {/if}
         {/if}
         {#if !hasWallet}
           <p class="sub">{$t("alloc.chainNoWallet")}</p>
@@ -1612,6 +1691,79 @@
   .wide-ghost:disabled {
     opacity: 0.45;
   }
+  /* ── The contract's whereabouts ─────────────────────────────────────── */
+  .chain-card {
+    margin-top: 0.5rem;
+    padding: 0.7rem 0.8rem;
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+  }
+  .chain-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.25rem 0;
+  }
+  .chain-k {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .chain-v {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .chain-v.warn {
+    color: #a3540d;
+    font-weight: 500;
+  }
+  .chain-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.4rem;
+    border-radius: 6px;
+    background: var(--paper);
+    color: var(--muted);
+  }
+  .chain-addr {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.86rem;
+    color: var(--ink);
+    word-break: break-all;
+    user-select: all;
+    -webkit-user-select: all;
+  }
+  .chain-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .chain-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 0.8rem;
+    border-radius: 10px;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+
   /* ── Bindings ─────────────────────────────────────────────────────────
      One row per party the root pays: name, where it goes on chain, and the
      bind button; the form unfolds under the row it belongs to. */
