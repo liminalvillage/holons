@@ -1378,6 +1378,10 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.bind": "Vincular",
   "alloc.rebind": "Revincular",
   "alloc.bindTo": "Pagar a",
+  "alloc.bindOwnElsewhere":
+    "El Bundle de {name} está en {theirs}; este está en {ours}. El valor nunca cruza redes, así que no puede recibir esta parte — vincula una wallet, o un Bundle en {ours}.",
+  "alloc.bindOwnUnknownChain":
+    "El Bundle de {name} no registró su red, así que no se ofrece aquí: el valor nunca cruza redes. Vincula una wallet, o vuelve a desplegar su Bundle desde un quiosco que la registre.",
   "alloc.bindOwn": "El Bundle de {name} — {address}",
   "alloc.bindCascade": "Dividida de nuevo en cadena entre {n} holones.",
   "alloc.bindWarnLoop":

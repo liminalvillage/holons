@@ -42,6 +42,7 @@
     bindingAuthority,
     bindingPreflight,
     bundleExplorerUrl,
+    bundlesSameChain,
     chainStanding,
     describeChain,
     loadBundleRecord,
@@ -414,6 +415,8 @@
   let bindAddress = "";
   /** That party's own Bundle, when their holon has one: the cascade target. */
   let bindOwnBundle: string | null = null;
+  /** Their Bundle's record as found, so its chain can be held against ours. */
+  let bindOwnRecord: HolonBundleRecord | null = null;
   let bindBusy = false;
   let bindError = "";
   let bindNotice = "";
@@ -447,7 +450,11 @@
     bindingsKey = want;
     bindingsLoading = true;
     try {
-      const read = await readBindings(address, ids ? ids.split("|") : []);
+      const read = await readBindings(
+        address,
+        ids ? ids.split("|") : [],
+        bundle?.chainId,
+      );
       if (bindingsKey === want) bindings = read;
     } catch (err) {
       console.warn("[kiosk] bindings read failed", err);
@@ -476,12 +483,19 @@
     bindError = "";
     bindNotice = "";
     bindOwnBundle = null;
+    bindOwnRecord = null;
     bindAddress = "";
     try {
       const store = await getReaStore();
       const own = await loadBundleRecord(store, id);
       if (bindFor !== id) return;
-      bindOwnBundle = own?.address ?? null;
+      bindOwnRecord = own;
+      // Their Bundle is a cascade target only on THIS Bundle's chain: value
+      // never crosses chains, and a claim to an address this chain does not
+      // know pushes the share to whatever sits there. Another chain, or one
+      // never recorded, is not offered — only said.
+      bindOwnBundle =
+        own && bundlesSameChain(bundle, own) === "same" ? own.address : null;
       bindAddress = bindOwnBundle ?? bindings?.bound[id] ?? "";
     } catch {
       // No settings for that holon: a plain address can still be typed.
@@ -493,6 +507,10 @@
       if (err instanceof ChainError && err.kind === "rejected") bindFor = "";
     }
   }
+
+  $: ownElsewhere = bindOwnRecord
+    ? bundlesSameChain(bundle, bindOwnRecord)
+    : "same";
 
   $: bindToOwnBundle =
     !!bindOwnBundle &&
@@ -517,6 +535,7 @@
     try {
       const hash = await bindOnChain({
         bundleAddress: bundle.address,
+        chainId: bundle.chainId,
         userId: bindFor,
         beneficiary: bindAddress.trim(),
       });
@@ -534,9 +553,11 @@
               ? $t("alloc.chainNoContract")
               : err.kind === "no-wallet"
                 ? $t("alloc.chainNoWallet")
-                : /not authorized/i.test(err.message)
-                  ? $t("alloc.bindNotAllowed")
-                  : $t("alloc.bindFailed", { reason: err.message });
+                : err.kind === "wrong-network"
+                  ? err.message
+                  : /not authorized/i.test(err.message)
+                    ? $t("alloc.bindNotAllowed")
+                    : $t("alloc.bindFailed", { reason: err.message });
       } else {
         bindError = $t("alloc.bindFailed", {
           reason: String(err?.message ?? err),
@@ -587,6 +608,7 @@
         holonId,
         {
           bundleAddress: target.address,
+          chainId: target.chainId,
           config: { interiorPercent, steepness, nzones, interiorMode },
           scored,
           shares: shareOf,
@@ -597,6 +619,7 @@
         },
         zoneOf,
         personZone,
+        target,
       );
       if (slug.trim() !== collectiveSlug) {
         await saveCollectiveSlug(store, holonId, slug.trim());
@@ -614,7 +637,9 @@
               ? $t("alloc.chainNoContract")
               : err.kind === "no-wallet"
                 ? $t("alloc.chainNoWallet")
-                : $t("alloc.chainFailed", { reason: err.message });
+                : err.kind === "wrong-network"
+                  ? err.message
+                  : $t("alloc.chainFailed", { reason: err.message });
       } else {
         failed(err);
       }
@@ -1238,6 +1263,21 @@
                             address: short(bindOwnBundle),
                           })}
                         </button>
+                      {/if}
+                      {#if bindOwnRecord && ownElsewhere !== "same"}
+                        <p class="bind-warn">
+                          {ownElsewhere === "different"
+                            ? $t("alloc.bindOwnElsewhere", {
+                                name: p.name,
+                                theirs:
+                                  describeChain(bindOwnRecord.chainId)?.name ??
+                                  "",
+                                ours: bundleChain?.name ?? "",
+                              })
+                            : $t("alloc.bindOwnUnknownChain", {
+                                name: p.name,
+                              })}
+                        </p>
                       {/if}
                       {#if bindToOwnBundle}
                         <p class="sub">

@@ -1388,6 +1388,10 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.bind": "Lega",
   "alloc.rebind": "Rilega",
   "alloc.bindTo": "Paga a",
+  "alloc.bindOwnElsewhere":
+    "Il Bundle di {name} è su {theirs}; questo è su {ours}. Il valore non attraversa mai le reti, quindi non può ricevere questa quota — lega un wallet, o un Bundle su {ours}.",
+  "alloc.bindOwnUnknownChain":
+    "Il Bundle di {name} non ha registrato la sua rete, perciò non viene proposto qui: il valore non attraversa mai le reti. Lega un wallet, o ridistribuisci il suo Bundle da un chiosco che la registra.",
   "alloc.bindOwn": "Il Bundle di {name} — {address}",
   "alloc.bindCascade": "Divisa di nuovo on-chain tra {n} holon.",
   "alloc.bindWarnLoop":

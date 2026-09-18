@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { bundleExplorerUrl, chainStanding, describeChain } from './chain.js';
+import { bundleExplorerUrl, bundlesSameChain, chainStanding, describeChain, requiredChainId } from './chain.js';
 import { readBundleRecord } from './bundle.js';
 
 const addr = '0xdA20c942FE60dC6bb7E9cfa3297bEad815ec275F';
@@ -41,5 +41,20 @@ describe('bundle record chainId', () => {
     expect(readBundleRecord({ bundle: { address: addr, chainId: '100' } })?.chainId).toBe(100);
     expect(readBundleRecord({ bundle: { address: addr } })).not.toHaveProperty('chainId');
     expect(readBundleRecord({ bundle: { address: addr, chainId: 'sepolia' } })).not.toHaveProperty('chainId');
+  });
+});
+
+describe('bundlesSameChain / requiredChainId', () => {
+  it('only calls two recorded chains the same, never guesses', () => {
+    expect(bundlesSameChain({ chainId: 100 }, { chainId: 100 })).toBe('same');
+    expect(bundlesSameChain({ chainId: 100 }, { chainId: 11155111 })).toBe('different');
+    expect(bundlesSameChain({ chainId: 100 }, {})).toBe('unknown');
+    expect(bundlesSameChain(null, { chainId: 100 })).toBe('unknown');
+  });
+
+  it('requires the recorded chain and nothing for an unrecorded one', () => {
+    expect(requiredChainId({ chainId: 11155111 })).toBe(11155111);
+    expect(requiredChainId({})).toBeNull();
+    expect(requiredChainId(null)).toBeNull();
   });
 });

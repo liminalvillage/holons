@@ -267,8 +267,11 @@ export {
 export {
   KNOWN_CHAINS,
   bundleExplorerUrl,
+  bundlesSameChain,
   chainStanding,
   describeChain,
+  requiredChainId,
   type ChainInfo,
   type ChainStanding,
+  type SameChain,
 } from './chain.js';

@@ -73,3 +73,34 @@ export function chainStanding(
     ? { kind: 'same', chain: bundle }
     : { kind: 'elsewhere', wallet, bundle };
 }
+
+export type SameChain = 'same' | 'different' | 'unknown';
+
+/**
+ * Whether two Bundles are on the same chain — the one question that decides
+ * if one may be bound as the other's beneficiary. Value never crosses chains:
+ * a claim to an address the parent's chain does not know pushes the share to
+ * whatever sits there, or to nothing. `unknown` when either record never
+ * said, and a surface must then not offer the binding as a cascade.
+ */
+export function bundlesSameChain(
+  a: Pick<HolonBundleRecord, 'chainId'> | null | undefined,
+  b: Pick<HolonBundleRecord, 'chainId'> | null | undefined,
+): SameChain {
+  const x = describeChain(a?.chainId)?.chainId;
+  const y = describeChain(b?.chainId)?.chainId;
+  if (x == null || y == null) return 'unknown';
+  return x === y ? 'same' : 'different';
+}
+
+/**
+ * The chain a write to `record` must be sent on: the recorded one. A record
+ * that never said (deployed before 2026-09-18) constrains nothing here — the
+ * caller then falls back to "is there code at the address", and records the
+ * chain it found on the first successful write.
+ */
+export function requiredChainId(
+  record: Pick<HolonBundleRecord, 'chainId'> | null | undefined,
+): number | null {
+  return describeChain(record?.chainId)?.chainId ?? null;
+}

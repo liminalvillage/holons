@@ -36,6 +36,7 @@
     bindingAuthority,
     bindingPreflight,
     bundleExplorerUrl,
+    bundlesSameChain,
     chainStanding,
     describeChain,
     loadBundleRecord,
@@ -46,7 +47,9 @@
   } from "@holons/core/flows";
   import {
     bindMember,
+    ensureChain,
     readBindings,
+    WrongNetworkError,
     type BundleBindings,
   } from "../../lib/holons/bindings";
   import { ZONE_COLORS } from "../flow/types";
@@ -308,6 +311,12 @@
     if (!manager || !bundle) return;
     try {
       busy = true;
+      // Value never crosses chains: the wallet must be on the Bundle's. A
+      // switch leaves the manager's provider on the old chain — reconnect.
+      const before = walletChain;
+      const { chainId } = await ensureChain(bundle);
+      if (chainId !== before) await connect();
+      if (!manager) return;
       say("Confirm the transaction in your wallet…");
       const tx = await syncAllocation({
         manager,
@@ -330,6 +339,8 @@
     } catch (err: any) {
       if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
         say("Transaction rejected.", "error");
+      } else if (err instanceof WrongNetworkError) {
+        say(err.message, "error");
       } else {
         say(err?.message ?? "Could not update on chain.", "error");
       }
@@ -348,7 +359,10 @@
   let bindFor = "";
   let bindAddress = "";
   let bindOwnBundle: string | null = null;
+  /** Their Bundle's record as found, so its chain can be held against ours. */
+  let bindOwnRecord: HolonBundleRecord | null = null;
   let bindBusy = false;
+  $: ownElsewhere = bindOwnRecord ? bundlesSameChain(bundle, bindOwnRecord) : "same";
 
   // Everyone the root pays, as the draft stands.
   $: parties = [
@@ -379,7 +393,12 @@
     if (!provider || want === bindingsKey) return;
     bindingsKey = want;
     try {
-      const read = await readBindings(provider, address, ids ? ids.split("|") : []);
+      const read = await readBindings(
+        provider,
+        address,
+        ids ? ids.split("|") : [],
+        bundle?.chainId,
+      );
       if (bindingsKey === want) bindings = read;
     } catch (err) {
       console.warn("[flows] bindings read failed", err);
@@ -400,12 +419,17 @@
   async function openBind(id: string) {
     bindFor = id;
     bindOwnBundle = null;
+    bindOwnRecord = null;
     bindAddress = "";
     if (!holosphere) return;
     try {
       const own = await loadBundleRecord(holosphere, id);
       if (bindFor !== id) return;
-      bindOwnBundle = own?.address ?? null;
+      bindOwnRecord = own;
+      // Their Bundle is a cascade target only on THIS Bundle's chain: value
+      // never crosses chains. Another chain, or one never recorded, is only
+      // said, not offered.
+      bindOwnBundle = own && bundlesSameChain(bundle, own) === "same" ? own.address : null;
       bindAddress = bindOwnBundle ?? bindings?.bound[id] ?? "";
     } catch {
       // No settings for that holon: a plain address can still be typed.
@@ -429,8 +453,7 @@
     try {
       bindBusy = true;
       say("Confirm the transaction in your wallet…");
-      const tx = await bindMember(signer, {
-        bundleAddress: bundle.address,
+      const tx = await bindMember(bundle, {
         userId: bindFor,
         beneficiary: bindAddress.trim(),
       });
@@ -447,6 +470,8 @@
     } catch (err: any) {
       if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
         say("Transaction rejected.", "error");
+      } else if (err instanceof WrongNetworkError) {
+        say(err.message, "error");
       } else if (/not authorized/i.test(String(err?.reason ?? err?.message ?? ""))) {
         say("This wallet can't bind that share.", "error");
       } else {
@@ -797,6 +822,19 @@
                           on:click={() => (bindAddress = bindOwnBundle ?? "")}
                           >{p.name}'s own Bundle — {short(bindOwnBundle)}</button
                         >
+                      {/if}
+                      {#if bindOwnRecord && ownElsewhere !== "same"}
+                        <p class="bind-warn">
+                          {#if ownElsewhere === "different"}
+                            {p.name}'s own Bundle is on {describeChain(bindOwnRecord.chainId)
+                              ?.name}; this one is on {bundleChain?.name}. Value never crosses
+                            chains, so it cannot receive this share — bind a wallet, or a
+                            Bundle on {bundleChain?.name}.
+                          {:else}
+                            {p.name}'s own Bundle did not record its network, so it is not
+                            offered: value never crosses chains.
+                          {/if}
+                        </p>
                       {/if}
                       {#if bindToOwnBundle}
                         <p class="muted">

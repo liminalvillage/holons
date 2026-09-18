@@ -23,7 +23,9 @@ import {
   bundleSyncArgList,
   bundleSyncArgs,
   chainInteriorRoster,
+  describeChain,
   readBoundAddress,
+  requiredChainId,
   resolveInteriorMembers,
   saveAllocationConfig,
   saveBundleRecord,
@@ -39,7 +41,12 @@ export { isWalletAvailable };
 export class ChainError extends Error {
   constructor(
     message: string,
-    public readonly kind: "no-wallet" | "rejected" | "no-contract" | "failed",
+    public readonly kind:
+      | "no-wallet"
+      | "rejected"
+      | "no-contract"
+      | "wrong-network"
+      | "failed",
   ) {
     super(message);
     this.name = "ChainError";
@@ -48,6 +55,12 @@ export class ChainError extends Error {
 
 export interface ChainSyncInput {
   bundleAddress: string;
+  /**
+   * The chain the Bundle is recorded on. The write is refused unless the
+   * wallet is on it (after asking the wallet to switch). Absent for a record
+   * that never said, where "is there code at the address" is all there is.
+   */
+  chainId?: number;
   /**
    * The holon being synced. With it, a split that has an interior share but
    * nobody in it seats the holon itself (core `chainInteriorRoster`) — the
@@ -83,6 +96,54 @@ export function encodeChainSync(input: ChainSyncInput): unknown[] {
 }
 
 /**
+ * Value never crosses chains. Before any write to a Bundle the wallet must be
+ * on the chain the Bundle is recorded on: the same address holds a different
+ * contract — or nothing — on another network (a deployer's nth deployment
+ * lands on the same address on every chain). The wallet is asked to switch;
+ * a refusal, or a wallet that cannot, ends the write. A record that never
+ * said its chain is checked for code only, and the chain found is returned
+ * so the caller can record it.
+ */
+async function ensureChain(
+  provider: ethers.BrowserProvider,
+  bundleAddress: string,
+  expected: number | null | undefined,
+): Promise<number> {
+  const want = requiredChainId({ chainId: expected ?? undefined });
+  let actual = Number((await provider.getNetwork()).chainId);
+  if (want != null && actual !== want) {
+    try {
+      await provider.send("wallet_switchEthereumChain", [
+        { chainId: "0x" + want.toString(16) },
+      ]);
+    } catch {
+      // Refused, or the wallet does not know the chain: said below.
+    }
+    // A fresh provider: ethers caches the network it first saw.
+    actual = Number(
+      (await new ethers.BrowserProvider((window as any).ethereum).getNetwork())
+        .chainId,
+    );
+    if (actual !== want) {
+      throw new ChainError(
+        `This Bundle is on ${describeChain(want)?.name}; the wallet is on ${
+          describeChain(actual)?.name
+        }. Switch the wallet to ${describeChain(want)?.name} first.`,
+        "wrong-network",
+      );
+    }
+  }
+  const code = await provider.getCode(bundleAddress).catch(() => "0x");
+  if (!code || code === "0x") {
+    throw new ChainError(
+      `No contract at the bundle address on ${describeChain(actual)?.name}.`,
+      "no-contract",
+    );
+  }
+  return actual;
+}
+
+/**
  * Send `syncAll` and wait for it to be mined.
  *
  * The dashboard's manager uses a fixed 5M gas limit for this batch call
@@ -109,15 +170,15 @@ export async function syncAllocationOnChain(
     );
   }
 
-  // The bundle lives on one network; a wallet on another sees no code there
-  // and would burn gas on a call to nothing.
-  const code = await provider.getCode(input.bundleAddress).catch(() => "0x");
-  if (!code || code === "0x") {
-    throw new ChainError(
-      "No contract at the bundle address on the wallet's network.",
-      "no-contract",
-    );
-  }
+  const chainId = await ensureChain(
+    provider,
+    input.bundleAddress,
+    input.chainId,
+  );
+  // The switch above may have moved the wallet: sign on the chain we checked.
+  const onChain = new ethers.BrowserProvider((window as any).ethereum);
+  signer = await onChain.getSigner();
+  lastWriteChainId = chainId;
 
   const contract = new ethers.Contract(
     input.bundleAddress,
@@ -144,6 +205,26 @@ export async function syncAllocationOnChain(
   }
 }
 
+/** The chain the last successful write went to — see `recordChainIfUnknown`. */
+let lastWriteChainId: number | null = null;
+
+/**
+ * A record from before chains were recorded learns its chain from the first
+ * write that reached it, so every later write is held to it.
+ */
+async function recordChainIfUnknown(
+  store: any,
+  holonId: string,
+  bundle: HolonBundleRecord | null | undefined,
+): Promise<void> {
+  if (!bundle || requiredChainId(bundle) != null || lastWriteChainId == null)
+    return;
+  await saveBundleRecord(store, holonId, {
+    ...bundle,
+    chainId: lastWriteChainId,
+  });
+}
+
 /** The chain first, then the mirror every wallet-less surface reads. */
 export async function syncAllocationOnChainAndMirror(
   store: any,
@@ -151,8 +232,10 @@ export async function syncAllocationOnChainAndMirror(
   input: ChainSyncInput,
   zones: Record<string, number>,
   people: Record<string, number>,
+  bundle?: HolonBundleRecord | null,
 ): Promise<string> {
   const hash = await syncAllocationOnChain({ ...input, holonId });
+  await recordChainIfUnknown(store, holonId, bundle);
   await saveAllocationConfig(
     store,
     holonId,
@@ -253,12 +336,17 @@ export interface BundleBindings {
 export async function readBindings(
   bundleAddress: string,
   userIds: string[],
+  expectedChainId?: number,
 ): Promise<BundleBindings | null> {
   if (!isWalletAvailable()) return null;
   const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const chainId = Number((await provider.getNetwork()).chainId);
+  // Never read the wrong chain's contract as this one: the panel says the
+  // wallet is elsewhere instead (`chainStanding`).
+  const want = requiredChainId({ chainId: expectedChainId });
+  if (want != null && chainId !== want) return null;
   const code = await provider.getCode(bundleAddress).catch(() => "0x");
   if (!code || code === "0x") return null;
-  const chainId = Number((await provider.getNetwork()).chainId);
   const contract = new ethers.Contract(
     bundleAddress,
     [...BUNDLE_BINDING_ABI],
@@ -324,20 +412,22 @@ export async function connectedWallet(): Promise<string> {
  */
 export async function bindOnChain(input: {
   bundleAddress: string;
+  /** The Bundle's recorded chain; the write is refused elsewhere. */
+  chainId?: number;
   userId: string;
   beneficiary: string;
 }): Promise<string> {
   const args = bundleClaimArgs(input);
   await connectedWallet();
   const provider = new ethers.BrowserProvider((window as any).ethereum);
-  const signer = await provider.getSigner();
-  const code = await provider.getCode(input.bundleAddress).catch(() => "0x");
-  if (!code || code === "0x") {
-    throw new ChainError(
-      "No contract at the bundle address on the wallet's network.",
-      "no-contract",
-    );
-  }
+  lastWriteChainId = await ensureChain(
+    provider,
+    input.bundleAddress,
+    input.chainId,
+  );
+  const signer = await new ethers.BrowserProvider(
+    (window as any).ethereum,
+  ).getSigner();
   const contract = new ethers.Contract(
     input.bundleAddress,
     [BUNDLE_CLAIM_ABI],

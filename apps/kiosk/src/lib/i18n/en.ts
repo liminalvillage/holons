@@ -1357,6 +1357,10 @@ export const en = {
   "alloc.bind": "Bind",
   "alloc.rebind": "Rebind",
   "alloc.bindTo": "Pay to",
+  "alloc.bindOwnElsewhere":
+    "{name}'s own Bundle is on {theirs}; this one is on {ours}. Value never crosses chains, so it cannot receive this share — bind a wallet, or a Bundle on {ours}.",
+  "alloc.bindOwnUnknownChain":
+    "{name}'s own Bundle did not record its network, so it is not offered here: value never crosses chains. Bind a wallet, or redeploy their Bundle from a kiosk that records it.",
   "alloc.bindOwn": "{name}'s own Bundle — {address}",
   "alloc.bindCascade": "Divided again on chain across {n} holons.",
   "alloc.bindWarnLoop":

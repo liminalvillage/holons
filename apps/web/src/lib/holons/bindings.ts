@@ -16,8 +16,52 @@ import {
   BUNDLE_BINDING_ABI,
   BUNDLE_CLAIM_ABI,
   bundleClaimArgs,
+  describeChain,
   readBoundAddress,
+  requiredChainId,
+  type HolonBundleRecord,
 } from "@holons/core/flows";
+
+export class WrongNetworkError extends Error {
+  constructor(
+    public readonly want: number,
+    public readonly actual: number,
+  ) {
+    super(
+      `This Bundle is on ${describeChain(want)?.name}; the wallet is on ${describeChain(actual)?.name}. Switch the wallet to ${describeChain(want)?.name} first.`,
+    );
+    this.name = "WrongNetworkError";
+  }
+}
+
+/**
+ * Value never crosses chains. Before any write to a Bundle the wallet must be
+ * on the chain the Bundle is recorded on — the same address holds a different
+ * contract, or nothing, on another network. The wallet is asked to switch; a
+ * refusal ends the write. Returns the chain the wallet is on, and a fresh
+ * provider on it (ethers caches the network a provider first saw).
+ */
+export async function ensureChain(
+  bundle: Pick<HolonBundleRecord, "chainId"> | null | undefined,
+): Promise<{ chainId: number; provider: ethers.BrowserProvider }> {
+  const eth = (window as any).ethereum;
+  let provider = new ethers.BrowserProvider(eth);
+  let actual = Number((await provider.getNetwork()).chainId);
+  const want = requiredChainId(bundle);
+  if (want != null && actual !== want) {
+    try {
+      await provider.send("wallet_switchEthereumChain", [
+        { chainId: "0x" + want.toString(16) },
+      ]);
+    } catch {
+      // Refused, or unknown to the wallet: said below.
+    }
+    provider = new ethers.BrowserProvider(eth);
+    actual = Number((await provider.getNetwork()).chainId);
+    if (actual !== want) throw new WrongNetworkError(want, actual);
+  }
+  return { chainId: actual, provider };
+}
 
 export interface BundleBindings {
   owner: string | null;
@@ -34,7 +78,14 @@ export async function readBindings(
   provider: ethers.Provider,
   bundleAddress: string,
   userIds: string[],
+  expectedChainId?: number,
 ): Promise<BundleBindings | null> {
+  // Never read the wrong chain's contract as this one.
+  const want = requiredChainId({ chainId: expectedChainId });
+  if (want != null) {
+    const actual = Number((await provider.getNetwork()).chainId);
+    if (actual !== want) return null;
+  }
   const code = await provider.getCode(bundleAddress).catch(() => "0x");
   if (!code || code === "0x") return null;
   const contract = new ethers.Contract(
@@ -69,12 +120,14 @@ export async function readBindings(
  * is explicit: lagging nodes under-estimate a cascade.
  */
 export async function bindMember(
-  signer: ethers.Signer,
-  input: { bundleAddress: string; userId: string; beneficiary: string },
+  bundle: Pick<HolonBundleRecord, "address" | "chainId">,
+  input: { userId: string; beneficiary: string },
 ): Promise<ethers.TransactionResponse> {
   const args = bundleClaimArgs(input);
+  const { provider } = await ensureChain(bundle);
+  const signer = await provider.getSigner();
   const contract = new ethers.Contract(
-    input.bundleAddress,
+    bundle.address,
     [BUNDLE_CLAIM_ABI],
     signer,
   );
