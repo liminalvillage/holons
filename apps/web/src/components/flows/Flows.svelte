@@ -169,6 +169,7 @@
   // The federation record is a global, not a lens, so there is nothing to
   // listen to — a slow poll keeps a newly linked partner from needing a reload.
   let federationTimer: ReturnType<typeof setInterval> | null = null;
+  let loadingFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   const FEDERATION_POLL_MS = 60_000;
 
   $: panel = (PANELS.some((p) => p.id === prefs.panel) ? prefs.panel : "movement") as Panel;
@@ -798,6 +799,8 @@
     rescoreTimer = null;
     if (federationTimer) clearInterval(federationTimer);
     federationTimer = null;
+    if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+    loadingFallbackTimer = null;
     eventsById.clear();
     eventSigs.clear();
     userSigs.clear();
@@ -826,6 +829,14 @@
       loading = false;
       return;
     }
+
+    // Armed BEFORE the first await, as the kiosk does: the first read below
+    // waits on the relays, and a socket that dropped mid-session answers
+    // nothing — the board must settle to what the subscriptions bring in
+    // rather than stay on "reading" for good.
+    loadingFallbackTimer = setTimeout(() => {
+      if (holonID === id) loading = false;
+    }, 9000);
 
     try {
       // subscribeFederated hands back a whole deduped snapshot per change, and
@@ -903,14 +914,14 @@
           scheduleSettle(id);
         },
       );
-      await refreshEvents(id);
-
+      // The federation and the equation do not depend on the ledger read, and
+      // must not wait on it: with the read hung on a dead socket the board
+      // would clear (see the fallback above) to a split with nobody in it.
       void loadFederation(id);
       federationTimer = setInterval(
         () => void loadFederation(id),
         FEDERATION_POLL_MS,
       );
-
       void loadEquation(holosphere, id)
         .then((eq) => {
           if (holonID !== id) return;
@@ -918,10 +929,14 @@
           void rescoreMembers();
         })
         .catch(() => {});
+
+      await refreshEvents(id);
     } catch (err) {
       console.error("[flows] bind failed", err);
     } finally {
-      loading = false;
+      if (holonID === id) loading = false;
+      if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+      loadingFallbackTimer = null;
     }
   }
 
