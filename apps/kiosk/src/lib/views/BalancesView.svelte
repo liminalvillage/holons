@@ -68,12 +68,6 @@
   export let onCurrency: (c: string) => void = () => {};
   /** The viewer's own tab only (the "My balance" view). */
   export let mine = false;
-  /**
-   * The Show pill's Personal scope: keep everyone's numbers (a balance is
-   * computed over the whole tab, not a slice of it) but list only the rows,
-   * transfers and records the viewer is part of.
-   */
-  export let filterMine = false;
 
   const PAGE = 10;
 
@@ -128,9 +122,7 @@
   $: ranked = [...credit.balances].sort(
     (a, b) => Math.abs(b.net) - Math.abs(a.net),
   );
-  $: active = ranked
-    .filter((b) => Math.abs(b.net) >= 0.005)
-    .filter((b) => !filterMine || isMe(b.userId));
+  $: active = ranked.filter((b) => Math.abs(b.net) >= 0.005);
   // Two ways to square up: the fewest transfers, or paying whom you owe
   // (core's cost-weighted plan along the recorded debts).
   let planMode: "fewest" | "known" = "fewest";
@@ -140,9 +132,7 @@
       .sort()
       .join("|");
   $: plansDiffer = planKey(credit.plan) !== planKey(credit.knownPlan);
-  $: plan = (planMode === "known" ? credit.knownPlan : credit.plan).filter(
-    (p) => !filterMine || isMe(p.from) || isMe(p.to),
-  );
+  $: plan = planMode === "known" ? credit.knownPlan : credit.plan;
   $: square = ranked.filter((b) => Math.abs(b.net) < 0.005);
   $: maxAbs = active.reduce((m, b) => Math.max(m, Math.abs(b.net)), 0) || 1;
   let showSquare = false;
@@ -150,7 +140,7 @@
   // The list under it all: this currency's records, newest first.
   $: inCurrency = expenses
     .filter((e) => e && expenseCurrency(e) === currency)
-    .filter((e) => !(mine || filterMine) || involvesMe(e))
+    .filter((e) => !mine || involvesMe(e))
     .map((e) => ({ e, ts: stamp(e) }))
     .sort((a, b) => b.ts - a.ts);
 

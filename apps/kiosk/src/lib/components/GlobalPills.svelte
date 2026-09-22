@@ -1,7 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The single pills band for the whole kiosk: one Show pill (scope), the
+  // The single pills band for the whole kiosk: one Show federated switch, the
   // active tab's own Layout/Sort segments, and — at the right edge — the
   // active tab's settings gear. Rendered once by the page shell — outside the
   // tab-keyed view mount, so switching tabs swaps the segments without
@@ -73,8 +73,8 @@
 
   type Segment = { id: string; icon: IconName; labelKey: MessageKey };
 
-  // ── Tasks: swipe deck / compact list / post-it wall. Whose tasks show is
-  // the orthogonal Show pill (scope) — see ScopePill.
+  // ── Tasks: swipe deck / compact list / post-it wall. Whether partners'
+  // tasks come along is the orthogonal Show federated switch — see ScopePill.
   const TASK_MODES: (Segment & { id: TaskViewMode })[] = [
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
@@ -99,7 +99,7 @@
   ];
 
   // ── Flows: my balance (the viewer's account), everyone's balances, or
-  // the Sankey graph. Whose ITEMS show is still the Show pill's business.
+  // the Sankey graph. Whether partner items show is the switch's business.
   const FLOWS_MODES: (Segment & { id: FlowsViewMode })[] = [
     { id: "mine", ...LAYOUT_SEGMENTS.mine },
     { id: "balances", ...LAYOUT_SEGMENTS.balances },
@@ -107,8 +107,8 @@
   ];
 
   // ── Stock: the shelf (what is on hand) / the reorder (what to buy) / the
-  // moves (what the federation could shift). The Show pill decides whether
-  // partner shelves come along.
+  // moves (what the federation could shift). The Show federated switch
+  // decides whether partner shelves come along.
   const STOCK_MODES: (Segment & { id: StockViewMode })[] = [
     { id: "shelf", icon: "shelf", labelKey: "pills.shelf" },
     { id: "reorder", icon: "cart", labelKey: "pills.reorder" },
@@ -333,8 +333,7 @@
     $calendarMode,
   );
 
-  // Status and Shifts have no layout pill of their own; the Show pill still
-  // applies (Personal narrows both boards to the viewer).
+  // Status and Shifts have no layout pill of their own.
   // The gear: the view's own settings while it offers them, else the kiosk's
   // caretaker settings, so every tab has one.
   const kioskGear = {

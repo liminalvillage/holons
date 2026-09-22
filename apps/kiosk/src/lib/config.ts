@@ -267,37 +267,27 @@ export function clearHolonId(): void {
 }
 
 /**
- * Whose items every content view shows — the "Show" pill:
- * `personal` (only items involving the logged-in user), `all` (everything in
- * this holon), or `networked` (this holon plus its federation partners).
- * One device-wide choice shared by every view.
+ * What every content view shows — the "Show federated" switch: `all` (this
+ * holon's own items) or `networked` (this holon plus its federation
+ * partners). One device-wide choice shared by every view.
  */
-export type Scope = "personal" | "all" | "networked";
+export type Scope = "all" | "networked";
 
 const SCOPE_KEY = "kiosk_scope";
 
 /**
- * Derive the scope from what's on disk, honouring pre-scope-pill devices.
- * Priority: an explicit `kiosk_scope` wins; else a legacy per-view "personal"
- * mode (the deliberate phone-in-hand choice — migrating it to all/networked
- * would suddenly show everyone's items); else the legacy federated toggle;
- * else `all`. Pure so the matrix is testable.
+ * Derive the scope from what's on disk, honouring pre-switch devices.
+ * Priority: an explicit `kiosk_scope` wins — the retired `personal` value
+ * (the old Show pill's me-filter) reads as `all`, the holon's own items being
+ * the nearest thing; else the legacy federated toggle; else `all`. Pure so
+ * the matrix is testable.
  */
 export function scopeFromLegacy(v: {
   scope: string | null;
   federated: string | null;
-  taskView: string | null;
-  libraryView: string | null;
-  rolesView: string | null;
 }): Scope {
-  if (v.scope === "personal" || v.scope === "all" || v.scope === "networked")
-    return v.scope;
-  if (
-    v.taskView === "personal" ||
-    v.libraryView === "personal" ||
-    v.rolesView === "personal"
-  )
-    return "personal";
+  if (v.scope === "all" || v.scope === "networked") return v.scope;
+  if (v.scope === "personal") return "all";
   if (v.federated === "1") return "networked";
   return "all";
 }
@@ -307,13 +297,10 @@ export function resolveScope(): Scope {
   return scopeFromLegacy({
     scope: persisted(SCOPE_KEY),
     federated: persisted(FEDERATED_KEY),
-    taskView: persisted(TASK_VIEW_KEY),
-    libraryView: persisted(LIBRARY_VIEW_KEY),
-    rolesView: persisted(ROLES_VIEW_KEY),
   });
 }
 
-/** Persist the scope chosen from a view's Show pill. */
+/** Persist the scope chosen from the Show federated switch. */
 export function setScope(scope: Scope): void {
   persist(SCOPE_KEY, scope);
 }
@@ -653,7 +640,7 @@ export function isPhoneDisplay(): boolean {
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
   if (v === "cards" || v === "list" || v === "swipe" || v === "graph") return v;
-  // Legacy "personal" mode rendered the list; the me-filter lives in the scope now.
+  // Legacy "personal" mode rendered the list (its me-filter is retired).
   if (v === "personal") return "list";
   const mobile =
     typeof window !== "undefined" &&

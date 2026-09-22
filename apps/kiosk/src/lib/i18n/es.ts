@@ -67,10 +67,6 @@ export const es: Record<MessageKey, Msg> = {
     "Riega las plantas\nArregla la puerta\nOrganiza la cena",
   "tasks.adding": "Añadiendo…",
   "tasks.add": "Añadir",
-  "tasks.loginPersonal":
-    "Inicia sesión para ver las tareas en las que participas ✶",
-  "tasks.emptyPersonal":
-    "Aún no hay nada a tu nombre — únete a una tarea para verla aquí ✶",
   "tasks.emptyBacklog": "No hay tareas pendientes. ✶",
 
   // Swipe deck
@@ -88,7 +84,7 @@ export const es: Record<MessageKey, Msg> = {
   "swipe.allCaughtUp": "Todo al día",
   "swipe.roundSummary": "{joins} uniones · {likes} me gusta en esta ronda",
   "swipe.startOver": "Empezar de nuevo",
-  "swipe.seeMine": "Ver mis tareas",
+  "swipe.seeList": "Ver la lista",
   "swipe.backToWall": "Volver a los pósits",
   "swipe.skipAria": "Saltar esta tarea",
   "swipe.skipTitle": "Saltar",
@@ -121,7 +117,6 @@ export const es: Record<MessageKey, Msg> = {
   "lists.removeItemAria": "Quitar {item}",
   "lists.addItemPlaceholder": "Añadir un elemento…",
   "lists.newItemAria": "Nuevo elemento",
-  "lists.loginPersonal": "Inicia sesión para ver tus listas ✶",
   "lists.empty": "Aún no hay listas — empieza una con ＋",
   "lists.startList": "Empezar una lista",
   "lists.startLead": "Una lista compartida que cualquiera aquí puede marcar.",
@@ -141,7 +136,6 @@ export const es: Record<MessageKey, Msg> = {
   "cal.dayOfSpan": "día {span}",
   "cal.previous": "Anterior",
   "cal.next": "Siguiente",
-  "cal.loginEvents": "Inicia sesión para ver tus eventos ✶",
   "cal.newMoon": "Luna nueva",
   "cal.fullMoon": "Luna llena",
   "cal.moonWaxingCrescent": "Luna creciente",
@@ -206,8 +200,6 @@ export const es: Record<MessageKey, Msg> = {
   "rolesv.prevWeek": "Semana anterior",
   "rolesv.nextWeek": "Semana siguiente",
   "rolesv.today": "Hoy",
-  "rolesv.loginPersonal": "Inicia sesión para ver tus roles ✶",
-  "rolesv.emptyPersonal": "Aún no hay roles a tu nombre — toma un día ✪",
   "rolesv.empty": "Aún no hay roles. ✪",
   "rolesv.fixedRole": "Rol fijo",
   "rolesv.fixed": "Fijo",
@@ -234,15 +226,10 @@ export const es: Record<MessageKey, Msg> = {
 
   // Library status chips
   "library.available": "disponible",
-  "library.returnBy": "devolver {when}",
-  "library.withYou": "contigo",
   "library.outWith": "prestado · {who}",
   "library.out": "prestado",
 
   // Library view
-  "library.loginPersonal": "Inicia sesión para ver lo que tienes prestado ✶",
-  "library.emptyPersonal":
-    "Nada prestado ahora — toca un objeto para llevártelo ✶",
   "library.emptyShared": "Aún no hay objetos compartidos.",
   "library.prevItem": "Objeto anterior",
   "library.nextItem": "Objeto siguiente",
@@ -277,8 +264,6 @@ export const es: Record<MessageKey, Msg> = {
   "shifts.loading": "Leyendo el calendario de turnos…",
   "shifts.empty": "Aún no hay turnos en el calendario.",
   "shifts.noMatch": "Ningún turno coincide con la búsqueda.",
-  "shifts.loginPersonal": "Inicia sesión para ver tus turnos ✶",
-  "shifts.emptyPersonal": "Aún no hay turnos a tu nombre — toma uno ✪",
   "shifts.now": "Ahora",
   "shifts.full": "Completo",
   "shifts.signedUp": { one: "{n} apuntado", other: "{n} apuntados" },
@@ -401,11 +386,8 @@ export const es: Record<MessageKey, Msg> = {
   "pills.calendarView": "Vista del calendario",
 
   // Show (scope) pill
-  "scope.personal": "Personal",
-  "scope.local": "Local",
-  "scope.global": "Federación",
-  "scope.show": "Mostrar",
-  "scope.aria": "Qué elementos mostrar",
+  "scope.federated": "Federados",
+  "scope.aria": "Mostrar también los elementos de los holones federados",
 
   // Header bar
   "tabbar.search": "Buscar…",
@@ -564,6 +546,8 @@ export const es: Record<MessageKey, Msg> = {
 
   // Completion confirmation
   "complete.title": "¿Completar esta tarea?",
+  "complete.leadHosts":
+    "Este evento tiene anfitriones: el crédito es para ellos. Desmarca a quien no haya sido anfitrión.",
   "complete.lead":
     "Confirma quién participó — se le acreditará en la contabilidad del holón.",
   "complete.addMemberAria": "Añadir un miembro",
@@ -796,6 +780,12 @@ export const es: Record<MessageKey, Msg> = {
     one: "{n} participante",
     other: "{n} participantes",
   },
+  "detail.hostedBy": "Anfitriones",
+  "detail.hosts": "Anfitriones",
+  "detail.hostsHint":
+    "Los anfitriones reciben el crédito del evento. Sin anfitrión, lo recibe quien participa.",
+  "detail.addHost": "Añadir un anfitrión…",
+  "detail.removeHost": "Quitar a {name} como anfitrión",
   "detail.leaveTitle": "Dejar esta tarea",
   "detail.joinedLeave": "Unido · dejar",
   "detail.appreciatedLabel": "Apreciada",
@@ -850,8 +840,6 @@ export const es: Record<MessageKey, Msg> = {
   // Status leaderboard
   "status.tallying": "Sumando contribuciones… ♛",
   "status.noActivity": "Aún no hay actividad clasificada. ♛",
-  "status.loginPersonal": "Inicia sesión para ver tu posición ✶",
-  "status.emptyPersonal": "Aún no hay nada clasificado a tu nombre. ♛",
   "status.seeScore": "Mira cómo se formó la puntuación de {name}",
   "status.disclaimerLead":
     "La tecnología recuerda. El sentido lo dan las personas.",
@@ -950,6 +938,8 @@ export const es: Record<MessageKey, Msg> = {
   "voice.plan.kind.update": "Cambio",
   "voice.plan.kind.participants": "Participantes",
   "voice.plan.kind.complete": "Completar",
+  "voice.plan.kind.hosts": "Anfitriones",
+  "voice.plan.field.hosts": "Anfitriones",
   "voice.plan.field.title": "Título",
   "voice.plan.field.description": "Descripción",
   "voice.plan.field.category": "Categoría",

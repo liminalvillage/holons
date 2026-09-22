@@ -40,44 +40,22 @@ describe("scopeLocal", () => {
     expect(scopeLocal(all, "networked")).toBe(all);
   });
 
-  test("all/personal drop only partner copies, keep holograms", () => {
+  test("all drops only partner copies, keeps holograms", () => {
     expect(scopeLocal(all, "all")).toEqual([local, hologram]);
-    expect(scopeLocal(all, "personal")).toEqual([local, hologram]);
   });
 });
 
 describe("scopeFromLegacy", () => {
-  const none = {
-    scope: null,
-    federated: null,
-    taskView: null,
-    libraryView: null,
-    rolesView: null,
-  };
+  const none = { scope: null, federated: null };
 
-  test("explicit kiosk_scope wins over every legacy key", () => {
-    expect(
-      scopeFromLegacy({
-        ...none,
-        scope: "all",
-        federated: "1",
-        taskView: "personal",
-      }),
-    ).toBe("all");
+  test("explicit kiosk_scope wins over the legacy toggle", () => {
+    expect(scopeFromLegacy({ scope: "all", federated: "1" })).toBe("all");
     expect(scopeFromLegacy({ ...none, scope: "networked" })).toBe("networked");
-    expect(scopeFromLegacy({ ...none, scope: "personal" })).toBe("personal");
   });
 
-  test("any legacy per-view personal mode beats the federated toggle", () => {
-    expect(
-      scopeFromLegacy({ ...none, taskView: "personal", federated: "1" }),
-    ).toBe("personal");
-    expect(scopeFromLegacy({ ...none, libraryView: "personal" })).toBe(
-      "personal",
-    );
-    expect(scopeFromLegacy({ ...none, rolesView: "personal" })).toBe(
-      "personal",
-    );
+  test("the retired personal scope reads as all, whatever the toggle said", () => {
+    expect(scopeFromLegacy({ scope: "personal", federated: "1" })).toBe("all");
+    expect(scopeFromLegacy({ ...none, scope: "personal" })).toBe("all");
   });
 
   test("legacy federated=1 alone migrates to networked", () => {

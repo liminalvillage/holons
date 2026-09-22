@@ -10,24 +10,12 @@
     holonId,
     showNotice,
     libraryViewMode,
-    scope,
-    now,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
-  import {
-    setLibraryCalendarView,
-    type CalendarMode,
-    type Scope,
-  } from "$lib/config";
-  import { personalThings } from "$lib/personal";
-  import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
-  import {
-    dueLabelFor,
-    type CalendarEvent,
-    type LibraryThing,
-    holoSeed,
-  } from "$lib/data";
+  import { setLibraryCalendarView, type CalendarMode } from "$lib/config";
+  import { t, type MessageKey, type Translator } from "$lib/i18n";
+  import { type CalendarEvent, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { resolveImage } from "$lib/image";
@@ -59,37 +47,15 @@
   // Layout is chosen in the shell's global pills band (see GlobalPills);
   // this view only reads the store.
 
-  // Things the logged-in user currently has out (legacy borrow fields are
-  // core-maintained today-mirrors of bookings, so this is "out with me now").
-  $: mine = personalThings($things, $currentUser?.id);
-  $: shownThings = $scope === "personal" ? mine : $things;
-
   // The Card pager's position; clamped as live updates grow/shrink the set.
   let cardIndex = 0;
-  $: if (cardIndex > shownThings.length - 1)
-    cardIndex = Math.max(0, shownThings.length - 1);
+  $: if (cardIndex > $things.length - 1)
+    cardIndex = Math.max(0, $things.length - 1);
 
-  /**
-   * Status chip text for a row; the Mine scope leads with the return date.
-   * Scope and clock come in as arguments so the template expression re-runs
-   * when either store changes.
-   */
-  function statusLabel(
-    thing: LibraryThing,
-    s: Scope,
-    at: Date,
-    tr: Translator,
-    loc: string,
-  ): string {
+  /** Status chip text for a row (the translator comes in as an argument so
+   *  the template expression re-runs on a language switch). */
+  function statusLabel(thing: LibraryThing, tr: Translator): string {
     if (thing.available) return tr("library.available");
-    if (s === "personal") {
-      const back = thing.returnBy
-        ? dueLabelFor(thing.returnBy, at, tr, loc)
-        : null;
-      return back
-        ? tr("library.returnBy", { when: back })
-        : tr("library.withYou");
-    }
     return thing.borrower
       ? tr("library.outWith", { who: thing.borrower })
       : tr("library.out");
@@ -182,34 +148,23 @@
          spans. It brings its own header (‹ period ›) and scrolling, so it
          sits beside `.lib` rather than inside it — and the ＋/voice row below
          stays the LIBRARY's (share an item), which is why it renders
-         read-only. The personal scope narrows to the user's own bookings
-         inside CalendarView, so it needs no `shownThings` guard here: a
-         future booking is not a thing that is out today. -->
-    {#if $scope === "personal" && !$currentUser}
-      <p class="empty">{$t("library.loginPersonal")}</p>
-    {:else}
-      <CalendarView
-        events={$bookingEvents}
-        mode={$libraryCalendarMode}
-        readonly
-        onOpen={openSpan}
-        onModeChange={(m: CalendarMode) => {
-          libraryCalendarMode.set(m);
-          setLibraryCalendarView(m);
-        }}
-      />
-    {/if}
+         read-only. -->
+    <CalendarView
+      events={$bookingEvents}
+      mode={$libraryCalendarMode}
+      readonly
+      onOpen={openSpan}
+      onModeChange={(m: CalendarMode) => {
+        libraryCalendarMode.set(m);
+        setLibraryCalendarView(m);
+      }}
+    />
   {:else}
     <div class="lib scroll">
-      {#if $scope === "personal" && !$currentUser}
-        <p class="empty">{$t("library.loginPersonal")}</p>
-      {:else if $scope === "personal" && !shownThings.length}
-        <p class="empty">{$t("library.emptyPersonal")}</p>
-      {:else if $libraryViewMode === "swipe"}
+      {#if $libraryViewMode === "swipe"}
         <!-- One big card at a time — the library's Card layout. -->
-        {#if shownThings.length}
-          {@const thing =
-            shownThings[Math.min(cardIndex, shownThings.length - 1)]}
+        {#if $things.length}
+          {@const thing = $things[Math.min(cardIndex, $things.length - 1)]}
           <div class="pager">
             <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
             <article
@@ -241,7 +196,7 @@
                   ><Icon name="swap" /> {thing.source}</span
                 >{/if}
               <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $scope, $now, $t, $locale)}
+                {statusLabel(thing, $t)}
               </span>
             </article>
             <div class="pagenav">
@@ -252,13 +207,13 @@
                 aria-label={$t("library.prevItem")}>‹</button
               >
               <span class="count"
-                >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
+                >{Math.min(cardIndex, $things.length - 1) + 1} / {$things.length}</span
               >
               <button
                 class="arrow"
                 on:click={() =>
-                  (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
-                disabled={cardIndex >= shownThings.length - 1}
+                  (cardIndex = Math.min($things.length - 1, cardIndex + 1))}
+                disabled={cardIndex >= $things.length - 1}
                 aria-label={$t("library.nextItem")}>›</button
               >
             </div>
@@ -267,9 +222,9 @@
           <p class="empty">{$t("library.emptyShared")}</p>
         {/if}
       {:else if $libraryViewMode === "cards"}
-        {#if shownThings.length}
+        {#if $things.length}
           <div class="grid">
-            {#each shownThings as thing (thing.id)}
+            {#each $things as thing (thing.id)}
               <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
               <article
                 class="card"
@@ -312,14 +267,14 @@
         {:else}
           <p class="empty">{$t("library.emptyShared")}</p>
         {/if}
-      {:else if shownThings.length}
+      {:else if $things.length}
         <!-- Compact rows: the list layout, whatever the scope. -->
         <ul class="rows">
-          {#each shownThings as thing (thing.id)}
+          {#each $things as thing (thing.id)}
             <li>
               <div
                 class="row"
-                class:out={!thing.available && $scope !== "personal"}
+                class:out={!thing.available}
                 class:is-foreign={!!thing.sourceColor}
                 class:holo={!!thing.hologram}
                 style:--holo-seed={holoSeed(thing.id)}
@@ -352,7 +307,7 @@
                   </div>
                 </div>
                 <span class="status" class:available={thing.available}>
-                  {statusLabel(thing, $scope, $now, $t, $locale)}
+                  {statusLabel(thing, $t)}
                 </span>
               </div>
             </li>

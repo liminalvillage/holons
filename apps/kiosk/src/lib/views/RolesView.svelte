@@ -17,12 +17,10 @@
     now,
     showNotice,
     rolesViewMode,
-    scope,
   } from "$lib/stores";
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
   import { t, locale } from "$lib/i18n";
-  import { sameId } from "$lib/personal";
   import {
     noteColor,
     noteTilt,
@@ -97,20 +95,6 @@
     weekKey = weekKeyOf(base);
   }
 
-  // "My roles": fixed holder, holding a day of the shown week, or listed as a
-  // participant. Depends on `days` so navigating weeks re-filters.
-  $: mineCards = $roleCards.filter((c) => {
-    if (myId == null) return false;
-    const raw = byId.get(c.id);
-    if (!raw) return false;
-    return (
-      isPermanentHolder(raw, myId) ||
-      days.some((d) => isHolderOnDate(raw, d, myId)) ||
-      c.people.some((p) => sameId(p.id, myId))
-    );
-  });
-  // Under the Mine scope the week nav still applies: "my roles this week".
-  $: shownCards = $scope === "personal" ? mineCards : $roleCards;
   function goToday() {
     weekKey = weekKeyOf(todayCell);
   }
@@ -346,18 +330,12 @@
   {/if}
 
   <div class="scrollarea scroll" class:clear={$rolesViewMode !== "week"}>
-    {#if $scope === "personal" && !$currentUser}
-      <p class="empty">{$t("rolesv.loginPersonal")}</p>
-    {:else if !shownCards.length}
-      <p class="empty">
-        {$scope === "personal"
-          ? $t("rolesv.emptyPersonal")
-          : $t("rolesv.empty")}
-      </p>
+    {#if !$roleCards.length}
+      <p class="empty">{$t("rolesv.empty")}</p>
     {:else if $rolesViewMode === "list"}
       <!-- ── List: compact rows, today's holder at a glance ─────────────── -->
       <ul class="rows">
-        {#each shownCards as card (card.id)}
+        {#each $roleCards as card (card.id)}
           {@const raw = byId.get(card.id)}
           {#if raw}
             {@const fixed = hasPermanent(raw)}
@@ -446,7 +424,7 @@
     {:else if $rolesViewMode === "cards"}
       <!-- ── Cards: today's holder per role ─────────────────────────────── -->
       <div class="wall">
-        {#each shownCards as card (card.id)}
+        {#each $roleCards as card (card.id)}
           {@const raw = byId.get(card.id)}
           {#if raw}
             {@const fixed = hasPermanent(raw)}
@@ -559,7 +537,7 @@
         {/each}
       </div>
 
-      {#each shownCards as card (card.id)}
+      {#each $roleCards as card (card.id)}
         {@const raw = byId.get(card.id)}
         {#if raw}
           {@const fixed = hasPermanent(raw)}

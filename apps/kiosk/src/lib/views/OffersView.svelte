@@ -29,7 +29,6 @@
     rawQuests,
     partnerNames,
     rotationHold,
-    scope,
     offersViewMode,
     searchQuery,
     showNotice,
@@ -262,12 +261,7 @@
         holonId: hid,
         viewerId,
         scale: activeScale,
-        quests:
-          $scope === "personal"
-            ? $rawQuests.filter(
-                (q) => !(q as { _federation?: unknown })._federation,
-              )
-            : $rawQuests,
+        quests: $rawQuests,
         cell,
         partners: partnerGraph,
         hexOf,

@@ -19,7 +19,6 @@ import {
   toChecklists,
   toSuggestions,
   filterBySearch,
-  categoryColorMap,
 } from "./data";
 import type { SearchSuggestions, TaskSort } from "./data";
 import type { LinkedCard } from "./cardlink";
@@ -73,10 +72,9 @@ export const brandLogo = writable<string>("");
 export const accent = writable<string>("#0e6b66");
 
 /**
- * Whose items the views show — the "Show" pill, shared by every view:
- * `personal` (only the logged-in user's), `all` (this holon), or `networked`
- * (this holon plus its federation partners). Persisted per device; hydrated
- * in `+layout.svelte`.
+ * What the views show — the "Show federated" switch, shared by every view:
+ * `all` (this holon's own items) or `networked` (this holon plus its
+ * federation partners). Persisted per device; hydrated in `+layout.svelte`.
  */
 export const scope = writable<Scope>("all");
 
@@ -325,12 +323,6 @@ export const backlog = derived(
   [rawQuests, partnerNames, searchQuery, scope, taskSort, t, holonColors],
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
     filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
-);
-// One palette slot per distinct category, derived from *all* quests (not a
-// search- or scope-filtered subset) so a category keeps the same colour across
-// the calendar and the task wall, and doesn't shift as the filters narrow.
-export const categoryColors = derived(rawQuests, ($q) =>
-  categoryColorMap($q.map((x) => x.category)),
 );
 export const things = derived(
   [rawLibrary, partnerNames, searchQuery, scope, t, holonColors],

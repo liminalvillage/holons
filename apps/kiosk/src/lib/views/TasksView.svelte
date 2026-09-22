@@ -13,10 +13,8 @@
     rawQuests,
     completionRequest,
     showNotice,
-    categoryColors,
     taskViewMode,
     taskSort,
-    scope,
   } from "$lib/stores";
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
@@ -43,7 +41,7 @@
     type BacklogTask,
     holoSeed,
   } from "$lib/data";
-  import { personalTasks, sameId } from "$lib/personal";
+  import { sameId } from "$lib/ids";
   import {
     createTask,
     deleteTaskWithCascade,
@@ -182,22 +180,18 @@
   // each quest's `orderIndex` on drop.
   let order: string[] = [];
   $: byId = new Map($backlog.map((t) => [t.id, t] as const));
-  // Shared category→colour map (see stores) so a category looks the same here
-  // and in the calendar; blank categories fall back to the hash (`noteColor`).
-  const noteColorFor = (category: string | undefined): string =>
-    (category ? $categoryColors.get(category) : undefined) ??
-    noteColor(category);
+  // A note's fill is the hash of its category (see `noteColor`), so a category
+  // looks the same here and in the calendar, whatever else is on the board.
+  const noteColorFor = noteColor;
   // Depends only on $backlog (syncOrder reads `order`/`drag` but isn't tracked),
   // so reassigning `order` inside can't re-trigger this statement.
   $: syncOrder($backlog);
   $: orderedTasks = order
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
-  // The personal slice: same order as the wall/list, narrowed to the user.
-  $: mine = personalTasks(orderedTasks, $currentUser?.id);
-  // What every layout renders, after the Show pill's scope. (all/networked
-  // differ upstream in the derived stores; here they're both "everything".)
-  $: shownTasks = $scope === "personal" ? mine : orderedTasks;
+  // What every layout renders. (Whether partners' tasks are in is decided
+  // upstream, in the derived stores; here it is everything that arrived.)
+  $: shownTasks = orderedTasks;
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -277,9 +271,6 @@
 
   function onPointerDown(e: PointerEvent, task: BacklogTask) {
     if (e.button != null && e.button !== 0) return;
-    // No drag-to-reorder under the Mine scope: it's a filtered subset, so a
-    // reorder there would scramble the full wall's persisted orderIndex.
-    if (get(scope) === "personal") return;
     const el = (e.currentTarget as HTMLElement).closest<HTMLElement>(
       "[data-task]",
     );
@@ -782,11 +773,7 @@
 <!-- The graph drawer's live size (0 in every other layout), so the floating
      buttons can ride clear of it — same contract as the calendar. -->
 <div class="board" style="--tray-h: {graphTrayH}px; --tray-w: {graphTrayW}px;">
-  {#if $scope === "personal" && !$currentUser}
-    <div class="tasks scroll">
-      <p class="empty">{$t("tasks.loginPersonal")}</p>
-    </div>
-  {:else if $taskViewMode === "swipe"}
+  {#if $taskViewMode === "swipe"}
     <div class="deckwrap">
       <TaskSwipeView
         tasks={shownTasks}
@@ -815,9 +802,7 @@
     />
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
-      {#if $scope === "personal" && !shownTasks.length}
-        <p class="empty">{$t("tasks.emptyPersonal")}</p>
-      {:else if $taskViewMode === "list"}
+      {#if $taskViewMode === "list"}
         <TaskListView
           tasks={shownTasks}
           colorFor={noteColorFor}

@@ -69,9 +69,6 @@ export const en = {
   "tasks.addPlaceholder": "Water the plants\nFix the gate\nPlan the potluck",
   "tasks.adding": "Adding…",
   "tasks.add": "Add",
-  "tasks.loginPersonal": "Log in to see the tasks you're part of ✶",
-  "tasks.emptyPersonal":
-    "Nothing with your name on it yet — join a task to see it here ✶",
   "tasks.emptyBacklog": "The backlog is clear. ✶",
 
   // Swipe deck
@@ -89,7 +86,7 @@ export const en = {
   "swipe.allCaughtUp": "All caught up",
   "swipe.roundSummary": "{joins} joined · {likes} liked this round",
   "swipe.startOver": "Start over",
-  "swipe.seeMine": "See my tasks",
+  "swipe.seeList": "See the list",
   "swipe.backToWall": "Back to post-its",
   "swipe.skipAria": "Skip this task",
   "swipe.skipTitle": "Skip",
@@ -119,7 +116,6 @@ export const en = {
   "lists.removeItemAria": "Remove {item}",
   "lists.addItemPlaceholder": "Add an item…",
   "lists.newItemAria": "New item",
-  "lists.loginPersonal": "Log in to see your lists ✶",
   "lists.empty": "No lists yet — start one with ＋",
   "lists.startList": "Start a list",
   "lists.startLead": "A shared checklist anyone here can tick off.",
@@ -138,7 +134,6 @@ export const en = {
   "cal.dayOfSpan": "day {span}",
   "cal.previous": "Previous",
   "cal.next": "Next",
-  "cal.loginEvents": "Log in to see your events ✶",
   "cal.newMoon": "New moon",
   "cal.fullMoon": "Full moon",
   "cal.moonWaxingCrescent": "Waxing crescent",
@@ -202,8 +197,6 @@ export const en = {
   "rolesv.prevWeek": "Previous week",
   "rolesv.nextWeek": "Next week",
   "rolesv.today": "Today",
-  "rolesv.loginPersonal": "Log in to see your roles ✶",
-  "rolesv.emptyPersonal": "No roles with your name on them yet — take a day ✪",
   "rolesv.empty": "No roles yet. ✪",
   "rolesv.fixedRole": "Fixed role",
   "rolesv.fixed": "Fixed",
@@ -230,15 +223,10 @@ export const en = {
 
   // Library status chips
   "library.available": "available",
-  "library.returnBy": "return {when}",
-  "library.withYou": "with you",
   "library.outWith": "out · {who}",
   "library.out": "out",
 
   // Library view
-  "library.loginPersonal": "Log in to see what you've borrowed ✶",
-  "library.emptyPersonal":
-    "Nothing borrowed right now — tap a thing to take it out ✶",
   "library.emptyShared": "No things shared yet.",
   "library.prevItem": "Previous item",
   "library.nextItem": "Next item",
@@ -273,8 +261,6 @@ export const en = {
   "shifts.loading": "Reading the shift schedule…",
   "shifts.empty": "No shifts on the schedule yet.",
   "shifts.noMatch": "No shifts match your search.",
-  "shifts.loginPersonal": "Log in to see the shifts you're on ✶",
-  "shifts.emptyPersonal": "No shifts with your name on them yet — take one ✪",
   "shifts.now": "Now",
   "shifts.full": "Full",
   "shifts.signedUp": { one: "{n} signed up", other: "{n} signed up" },
@@ -390,11 +376,8 @@ export const en = {
   "pills.calendarView": "Calendar view",
 
   // Show (scope) pill
-  "scope.personal": "Personal",
-  "scope.local": "Local",
-  "scope.global": "Federation",
-  "scope.show": "Show",
-  "scope.aria": "Whose items to show",
+  "scope.federated": "Federated",
+  "scope.aria": "Show the federated holons' items too",
 
   // Header bar
   "tabbar.search": "Search…",
@@ -555,6 +538,8 @@ export const en = {
 
   // Completion confirmation
   "complete.title": "Complete this task?",
+  "complete.leadHosts":
+    "This event names its hosts, so they get the credit. Untick anyone who did not host.",
   "complete.lead":
     "Confirm who took part — they'll be credited in the holon's accounting.",
   "complete.addMemberAria": "Add a member",
@@ -778,6 +763,12 @@ export const en = {
   "detail.newCategory": "New category…",
   "detail.description": "Description",
   "detail.participants": { one: "{n} participant", other: "{n} participants" },
+  "detail.hostedBy": "Hosted by",
+  "detail.hosts": "Hosts",
+  "detail.hostsHint":
+    "Hosts get the credit for the event. With no host, everyone who takes part does.",
+  "detail.addHost": "Add a host…",
+  "detail.removeHost": "Remove {name} as host",
   "detail.leaveTitle": "Leave this task",
   "detail.joinedLeave": "Joined · leave",
   "detail.appreciatedLabel": "Appreciated",
@@ -832,8 +823,6 @@ export const en = {
   // Status leaderboard
   "status.tallying": "Tallying contributions… ♛",
   "status.noActivity": "No ranked activity yet. ♛",
-  "status.loginPersonal": "Log in to see your own standing ✶",
-  "status.emptyPersonal": "Nothing ranked with your name on it yet. ♛",
   "status.seeScore": "See how {name}'s score was reached",
   // The framing the board is never shown without: it measures
   // contributions, not people — and warns against acting on the number.
@@ -933,6 +922,8 @@ export const en = {
   "voice.plan.kind.update": "Change",
   "voice.plan.kind.participants": "Participants",
   "voice.plan.kind.complete": "Complete",
+  "voice.plan.kind.hosts": "Hosts",
+  "voice.plan.field.hosts": "Hosts",
   "voice.plan.field.title": "Title",
   "voice.plan.field.description": "Description",
   "voice.plan.field.category": "Category",

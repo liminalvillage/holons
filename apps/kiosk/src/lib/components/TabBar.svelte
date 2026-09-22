@@ -13,7 +13,6 @@
     userMenuOpen,
     searchQuery,
     searchSuggestions,
-    categoryColors,
     now,
     autoRotates,
     rotating,
@@ -24,6 +23,7 @@
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { moveId } from "$lib/taborder";
+  import { noteColor } from "$lib/palette";
   import { currentUser, displayName } from "$lib/auth";
   import { requestClose } from "$lib/dock";
   import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
@@ -377,7 +377,7 @@
                     cat.toLowerCase()}
                   class:on={$searchQuery.trim().toLowerCase() ===
                     cat.toLowerCase()}
-                  style="--dot: {$categoryColors.get(cat) ?? 'var(--line)'}"
+                  style="--dot: {noteColor(cat)}"
                   on:pointerdown|preventDefault
                   on:click={() => applySuggestion(cat)}
                 >

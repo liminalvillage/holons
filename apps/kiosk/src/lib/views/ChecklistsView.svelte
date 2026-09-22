@@ -14,13 +14,11 @@
     rawChecklists,
     holonId,
     showNotice,
-    scope,
     rotationHold,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getChecklistStore, getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
-  import { personalChecklists } from "$lib/personal";
   import { recordKey, sourceRef, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -37,11 +35,6 @@
   } from "@holons/core/checklists";
   import { SHOPPING_KEY } from "@holons/core/shopping";
   import { syncNeedsFromShopping } from "@holons/core/needs";
-
-  $: shownLists =
-    $scope === "personal"
-      ? personalChecklists($checklistCards, $currentUser?.id)
-      : $checklistCards;
 
   // ── Open list ─────────────────────────────────────────────────────────────
   // The tapped list "opens" in place of the grid (like the dashboard). The
@@ -392,12 +385,10 @@
           <button type="submit" disabled={!addItemText.trim()}>＋</button>
         </form>
       </div>
-    {:else if $scope === "personal" && !$currentUser}
-      <p class="empty">{$t("lists.loginPersonal")}</p>
-    {:else if shownLists.length}
+    {:else if $checklistCards.length}
       <!-- The grid of list cards. -->
       <div class="grid">
-        {#each shownLists as list (list.key)}
+        {#each $checklistCards as list (list.key)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <article
             class="card"

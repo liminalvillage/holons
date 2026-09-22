@@ -15,12 +15,11 @@
     showNotice,
     taskSort,
     taskViewMode,
-    scope,
   } from "$lib/stores";
   import { get } from "svelte/store";
   import { tick } from "svelte";
-  import { setScope, setTaskView } from "$lib/config";
-  import { sameId } from "$lib/personal";
+  import { setTaskView } from "$lib/config";
+  import { sameId } from "$lib/ids";
   import { resolveImage } from "$lib/image";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import {
@@ -334,10 +333,8 @@
     setTaskView("cards");
   }
   // Post-triage landing: an explicit tap (unlike the old silent hop) that
-  // flips the Show pill to Mine and the layout to the list, both persisted.
-  function seeMine() {
-    scope.set("personal");
-    setScope("personal");
+  // flips the layout to the list, persisted.
+  function seeList() {
     taskViewMode.set("list");
     setTaskView("list");
   }
@@ -492,11 +489,9 @@
             <button class="primary" on:click={startOver}
               >{$t("swipe.startOver")}</button
             >
-            {#if $currentUser}
-              <button class="primary" on:click={seeMine}
-                >{$t("swipe.seeMine")}</button
-              >
-            {/if}
+            <button class="primary" on:click={seeList}
+              >{$t("swipe.seeList")}</button
+            >
             <button class="ghost" on:click={backToWall}>
               {$t("swipe.backToWall")}
             </button>

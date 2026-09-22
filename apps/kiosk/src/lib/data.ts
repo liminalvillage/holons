@@ -8,14 +8,14 @@
 // Core owns the meaning of these records; here we only shape them for display.
 
 import {
-  isAgendaQuest,
+  isQuestCompleted,
   isQuestSettled,
   isRecurring,
-  isTaskQuest,
-  nextOpenOccurrence,
   questFrequency,
   questOccurrences,
   questSchedule,
+  showsOnCalendar,
+  taskWallPlacement,
   unmetDependencies,
 } from "@holons/core/tasks";
 import type { Quest, QuestFrequency } from "@holons/core/tasks";
@@ -52,28 +52,12 @@ import {
 
 // The post-it palette and the hash that picks from it live in lib/palette —
 // the same algorithm colours a holon (board wash, dock orb, map hexagon), so
-// it sits beside the holon overrides. Re-exported for the views.
+// it sits beside the holon overrides. Re-exported for the views. A card's
+// fill is `noteColor(category)` — the same hash-into-the-palette step that
+// colours a holon from its id (`holonColor`) and so the glow edge of every
+// card mirrored from it (`sourceGlow` below): one algorithm, two seeds, and a
+// colour that never shifts as records arrive or leave.
 export { NOTE_COLORS, noteColor };
-
-/**
- * Build a stable category → post-it colour map for a set of cards. The distinct
- * categories present are sorted (for determinism) and handed successive palette
- * entries, so every category on the wall gets a *different* colour until the
- * six-colour palette is exhausted (then it wraps). This beats hashing each
- * category independently — independent hashes can collide, landing two large
- * categories on the same hue and making the whole wall look monochrome. Blank
- * categories aren't assigned here; callers fall back to {@link noteColor}.
- */
-export function categoryColorMap(
-  categories: Iterable<string | undefined>,
-): Map<string, string> {
-  const distinct = [
-    ...new Set([...categories].filter((c): c is string => !!c && c.length > 0)),
-  ].sort();
-  const map = new Map<string, string>();
-  distinct.forEach((c, i) => map.set(c, NOTE_COLORS[i % NOTE_COLORS.length]));
-  return map;
-}
 
 /**
  * Very slight, repeatable tilt (deg) for a note, keyed by id — stable, never
@@ -245,6 +229,11 @@ export interface CalendarEvent {
    */
   color?: string;
   /**
+   * Done: a completed quest, or a ticked-off occurrence of a series. It stays
+   * on the calendar as a record, drawn struck through.
+   */
+  completed?: boolean;
+  /**
    * Set on one occurrence of a recurring series (see `questOccurrences` in
    * @holons/core/tasks). `id` is then unique to the occurrence; the quest a
    * tap opens and a gesture writes is `seriesId`, and `when` is this
@@ -391,7 +380,9 @@ export function occurrenceWindow(now: Date): { start: Date; end: Date } {
 }
 
 /**
- * Dated, still-open quests → calendar events, soonest first. A recurring
+ * Dated quests → calendar events, soonest first. The calendar is also a
+ * record: a past event stays, and a completed one is drawn as done (core's
+ * `showsOnCalendar` — only cancelled and deleted quests leave). A recurring
  * series contributes one event per occurrence inside {@link occurrenceWindow}
  * around `now` (core expands the cadence), each tagged with `occurrence` so a
  * tap or a drag reaches the series behind it.
@@ -407,14 +398,12 @@ export function toEvents(
   const seen = new Set<string>();
   const window = occurrenceWindow(now);
   for (const q of quests) {
-    if (isDone(q)) continue;
-    // Tasks and events only. Offers, needs and whatever else a domain parks on
-    // the `quests` lens have their own boards — core draws that line
-    // (`isAgendaQuest`), so an offer's expiry never lands on the calendar.
-    if (!isAgendaQuest(q)) continue;
-    // Core owns what a schedule means: all-day vs timed, and the inclusive
-    // span of days a multi-day card covers.
-    if (!questSchedule(q).start) continue;
+    // Dated tasks and events only, completed ones included. Offers, needs and
+    // whatever else a domain parks on the `quests` lens have their own boards
+    // — core draws that line (`showsOnCalendar`), so an offer's expiry never
+    // lands on the calendar.
+    if (!showsOnCalendar(q)) continue;
+    const completed = isQuestCompleted(q);
     const id = String(q.id ?? q.title);
     // Federation shares quests, so the same id can arrive from several holons —
     // keep the first (the kiosk's own copy) so view keys stay unique.
@@ -434,7 +423,14 @@ export function toEvents(
     // A series whose every occurrence lies beyond the window (it starts more
     // than a season ahead) falls through and draws as its own start instead.
     const occurrences =
-      frequency && isRecurring(q) ? questOccurrences(q, window) : [];
+      frequency && isRecurring(q)
+        ? questOccurrences(
+            q,
+            // A completed series has run its course: what happened stays on
+            // the board, nothing more is drawn ahead of today.
+            completed ? { start: window.start, end: now } : window,
+          )
+        : [];
     if (frequency && occurrences.length) {
       for (const occ of occurrences) {
         const {
@@ -455,10 +451,11 @@ export function toEvents(
           days,
           multiDay,
           allDay,
+          completed: completed || occ.completed,
           occurrence: {
             seriesId: id,
             when: occ.when,
-            completed: occ.completed,
+            completed: completed || occ.completed,
             frequency,
           },
         });
@@ -475,6 +472,7 @@ export function toEvents(
       days,
       multiDay,
       allDay,
+      completed,
     });
   }
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -488,9 +486,11 @@ export function toEvents(
 export type TaskSort = "loved" | "new" | "manual";
 
 /**
- * Open tasks → the backlog wall. The `quests` lens is shared, so this keeps
- * only what core calls a task: calendar events, marketplace offers/requests/
- * needs and any other domain's records stay off the wall.
+ * What is still ahead → the backlog wall. The `quests` lens is shared, so
+ * core's `taskWallPlacement` decides: open tasks, plus events that are still
+ * to come — never a past one, and a recurring series as ONE card, its next
+ * open occurrence. Marketplace offers/requests/needs and any other domain's
+ * records stay off the wall.
  */
 export function toBacklog(
   quests: Quest[],
@@ -513,20 +513,19 @@ export function toBacklog(
     // a phantom "Untitled" card that flips with the real one and re-triggers the
     // FLIP reshuffle endlessly.
     if (q.id == null && !q.title) continue;
-    // The backlog is tasks and nothing else. Events belong to the calendar,
+    // Tasks and upcoming events. A past event belongs to the calendar alone,
     // offers/needs to their own board, and an unknown type to whichever
-    // domain wrote it — core's `isTaskQuest` is the single rule (see
-    // `@holons/core/tasks/kind`), so nothing new leaks onto the wall.
-    if (!isTaskQuest(q)) continue;
+    // domain wrote it — core's `taskWallPlacement` is the single rule (see
+    // `@holons/core/tasks/placement`), so nothing new leaks onto the wall.
+    const placement = taskWallPlacement(q, now);
+    if (!placement) continue;
     const id = String(q.id ?? q.title);
     if (seen.has(id)) continue; // dedupe federated copies of the same quest
     seen.add(id);
-    // A recurring task is due when its next open occurrence is, not on the
+    // A recurring card is due when its next open occurrence is, not on the
     // day the series began (core walks the cadence past the ticked-off ones).
     const frequency = isRecurring(q) ? questFrequency(q) : null;
-    const due = frequency
-      ? (nextOpenOccurrence(q, now)?.start ?? parseWhen(q.when))
-      : parseWhen(q.when);
+    const due = placement.due;
     out.push({
       id,
       title: q.title || (t ? t("common.untitled") : "Untitled"),
@@ -675,7 +674,7 @@ export interface ChecklistCard {
   total: number;
   /** Agenda/shopping — undeletable, pinned ahead of the ad-hoc lists. */
   special: boolean;
-  /** Who created the list (raw id), for the personal scope. */
+  /** Who created the list (raw id). */
   creator?: string | number | null;
   source?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */

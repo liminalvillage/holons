@@ -10,7 +10,7 @@
   import Avatars, { hideImg } from "$lib/components/Avatars.svelte";
   import { resolveImage } from "$lib/image";
   import { currentUser } from "$lib/auth";
-  import { sameId } from "$lib/personal";
+  import { sameId } from "$lib/ids";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
   import { t } from "$lib/i18n";

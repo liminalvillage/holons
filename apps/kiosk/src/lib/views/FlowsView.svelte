@@ -26,12 +26,10 @@
   //     fewest transfers that square it, the records (BalancesView).
   //   GRAPH — the two Sankeys: movement, and the fund allocation rights.
   //
-  // The Show pill (Personal / Local / Global) only FILTERS items, as it does
-  // on every other board: Personal keeps the rows, transfers and records the
-  // viewer is part of, and the movement the viewer took part in. Balances
-  // and rights are computed over the whole tab and the whole fund under
-  // every scope — half a split is nobody's debt, and half a fund is nobody's
-  // right.
+  // Balances and rights are computed over the whole tab and the whole fund —
+  // half a split is nobody's debt, and half a fund is nobody's right. Partner
+  // data, when the Show federated switch is on, is folded in by the
+  // subscription layer, not here.
   //
   // Units never mix. Kudos are not hours and hours are not euros, this repo has
   // no exchange rates, and inventing one would be a lie — so each unit gets its
@@ -49,7 +47,6 @@
     holonId,
     rotationHold,
     flowsViewMode,
-    scope,
     now,
     offerSettings,
   } from "$lib/stores";
@@ -124,7 +121,6 @@
   import { loadSettings } from "@holons/core/settings";
   import { buildNameMap } from "@holons/core/identity";
   import {
-    expenseSharers,
     expenseCurrencies,
     normalizeCurrency,
     participantIds,
@@ -280,8 +276,8 @@
 
   $: flowsInput = {
     holonId: hid ?? "",
-    events: scopedEvents,
-    expenses: scopedExpenses,
+    events,
+    expenses,
     collective,
     settings,
     window: flowsWindow,
@@ -428,25 +424,6 @@
     ? moneyFormatter(collective.currency, 2)
     : (v: number) => `${Math.round(v * 10) / 10}%`;
   $: sharePct = (pct: number) => String(Math.round(pct * 10) / 10);
-
-  // ── The Show pill: which items feed the board ───────────────────────────
-  // Personal keeps the expenses the viewer paid or shares and the events they
-  // took part in. Anything else (Local, Global) is everything this holon has;
-  // partner data is folded in by the subscription layer, not here.
-  $: involvesMe = (e: Expense): boolean =>
-    !!selfId &&
-    (String(e?.paidBy) === selfId ||
-      expenseSharers(e, memberIds).map(String).includes(selfId));
-  $: scopedExpenses =
-    $scope === "personal" && selfId ? expenses.filter(involvesMe) : expenses;
-  $: scopedEvents =
-    $scope === "personal" && selfId
-      ? events.filter(
-          (e: any) =>
-            String(e?.provider?.id ?? "") === selfId ||
-            String(e?.receiver?.id ?? "") === selfId,
-        )
-      : events;
 
   // What is left to the rights-holders, as the diagram draws it: the sum of
   // every right less what it has already used, never below zero per right —
@@ -675,12 +652,8 @@
 
   // ── Derived: between people ─────────────────────────────────────────────
   // The same records with both ends kept: who gave what to whom, one matrix
-  // per unit, drawn as a directed chord. Personal narrows to the flows the
-  // viewer gave or received, not every flow on a record they are named on.
-  $: peopleTracks = buildPeopleFlows({
-    ...flowsInput,
-    involving: $scope === "personal" ? selfId : null,
-  });
+  // per unit, drawn as a directed chord.
+  $: peopleTracks = buildPeopleFlows({ ...flowsInput, involving: null });
   const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
   // Driven by the same pill as the movement Sankey, and merged the same way.
   $: activePeople =
@@ -1444,7 +1417,6 @@
         {people}
         {currencies}
         {currency}
-        filterMine={$scope === "personal"}
         onCurrency={(c) => pickUnit(`money:${c}`)}
       />
     {:else}

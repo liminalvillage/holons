@@ -14,9 +14,7 @@
     holonId,
     selection,
     editOnOpen,
-    categoryColors,
     showNotice,
-    scope,
     calendarMode,
     offerSettings,
   } from "$lib/stores";
@@ -41,7 +39,6 @@
     type CalendarEvent,
     holoSeed,
   } from "$lib/data";
-  import { personalEvents, personalTasks } from "$lib/personal";
   import { externalEvents, refreshExternalCalendars } from "$lib/calendars";
   import { inkOn } from "$lib/palette";
   import Avatars from "$lib/components/Avatars.svelte";
@@ -77,25 +74,16 @@
   export let onModeChange: ((m: CalendarMode) => void) | null = null;
   $: view = mode ?? $calendarMode;
 
-  // The Show pill narrows the calendar too: under Mine only events the user
-  // is going to (RSVPs toggle participants, so people IS the RSVP list) — and,
-  // on the booking spans, only the bookings that are theirs (the borrower is
-  // the span's single "participant").
-  $: uid = $currentUser?.id;
   // Subscribed external calendars belong to the Calendar tab's own board, not
   // to a caller that hands us its own spans (the Library's bookings) — those
   // answer "when is this resource gone", and a room's opening hours are no
   // part of that answer. Refreshing is throttled inside `$lib/calendars`.
   $: ownBoard = events == null;
   $: void refreshExternalCalendars(ownBoard ? $holonId : null);
-  $: baseEvents = events ?? [...$questEvents, ...$externalEvents];
-  $: shownEvents =
-    $scope === "personal" ? personalEvents(baseEvents, uid) : baseEvents;
+  $: shownEvents = events ?? [...$questEvents, ...$externalEvents];
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
-  $: baseBacklog =
-    $scope === "personal" ? personalTasks($backlog, uid) : $backlog;
-  $: unscheduled = readonly ? [] : baseBacklog.filter((t) => !t.due);
+  $: unscheduled = readonly ? [] : $backlog.filter((t) => !t.due);
 
   // One write path for every calendar gesture (move / unschedule / resize):
   // a federated card's write is routed to its owner holon under its source key
@@ -168,7 +156,7 @@
   function resolveCard(
     id: string,
   ): { q: Quest; occurrence?: CalendarEvent["occurrence"] } | null {
-    const ev = baseEvents.find((e) => e.id === id);
+    const ev = shownEvents.find((e) => e.id === id);
     const questId = ev?.occurrence?.seriesId ?? id;
     const q = get(rawQuests).find((x) => String(x.id ?? x.title) === questId);
     return q ? { q, occurrence: ev?.occurrence } : null;
@@ -920,11 +908,11 @@
   function tiltStyle(id: string, bg: string): string {
     return `--tilt: ${noteTilt(id)}deg; background: ${bg};`;
   }
-  // Shared category→colour map (see stores) so an event's note matches the same
-  // category on the task wall; blank categories fall back to the hash.
-  const noteColorFor = (category: string | undefined): string =>
-    (category ? $categoryColors.get(category) : undefined) ??
-    noteColor(category);
+  // A note's fill is the hash of its category (the same step a holon's colour
+  // and the glow edge of a mirrored card come from), so an event matches the
+  // same category on the task wall and never changes colour as records from
+  // elsewhere arrive.
+  const noteColorFor = noteColor;
   // An event's own colour (a followed calendar's) wins over its category's.
   const noteBg = (ev: CalendarEvent): string =>
     ev.color ?? noteColorFor(ev.category);
@@ -1296,10 +1284,6 @@
     </div>
   </header>
 
-  {#if $scope === "personal" && !$currentUser}
-    <p class="scopehint">{$t("cal.loginEvents")}</p>
-  {/if}
-
   <div
     class="scrollarea scroll"
     bind:this={scrollEl}
@@ -1336,7 +1320,7 @@
                     class:ext={!!ev.external}
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
-                    class:done={!!ev.occurrence?.completed}
+                    class:done={!!ev.completed}
                     style:--holo-seed={holoSeed(ev.id)}
                     class:tinted={!!inkOn(ev.color)}
                     style="{tiltStyle(
@@ -1398,7 +1382,7 @@
                       class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
-                      class:done={!!ev.occurrence?.completed}
+                      class:done={!!ev.completed}
                       style:--holo-seed={holoSeed(ev.id)}
                       class:tinted={!!inkOn(ev.color)}
                       style="{tiltStyle(
@@ -1480,7 +1464,7 @@
                       class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
-                      class:done={!!ev.occurrence?.completed}
+                      class:done={!!ev.completed}
                       style:--holo-seed={holoSeed(ev.id)}
                       class:tinted={!!inkOn(ev.color)}
                       style="background: {noteBg(
@@ -1576,7 +1560,7 @@
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
-                  class:done={!!ev.occurrence?.completed}
+                  class:done={!!ev.completed}
                   style:--holo-seed={holoSeed(ev.id)}
                   class:compact
                   style="{eventBox(
@@ -1993,15 +1977,6 @@
     justify-content: center;
     gap: 0.4rem;
     width: 100%;
-  }
-  /* One-line hint when the Mine scope has no one to be personal about; the
-     (blank) grid still renders beneath it. */
-  .scopehint {
-    margin: 0;
-    padding: 0.2rem 1.4rem 0.4rem;
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.92rem;
   }
   .period {
     margin: 0;
