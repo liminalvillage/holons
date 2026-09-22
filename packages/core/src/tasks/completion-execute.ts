@@ -15,6 +15,12 @@ export interface ExecuteCompletionOptions {
   recordEvents?: boolean;
   /** Default true. Set false to skip hour-currency expense writes. */
   recordExpenses?: boolean;
+  /**
+   * The lens the completed record lives in; defaults to `quests`. The bot's
+   * events live in `events` — without this the completed event is written to
+   * `quests` as a second copy.
+   */
+  lens?: string;
 }
 
 export interface ExecuteOutcome {
@@ -45,7 +51,7 @@ export async function executeCompletionPlan(
   };
 
   const holonIdStr = String(holonId);
-  outcome.taskSaved = await saveTaskToHolon(store, holonIdStr, plan.task);
+  outcome.taskSaved = await saveTaskToHolon(store, holonIdStr, plan.task, options.lens);
   if (!outcome.taskSaved) {
     outcome.errors.push({ kind: 'task', message: 'saveTaskToHolon returned false' });
   }

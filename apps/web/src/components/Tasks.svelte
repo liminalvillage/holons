@@ -28,7 +28,9 @@
 	import {
 		applyTaskCompletion,
 		planTaskCompletion,
-		executeCompletionPlan
+		executeCompletionPlan,
+		isEventQuest,
+		taskWallPlacement
 	} from "@holons/core/tasks";
 	import { getEventStore } from "../lib/rea/eventStore";
 	import { getColorFromCategory } from "@holons/core/categories";
@@ -339,6 +341,10 @@
 	// Add this variable to track the selected task
 	let selectedTask: any = $state(null);
 	let selectedTaskId: string | null = null; // For URL parameter support
+	// The lens the open card was read from: `quests`, or `events` for an event
+	// the Telegram bot created (its deep link is `/events?event=<id>`).
+	let selectedLens: string = $state('quests');
+	let eventLensLookup: string | null = null; // id already looked up in `events`
 
 	// Add these near the top of the script section, after the interface definitions
 	// let sortField: 'x' | 'y' = 'x'; // Removed
@@ -394,6 +400,15 @@
 			const status = quest.status || 'ongoing';
 			if (status === "completed" && !showCompleted) {
 				return false;
+			}
+
+			// The task board is what is still ahead: a past event belongs to
+			// the calendar alone, and a recurring one shows once. Core owns
+			// that rule; the /events list keeps its full history.
+			if (filterType !== 'event' && isEventQuest(quest)) {
+				if (status === "completed" || !taskWallPlacement(quest as any, new Date())) {
+					return false;
+				}
 			}
 
 			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
@@ -461,6 +476,7 @@
 			console.error("Cannot select task: missing key");
 			return;
 		}
+		selectedLens = 'quests';
 		selectedTask = { key, quest };
 		
 		// Update URL with task parameter
@@ -1019,13 +1035,34 @@
 	}
 
 	// Open the URL-selected task as soon as it appears in the store.
-	function maybeOpenSelectedTask() {
-		if (!selectedTaskId || selectedTask || !store[selectedTaskId]) return;
-		selectedTask = { key: selectedTaskId, quest: store[selectedTaskId] };
+	function openLinked(key: string, quest: Quest, lens: string) {
+		selectedLens = lens;
+		selectedTask = { key, quest };
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
+		url.searchParams.delete('event');
 		replaceState(url.toString(), { replaceState: true });
 		selectedTaskId = null;
+	}
+
+	function maybeOpenSelectedTask() {
+		if (!selectedTaskId || selectedTask) return;
+		if (store[selectedTaskId]) {
+			openLinked(selectedTaskId, store[selectedTaskId], 'quests');
+			return;
+		}
+		// Not among the quests: an event the bot created lives in `events`.
+		// Looked up once per id, after the quests stream has had its say.
+		if (filterType !== 'event' || !holonID || eventLensLookup === selectedTaskId) return;
+		const id = selectedTaskId;
+		eventLensLookup = id;
+		holosphere
+			.get(holonID, 'events', id)
+			.then((found: any) => {
+				if (!found || found._deleted || selectedTask || selectedTaskId !== id) return;
+				openLinked(id, { ...found, participants: found.participants ?? [] } as Quest, 'events');
+			})
+			.catch((err: any) => console.warn('[Tasks.svelte] events lens lookup failed:', err));
 	}
 
 	// One live federation-aware quests stream. subscribeFederated emits the local
@@ -1080,7 +1117,8 @@
 	onMount(() => {
 		// Check for task parameter in URL
 		const urlParams = new URLSearchParams(window.location.search);
-		const taskParam = urlParams.get('task');
+		// `?task=` everywhere; the bot links events as `/events?event=<id>`.
+		const taskParam = urlParams.get('task') ?? urlParams.get('event');
 		if (taskParam) {
 			selectedTaskId = taskParam;
 		}
@@ -1101,6 +1139,7 @@
 			const { taskId } = event.detail;
 			if (taskId && store[taskId]) {
 				selectedTask = null;
+				selectedLens = 'quests';
 				selectedTask = { key: taskId, quest: store[taskId] };
 			}
 		};
@@ -1467,9 +1506,12 @@
 		quest={selectedTask.quest}
 		questId={selectedTask.key}
 		holonId={holonID}
+		lens={selectedLens}
 		on:close={handleTaskDeleted}
 		on:taskCompleted={handleTaskCompleted}
 		on:updated={(e) => {
+			// `store` mirrors the quests lens; an `events`-lens card is not in it.
+			if (selectedLens !== 'quests') return;
 			store = { ...store, [e.detail.questId]: e.detail.quest };
 		}}
 	/>

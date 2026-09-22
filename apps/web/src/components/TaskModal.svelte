@@ -33,6 +33,9 @@
     import { getColorFromCategory } from "@holons/core/categories";
     import {
         toggleParticipant as coreToggleParticipant,
+        toggleHost as coreToggleHost,
+        hostsOf,
+        isEventQuest,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -63,6 +66,9 @@
     export let quest: any;
     export let questId: string;
     export let holonId: string;
+    // The lens this record was read from. The Telegram bot keeps its events in
+    // `events`; every write here goes back there, never to a copy in `quests`.
+    export let lens: string = "quests";
     // When the modal was opened from a specific recurring-task instance, this holds
     // that occurrence's ISO `when`. Completion toggles apply only to that occurrence.
     export let occurrenceWhen: string | undefined = undefined;
@@ -316,7 +322,7 @@
         dispatch("updated", { questId, quest: updatedQuest });
 
         // Sync quest in background — roll back on failure.
-        holosphere.put(holonId, "quests", updatedQuest).catch((error: any) => {
+        holosphere.put(holonId, lens, updatedQuest).catch((error: any) => {
             quest = previousQuest;
             dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
@@ -342,6 +348,30 @@
             questId: String(updatedQuest.id),
             userId: user.id,
             joined: !isSelected,
+        });
+    }
+
+    // Hosts of an event: when any is named they get the credit for it;
+    // otherwise every participant does (core's creditedMembers).
+    $: isEvent = isEventQuest(quest);
+    $: hostIds = new Set(hostsOf(quest).map((h: any) => String(h.id)));
+
+    function toggleUserHost(user: User) {
+        const host: any = { id: user.id };
+        if (user.username) host.username = user.username;
+        if (user.first_name) host.first_name = user.first_name;
+        const updatedQuest: any = coreToggleHost(quest, host);
+        const previousQuest = quest;
+        quest = updatedQuest;
+        dispatch("updated", { questId, quest: updatedQuest });
+        holosphere.put(holonId, lens, updatedQuest).catch((error: any) => {
+            quest = previousQuest;
+            dispatch("updated", { questId, quest: previousQuest });
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("[TaskModal.svelte] Error syncing host:", error);
+            }
         });
     }
 
@@ -386,7 +416,7 @@
         try {
             // holosphere.put() is optimistic - caches locally and returns immediately
             // For holograms, holosphere automatically routes writes to the source holon
-            await holosphere.put(holonId, "quests", updatedQuest);
+            await holosphere.put(holonId, lens, updatedQuest);
             quest = updatedQuest;
             // Let the host view (Calendar, Tasks, …) merge the change into its
             // own task map immediately — the store's subscription echo of a local
@@ -423,6 +453,7 @@
                     holosphere as any,
                     holonId,
                     questId,
+                    { lens },
                 );
                 if (!result.sourceDeleted) {
                     throw new Error("Source delete failed");
@@ -431,7 +462,7 @@
                 // snapshot emission doesn't flash the deleted card back
                 // into any list view that hasn't received the store's null
                 // tombstone yet.
-                queryManager.evict(holonId, "quests", questId);
+                queryManager.evict(holonId, lens, questId);
 
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {
@@ -560,7 +591,7 @@
         const eventStore = getEventStore(holosphere);
 
         try {
-            await executeCompletionPlan(holosphere as any, eventStore, holonId, plan);
+            await executeCompletionPlan(holosphere as any, eventStore, holonId, plan, { lens });
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -595,7 +626,7 @@
             credited: participants,
         });
         try {
-            await executeCompletionPlan(holosphere as any, getEventStore(holosphere), holonId, plan);
+            await executeCompletionPlan(holosphere as any, getEventStore(holosphere), holonId, plan, { lens });
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -1188,7 +1219,7 @@
 
         Promise.all([
             holosphere.put(holonId, "canvases", newCanvas),
-            holosphere.put(holonId, "quests", quest),
+            holosphere.put(holonId, lens, quest),
         ])
             .then(() => {
                 goto(`/${holonId}/canvas/${canvasId}`);
@@ -1231,7 +1262,7 @@
 
         Promise.all([
             holosphere.put(holonId, "checklists", newChecklist),
-            holosphere.put(holonId, "quests", quest),
+            holosphere.put(holonId, lens, quest),
         ]).catch((error: any) => {
             quest = previousQuest;
             if (error?.name === 'AuthorizationError') {
@@ -1978,6 +2009,20 @@
                                             </div>
                                         </div>
 
+                                        <!-- Host toggle (events only): named hosts get the credit instead of the participants -->
+                                        {#if isEvent}
+                                            {@const isHostUser = hostIds.has(String(user.id))}
+                                            <button
+                                                class="px-2 py-1 rounded text-xs flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px] {isHostUser ? 'bg-amber-500/30 text-amber-300' : 'bg-gray-600/30 text-gray-400 hover:bg-gray-600/50'}"
+                                                on:click|stopPropagation={() => toggleUserHost(user)}
+                                                aria-pressed={isHostUser}
+                                                title={isHostUser ? 'Host (gets the credit) — tap to remove' : 'Make host: hosts get the credit instead of the participants'}
+                                                type="button"
+                                            >
+                                                Host
+                                            </button>
+                                        {/if}
+
                                         <!-- Time tracking button (only for selected users) -->
                                         {#if isSelected}
                                             <button
@@ -2112,7 +2157,7 @@
                     <div class="flex gap-2">
                     <PublishToFederationButton
                         {holonId}
-                        lens="quests"
+                        {lens}
                         item={quest}
                         onPublished={handlePublished}
                     />
