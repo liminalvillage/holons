@@ -53,6 +53,8 @@ describe('task catalogue', () => {
       'task_add_participant',
       'task_remove_participant',
       'task_toggle_participant',
+      'task_add_host',
+      'task_remove_host',
       'task_complete',
     ]);
     for (const a of TASK_ACTIONS) {

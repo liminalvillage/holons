@@ -100,6 +100,7 @@ const NEVER_ASK = new Set([
   "provider",
   "receiver",
   "participants",
+  "hosts",
   "appreciation",
   "stoppers",
   "dependencies",

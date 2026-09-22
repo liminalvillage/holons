@@ -47,6 +47,23 @@ describe('applyChange', () => {
     expect(db.v1.participants).toEqual([{ id: '1', first_name: 'Marco' }]);
   });
 
+  it('names a host on an event; refuses on a task', async () => {
+    const dinner: Quest = {
+      id: 'd1', title: 'Full moon dinner', type: 'event', status: 'ongoing', participants: [],
+      initiator: { id: '3', first_name: 'Roberto' },
+    };
+    const change = stage({ name: 'task_add_host', input: { taskId: 'd1', user: { name: 'Marco' } } }, ctx('', [dinner]));
+    expect(change.kind).toBe('hosts');
+    expect(change.diff).toEqual([{ field: 'hosts', before: [], after: ['Marco'] }]);
+    const { db, ports } = fakeStore({ d1: dinner });
+    expect((await applyChange(change, ports)).ok).toBe(true);
+    expect(db.d1.hosts).toEqual([{ id: '1', first_name: 'Marco' }]);
+
+    expect(() => stage({ name: 'task_add_host', input: { taskId: 'v1', user: { name: 'Marco' } } })).toThrow(
+      'only events have hosts',
+    );
+  });
+
   it('writes a creation and routes completion through the consumer flow', async () => {
     const create = stage({ name: 'task_create', input: { title: 'New one' } });
     const { db, ports } = fakeStore({});

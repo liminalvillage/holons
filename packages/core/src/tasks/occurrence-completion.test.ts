@@ -101,3 +101,44 @@ describe('planOccurrenceCompletion', () => {
     expect(plan.task.participants).toEqual([{ id: 'ada' }, { id: 'bob' }]);
   });
 });
+
+describe('planTaskCompletion: hosts get the credit when an event names any', () => {
+  const dinner = {
+    id: 'e1',
+    title: 'Full moon dinner',
+    type: 'event',
+    status: 'ongoing',
+    initiator: { id: 'ada' },
+    hosts: [{ id: 'ada' }, { id: 'cy' }],
+    participants: [{ id: 'bob' }, { id: 'ada' }],
+    appreciation: [{ id: 'dee' }, { id: 'cy' }],
+  };
+  const completedBy = (q: Quest) =>
+    planTaskCompletion(q, equation).actions.filter((a) => a.type === 'questCompleted').map((a) => a.user.id);
+  const thanked = (q: Quest) =>
+    planTaskCompletion(q, equation)
+      .actions.filter((a) => a.type === 'appreciationExchange')
+      .map((a) => [a.user.id, a.receiver?.id]);
+
+  it('credits the completion to the hosts, not the attendees', () => {
+    expect(completedBy(dinner)).toEqual(['ada', 'cy']);
+  });
+
+  it('thanks the hosts, never oneself', () => {
+    expect(thanked(dinner)).toEqual([
+      ['dee', 'ada'],
+      ['dee', 'cy'],
+      ['cy', 'ada'],
+    ]);
+  });
+
+  it('credits every participant when no host is named', () => {
+    const open = { ...dinner, hosts: [] };
+    expect(completedBy(open)).toEqual(['bob', 'ada']);
+    expect(thanked(open).map(([, to]) => to).sort()).toEqual(['ada', 'ada', 'bob', 'bob']);
+  });
+
+  it('ignores a host list on a task', () => {
+    expect(completedBy({ ...dinner, type: 'task' })).toEqual(['bob', 'ada']);
+  });
+});

@@ -34,6 +34,7 @@
     category: "voice.plan.field.category",
     schedule: "voice.plan.field.schedule",
     participants: "voice.plan.field.participants",
+    hosts: "voice.plan.field.hosts",
     status: "voice.plan.field.status",
   } as const;
   type FieldName = keyof typeof FIELD_KEY;
@@ -44,6 +45,7 @@
     create: "plus",
     update: "pencil",
     participants: "users",
+    hosts: "crown",
     complete: "check",
   };
 

@@ -15,6 +15,7 @@ import {
 } from './utilities.js';
 import QRCode from 'qrcode';
 import { colorFromCategory } from '@holons/core/categories';
+import { hostsOf } from '@holons/core/tasks';
 import { normalizeOffer, remainingSupply } from '@holons/core/offers';
 
 const DASHBOARD_ADDRESS =
@@ -2627,6 +2628,10 @@ class UI {
       lines.push(
         `| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(event.frequency, { lng: language, defaultValue: event.frequency })}`
       );
+
+    const hosts = hostsOf(event);
+    if (hosts.length)
+      lines.push(`| 👑: ${hosts.map(u => getDisplayName(u)).join(', ')}`);
 
     if (event.participants?.length) {
       const names = event.participants.map(u => getDisplayName(u));

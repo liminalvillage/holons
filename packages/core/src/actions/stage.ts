@@ -19,12 +19,14 @@ import {
   removeParticipant,
 } from '../tasks/participants.js';
 import { applyTaskCompletion } from '../tasks/completion.js';
+import { addHost, creditedMembers, hostsOf, isHost, removeHost } from '../tasks/hosts.js';
+import { isEventQuest } from '../tasks/kind.js';
 import { sourceRef } from '../holosphere/provenance.js';
 import { toLocalDateField, toLocalTimeField } from '../datetime/index.js';
 import { personLabel } from './match.js';
 import type { ResolvedAction } from './resolve.js';
 
-export type ChangeKind = 'create' | 'update' | 'participants' | 'complete';
+export type ChangeKind = 'create' | 'update' | 'participants' | 'hosts' | 'complete';
 
 export interface ParticipantOp {
   mode: 'add' | 'remove';
@@ -35,6 +37,7 @@ export type ChangeOp =
   | { type: 'create'; task: Quest }
   | { type: 'patch'; fields: Partial<Quest> }
   | { type: 'participants'; ops: ParticipantOp[] }
+  | { type: 'hosts'; ops: ParticipantOp[] }
   | { type: 'complete'; completer: QuestParticipant };
 
 export interface FieldDiff {
@@ -94,6 +97,13 @@ export function applyOp(base: Quest | null, op: ChangeOp): Quest {
       }
       return q;
     }
+    case 'hosts': {
+      let q = base as Quest;
+      for (const o of op.ops) {
+        q = o.mode === 'add' ? addHost(q, o.user) : removeHost(q, o.user.id ?? '');
+      }
+      return q;
+    }
     case 'complete': {
       const q = creditedForCompletion(base as Quest, op.completer);
       const r = applyTaskCompletion(q, String(op.completer.id ?? ''), { isAdmin: true });
@@ -102,9 +112,12 @@ export function applyOp(base: Quest | null, op: ChangeOp): Quest {
   }
 }
 
-/** Who a completion credits: the participants, or the completer when nobody joined. */
+/**
+ * Who a completion credits: the hosts an event names, else the participants,
+ * else — when nobody joined — the completer.
+ */
 export function creditedForCompletion(quest: Quest, completer: QuestParticipant): Quest {
-  return participants(quest).length ? quest : addParticipant(quest, completer);
+  return hostsOf(quest).length || participants(quest).length ? quest : addParticipant(quest, completer);
 }
 
 function scheduleLabel(q: Quest | null | undefined): string {
@@ -123,6 +136,7 @@ function scheduleLabel(q: Quest | null | undefined): string {
 }
 
 const names = (q: Quest | null): string[] => participants(q).map((p) => personLabel(p));
+const hostNames = (q: Quest | null): string[] => hostsOf(q).map((p) => personLabel(p));
 
 function diffOf(kind: ChangeKind, before: Quest | null, after: Quest): FieldDiff[] {
   const out: FieldDiff[] = [];
@@ -145,6 +159,9 @@ function diffOf(kind: ChangeKind, before: Quest | null, after: Quest): FieldDiff
   const pb = names(b);
   const pa = names(after);
   if (pb.join('|') !== pa.join('|')) out.push({ field: 'participants', before: pb, after: pa });
+  const hb = hostNames(b);
+  const ha = hostNames(after);
+  if (hb.join('|') !== ha.join('|')) out.push({ field: 'hosts', before: hb, after: ha });
   if ((b.status ?? '') !== (after.status ?? '')) out.push({ field: 'status', before: b.status ?? '', after: after.status ?? '' });
   return out;
 }
@@ -158,6 +175,8 @@ export function touchedFields(op: ChangeOp): string[] {
       return Object.keys(op.fields);
     case 'participants':
       return ['participants'];
+    case 'hosts':
+      return ['hosts'];
     case 'complete':
       return ['status', 'participants'];
   }
@@ -259,6 +278,24 @@ export function stageAction(resolved: ResolvedAction, warnings: string[] = []): 
         }),
       };
     }
+    case 'task_add_host':
+    case 'task_remove_host': {
+      if (!isEventQuest(quest)) {
+        return { error: `"${quest.title}" is not a calendar event — only events have hosts.` };
+      }
+      const has = isHost(quest, resolved.user.id ?? '');
+      const mode: ParticipantOp['mode'] = resolved.name === 'task_add_host' ? 'add' : 'remove';
+      if (mode === 'add' && has) return { error: `${personLabel(resolved.user)} already hosts "${quest.title}".` };
+      if (mode === 'remove' && !has) return { error: `${personLabel(resolved.user)} does not host "${quest.title}".` };
+      return {
+        change: withPreview({
+          ...common,
+          action: resolved.name,
+          kind: 'hosts',
+          op: { type: 'hosts', ops: [{ mode, user: resolved.user }] },
+        }),
+      };
+    }
     case 'task_complete': {
       if (quest.status === 'completed') return { error: `"${quest.title}" is already completed.` };
       if (quest.status === 'stopped') return { error: `"${quest.title}" was stopped and cannot be completed.` };
@@ -327,7 +364,8 @@ export function mergeChange(set: Changeset, change: StagedChange): Changeset {
       changes[idx] = withPreview({ ...prev, op: { type: 'patch', fields }, warnings });
       return { changes };
     }
-    case 'participants': {
+    case 'participants':
+    case 'hosts': {
       const ops = mergeParticipantOps(
         (prev.op as { ops: ParticipantOp[] }).ops,
         (change.op as { ops: ParticipantOp[] }).ops,
@@ -336,7 +374,7 @@ export function mergeChange(set: Changeset, change: StagedChange): Changeset {
         changes.splice(idx, 1);
         return { changes };
       }
-      changes[idx] = withPreview({ ...prev, op: { type: 'participants', ops }, warnings });
+      changes[idx] = withPreview({ ...prev, op: { type: change.kind, ops } as ChangeOp, warnings });
       return { changes };
     }
     default:
@@ -403,8 +441,19 @@ export function describeChange(c: StagedChange): string {
         .filter(Boolean)
         .join('; ');
     }
+    case 'hosts': {
+      const ops = (c.op as { ops: ParticipantOp[] }).ops;
+      const adds = ops.filter((o) => o.mode === 'add').map((o) => personLabel(o.user));
+      const removes = ops.filter((o) => o.mode === 'remove').map((o) => personLabel(o.user));
+      return [
+        adds.length ? `${adds.join(', ')} ${adds.length > 1 ? 'host' : 'hosts'} ${t}` : '',
+        removes.length ? `${removes.join(', ')} no longer ${removes.length > 1 ? 'host' : 'hosts'} ${t}` : '',
+      ]
+        .filter(Boolean)
+        .join('; ');
+    }
     case 'complete':
-      return `Complete ${t} (credits ${names(c.after).join(', ') || 'nobody'})`;
+      return `Complete ${t} (credits ${(c.after ? creditedMembers(c.after) : []).map((p) => personLabel(p)).join(', ') || 'nobody'})`;
   }
 }
 

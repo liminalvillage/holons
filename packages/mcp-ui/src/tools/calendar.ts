@@ -12,7 +12,9 @@ import {
   type HolonEvent,
   type RSVPUser,
 } from '@holons/core/calendar';
+import { addHost, createTask, questSchedule, type Quest, type QuestParticipant } from '@holons/core/tasks';
 import type { ToolDeps } from './index.js';
+import { shortTaskId } from './tasks.js';
 
 type TextContent = { type: 'text'; text: string };
 type ToolResult = { content: TextContent[]; isError?: boolean };
@@ -185,10 +187,14 @@ export function registerCalendarTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // No `createEvent` helper in @holons/core/calendar yet — build inline.
+  // A calendar event is a quest of type 'event': every surface (kiosk, web,
+  // bot, iCal feed) reads the calendar out of the `quests` lens. The record
+  // is built by core's createTask so it carries the same default fields a
+  // kiosk- or bot-made event does; the end goes in `ends`, the field core's
+  // schedule reader treats as canonical.
   server.tool(
     'calendar_event_create',
-    'Create a calendar event in a holon. Persists to the `events` lens via HoloSphere. No Telegram or browser side-effects.',
+    "Create a calendar event in a holon: a quest of type 'event' written to the `quests` lens (where the kiosk, web and bot calendars read). Times are ISO 8601; an end that is not after the start is dropped. No Telegram or browser side-effects.",
     {
       holon: z.string().describe('Holon ID'),
       title: z.string().describe('Event title'),
@@ -196,28 +202,50 @@ export function registerCalendarTools(server: McpServer, deps: ToolDeps): void {
       until: z.string().optional().describe('End time (ISO date string)'),
       description: z.string().optional(),
       category: z.string().optional(),
+      id: z.string().optional().describe('Override the auto-generated short id.'),
+      hosts: z
+        .array(
+          z.object({
+            id: z.union([z.string(), z.number()]),
+            username: z.string().optional(),
+            first_name: z.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Who leads the event. When set, the hosts get the credit for it (completion + appreciation) instead of the participants.',
+        ),
     },
-    async ({ holon, title, when, until, description, category }): Promise<ToolResult> => {
+    async ({ holon, title, when, until, description, category, id, hosts }): Promise<ToolResult> => {
       try {
         const h = await deps.getHoloSphere();
         const actor = deps.resolveActor();
-        const event = {
-          id: `e_${Date.now()}`,
-          version: '0.1',
-          holon,
+        let event: Quest = createTask({
+          holonId: holon,
+          initiator: { id: actor.id, username: actor.username, firstName: actor.first_name },
           title,
-          description: description || '',
           type: 'event',
-          status: 'upcoming',
-          date: Date.now(),
-          when,
-          until: until || '',
-          category: category || undefined,
-          participants: [] as unknown[],
-          initiator: actor,
-        };
-        await h.put(holon, 'events', event);
-        return ok({ success: true, holon, event });
+          category,
+        });
+        event.id = id || shortTaskId();
+        if (description !== undefined) event.description = description;
+        event.when = when;
+        // Keep only an end that is after the start (core's own rule).
+        const schedule = questSchedule({ when, ends: until || '' });
+        if (!schedule.start) {
+          return fail(`Unparsable start time "${when}" — pass an ISO 8601 date or date-time.`);
+        }
+        event.ends = schedule.end ? (until as string) : '';
+        for (const host of hosts ?? []) {
+          const participant: QuestParticipant = {
+            id: String(host.id),
+            ...(host.username ? { username: host.username } : {}),
+            ...(host.first_name ? { firstName: host.first_name } : {}),
+          };
+          event = addHost(event, participant);
+        }
+        await h.put(holon, 'quests', event);
+        return ok({ success: true, holon, lens: 'quests', event });
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }

@@ -120,7 +120,9 @@ export async function stageCall(
         ? "update"
         : call.name === "task_complete"
           ? "complete"
-          : "participants";
+          : call.name === "task_add_host" || call.name === "task_remove_host"
+            ? "hosts"
+            : "participants";
     const pending = get(pendingPlan)?.changeset.changes.find(
       (c) => c.localId === target && (c.kind === kind || c.kind === "create"),
     );

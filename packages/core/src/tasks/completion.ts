@@ -1,7 +1,7 @@
 // Pure task-completion transform shared by all UIs and the MCP server.
 //
 // What this owns:
-//   - Permission check (initiator OR participant OR caller-supplied isAdmin).
+//   - Permission check (initiator OR host OR participant OR caller-supplied isAdmin).
 //   - Status guard (cannot complete a 'stopped' quest).
 //   - Stamping `status: 'completed'` + `completed_at` + clearing `activeHolograms`.
 //
@@ -12,6 +12,7 @@
 //   - Telegram message editing, reminder cancellation, federation propagation.
 
 import type { Quest } from './types.js';
+import { isHost } from './hosts.js';
 import {
   isOccurrenceCompleted,
   isRecurring,
@@ -49,6 +50,7 @@ export function applyTaskCompletion(
 
   const allowed = options.isAdmin === true
     || isInitiator(task, completerId)
+    || isHost(task, completerId)
     || isParticipant(task, completerId);
   if (!allowed) return { ok: false, reason: 'forbidden' };
 
@@ -89,6 +91,7 @@ export function applyOccurrenceCompletion(
   }
   const allowed = options.isAdmin === true
     || isInitiator(task, completerId)
+    || isHost(task, completerId)
     || isParticipant(task, completerId);
   if (!allowed) return { ok: false, reason: 'forbidden' };
 

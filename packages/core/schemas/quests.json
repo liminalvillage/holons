@@ -30,6 +30,9 @@
     "appreciation": {
       "type": "array"
     },
+    "hosts": {
+      "type": "array"
+    },
     "category": {
       "type": "string"
     },

@@ -62,7 +62,12 @@ export type ResolvedAction =
   | { name: 'task_create'; holon: string; task: Quest }
   | { name: 'task_update'; holon: string; quest: Quest; patch: Partial<Quest> }
   | {
-      name: 'task_add_participant' | 'task_remove_participant' | 'task_toggle_participant';
+      name:
+        | 'task_add_participant'
+        | 'task_remove_participant'
+        | 'task_toggle_participant'
+        | 'task_add_host'
+        | 'task_remove_host';
       holon: string;
       quest: Quest;
       user: QuestParticipant;
@@ -339,7 +344,9 @@ export function resolveAction(call: ActionCall, ctx: ResolveContext): ResolveOut
     }
     case 'task_add_participant':
     case 'task_remove_participant':
-    case 'task_toggle_participant': {
+    case 'task_toggle_participant':
+    case 'task_add_host':
+    case 'task_remove_host': {
       const person = resolvePerson(input, ctx);
       if (!('user' in person)) return person;
       warnings.push(...person.warnings);

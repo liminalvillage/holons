@@ -5,6 +5,7 @@
 import type { Quest, QuestParticipant } from './types.js';
 import type { ScoreEquation } from '../scoring/index.js';
 import { getActionScore } from '../scoring/index.js';
+import { creditedMembers } from './hosts.js';
 
 export interface PlannedAction {
   user: QuestParticipant;
@@ -62,7 +63,10 @@ export function planTaskCompletion(
     });
   }
 
-  for (const participant of task.participants ?? []) {
+  // The hosts when an event names any, otherwise everyone who took part.
+  const credited = creditedMembers(task);
+
+  for (const participant of credited) {
     actions.push({
       user: participant,
       type: 'questCompleted',
@@ -73,7 +77,7 @@ export function planTaskCompletion(
   }
 
   for (const sender of task.appreciation ?? []) {
-    for (const recipient of task.participants ?? []) {
+    for (const recipient of credited) {
       if (isSelfPair(sender, recipient)) continue;
       actions.push({
         user: sender,

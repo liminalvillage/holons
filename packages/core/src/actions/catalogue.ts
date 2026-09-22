@@ -113,12 +113,30 @@ export const TASK_TOGGLE_PARTICIPANT: ActionSpec = {
   fields: [HOLON, TASK_ID, TASK_REF, USER],
 };
 
+export const TASK_ADD_HOST: ActionSpec = {
+  name: 'task_add_host',
+  kind: 'write',
+  lens: 'quests',
+  description:
+    'Name a person as a host of a calendar event ("Anna hosts the dinner"). Hosts lead the event and get the credit ' +
+    'for it — its completion and its appreciation. With no host named, everyone who takes part is credited. Events only.',
+  fields: [HOLON, TASK_ID, TASK_REF, USER],
+};
+
+export const TASK_REMOVE_HOST: ActionSpec = {
+  name: 'task_remove_host',
+  kind: 'write',
+  lens: 'quests',
+  description: 'Remove a person from a calendar event\'s hosts.',
+  fields: [HOLON, TASK_ID, TASK_REF, USER],
+};
+
 export const TASK_COMPLETE: ActionSpec = {
   name: 'task_complete',
   kind: 'write',
   lens: 'quests',
   description:
-    'Mark a task completed. Its participants are the ones credited; the speaker is credited when nobody has joined.',
+    'Mark a task completed. Its participants are the ones credited (the hosts, on an event that names any); the speaker is credited when nobody has joined.',
   fields: [
     HOLON,
     TASK_ID,
@@ -138,6 +156,8 @@ export const TASK_ACTIONS: readonly ActionSpec[] = [
   TASK_ADD_PARTICIPANT,
   TASK_REMOVE_PARTICIPANT,
   TASK_TOGGLE_PARTICIPANT,
+  TASK_ADD_HOST,
+  TASK_REMOVE_HOST,
   TASK_COMPLETE,
 ];
 

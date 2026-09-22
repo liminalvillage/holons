@@ -65,6 +65,7 @@
     QUEST_FREQUENCIES,
     applyBreakdownProposal,
     buildScheduleFields,
+    hostsOf,
     isAgendaQuest,
     isOccurrenceCompleted,
     isRecurring,
@@ -80,8 +81,10 @@
     type BreakdownStep,
     type Quest,
     type QuestFrequency,
+    type QuestParticipant,
     type SwitchableKind,
   } from "@holons/core/tasks";
+  import HostPicker from "./HostPicker.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
 
@@ -203,6 +206,9 @@
 
   // Participants as display people (id + friendly name) for the chips below.
   $: people = toPeople(quest?.participants);
+  // The hosts an event names — they get the credit; empty when nobody is
+  // named, and for anything that is not an event.
+  $: hostPeople = toPeople(hostsOf(quest));
 
   // Whether the logged-in user has already appreciated this quest.
   $: appreciationCount = Array.isArray(quest?.appreciation)
@@ -453,6 +459,9 @@
   let fFrequency: QuestFrequency | null = null;
   // Task or event — the switch that moves a card between the two boards.
   let fKind: SwitchableKind = "task";
+  // The hosts of an event. Kept while the switch reads "task" so flipping it
+  // back to "event" doesn't lose them; only saved on an event.
+  let fHosts: QuestParticipant[] = [];
   // Both of these hang off the start date, and — like the schedule rules
   // further down — they shape what is shown and saved rather than the fields
   // themselves, so a date that reads empty for a keystroke doesn't throw the
@@ -648,6 +657,8 @@
       // the two the switch offers. A marketplace card never reaches the
       // switch, so the fallback is harmless.
       fKind = questKind(q) === "event" ? "event" : "task";
+      // Read as an event either way, so hosts survive a trip through "task".
+      fHosts = hostsOf({ ...q, type: "event" });
     }
     editing = true;
   }
@@ -703,6 +714,7 @@
       // Task ↔ event. Core refuses to retype a marketplace item, so an offer
       // that somehow reached this form keeps its own lifecycle.
       ...setQuestKind(sel.quest, timing.when ? fKind : "task"),
+      ...(timing.when && fKind === "event" ? { hosts: fHosts } : {}),
     };
     const writer = await getWriter($holonId, (m) => (message = m));
     const ok = await writer.put("quests", updated);
@@ -1378,6 +1390,30 @@
         {#if quest.description}<p class="desc">
             {@html linkify(quest.description)}
           </p>{/if}
+        {#if hostPeople.length}
+          <div class="facts-line">
+            <span class="people-label"
+              ><Icon name="crown" /> {$t("detail.hostedBy")}</span
+            >
+          </div>
+          <ul class="people">
+            {#each hostPeople as p (p.id)}
+              <li class="person">
+                <span class="pav">
+                  <span class="pini">{avatarInitial(p.name)}</span>
+                  <img
+                    src={avatarUrl(p.id)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
+                </span>
+                <span class="pname">{p.name}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
         {#if people.length || appreciationCount}
           <div class="facts-line">
             {#if people.length}
@@ -1682,6 +1718,16 @@
                   "detail.kindEventHint",
                 )}{:else}{$t("detail.kindTaskHint")}{/if}
             </p>
+          </div>
+        {/if}
+
+        <!-- Who leads the event: named hosts get the credit instead of the
+             participants (core's creditedMembers). Events only. -->
+        {#if effectiveKind === "event"}
+          <div class="hosts-edit">
+            <span class="elab"><Icon name="crown" /> {$t("detail.hosts")}</span>
+            <HostPicker bind:hosts={fHosts} />
+            <p class="kind-hint">{$t("detail.hostsHint")}</p>
           </div>
         {/if}
 
@@ -2180,6 +2226,12 @@
   /* The task/event switch, above the cadence and sharing its chip row. */
   .kind {
     margin-top: 0.9rem;
+  }
+  .hosts-edit {
+    margin-top: 0.9rem;
+  }
+  .hosts-edit .elab {
+    margin-bottom: 0.4rem;
   }
   .kind-hint {
     margin: 0.35rem 0 0;

@@ -23,6 +23,7 @@ import {
   unixToIso,
 } from '../tags.js';
 import { addParticipant, removeParticipant } from '../../tasks/participants.js';
+import { hostsOf } from '../../tasks/hosts.js';
 import type { Quest, QuestParticipant } from '../../tasks/types.js';
 import { classifiedCodec, CLASSIFIED_KIND } from './classified.js';
 import { REACTION_KIND, parseReaction, reactionCompanions } from './reactions.js';
@@ -124,11 +125,20 @@ function projectCalendarPrimary(lens: string, holon: string, item: CalendarRecor
   pushIf(tags, 't', item.type && item.type !== 'quest' ? item.type : undefined);
 
   const companions: Companion[] = [];
+  // NIP-52 roles: who gives the event, then who attends it. A host who also
+  // RSVPs is tagged once, as host.
+  const hostKeys = new Set<string>();
+  for (const h of hostsOf(item as unknown as Quest)) {
+    const pk = h.id == null ? undefined : ctx.pubkeyFor?.(h.id);
+    if (!pk || hostKeys.has(pk)) continue;
+    hostKeys.add(pk);
+    tags.push(['p', pk, '', 'host']);
+  }
   for (const p of item.participants ?? []) {
     const uid = participantId(p);
     if (uid === undefined || uid === null) continue;
     const pk = ctx.pubkeyFor?.(uid);
-    if (pk) tags.push(['p', pk, '', 'participant']);
+    if (pk && !hostKeys.has(pk)) tags.push(['p', pk, '', 'participant']);
     companions.push(rsvpCompanion(ctx, holon, kind, dTag, item.id, uid));
   }
   tags.push(...commonTags(ctx, holon, lens, item.id));

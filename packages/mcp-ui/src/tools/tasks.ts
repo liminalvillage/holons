@@ -28,6 +28,8 @@ import {
   TASK_CREATE,
   TASK_REMOVE_PARTICIPANT,
   TASK_TOGGLE_PARTICIPANT,
+  TASK_ADD_HOST,
+  TASK_REMOVE_HOST,
   TASK_UPDATE,
   describeChange,
   fuzzyFindByTitle,
@@ -130,7 +132,7 @@ async function resolveParticipant(
 // so any underscore in a task id makes the bot misroute or drop it (which
 // also hides the task from the web UI's task lists indirectly).
 // See apps/web/src/components/Tasks.svelte:480.
-function shortTaskId(): string {
+export function shortTaskId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
@@ -558,6 +560,13 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     "Toggle a user's membership in a task's participants. Defaults to the configured actor when `user` is omitted.",
     false,
   );
+  // Hosts — events only. When named, they get the credit instead of the participants.
+  participantTool(
+    TASK_ADD_HOST,
+    "Name a user as a host of a calendar event (a quest of type 'event'). When an event names hosts they get the credit for it (completion + appreciation); with none, every participant is credited. Refuses on anything that is not an event.",
+    false,
+  );
+  participantTool(TASK_REMOVE_HOST, "Remove a user from a calendar event's hosts.", false);
 
   // task_add_appreciation — add a user to the appreciation array.
   server.registerTool(

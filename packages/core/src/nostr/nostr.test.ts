@@ -53,6 +53,15 @@ describe('tags', () => {
 
 describe('calendar codec', () => {
   const quests = PROJECTION_CODECS.quests;
+  it('tags the hosts of an event with the NIP-52 host role, once', () => {
+    const out = quests.project(HOLON, {
+      id: 735, type: 'event', title: 'Dinner', when: '2026-09-01T18:00:00Z',
+      hosts: [{ id: 42 }], participants: [{ id: 42 }, { id: 7 }],
+    }, ctx)!;
+    expect(tags(out.primary.tags, 'p')).toEqual([['b'.repeat(64), '', 'host']]);
+    expect(out.companions).toHaveLength(2); // a host who RSVPs still RSVPs
+  });
+
   it('projects a timed quest to 31923 with tz, participants and RSVP companions', () => {
     const out = quests.project(HOLON, {
       id: 734, title: 'Garden day', description: 'Bring gloves', when: '2026-09-01T08:00:00Z', ends: '2026-09-01T12:00:00Z',

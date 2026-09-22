@@ -12,6 +12,7 @@ export * from './kind.js';
 export * from './placement.js';
 export * from './persistence.js';
 export * from './participants.js';
+export * from './hosts.js';
 export * from './join-reflect.js';
 export * from './completion.js';
 export * from './completion-plan.js';
