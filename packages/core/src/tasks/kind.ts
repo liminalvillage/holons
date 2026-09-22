@@ -15,7 +15,8 @@ import type { Quest } from './types.js';
  * The families a `quests` record can belong to.
  *
  * - `task` — work someone took on: the backlog wall.
- * - `event` — something that happens at a time: the calendar only.
+ * - `event` — something that happens at a time: the calendar, and the task
+ *   wall only while it is still to come (see `placement.ts`).
  * - `offer` / `request` / `need` — marketplace items, their own boards.
  * - `other` — a type written by a domain we don't know about. Deliberately
  *   NOT a task: an unknown record is shown by whoever wrote it, never by the

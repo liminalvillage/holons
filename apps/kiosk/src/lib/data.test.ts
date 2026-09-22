@@ -725,8 +725,91 @@ describe("the two boards stay separate", () => {
     quest("some-resource", { type: "resource", when: "2026-08-20" }),
   ];
 
-  it("keeps the backlog to tasks alone", () => {
-    expect(toBacklog(mixed).map((t) => t.id)).toEqual(["chore"]);
+  const at = (y: number, mo: number, d: number) => new Date(y, mo - 1, d, 12);
+  const wall = (quests: Quest[], now: Date) =>
+    toBacklog(quests, undefined, undefined, undefined, undefined, now)
+      .map((t) => t.id)
+      .sort();
+
+  it("keeps marketplace and unknown records off the wall", () => {
+    expect(wall(mixed, at(2026, 8, 1))).toEqual(["chore", "standup"]);
+  });
+
+  it("drops an event from the wall once its day has passed; the task stays", () => {
+    expect(wall(mixed, at(2026, 8, 20))).toEqual(["chore", "standup"]);
+    expect(wall(mixed, at(2026, 8, 21))).toEqual(["chore"]);
+  });
+
+  it("puts a recurring event on the wall once, as its next occurrence", () => {
+    const series = [
+      quest("circle", {
+        type: "event",
+        when: "2026-08-05",
+        frequency: "weekly",
+      }),
+    ];
+    const out = toBacklog(
+      series,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((t) => t.id)).toEqual(["circle"]);
+    expect(out[0].due).toEqual(new Date(2026, 7, 26));
+  });
+
+  it("keeps a past and a completed event on the calendar, drawn as done", () => {
+    const past = [
+      quest("standup", { type: "event", when: "2026-01-20" }),
+      quest("party", {
+        type: "event",
+        when: "2026-01-21",
+        status: "completed",
+      }),
+      quest("called-off", {
+        type: "event",
+        when: "2026-01-22",
+        status: "cancelled",
+      }),
+    ];
+    const out = toEvents(
+      past,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((e) => [e.id, !!e.completed])).toEqual([
+      ["standup", false],
+      ["party", true],
+    ]);
+    expect(wall(past, at(2026, 8, 20))).toEqual([]);
+  });
+
+  it("draws a completed series up to today and no further", () => {
+    const ended = [
+      quest("circle", {
+        type: "event",
+        when: "2026-08-05",
+        frequency: "weekly",
+        status: "completed",
+      }),
+    ];
+    const out = toEvents(
+      ended,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((e) => e.occurrence?.when)).toEqual([
+      "2026-08-05",
+      "2026-08-12",
+      "2026-08-19",
+    ]);
+    expect(out.every((e) => e.completed)).toBe(true);
   });
 
   it("keeps offers, needs and unknown records off the calendar too", () => {
