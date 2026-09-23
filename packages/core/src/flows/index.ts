@@ -202,3 +202,24 @@ export {
   saveCollectiveSlug,
   toAllocationPartners,
 } from './settings.js';
+
+export {
+  FLOW_CLAIMS_LENS,
+  buildClaim,
+  buildPayout,
+  buildClaimVerdict,
+  foldClaims,
+  claimTotalsOf,
+  isClaim,
+  isPayout,
+  type BuildClaimInput,
+  type Claim,
+  type ClaimBody,
+  type ClaimStatus,
+  type ClaimTotals,
+  type FoldClaimsInput,
+  type FoldedClaims,
+  type Payout,
+  type PayoutBody,
+  type RightsLookup,
+} from './claims.js';

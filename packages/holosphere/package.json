@@ -1,7 +1,7 @@
 {
   "name": "holosphere",
   "version": "2.0.0",
-  "description": "Holonic Geospatial Communication Infrastructure \u2014 signed Nostr events on relays, mirrored into a local event-sourced store",
+  "description": "Holonic Geospatial Communication Infrastructure — signed Nostr events on relays, mirrored into a local event-sourced store",
   "main": "holosphere.js",
   "module": "holosphere.js",
   "types": "holosphere.d.ts",
@@ -70,7 +70,10 @@
     "README.md",
     "SIGNING.md",
     "LICENSE",
-    "FEDERATION.md"
+    "FEDERATION.md",
+    "nostr-events.d.ts",
+    "signing.d.ts",
+    "log.js"
   ],
   "exports": {
     ".": {

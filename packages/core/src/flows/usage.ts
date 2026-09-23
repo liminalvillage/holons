@@ -42,6 +42,7 @@ import { expenseCurrency, normalizeCurrency } from '../expenses/index.js';
 import { foldForSearch } from './ledger.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import type { AllocationResult, AllocationSlice } from './allocation.js';
+import type { FoldedClaims } from './claims.js';
 import { resolveWindow, type FlowsWindow } from './window.js';
 
 /** Someone with a right over the fund: a scored member or a placed partner. */
@@ -89,6 +90,16 @@ export interface FundUsage {
   unattributed: Record<string, FundUse>;
   /** The unmatched payees with their amounts, largest first, so a reader can see who was missed. */
   unattributedPayees: FundPayee[];
+  /**
+   * Where `claimed` comes from: the signed claims log (founded holon or a
+   * provisional signer set), or the expenses lens when no log was given.
+   */
+  claimsSource: 'log' | 'bootstrap' | 'expenses';
+  /**
+   * What the expenses lens infers as open claims when the log is the source
+   * — shown, not counted. Party → unit → amount.
+   */
+  legacyClaimed: Record<string, Record<string, number>>;
 }
 
 export interface BuildFundUsageInput {
@@ -109,6 +120,13 @@ export interface BuildFundUsageInput {
   windowDays?: number | null;
   /** Absolute bounds; wins over `windowDays` (see `resolveWindow`). */
   window?: FlowsWindow | null;
+  /**
+   * The folded `flow_claims` log (`foldClaims`). When given, `claimed` is
+   * what the log approves and its payouts are spending; what the expenses
+   * lens infers as claims is then reported in `legacyClaimed` instead of
+   * counted, so the two never double-count.
+   */
+  claims?: FoldedClaims | null;
 }
 
 export const DEFAULT_USAGE_WINDOW_DAYS = 90;
@@ -272,12 +290,15 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
   const partyIds = new Set(parties.map((p) => String(p.id)));
   const members = (input.members ?? [...partyIds]).map((id) => String(id));
 
+  const claims = input.claims ?? null;
   const usage: FundUsage = {
     unit: normalizeCurrency(input.unit),
     parties: {},
     lifetime: {},
     unattributed: {},
     unattributedPayees: [],
+    claimsSource: claims ? claims.source : 'expenses',
+    legacyClaimed: {},
   };
 
   const touch = (partyId: string | null, unit: string): FundUse => {
@@ -346,9 +367,33 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
   for (const [key, gross] of claimedGross) {
     const [partyId, unit] = key.split('|');
     const open = gross - (settled.get(key) ?? 0);
-    if (open > 0.005) {
-      touch(partyId, unit).claimed += open;
-      touchLife(partyId, unit).claimed += open;
+    if (open <= 0.005) continue;
+    if (claims) {
+      // The log is the source of claims; what the lens infers is a footnote.
+      (usage.legacyClaimed[partyId] ??= {})[unit] = round(open);
+      continue;
+    }
+    touch(partyId, unit).claimed += open;
+    touchLife(partyId, unit).claimed += open;
+  }
+
+  // ── The signed claims log: approved claims owed, payouts spent ──────────
+  if (claims) {
+    for (const [partyId, perUnit] of Object.entries(claims.byParty)) {
+      if (!partyIds.has(partyId)) continue;
+      for (const [rawUnit, t] of Object.entries(perUnit)) {
+        const unit = normalizeCurrency(rawUnit);
+        if (!unit || t.claimed <= 0) continue;
+        touch(partyId, unit).claimed += t.claimed;
+        touchLife(partyId, unit).claimed += t.claimed;
+      }
+    }
+    for (const p of claims.payouts) {
+      if (!partyIds.has(p.party)) continue;
+      const unit = normalizeCurrency(p.unit);
+      if (!unit) continue;
+      touchLife(p.party, unit).spent += p.amount;
+      if (inWindow(p.createdAt * 1000)) touch(p.party, unit).spent += p.amount;
     }
   }
 

@@ -6,10 +6,21 @@ import { createHoloSphere } from './factory.js';
 const APP = 'factory-test';
 
 describe('createHoloSphere: standard wires', () => {
-  it('consumes the envelope alone by default', () => {
+  it('consumes the envelope plus the protocol logs by default', () => {
     const hs = createHoloSphere({ appName: APP, store: { adapter: 'memory' } });
-    expect(hs.store.wire.kinds()).toEqual([30078]);
+    expect(hs.store.wire.kinds()).toEqual([30078, 1808]);
     expect(hs.store.wire.isStandardPrimary('shifts')).toBe(false);
+    expect(hs.isAppendLens('_policy')).toBe(true);
+    expect(hs.isAppendLens('_checkpoints')).toBe(true);
+    expect(hs.isAppendLens('tasks')).toBe(false);
+  });
+
+  it('adds a domain log, or carries none at all', () => {
+    const withClaims = createHoloSphere({ appName: APP, store: { adapter: 'memory' }, appendLenses: ['flow_claims'] });
+    expect(withClaims.isAppendLens('flow_claims')).toBe(true);
+    expect(withClaims.isAppendLens('_policy')).toBe(true);
+    const none = createHoloSphere({ appName: APP, store: { adapter: 'memory' }, appendLenses: false });
+    expect(none.store.wire.kinds()).toEqual([30078]);
   });
 
   it('carries shifts on its own kinds when asked', () => {

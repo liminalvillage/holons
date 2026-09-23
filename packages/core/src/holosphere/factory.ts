@@ -18,6 +18,7 @@ import { HoloSphere } from 'holosphere';
 import { attachLedger, type LedgerHost } from '../rea/attach.js';
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
+import { PROTOCOL_LENSES } from '../protocol/events.js';
 import type { ProjectionHook } from '../nostr/types.js';
 
 /** Where the local store persists (see holosphere/STORE.md). */
@@ -107,6 +108,13 @@ export interface CreateHoloSphereOptions {
    * (imports, forensics).
    */
   ledger?: boolean;
+  /**
+   * Append-only lenses (kind 1808, every signed entry kept — see
+   * `@holons/core/protocol`). Defaults to the protocol's own lenses; pass a
+   * list to add a domain's logs, or `false` for none. Registering costs
+   * nothing until a lens is read or written.
+   */
+  appendLenses?: readonly string[] | false;
 }
 
 /**
@@ -123,16 +131,21 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, appendLenses } = options;
 
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
-  let storeCfg = store;
+  let storeCfg: (HoloSphereStoreOptions & { appendLenses?: string[] }) | undefined = store;
   if (standardWires?.shifts || standardWires?.shiftIdentity) {
     const wire = createWireRegistry();
     if (standardWires.shifts) wire.register(createShiftWire(standardWires.shifts));
     if (standardWires.shiftIdentity) wire.register(createShiftIdentityWire(standardWires.shiftIdentity));
     storeCfg = { ...(store ?? {}), wire };
+  }
+  // The protocol's own logs ride along by default; a domain adds its own.
+  if (appendLenses !== false) {
+    const lenses = [...new Set([...PROTOCOL_LENSES, ...(appendLenses ?? [])])];
+    storeCfg = { ...(storeCfg ?? {}), appendLenses: lenses };
   }
 
   const config: Record<string, unknown> = {
