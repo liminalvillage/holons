@@ -1154,8 +1154,10 @@ export const en = {
   "flows.claimRecord": "Record a claim",
   "flows.claimAmount": "Amount",
   "flows.claimMemo": "What for",
-  "flows.claimNoSigner": "Signing is not set up for this login, so a claim cannot be recorded here.",
-  "flows.claimsProvisional": "This holon is not founded yet: who counts is provisional until the bot signs its membership.",
+  "flows.claimNoSigner":
+    "Signing is not set up for this login, so a claim cannot be recorded here.",
+  "flows.claimsProvisional":
+    "This holon is not founded yet: who counts is provisional until the bot signs its membership.",
   "flows.claimsReview": "Claims to review",
   "flows.claimAttest": "Attest",
   "flows.claimDispute": "Dispute",

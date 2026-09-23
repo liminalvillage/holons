@@ -1172,8 +1172,10 @@ export const es: Record<MessageKey, Msg> = {
   "flows.claimRecord": "Registrar una reclamación",
   "flows.claimAmount": "Importe",
   "flows.claimMemo": "Para qué",
-  "flows.claimNoSigner": "La firma no está configurada para este acceso: aquí no se puede registrar una reclamación.",
-  "flows.claimsProvisional": "Este holon aún no está fundado: quién cuenta es provisional hasta que el bot firme sus miembros.",
+  "flows.claimNoSigner":
+    "La firma no está configurada para este acceso: aquí no se puede registrar una reclamación.",
+  "flows.claimsProvisional":
+    "Este holon aún no está fundado: quién cuenta es provisional hasta que el bot firme sus miembros.",
   "flows.claimsReview": "Reclamaciones por revisar",
   "flows.claimAttest": "Atestiguar",
   "flows.claimDispute": "Disputar",

@@ -50,7 +50,9 @@ export const GET: RequestHandler = async ({ cookies }) => {
   }
   const id = await telegramId(cookies.get(SESSION_COOKIE));
   if (!id) return json({ error: "Not a Telegram session" }, { status: 401 });
-  const pubkey = createIdentityContext({ derivationSecret: secret }).memberPubkey(id);
+  const pubkey = createIdentityContext({
+    derivationSecret: secret,
+  }).memberPubkey(id);
   if (!pubkey) return json({ error: "Key derivation failed" }, { status: 500 });
   return json({ pubkey, party: id });
 };
@@ -76,23 +78,35 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
   const lens = String(body.lens ?? "").trim();
   const item = body.item;
   if (!holon) return json({ error: "holon is required" }, { status: 400 });
-  if (!LENSES.has(lens)) return json({ error: `Not a log this route signs: ${lens}` }, { status: 400 });
+  if (!LENSES.has(lens))
+    return json(
+      { error: `Not a log this route signs: ${lens}` },
+      { status: 400 },
+    );
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return json({ error: "item must be an object" }, { status: 400 });
   }
   if (isClaim(item)) {
     if (String(item.party) !== id || item.onBehalfOf) {
-      return json({ error: "A claim is signed for the session user only" }, { status: 403 });
+      return json(
+        { error: "A claim is signed for the session user only" },
+        { status: 403 },
+      );
     }
   } else if (!isPayout(item) && !isAttestation(item)) {
-    return json({ error: "Not a claim, a verdict or a payout" }, { status: 400 });
+    return json(
+      { error: "Not a claim, a verdict or a payout" },
+      { status: 400 },
+    );
   }
   const refs =
     body.refs && typeof body.refs === "object" && !Array.isArray(body.refs)
       ? (body.refs as Record<string, string | string[]>)
       : undefined;
 
-  const signer = createIdentityContext({ derivationSecret: secret }).memberSigner(id);
+  const signer = createIdentityContext({
+    derivationSecret: secret,
+  }).memberSigner(id);
   if (!signer) return json({ error: "Key derivation failed" }, { status: 500 });
   const event = signer.sign(
     logTemplate({

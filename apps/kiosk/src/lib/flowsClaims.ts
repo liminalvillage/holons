@@ -63,7 +63,12 @@ export function watchClaimsLogs(
   holon: string,
   onChange: (logs: ClaimsLogs) => void,
 ): () => void {
-  const state: ClaimsLogs = { entries: [], policy: [], members: [], attestations: [] };
+  const state: ClaimsLogs = {
+    entries: [],
+    policy: [],
+    members: [],
+    attestations: [],
+  };
   let alive = true;
   let scheduled = false;
   const emit = () => {
@@ -71,7 +76,12 @@ export function watchClaimsLogs(
     scheduled = true;
     queueMicrotask(() => {
       scheduled = false;
-      if (alive) onChange({ ...state, entries: [...state.entries], policy: [...state.policy] });
+      if (alive)
+        onChange({
+          ...state,
+          entries: [...state.entries],
+          policy: [...state.policy],
+        });
     });
   };
   const entries = new Map<string, LogEvent<unknown>>();
@@ -114,16 +124,24 @@ export function watchClaimsLogs(
 }
 
 /** Who this session signs log entries as, or null when it cannot. */
-export async function claimSigner(): Promise<{ pubkey: string; party: string; mode: "server" | "local" } | null> {
+export async function claimSigner(): Promise<{
+  pubkey: string;
+  party: string;
+  mode: "server" | "local";
+} | null> {
   const user = get(currentUser);
   if (!user) return null;
   if (user.provider !== "telegram") {
-    return getSessionSecret() ? { pubkey: String(user.id), party: String(user.id), mode: "local" } : null;
+    return getSessionSecret()
+      ? { pubkey: String(user.id), party: String(user.id), mode: "local" }
+      : null;
   }
   try {
     const res = await fetch("/api/flows/log");
     const body = res.ok ? await res.json() : null;
-    return body?.pubkey ? { pubkey: body.pubkey, party: String(user.id), mode: "server" } : null;
+    return body?.pubkey
+      ? { pubkey: body.pubkey, party: String(user.id), mode: "server" }
+      : null;
   } catch {
     return null;
   }
@@ -141,9 +159,16 @@ export async function recordLogEntry(
   const refs = appendable.refs as Record<string, string | string[]> | undefined;
   if (user.provider !== "telegram") {
     const secret = getSessionSecret();
-    if (!secret) throw new Error("This session cannot sign (reload lost the key)");
+    if (!secret)
+      throw new Error("This session cannot sign (reload lost the key)");
     const event = signerFromSecretKey(secret).sign(
-      logTemplate({ holon, lens, appName: resolveAppName(), item: appendable.item, refs }),
+      logTemplate({
+        holon,
+        lens,
+        appName: resolveAppName(),
+        item: appendable.item,
+        refs,
+      }),
     );
     await hs.appendSigned(event as never);
     return event;
@@ -154,17 +179,59 @@ export async function recordLogEntry(
     body: JSON.stringify({ holon, lens, item: appendable.item, refs }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body?.event) throw new Error(String(body?.error ?? `Signing failed (${res.status})`));
+  if (!res.ok || !body?.event)
+    throw new Error(String(body?.error ?? `Signing failed (${res.status})`));
   await hs.appendSigned(body.event);
   return body.event;
 }
 
-export function recordClaim(hs: HoloSphere, holon: string, input: { party: string; amount: number; unit: string; memo?: string; percentage?: number }) {
-  return recordLogEntry(hs, holon, FLOW_CLAIMS_LENS, buildClaim(input) as never);
+export function recordClaim(
+  hs: HoloSphere,
+  holon: string,
+  input: {
+    party: string;
+    amount: number;
+    unit: string;
+    memo?: string;
+    percentage?: number;
+  },
+) {
+  return recordLogEntry(
+    hs,
+    holon,
+    FLOW_CLAIMS_LENS,
+    buildClaim(input) as never,
+  );
 }
-export function recordVerdict(hs: HoloSphere, holon: string, claimId: string, verdict: "attest" | "dispute", reason?: string) {
-  return recordLogEntry(hs, holon, FLOW_CLAIMS_LENS, buildClaimVerdict(claimId, verdict, reason) as never);
+export function recordVerdict(
+  hs: HoloSphere,
+  holon: string,
+  claimId: string,
+  verdict: "attest" | "dispute",
+  reason?: string,
+) {
+  return recordLogEntry(
+    hs,
+    holon,
+    FLOW_CLAIMS_LENS,
+    buildClaimVerdict(claimId, verdict, reason) as never,
+  );
 }
-export function recordPayout(hs: HoloSphere, holon: string, input: { claimId: string; party: string; amount: number; unit: string; memo?: string }) {
-  return recordLogEntry(hs, holon, FLOW_CLAIMS_LENS, buildPayout(input) as never);
+export function recordPayout(
+  hs: HoloSphere,
+  holon: string,
+  input: {
+    claimId: string;
+    party: string;
+    amount: number;
+    unit: string;
+    memo?: string;
+  },
+) {
+  return recordLogEntry(
+    hs,
+    holon,
+    FLOW_CLAIMS_LENS,
+    buildPayout(input) as never,
+  );
 }

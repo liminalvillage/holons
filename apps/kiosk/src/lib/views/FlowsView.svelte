@@ -1481,7 +1481,10 @@
                      you take from the fund, judged by its attesters, folded
                      the same way on every screen. -->
                 {#if selfId}
-                  <form class="claim-form" on:submit|preventDefault={submitClaim}>
+                  <form
+                    class="claim-form"
+                    on:submit|preventDefault={submitClaim}
+                  >
                     <label class="claim-field">
                       <span class="k">{$t("flows.claimAmount")}</span>
                       <input
@@ -1495,7 +1498,11 @@
                     </label>
                     <label class="claim-field grow">
                       <span class="k">{$t("flows.claimMemo")}</span>
-                      <input type="text" maxlength="140" bind:value={claimMemo} />
+                      <input
+                        type="text"
+                        maxlength="140"
+                        bind:value={claimMemo}
+                      />
                     </label>
                     <button
                       class="claim"
@@ -1520,7 +1527,9 @@
                         <li class={`claim-row ${c.status}`}>
                           <span class="amt">{c.amount} {c.unit}</span>
                           <span class="memo">{c.memo ?? ""}</span>
-                          <span class="badge">{$t(`flows.claimStatus.${c.status}`)}</span>
+                          <span class="badge"
+                            >{$t(`flows.claimStatus.${c.status}`)}</span
+                          >
                         </li>
                       {/each}
                     </ul>
@@ -1598,16 +1607,36 @@
                     <span class="who">{partyName(c.party)}</span>
                     <span class="amt">{c.amount} {c.unit}</span>
                     <span class="memo">{c.memo ?? ""}</span>
-                    <span class="badge">{$t(`flows.claimStatus.${c.status}`)}</span>
+                    <span class="badge"
+                      >{$t(`flows.claimStatus.${c.status}`)}</span
+                    >
                     <span class="acts">
                       {#if c.status !== "approved"}
-                        <button type="button" class="mini" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>{$t("flows.claimAttest")}</button>
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => judgeClaim(c, "attest")}
+                          >{$t("flows.claimAttest")}</button
+                        >
                       {/if}
                       {#if c.status !== "disputed"}
-                        <button type="button" class="mini" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>{$t("flows.claimDispute")}</button>
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => judgeClaim(c, "dispute")}
+                          >{$t("flows.claimDispute")}</button
+                        >
                       {/if}
                       {#if c.status === "approved"}
-                        <button type="button" class="mini" disabled={claimBusy} on:click={() => markPaid(c)}>{$t("flows.claimPaid")}</button>
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => markPaid(c)}
+                          >{$t("flows.claimPaid")}</button
+                        >
                       {/if}
                     </span>
                   </li>
