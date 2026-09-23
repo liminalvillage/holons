@@ -3,7 +3,7 @@
 // Type declarations for holosphere 2.x — signed Nostr events on relays,
 // mirrored into a local event-sourced store (see STORE.md).
 
-import type { Store, StoreAdapter, NostrEvent } from './store/index.js';
+import type { Store, StoreAdapter, NostrEvent, WireRegistry } from './store/index.js';
 
 export type { Store, StoreAdapter, NostrEvent, StoreRecord, StoreSnapshot, StoreOp, WatchMeta, Cursor } from './store/index.js';
 
@@ -263,7 +263,35 @@ export interface StoreOptions {
   dir?: string;
   /** Persisted ops before the log is compacted (default 50000). */
   compactAfter?: number;
+  /** Which kinds this store consumes; defaults to the envelope alone. */
+  wire?: WireRegistry;
+  /** Lenses carried on the append-only log kind (1808): every entry kept, never replaced. */
+  appendLenses?: string[];
 }
+
+/** The entries a log event points at, by `e`-tag marker. */
+export interface LogRefs {
+  prev: string[];
+  basis: string[];
+  attests: string[];
+  disputes: string[];
+  other: string[];
+}
+
+/** A verified entry of an append-only lens, as `getLog` / `subscribeLog` yield it. */
+export interface LogEntry<T = Record<string, unknown>> {
+  /** The event id — also the record id. */
+  id: string;
+  pubkey: string;
+  created_at: number;
+  kind: number;
+  refs: LogRefs;
+  /** The decoded body (`id` = event id, plus a `_log` block). */
+  item: T & { id: string; _log: { pubkey: string; created_at: number; kind: number; refs: LogRefs } };
+  event: NostrEvent;
+}
+
+export type LogRefsInput = Partial<Record<'prev' | 'basis' | 'attests' | 'disputes', string | string[]>> | Array<{ id: string; marker?: string } | string>;
 
 interface HoloSphereConfig {
   appName?: string;
@@ -374,6 +402,19 @@ declare class HoloSphere {
     exportEvents(filter?: { holon?: string | null; lens?: string; authors?: string[] }): NostrEvent[];
     /** Apply signed events (verified); with `publish` also republish them to the relays. */
     importEvents(events: NostrEvent[], options?: { publish?: boolean }): Promise<{ received: number; applied: number; rejected: number }>;
+
+    // Append-only logs (see log.js)
+    /** Carry `lens` on the append-only log kind from now on (idempotent). */
+    registerAppendLens(lens: string): void;
+    isAppendLens(lens: string): boolean;
+    /** Append a signed entry with the instance key; returns the signed event. */
+    append(holon: string | null, lens: string, item: object, options?: { refs?: LogRefsInput; created_at?: number }): Promise<NostrEvent>;
+    /** Apply + publish a log entry signed elsewhere. */
+    appendSigned(event: NostrEvent): Promise<{ applied: boolean; reason?: string }>;
+    /** Every verified entry of a log lens, oldest first. */
+    getLog<T = Record<string, unknown>>(holon: string | null, lens: string, options?: { since?: number; until?: number; authors?: string[] }): Promise<LogEntry<T>[]>;
+    /** Ordered replay, then each new entry; returns the unsubscribe function. */
+    subscribeLog<T = Record<string, unknown>>(holon: string | null, lens: string, callback: (entry: LogEntry<T>) => void, options?: { replay?: boolean }): () => void;
 
     // Node
     getNode(holon: string, lens: string, key: string): Promise<any | null>;

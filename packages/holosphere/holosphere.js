@@ -20,7 +20,8 @@ import * as GlobalOps from './global.js';
 import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
-import { createStore, CAPABILITIES_HOLON } from './store/index.js';
+import { createStore, createAppendWire, CAPABILITIES_HOLON } from './store/index.js';
+import * as LogOps from './log.js';
 import { createSigner } from './signing.js';
 import { createRelayTransport } from './relay-transport.js';
 import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
@@ -100,6 +101,10 @@ class HoloSphere {
             // envelope alone, which is every lens without a standard codec.
             wire: storeCfg.wire,
         });
+        // Append-only lenses (see log.js): every entry its own record on the
+        // log kind, never replaced. Registered up front so the transport's
+        // filters and the store's decode know them from the first sync.
+        for (const lens of storeCfg.appendLenses || cfg.appendLenses || []) this.registerAppendLens(lens);
 
         this.openai = null;
         this.subscriptions = {};
@@ -364,6 +369,50 @@ class HoloSphere {
         const result = this.store.importEvents(events);
         if (publish && this._relayTransport) this._relayTransport.publishEvents(events);
         return result;
+    }
+
+    // ================================ APPEND-ONLY LOGS ================================
+    // See log.js. A log lens keeps every signed entry (regular kind 1808,
+    // addressed by event id); what the log MEANS is the reader's reduce.
+
+    /** Carry `lens` on the append-only log kind from now on (idempotent). */
+    registerAppendLens(lens) {
+        if (!lens || this.store.wire.isAppend?.(lens)) return;
+        this.store.wire.register(createAppendWire({ lens, appName: this.appname }));
+    }
+
+    /** Is this lens an append-only log? */
+    isAppendLens(lens) {
+        return !!this.store.wire.isAppend?.(lens);
+    }
+
+    /**
+     * Append a signed entry with the instance key. `refs` = `{ prev, basis,
+     * attests, disputes }` (ids or id arrays). Returns the signed event.
+     */
+    async append(holon, lens, item, options = {}) {
+        await this._awaitBackend();
+        this._relaySync(holon, lens);
+        return LogOps.append(this, holon, lens, item, options);
+    }
+
+    /** Apply + publish a log entry signed elsewhere (e.g. a host signing as a member). */
+    async appendSigned(event) {
+        await this._awaitBackend();
+        return LogOps.appendSigned(this, event);
+    }
+
+    /** Every verified entry of a log lens, oldest first (`{ id, pubkey, created_at, refs, item, event }`). */
+    async getLog(holon, lens, options = {}) {
+        await this._awaitBackend();
+        await this._relaySync(holon, lens, { await: true });
+        return LogOps.getLog(this, holon, lens, options);
+    }
+
+    /** Watch a log lens: ordered replay, then each new entry. Returns the unsubscribe function. */
+    subscribeLog(holon, lens, callback, options = {}) {
+        this._ready.then(() => this._relaySync(holon, lens)).catch(() => {});
+        return LogOps.subscribeLog(this, holon, lens, callback, options);
     }
 
     // ================================ NODE FUNCTIONS ================================

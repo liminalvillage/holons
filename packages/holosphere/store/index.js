@@ -7,7 +7,7 @@ import { createMemoryAdapter } from './adapters/memory.js';
 import { createIndexedDbAdapter } from './adapters/indexeddb.js';
 
 export { Store, isTombstone, decodeEvent } from './store.js';
-export { createWireRegistry } from './wire.js';
+export { createWireRegistry, createAppendWire } from './wire.js';
 export { createMemoryAdapter } from './adapters/memory.js';
 export { createIndexedDbAdapter } from './adapters/indexeddb.js';
 export { wins, newestFirst } from './lww.js';

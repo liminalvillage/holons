@@ -17,6 +17,17 @@ const isStandardPrimary = (holoInstance, lens) =>
     !!holoInstance?.store?.wire?.isStandardPrimary?.(lens);
 
 /**
+ * An append-only lens (see `log.js`) has no slot to overwrite and no record
+ * to tombstone: an entry, once signed, is what happened. `put` and `delete`
+ * refuse it loudly rather than degrade into a phantom replaceable record.
+ */
+function refuseAppendOnly(holoInstance, lens, op) {
+    if (holoInstance?.store?.wire?.isAppend?.(lens)) {
+        throw new Error(`${op}: lens '${lens}' is append-only — entries are added with append() and never replaced or deleted`);
+    }
+}
+
+/**
  * What a standard-primary lens cannot do, and why it throws instead of quietly
  * degrading to a local write.
  *
@@ -35,6 +46,7 @@ const isStandardPrimary = (holoInstance, lens) =>
  * record.
  */
 function refuseUnsupported(holoInstance, holon, lens, data, options) {
+    refuseAppendOnly(holoInstance, lens, 'put');
     if (!isStandardPrimary(holoInstance, lens)) return options;
     const where = `lens '${lens}' is carried on a standard Nostr kind`;
     // The shapes the ENCODING cannot express come first: they are true of any
@@ -785,6 +797,7 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
         throw new Error('delete: Missing required parameters');
     }
     if (password) return PrivateOps.deleteFunc(holoInstance, holon, lens, key, password);
+    refuseAppendOnly(holoInstance, lens, 'delete');
 
     try {
         const wireHolon = normHolon(holon);
@@ -855,6 +868,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null, opti
         return false;
     }
     if (password) return PrivateOps.deleteAll(holoInstance, holon, lens, password);
+    refuseAppendOnly(holoInstance, lens, 'deleteAll');
 
     try {
         const wireHolon = normHolon(holon);

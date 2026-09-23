@@ -41,6 +41,8 @@ export interface LensWire {
     filters?(holon: string): object[];
     /** Resolve a `d` tag back to an address, so a NIP-09 retraction can land. */
     address?(dTag: string): { holon: string; lens: string; id: string } | null;
+    /** An append-only log: every event its own record (addressed by event id), never replaced. */
+    append?: boolean;
 }
 
 /** Which event kinds a store consumes, and how each decodes to an address. */
@@ -49,12 +51,16 @@ export interface WireRegistry {
     register(wire: LensWire): void;
     wiresFor(lens: string): LensWire[];
     isStandardPrimary(lens: string): boolean;
+    /** Is this lens an append-only log? */
+    isAppend(lens: string): boolean;
     kinds(): number[];
     accepts(kind: number): boolean;
     decode(event: any): WireClaim[] | null;
 }
 
 export function createWireRegistry(opts?: { legacyKind?: number }): WireRegistry;
+/** The wire of an append-only lens on the log kind (1808). */
+export function createAppendWire(opts: { lens: string; appName?: string; kind?: number }): LensWire;
 
 export function createStore(opts: CreateStoreOptions): Store;
 export function resolveAdapter(spec: AdapterSpec | undefined, opts?: { appName?: string; dir?: string }): StoreAdapter | (() => Promise<StoreAdapter>);

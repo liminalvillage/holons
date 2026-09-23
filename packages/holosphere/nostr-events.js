@@ -157,7 +157,73 @@ export function tag(event, name) {
   return t ? t[1] : undefined;
 }
 
+// ---------------------------------------------------------------- log entries
+
+/**
+ * Append-only log entries ride a REGULAR kind (NIP-01 1000–9999: stored,
+ * never replaced), so every signed entry survives next to every other. The
+ * store addresses each one by its event id. 1808 is unassigned in the NIP
+ * registry.
+ */
+export const HOLOSPHERE_LOG_KIND = 1808;
+
+/** The `e`-tag markers a log entry uses to point at other entries. */
+export const LOG_REF_MARKERS = ['prev', 'basis', 'attests', 'disputes'];
+
+/** `{ prev: id, basis: [ids] }` or `[{ id, marker }]` → `[{ id, marker }]`. */
+function normalizeRefs(refs) {
+  const out = [];
+  if (!refs) return out;
+  if (Array.isArray(refs)) {
+    for (const r of refs) {
+      if (!r) continue;
+      if (typeof r === 'string') out.push({ id: r, marker: '' });
+      else if (r.id) out.push({ id: String(r.id), marker: r.marker ? String(r.marker) : '' });
+    }
+    return out;
+  }
+  for (const [marker, v] of Object.entries(refs)) {
+    for (const id of Array.isArray(v) ? v : [v]) if (id) out.push({ id: String(id), marker });
+  }
+  return out;
+}
+
+/**
+ * Build + sign a log entry (kind 1808). Tags: `h`, `l`, one `['e', id, '',
+ * marker]` per ref, then `extraTags` (the caller adds the `n` namespace tag,
+ * as for `buildEvent`). The body's `id` and `_log` are dropped: a log entry's
+ * id IS its event id, and `_log` is what the store's decode adds.
+ */
+export function buildLogEvent({ holon, lens, item, sk, created_at, refs, extraTags = [] }) {
+  if (!holon || !lens) throw new Error('buildLogEvent: holon and lens are required');
+  if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('buildLogEvent: item must be an object');
+  const { id: _id, _log: _meta, ...body } = item;
+  const tags = [['h', String(holon)], ['l', String(lens)]];
+  for (const { id, marker } of normalizeRefs(refs)) tags.push(['e', id, '', marker]);
+  tags.push(...extraTags);
+  return finalizeEvent(
+    {
+      kind: HOLOSPHERE_LOG_KIND,
+      created_at: created_at ?? nowSec(),
+      tags,
+      content: JSON.stringify(body),
+    },
+    toBytes(sk),
+  );
+}
+
+/** The entries a log event points at, by marker (`other` for unmarked `e` tags). */
+export function logRefs(event) {
+  const out = { prev: [], basis: [], attests: [], disputes: [], other: [] };
+  for (const t of event?.tags || []) {
+    if (t[0] !== 'e' || typeof t[1] !== 'string') continue;
+    const marker = t[3] || '';
+    (LOG_REF_MARKERS.includes(marker) ? out[marker] : out.other).push(t[1]);
+  }
+  return out;
+}
+
 export default {
-  HOLOSPHERE_KIND, generateSecretKey, getPublicKey, getEventHash,
-  buildEvent, signEvent, verifyEvent, eventToItem, tag,
+  HOLOSPHERE_KIND, HOLOSPHERE_LOG_KIND, generateSecretKey, getPublicKey, getEventHash,
+  buildEvent, buildLogEvent, logRefs, signEvent, verifyEvent, eventToItem, tag,
 };

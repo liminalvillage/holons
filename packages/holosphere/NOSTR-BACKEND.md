@@ -79,6 +79,22 @@ tags: [["h", holon|"_g"], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
   signing layer uses); receivers store the tombstone, and normal reads
   filter it.
 
+### Append-only lenses — kind 1808
+
+```
+kind 1808 (regular: stored, never replaced), content = JSON(body)
+tags: [["h", holon|"_g"], ["l", lens], ["e", <id>, "", prev|basis|attests|disputes]*, ["n", appname]]
+```
+
+A lens registered as append-only (`appendLenses` / `registerAppendLens`)
+rides this kind instead of 30078: no `d` tag, every event its own record
+addressed by its event id, so nothing ever supersedes an entry (`STORE.md`,
+"Append-only lenses"). `append` / `appendSigned` write, `getLog` /
+`subscribeLog` read oldest first. The sync filter is
+`{ kinds:[1808], #h, #l, #n }` on its own wire (`std:1808`) and cursor. What
+the log folds into is decided by the reader (`@holons/core/protocol`), not
+here.
+
 ## Projections — standard kinds next to 30078
 
 The 30078 record is opaque to every other Nostr client. With projection
