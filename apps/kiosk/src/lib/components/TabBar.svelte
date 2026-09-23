@@ -229,15 +229,52 @@
   // the tabs drop to icons (the phone layout), and if even the icons overflow
   // the strip scrolls sideways. Re-measured when the tabs, the language, or
   // the width change.
+  // On a wide screen the strip first tries the header's own row (`merged`,
+  // see the CSS): brand | tabs | search | account. Two rows of chrome spend
+  // a fifth of a desktop's height before the board starts, and the top row
+  // is mostly empty. The names keep priority over the merge, though: if they
+  // don't fit in the room the row leaves them, the strip drops back beneath
+  // the header at full width, where they do — icons-alone is a phone's
+  // layout, not a desktop's.
+  const WIDE = "(min-width: 1280px)";
   let compact = false;
+  let merged = false;
   let fitWidth = 0;
+  let fitRun = 0;
   async function fit() {
     if (!nav) return;
+    const run = ++fitRun;
     compact = false;
+    merged = typeof window !== "undefined" && window.matchMedia(WIDE).matches;
     await tick();
-    if (!nav) return;
-    compact = nav.scrollWidth > nav.clientWidth + 1;
+    if (!nav || run !== fitRun) return;
+    if (merged && overflows()) {
+      merged = false;
+      await tick();
+      if (!nav || run !== fitRun) return;
+    }
+    compact = overflows();
     fitWidth = nav.clientWidth;
+  }
+  // Overflow is judged from layout widths, not `scrollWidth`: a tab mid-flip
+  // carries a transform toward where it was, which scrollWidth counts and
+  // would read as overflow. offsetWidth rounds to whole pixels, so allow a
+  // half-pixel per tab before calling it overflow.
+  function overflows(): boolean {
+    if (!nav) return false;
+    const gap = parseFloat(getComputedStyle(nav).columnGap) || 0;
+    let need = 0;
+    let n = 0;
+    for (const el of Array.from(nav.children) as HTMLElement[]) {
+      const cs = getComputedStyle(el);
+      need +=
+        el.offsetWidth +
+        (parseFloat(cs.marginLeft) || 0) +
+        (parseFloat(cs.marginRight) || 0);
+      n++;
+    }
+    need += gap * Math.max(0, n - 1);
+    return need > nav.clientWidth + Math.ceil(n / 2) + 1;
   }
   $: ($visibleTabs, $locale, void fit());
   onMount(() => {
@@ -245,6 +282,11 @@
       if (nav && nav.clientWidth !== fitWidth) void fit();
     });
     ro.observe(nav);
+    // Crossing the wide breakpoint re-decides the merge even when the strip's
+    // own width happens not to change.
+    const wide = window.matchMedia(WIDE);
+    const onWide = () => void fit();
+    wide.addEventListener("change", onWide);
     if (!resolveAddTipSeen()) {
       addTipTimer = setTimeout(() => {
         addTipTimer = null;
@@ -253,6 +295,7 @@
     }
     return () => {
       ro.disconnect();
+      wide.removeEventListener("change", onWide);
       if (addTipTimer) clearTimeout(addTipTimer);
     };
   });
@@ -315,7 +358,11 @@
   }
 </script>
 
-<header class="bar" class:suggest-open={suggestOpen || addOpen || addTip}>
+<header
+  class="bar"
+  class:merged
+  class:suggest-open={suggestOpen || addOpen || addTip}
+>
   <div class="top">
     <div class="brand">
       {#if $brandLogo}
@@ -1244,5 +1291,72 @@
   .fill.paused {
     background: var(--note-coral);
     transition: none;
+  }
+
+  /* Wide screens: the header is one row. Two rows of chrome (brand + search
+     + account above, the tabs beneath) spend a fifth of a desktop's height
+     before the board starts, and the top row is mostly empty space between
+     its three groups. So from a laptop up the strip slides into that space:
+     brand | tabs … | search | account · clock · ✕, browser-style. The tabs
+     size to their names and sit next to the brand; the search and the
+     account group keep the right edge. `.top` becomes a transparent wrapper
+     so its three groups and the strip share the one flex row, ordered by
+     `order`. The script (`fit`) sets `.merged` only while the names fit in
+     the room the row leaves them; otherwise the strip keeps its own row at
+     full width, tightened a little, below. */
+  @media (min-width: 1280px) {
+    .bar {
+      padding-top: 0.45rem;
+    }
+    .tabs {
+      margin-top: 0.2rem;
+      padding-top: 0.4rem;
+    }
+    .tab {
+      padding: 0.3rem 0.6rem 0.4rem;
+      min-height: 2rem;
+    }
+  }
+  .bar.merged {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding-top: 0.4rem;
+  }
+  .bar.merged .top {
+    display: contents;
+  }
+  .bar.merged .brand {
+    order: 0;
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .bar.merged .brand .wordmark {
+    max-width: 14rem;
+  }
+  .bar.merged .strip {
+    order: 1;
+    flex: 0 1 auto;
+    min-width: 0;
+    /* Sits on the bar's bottom edge, so the active tab still opens into the
+       surface below. */
+    align-self: flex-end;
+  }
+  .bar.merged .tabs {
+    margin-top: 0;
+  }
+  .bar.merged .tab {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.9rem 0.45rem;
+  }
+  .bar.merged .search {
+    order: 2;
+    flex: 0 0 auto;
+    width: clamp(11rem, 16vw, 20rem);
+    margin: 0 0 0 auto;
+  }
+  .bar.merged .right {
+    order: 3;
+    flex: 0 0 auto;
   }
 </style>
