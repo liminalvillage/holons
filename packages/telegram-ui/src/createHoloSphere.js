@@ -27,6 +27,8 @@ import {
   deriveTelegramNostrKey,
 } from '@holons/core/auth';
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
+import { syncMembersLog } from '@holons/core/protocol';
+import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -140,6 +142,9 @@ export default function createHoloSphere(appName, options = {}) {
       },
       shiftIdentity: {},
     },
+    // Fund claims are an append-only log (kind 1808): members append signed
+    // entries (/fundclaim), every reader folds the same log (see FundClaims.js).
+    appendLenses: [FLOW_CLAIMS_LENS],
     nostr: projectionOptions,
     extra: { logLevel: logLevel || 'INFO', ...extra },
   });
@@ -363,7 +368,55 @@ export function createTrustCache(
       /* no settings yet */
     }
     publishGroupState(holon, settings, memberIds);
+    syncMembership(holon, settings, list);
     return [...list];
+  }
+
+  /**
+   * The same roster, signed: the holon key founds its `_members` log once
+   * and keeps it in line with the keys trusted here (members; the admin's
+   * key as admin). This is what turns "who is in the users lens" into a
+   * signed, as-of-time fact every reader folds the same way (see
+   * @holons/core/protocol membership). Readers without the derivation
+   * secret pin the trust anchor from `settings.holonPubkey`, written once.
+   * Fire-and-forget; a failed sync is retried on the next refresh.
+   */
+  function syncMembership(holon, settings, keys) {
+    const hs = projectionHost.instance;
+    if (!secret || !hs || !hs.signingEnabled) return;
+    const desired = new Map();
+    for (const k of keys) if (k !== holonPubkey) desired.set(k, 'member');
+    const adminId =
+      settings?.admin != null ? String(settings.admin).trim() : '';
+    if (adminId) {
+      try {
+        desired.set(deriveTelegramNostrKey(adminId, secret).publicKey, 'admin');
+      } catch {
+        /* no admin key */
+      }
+    }
+    syncMembersLog(hs, String(holon), desired)
+      .then(r => {
+        if (r.founded)
+          console.log(
+            `[holosphere] founded ${holon}: membership log signed by the holon key`
+          );
+      })
+      .catch(e =>
+        console.warn('[holosphere] membership sync failed:', e?.message)
+      );
+    if (settings && typeof settings === 'object' && !settings.holonPubkey) {
+      hs.put(String(holon), 'settings', {
+        ...settings,
+        id: settings.id ?? String(holon),
+        holonPubkey,
+      }).catch(e =>
+        console.warn(
+          '[holosphere] could not record holonPubkey in settings:',
+          e?.message
+        )
+      );
+    }
   }
 
   return {

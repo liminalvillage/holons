@@ -67,6 +67,12 @@
     usageOf,
     usageTotals,
     usageUnits,
+    FLOW_CLAIMS_LENS,
+    buildClaim,
+    buildClaimVerdict,
+    buildPayout,
+    foldClaimsFromLenses,
+    type Claim,
     type AllocationSlice,
     type BreakdownRow,
     type ChordGroup,
@@ -81,6 +87,14 @@
     type ValueFlowTrack,
   } from "@holons/core/flows";
   import { getFederationSnapshot } from "@holons/core/federation";
+  import {
+    MEMBERS_LENS,
+    POLICY_LENS,
+    readMembersLog,
+    type LogEvent,
+    type MembershipEnvelope,
+  } from "@holons/core/protocol";
+  import { attestationsFrom, SHIFT_IDENTITY_LENS, type IdentityAttestation } from "@holons/core/shifts";
   import { buildNameMap } from "@holons/core/identity";
   import {
     expenseCurrencies,
@@ -137,6 +151,137 @@
   let settingsSub: any;
   let reaSub: any;
   let rescoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── The signed claims log ───────────────────────────────────────────────
+  // A claim is a signed, append-only entry in the holon's own log (kind 1808).
+  // This instance signs with the member's own derived key, so `append` is
+  // enough; whether an entry counts is the fold's call (core), from the
+  // membership log, settings, users and the identity directory — the same
+  // fold the kiosk and the bot run.
+  let claimEntries = new Map<string, LogEvent<unknown>>();
+  let policyEntries = new Map<string, LogEvent<unknown>>();
+  let membersLog: MembershipEnvelope[] = [];
+  let attestations: IdentityAttestation[] = [];
+  let claimsOffs: Array<() => void> = [];
+  let claimsBoundTo = "";
+  let claimAmount = "";
+  let claimMemo = "";
+  let claimBusy = false;
+  let claimError = "";
+  $: if (holonID && holonID !== claimsBoundTo) bindClaims(holonID);
+  function bindClaims(id: string) {
+    unbindClaims();
+    claimsBoundTo = id;
+    claimEntries = new Map();
+    policyEntries = new Map();
+    membersLog = [];
+    claimsOffs.push(
+      holosphere.subscribeLog(id, FLOW_CLAIMS_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        claimEntries.set(e.id, e as LogEvent<unknown>);
+        claimEntries = claimEntries;
+      }),
+    );
+    claimsOffs.push(
+      holosphere.subscribeLog(id, POLICY_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        policyEntries.set(e.id, e as LogEvent<unknown>);
+        policyEntries = policyEntries;
+      }),
+    );
+    void (async () => {
+      try {
+        await holosphere.getAll(id, MEMBERS_LENS);
+        const log = await readMembersLog(holosphere, id);
+        if (claimsBoundTo === id) membersLog = log;
+      } catch {
+        /* not founded yet */
+      }
+      try {
+        const dir = (await holosphere.getAllGlobal(SHIFT_IDENTITY_LENS)) as never[];
+        if (claimsBoundTo === id) attestations = attestationsFrom(dir || []);
+      } catch {
+        /* no directory */
+      }
+    })();
+  }
+  function unbindClaims() {
+    for (const off of claimsOffs) off();
+    claimsOffs = [];
+    claimsBoundTo = "";
+  }
+  onDestroy(unbindClaims);
+  $: claimsCtx = holonID
+    ? foldClaimsFromLenses({
+        holonId: holonID,
+        entries: [...claimEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+      })
+    : null;
+  $: myLogRole = claimsCtx
+    ? claimsCtx.actors.roleAt(holosphere.currentPubkey, Math.floor(Date.now() / 1000))
+    : null;
+  $: canAttest = !!(claimsCtx && myLogRole && claimsCtx.policy.attesters.includes(myLogRole));
+  $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
+  $: claimUnit = collective?.currency ?? usage?.unit ?? "";
+  const claimStatusLabel: Record<Claim["status"], string> = {
+    approved: "Approved",
+    pending: "Awaiting attestation",
+    disputed: "Disputed",
+    over: "Over the right",
+    conflict: "Conflict",
+    settled: "Paid",
+    rejected: "Not counted",
+  };
+  const partyName = (id: string) =>
+    usersById[id]?.first_name || usersById[id]?.username || partners.find((p) => p.id === id)?.name || id;
+  async function submitClaim() {
+    if (!holonID || !selfId || claimBusy) return;
+    const amount = Number(String(claimAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildClaim({ party: selfId, amount, unit: claimUnit, memo: claimMemo.trim() || undefined });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+      claimAmount = "";
+      claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function judgeClaim(c: Claim, verdict: "attest" | "dispute") {
+    if (!holonID || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildClaimVerdict(c.id, verdict);
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function markPaid(c: Claim) {
+    if (!holonID || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildPayout({ claimId: c.id, party: c.party, amount: c.amount, unit: c.unit });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
 
   // ---- Live lens state ------------------------------------------------------
   //
@@ -369,6 +514,7 @@
         expenses,
         collective,
         windowDays,
+        claims: claimsCtx?.folded ?? null,
       })
     : null;
   $: usageTotal = usageTotals(usage);
@@ -1259,6 +1405,48 @@
             }}
           />
         </div>
+        <!-- Claims on the fund: signed entries in the holon's own log, judged
+             by its attesters, folded the same way on every surface. -->
+        <div class="claims-panel">
+          <h3>Claims on the fund</h3>
+          {#if claimsProvisional}
+            <p class="note">This holon is not founded yet: who counts is provisional until the bot signs its membership.</p>
+          {/if}
+          {#if selfId}
+            <form class="claim-form" on:submit|preventDefault={submitClaim}>
+              <label>Amount <input type="number" min="0.01" step="0.01" bind:value={claimAmount} required /></label>
+              <label class="grow">What for <input type="text" maxlength="140" bind:value={claimMemo} /></label>
+              <button type="submit" disabled={claimBusy || !claimUnit}>Record a claim{claimUnit ? ` (${claimUnit})` : ""}</button>
+            </form>
+          {/if}
+          {#if claimError}<p class="note warn">{claimError}</p>{/if}
+          {#if claimsCtx && claimsCtx.folded.claims.length}
+            <table class="claims">
+              <thead><tr><th>Who</th><th>Amount</th><th>What for</th><th>Status</th>{#if canAttest}<th></th>{/if}</tr></thead>
+              <tbody>
+                {#each claimsCtx.folded.claims.slice(-20).reverse() as c (c.id)}
+                  <tr class={c.status}>
+                    <th scope="row">{partyName(c.party)}</th>
+                    <td>{c.amount} {c.unit}</td>
+                    <td class="memo">{c.memo ?? ""}</td>
+                    <td><span class="badge">{claimStatusLabel[c.status]}</span>{#if c.reason && c.status !== "approved" && c.status !== "settled"} <small>({c.reason})</small>{/if}</td>
+                    {#if canAttest}
+                      <td class="acts">
+                        {#if c.status !== "settled" && c.status !== "rejected"}
+                          {#if c.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>Attest</button>{/if}
+                          {#if c.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>Dispute</button>{/if}
+                          {#if c.status === "approved"}<button type="button" disabled={claimBusy} on:click={() => markPaid(c)}>Paid</button>{/if}
+                        {/if}
+                      </td>
+                    {/if}
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="empty">No claims recorded in the log yet.</p>
+          {/if}
+        </div>
         <p class="note">
           The concentric editor, deploys and per-contributor detail live in
           <a href={`/${holonID}/flow`}>Flow Management</a>.
@@ -1598,5 +1786,83 @@
     .panel {
       animation: none;
     }
+  }
+
+  .claims-panel {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .claims-panel h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .claim-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+  .claim-form label {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.85rem;
+  }
+  .claim-form label.grow {
+    flex: 1 1 10rem;
+  }
+  .claim-form input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .claim-form button,
+  .claims .acts button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .claims {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .claims th,
+  .claims td {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+  }
+  .claims .memo {
+    opacity: 0.75;
+  }
+  .claims .acts {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .claims .badge {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    font-size: 0.75rem;
+  }
+  .claims tr.approved .badge,
+  .claims tr.settled .badge {
+    border-color: #2a9d8f;
+    color: #2a9d8f;
+  }
+  .claims tr.disputed .badge,
+  .claims tr.over .badge,
+  .claims tr.conflict .badge,
+  .claims tr.rejected .badge {
+    border-color: #e76f51;
+    color: #e76f51;
   }
 </style>

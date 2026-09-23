@@ -17,7 +17,42 @@
  *                  epoch, so readers can compare their fold with a signer's.
  */
 
+import { HOLOSPHERE_LOG_KIND } from 'holosphere/nostr-events.js';
+import type { SignableTemplate } from '../holosphere/signers.js';
 import type { Appendable, LogEvent, Policy, RefsInput } from './types.js';
+
+/** The kind every log entry rides (regular, never replaced). */
+export const LOG_KIND: number = HOLOSPHERE_LOG_KIND;
+
+export interface LogTemplateInput<T = Record<string, unknown>> extends Appendable<T> {
+  holon: string;
+  lens: string;
+  /** The app namespace (`appName`), so the store accepts it. */
+  appName: string;
+  /** Unix seconds; default now. */
+  created_at?: number;
+}
+
+/**
+ * The unsigned log entry, for a `NostrSigner` that holds the key elsewhere
+ * (a host signing as one of its members). Same tag layout as holosphere's
+ * `buildLogEvent`: `h`, `l`, one `e` per ref with its marker, `n`. Hand the
+ * signed event to `holosphere.appendSigned`.
+ */
+export function logTemplate<T extends Record<string, unknown>>(input: LogTemplateInput<T>): SignableTemplate {
+  const { id: _id, _log: _meta, ...body } = input.item as Record<string, unknown>;
+  const tags: string[][] = [['h', String(input.holon)], ['l', String(input.lens)]];
+  for (const [marker, v] of Object.entries(input.refs ?? {})) {
+    for (const id of Array.isArray(v) ? v : [v]) if (id) tags.push(['e', String(id), '', marker]);
+  }
+  tags.push(['n', String(input.appName)]);
+  return {
+    kind: HOLOSPHERE_LOG_KIND,
+    created_at: input.created_at ?? Math.floor(Date.now() / 1000),
+    tags,
+    content: JSON.stringify(body),
+  };
+}
 
 /** Holosphere's signed membership log (replaceable envelope, not a log lens). */
 export const MEMBERS_LENS = '_members';

@@ -5,6 +5,7 @@
 	import { browser } from '$app/environment';
 	import { handshake } from "holosphere"
 	import { createHoloSphere, resolveRelays } from '@holons/core/holosphere';
+	import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
@@ -526,6 +527,9 @@
 			privateKey: hexToBytes(privateKey),
 			relays,
 			store: { adapter: 'indexeddb' },
+			// Fund claims are an append-only log (kind 1808), signed here with
+			// the member's own derived key (see components/flows/Flows.svelte).
+			appendLenses: [FLOW_CLAIMS_LENS],
 			nostr: projectionOptions,
 			awaitReady: true,
 		});

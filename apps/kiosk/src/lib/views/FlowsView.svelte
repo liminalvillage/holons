@@ -136,6 +136,15 @@
   import ChordChart from "$lib/components/ChordChart.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import BalancesView from "./BalancesView.svelte";
+  import {
+    watchClaimsLogs,
+    claimSigner,
+    recordClaim,
+    recordVerdict,
+    recordPayout,
+    type ClaimsLogs,
+  } from "$lib/flowsClaims";
+  import { foldClaimsFromLenses, type Claim } from "@holons/core/flows";
 
   // The period, one choice for every chart and statement on the board,
   // picked in the settings drawer and kept per device. 90 days is the
@@ -176,6 +185,138 @@
   // The federation record's partner ids; zones and names are derived below so
   // a settings doc or a resolved name arriving later still lands on the board.
   let federated: string[] = [];
+
+  // ── The signed claims log ───────────────────────────────────────────────
+  // A claim is a signed, append-only entry in the holon's own log; who it
+  // counts for and whether it counts is the fold's call (core), from the
+  // membership log, the settings, the users and the identity directory —
+  // the same fold every other surface runs. The board watches the logs and
+  // re-folds on every entry; `usage` then takes `claimed` from the fold.
+  let claimsLogs: ClaimsLogs | null = null;
+  let claimsOff: (() => void) | null = null;
+  let claimsBoundTo: string | null = null;
+  let logSigner: Awaited<ReturnType<typeof claimSigner>> = null;
+  let claimAmount = "";
+  let claimMemo = "";
+  let claimBusy = false;
+  let claimError = "";
+  $: if (hsRef && hid && hid !== claimsBoundTo) bindClaims(hsRef, hid);
+  $: if (!hid && claimsBoundTo) unbindClaims();
+  function bindClaims(hs: HoloSphere, holon: string) {
+    unbindClaims();
+    claimsBoundTo = holon;
+    claimsOff = watchClaimsLogs(hs, holon, (logs) => {
+      if (claimsBoundTo === holon) claimsLogs = logs;
+    });
+  }
+  function unbindClaims() {
+    claimsOff?.();
+    claimsOff = null;
+    claimsBoundTo = null;
+    claimsLogs = null;
+  }
+  onDestroy(unbindClaims);
+  // Who this session signs as (server-side derived key for Telegram logins,
+  // the adopted key for key logins) — re-resolved when the login changes.
+  $: void refreshLogSigner($currentUser);
+  async function refreshLogSigner(_user: unknown) {
+    logSigner = await claimSigner();
+  }
+  $: claimsCtx =
+    hid && claimsLogs
+      ? foldClaimsFromLenses({
+          holonId: hid,
+          entries: claimsLogs.entries,
+          policyEntries: claimsLogs.policy,
+          membersLog: claimsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: claimsLogs.attestations,
+        })
+      : null;
+  $: myClaims =
+    claimsCtx && selfId
+      ? claimsCtx.folded.claims.filter((c) => c.party === selfId)
+      : [];
+  $: myLogRole =
+    claimsCtx && logSigner
+      ? claimsCtx.actors.roleAt(
+          logSigner.pubkey,
+          Math.floor($now.getTime() / 1000),
+        )
+      : null;
+  $: canAttest = !!(
+    claimsCtx &&
+    myLogRole &&
+    claimsCtx.policy.attesters.includes(myLogRole)
+  );
+  $: reviewClaims =
+    claimsCtx && canAttest
+      ? claimsCtx.folded.claims.filter(
+          (c) =>
+            c.party !== selfId &&
+            c.status !== "settled" &&
+            c.status !== "rejected",
+        )
+      : [];
+  $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
+  $: claimUnit = collective?.currency ?? usage?.unit ?? "";
+  const partyName = (id: string) =>
+    usersById[id]?.first_name ||
+    usersById[id]?.username ||
+    partnerNameMap[id] ||
+    id;
+  async function submitClaim() {
+    if (!hsRef || !hid || !selfId || claimBusy) return;
+    const amount = Number(String(claimAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordClaim(hsRef, hid, {
+        party: selfId,
+        amount,
+        unit: claimUnit,
+        memo: claimMemo.trim() || undefined,
+        percentage: myAccount?.percentage,
+      });
+      claimAmount = "";
+      claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function judgeClaim(c: Claim, verdict: "attest" | "dispute") {
+    if (!hsRef || !hid || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordVerdict(hsRef, hid, c.id, verdict);
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function markPaid(c: Claim) {
+    if (!hsRef || !hid || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordPayout(hsRef, hid, {
+        claimId: c.id,
+        party: c.party,
+        amount: c.amount,
+        unit: c.unit,
+      });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
 
   /**
    * The unit both the movement Sankey and the people chord are drawn in.
@@ -382,6 +523,7 @@
         expenses,
         collective,
         window: flowsWindow,
+        claims: claimsCtx?.folded ?? null,
       })
     : null;
   $: usageTotal = usageTotals(usage);
@@ -1335,6 +1477,55 @@
                   </a>
                   <p class="claim-hint">{$t("flows.claimOpens")}</p>
                 {/if}
+                <!-- A claim as a signed record in the holon's own log: what
+                     you take from the fund, judged by its attesters, folded
+                     the same way on every screen. -->
+                {#if selfId}
+                  <form class="claim-form" on:submit|preventDefault={submitClaim}>
+                    <label class="claim-field">
+                      <span class="k">{$t("flows.claimAmount")}</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        inputmode="decimal"
+                        bind:value={claimAmount}
+                        required
+                      />
+                    </label>
+                    <label class="claim-field grow">
+                      <span class="k">{$t("flows.claimMemo")}</span>
+                      <input type="text" maxlength="140" bind:value={claimMemo} />
+                    </label>
+                    <button
+                      class="claim"
+                      type="submit"
+                      disabled={claimBusy || !logSigner || !claimUnit}
+                    >
+                      {$t("flows.claimRecord")}
+                    </button>
+                  </form>
+                  {#if !logSigner}
+                    <p class="claim-hint">{$t("flows.claimNoSigner")}</p>
+                  {/if}
+                  {#if claimError}
+                    <p class="claim-hint error">{claimError}</p>
+                  {/if}
+                  {#if claimsProvisional && myClaims.length}
+                    <p class="claim-hint">{$t("flows.claimsProvisional")}</p>
+                  {/if}
+                  {#if myClaims.length}
+                    <ul class="claims">
+                      {#each myClaims.slice(-6).reverse() as c (c.id)}
+                        <li class={`claim-row ${c.status}`}>
+                          <span class="amt">{c.amount} {c.unit}</span>
+                          <span class="memo">{c.memo ?? ""}</span>
+                          <span class="badge">{$t(`flows.claimStatus.${c.status}`)}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                {/if}
                 <dl class="statement">
                   <div>
                     <dt>{$t("flows.accountRight")}</dt>
@@ -1394,6 +1585,34 @@
             <div class="account none">
               <div class="k">{$t("flows.accountTitle")}</div>
               <p class="account-sub">{$t("flows.accountNone")}</p>
+            </div>
+          {/if}
+          {#if canAttest && reviewClaims.length}
+            <!-- An attester's desk: every open claim by someone else, with
+                 the three words the log takes from them. -->
+            <div class="account review">
+              <div class="k">{$t("flows.claimsReview")}</div>
+              <ul class="claims">
+                {#each reviewClaims.slice(-8).reverse() as c (c.id)}
+                  <li class={`claim-row ${c.status}`}>
+                    <span class="who">{partyName(c.party)}</span>
+                    <span class="amt">{c.amount} {c.unit}</span>
+                    <span class="memo">{c.memo ?? ""}</span>
+                    <span class="badge">{$t(`flows.claimStatus.${c.status}`)}</span>
+                    <span class="acts">
+                      {#if c.status !== "approved"}
+                        <button type="button" class="mini" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>{$t("flows.claimAttest")}</button>
+                      {/if}
+                      {#if c.status !== "disputed"}
+                        <button type="button" class="mini" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>{$t("flows.claimDispute")}</button>
+                      {/if}
+                      {#if c.status === "approved"}
+                        <button type="button" class="mini" disabled={claimBusy} on:click={() => markPaid(c)}>{$t("flows.claimPaid")}</button>
+                      {/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
             </div>
           {/if}
         </section>
@@ -2086,6 +2305,103 @@
     margin: 0 0 0.7rem;
     font-size: 0.78rem;
     color: var(--muted);
+  }
+  .claim-hint.error {
+    color: #ff8a7a;
+  }
+  .claim-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+    margin: 0.2rem 0 0.5rem;
+  }
+  .claim-field {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 6rem;
+  }
+  .claim-field.grow {
+    flex: 1 1 8rem;
+  }
+  .claim-field input {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+  }
+  .claims {
+    list-style: none;
+    margin: 0 0 0.6rem;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+  }
+  .claim-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .claim-row .amt {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .claim-row .who {
+    font-weight: 600;
+  }
+  .claim-row .memo {
+    flex: 1 1 6rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .claim-row .badge {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    color: var(--muted);
+  }
+  .claim-row.approved .badge,
+  .claim-row.settled .badge {
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+  .claim-row.disputed .badge,
+  .claim-row.over .badge,
+  .claim-row.rejected .badge,
+  .claim-row.conflict .badge {
+    border-color: #ff8a7a;
+    color: #ff8a7a;
+  }
+  .claim-row .acts {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .mini {
+    min-height: 44px;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--teal);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--teal);
+    font: inherit;
+    font-size: 0.8rem;
+    touch-action: manipulation;
+  }
+  .mini:disabled {
+    opacity: 0.5;
+  }
+  .account.review {
+    margin-top: 0.6rem;
   }
 
   .statement {

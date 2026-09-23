@@ -25,6 +25,9 @@ export {
   POLICY_LENS,
   CHECKPOINTS_LENS,
   PROTOCOL_LENSES,
+  LOG_KIND,
+  logTemplate,
+  type LogTemplateInput,
   action,
   attestation,
   attestationTarget,
@@ -79,3 +82,5 @@ export {
   checkpointKey,
   type CheckpointVerdict,
 } from './checkpoint.js';
+
+export { bootstrapFromLenses, type LensBootstrap, type LensBootstrapInput } from './bootstrap.js';

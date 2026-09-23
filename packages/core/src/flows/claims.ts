@@ -29,14 +29,22 @@
 import {
   action,
   attestation,
+  bootstrapFromLenses,
   collapse,
+  createPartyResolver,
+  foldPolicies,
   isAction,
   normalizePolicy,
+  policyFor,
+  resolveAcceptedActors,
   type AcceptedActors,
   type Appendable,
   type AttestationRecord,
   type CollapseResult,
+  type LensBootstrapInput,
   type LogEvent,
+  type MembershipEnvelope,
+  type PartyResolver,
   type Policy,
 } from '../protocol/index.js';
 import { lunationAt } from './lunation.js';
@@ -120,6 +128,8 @@ export interface FoldedClaims {
   /** Every claim in log order, judged. */
   claims: Claim[];
   payouts: Payout[];
+  /** The entries that count (claims and payouts), in log order — what a checkpoint covers. */
+  accepted: LogEvent<unknown>[];
   /** Party → unit → totals. */
   byParty: Record<string, Record<string, ClaimTotals>>;
   /** Whether the accepted-signer set came from a founded holon or a bootstrap list. */
@@ -356,6 +366,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
   return {
     claims,
     payouts: [...result.state.payouts],
+    accepted: result.accepted,
     byParty,
     source: result.source,
     policy: result.policy,
@@ -373,4 +384,69 @@ function settledOf(state: FoldState, key: string): number {
 /** A party's totals in a unit; zeros when it never claimed in it. */
 export function claimTotalsOf(folded: FoldedClaims | null | undefined, party: string, unit: string): ClaimTotals {
   return { ...(folded?.byParty[String(party)]?.[unitOf(unit)] ?? { claimed: 0, settled: 0, pending: 0, over: 0 }) };
+}
+
+// ── From lens data to a folded statement ─────────────────────────────────
+// What every surface needs to do before folding: decide who counts and who
+// each key is. One function so the kiosk, the web and the bot cannot drift.
+
+export interface ClaimsFromLensesInput {
+  holonId: string;
+  /** The `flow_claims` log (`getLog`). */
+  entries: Iterable<LogEvent<unknown>>;
+  /** The `_policy` log, when the holon has one. */
+  policyEntries?: Iterable<LogEvent<unknown>> | null;
+  /** The signed `_members` envelopes (`readMembersLog`), when founded. */
+  membersLog?: MembershipEnvelope[] | null;
+  settings?: Record<string, unknown> | null;
+  users?: LensBootstrapInput['users'];
+  attestations?: LensBootstrapInput['attestations'];
+  /** Key → party the caller knows beyond the lenses (the bot's derived keys). */
+  extraKeyToParty?: Iterable<readonly [string, string]> | null;
+  /** Keys the caller trusts beyond the lenses (the bot's derived member keys). */
+  extraMembers?: Iterable<string> | null;
+  holonPubkey?: string | null;
+  rights?: RightsLookup | null;
+}
+
+export interface ClaimsContext {
+  folded: FoldedClaims;
+  actors: AcceptedActors;
+  parties: PartyResolver;
+  policy: Policy;
+  holonPubkey: string | null;
+}
+
+/** Fold the claims log with the signer set and party map the lenses give. */
+export function foldClaimsFromLenses(input: ClaimsFromLensesInput): ClaimsContext {
+  const boot = bootstrapFromLenses({
+    holonId: input.holonId,
+    settings: input.settings,
+    users: input.users,
+    attestations: input.attestations,
+    holonPubkey: input.holonPubkey,
+  });
+  for (const [k, party] of input.extraKeyToParty ?? []) if (!boot.keyToParty.has(k)) boot.keyToParty.set(k, party);
+  const members = new Set([...boot.actors.members, ...(input.extraMembers ?? []), ...boot.keyToParty.keys()]);
+  const actors = resolveAcceptedActors({
+    membersLog: input.membersLog,
+    genesis: boot.holonPubkey,
+    bootstrap: { ...boot.actors, members: [...members] },
+  });
+  const parties = createPartyResolver({
+    keyToParty: boot.keyToParty,
+    linkedKeys: boot.linkedKeys,
+    holonPubkey: boot.holonPubkey,
+    holonId: input.holonId,
+  });
+  const policy = policyFor(foldPolicies(input.policyEntries ?? [], actors), FLOW_CLAIMS_LENS);
+  const folded = foldClaims({
+    entries: input.entries,
+    actors,
+    policy,
+    partyOf: parties.partyOf,
+    rights: input.rights,
+    holonPubkey: boot.holonPubkey,
+  });
+  return { folded, actors, parties, policy, holonPubkey: boot.holonPubkey };
 }

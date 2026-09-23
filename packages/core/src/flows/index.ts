@@ -223,3 +223,4 @@ export {
   type PayoutBody,
   type RightsLookup,
 } from './claims.js';
+export { foldClaimsFromLenses, type ClaimsContext, type ClaimsFromLensesInput } from './claims.js';

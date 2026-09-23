@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { bootstrapActors } from '../protocol/membership.js';
 import { shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import type { LogEvent } from '../protocol/types.js';
-import { buildClaim, buildClaimVerdict, buildPayout, claimTotalsOf, foldClaims } from './claims.js';
+import { buildClaim, buildClaimVerdict, buildPayout, claimTotalsOf, foldClaims, foldClaimsFromLenses } from './claims.js';
 import { lunationAt } from './lunation.js';
 import { buildFundUsage, fundAccount } from './usage.js';
 import { allocate } from './allocation.js';
@@ -133,5 +133,25 @@ describe('buildFundUsage with the claims log', () => {
     const account = fundAccount(allocation, usage, 'ada')!;
     expect(account.claimed).toBe(30);
     expect(account.available).toBe(70);
+  });
+});
+
+describe('foldClaimsFromLenses', () => {
+  it('folds with the signer set and party map the lenses give, provisional until founded', () => {
+    const c = entry(ada.sk, buildClaim({ party: '7', amount: 5, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const ctx = foldClaimsFromLenses({
+      holonId: '-100',
+      entries: [c],
+      settings: { holonPubkey: holon.pk, admin: '7' },
+      users: [{ id: 7, linkedKeys: [ada.pk] }],
+    });
+    expect(ctx.actors.source).toBe('bootstrap');
+    expect(ctx.parties.partyOf(ada.pk)).toBe('7');
+    expect(ctx.folded.claims[0].status).toBe('approved');
+    expect(ctx.actors.roleAt(ada.pk, T0)).toBe('admin');
+    expect(ctx.policy.quorum).toBe(0);
+    // Nobody vouches for the key → rejected, and the statement says why.
+    const nobody = foldClaimsFromLenses({ holonId: '-100', entries: [c], settings: { holonPubkey: holon.pk } });
+    expect(nobody.folded.claims[0]).toMatchObject({ status: 'rejected', reason: 'unaccepted-signer' });
   });
 });
