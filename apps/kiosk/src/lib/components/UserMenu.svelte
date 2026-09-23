@@ -13,8 +13,10 @@
     settingsOpen,
     userMenuOpen,
   } from "$lib/stores";
-  import { dashboardUrl } from "$lib/config";
+  import { clearBotHandoff, dashboardUrl } from "$lib/config";
+  import { clearHubClaim } from "$lib/hubclaim";
   import { showHomePage } from "$lib/home";
+  import { goto } from "$app/navigation";
   import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
   import { installMode, promptInstall } from "$lib/install";
   import { t } from "$lib/i18n";
@@ -34,6 +36,21 @@
   }
   function goHome() {
     void showHomePage();
+  }
+  // The signed-in person's own holon IS their id (Telegram id or pubkey hex),
+  // so opening it is the same path the front door's "open the board" field
+  // takes: the URL names it, the store rebinds the layout now. Deliberately
+  // not persisted — the device keeps pointing at its own board.
+  $: myHolonId = $currentUser ? String($currentUser.id) : null;
+  $: onMyHolon = myHolonId != null && $holonId === myHolonId;
+  async function openMyHolon() {
+    if (!myHolonId) return;
+    close();
+    settingsOpen.set(false);
+    clearBotHandoff();
+    clearHubClaim();
+    await goto(`/${encodeURIComponent(myHolonId)}`);
+    holonId.set(myHolonId);
   }
   function login() {
     close();
@@ -76,16 +93,34 @@
     {/if}
   </div>
 
-  <button class="row" on:click={openDashboard} disabled={!$holonId}>
-    <span class="ico"><Icon name="hexagon" /></span>
-    <span class="label">{$t("menu.dashboard")}</span>
-    <span class="chev"><Icon name="arrow-up-right" /></span>
-  </button>
-
+  <!-- The holon's settings sit right under the name: that is where people
+       look for "this board's" controls. -->
   <button class="row" on:click={openSettings}>
     <span class="ico"><Icon name="gear" /></span>
     <span class="label">{$t("menu.settings")}</span>
     <span class="chev">›</span>
+  </button>
+
+  {#if myHolonId}
+    <!-- Your own holon, by its id — distinct from the displayed board. -->
+    <button
+      class="row"
+      on:click={openMyHolon}
+      disabled={onMyHolon}
+      aria-current={onMyHolon ? "page" : undefined}
+    >
+      <span class="ico"><Icon name="person" /></span>
+      <span class="label"
+        >{$t("menu.myHolon")}<span class="hint">{myHolonId}</span></span
+      >
+      <span class="chev">›</span>
+    </button>
+  {/if}
+
+  <button class="row" on:click={openDashboard} disabled={!$holonId}>
+    <span class="ico"><Icon name="hexagon" /></span>
+    <span class="label">{$t("menu.dashboard")}</span>
+    <span class="chev"><Icon name="arrow-up-right" /></span>
   </button>
 
   <!-- Leaving a holon is not logging out — the identity and the holon are
@@ -235,12 +270,23 @@
   }
   .row .label {
     flex: 1;
+    min-width: 0;
     font-weight: 700;
     font-size: 1rem;
   }
   .row .chev {
     color: var(--muted);
     font-weight: 700;
+  }
+  .row .label .hint {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .install {
