@@ -139,12 +139,18 @@
   import {
     watchClaimsLogs,
     claimSigner,
+    recordPolicy,
     recordClaim,
     recordVerdict,
     recordPayout,
     type ClaimsLogs,
   } from "$lib/flowsClaims";
-  import { foldClaimsFromLenses, type Claim } from "@holons/core/flows";
+  import {
+    FLOW_CLAIMS_LENS,
+    foldClaimsFromLenses,
+    type Claim,
+  } from "@holons/core/flows";
+  import type { Policy } from "@holons/core/protocol";
 
   // The period, one choice for every chart and statement on the board,
   // picked in the settings drawer and kept per device. 90 days is the
@@ -232,6 +238,7 @@
           settings,
           users: Object.values(usersById),
           attestations: claimsLogs.attestations,
+          imports: claimsLogs.imports,
         })
       : null;
   $: myClaims =
@@ -592,6 +599,39 @@
       return;
     }
     allocationOpen = true;
+    void loadPartnerKeys();
+  }
+  // Each partner's published holon key, so the Rules tab can pin it. Read
+  // when the sheet opens: a partner's settings are its own holon's, not a
+  // lens this board otherwise watches.
+  let partnerKeys: Record<string, string | null> = {};
+  async function loadPartnerKeys() {
+    if (!hsRef) return;
+    const ids = partners.filter((p) => p.kind !== "person").map((p) => p.id);
+    const out: Record<string, string | null> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const doc = (await hsRef!.get(id, "settings", id)) as {
+            holonPubkey?: unknown;
+          } | null;
+          const key = String(doc?.holonPubkey ?? "");
+          out[id] = /^[0-9a-f]{64}$/i.test(key) ? key.toLowerCase() : null;
+        } catch {
+          out[id] = null;
+        }
+      }),
+    );
+    partnerKeys = out;
+  }
+  /** The Rules tab's word: append the policy record, signed as the logged-in person. */
+  async function savePolicy(rule: Partial<Policy>) {
+    if (!hsRef || !hid) return;
+    try {
+      await recordPolicy(hsRef, hid, FLOW_CLAIMS_LENS, rule);
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    }
   }
   // The allocation settings are reached from the gear in the pills band
   // (offered while this board is mounted), not from a button in the board.
@@ -1862,6 +1902,11 @@
     units={unitOptions}
     unit={trackId}
     period={windowChoice}
+    policy={claimsCtx?.policy ?? null}
+    policyRole={myLogRole}
+    policySignable={!!logSigner}
+    {partnerKeys}
+    on:policy={(e) => void savePolicy(e.detail)}
     on:unit={(e) => pickUnit(e.detail)}
     on:period={(e) => pickWindow(e.detail)}
     on:draft={(e) => (allocationDraft = e.detail)}

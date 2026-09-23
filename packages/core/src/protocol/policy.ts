@@ -15,13 +15,30 @@ import { byLogOrder, type AcceptedActors, type Appendable, type LogEvent, type P
 
 const ROLES: readonly Role[] = ['admin', 'member'];
 
-/** Members act, admins attest, nothing needs a quorum, the first spend wins. */
+/** Members act, admins attest, nothing needs a quorum, the first spend wins, nothing is imported. */
 export const DEFAULT_POLICY: Policy = Object.freeze({
   authors: ['admin', 'member'],
   attesters: ['admin'],
   quorum: 0,
   conflict: 'earliest',
+  partners: Object.freeze({}) as Record<string, string>,
 }) as Policy;
+
+/** The roles a policy may name, in the order a UI lists them. */
+export const POLICY_ROLES: readonly Role[] = ROLES;
+
+const HEX64 = /^[0-9a-f]{64}$/i;
+
+/** Partner holon → genesis pubkey; a partner without a well-formed key is dropped. */
+const partners = (v: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  for (const [holon, key] of Object.entries(v as Record<string, unknown>)) {
+    const h = String(holon).trim();
+    if (h && typeof key === 'string' && HEX64.test(key)) out[h] = key.toLowerCase();
+  }
+  return out;
+};
 
 const roles = (v: unknown, fallback: Role[]): Role[] => {
   if (!Array.isArray(v)) return [...fallback];
@@ -38,6 +55,7 @@ export function normalizePolicy(partial?: Partial<Policy> | null): Policy {
     attesters: roles(p.attesters, DEFAULT_POLICY.attesters),
     quorum: Number.isFinite(quorum) && quorum >= 0 ? Math.floor(quorum) : DEFAULT_POLICY.quorum,
     conflict: p.conflict === 'quorum' ? 'quorum' : 'earliest',
+    partners: partners(p.partners),
   };
 }
 
@@ -63,7 +81,24 @@ export function foldPolicies(entries: Iterable<LogEvent<unknown>>, actors: Accep
 
 /** The rule for a lens, or the default. */
 export function policyFor(policies: Map<string, Policy> | null | undefined, lens: string): Policy {
-  return policies?.get(String(lens)) ?? { ...DEFAULT_POLICY };
+  return policies?.get(String(lens)) ?? { ...DEFAULT_POLICY, partners: {} };
+}
+
+/** True when two rules would judge a log the same way. */
+export function samePolicy(a: Partial<Policy> | null | undefined, b: Partial<Policy> | null | undefined): boolean {
+  const x = normalizePolicy(a);
+  const y = normalizePolicy(b);
+  const same = (p: Role[], q: Role[]) => p.length === q.length && p.every((r) => q.includes(r));
+  const px = Object.entries(x.partners).sort();
+  const py = Object.entries(y.partners).sort();
+  return (
+    same(x.authors, y.authors) &&
+    same(x.attesters, y.attesters) &&
+    x.quorum === y.quorum &&
+    x.conflict === y.conflict &&
+    px.length === py.length &&
+    px.every(([h, k], i) => py[i][0] === h && py[i][1] === k)
+  );
 }
 
 export { POLICY_LENS };

@@ -29,6 +29,7 @@ import {
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
 import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
+import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -142,9 +143,10 @@ export default function createHoloSphere(appName, options = {}) {
       },
       shiftIdentity: {},
     },
-    // Fund claims are an append-only log (kind 1808): members append signed
-    // entries (/fundclaim), every reader folds the same log (see FundClaims.js).
-    appendLenses: [FLOW_CLAIMS_LENS],
+    // Fund claims and votes are append-only logs (kind 1808): members append
+    // signed entries (/fundclaim, /vote), every reader folds the same log
+    // (see FundClaims.js, GovernanceVotes.js).
+    appendLenses: [FLOW_CLAIMS_LENS, GOVERNANCE_VOTES_LENS],
     nostr: projectionOptions,
     extra: { logLevel: logLevel || 'INFO', ...extra },
   });

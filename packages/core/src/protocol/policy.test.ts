@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { bootstrapActors } from './membership.js';
-import { DEFAULT_POLICY, foldPolicies, normalizePolicy, policyFor, policyRecord } from './policy.js';
+import { DEFAULT_POLICY, foldPolicies, normalizePolicy, policyFor, policyRecord, samePolicy } from './policy.js';
 import { shuffled, signedEntry, testKey } from './testing.js';
 
 const admin = testKey();
@@ -14,8 +14,18 @@ describe('policy', () => {
   it('normalizes partial and junk input to a complete rule', () => {
     expect(normalizePolicy()).toEqual(DEFAULT_POLICY);
     expect(normalizePolicy({ quorum: 2.7, conflict: 'quorum', authors: ['admin', 'bogus' as never], attesters: [] }))
-      .toEqual({ authors: ['admin'], attesters: ['admin'], quorum: 2, conflict: 'quorum' });
+      .toEqual({ authors: ['admin'], attesters: ['admin'], quorum: 2, conflict: 'quorum', partners: {} });
     expect(normalizePolicy({ quorum: -1 }).quorum).toBe(0);
+  });
+
+  it('keeps partner pins only when the genesis key is well-formed', () => {
+    const good = 'A'.repeat(64);
+    const p = normalizePolicy({ partners: { '-100': good, '-200': 'nope', '': good } as never });
+    expect(p.partners).toEqual({ '-100': good.toLowerCase() });
+    expect(normalizePolicy({ partners: ['x'] as never }).partners).toEqual({});
+    expect(samePolicy({ partners: { a: good } }, { partners: { a: good.toLowerCase() } })).toBe(true);
+    expect(samePolicy({ quorum: 1 }, {})).toBe(false);
+    expect(samePolicy({ authors: ['member', 'admin'] }, { authors: ['admin', 'member'] })).toBe(true);
   });
 
   it('folds the latest admin-signed record per lens; a member cannot set policy', () => {

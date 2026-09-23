@@ -13,8 +13,10 @@
  * Checkpoint — and this module owns what each one means: who counts as of
  * when (`membership`), which key acts for which party (`identity`), the
  * lens's rule (`policy`), the reduce itself (`reduce`) and the root a signer
- * publishes so readers can compare folds (`checkpoint`). Domains (flows,
- * governance) bring the fold and the validation; UIs render the result.
+ * publishes so readers can compare folds (`checkpoint`), and how a
+ * partner's accepted entries enter a holon's own fold (`federation`).
+ * Domains (flows, governance) bring the fold and the validation; UIs render
+ * the result.
  */
 
 export type { AcceptedActors, Appendable, LogEvent, LogRefs, Policy, RefsInput, Role } from './types.js';
@@ -58,7 +60,7 @@ export {
 
 export { createPartyResolver, partiesFromAttestations, type PartyResolver, type PartyResolverInput } from './identity.js';
 
-export { DEFAULT_POLICY, normalizePolicy, policyRecord, foldPolicies, policyFor } from './policy.js';
+export { DEFAULT_POLICY, POLICY_ROLES, normalizePolicy, policyRecord, foldPolicies, policyFor, samePolicy } from './policy.js';
 
 export {
   collapse,
@@ -84,3 +86,17 @@ export {
 } from './checkpoint.js';
 
 export { bootstrapFromLenses, type LensBootstrap, type LensBootstrapInput } from './bootstrap.js';
+
+export { lensContext, type LensContext, type LensContextInput } from './context.js';
+
+export {
+  federatedActors,
+  importPartnerLog,
+  importPartnerLogs,
+  partnerFromKey,
+  pinnedPartners,
+  readPartnerLogs,
+  type FederatedActors,
+  type PartnerImport,
+  type PartnerLog,
+} from './federation.js';

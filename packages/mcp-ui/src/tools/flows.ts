@@ -16,7 +16,7 @@ import {
   buildPayout,
   foldClaimsFromLenses,
 } from '@holons/core/flows';
-import { MEMBERS_LENS, POLICY_LENS, readMembersLog } from '@holons/core/protocol';
+import { MEMBERS_LENS, POLICY_LENS, importPartnerLogs, lensContext, readMembersLog } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
 import type { ToolDeps } from './index.js';
 
@@ -42,15 +42,11 @@ async function claimsContext(hs: any, holon: string) {
   ]);
   await hs.getAll(holon, MEMBERS_LENS).catch(() => []);
   const membersLog = await readMembersLog(hs, holon);
-  return foldClaimsFromLenses({
-    holonId: holon,
-    entries,
-    policyEntries: policy,
-    membersLog,
-    settings,
-    users,
-    attestations: attestationsFrom(dir || []),
-  });
+  const base = { holonId: holon, policyEntries: policy, membersLog, settings, users, attestations: attestationsFrom(dir || []) };
+  // The partners the policy pins claim in their own logs; read them by
+  // their own rules, then fold them in under this holon's.
+  const imports = await importPartnerLogs(hs, FLOW_CLAIMS_LENS, lensContext(base).policyFor(FLOW_CLAIMS_LENS));
+  return foldClaimsFromLenses({ ...base, entries, imports });
 }
 
 export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
@@ -146,6 +142,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           policy: ctx.policy,
           myPubkey: hs.currentPubkey,
           myRole: ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000)),
+          imports: ctx.folded.imports,
           claims: ctx.folded.claims,
           payouts: ctx.folded.payouts,
           byParty: ctx.folded.byParty,
@@ -159,7 +156,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'protocol_log',
     {
-      description: 'Every verified entry of an append-only lens (flow_claims, _policy, _checkpoints), oldest first, with author, time and refs. Raw — nothing judged.',
+      description: 'Every verified entry of an append-only lens (flow_claims, governance_votes, _policy, _checkpoints), oldest first, with author, time and refs. Raw — nothing judged.',
       inputSchema: {
         holon: z.string(),
         lens: z.string().describe('An append-only lens name.'),

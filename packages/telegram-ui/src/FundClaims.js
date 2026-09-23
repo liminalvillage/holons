@@ -12,12 +12,15 @@
 //                                       pending, disputed, over, settled …
 //   /fundattest <id> · /funddispute <id> [reason]   an attester's word
 //   /fundpaid <id> [amount]             an attester records the payout
+//   /fundpolicy                         the rules in force for the claims log
+//   /fundpolicy quorum N | conflict earliest|quorum | pin <holon> | unpin <holon>
+//                                       an admin sets one rule (a signed _policy entry)
 //
 // Every reader folds the same log the same way; the bot adds nothing a
 // kiosk or the web would not derive. What the bot alone can do is sign the
-// holon key: at each new moon it appends a CHECKPOINT — the merkle root of
-// the entries that counted in the closed lunar cycle — so other readers can
-// compare their fold with the holon's.
+// holon key: at each new moon it appends a CHECKPOINT per log lens — the
+// merkle root of the entries that counted in the closed lunar cycle — so
+// other readers can compare their fold with the holon's.
 
 import { getholonId, getUserId } from './utilities.js';
 import { createIdentityContext } from '@holons/core/holosphere';
@@ -29,18 +32,26 @@ import {
   foldClaimsFromLenses,
 } from '@holons/core/flows';
 import {
+  GOVERNANCE_VOTES_LENS,
+  foldVotesFromLenses,
+} from '@holons/core/governance';
+import {
   CHECKPOINTS_LENS,
-  MEMBERS_LENS,
   POLICY_LENS,
   buildCheckpoint,
   epochOf,
   foldCheckpoints,
-  logTemplate,
-  readMembersLog,
+  normalizePolicy,
+  policyRecord,
+  samePolicy,
 } from '@holons/core/protocol';
-import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
-import { deriveTelegramNostrKey } from '@holons/core/auth';
-import { linkedKeysOf } from '@holons/core/users';
+import {
+  appendAsMember,
+  memberNames,
+  readLogContext,
+} from './protocolContext.js';
+
+const HEX64 = /^[0-9a-f]{64}$/i;
 
 const UNIT_RE = /^[A-Za-z]{3}$/;
 const STATUS_MARK = {
@@ -83,6 +94,7 @@ export default class FundClaims {
       bot.command('fundattest', ctx => this.verdict(ctx, 'attest'));
       bot.command('funddispute', ctx => this.verdict(ctx, 'dispute'));
       bot.command('fundpaid', ctx => this.payout(ctx));
+      bot.command('fundpolicy', ctx => this.policy(ctx));
     }
     if (options.checkpoints !== false)
       this.startCheckpoints(options.checkpointEveryMs ?? 60 * 60_000);
@@ -92,68 +104,26 @@ export default class FundClaims {
 
   /** Everything the fold reads, plus the derived keys only the bot knows. */
   async context(holon) {
-    const db = this.db;
-    const h = String(holon);
-    const [entries, policy, settings, users, dir] = await Promise.all([
-      db.getLog(h, FLOW_CLAIMS_LENS),
-      db.getLog(h, POLICY_LENS).catch(() => []),
-      db.get(h, 'settings', h).catch(() => null),
-      db.getAll(h, 'users').catch(() => []),
-      db.getAllGlobal(SHIFT_IDENTITY_LENS).catch(() => []),
-    ]);
-    await db.getAll(h, MEMBERS_LENS).catch(() => []);
-    const membersLog = await readMembersLog(db, h);
-    const extraKeyToParty = [];
-    for (const u of users || []) {
-      if (!u || u.id === undefined || u.id === null) continue;
-      if (this.secret) {
-        try {
-          extraKeyToParty.push([
-            deriveTelegramNostrKey(u.id, this.secret).publicKey,
-            String(u.id),
-          ]);
-        } catch {
-          /* skip */
-        }
-      }
-      for (const k of linkedKeysOf(u)) extraKeyToParty.push([k, String(u.id)]);
-    }
-    return foldClaimsFromLenses({
-      holonId: h,
-      entries,
-      policyEntries: policy,
-      membersLog,
-      settings,
-      users,
-      attestations: attestationsFrom(dir || []),
-      extraKeyToParty,
-      extraMembers: extraKeyToParty.map(([k]) => k),
-      holonPubkey: db.currentPubkey,
-    });
+    return foldClaimsFromLenses(
+      await readLogContext(this.db, holon, FLOW_CLAIMS_LENS, {
+        secret: this.secret,
+      })
+    );
   }
 
-  /**
-   * Sign an entry as the member (derived key) and add it to the log. Without
-   * a derivation secret the holon key signs on the member's behalf.
-   */
-  async appendAs(userId, holon, appendable) {
-    const signer = this.identity.memberSigner(userId);
-    if (signer) {
-      const event = signer.sign(
-        logTemplate({
-          holon: String(holon),
-          lens: FLOW_CLAIMS_LENS,
-          appName: this.db.appname,
-          item: appendable.item,
-          refs: appendable.refs,
-        })
-      );
-      await this.db.appendSigned(event);
-      return event;
-    }
-    return this.db.append(String(holon), FLOW_CLAIMS_LENS, appendable.item, {
-      refs: appendable.refs,
-    });
+  /** Sign an entry as the member (derived key) and add it to the claims log. */
+  appendAs(userId, holon, appendable, lens = FLOW_CLAIMS_LENS) {
+    return appendAsMember(
+      this.db,
+      this.identity,
+      userId,
+      holon,
+      lens,
+      appendable,
+      {
+        at: Math.floor(this.now() / 1000),
+      }
+    );
   }
 
   // ---------------------------------------------------------------- commands
@@ -303,20 +273,97 @@ export default class FundClaims {
     }
   }
 
-  async names(holon) {
-    const map = new Map();
-    let users = [];
+  names(holon) {
+    return memberNames(this.db, holon);
+  }
+
+  // ---------------------------------------------------------------- policy
+
+  /**
+   * /fundpolicy — the rules in force for the claims log; with arguments, an
+   * admin's change of one rule, appended to `_policy` signed as them (it
+   * counts only if their key is an admin as of now — said in the reply).
+   */
+  async policy(ctx) {
+    const holon = getholonId(ctx);
+    const userId = String(getUserId(ctx));
+    const args = (ctx.message?.text || '').split(/\s+/).slice(1);
+    let fold;
     try {
-      users = (await this.db.getAll(String(holon), 'users')) || [];
-    } catch {
-      users = [];
+      fold = await this.context(holon);
+    } catch (err) {
+      return ctx.reply(`Could not read the rules: ${err?.message || err}`);
     }
-    for (const u of users) {
-      if (!u || u.id === undefined || u.id === null) continue;
-      const name = u.first_name || u.username || String(u.id);
-      map.set(String(u.id), u.username ? `${name} (@${u.username})` : name);
+    const rule = fold.policy;
+    const show = () => {
+      const pins = Object.keys(rule.partners);
+      return ctx.reply(
+        [
+          `Rules for the claims log${fold.actors.source === 'bootstrap' ? ' (provisional signer set)' : ''}:`,
+          `· who may claim: ${rule.authors.join(', ')}`,
+          `· who attests: ${rule.attesters.join(', ')}`,
+          `· attestations needed: ${rule.quorum}`,
+          `· two on one basis: ${rule.conflict === 'quorum' ? 'a human decides' : 'the first wins'}`,
+          `· partners pinned: ${pins.length ? pins.join(', ') : 'none'}`,
+          '',
+          'Change one: /fundpolicy quorum N · conflict earliest|quorum · pin <holon id> · unpin <holon id>',
+        ].join('\n')
+      );
+    };
+    if (!args.length) return show();
+    const next = normalizePolicy(rule);
+    const [what, value] = args;
+    if (what === 'quorum') {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0)
+        return ctx.reply('Usage: /fundpolicy quorum <0-9>');
+      next.quorum = n;
+    } else if (what === 'conflict') {
+      if (value !== 'earliest' && value !== 'quorum')
+        return ctx.reply('Usage: /fundpolicy conflict earliest|quorum');
+      next.conflict = value;
+    } else if (what === 'pin') {
+      if (!value) return ctx.reply('Usage: /fundpolicy pin <partner holon id>');
+      let doc = null;
+      try {
+        doc = await this.db.get(String(value), 'settings', String(value));
+      } catch {
+        doc = null;
+      }
+      const key = String(doc?.holonPubkey || '');
+      if (!HEX64.test(key))
+        return ctx.reply(
+          `${value} has not published a holon key, so there is nothing to pin.`
+        );
+      next.partners = { ...next.partners, [String(value)]: key.toLowerCase() };
+    } else if (what === 'unpin') {
+      if (!value || !next.partners[String(value)])
+        return ctx.reply(`${value || '?'} is not pinned.`);
+      const { [String(value)]: _gone, ...rest } = next.partners;
+      next.partners = rest;
+    } else {
+      return show();
     }
-    return map;
+    if (samePolicy(next, rule))
+      return ctx.reply('These are the rules already in force.');
+    const signer = this.identity.memberSigner(userId);
+    const pub = signer ? signer.pubkey : this.db.currentPubkey;
+    const role = fold.actors.roleAt(pub, Math.floor(this.now() / 1000));
+    try {
+      await this.appendAs(
+        userId,
+        holon,
+        policyRecord(FLOW_CLAIMS_LENS, next),
+        POLICY_LENS
+      );
+      return ctx.reply(
+        role === 'admin'
+          ? `Rule set: ${what} ${value}.`
+          : `Recorded, but your key is not an admin of this holon, so the rule does not change.`
+      );
+    } catch (err) {
+      return ctx.reply(`Could not set the rule: ${err?.message || err}`);
+    }
   }
 
   // ---------------------------------------------------------------- checkpoints
@@ -345,37 +392,55 @@ export default class FundClaims {
     if (!db.signingEnabled) return { checkpointed: [] };
     const closed = epochOf(Math.floor(this.now() / 1000)) - 1;
     const done = [];
+    const lenses = [
+      {
+        lens: FLOW_CLAIMS_LENS,
+        fold: async h => this.context(h),
+      },
+      {
+        lens: GOVERNANCE_VOTES_LENS,
+        fold: async h =>
+          foldVotesFromLenses(
+            await readLogContext(db, h, GOVERNANCE_VOTES_LENS, {
+              secret: this.secret,
+            })
+          ),
+      },
+    ];
     for (const holon of await db.listHolons()) {
       const h = String(holon);
-      let entries = [];
-      try {
-        entries = await db.getLog(h, FLOW_CLAIMS_LENS);
-      } catch {
-        continue;
+      for (const { lens, fold } of lenses) {
+        let entries = [];
+        try {
+          entries = await db.getLog(h, lens);
+        } catch {
+          continue;
+        }
+        if (!entries.length) continue;
+        const ctx = await fold(h);
+        const existing = foldCheckpoints(
+          await db.getLog(h, CHECKPOINTS_LENS).catch(() => []),
+          ctx.actors
+        );
+        if (existing.has(`${lens}|${closed}`)) continue;
+        const cp = buildCheckpoint({
+          lens,
+          epoch: closed,
+          accepted: ctx.folded.accepted,
+        });
+        await db.append(h, CHECKPOINTS_LENS, cp.item);
+        done.push({
+          holon: h,
+          lens,
+          epoch: closed,
+          root: cp.item.root,
+          count: cp.item.count,
+        });
       }
-      if (!entries.length) continue;
-      const ctx = await this.context(h);
-      const existing = foldCheckpoints(
-        await db.getLog(h, CHECKPOINTS_LENS).catch(() => []),
-        ctx.actors
-      );
-      if (existing.has(`${FLOW_CLAIMS_LENS}|${closed}`)) continue;
-      const cp = buildCheckpoint({
-        lens: FLOW_CLAIMS_LENS,
-        epoch: closed,
-        accepted: ctx.folded.accepted,
-      });
-      await db.append(h, CHECKPOINTS_LENS, cp.item);
-      done.push({
-        holon: h,
-        epoch: closed,
-        root: cp.item.root,
-        count: cp.item.count,
-      });
     }
     if (done.length)
       console.log(
-        `[fundclaims] checkpointed epoch ${closed} for ${done.length} holon(s)`
+        `[fundclaims] checkpointed epoch ${closed}: ${done.length} lens(es)`
       );
     return { checkpointed: done };
   }

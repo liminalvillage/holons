@@ -8,6 +8,7 @@
     import CompleterModal from './shared/CompleterModal.svelte';
     import SourceBadge from './shared/SourceBadge.svelte';
     import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
+    import ProposalVote from './governance/ProposalVote.svelte';
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
     import { fileToDownscaledDataURL } from "../utils/imageCompression";
@@ -1925,6 +1926,11 @@
 
                 <!-- Right column -->
                 <div class="space-y-3 min-h-0">
+                    {#if quest?.type === 'proposal' && holonId}
+                        <!-- A proposal is decided by signed ballots on the votes
+                             log, not by who joined it (core folds, this renders). -->
+                        <ProposalVote {holonId} proposalId={String(questId ?? quest.id)} selfId={currentUserId()} names={$nameMap ?? {}} />
+                    {/if}
                     <!-- Team Selection -->
                     <div class="bg-gray-700/30 p-3 rounded-lg">
                         <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">

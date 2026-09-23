@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Fund-claim log entries for Telegram-logged-in kiosk users, signed UNDER THE
-// USER'S OWN derived key — the same `deriveTelegramNostrKey(telegramId,
+// Log entries (fund claims, votes, policy) for Telegram-logged-in kiosk
+// users, signed UNDER THE USER'S OWN derived key — the same `deriveTelegramNostrKey(telegramId,
 // secret)` identity the bot and the web sign with, so the entry counts as
 // theirs when every reader folds the `flow_claims` log. The kiosk is a shared
 // screen, so the key never leaves this server: the browser proves who it is
@@ -15,17 +15,24 @@
 // GET  → { pubkey }                          the session user's log pubkey
 // POST { holon, lens, item, refs? } → { event }   the signed kind-1808 entry
 //
-// What this will sign is narrow on purpose: an entry to the claims log whose
-// `claim` names the session user as the party. Verdicts and payouts are
-// signed as asked — whether they COUNT is the reducer's call, from the
-// holon's policy and signer set, not this route's.
+// What this will sign is narrow on purpose: a claim or a vote that names the
+// session user as the party, a verdict, a payout, or a policy record.
+// Whether any of them COUNTS is the reducer's call, from the holon's policy
+// and signer set, not this route's — a policy signed by a non-admin is a
+// visible entry that changes nothing.
 
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { env } from "$env/dynamic/private";
 import { createIdentityContext } from "@holons/core/holosphere";
-import { logTemplate, isAttestation } from "@holons/core/protocol";
+import {
+  POLICY_LENS,
+  isAttestation,
+  isPolicy,
+  logTemplate,
+} from "@holons/core/protocol";
 import { FLOW_CLAIMS_LENS, isClaim, isPayout } from "@holons/core/flows";
+import { GOVERNANCE_VOTES_LENS, isVote } from "@holons/core/governance";
 import { resolveAppName } from "$lib/config";
 import {
   authConfig,
@@ -33,7 +40,11 @@ import {
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
 
-const LENSES = new Set<string>([FLOW_CLAIMS_LENS]);
+const LENSES = new Set<string>([
+  FLOW_CLAIMS_LENS,
+  GOVERNANCE_VOTES_LENS,
+  POLICY_LENS,
+]);
 
 async function telegramId(cookie: string | undefined): Promise<string | null> {
   const identity = await verifySessionIdentity(cookie, authConfig().jwtSecret);
@@ -86,16 +97,22 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return json({ error: "item must be an object" }, { status: 400 });
   }
-  if (isClaim(item)) {
+  if (isClaim(item) || isVote(item)) {
     if (String(item.party) !== id || item.onBehalfOf) {
       return json(
-        { error: "A claim is signed for the session user only" },
+        { error: "A claim or a vote is signed for the session user only" },
         { status: 403 },
       );
     }
-  } else if (!isPayout(item) && !isAttestation(item)) {
+  } else if (!isPayout(item) && !isAttestation(item) && !isPolicy(item)) {
     return json(
-      { error: "Not a claim, a verdict or a payout" },
+      { error: "Not a claim, a vote, a verdict, a payout or a policy" },
+      { status: 400 },
+    );
+  }
+  if (lens === POLICY_LENS && !isPolicy(item)) {
+    return json(
+      { error: "Only a policy record goes on _policy" },
       { status: 400 },
     );
   }

@@ -76,4 +76,10 @@ export interface Policy {
    * human decides with an attestation.
    */
   conflict: 'earliest' | 'quorum';
+  /**
+   * Partner holons whose accepted entries this lens imports, each pinned to
+   * its genesis pubkey — cross-holon trust as data an admin signed, never
+   * trust on first use. Empty by default: a holon imports nothing.
+   */
+  partners: Record<string, string>;
 }

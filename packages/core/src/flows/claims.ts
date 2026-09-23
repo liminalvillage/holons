@@ -21,7 +21,11 @@
  *     held as `over` — kept and shown, never counted as available money;
  *   - the policy's quorum and disputes apply (`protocol.collapse`);
  *   - a payout names the claim it settles as `basis`; a second payout for
- *     the same claim is a double-consume and does not count.
+ *     the same claim is a double-consume and does not count;
+ *   - a partner holon with a right on this fund claims it in ITS OWN log:
+ *     the entries the partner accepted (`importPartnerLog`) fold here as
+ *     claims by the partner party, judged again under this holon's policy —
+ *     its attesters, its quorum (`protocol/federation`).
  *
  * Pure: entries in, statement out.
  */
@@ -29,21 +33,18 @@
 import {
   action,
   attestation,
-  bootstrapFromLenses,
   collapse,
-  createPartyResolver,
-  foldPolicies,
+  federatedActors,
   isAction,
+  lensContext,
   normalizePolicy,
-  policyFor,
-  resolveAcceptedActors,
   type AcceptedActors,
   type Appendable,
   type AttestationRecord,
   type CollapseResult,
-  type LensBootstrapInput,
+  type LensContextInput,
   type LogEvent,
-  type MembershipEnvelope,
+  type PartnerImport,
   type PartyResolver,
   type Policy,
 } from '../protocol/index.js';
@@ -92,6 +93,8 @@ export interface Claim {
   pubkey: string;
   /** True when the holon key raised it for the party. */
   delegated: boolean;
+  /** The partner holon whose log the claim came from, when imported. */
+  origin?: string;
   status: ClaimStatus;
   /** Why it is not approved, in the reducer's or the domain's words. */
   reason?: string;
@@ -136,6 +139,8 @@ export interface FoldedClaims {
   source: AcceptedActors['source'];
   policy: Policy;
   epochs: number[];
+  /** The partner logs folded in: what each accepted by its own rules, and how it was trusted. */
+  imports: Array<{ holon: string; source: AcceptedActors['source']; accepted: number; pending: number; rejected: number }>;
 }
 
 /** Rights per party and unit, or a lookup. `null` means "no ceiling known". */
@@ -203,6 +208,8 @@ export interface FoldClaimsInput {
   rights?: RightsLookup | null;
   /** The holon's own key, allowed to claim `onBehalfOf` a party. */
   holonPubkey?: string | null;
+  /** Partner logs, each already judged by the partner's own rules (`importPartnerLog`). */
+  imports?: Iterable<PartnerImport> | null;
 }
 
 interface FoldState {
@@ -223,14 +230,22 @@ const rightOf = (rights: RightsLookup | null | undefined, party: string, unit: s
 export function foldClaims(input: FoldClaimsInput): FoldedClaims {
   const holonKey = input.holonPubkey?.toLowerCase() ?? null;
   const attesterRoles = new Set(normalizePolicy(input.policy).attesters);
-  const partyOf = (pubkey: string) => {
+  const imports = [...(input.imports ?? [])];
+  // A partner's key acts for the partner holon; the importer's own word
+  // wins for a key it knows.
+  const actors = federatedActors(input.actors, imports);
+  const partyOf = (pubkey: string, at: number) => {
+    const origin = actors.originOf(pubkey, at);
+    if (origin) return origin;
     const p = input.partyOf(pubkey);
     return p == null ? null : String(p);
   };
+  const entries: LogEvent<unknown>[] = [...input.entries];
+  for (const p of imports) entries.push(...p.accepted);
 
   const result: CollapseResult<unknown, FoldState> = collapse<unknown, FoldState>({
-    entries: input.entries,
-    actors: input.actors,
+    entries,
+    actors,
     policy: input.policy,
     initial: { claims: new Map(), open: new Map(), payouts: [] },
     validate: (e, state) => {
@@ -238,7 +253,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
         const c = e.item;
         if (!(Number(c.amount) > 0) || !Number.isFinite(Number(c.amount))) return 'bad-amount';
         if (!unitOf(c.unit)) return 'no-unit';
-        const actsFor = partyOf(e.pubkey);
+        const actsFor = partyOf(e.pubkey, e.created_at);
         const delegated = !!holonKey && e.pubkey.toLowerCase() === holonKey && !!c.onBehalfOf;
         if (delegated) {
           if (String(c.onBehalfOf) !== String(c.party)) return 'party-mismatch';
@@ -259,7 +274,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
         const p = e.item;
         // Paying out is attester work: the roles the policy trusts to judge
         // a claim are the ones that may say it was paid.
-        const role = input.actors.roleAt(e.pubkey, e.created_at);
+        const role = actors.roleAt(e.pubkey, e.created_at);
         if (!role || !attesterRoles.has(role)) return 'not-attester';
         if (!(Number(p.amount) > 0)) return 'bad-amount';
         const claimId = e.refs.basis[0];
@@ -329,6 +344,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
     }
     if (status === 'pending' && !reason) reason = j.reason ?? undefined;
     epochs.add(Number(c.epoch));
+    const origin = actors.originOf(j.entry.pubkey, j.entry.created_at);
     claims.push({
       id: j.entry.id,
       party: String(c.party),
@@ -340,6 +356,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
       createdAt: j.entry.created_at,
       pubkey: j.entry.pubkey,
       delegated: !!holonKey && j.entry.pubkey.toLowerCase() === holonKey && !!c.onBehalfOf,
+      ...(origin ? { origin } : {}),
       status,
       ...(reason ? { reason } : {}),
       attests: j.attests,
@@ -371,6 +388,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
     source: result.source,
     policy: result.policy,
     epochs: [...epochs].sort((a, b) => a - b),
+    imports: imports.map((p) => ({ holon: p.holon, source: p.source, accepted: p.accepted.length, pending: p.pending, rejected: p.rejected })),
   };
 }
 
@@ -390,23 +408,12 @@ export function claimTotalsOf(folded: FoldedClaims | null | undefined, party: st
 // What every surface needs to do before folding: decide who counts and who
 // each key is. One function so the kiosk, the web and the bot cannot drift.
 
-export interface ClaimsFromLensesInput {
-  holonId: string;
+export interface ClaimsFromLensesInput extends LensContextInput {
   /** The `flow_claims` log (`getLog`). */
   entries: Iterable<LogEvent<unknown>>;
-  /** The `_policy` log, when the holon has one. */
-  policyEntries?: Iterable<LogEvent<unknown>> | null;
-  /** The signed `_members` envelopes (`readMembersLog`), when founded. */
-  membersLog?: MembershipEnvelope[] | null;
-  settings?: Record<string, unknown> | null;
-  users?: LensBootstrapInput['users'];
-  attestations?: LensBootstrapInput['attestations'];
-  /** Key → party the caller knows beyond the lenses (the bot's derived keys). */
-  extraKeyToParty?: Iterable<readonly [string, string]> | null;
-  /** Keys the caller trusts beyond the lenses (the bot's derived member keys). */
-  extraMembers?: Iterable<string> | null;
-  holonPubkey?: string | null;
   rights?: RightsLookup | null;
+  /** Pinned partners' logs, judged by their own rules (`importPartnerLogs`). */
+  imports?: Iterable<PartnerImport> | null;
 }
 
 export interface ClaimsContext {
@@ -419,34 +426,16 @@ export interface ClaimsContext {
 
 /** Fold the claims log with the signer set and party map the lenses give. */
 export function foldClaimsFromLenses(input: ClaimsFromLensesInput): ClaimsContext {
-  const boot = bootstrapFromLenses({
-    holonId: input.holonId,
-    settings: input.settings,
-    users: input.users,
-    attestations: input.attestations,
-    holonPubkey: input.holonPubkey,
-  });
-  for (const [k, party] of input.extraKeyToParty ?? []) if (!boot.keyToParty.has(k)) boot.keyToParty.set(k, party);
-  const members = new Set([...boot.actors.members, ...(input.extraMembers ?? []), ...boot.keyToParty.keys()]);
-  const actors = resolveAcceptedActors({
-    membersLog: input.membersLog,
-    genesis: boot.holonPubkey,
-    bootstrap: { ...boot.actors, members: [...members] },
-  });
-  const parties = createPartyResolver({
-    keyToParty: boot.keyToParty,
-    linkedKeys: boot.linkedKeys,
-    holonPubkey: boot.holonPubkey,
-    holonId: input.holonId,
-  });
-  const policy = policyFor(foldPolicies(input.policyEntries ?? [], actors), FLOW_CLAIMS_LENS);
+  const ctx = lensContext(input);
+  const policy = ctx.policyFor(FLOW_CLAIMS_LENS);
   const folded = foldClaims({
     entries: input.entries,
-    actors,
+    actors: ctx.actors,
     policy,
-    partyOf: parties.partyOf,
+    partyOf: ctx.parties.partyOf,
     rights: input.rights,
-    holonPubkey: boot.holonPubkey,
+    holonPubkey: ctx.holonPubkey,
+    imports: input.imports,
   });
-  return { folded, actors, parties, policy, holonPubkey: boot.holonPubkey };
+  return { folded, actors: ctx.actors, parties: ctx.parties, policy, holonPubkey: ctx.holonPubkey };
 }

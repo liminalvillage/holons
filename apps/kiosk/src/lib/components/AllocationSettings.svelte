@@ -54,6 +54,13 @@
     syncAllocationOnChainAndMirror,
   } from "$lib/chain";
   import type { AllocationDraft } from "$lib/allocation";
+  import {
+    POLICY_ROLES,
+    normalizePolicy,
+    samePolicy,
+    type Policy,
+    type Role,
+  } from "@holons/core/protocol";
   import SidePanel from "./SidePanel.svelte";
   import ValueEquation from "./ValueEquation.svelte";
 
@@ -77,6 +84,14 @@
   export let unit = "all";
   /** The period the board covers. */
   export let period: FlowsWindowChoice = { preset: DEFAULT_WINDOW_PRESET };
+  /** The rule in force for the claims log (core's fold of `_policy`). */
+  export let policy: Policy | null = null;
+  /** The logged-in person's role in the signed log, as of now. */
+  export let policyRole: Role | null = null;
+  /** Whether this session can sign a log entry at all. */
+  export let policySignable = false;
+  /** Each partner's published holon key (settings.holonPubkey), when known. */
+  export let partnerKeys: Record<string, string | null> = {};
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -86,6 +101,8 @@
      *  read, not a setting to save. */
     unit: string;
     period: FlowsWindowChoice;
+    /** The Rules tab's word: an admin-signed policy record for the claims log. */
+    policy: Partial<Policy>;
   }>();
 
   $: unitLabel =
@@ -133,11 +150,54 @@
   // and most visits here are about the split, not the scoring behind it.
   let eqOpen = false;
 
+  // ── Rules (the claims policy) ───────────────────────────────────────────
+  // A draft of the rule in force; "Set the rules" appends it to the policy
+  // log signed as the logged-in person — an admin's entry counts, anyone
+  // else's is recorded and ignored, which the tab says up front.
+  const inForce = () => normalizePolicy(policy);
+  let ruleAuthors: Role[] = inForce().authors;
+  let ruleAttesters: Role[] = inForce().attesters;
+  let ruleQuorum = inForce().quorum;
+  let ruleConflict: Policy["conflict"] = inForce().conflict;
+  let rulePartners: Record<string, string> = { ...inForce().partners };
+  $: ruleDraft = {
+    authors: ruleAuthors,
+    attesters: ruleAttesters,
+    quorum: ruleQuorum,
+    conflict: ruleConflict,
+    partners: rulePartners,
+  } satisfies Partial<Policy>;
+  $: rulesUnchanged = samePolicy(ruleDraft, policy);
+  $: rulesCanSign = policySignable && policyRole === "admin";
+  function toggleRole(list: "authors" | "attesters", role: Role) {
+    const cur = list === "authors" ? ruleAuthors : ruleAttesters;
+    const next = cur.includes(role)
+      ? cur.filter((r) => r !== role)
+      : [...cur, role];
+    if (!next.length) return; // a rule with nobody is not a rule
+    if (list === "authors") ruleAuthors = next;
+    else ruleAttesters = next;
+  }
+  function togglePartner(id: string) {
+    const key = partnerKeys[id];
+    if (!key) return;
+    const next = { ...rulePartners };
+    if (next[id]) delete next[id];
+    else next[id] = key;
+    rulePartners = next;
+  }
+  function saveRules() {
+    if (!rulesCanSign || rulesUnchanged) return;
+    error = "";
+    notice = $t("alloc.rulesSaved");
+    dispatch("policy", ruleDraft);
+  }
+
   // ── Tabs ────────────────────────────────────────────────────────────────
   // Four questions, one screen each, instead of nine sections in one scroll.
   // Each tab carries its current value in the strip, so the state of the whole
   // sheet is readable without opening anything.
-  type TabId = "view" | "split" | "contributors" | "zones" | "fund";
+  type TabId = "view" | "split" | "contributors" | "zones" | "fund" | "rules";
   let tab: TabId = "view";
   let tabEls: Record<string, HTMLButtonElement | undefined> = {};
 
@@ -169,6 +229,13 @@
       id: "fund" as const,
       label: $t("alloc.tabFund"),
       summary: slug.trim() || $t("alloc.tabFundEmpty"),
+    },
+    {
+      id: "rules" as const,
+      label: $t("alloc.tabRules"),
+      summary: $t("alloc.tabRulesSummary", {
+        quorum: String(inForce().quorum),
+      }),
     },
   ];
 
@@ -890,6 +957,126 @@
           <p class="sub">{$t("alloc.noPeople")}</p>
         {/if}
       </div>
+    {:else if tab === "rules"}
+      <!-- ── The claims policy ─────────────────────────────────────────── -->
+      <p class="sub">{$t("alloc.rulesAbout")}</p>
+      {#if !policySignable}
+        <p class="sub warn">{$t("alloc.rulesNoSigner")}</p>
+      {:else if policyRole !== "admin"}
+        <p class="sub warn">{$t("alloc.rulesNotAdmin")}</p>
+      {/if}
+
+      <div class="control">
+        <div class="k">{$t("alloc.rulesAuthors")}</div>
+        <div class="roles" role="group" aria-label={$t("alloc.rulesAuthors")}>
+          {#each POLICY_ROLES as r (r)}
+            <button
+              type="button"
+              class="rp wide"
+              class:on={ruleAuthors.includes(r)}
+              aria-pressed={ruleAuthors.includes(r)}
+              disabled={!rulesCanSign}
+              on:click={() => toggleRole("authors", r)}
+              >{$t(`alloc.rulesRole.${r}`)}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <div class="control">
+        <div class="k">{$t("alloc.rulesAttesters")}</div>
+        <div class="roles" role="group" aria-label={$t("alloc.rulesAttesters")}>
+          {#each POLICY_ROLES as r (r)}
+            <button
+              type="button"
+              class="rp wide"
+              class:on={ruleAttesters.includes(r)}
+              aria-pressed={ruleAttesters.includes(r)}
+              disabled={!rulesCanSign}
+              on:click={() => toggleRole("attesters", r)}
+              >{$t(`alloc.rulesRole.${r}`)}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <label class="field">
+        <span class="k">{$t("alloc.rulesQuorum")}</span>
+        <input
+          type="number"
+          min="0"
+          max="9"
+          step="1"
+          inputmode="numeric"
+          disabled={!rulesCanSign}
+          bind:value={ruleQuorum}
+        />
+      </label>
+      <div class="control">
+        <div class="k">{$t("alloc.rulesConflict")}</div>
+        <div
+          class="roles"
+          role="radiogroup"
+          aria-label={$t("alloc.rulesConflict")}
+        >
+          <button
+            type="button"
+            role="radio"
+            class="rp wide"
+            class:on={ruleConflict === "earliest"}
+            aria-checked={ruleConflict === "earliest"}
+            disabled={!rulesCanSign}
+            on:click={() => (ruleConflict = "earliest")}
+            >{$t("alloc.rulesConflictEarliest")}</button
+          >
+          <button
+            type="button"
+            role="radio"
+            class="rp wide"
+            class:on={ruleConflict === "quorum"}
+            aria-checked={ruleConflict === "quorum"}
+            disabled={!rulesCanSign}
+            on:click={() => (ruleConflict = "quorum")}
+            >{$t("alloc.rulesConflictQuorum")}</button
+          >
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.rulesPartners")}</div>
+        <p class="sub">{$t("alloc.rulesPartnersAbout")}</p>
+        {#if partners.length}
+          <ul class="parties">
+            {#each partners as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
+                  <span class="pshare"
+                    >{rulePartners[p.id]
+                      ? $t("alloc.rulesPartnerPinned")
+                      : partnerKeys[p.id]
+                        ? ""
+                        : $t("alloc.rulesPartnerNoKey")}</span
+                  >
+                </div>
+                <div class="roles">
+                  <button
+                    type="button"
+                    class="rp wide"
+                    class:on={!!rulePartners[p.id]}
+                    aria-pressed={!!rulePartners[p.id]}
+                    disabled={!rulesCanSign || !partnerKeys[p.id]}
+                    on:click={() => togglePartner(p.id)}
+                    >{rulePartners[p.id]
+                      ? $t("alloc.rulesPartnerPinned")
+                      : $t("alloc.rulesPin")}</button
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="sub">{$t("alloc.noPartners")}</p>
+        {/if}
+      </div>
     {:else}
       <!-- ── Where the money is ─────────────────────────────────────────── -->
       <label class="field">
@@ -936,6 +1123,20 @@
         <button class="primary" on:click={() => dispatch("close")}
           >{$t("common.close")}</button
         >
+      {:else if tab === "rules"}
+        <!-- The rules are a signed log entry, not a settings write: their
+             own button, gated on the signature that would count. -->
+        <button class="ghost" on:click={() => dispatch("close")}
+          >{$t("common.cancel")}</button
+        >
+        <button
+          class="primary"
+          disabled={!rulesCanSign || rulesUnchanged}
+          title={rulesUnchanged ? $t("alloc.rulesUnchanged") : ""}
+          on:click={saveRules}
+        >
+          {$t("alloc.rulesSave")}
+        </button>
       {:else}
         <button class="ghost" on:click={() => dispatch("close")}
           >{$t("common.cancel")}</button
@@ -1025,6 +1226,21 @@
   }
   .control {
     margin-top: 1.2rem;
+  }
+  .sub.warn {
+    color: var(--ink);
+  }
+  .roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+  }
+  .rp.wide {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 44px;
+    padding: 0 0.9rem;
   }
   .control:first-child {
     margin-top: 0.6rem;

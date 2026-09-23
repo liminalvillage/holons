@@ -18,11 +18,18 @@ import { signerFromSecretKey } from "@holons/core/holosphere";
 import {
   MEMBERS_LENS,
   POLICY_LENS,
+  foldPolicies,
+  importPartnerLogs,
   logTemplate,
+  policyFor,
+  policyRecord,
   readMembersLog,
+  resolveAcceptedActors,
   type Appendable,
   type LogEvent,
   type MembershipEnvelope,
+  type PartnerImport,
+  type Policy,
 } from "@holons/core/protocol";
 import {
   FLOW_CLAIMS_LENS,
@@ -38,12 +45,14 @@ import { getSessionSecret } from "./sessionKey";
 
 export type { LogEvent };
 
-/** Everything the claims fold reads besides settings and users. */
+/** Everything a log fold reads besides settings and users. */
 export interface ClaimsLogs {
   entries: LogEvent<unknown>[];
   policy: LogEvent<unknown>[];
   members: MembershipEnvelope[];
   attestations: IdentityAttestation[];
+  /** Pinned partners' logs of the same lens, judged by their own rules. */
+  imports: PartnerImport[];
 }
 
 const asEvent = (e: LogEntry): LogEvent<unknown> => ({
@@ -55,12 +64,18 @@ const asEvent = (e: LogEntry): LogEvent<unknown> => ({
 });
 
 /**
- * Watch the logs the fold reads. `onChange` fires with the full picture on
- * every change; returns the unsubscribe function.
+ * Watch the logs a fold reads for one append-only lens. `onChange` fires
+ * with the full picture on every change; returns the unsubscribe function.
+ *
+ * Partners the holon's policy pins are read too (their log of the same
+ * lens, their membership, their policy) and folded by THEIR rules, so the
+ * fold here can let their accepted entries in — re-read whenever the policy
+ * changes and on the periodic refresh.
  */
-export function watchClaimsLogs(
+export function watchLogLens(
   hs: HoloSphere,
   holon: string,
+  lens: string,
   onChange: (logs: ClaimsLogs) => void,
 ): () => void {
   const state: ClaimsLogs = {
@@ -68,6 +83,7 @@ export function watchClaimsLogs(
     policy: [],
     members: [],
     attestations: [],
+    imports: [],
   };
   let alive = true;
   let scheduled = false;
@@ -86,18 +102,48 @@ export function watchClaimsLogs(
   };
   const entries = new Map<string, LogEvent<unknown>>();
   const policy = new Map<string, LogEvent<unknown>>();
-  const offEntries = hs.subscribeLog(holon, FLOW_CLAIMS_LENS, (e) => {
+  const offEntries = hs.subscribeLog(holon, lens, (e) => {
     entries.set(e.id, asEvent(e));
     state.entries = [...entries.values()];
     emit();
   });
+  // Which partners to import is the policy's word, as folded by whoever is
+  // an admin here — so the partner read follows the policy, not the raw log.
+  let importsFor = "";
+  const refreshImports = async () => {
+    const actors = resolveAcceptedActors({
+      membersLog: state.members,
+      genesis: null,
+      bootstrap: {
+        members: [],
+        admins: adminKeys,
+        genesis: null,
+      },
+    });
+    const rule = policyFor(foldPolicies(state.policy, actors), lens);
+    const key = JSON.stringify(rule.partners);
+    if (key === importsFor) return;
+    importsFor = key;
+    try {
+      const imports = await importPartnerLogs(hs, lens, rule);
+      if (!alive) return;
+      state.imports = imports;
+    } catch {
+      state.imports = [];
+    }
+    emit();
+  };
   const offPolicy = hs.subscribeLog(holon, POLICY_LENS, (e) => {
     policy.set(e.id, asEvent(e));
     state.policy = [...policy.values()];
     emit();
+    void refreshImports();
   });
   // The membership log and the identity directory are read, not watched:
   // both change rarely, and a re-read on the next claim is soon enough.
+  // Before the holon is founded, the policy log has no admin to fold by;
+  // the holon's own key (settings.holonPubkey) stands in, as the fold does.
+  let adminKeys: string[] = [];
   const refreshMembers = async () => {
     try {
       await hs.getAll(holon, MEMBERS_LENS); // catches the lens up from the relays
@@ -106,12 +152,23 @@ export function watchClaimsLogs(
       state.members = [];
     }
     try {
+      const doc = (await hs.get(holon, "settings", holon)) as {
+        holonPubkey?: unknown;
+      } | null;
+      const key = String(doc?.holonPubkey ?? "");
+      adminKeys = /^[0-9a-f]{64}$/i.test(key) ? [key.toLowerCase()] : [];
+    } catch {
+      adminKeys = [];
+    }
+    try {
       const dir = (await hs.getAllGlobal(SHIFT_IDENTITY_LENS)) as never[];
       state.attestations = attestationsFrom(dir || []);
     } catch {
       state.attestations = [];
     }
     emit();
+    importsFor = ""; // partners may have written since
+    void refreshImports();
   };
   void refreshMembers();
   const timer = setInterval(() => void refreshMembers(), 5 * 60_000);
@@ -121,6 +178,15 @@ export function watchClaimsLogs(
     offEntries();
     offPolicy();
   };
+}
+
+/** The claims log and everything its fold reads. */
+export function watchClaimsLogs(
+  hs: HoloSphere,
+  holon: string,
+  onChange: (logs: ClaimsLogs) => void,
+): () => void {
+  return watchLogLens(hs, holon, FLOW_CLAIMS_LENS, onChange);
 }
 
 /** Who this session signs log entries as, or null when it cannot. */
@@ -215,6 +281,23 @@ export function recordVerdict(
     holon,
     FLOW_CLAIMS_LENS,
     buildClaimVerdict(claimId, verdict, reason) as never,
+  );
+}
+/**
+ * Set a lens's rule: an admin-signed entry of the `_policy` log. Signed as
+ * the logged-in person; it counts only if they are an admin as of now.
+ */
+export function recordPolicy(
+  hs: HoloSphere,
+  holon: string,
+  lens: string,
+  policy: Partial<Policy>,
+) {
+  return recordLogEntry(
+    hs,
+    holon,
+    POLICY_LENS,
+    policyRecord(lens, policy) as never,
   );
 }
 export function recordPayout(

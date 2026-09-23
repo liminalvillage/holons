@@ -23,7 +23,7 @@
   // Units never mix: no exchange rates exist in this repo, so each unit gets
   // its own track and each currency its own balance sheet.
 
-  import { onDestroy, onMount, getContext } from "svelte";
+  import { onDestroy, onMount, getContext, tick } from "svelte";
   import type { HoloSphere } from "holosphere";
   import { ID } from "../../dashboard/store";
   import { telegramUser } from "$lib/stores/telegram";
@@ -90,6 +90,14 @@
   import {
     MEMBERS_LENS,
     POLICY_LENS,
+    POLICY_ROLES,
+    importPartnerLogs,
+    normalizePolicy,
+    policyRecord,
+    samePolicy,
+    type PartnerImport,
+    type Policy,
+    type Role,
     readMembersLog,
     type LogEvent,
     type MembershipEnvelope,
@@ -162,6 +170,7 @@
   let policyEntries = new Map<string, LogEvent<unknown>>();
   let membersLog: MembershipEnvelope[] = [];
   let attestations: IdentityAttestation[] = [];
+  let claimImports: PartnerImport[] = [];
   let claimsOffs: Array<() => void> = [];
   let claimsBoundTo = "";
   let claimAmount = "";
@@ -187,6 +196,7 @@
         if (claimsBoundTo !== id) return;
         policyEntries.set(e.id, e as LogEvent<unknown>);
         policyEntries = policyEntries;
+        void refreshClaimImports(id);
       }),
     );
     void (async () => {
@@ -205,10 +215,27 @@
       }
     })();
   }
+  // The partners the policy pins are read by their own rules (their log,
+  // their membership, their policy); re-read when the policy log moves.
+  let importsFor = "";
+  async function refreshClaimImports(id: string) {
+    const key = [...policyEntries.keys()].sort().join(",");
+    if (key === importsFor) return;
+    importsFor = key;
+    await tick(); // claimsCtx has folded the new policy entries
+    try {
+      const next = claimsCtx ? await importPartnerLogs(holosphere, FLOW_CLAIMS_LENS, claimsCtx.policy) : [];
+      if (claimsBoundTo === id) claimImports = next;
+    } catch {
+      claimImports = [];
+    }
+  }
   function unbindClaims() {
     for (const off of claimsOffs) off();
     claimsOffs = [];
     claimsBoundTo = "";
+    claimImports = [];
+    importsFor = "";
   }
   onDestroy(unbindClaims);
   $: claimsCtx = holonID
@@ -220,6 +247,7 @@
         settings,
         users: Object.values(usersById),
         attestations,
+        imports: claimImports,
       })
     : null;
   $: myLogRole = claimsCtx
@@ -228,6 +256,79 @@
   $: canAttest = !!(claimsCtx && myLogRole && claimsCtx.policy.attesters.includes(myLogRole));
   $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
   $: claimUnit = collective?.currency ?? usage?.unit ?? "";
+
+  // ── The claims policy ───────────────────────────────────────────────────
+  // A draft of the rule in force; "Set the rules" appends it to the policy
+  // log. This instance signs with the member's derived key: an admin's entry
+  // counts, anyone else's is recorded and ignored — said up front.
+  let rulesOpen = false;
+  let ruleAuthors: Role[] = [];
+  let ruleAttesters: Role[] = [];
+  let ruleQuorum = 0;
+  let ruleConflict: Policy["conflict"] = "earliest";
+  let rulePartners: Record<string, string> = {};
+  let rulesSeeded = "";
+  // Seed the draft from the rule in force whenever a different one lands.
+  $: if (claimsCtx) seedRules(claimsCtx.policy);
+  function seedRules(rule: Policy) {
+    const sig = JSON.stringify(normalizePolicy(rule));
+    if (sig === rulesSeeded) return;
+    rulesSeeded = sig;
+    const p = normalizePolicy(rule);
+    ruleAuthors = p.authors;
+    ruleAttesters = p.attesters;
+    ruleQuorum = p.quorum;
+    ruleConflict = p.conflict;
+    rulePartners = { ...p.partners };
+  }
+  $: ruleDraft = { authors: ruleAuthors, attesters: ruleAttesters, quorum: ruleQuorum, conflict: ruleConflict, partners: rulePartners } satisfies Partial<Policy>;
+  $: rulesUnchanged = samePolicy(ruleDraft, claimsCtx?.policy ?? null);
+  $: rulesCanSign = myLogRole === "admin";
+  function toggleRole(list: "authors" | "attesters", role: Role) {
+    const cur = list === "authors" ? ruleAuthors : ruleAttesters;
+    const next = cur.includes(role) ? cur.filter((r) => r !== role) : [...cur, role];
+    if (!next.length) return;
+    if (list === "authors") ruleAuthors = next;
+    else ruleAttesters = next;
+  }
+  // Each partner's published holon key, so a pin has something to pin.
+  let partnerKeys: Record<string, string | null> = {};
+  async function loadPartnerKeys() {
+    const out: Record<string, string | null> = {};
+    await Promise.all(
+      partners.map(async (p) => {
+        try {
+          const doc = (await holosphere.get(p.id, "settings", p.id)) as { holonPubkey?: unknown } | null;
+          const key = String(doc?.holonPubkey ?? "");
+          out[p.id] = /^[0-9a-f]{64}$/i.test(key) ? key.toLowerCase() : null;
+        } catch {
+          out[p.id] = null;
+        }
+      }),
+    );
+    partnerKeys = out;
+  }
+  function togglePartner(id: string) {
+    const key = partnerKeys[id];
+    if (!key) return;
+    const next = { ...rulePartners };
+    if (next[id]) delete next[id];
+    else next[id] = key;
+    rulePartners = next;
+  }
+  async function saveRules() {
+    if (!holonID || claimBusy || !rulesCanSign || rulesUnchanged) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = policyRecord(FLOW_CLAIMS_LENS, ruleDraft);
+      await holosphere.append(holonID, POLICY_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
   const claimStatusLabel: Record<Claim["status"], string> = {
     approved: "Approved",
     pending: "Awaiting attestation",
@@ -1446,6 +1547,66 @@
           {:else}
             <p class="empty">No claims recorded in the log yet.</p>
           {/if}
+          {#if claimsCtx?.folded.imports.length}
+            <p class="note">
+              Partners folded in:
+              {#each claimsCtx.folded.imports as im, i (im.holon)}{i ? ", " : ""}{partyName(im.holon)} ({im.accepted} accepted{im.source === "bootstrap" ? ", key only" : ""}){/each}.
+            </p>
+          {/if}
+          <!-- The rules: an admin's signed word in the policy log, folded as-of-time. -->
+          <details class="rules" bind:open={rulesOpen} on:toggle={() => rulesOpen && void loadPartnerKeys()}>
+            <summary>
+              Rules · quorum {claimsCtx?.policy.quorum ?? 0}, {claimsCtx?.policy.conflict === "quorum" ? "a human decides" : "the first wins"}
+              {#if Object.keys(claimsCtx?.policy.partners ?? {}).length} · {Object.keys(claimsCtx?.policy.partners ?? {}).length} partner(s) pinned{/if}
+            </summary>
+            <p class="note">
+              How claims are judged: who may raise one, who attests, how many attestations count, and what
+              happens when two draw on the same thing. An admin's signed entry of the holon's policy log.
+            </p>
+            {#if !rulesCanSign}
+              <p class="note warn">Only an admin's signature sets the rules; yours would be recorded but not counted.</p>
+            {/if}
+            <div class="rule-row">
+              <span>Who may claim</span>
+              {#each POLICY_ROLES as r (r)}
+                <button type="button" class:on={ruleAuthors.includes(r)} aria-pressed={ruleAuthors.includes(r)} disabled={!rulesCanSign} on:click={() => toggleRole("authors", r)}>{r}s</button>
+              {/each}
+            </div>
+            <div class="rule-row">
+              <span>Who attests</span>
+              {#each POLICY_ROLES as r (r)}
+                <button type="button" class:on={ruleAttesters.includes(r)} aria-pressed={ruleAttesters.includes(r)} disabled={!rulesCanSign} on:click={() => toggleRole("attesters", r)}>{r}s</button>
+              {/each}
+            </div>
+            <div class="rule-row">
+              <label>Attestations needed <input type="number" min="0" max="9" step="1" disabled={!rulesCanSign} bind:value={ruleQuorum} /></label>
+            </div>
+            <div class="rule-row">
+              <span>Two on one basis</span>
+              <button type="button" class:on={ruleConflict === "earliest"} aria-pressed={ruleConflict === "earliest"} disabled={!rulesCanSign} on:click={() => (ruleConflict = "earliest")}>the first wins</button>
+              <button type="button" class:on={ruleConflict === "quorum"} aria-pressed={ruleConflict === "quorum"} disabled={!rulesCanSign} on:click={() => (ruleConflict = "quorum")}>a human decides</button>
+            </div>
+            <div class="rule-row wrap">
+              <span>Partners whose claims count</span>
+              {#if partners.length}
+                {#each partners as p (p.id)}
+                  <button
+                    type="button"
+                    class:on={!!rulePartners[p.id]}
+                    aria-pressed={!!rulePartners[p.id]}
+                    disabled={!rulesCanSign || !partnerKeys[p.id]}
+                    title={partnerKeys[p.id] ? "" : "no key published"}
+                    on:click={() => togglePartner(p.id)}>{p.name}{rulePartners[p.id] ? " · pinned" : ""}</button
+                  >
+                {/each}
+              {:else}
+                <small>No partners.</small>
+              {/if}
+            </div>
+            <div class="rule-row">
+              <button type="button" class="primary" disabled={claimBusy || !rulesCanSign || rulesUnchanged} title={rulesUnchanged ? "These are the rules already in force." : ""} on:click={saveRules}>Set the rules</button>
+            </div>
+          </details>
         </div>
         <p class="note">
           The concentric editor, deploys and per-contributor detail live in
@@ -1792,6 +1953,52 @@
     margin-top: 1rem;
     display: grid;
     gap: 0.5rem;
+  }
+  .rules {
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 0.6rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .rules summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .rule-row.wrap {
+    flex-wrap: wrap;
+  }
+  .rule-row > span {
+    min-width: 11rem;
+    color: inherit;
+    opacity: 0.8;
+  }
+  .rule-row button {
+    padding: 0.3rem 0.8rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+  }
+  .rule-row button.on {
+    opacity: 1;
+    font-weight: 600;
+  }
+  .rule-row button:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .rule-row input {
+    width: 4rem;
+    margin-left: 0.4rem;
   }
   .claims-panel h3 {
     margin: 0;
