@@ -524,7 +524,7 @@
     // their own drag/tap/resize gestures.
     if (
       el.closest(
-        ".day-event, .allday-chip, .chip, .note, .resize-handle, .tray-chip",
+        ".day-event, .allday-chip, .chip, .more-card, .resize-handle, .tray-chip",
       )
     )
       return;
@@ -842,12 +842,14 @@
   $: if (view !== lastMode) {
     lastMode = view;
     offset = 0;
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
   }
   function step(dir: 1 | -1) {
     offset += dir;
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
   }
+  // The day and week windows share the hour timeline (and its focus scroll).
+  $: hasHours = view === "day" || view === "week";
 
   // Year timeline tap-to-jump: land the day window on the tapped date. The
   // day offset is written BEFORE the mode flips (with `lastMode` pre-set so
@@ -930,6 +932,111 @@
     return ink ? ` --ev-ink: ${ink};` : "";
   };
 
+  // ── Month: crowded days ────────────────────────────────────────────────---
+  // A cell shows its first MONTH_CHIPS events; the rest fold into a stacked
+  // "+N more" card. Hovering it (mouse) or tapping it (touch) opens a popover
+  // with the whole day, from which any event opens or drags like a chip.
+  const MONTH_CHIPS = 2;
+  interface DayPop {
+    iso: string;
+    date: Date;
+    /** The cell's viewport box — the popover hangs off it. */
+    rect: { left: number; top: number; bottom: number; width: number };
+  }
+  let dayPop: DayPop | null = null;
+  let dayPopEl: HTMLElement | null = null;
+  let popCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  $: popEvents = dayPop ? eventsOn(dayPop.date, shownEvents) : [];
+
+  function openDayPop(day: Date, cell: HTMLElement) {
+    cancelPopClose();
+    const r = cell.getBoundingClientRect();
+    dayPop = {
+      iso: isoDay(day),
+      date: day,
+      rect: { left: r.left, top: r.top, bottom: r.bottom, width: r.width },
+    };
+  }
+  function closeDayPop() {
+    cancelPopClose();
+    dayPop = null;
+  }
+  function cancelPopClose() {
+    if (popCloseTimer) clearTimeout(popCloseTimer);
+    popCloseTimer = null;
+  }
+  // Mouse: leaving the cell (or the popover) closes it after a beat, so the
+  // pointer can cross the gap between the two without the popover vanishing.
+  function schedulePopClose() {
+    cancelPopClose();
+    popCloseTimer = setTimeout(() => (dayPop = null), 180);
+  }
+  function hoverMore(e: PointerEvent, day: Date) {
+    if (e.pointerType !== "mouse") return;
+    const cell = (e.currentTarget as HTMLElement).closest<HTMLElement>(".cell");
+    if (cell) openDayPop(day, cell);
+  }
+  function leaveCell(e: PointerEvent) {
+    if (e.pointerType !== "mouse" || !dayPop) return;
+    schedulePopClose();
+  }
+  function tapMore(e: MouseEvent, day: Date) {
+    e.stopPropagation();
+    const iso = isoDay(day);
+    if (dayPop?.iso === iso) closeDayPop();
+    else {
+      const cell = (e.currentTarget as HTMLElement).closest<HTMLElement>(
+        ".cell",
+      );
+      if (cell) openDayPop(day, cell);
+    }
+  }
+  // A press anywhere outside the popover (and off its own card) closes it;
+  // so does Escape, and so does a card being lifted off it to drag.
+  function onWindowPointerDown(e: PointerEvent) {
+    if (!dayPop) return;
+    const el = e.target as HTMLElement | null;
+    if (dayPopEl?.contains(el) || el?.closest(".more-card")) return;
+    closeDayPop();
+  }
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && dayPop) closeDayPop();
+  }
+  $: if (drag) dayPop = null;
+  // Navigating (or switching mode) leaves the popover behind.
+  $: closeOnNav(view, offset);
+  function closeOnNav(_view: CalendarMode, _offset: number) {
+    dayPop = null;
+  }
+  // The popover sits on the viewport below (or, near the bottom, above) its
+  // cell, kept inside the screen. Mounted at the document root so the board's
+  // stacking contexts and the scroll area's clipping can't cut it off.
+  const POP_W_REM = 20;
+  function popStyle(rect: DayPop["rect"]): string {
+    if (typeof window === "undefined") return "";
+    const gap = 8;
+    const w = Math.min(POP_W_REM * rootRem, window.innerWidth - gap * 2);
+    const left = Math.max(
+      gap,
+      Math.min(rect.left, window.innerWidth - w - gap),
+    );
+    const below = rect.bottom + 6;
+    const room = Math.min(window.innerHeight * 0.6, 24 * rootRem);
+    const vert =
+      below + room <= window.innerHeight - gap
+        ? `top: ${below}px;`
+        : `bottom: ${Math.max(gap, window.innerHeight - rect.top + 6)}px;`;
+    return `left: ${left}px; width: ${w}px; ${vert}`;
+  }
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
   $: anchorDay = addDays(startOfDay($now), view === "day" ? offset : 0);
 
@@ -964,7 +1071,34 @@
   let rootRem = 16;
   // Live height of the unscheduled drawer, so the + button rides above it.
   let trayHeight = 0;
-  $: HOUR_PX = Math.round(rootRem * 3.4);
+  // The week fits its waking hours on screen: the hour height is derived from
+  // the visible timeline (the scroll area minus the sticky date band) so that
+  // WEEK_FROM..WEEK_TO fill it exactly, and the window opens scrolled to
+  // WEEK_FROM. Earlier/later hours stay reachable by scrolling. A floor keeps
+  // the rows tappable on a very short screen (then it scrolls a little).
+  const WEEK_FROM_HOUR = 9;
+  const WEEK_TO_HOUR = 23;
+  let bodyHeight = 0;
+  let headsHeight = 0;
+  // The week's all-day strip is pinned under the date band (it must not
+  // scroll away with the early hours), so it takes visible height too.
+  let alldayHeight = 0;
+  let hoursRowEl: HTMLElement | null = null;
+  // Room for the hour labels, which sit just above their line: the first one
+  // peeks out under the pinned band, the last one clears the bottom edge.
+  const WEEK_EDGE_REM = 0.8;
+  $: weekPinnedPx = headsHeight + (view === "week" ? alldayHeight : 0);
+  $: weekHourPx = Math.max(
+    Math.round(rootRem * 1.4),
+    Math.floor(
+      (bodyHeight - weekPinnedPx - rootRem * WEEK_EDGE_REM) /
+        (WEEK_TO_HOUR - WEEK_FROM_HOUR),
+    ),
+  );
+  $: HOUR_PX = view === "week" ? weekHourPx : Math.round(rootRem * 3.4);
+  // Re-land on WEEK_FROM whenever the week's row height settles or changes
+  // (first measure, rotation, window resize).
+  $: if (view === "week" && weekHourPx > 0) void focusDay();
 
   function measureRem() {
     if (typeof document === "undefined") return;
@@ -999,6 +1133,22 @@
     await tick();
     requestAnimationFrame(() => {
       if (!scrollEl) return;
+      if (view === "week") {
+        // 09:00 right under the sticky date band, so 09:00–23:00 is the screen.
+        if (!hoursRowEl) return;
+        const rowTop =
+          hoursRowEl.getBoundingClientRect().top -
+          scrollEl.getBoundingClientRect().top +
+          scrollEl.scrollTop;
+        scrollEl.scrollTop = Math.max(
+          0,
+          rowTop +
+            yForMin(WEEK_FROM_HOUR * 60) -
+            weekPinnedPx -
+            rootRem * (WEEK_EDGE_REM / 2),
+        );
+        return;
+      }
       const mins = sameDay(anchorDay, get(now))
         ? minutesOf(get(now))
         : MORNING_MIN;
@@ -1055,7 +1205,7 @@
   onMount(() => {
     measureRem();
     window.addEventListener("resize", measureRem);
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
     // Kiosk displays are unattended — glide the timeline once so booked content
     // below the fold is shown without anyone dragging. Capped at the lowest
     // booked event so it never scrolls down into empty evening hours.
@@ -1090,6 +1240,9 @@
     /** The day itself — spans need it to say which of their days this is. */
     date: Date;
     label: string;
+    /** Stacked header parts for the (narrow) week columns: "Mon" / "23". */
+    dow: string;
+    dom: number;
     allDay: CalendarEvent[];
     timed: CalendarEvent[];
     layout: Map<string, { col: number; cols: number }>;
@@ -1114,6 +1267,8 @@
         day: "numeric",
         month: "short",
       }),
+      dow: day.toLocaleDateString($locale, { weekday: "short" }),
+      dom: day.getDate(),
       allDay: evs.filter((e) => e.allDay || e.multiDay),
       timed,
       layout: eventLayout(timed),
@@ -1124,12 +1279,18 @@
   // Events come in as an argument (not read inside makeColumn) so Svelte's
   // dependency tracking recomputes the columns when the events — or the scope
   // narrowing them — change.
-  $: dayCols = showNextDay
-    ? [
-        makeColumn(anchorDay, true, shownEvents),
-        makeColumn(nextDay, false, shownEvents),
-      ]
-    : [makeColumn(anchorDay, true, shownEvents)];
+  // The week is the same timeline with seven columns. None of them is
+  // "primary": the hour labels get a gutter column of their own (see
+  // `.gutter-col`), so every day's events span their full column width.
+  $: dayCols =
+    view === "week"
+      ? weekDays.map((d) => makeColumn(d, false, shownEvents))
+      : showNextDay
+        ? [
+            makeColumn(anchorDay, true, shownEvents),
+            makeColumn(nextDay, false, shownEvents),
+          ]
+        : [makeColumn(anchorDay, true, shownEvents)];
 
   // Inline geometry for a timed event's note. The next-day column has no hour
   // gutter, so its events span the full column width.
@@ -1288,6 +1449,7 @@
     class="scrollarea scroll"
     bind:this={scrollEl}
     bind:clientWidth={bodyWidth}
+    bind:clientHeight={bodyHeight}
   >
     {#if view === "month"}
       <div class="weekdays">
@@ -1308,10 +1470,11 @@
             class:stretch={stretchCovers(iso, stretch)}
             data-day={iso}
             on:pointerdown={beginCreatePress}
+            on:pointerleave={leaveCell}
           >
             <span class="num">{day.getDate()}</span>
             <div class="chips">
-              {#each evs.slice(0, 2) as ev (ev.id)}
+              {#each evs.slice(0, MONTH_CHIPS) as ev (ev.id)}
                 <span class="lift chip-wrap">
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
@@ -1343,76 +1506,30 @@
                   >
                 </span>
               {/each}
-              {#if evs.length > 2}
-                <span class="more">+{evs.length - 2}</span>
+              {#if evs.length > MONTH_CHIPS}
+                <!-- The rest of the day, as a small stack of cards: hover or
+                     tap to unfold the whole day. -->
+                <button
+                  class="more-card"
+                  class:open={dayPop?.iso === iso}
+                  aria-expanded={dayPop?.iso === iso}
+                  aria-haspopup="dialog"
+                  aria-label={$t("cal.moreEvents", {
+                    n: evs.length - MONTH_CHIPS,
+                  })}
+                  title={$t("cal.moreEvents", { n: evs.length - MONTH_CHIPS })}
+                  on:pointerenter={(e) => hoverMore(e, day)}
+                  on:click={(e) => tapMore(e, day)}
+                >
+                  <!-- Narrow cells (phones) show just the count. -->
+                  <span class="more-long"
+                    >{$t("cal.moreEvents", {
+                      n: evs.length - MONTH_CHIPS,
+                    })}</span
+                  ><span class="more-short">+{evs.length - MONTH_CHIPS}</span>
+                </button>
               {/if}
             </div>
-          </div>
-        {/each}
-      </div>
-    {:else if view === "week"}
-      <div class="week">
-        {#each weekDays as day (day.toISOString())}
-          {@const evs = eventsOn(day, shownEvents)}
-          {@const isToday = sameDay(day, $now)}
-          {@const iso = isoDay(day)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="row"
-            class:today={isToday}
-            class:drop={dropDay === iso}
-            class:stretch={stretchCovers(iso, stretch)}
-            data-day={iso}
-            on:pointerdown={beginCreatePress}
-          >
-            <div class="daychip">
-              <span class="dow"
-                >{day.toLocaleDateString($locale, { weekday: "short" })}</span
-              >
-              <span class="dom">{day.getDate()}</span>
-            </div>
-            {#if evs.length}
-              <div class="row-notes">
-                {#each evs as ev (ev.id)}
-                  <span class="lift">
-                    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-                    <article
-                      class="note sm tilt"
-                      class:draggable={!readonly && !ev.external}
-                      class:ext={!!ev.external}
-                      class:is-foreign={!!ev.sourceColor}
-                      class:holo={!!ev.hologram}
-                      class:done={!!ev.completed}
-                      style:--holo-seed={holoSeed(ev.id)}
-                      class:tinted={!!inkOn(ev.color)}
-                      style="{tiltStyle(
-                        ev.id,
-                        noteBg(ev),
-                      )} --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(
-                        ev,
-                      )}"
-                      role="button"
-                      tabindex="0"
-                      on:pointerdown={(e) =>
-                        beginDrag(e, ev.id, ev.title, !!ev.external)}
-                      on:click={() => open(ev)}
-                      on:keydown={(e) => onKey(e, ev)}
-                    >
-                      <span class="when"
-                        >{timeLabel(ev, day)}{#if ev.occurrence}<span
-                            class="rec"
-                            title={repeatsTitle(ev)}
-                            ><Icon name="repeat" /></span
-                          >{/if}</span
-                      >
-                      <span class="ttl">{ev.title}</span>
-                    </article>
-                  </span>
-                {/each}
-              </div>
-            {:else}
-              <span class="row-empty">—</span>
-            {/if}
           </div>
         {/each}
       </div>
@@ -1430,21 +1547,48 @@
         {dropDay}
       />
     {:else}
-      <!-- day timeline — one column, or two (with the next day) when wide -->
-      <div class="day-cols" class:twin={dayCols.length > 1}>
-        <!-- Date band: only needed with two columns (the period header already
-             names the day in single-column view). Sticks above the timeline so
-             each column's day stays visible while the hours scroll. -->
+      <!-- hour timeline — the day (one column, or two with the next day when
+           wide) and the week (seven columns, plus a gutter for the hour labels) -->
+      {@const wk = view === "week"}
+      <div class="day-cols" class:twin={dayCols.length > 1} class:wk>
+        <!-- Date band: only needed with several columns (the period header
+             already names the day in single-column view). Sticks above the
+             timeline so each column's day stays visible while the hours
+             scroll. In the week, tapping a day opens it. -->
         {#if dayCols.length > 1}
-          <div class="col-heads">
+          <div class="col-heads" bind:clientHeight={headsHeight}>
+            {#if wk}<div class="gutter-col" aria-hidden="true"></div>{/if}
             {#each dayCols as col (col.iso)}
-              <div class="col-head" class:today={col.isToday}>{col.label}</div>
+              {#if wk}
+                <button
+                  class="col-head stacked"
+                  class:today={col.isToday}
+                  on:click={() => gotoDay(col.date)}
+                  aria-label={col.label}
+                >
+                  <span class="dow">{col.dow}</span>
+                  <span class="dom">{col.dom}</span>
+                </button>
+              {:else}
+                <div class="col-head" class:today={col.isToday}>
+                  {col.label}
+                </div>
+              {/if}
             {/each}
           </div>
         {/if}
 
         {#if dayCols.some((c) => c.allDay.length)}
-          <div class="allday-row">
+          <div
+            class="allday-row"
+            bind:clientHeight={alldayHeight}
+            style:--heads-h="{headsHeight}px"
+          >
+            {#if wk}
+              <div class="gutter-col allday-gutter" aria-hidden="true">
+                <span class="allday-label">all day</span>
+              </div>
+            {/if}
             {#each dayCols as col (col.iso)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
@@ -1454,7 +1598,7 @@
                 data-day={col.iso}
                 on:pointerdown={beginCreatePress}
               >
-                <span class="allday-label">all day</span>
+                {#if !wk}<span class="allday-label">all day</span>{/if}
                 <div class="allday-items">
                   {#each col.allDay as ev (ev.id)}
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
@@ -1495,7 +1639,11 @@
 
         <!-- One shared hour grid behind both day columns, so the lines are drawn
              once: they always line up across days and never glitch on scroll. -->
-        <div class="hours-row" style="height: {gridHeight}px;">
+        <div
+          class="hours-row"
+          bind:this={hoursRowEl}
+          style="height: {gridHeight}px;"
+        >
           <div class="hour-grid" aria-hidden="true">
             {#each HOURS as h}
               <div class="hour" style="top: {yForMin(h * 60, HOUR_PX)}px;">
@@ -1504,10 +1652,12 @@
             {/each}
           </div>
 
+          {#if wk}<div class="gutter-col" aria-hidden="true"></div>{/if}
           {#each dayCols as col (col.iso)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="hours-col"
+              class:today={col.isToday}
               data-day={col.iso}
               data-hours="1"
               on:pointerdown={beginCreatePress}
@@ -1711,6 +1861,76 @@
     </div>
   {/if}
 </div>
+
+<svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKey} />
+
+{#if dayPop}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="day-pop"
+    role="dialog"
+    tabindex="-1"
+    aria-label={dayPop.date.toLocaleDateString($locale, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    })}
+    style={popStyle(dayPop.rect)}
+    use:portal
+    bind:this={dayPopEl}
+    on:pointerenter={cancelPopClose}
+    on:pointerleave={leaveCell}
+  >
+    <header class="pop-head">
+      <span class="pop-date"
+        >{dayPop.date.toLocaleDateString($locale, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })}</span
+      >
+      <span class="pop-count"
+        >{$t("cal.dayEvents", { n: popEvents.length })}</span
+      >
+    </header>
+    <div class="pop-list scroll">
+      {#each popEvents as ev (ev.id)}
+        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+        <article
+          class="pop-chip"
+          class:draggable={!readonly && !ev.external}
+          class:ext={!!ev.external}
+          class:is-foreign={!!ev.sourceColor}
+          class:holo={!!ev.hologram}
+          class:done={!!ev.completed}
+          style:--holo-seed={holoSeed(ev.id)}
+          class:tinted={!!inkOn(ev.color)}
+          style="background: {noteBg(ev)}; --glow: {ev.sourceColor ??
+            'transparent'};{inkStyle(ev)}"
+          role="button"
+          tabindex="0"
+          on:pointerdown={(e) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+          on:click={() => open(ev)}
+          on:keydown={(e) => onKey(e, ev)}
+        >
+          <span class="when"
+            >{timeLabel(ev, dayPop.date)}{#if ev.occurrence}<span
+                class="rec"
+                title={repeatsTitle(ev)}><Icon name="repeat" /></span
+              >{/if}</span
+          >
+          <span class="ttl">{ev.title}</span>
+          {#if ev.location}<span class="where">{ev.location}</span>{/if}
+          {#if ev.people.length}
+            <div class="ev-foot">
+              <Avatars people={ev.people} size="1.2rem" />
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
+  </div>
+{/if}
 
 {#if drag}
   <div
@@ -2076,11 +2296,147 @@
     text-overflow: ellipsis;
     text-align: center;
   }
-  .more {
+  /* The fold: a little stack of cards standing in for the rest of the day.
+     Two offset "sheets" behind it read as a pile; hover lifts it. */
+  .more-card {
+    position: relative;
+    display: block;
+    width: 100%;
+    margin-top: 2px;
+    padding: 0.16rem 0.34rem;
+    border: 1px solid var(--line);
+    border-radius: 3px 6px 6px 6px;
+    background: var(--card);
+    font: inherit;
     font-size: 0.6rem;
-    color: var(--muted);
-    font-weight: 700;
+    font-weight: 800;
+    color: var(--teal-deep);
     text-align: center;
+    cursor: pointer;
+    box-shadow:
+      0 2px 0 -1px var(--card),
+      0 2px 0 0 var(--line),
+      0 4px 0 -2px var(--card),
+      0 4px 0 -1px var(--line);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .more-card {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .more-short {
+    display: none;
+  }
+  @media (max-width: 40rem) {
+    .more-long {
+      display: none;
+    }
+    .more-short {
+      display: inline;
+    }
+  }
+  .more-card:hover,
+  .more-card.open {
+    transform: translateY(-1px);
+    background: #e7f3f1;
+    border-color: var(--teal);
+    box-shadow:
+      0 3px 0 -1px var(--card),
+      0 3px 0 0 var(--teal),
+      0 6px 0 -2px var(--card),
+      0 6px 0 -1px var(--teal),
+      var(--shadow-soft);
+  }
+
+  /* The unfolded day: a floating sheet hanging off its cell (viewport
+     positioned, mounted on <body>), listing every card of the day. */
+  .day-pop {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    padding: 0.6rem 0.6rem 0.7rem;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    animation: kiosk-rise 0.18s ease both;
+  }
+  .pop-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0 0.2rem;
+  }
+  .pop-date {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--ink);
+    text-transform: capitalize;
+  }
+  .pop-count {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pop-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: min(60vh, 24rem);
+    overflow-y: auto;
+    padding: 0.15rem;
+  }
+  .pop-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    padding: 0.4rem 0.6rem 0.45rem;
+    border-radius: 4px 12px 12px 12px;
+    box-shadow: var(--shadow-soft);
+    cursor: grab;
+    touch-action: none;
+  }
+  .pop-chip:active {
+    filter: brightness(0.97);
+  }
+  .pop-chip .when {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(32, 48, 47, 0.62);
+  }
+  .pop-chip .ttl {
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .pop-chip .where {
+    font-size: 0.76rem;
+    color: rgba(32, 48, 47, 0.62);
+  }
+  .pop-chip .ev-foot {
+    margin-top: 0.25rem;
+  }
+  .pop-chip.is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
+      var(--shadow-soft);
+  }
+  .pop-chip.done {
+    opacity: 0.55;
+  }
+  .pop-chip.done .ttl {
+    text-decoration: line-through;
   }
   /* "2/3" — which day of a multi-day span this card is showing. A quiet inked
      badge on the note itself, so a span reads as one thing continuing rather
@@ -2094,62 +2450,6 @@
     font-variant-numeric: tabular-nums;
     font-size: 0.9em;
     opacity: 0.85;
-  }
-
-  /* ── Week ──────────────────────────────────────────────────────────────── */
-  .week {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 0.6rem;
-    border-radius: 14px;
-    background: var(--paper);
-    min-height: 4.2rem;
-  }
-  .row.today {
-    background: #e7f3f1;
-    outline: 2px solid var(--teal);
-  }
-  .daychip {
-    flex: 0 0 3rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.05;
-  }
-  .daychip .dow {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: var(--muted);
-    letter-spacing: 0.04em;
-  }
-  .daychip .dom {
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-  }
-  .row.today .dom,
-  .row.today .dow {
-    color: var(--teal-deep);
-  }
-  .row-notes {
-    display: flex;
-    gap: 0.7rem;
-    flex-wrap: wrap;
-    flex: 1;
-    min-width: 0;
-  }
-  .row-empty {
-    color: var(--line);
-    font-size: 1.3rem;
-    padding-left: 0.4rem;
   }
 
   /* ── Day timeline ──────────────────────────────────────────────────────--- */
@@ -2183,7 +2483,10 @@
      the column rule only matches when a second column is present). */
   .day-cols.twin .col-heads > * + *,
   .day-cols.twin .allday-row > * + *,
-  .hours-col + .hours-col {
+  .day-cols.wk .col-heads > * + *,
+  .day-cols.wk .allday-row > * + *,
+  .hours-col + .hours-col,
+  .gutter-col + .hours-col {
     border-left: 1px solid var(--line);
   }
   .col-head {
@@ -2195,6 +2498,132 @@
   }
   .col-head.today {
     color: var(--teal-deep);
+  }
+  /* Week header: weekday over the date, like a wall calendar; a button so
+     tapping a day jumps to it. */
+  .col-head.stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    padding: 0.3rem 0 0.35rem;
+    border: 0;
+    background: none;
+    font: inherit;
+    line-height: 1.05;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .col-head.stacked .dow {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .col-head.stacked .dom {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .col-head.stacked.today .dow,
+  .col-head.stacked.today .dom {
+    color: var(--teal-deep);
+  }
+  .col-head.stacked.today .dom {
+    background: var(--teal);
+    color: #fff;
+    border-radius: 999px;
+    min-width: 1.7rem;
+    padding: 0.05rem 0.3rem;
+  }
+
+  /* Week: the hour labels live in a gutter column of their own so the seven
+     day columns stay equal and their events use the full column width. */
+  .day-cols.wk {
+    --gutter: 3rem;
+  }
+  @media (max-width: 40rem) {
+    .day-cols.wk {
+      --gutter: 2.4rem;
+    }
+  }
+  .gutter-col {
+    flex: 0 0 var(--gutter, 3rem);
+    width: var(--gutter, 3rem);
+  }
+  .day-cols.wk .hour-label {
+    width: calc(var(--gutter) - 0.35rem);
+  }
+  .day-cols.wk .now-time {
+    white-space: nowrap;
+  }
+  .allday-gutter {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0.3rem 0.35rem 0.6rem 0;
+  }
+  .allday-gutter .allday-label {
+    margin-top: 0.4rem;
+    text-align: right;
+    line-height: 1.1;
+  }
+  /* Pinned under the date band so the week's all-day events stay in view
+     while the timeline sits on the waking hours. */
+  .day-cols.wk .allday-row {
+    position: sticky;
+    top: var(--heads-h, 0px);
+    z-index: 5;
+    background: var(--paper);
+  }
+  .day-cols.wk .allday {
+    padding-left: 0.15rem;
+    padding-right: 0.15rem;
+    margin-bottom: 0;
+    border-radius: 0;
+  }
+  .day-cols.wk .allday-items {
+    gap: 0.3rem;
+  }
+  .day-cols.wk .allday-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0.3rem 0.45rem;
+    font-size: 0.72rem;
+  }
+  .day-cols.wk .hours-col.today {
+    background: color-mix(in srgb, var(--teal) 6%, transparent);
+  }
+  /* Seven narrow columns: tighter cards, the title first, the extras (place,
+     source) left to the card itself. */
+  .day-cols.wk .day-event {
+    padding: 0.2rem 0.3rem 0.5rem;
+    border-radius: 3px 8px 8px 8px;
+  }
+  .day-cols.wk .day-event .when {
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+  .day-cols.wk .day-event .ttl {
+    font-size: 0.8rem;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+  .day-cols.wk .day-event .where,
+  .day-cols.wk .day-event .src {
+    display: none;
+  }
+  .day-cols.wk .day-event .ev-foot {
+    margin-top: 0.2rem;
+  }
+  .day-cols.wk .slot-hint {
+    left: 0.15rem;
   }
 
   .allday {
@@ -2482,37 +2911,12 @@
     box-shadow: var(--shadow-soft);
   }
 
-  /* ── Shared post-it notes ──────────────────────────────────────────────--- */
-  .note {
-    border-radius: 4px 14px 14px 14px;
-    animation: kiosk-rise 0.4s ease both;
-    cursor: pointer;
-  }
+  /* ── Month chips ───────────────────────────────────────────────────────--- */
   .chip {
     cursor: pointer;
   }
-  .note:active,
   .chip:active {
     filter: brightness(0.97);
-  }
-  .note .when {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: rgba(32, 48, 47, 0.62);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .note.sm {
-    display: flex;
-    flex-direction: column;
-    padding: 0.5rem 0.7rem 0.6rem;
-    max-width: 11rem;
-  }
-  .note.sm .ttl {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--ink);
-    line-height: 1.15;
   }
 
   /* Federated / hologram events — a coloured edge keyed by their source holon
@@ -2520,8 +2924,7 @@
      coming from elsewhere, across every calendar surface they appear on. The
      surfaces that carry a soft lift keep it (re-stated here, since their own
      `box-shadow` rule would otherwise win on specificity). */
-  .chip.is-foreign,
-  .note.is-foreign {
+  .chip.is-foreign {
     box-shadow:
       0 0 0 2px var(--glow),
       0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent);
@@ -2548,14 +2951,12 @@
     margin: 0 0 0 0.35em;
   }
   .chip.done,
-  .note.done,
   .allday-chip.done,
   .day-event.done {
     opacity: 0.55;
   }
   .chip.done,
   .allday-chip.done,
-  .note.done .ttl,
   .day-event.done .ttl {
     text-decoration: line-through;
   }
