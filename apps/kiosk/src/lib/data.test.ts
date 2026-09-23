@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { makeTranslator } from "./i18n";
 import {
   dueLabelFor,
+  personName,
   toBacklog,
   toBookingEvents,
   toChecklists,
@@ -838,5 +839,30 @@ describe("the two boards stay separate", () => {
     const orphan = [quest("someday", { type: "event" })];
     expect(toEvents(orphan)).toEqual([]);
     expect(toBacklog(orphan)).toEqual([]);
+  });
+});
+
+describe("personName — first name and a dotted surname", () => {
+  it("reads 'First S.' when both names are there", () => {
+    expect(personName({ first_name: "Roberto", last_name: "Valenti" })).toBe(
+      "Roberto V.",
+    );
+  });
+
+  it("accepts the initiator's camelCase shape", () => {
+    expect(personName({ firstName: "Ada", lastName: "lovelace" })).toBe(
+      "Ada L.",
+    );
+  });
+
+  it("never shows a handle when a name exists", () => {
+    expect(personName({ first_name: "Sam", username: "samwise" })).toBe("Sam");
+    expect(personName({ last_name: "Ng", username: "ng" })).toBe("N.");
+  });
+
+  it("falls back to the bare username, then the id", () => {
+    expect(personName({ username: "samwise", id: 4 })).toBe("samwise");
+    expect(personName({ id: 4 })).toBe("#4");
+    expect(personName(undefined)).toBe("#?");
   });
 });

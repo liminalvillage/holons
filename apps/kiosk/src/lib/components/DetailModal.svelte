@@ -27,7 +27,12 @@
   import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
-  import { toggleJoin, toggleAppreciate } from "$lib/membership";
+  import {
+    reflectMembership,
+    toggleJoin,
+    toggleAppreciate,
+    type TgUser,
+  } from "$lib/membership";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -72,7 +77,9 @@
     questFrequency,
     questKind,
     questSchedule,
+    rosterDiff,
     scheduleToFields,
+    setParticipants,
     setQuestFrequency,
     setQuestKind,
     shiftSchedule,
@@ -84,7 +91,8 @@
     type QuestParticipant,
     type SwitchableKind,
   } from "@holons/core/tasks";
-  import HostPicker from "./HostPicker.svelte";
+  import PeoplePicker from "./PeoplePicker.svelte";
+  import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
 
@@ -462,6 +470,9 @@
   // The hosts of an event. Kept while the switch reads "task" so flipping it
   // back to "event" doesn't lose them; only saved on an event.
   let fHosts: QuestParticipant[] = [];
+  // Who takes part. Anyone can be put on (or taken off) the roster from the
+  // form — the same list a self-service Join/Leave edits one person at a time.
+  let fParticipants: QuestParticipant[] = [];
   // Both of these hang off the start date, and — like the schedule rules
   // further down — they shape what is shown and saved rather than the fields
   // themselves, so a date that reads empty for a keystroke doesn't throw the
@@ -659,6 +670,7 @@
       fKind = questKind(q) === "event" ? "event" : "task";
       // Read as an event either way, so hosts survive a trip through "task".
       fHosts = hostsOf({ ...q, type: "event" });
+      fParticipants = Array.isArray(q.participants) ? [...q.participants] : [];
     }
     editing = true;
   }
@@ -700,27 +712,48 @@
     const timing: Partial<Quest> = buildScheduleFields(
       coherentSchedule(fDate, fTime, fEndDate, fEndTime),
     );
-    const updated = {
-      ...sel.quest,
-      title: fTitle.trim() || sel.quest.title,
-      location: fLocation.trim() || undefined,
-      category: fCategory.trim() || undefined,
-      description: fDescription.trim() || undefined,
-      ...timing,
-      // The cadence (core also drops the bot scheduler's handle when it is
-      // cleared, so the bot stops spawning occurrences). Only a dated card
-      // can repeat, so an undated one is saved without a cadence.
-      ...setQuestFrequency(sel.quest, timing.when ? fFrequency : null),
-      // Task ↔ event. Core refuses to retype a marketplace item, so an offer
-      // that somehow reached this form keeps its own lifecycle.
-      ...setQuestKind(sel.quest, timing.when ? fKind : "task"),
-      ...(timing.when && fKind === "event" ? { hosts: fHosts } : {}),
-    };
+    // The roster is saved through core, which keeps the participate-XOR-
+    // appreciate rule (a member put on the list stops appreciating).
+    const updated = setParticipants(
+      {
+        ...sel.quest,
+        title: fTitle.trim() || sel.quest.title,
+        location: fLocation.trim() || undefined,
+        category: fCategory.trim() || undefined,
+        description: fDescription.trim() || undefined,
+        ...timing,
+        // The cadence (core also drops the bot scheduler's handle when it is
+        // cleared, so the bot stops spawning occurrences). Only a dated card
+        // can repeat, so an undated one is saved without a cadence.
+        ...setQuestFrequency(sel.quest, timing.when ? fFrequency : null),
+        // Task ↔ event. Core refuses to retype a marketplace item, so an offer
+        // that somehow reached this form keeps its own lifecycle.
+        ...setQuestKind(sel.quest, timing.when ? fKind : "task"),
+        ...(timing.when && fKind === "event" ? { hosts: fHosts } : {}),
+      },
+      fParticipants,
+    );
     const writer = await getWriter($holonId, (m) => (message = m));
     const ok = await writer.put("quests", updated);
     saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = $t("detail.saveFailed");
+    if (!ok) {
+      if (!message) message = $t("detail.saveFailed");
+      return;
+    }
+    closeDetail();
+    // Everyone added or dropped gets the same mirror a self-service join
+    // makes: a hologram in their own holon and a refreshed Telegram DM.
+    // Best-effort, after the save has landed.
+    const { joined, left } = rosterDiff(
+      sel.quest.participants,
+      updated.participants,
+    );
+    const hid = $holonId;
+    // rosterDiff only yields people with an id; the cast narrows the type.
+    for (const p of joined)
+      void reflectMembership(hid, updated, p as TgUser, true);
+    for (const p of left)
+      void reflectMembership(hid, updated, p as TgUser, false);
   }
 
   /**
@@ -1446,6 +1479,12 @@
           </ul>
         {/if}
 
+        {#if quest && quest.type === "proposal" && $holonId}
+          <!-- A proposal is decided by signed ballots on the votes log, not
+               by who joined it: the fold is core's, this only renders it. -->
+          <ProposalVote holonId={$holonId} proposalId={String(quest.id)} />
+        {/if}
+
         {#if $isLoggedIn}
           <div class="actions">
             {#if amParticipant}
@@ -1726,10 +1765,28 @@
         {#if effectiveKind === "event"}
           <div class="hosts-edit">
             <span class="elab"><Icon name="crown" /> {$t("detail.hosts")}</span>
-            <HostPicker bind:hosts={fHosts} />
+            <PeoplePicker
+              bind:people={fHosts}
+              addLabel={$t("detail.addHost")}
+              removeLabel={(name) => $t("detail.removeHost", { name })}
+            />
             <p class="kind-hint">{$t("detail.hostsHint")}</p>
           </div>
         {/if}
+
+        <!-- Who takes part: add or drop anyone on the roster, not just
+             yourself. Core keeps a member out of both lists at once. -->
+        <div class="hosts-edit">
+          <span class="elab"
+            ><Icon name="users" /> {$t("detail.participantsLabel")}</span
+          >
+          <PeoplePicker
+            bind:people={fParticipants}
+            addLabel={$t("detail.addParticipant")}
+            removeLabel={(name) => $t("detail.removeParticipant", { name })}
+          />
+          <p class="kind-hint">{$t("detail.participantsHint")}</p>
+        </div>
 
         <!-- Repeats: one tap picks the cadence, the same choices as the web
              dashboard's task modal. Greyed until the card has a start date. -->

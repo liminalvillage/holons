@@ -22,6 +22,7 @@
 // key + `actingAs` after a reload, same as everyone else.
 
 import { writable, derived, get } from "svelte/store";
+import { personName } from "./data";
 import { signAuthEvent } from "@holons/core/auth";
 import type { ProviderLogin } from "./login/types";
 import { npubLabel } from "./login/nostrKey";
@@ -158,10 +159,9 @@ export async function logout(): Promise<void> {
   await dropSessionKey();
 }
 
-/** Friendly display name for the logged-in user. */
+/** Friendly display name for the logged-in user — the kiosk's one name rule. */
 export function displayName(u: KioskUser): string {
-  const full = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
-  return full || (u.username ? `@${u.username}` : `#${u.id}`);
+  return personName(u);
 }
 
 /**

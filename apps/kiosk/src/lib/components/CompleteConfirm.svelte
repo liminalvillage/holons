@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { personName } from "$lib/data";
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
@@ -75,8 +76,7 @@
   }
 
   function partName(p: Member): string {
-    const full = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
-    return full || (p?.username ? `@${p.username}` : `#${p?.id ?? "?"}`);
+    return personName(p);
   }
   function initial(p: Member): string {
     return (p?.first_name?.[0] ?? p?.username?.[0] ?? "·").toUpperCase();

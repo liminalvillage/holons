@@ -7,6 +7,7 @@
 // at the same zoom, in the same colour. Pure data + functions; the Mapbox
 // wiring lives in DockMap.svelte.
 
+import { personName as kioskPersonName } from "$lib/data";
 import {
   cellToBoundary,
   cellToChildren,
@@ -585,7 +586,10 @@ function personName(v: unknown): string {
   if (v == null) return "";
   if (typeof v !== "object") return String(v);
   const p = v as Record<string, unknown>;
-  for (const f of ["name", "username", "first_name", "title", "label", "id"]) {
+  // A named person reads "First S." like everywhere else on the kiosk.
+  if (typeof p.first_name === "string" || typeof p.last_name === "string")
+    return kioskPersonName(p);
+  for (const f of ["name", "username", "title", "label", "id"]) {
     const s = p[f];
     if (typeof s === "string" && s.trim()) return s.trim();
     if (typeof s === "number") return String(s);

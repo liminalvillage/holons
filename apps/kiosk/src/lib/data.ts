@@ -301,16 +301,22 @@ export interface BacklogTask {
 }
 
 /**
- * Friendly display name for a person record. Tolerates both the Telegram
- * snake_case participants (`first_name`) and the quest initiator's camelCase
- * (`firstName`), so either shape resolves to a real name.
+ * Friendly display name for a person record: the first name and a dotted
+ * surname ("Roberto V."), the way people are named on every kiosk surface.
+ * Tolerates both the Telegram snake_case participants (`first_name`) and the
+ * quest initiator's camelCase (`firstName`). A record with no name at all
+ * falls back to its bare username, then its id — never a handle when a name
+ * exists.
  */
 export function personName(p: any): string {
-  const full = [p?.first_name ?? p?.firstName, p?.last_name ?? p?.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  return full || (p?.username ? `@${p.username}` : `#${p?.id ?? "?"}`);
+  const first = String(p?.first_name ?? p?.firstName ?? "").trim();
+  const last = String(p?.last_name ?? p?.lastName ?? "").trim();
+  if (first || last) {
+    const initial = last ? `${last[0].toUpperCase()}.` : "";
+    return [first, initial].filter(Boolean).join(" ");
+  }
+  const handle = String(p?.username ?? "").trim();
+  return handle || `#${p?.id ?? "?"}`;
 }
 
 /** The quest's initiator as an avatar-stack person, or null when unset. */
