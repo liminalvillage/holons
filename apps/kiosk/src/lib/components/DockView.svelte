@@ -1130,12 +1130,12 @@
      and its place, so it simply follows the orb. A pop-in replayed itself
      every time a place panned back into view, which read as the beacon
      twitching rather than pointing. */
-  /* The beam is the orb's note lifted toward white: a light beam must read
-     over satellite imagery on the night palette too, where the notes are
-     deep. Its edges get the same light so the cone keeps its shape where
-     the fill has faded. */
+  /* The beam wears the orb's own note, unmixed: lifting it toward white
+     shifted the hue (a deep blue read lavender), so the cone no longer
+     matched the orb it pointed from. Brightness comes from the stop
+     opacities and the blur below, not from the colour. */
   .beam-stop {
-    stop-color: color-mix(in srgb, var(--c, var(--teal)) 55%, #fff);
+    stop-color: var(--c, var(--teal));
   }
   /* The cross-fade already leaves the beam edgeless; a little blur melts
      the last of the geometry into the light. */
