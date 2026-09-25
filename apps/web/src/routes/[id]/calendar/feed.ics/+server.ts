@@ -6,7 +6,11 @@ import type { RequestHandler } from "./$types";
 import { env } from "$env/dynamic/private";
 import { generateICalFeed } from "$lib/services/icalGenerator";
 import type { HoloSphere } from "holosphere";
-import { createHoloSphere, resolveRelays } from "@holons/core/holosphere";
+import {
+  createHoloSphere,
+  resolveEnforce,
+  resolveRelays,
+} from "@holons/core/holosphere";
 import { loadSettings } from "@holons/core/settings";
 import { resolveFeedAppName } from "$lib/server/feedEnv";
 
@@ -28,6 +32,7 @@ function getHolosphere() {
       appName: resolveFeedAppName(env),
       relays: resolveRelays(env.HOLOSPHERE_RELAYS),
       store: { adapter: "memory" },
+      enforce: resolveEnforce(env.HOLOSPHERE_ENFORCE),
     });
   }
   return holosphere;

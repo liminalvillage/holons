@@ -163,6 +163,43 @@ const dropped = await sphere.getPending(holon, 'tasks');// unsigned / untrusted 
 
 No genesis, no admins, no per-holon setup — each reader curates their own trust.
 
+### Holon-defined authority (`enforce: 'authority'`) — what the apps run
+
+Every Holons surface builds its instance through `@holons/core/holosphere`,
+which turns this mode ON by default (`enforce: false`, or
+`HOLOSPHERE_ENFORCE=off` / `VITE_HOLOSPHERE_ENFORCE=off`, reads the open
+graph). The signer asks a hook, per holon, who counts:
+
+```js
+new HoloSphere({ ..., signing: { enforce: 'authority', authority: async (holo, holon) => predicate | null } });
+```
+
+The hook returns `(pubkey, created_at) => boolean`, or **null when nothing
+signed says who speaks for the holon** — such a holon reads unenforced, every
+claim as before, so a legacy holon keeps its data while its bot founds it.
+Core's rule (`createReadAuthority`, `resolveHolonAuthority`):
+
+- a **pubkey holon** is its key, plus the keys that person linked in a `users`
+  record they signed themselves;
+- a **founded holon** is its signed `_members` log, folded as-of-time;
+- an **unfounded holon** is bootstrapped from its own records — only those its
+  *anchor* signed: the earliest `settings` envelope that declares a
+  `holonPubkey` **and is signed by that key** (the current settings record is
+  last-writer-wins and never decides), its `nostrTrustedPubkeys`, its members'
+  `linkedKeys`, plus the provider-signed identity directory (kind 31926);
+- an **h3 cell** (an aggregate of many holons) has nobody defined.
+
+The same rule answers the privacy layer's "may this key hand out keys of the
+holon" (`config.privacy.acceptGrantFrom`, see PRIVACY.md). Answers are cached
+ten seconds per holon and read straight from envelopes, never through `get`.
+A re-login (`login()`) keeps the configured mode.
+
+Consequences worth knowing: a write signed by a key the holon does not accept
+(a kiosk's device key, an MCP key that is not a member, a member whose derived
+key the bot has not yet attested or synced into `_members`) is visible to its
+author and waits in `getPending` for everyone else until the bot founds the
+holon and syncs the roster.
+
 ### Optional: holon-owned authority (`enforce: 'membership'`)
 
 When the *space* should define who may write (a shared treasury, a formal org) rather
@@ -214,7 +251,7 @@ signer), not its self-reported fields.
 
 | Method | Purpose |
 |---|---|
-| `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon authority |
+| `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, authority?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon log, `enforce: 'authority'` = the `authority` hook decides per holon (the apps' default; unset options fall back to the constructor's `signing`) |
 | `sphere.addReadKey(npubOrHex)` / `removeReadKey(...)` / `getReadKeys()` | Manage your federation read-list (default `enforce`) |
 | `await sphere.aggregate(holon, lens, subject?)` | Per-author records (latest per trusted actor; `_owner`/`_subject`) for signed collaborative state |
 | `sphere.setPerActorLens(lens)` (or `enableSigning({ perActorLenses })`) | Mark a lens per-author → enforce `getAll` aggregates it |
@@ -235,10 +272,12 @@ by env (default **off** — no behavior change):
 
 ```bash
 # apps/web/.env
-VITE_HOLOSPHERE_SIGNING=shadow            # off (default) | shadow | enforce
 VITE_HOLOSPHERE_RELAYS=wss://relay.example.com,wss://relay2.example.com   # optional
-VITE_HOLOSPHERE_READ_KEYS=npub1abc…,npub1def…   # enforce: keys you trust to read (your own is implicit)
+VITE_HOLOSPHERE_ENFORCE=off               # default on: holon-defined authority (see above)
 ```
+
+(`VITE_HOLOSPHERE_SIGNING` / `VITE_HOLOSPHERE_READ_KEYS` belong to the earlier
+reader-curated mode and are no longer read by the apps.)
 
 - `shadow` — every write is signed + published to the relay(s) and a forgery-surface
   report is collected; **what's displayed is unchanged**. Inspect from the browser
@@ -257,10 +296,12 @@ no-op against a holosphere build without signing.
 - **Shadow measurement** of the forgery surface (`shadow: true`). ✅
 - **Authorized read** with a signed membership log + revocation-as-of-time
   (`enforce: true`). ✅
-- **Not yet** (see the plan): `content` encryption (NIP-44) — signing proves *who
-  wrote what* and now gates *what is displayed*, but does not yet hide content;
-  relay write-policy/NIP-42; lens-scoped roles; hard (retroactive) revocation
-  tombstones; cross-holon/federated authorization import.
+- **Content encryption** (NIP-44) lives beside signing: a private lens seals
+  `content` and hands keys out per lens or per item (`PRIVACY.md`). A sealed
+  claim nobody here can open is neither shown nor pending under enforce.
+- **Not yet** (see the plan): relay write-policy/NIP-42; lens-scoped roles;
+  hard (retroactive) revocation tombstones; cross-holon/federated
+  authorization import.
 
 Note: standard-kind projections (`projections.js`, see `NOSTR-BACKEND.md`)
 are published beside each envelope but NEVER stored in the `_events`

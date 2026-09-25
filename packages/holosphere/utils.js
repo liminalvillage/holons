@@ -140,6 +140,13 @@ export function subscribe(holoInstance, holon, lens, callback, options = {}) {
 
     const deliver = async (item, key, meta) => {
         if (!active) return;
+        if (meta.locked) {
+            // A sealed record this instance cannot open: nothing to show. A
+            // live view drops it like a delete; it comes back through the
+            // same feed once a key arrives (store.rescan).
+            if (includeDeletes) callback(null, key);
+            return;
+        }
         if (meta.tombstone) {
             // A pending hologram retry for this key is moot once it is deleted.
             const r = retries.get(key);

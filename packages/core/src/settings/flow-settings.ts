@@ -60,6 +60,12 @@ export interface HolonSettings {
    * members' derived keys — e.g. an Elinor coordinator. Optional, no UI yet.
    */
   nostrTrustedPubkeys?: string[];
+  /**
+   * Public hint of which lenses are sealed (see `@holons/core/privacy`). The
+   * owner's encrypted vault is the source of truth; this only lets other
+   * surfaces show a lock without holding a key.
+   */
+  privacy?: { lenses: Record<string, 'private' | 'public'> };
   flowManagement: {
     internalPercent: number;
     externalPercent: number;

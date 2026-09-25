@@ -37,6 +37,17 @@ describe('store/adapters/indexeddb', () => {
         await s2.close();
     });
 
+    test('received key rows persist across reopen and delete', async () => {
+        const { store } = await openStore();
+        store.keysPut('app|owner|h1|quests|k1', 'c1');
+        store.keysPut('app|owner|h1|quests|k2', 'c2');
+        store.keysDelete('app|owner|h1|quests|k2');
+        await store.close();
+        const { store: again } = await openStore();
+        expect(again.keysList().map((r) => [r.key, r.cipher])).toEqual([['app|owner|h1|quests|k1', 'c1']]);
+        await again.close();
+    });
+
     test('superseded events and deleted private rows are removed', async () => {
         const a = keypair();
         const { store: s1 } = await openStore();

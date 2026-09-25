@@ -110,6 +110,9 @@ export function createReverseSync(holo, {
   }
 
   async function apply(hook, r, holon) {
+    // A private lens has no standard-kind twin to fold back: its projections
+    // are never emitted, so an external edit of one is not ours to apply.
+    if (holo.isPrivateLens?.(holon, r.lens)) { vlog('private lens, ignoring external edit', holon, r.lens, r.id); return; }
     const current = await holo.get(holon, r.lens, r.id);
     if (!current || typeof current !== 'object' || current._deleted) { vlog('no record for claim', holon, r.lens, r.id); return; }
     let next = null;

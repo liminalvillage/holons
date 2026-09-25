@@ -536,6 +536,11 @@ export const es: Record<MessageKey, Msg> = {
   "menu.homePage": "Mostrar la página de inicio",
   "menu.logout": "Cerrar sesión",
   "menu.signingAs": "Firmando como {key}",
+  "menu.accepted": "Tu clave cuenta en este hub",
+  "menu.held":
+    "En espera — este hub aún no ha aceptado tu clave, así que solo esta pantalla ve tus cambios",
+  "layout.heldWrites":
+    "Este hub aún no ha aceptado tu clave — tus cambios se quedan en esta pantalla hasta que lo haga.",
   "menu.loginTelegram": "Entrar con Telegram",
   "menu.login": "Iniciar sesión",
   "menu.install": "Añadir a la pantalla de inicio",
@@ -645,6 +650,25 @@ export const es: Record<MessageKey, Msg> = {
   "settings.checking": "Comprobando…",
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",
+  "settings.privacy": "Lentes privadas",
+  "settings.privacySub":
+    "— selladas en los relés; solo las claves que entregues pueden leerlas",
+  "settings.privacyLogin":
+    "Inicia sesión con tu clave para hacer privada una lente.",
+  "settings.privacyAria": "{lens}: {state}",
+  "settings.privacyPrivate": "privada",
+  "settings.privacyPublic": "pública",
+  "settings.privacyHint":
+    "Una lente privada mantiene sellado lo que contiene. Comparte una lente entera desde el dock, o una sola tarjeta desde su detalle.",
+  "settings.privacyFailed":
+    "No se pudo cambiar esa lente — inténtalo de nuevo.",
+  "settings.privacyShared": "compartida con {n}",
+  "settings.hubKey": "Clave del hub {key}",
+  "settings.hubKeyLog": "fundado, su lista de miembros está firmada",
+  "settings.hubKeyOwn": "este hub es su propia clave",
+  "settings.hubKeyBoot": "de su propia configuración firmada",
+  "settings.hubKeyNone":
+    "Aún sin clave firmada: no se pueden compartir llaves con este hub, y cada escritura cuenta hasta que su bot lo funde.",
   "settings.onMap": "En el mapa",
   "settings.onMapSub":
     "— lo que este holón pone en el mapa compartido, y desde qué lejos se ve",
@@ -685,6 +709,16 @@ export const es: Record<MessageKey, Msg> = {
   "fed.unlink": "Desvincular {name}",
   "fed.linkError": "No se pudo vincular ese holón — inténtalo de nuevo.",
   "fed.changeError": "El cambio no se guardó — inténtalo de nuevo.",
+  "fed.keyShare": "Compartir la clave de {lens} con {name}",
+  "fed.keyRevoke": "Retirar la clave de {lens} a {name}",
+  "fed.keyNoPubkey": "{name} no tiene una clave con la que compartir.",
+  "fed.keyError": "El cambio de clave no se guardó — inténtalo de nuevo.",
+  "fed.privateHint":
+    "Una lente con candado es privada: la flecha abre el flujo, la llave comparte el contenido.",
+  "fed.keyToOwn": "Las llaves para {name} van a su propia clave {key}.",
+  "fed.keyToAnchor": "Las llaves para {name} van a su clave firmada {key}.",
+  "fed.keyNoAnchor":
+    "{name} aún no tiene una clave firmada — su bot tiene que fundarlo antes de poder compartir una llave.",
   "fed.unlinkError": "La desvinculación no se guardó — inténtalo de nuevo.",
 
   // Location (hex) picker
@@ -778,6 +812,16 @@ export const es: Record<MessageKey, Msg> = {
   "detail.newCategoryPlaceholder": "Nombre de la nueva categoría",
   "detail.pickFromList": "Elegir de la lista",
   "detail.newCategory": "Nueva categoría…",
+  "detail.shareWith": "Compartir con…",
+  "detail.shareTitle": "Compartir la clave de esta tarjeta con",
+  "detail.shareNoPartners": "No hay holones federados con los que compartir.",
+  "detail.shareNoKey": "sin clave con la que compartir",
+  "detail.shared": "Compartida",
+  "detail.notShared": "No compartida",
+  "detail.sharedLens": "Lente entera compartida",
+  "detail.shareDone": "Clave compartida con {name}.",
+  "detail.unshareDone": "Clave retirada a {name}.",
+  "detail.shareFailed": "No se pudo cambiar el uso compartido — {reason}",
   "detail.description": "Descripción",
   "detail.participants": {
     one: "{n} participante",

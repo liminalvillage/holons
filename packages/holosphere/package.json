@@ -69,6 +69,8 @@
     "NOSTR-BACKEND.md",
     "README.md",
     "SIGNING.md",
+    "PRIVACY.md",
+    "privacy.js",
     "LICENSE",
     "FEDERATION.md",
     "nostr-events.d.ts",
@@ -97,7 +99,10 @@
     "./store/index.js": "./store/index.js",
     "./store/adapters/file.js": "./store/adapters/file.js",
     "./store/private.js": "./store/private.js",
-    "./private-ops.js": "./private-ops.js"
+    "./private-ops.js": "./private-ops.js",
+    "./privacy.js": "./privacy.js",
+    "./authority.js": "./authority.js",
+    "./store/sealed.js": "./store/sealed.js"
   },
   "repository": {
     "type": "git",

@@ -262,6 +262,7 @@ export const ICONS = {
     paths: [...s(CIRCLE), ...f("M12 7.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z")],
   },
   lock: { paths: s("M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4") },
+  unlock: { paths: s("M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 7.6-1.7") },
   key: {
     paths: s(
       "M15.5 3a5.5 5.5 0 1 1-3.9 9.4L5 19v2.5h3.5V19H11v-2.5h2.4A5.5 5.5 0 0 1 15.5 3Z",

@@ -65,6 +65,11 @@ interface PutOptions {
   awaitPropagation?: boolean;
   /** Store only — never sign or publish (reserved namespaces). */
   local?: boolean;
+  /**
+   * Seal this one write ('private') or send it in the clear ('public')
+   * regardless of the lens's mode. See PRIVACY.md.
+   */
+  privacy?: 'private' | 'public';
 }
 
 interface PutGlobalOptions {
@@ -76,11 +81,15 @@ interface GetOptions {
   validationOptions?: object;
   /** Return `_deleted: true` soft-tombstoned records instead of treating them as not-found. Default false. */
   includeDeleted?: boolean;
+  /** Return the `{ id, _locked: true }` stub of a sealed record this instance cannot open. Default false. */
+  includeLocked?: boolean;
 }
 
 interface GetAllOptions {
   /** Include `_deleted: true` soft-tombstoned records in the response. Default false. */
   includeDeleted?: boolean;
+  /** Include the `{ id, _locked: true }` stubs of sealed records this instance cannot open. Default false. */
+  includeLocked?: boolean;
   /** Return hologram pointers as stored instead of resolving them. Default true (resolve). */
   resolveHolograms?: boolean;
   /**
@@ -96,6 +105,51 @@ interface SubscribeOptions {
   includeDeletes?: boolean;
   /** Surface unsigned/untrusted updates tagged `_unverified` instead of dropping them under enforce. Display-only. Default false. */
   includeUnverified?: boolean;
+}
+
+/** A grant as it travels (NIP-17 DM, subject `holons/grant`). */
+interface GrantPayload {
+  t: 'holons/grant';
+  v: 1;
+  id: string;
+  holon: string;
+  lens: string;
+  kid: string;
+  /** Lens key (hex) — a lens grant. */
+  key?: string;
+  /** Item id + its content key (hex) — an item grant. */
+  item?: string;
+  cek?: string;
+  at: string;
+}
+
+/** What a pubkey has been granted, per lens. */
+interface GrantLedger {
+  [pubkey: string]: { lenses: string[]; items: Record<string, string[]> };
+}
+
+interface Privacy {
+  isPrivateLens(holon: string | null, lens: string): boolean;
+  privatizable(holon: string | null, lens: string): boolean;
+  assertPrivatizable(holon: string | null, lens: string): void;
+  /** Load every key the active identity can have for a lens, then re-decode it. */
+  ensureKeys(holon: string | null, lens: string): Promise<void>;
+  /** 'private' creates the lens key on first use; 'public' stops sealing new writes. */
+  setLensMode(holon: string, lens: string, mode: 'private' | 'public'): Promise<{ lens: string; mode: string; kid: string } | null>;
+  /** The private lenses this identity owns in a holon, with their mode. */
+  ownedLenses(holon: string): Record<string, string>;
+  grantLens(holon: string, lens: string, pubkey: string): Promise<{ sent: boolean; kid: string; grantee: string }>;
+  grantItem(holon: string, lens: string, id: string, pubkey: string): Promise<{ sent: boolean; grantee: string; item: string }>;
+  /** Rotates the lens key and every item's content key, rewrites the lens, re-grants the rest. */
+  revokeLens(holon: string, lens: string, pubkey: string): Promise<{ kid: string; rewritten: number; regranted: string[] }>;
+  revokeItem(holon: string, lens: string, id: string, pubkey: string): Promise<{ rewritten: number; regranted: string[] }>;
+  listGrants(holon: string, lens?: string): Promise<GrantLedger>;
+  /** Accept a grant addressed to this identity (validated, kept, re-decoded). */
+  /** `trusted` skips the sender policy (an out-of-band grant the user chose to accept). */
+  acceptGrant(payload: GrantPayload | string, sender?: string | null, opts?: { trusted?: boolean }): Promise<{ accepted: boolean; reason?: string; holon?: string; lens?: string; item?: string | null; kid?: string }>;
+  parseGrant(raw: unknown): GrantPayload | null;
+  startGrants(): void;
+  stopGrants(): void;
 }
 
 interface ResolveHologramOptions {
@@ -246,11 +300,26 @@ export interface ProjectionHook {
   merge?(current: unknown, reversed: any): unknown | null;
 }
 
+export interface PrivacyOptions {
+  /**
+   * May `sender` hand out (or edit under) keys of `holon`? Default: the holon
+   * itself, the anchor of its signed records, or a current member of its
+   * `_members` log (see authority.js).
+   */
+  acceptGrantFrom?: (holo: HoloSphere, holon: string, lens: string, sender: string) => boolean | Promise<boolean>;
+}
+
 export interface SigningOptions {
   /** Measure what enforce would drop, without changing output. */
   shadow?: boolean;
-  /** Authorized reads: `true` = federation read-list, `'membership'` = the holon's signed `_members` log. */
-  enforce?: boolean | 'membership';
+  /**
+   * Authorized reads: `true` = federation read-list, `'membership'` = the
+   * holon's signed `_members` log, `'authority'` = the `authority` hook
+   * decides per holon (null = nobody defined, that holon reads unenforced).
+   */
+  enforce?: boolean | 'membership' | 'authority';
+  /** For `enforce: 'authority'`: who counts for a holon, as `(pubkey, created_at) => boolean`, or null. */
+  authority?: (holo: HoloSphere, holon: string) => Promise<((pubkey: string, createdAt: number) => boolean) | null> | ((pubkey: string, createdAt: number) => boolean) | null;
   /** Lenses read as per-author aggregates (participation, reactions, …). */
   perActorLenses?: string[];
   verbose?: boolean;
@@ -307,6 +376,8 @@ interface HoloSphereConfig {
   store?: StoreOptions;
   /** Read-side signing modes. */
   signing?: SigningOptions;
+  /** Privacy policy hooks (see PRIVACY.md). */
+  privacy?: PrivacyOptions;
   nostr?: {
     /** Alias of top-level `relays`. */
     relays?: string[];
@@ -351,7 +422,7 @@ export interface EnableSigningOptions extends SigningOptions {
 export interface Signer {
   pubkey: string;
   shadow: boolean;
-  enforce: false | 'federation' | 'membership';
+  enforce: false | 'federation' | 'membership' | 'authority';
   getReport(): Record<string, any>;
   resetReport(): void;
   isPerActor(lens: string): boolean;
@@ -503,7 +574,14 @@ declare class HoloSphere {
     enableSigning(opts?: EnableSigningOptions): Promise<Signer>;
     disableSigning(): void;
     login(privateKey: Uint8Array | string, opts?: EnableSigningOptions): Promise<{ pubkey: string; signer: Signer }>;
-    logout(): void;
+    /** Drops the signing identity; sealed records lock again once the returned promise settles. */
+    logout(): Promise<void>;
+
+    // Privacy (see PRIVACY.md)
+    /** Vaults, keyring and grants of the active identity. */
+    readonly privacy: Privacy;
+    /** Is this lens private, as far as this instance can tell right now? */
+    isPrivateLens(holon: string | null, lens: string): boolean;
     readonly currentPubkey: string;
     readonly loggedIn: boolean;
     readonly signingEnabled: boolean;

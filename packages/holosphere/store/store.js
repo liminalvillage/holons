@@ -13,6 +13,8 @@
 //             per address is kept (NIP-33 semantics). This replaces the old
 //             `_events` sidecar: signing reads its envelopes from here.
 //   private   NIP-44 ciphertext of password lenses (see private.js).
+//   keys      received lens/item keys for sealed content (see sealed.js and
+//             privacy.js), each row sealed to this instance's own key.
 //   cursors   lens key → { since, syncedAt }: how far a lens has been synced.
 //   backlinks source soul → Set<pointer soul>: derived from the records that
 //             are hologram pointers; rebuilt on open, maintained on write.
@@ -29,6 +31,7 @@ import {
 import { wins, newestFirst } from './lww.js';
 import { createWireRegistry, decodeEvent } from './wire.js';
 import { privateKeyOf, privateLensPrefix } from './private.js';
+import { isLocked } from './sealed.js';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -36,6 +39,8 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 export function isTombstone(item) {
     return !!item && typeof item === 'object' && item._deleted === true;
 }
+
+export { isLocked };
 
 /**
  * The slot an author's claim occupies at an address.
@@ -63,9 +68,10 @@ export class Store {
      * @param {object|Function} opts.adapter  a StoreAdapter, or a thunk resolving to one
      * @param {number} [opts.kind]           legacy envelope kind (default 30078)
      * @param {object} [opts.wire]           wire registry; defaults to the legacy envelope alone
+     * @param {Function} [opts.unseal]       opens sealed envelopes (see sealed.js); installable later via `setUnseal`
      * @param {number} [opts.compactAfter]   ops appended before the log is compacted (default 50000)
      */
-    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, wire, compactAfter = 50000 } = {}) {
+    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, wire, unseal, compactAfter = 50000 } = {}) {
         if (!appName) throw new Error('store: appName is required');
         this.appName = String(appName);
         this.kind = kind;
@@ -73,6 +79,7 @@ export class Store {
         // Seeded with the legacy envelope alone, so a store nobody configured
         // behaves exactly as it always did.
         this.wire = wire || createWireRegistry({ legacyKind: kind });
+        if (typeof unseal === 'function') this.wire.setUnseal?.(unseal);
         this.compactAfter = compactAfter;
 
         this._adapterInit = adapter;
@@ -85,6 +92,7 @@ export class Store {
         this.eventsByAddr = new Map();   // addr → Map<`pubkey|kind`, eventId>
         this.eventIdsByLens = new Map(); // lens key → Set<id>
         this.private = new Map();
+        this.keys = new Map();           // received keys for sealed content (sealed rows)
         this.cursors = new Map();
         this.backlinks = new Map();      // soul → Set<soul>
         this.lensIndex = new Map();      // lens key → Map<id, record>
@@ -114,6 +122,7 @@ export class Store {
             }
             for (const evt of snapshot.events || []) this._indexEvent(evt);
             for (const [k, v] of snapshot.private || []) this.private.set(k, v);
+            for (const [k, v] of snapshot.keys || []) this.keys.set(k, v);
             for (const [k, v] of snapshot.cursors || []) this.cursors.set(k, v);
         }
         this._opened = true;
@@ -136,7 +145,7 @@ export class Store {
     /** Drop everything, in memory and in the adapter. */
     async clear() {
         this.records.clear(); this.events.clear(); this.eventsByAddr.clear(); this.eventIdsByLens.clear();
-        this.private.clear(); this.cursors.clear(); this.backlinks.clear();
+        this.private.clear(); this.keys.clear(); this.cursors.clear(); this.backlinks.clear();
         this.lensIndex.clear(); this.holonIndex.clear();
         this._ops = [];
         if (this.adapter) await this.adapter.clear();
@@ -156,6 +165,7 @@ export class Store {
             records: Array.from(this.records.values()),
             events: Array.from(this.events.values()),
             private: Array.from(this.private.entries()),
+            keys: Array.from(this.keys.entries()),
             cursors: Array.from(this.cursors.entries()),
         };
     }
@@ -165,6 +175,7 @@ export class Store {
             records: this.records.size,
             events: this.events.size,
             private: this.private.size,
+            keys: this.keys.size,
             cursors: this.cursors.size,
             lenses: this.lensIndex.size,
             holons: this.listHolons().length,
@@ -279,12 +290,18 @@ export class Store {
         return this.records.get(addr(holon, lens, id));
     }
 
-    list(holon, lens, { includeDeleted = false } = {}) {
+    /**
+     * The current records of a lens. Tombstones and locked stubs (sealed
+     * records this instance holds no key for) are hidden unless asked for —
+     * both are records that mean "nothing to show here".
+     */
+    list(holon, lens, { includeDeleted = false, includeLocked = false } = {}) {
         const idx = this.lensIndex.get(lensKey(holon, lens));
         if (!idx) return [];
         const out = [];
         for (const rec of idx.values()) {
             if (!includeDeleted && isTombstone(rec.item)) continue;
+            if (!includeLocked && isLocked(rec.item)) continue;
             out.push(rec);
         }
         return out;
@@ -361,7 +378,7 @@ export class Store {
                 if (!idx) return;
                 for (const rec of Array.from(idx.values())) {
                     if (!entry.active) break;
-                    if (isTombstone(rec.item) || skip.has(rec.id)) continue;
+                    if (isTombstone(rec.item) || isLocked(rec.item) || skip.has(rec.id)) continue;
                     this._deliver(entry, rec, true);
                 }
             });
@@ -422,6 +439,66 @@ export class Store {
             if (this.privateDelete(scope, lens, key)) n++;
         }
         return n;
+    }
+
+    // ------------------------------------------------------------------ sealed content
+
+    /** Install the function that opens sealed envelopes (see wire.js). */
+    setUnseal(fn) {
+        this.wire.setUnseal?.(fn);
+    }
+
+    /** Keep a received key row (already sealed by the caller). */
+    keysPut(k, cipher) {
+        this.keys.set(k, cipher);
+        this._enqueue({ t: 'key', k, v: cipher });
+    }
+
+    keysGet(k) {
+        return this.keys.get(k);
+    }
+
+    /** Every key row whose id starts with `prefix`. */
+    keysList(prefix = '') {
+        const out = [];
+        for (const [k, cipher] of this.keys) {
+            if (k.startsWith(prefix)) out.push({ key: k, cipher });
+        }
+        return out;
+    }
+
+    keysDelete(k) {
+        const had = this.keys.delete(k);
+        if (had) this._enqueue({ t: 'key-del', k });
+        return had;
+    }
+
+    /**
+     * Re-decode the current winning event at every address of a lens (or of
+     * every lens when none is given) and replace the record when the item
+     * changed — a locked stub opens once a key arrives, a plaintext record
+     * locks again once the keys are gone. Watchers hear each change like any
+     * other write. Returns the number of records that changed.
+     */
+    rescan({ holon, lens } = {}) {
+        let changed = 0;
+        const wantLk = lens !== undefined ? lensKey(holon, lens) : null;
+        for (const rec of Array.from(this.records.values())) {
+            if (wantLk !== null && lensKeyOfAddr(rec.addr) !== wantLk) continue;
+            if (!rec.eventId) continue;                       // raw local writes have no envelope
+            const event = this.events.get(rec.eventId);
+            if (!event) continue;
+            const claims = this.wire.decode(event);
+            if (!claims) continue;
+            const decoded = claims.find((c) => addr(c.holon, c.lens, c.id) === rec.addr);
+            if (!decoded || !decoded.sealed) continue;        // only sealed records can flip
+            const before = rec.item;
+            const after = decoded.item;
+            if (isLocked(before) === isLocked(after) && JSON.stringify(before) === JSON.stringify(after)) continue;
+            this._setRecord({ ...rec, item: after });
+            changed++;
+        }
+        return changed;
     }
 
     // ------------------------------------------------------------------ export / import
@@ -573,6 +650,7 @@ export class Store {
         try {
             entry.cb(record.item, record.id, {
                 tombstone: isTombstone(record.item),
+                locked: isLocked(record.item),
                 created_at: record.created_at,
                 pubkey: record.pubkey,
                 eventId: record.eventId,

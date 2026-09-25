@@ -30,6 +30,7 @@ const DOMAINS = [
   'flows',
   'governance',
   'protocol',
+  'privacy',
 ];
 
 export async function registerAllTools(server: McpServer, deps: ToolDeps): Promise<void> {

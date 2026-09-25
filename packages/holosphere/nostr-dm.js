@@ -7,6 +7,7 @@
 // hidden inside. Used by the federation handshake (handshake-shim.js) and by
 // hosts for notifications. nostr-tools is loaded lazily (optional dep).
 
+import { hexToBytes } from '@noble/hashes/utils';
 import { getPublicKey } from './nostr-events.js';
 
 export const GIFT_WRAP_KIND = 1059;
@@ -18,7 +19,8 @@ function nip17() {
   return nip17Ready;
 }
 
-const toBytes = (k) => (typeof k === 'string' ? Uint8Array.from(Buffer.from(k, 'hex')) : k);
+// hexToBytes, not Buffer: this file ships in the browser bundle.
+const toBytes = (k) => (typeof k === 'string' ? hexToBytes(k) : k);
 
 /** Wrap `content` for `recipientPubkey`. Returns the signed kind-1059 event. */
 export async function wrapDirectMessage({ senderPrivateKey, recipientPubkey, content, subject }) {

@@ -26,6 +26,13 @@
     lensMode,
     type FederationLensMode,
   } from "@holons/core/federation";
+  import {
+    getPrivacySnapshot,
+    grantLens,
+    resolveGranteePubkey,
+    revokeLens,
+    type PrivacySnapshot,
+  } from "@holons/core/privacy";
   import type { HoloSphere } from "holosphere";
   import { getHolosphere } from "$lib/holosphere";
   import { holonColor, holonColors } from "$lib/palette";
@@ -73,6 +80,21 @@
   let confirmUnlink = false;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   let alive = true;
+  // Private lenses of `holon` this identity owns, and the partner's key. An
+  // outbound flow on a private lens carries sealed items; the key button next
+  // to it is what lets the partner read them (see @holons/core/privacy).
+  let privacy: PrivacySnapshot | null = null;
+  let partnerPub: string | null = null;
+  // How the partner's key was found: its id is a key, or its signed records
+  // name one. Nothing signed → nobody to hand a key to, and the row says so.
+  let partnerVia: "pubkey" | "anchor" | null = null;
+  let keyBusy = "";
+  $: hasPrivate = !!privacy && privacy.owned.length > 0;
+  const keyShared = (
+    p: PrivacySnapshot | null,
+    pub: string | null,
+    lens: string,
+  ) => !!p && !!pub && (p.grants[pub]?.lenses ?? []).includes(lens);
 
   $: lenses = [
     ...KIOSK_LENSES,
@@ -144,6 +166,7 @@
           inbound: snap.lensConfig[partner]?.inbound ?? [],
           outbound: snap.lensConfig[partner]?.outbound ?? [],
         };
+      await loadPrivacy();
     } catch (err) {
       console.error("[kiosk] federation lens load failed", err);
       if (alive) error = $t("fed.loadError");
@@ -192,6 +215,41 @@
       );
     } finally {
       busy = false;
+    }
+  }
+
+  async function loadPrivacy() {
+    if (!hs) return;
+    try {
+      privacy = await getPrivacySnapshot(hs, holon);
+    } catch {
+      privacy = null;
+    }
+    try {
+      const g = await resolveGranteePubkey(hs, partner);
+      partnerPub = g.pubkey;
+      partnerVia = g.via;
+    } catch {
+      partnerPub = null;
+      partnerVia = null;
+    }
+  }
+
+  /** Hand the partner the lens key, or take it back (forward-only). */
+  async function toggleKey(lens: string) {
+    if (!hs || keyBusy || !partnerPub) return;
+    keyBusy = lens;
+    error = "";
+    try {
+      if (keyShared(privacy, partnerPub, lens))
+        await revokeLens(hs, holon, lens, partnerPub);
+      else await grantLens(hs, holon, lens, partnerPub);
+      await loadPrivacy();
+    } catch (err) {
+      console.error("[kiosk] lens key change failed", err);
+      error = $t("fed.keyError");
+    } finally {
+      keyBusy = "";
     }
   }
 
@@ -284,7 +342,12 @@
           >{initialOf(nameA())}</span
         >
         <div class="mid">
-          <span class="lens-name">{r.label}</span>
+          <span class="lens-name"
+            >{#if !r.master && privacy?.lenses[r.key] === "private"}<Icon
+                name="lock"
+              />{/if}
+            {r.label}</span
+          >
           <div class="flow">
             {#each LANES as dir (dir)}
               {@const on = r.master ? allOn[dir] : isOn(cfg, r.key, dir)}
@@ -304,6 +367,26 @@
                 <span class="head-r"></span>
               </button>
             {/each}
+            {#if !r.master && privacy?.owned.includes(r.key)}
+              {@const shared = keyShared(privacy, partnerPub, r.key)}
+              <button
+                type="button"
+                class="key"
+                class:on={shared}
+                aria-pressed={shared}
+                aria-label={$t(shared ? "fed.keyRevoke" : "fed.keyShare", {
+                  lens: r.label,
+                  name: nameB(),
+                })}
+                title={partnerPub
+                  ? undefined
+                  : $t("fed.keyNoPubkey", { name: nameB() })}
+                disabled={busy || !!keyBusy || !partnerPub}
+                on:click={() => toggleKey(r.key)}
+              >
+                <Icon name="key" />
+              </button>
+            {/if}
           </div>
         </div>
         <span class="mini" style="--c: {colorB}" aria-hidden="true"
@@ -313,6 +396,23 @@
     {/each}
 
     <p class="hint">{$t("fed.arrowHint")}</p>
+    {#if hasPrivate}
+      <p class="hint">{$t("fed.privateHint")}</p>
+      {#if partnerPub}
+        <p class="hint keyto">
+          <Icon name="key" />
+          {$t(partnerVia === "pubkey" ? "fed.keyToOwn" : "fed.keyToAnchor", {
+            name: nameB(),
+            key: `${partnerPub.slice(0, 8)}…`,
+          })}
+        </p>
+      {:else}
+        <p class="hint keyto warn">
+          <Icon name="lock" />
+          {$t("fed.keyNoAnchor", { name: nameB() })}
+        </p>
+      {/if}
+    {/if}
     {#if error}<p class="err">{error}</p>{/if}
     {#if linked}
       {#if confirmUnlink}
@@ -400,6 +500,20 @@
   .status.idle {
     color: var(--muted);
   }
+  .hint.keyto {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .hint.keyto :global(svg) {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    margin-top: 0.15em;
+  }
+  .hint.keyto.warn {
+    color: #b45309;
+  }
   .hint {
     margin: 0.7rem 0 0;
     font-size: 0.78rem;
@@ -466,6 +580,32 @@
   .flow {
     display: flex;
     align-items: center;
+  }
+  /* The key next to a private lens's arrow: lit once the partner holds it. */
+  .key {
+    width: 2rem;
+    height: 2rem;
+    margin-left: 0.35rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    color: var(--muted);
+  }
+  .key.on {
+    background: var(--teal-deep);
+    border-color: var(--teal-deep);
+    color: #fff;
+  }
+  .key:disabled {
+    opacity: 0.45;
+  }
+  .lens-name :global(svg) {
+    width: 0.8em;
+    height: 0.8em;
+    vertical-align: -0.08em;
+    margin-right: 0.15rem;
   }
   .lane {
     flex: 1;

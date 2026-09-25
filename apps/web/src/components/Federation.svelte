@@ -17,6 +17,15 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import HomeHexCard from "./federation/HomeHexCard.svelte";
     import { readSettingsHex } from "@holons/core/federation";
+    import {
+        getPrivacySnapshot,
+        grantLens,
+        resolveGranteePubkey,
+        revokeLens,
+        setLensPrivacy,
+        type PrivacyLensMode,
+        type PrivacySnapshot
+    } from "@holons/core/privacy";
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -94,6 +103,16 @@
     let viewMode: 'list' | 'network' = 'list';
 
     let toast: { kind: 'success' | 'error'; message: string } | null = null;
+    // Private lenses this identity owns, and each partner's key (a personal
+    // holon IS its key; a group holon pins the key that runs it). A sealed lens
+    // sent outbound stays unreadable until the partner holds the key.
+    let privacy: PrivacySnapshot | null = null;
+    let partnerPubkeys: Record<string, string | null> = {};
+    let keyBusy = '';
+    let privacyBusy = '';
+    $: canOwn = !!holosphere?.loggedIn;
+    const keyShared = (p: PrivacySnapshot | null, pub: string | null, lens: string) =>
+        !!p && !!pub && (p.grants[pub]?.lenses ?? []).includes(normalizeLens(lens));
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
     let idStoreUnsubscribe: (() => void) | undefined;
@@ -182,12 +201,65 @@
             }
 
             federatedHolons = result;
+            await loadPrivacy(result);
             setTimeout(() => repairLensConfigs(), 100);
         } catch (err) {
             console.error('Federation load error:', err);
             showToast('error', err instanceof Error ? err.message : 'Failed to load federation data');
         } finally {
             loading = false;
+        }
+    }
+
+    async function loadPrivacy(holons: FederatedHolon[]) {
+        if (!holosphere || !currentHolonId) return;
+        try {
+            privacy = await getPrivacySnapshot(holosphere, currentHolonId);
+        } catch {
+            privacy = null;
+        }
+        const keys: Record<string, string | null> = {};
+        for (const h of holons) {
+            try {
+                keys[h.id] = (await resolveGranteePubkey(holosphere, h.id)).pubkey;
+            } catch {
+                keys[h.id] = null;
+            }
+        }
+        partnerPubkeys = keys;
+        partnerKeysLoaded = true;
+    }
+
+    async function togglePrivacy(lens: string) {
+        if (!holosphere || !currentHolonId || privacyBusy) return;
+        const next: PrivacyLensMode = privacy?.lenses[lens] === 'private' ? 'public' : 'private';
+        privacyBusy = lens;
+        try {
+            await setLensPrivacy(holosphere, currentHolonId, lens, next);
+            await loadPrivacy(federatedHolons);
+            showToast('success', next === 'private' ? `${lens} is now private` : `${lens} is public again`);
+        } catch (err) {
+            showToast('error', err instanceof Error ? err.message : 'Failed to change the lens');
+        } finally {
+            privacyBusy = '';
+        }
+    }
+
+    let partnerKeysLoaded = false;
+
+    /** Hand a partner the lens key, or take it back (forward-only). */
+    async function toggleKey(holon: FederatedHolon, lens: string) {
+        const pub = partnerPubkeys[holon.id];
+        if (!holosphere || !currentHolonId || keyBusy || !pub) return;
+        keyBusy = `${holon.id}|${lens}`;
+        try {
+            if (keyShared(privacy, pub, lens)) await revokeLens(holosphere, currentHolonId, lens, pub);
+            else await grantLens(holosphere, currentHolonId, lens, pub);
+            await loadPrivacy(federatedHolons);
+        } catch (err) {
+            showToast('error', err instanceof Error ? err.message : 'Failed to change the key');
+        } finally {
+            keyBusy = '';
         }
     }
 
@@ -361,6 +433,40 @@
     />
 
     {#if currentHolonId && viewMode === 'list'}
+        <!-- Private lenses: sealed on the relays; only keys handed out can read them. -->
+        <div class="privacy-card">
+            <div class="privacy-card__head">
+                <span class="privacy-card__title">🔒 Private lenses</span>
+                <span class="privacy-card__hint">
+                    {#if canOwn}
+                        A private lens keeps its content sealed. Send it to a partner with the arrow, then hand over the key.
+                    {:else}
+                        Log in with your key to make a lens private.
+                    {/if}
+                </span>
+            </div>
+            {#if canOwn}
+                <div class="privacy-card__lenses">
+                    {#each ALL_LENSES as lens}
+                        {@const on = privacy?.lenses[lens] === 'private'}
+                        <button
+                            type="button"
+                            class="privacy-pill"
+                            class:privacy-pill--on={on}
+                            aria-pressed={on}
+                            disabled={!!privacyBusy}
+                            title={on ? `${lens}: private — click to make public` : `${lens}: public — click to make private`}
+                            on:click={() => togglePrivacy(lens)}
+                        >
+                            <span>{lensIcon(lens)}</span>
+                            <span>{lens}</span>
+                            <span class="privacy-pill__state">{on ? 'private' : 'public'}</span>
+                        </button>
+                    {/each}
+                </div>
+            {/if}
+        </div>
+
         <HomeHexCard lenses={ALL_LENSES} {lensIcon} />
     {/if}
 
@@ -430,6 +536,14 @@
                                     {name}
                                 </button>
                                 <div class="fed-card__id" title={holon.id}>{holon.id}</div>
+                                {#if privacy?.owned.length && partnerKeysLoaded}
+                                    {@const pub = partnerPubkeys[holon.id] ?? null}
+                                    <div class="fed-card__key" class:fed-card__key--none={!pub} title={pub ?? undefined}>
+                                        {pub
+                                            ? `🔑 keys go to ${pub.slice(0, 8)}…`
+                                            : 'No signed hub key yet — its bot has to found it before a key can be shared'}
+                                    </div>
+                                {/if}
                             </div>
                             <button
                                 type="button"
@@ -452,6 +566,9 @@
                                 <span class="lens-list__col" title="Outbound — send to this holon">
                                     <ArrowUp size="12" /> Out
                                 </span>
+                                {#if privacy?.owned.length}
+                                    <span class="lens-list__col" title="Key — the partner can read this private lens">🔑</span>
+                                {/if}
                             </div>
                             {#each ALL_LENSES as lens}
                                 {@const isIn = hasLens(lens, holon.lensConfig.inbound)}
@@ -487,6 +604,27 @@
                                     >
                                         <span class="toggle__dot"></span>
                                     </button>
+                                    {#if privacy?.owned.length}
+                                        {@const owned = privacy.owned.includes(lens)}
+                                        {@const pub = partnerPubkeys[holon.id] ?? null}
+                                        {@const shared = keyShared(privacy, pub, lens)}
+                                        {#if owned}
+                                            <button
+                                                type="button"
+                                                class="keybtn"
+                                                class:keybtn--on={shared}
+                                                on:click={() => toggleKey(holon, lens)}
+                                                disabled={saving || !!keyBusy || !pub}
+                                                aria-pressed={shared}
+                                                aria-label="{shared ? 'Take back' : 'Share'} the key for {lens}"
+                                                title={pub
+                                                    ? (shared ? `Take the ${lens} key back from ${holon.name}` : `Share the ${lens} key with ${holon.name} (${pub.slice(0, 8)}…)`)
+                                                    : `${holon.name} has no signed hub key yet — its bot has to found it first`}
+                                            >🔑</button>
+                                        {:else}
+                                            <span></span>
+                                        {/if}
+                                    {/if}
                                 </div>
                             {/each}
                         </div>
@@ -825,6 +963,14 @@
     .fed-card__name:hover {
         color: #818cf8;
     }
+    .fed-card__key {
+        font-size: 0.7rem;
+        color: var(--color-text-muted);
+        margin-top: 0.15rem;
+    }
+    .fed-card__key--none {
+        color: #b45309;
+    }
     .fed-card__id {
         font-size: 0.7rem;
         color: var(--color-text-muted);
@@ -861,6 +1007,73 @@
         gap: 0.25rem;
     }
 
+    .privacy-card {
+        margin-bottom: 1rem;
+        padding: 0.9rem 1rem;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .privacy-card__head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        margin-bottom: 0.6rem;
+    }
+    .privacy-card__title {
+        font-weight: 600;
+    }
+    .privacy-card__hint {
+        font-size: 0.8rem;
+        color: #9ca3af;
+    }
+    .privacy-card__lenses {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .privacy-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 36px;
+        padding: 0 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        color: inherit;
+        font-size: 0.85rem;
+    }
+    .privacy-pill--on {
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.15);
+    }
+    .privacy-pill__state {
+        font-size: 0.72rem;
+        color: #9ca3af;
+    }
+    .privacy-pill--on .privacy-pill__state {
+        color: #fbbf24;
+    }
+    .privacy-pill:disabled {
+        opacity: 0.6;
+    }
+    .keybtn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        opacity: 0.55;
+    }
+    .keybtn--on {
+        opacity: 1;
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.2);
+    }
+    .keybtn:disabled {
+        opacity: 0.3;
+    }
     .lens-row {
         display: grid;
         grid-template-columns: 1fr 56px 56px;

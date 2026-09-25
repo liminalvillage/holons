@@ -11,6 +11,7 @@
 		type PublishOutcome
 	} from '$lib/holosphere/publish';
 	import { awaitName } from '$lib/stores/nameResolver';
+	import { grantItem } from '@holons/core/privacy';
 	import Modal from './Modal.svelte';
 	// HexPicker pulls in mapbox-gl (~1.9 MB). It's only shown when the user
 	// opens the picker, so load it lazily (see the {#await} in the markup) to
@@ -48,6 +49,10 @@
 	let federationLoaded = false;
 	let partners: Array<{ id: string; name: string }> = [];
 	let settingsHex: string | null = null;
+	// A private lens: a partner receives a pointer it cannot open unless the
+	// item's key travels too. On by default — publishing means "let them see".
+	let lensPrivate = false;
+	let shareKey = true;
 
 	$: isHologramItem = !!item?._hologram?.isHologram;
 	$: effectiveDisabled = disabled || !holosphere || !holonId;
@@ -64,6 +69,7 @@
 				readSettingsHex(holosphere, holonId)
 			]);
 			settingsHex = hex;
+			try { lensPrivate = !!holosphere.isPrivateLens?.(holonId, lens); } catch { lensPrivate = false; }
 			const list: Array<{ id: string; name: string }> = [];
 			for (const id of snap.federated) {
 				let name = await awaitName(id);
@@ -215,6 +221,15 @@
 				{ ...extraOpts, useHolograms: true }
 			);
 			outcome = result;
+			// A partner publish of a private item also hands over the item's key,
+			// or the partner only gets a pointer it cannot open.
+			if (result.publishedTo > 0 && lensPrivate && shareKey && target.kind === 'partner' && !isHologramItem) {
+				try {
+					await grantItem(holosphere, holonId, lens, String(item.id), target.holonId);
+				} catch (err: any) {
+					result.errors.push(`key not shared: ${err?.message ?? err}`);
+				}
+			}
 			if (result.publishedTo > 0) {
 				phase = 'success';
 				statusMessage = result.errors.length
@@ -400,6 +415,12 @@
 				<input type="checkbox" bind:checked={upcastOnPublish} />
 				<span class="ptf-toggle-row__label">Upcast — show at wider zoom levels</span>
 			</label>
+			{#if lensPrivate}
+				<label class="ptf-toggle-row">
+					<input type="checkbox" bind:checked={shareKey} />
+					<span class="ptf-toggle-row__label">🔑 Also share this item's key (private lens)</span>
+				</label>
+			{/if}
 		</div>
 	{/if}
 

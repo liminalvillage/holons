@@ -5,7 +5,7 @@
 // 'HolonsDebug'. Resolving on demand makes the root .env the single source of
 // truth (HOLONS_APP / HOLOSPHERE_RELAYS, with the legacy APPNAME as a
 // fallback), matching how the bot and web read it.
-import { createHoloSphere, resolveRelays } from '@holons/core/holosphere';
+import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/holosphere';
 import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
 import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import { generateNsec, nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
@@ -57,6 +57,8 @@ export async function getHoloSphere(): Promise<any> {
     appendLenses: [FLOW_CLAIMS_LENS, GOVERNANCE_VOTES_LENS],
     // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
     nostr: projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
+    // Authorized reads (HOLOSPHERE_ENFORCE=off reads the open graph).
+    enforce: resolveEnforce(process.env.HOLOSPHERE_ENFORCE),
     awaitReady: true,
   });
   return hs;

@@ -1557,6 +1557,13 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         federateToPartners = true
     } = options;
 
+    // A private lens never leaves as a plaintext copy: a hologram (pointer)
+    // is fine — it resolves only for readers holding a key — but a detached
+    // copy in another holon would be the plaintext.
+    if (useHolograms === false && holosphere.isPrivateLens?.(holon, lens)) {
+        throw new Error(`propagate: lens '${lens}' of ${holon} is private — share a key instead of copying it`);
+    }
+
     const result = {
         success: 0,
         errors: 0,

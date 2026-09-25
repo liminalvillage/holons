@@ -21,7 +21,9 @@
  *   - hologram pointers and full-copy federation propagation
  *     (`preserveFederationMeta`): mirrors of a record someone else accounts;
  *   - writes redirected by a hologram at the target are accounted where they
- *     land (the source holon), the same place the record itself goes.
+ *     land (the source holon), the same place the record itself goes;
+ *   - private lenses (sealed content): `rea_events` is plaintext, so a
+ *     sealed quest gets no ledger line (a sealed ledger is a follow-up).
  */
 
 import { economicEventProblems, normalizeReaEvent } from './valueflows.js';
@@ -34,6 +36,8 @@ export interface LedgerHost {
   delete(holon: string | null, lens: string, key: string, password?: any, options?: any): Promise<any>;
   isHologram?(data: unknown): boolean;
   parseSoulPath?(soul: string): { holon: string; lens: string; key: string } | null;
+  /** A private lens gets no plaintext ledger (see `@holons/core/privacy`). */
+  isPrivateLens?(holon: string | null, lens: string): boolean;
   store?: {
     get(holon: string, lens: string, id: string): { item?: unknown } | undefined;
     list(holon: string, lens: string, opts?: { includeDeleted?: boolean }): Array<{ item?: unknown }>;
@@ -71,6 +75,7 @@ function localItem(host: LedgerHost, holon: string, lens: string, key: string): 
     const item = rec?.item;
     if (!item || typeof item !== 'object') return null;
     if ((item as any)._deleted === true) return null;
+    if ((item as any)._locked === true) return null;
     return item as Record<string, unknown>;
   } catch {
     return null;
@@ -225,6 +230,8 @@ export function attachLedger<T extends LedgerHost>(host: T, opts: AttachLedgerOp
       LEDGER_LENSES.includes(lens) &&
       !password &&
       !opts2.preserveFederationMeta &&
+      opts2.privacy !== 'private' &&
+      !(host.isPrivateLens?.(String(holon), lens) ?? false) &&
       data &&
       typeof data === 'object' &&
       !(host.isHologram?.(data) ?? false);

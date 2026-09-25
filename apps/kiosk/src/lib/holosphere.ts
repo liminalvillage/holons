@@ -23,6 +23,7 @@ import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
 import {
   resolveAppName,
+  resolveEnforceReads,
   resolveRelays,
   resolveShiftCoordinator,
 } from "./config";
@@ -95,6 +96,9 @@ export function getHolosphere(): Promise<HoloSphere> {
           (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
         cellToLatLng,
       }),
+      // Authorized reads: only accepted authors' claims are shown for a holon
+      // someone is defined to speak for (VITE_HOLOSPHERE_ENFORCE=off opts out).
+      enforce: resolveEnforceReads(),
       awaitReady: true,
     });
 

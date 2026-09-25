@@ -12,6 +12,7 @@
     brandName,
     settingsOpen,
     userMenuOpen,
+    writeStanding,
   } from "$lib/stores";
   import { clearBotHandoff, dashboardUrl } from "$lib/config";
   import { clearHubClaim } from "$lib/hubclaim";
@@ -180,6 +181,20 @@
         <span class="chev"><Icon name="close" /></span>
       </button>
     {/if}
+    <!-- Where this key stands with the hub: reads are enforced, so a key the
+         hub has not accepted writes only for itself. Said here, where the
+         identity is, rather than on every card. -->
+    {#if $writeStanding === "held"}
+      <div class="row standing held" role="status">
+        <span class="ico"><Icon name="lock" /></span>
+        <span class="label">{$t("menu.held")}</span>
+      </div>
+    {:else if $writeStanding === "accepted"}
+      <div class="row standing" role="status">
+        <span class="ico"><Icon name="check" /></span>
+        <span class="label">{$t("menu.accepted")}</span>
+      </div>
+    {/if}
     <button class="row danger" on:click={logout}>
       <span class="ico"><Icon name="power" /></span>
       <span class="label">{$t("menu.logout")}</span>
@@ -332,6 +347,22 @@
   }
   .row.primary .ico {
     color: #fff;
+  }
+  .row.standing {
+    cursor: default;
+    opacity: 0.85;
+  }
+  .row.standing .label {
+    font-size: 0.85em;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .row.standing.held {
+    background: color-mix(in srgb, #b45309 12%, transparent);
+    opacity: 1;
+  }
+  .row.standing.held .ico {
+    color: #b45309;
   }
   .row.danger .ico {
     color: #9a3b2f;

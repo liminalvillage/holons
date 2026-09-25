@@ -35,12 +35,16 @@ export type StoreOp =
     | { t: 'evt-del'; id: string }
     | { t: 'priv'; k: string; v: string }
     | { t: 'priv-del'; k: string }
+    | { t: 'key'; k: string; v: string }
+    | { t: 'key-del'; k: string }
     | { t: 'cur'; k: string; v: Cursor };
 
 export interface StoreSnapshot {
     records: StoreRecord[];
     events: NostrEvent[];
     private: [string, string][];
+    /** Received sealed-content keys (rows sealed to the instance's own key). */
+    keys?: [string, string][];
     cursors: [string, Cursor][];
 }
 
@@ -55,6 +59,8 @@ export interface StoreAdapter {
 
 export interface WatchMeta {
     tombstone: boolean;
+    /** A sealed record this instance holds no key for. */
+    locked: boolean;
     created_at: number;
     pubkey: string | null;
     eventId: string;
@@ -77,10 +83,33 @@ export interface StoreOptions {
     adapter: StoreAdapter | (() => Promise<StoreAdapter> | StoreAdapter);
     kind?: number;
     compactAfter?: number;
+    /** Opens sealed envelopes (see sealed.js); installable later via `setUnseal`. */
+    unseal?: Unsealer;
+}
+
+/** Opens a sealed envelope, or returns null when no key fits. */
+export type Unsealer = (claim: { holon: string | null; lens: string; id: string; sealed: SealedContent; event: NostrEvent }) => Record<string, unknown> | null;
+
+/** NIP-44 ciphertext inside a kind-30078 envelope (see sealed.js). */
+export interface SealedContent {
+    enc: 'nip44';
+    v: 1;
+    kid: string;
+    ct: string;
+    /** The item's content key wrapped under the lens key; absent on self-sealed records. */
+    k?: string;
+}
+
+/** The record kept for a sealed event no key opens. */
+export interface LockedStub {
+    id: string;
+    _locked: true;
+    _kid: string | null;
 }
 
 export function isTombstone(item: unknown): boolean;
-export function decodeEvent(event: NostrEvent): { holon: string | null; lens: string; id: string; item: any } | null;
+export function isLocked(item: unknown): item is LockedStub;
+export function decodeEvent(event: NostrEvent, unseal?: Unsealer | null): { holon: string | null; lens: string; id: string; item: any; sealed?: SealedContent } | null;
 
 export class Store {
     constructor(opts: StoreOptions);
@@ -94,15 +123,15 @@ export class Store {
     clear(): Promise<void>;
     close(): Promise<void>;
     snapshot(): StoreSnapshot;
-    stats(): { records: number; events: number; private: number; cursors: number; lenses: number; holons: number; watchers: number; adapter: string | null };
+    stats(): { records: number; events: number; private: number; keys: number; cursors: number; lenses: number; holons: number; watchers: number; adapter: string | null };
 
     apply(event: NostrEvent, opts?: { origin?: RecordOrigin; verify?: boolean }): ApplyResult;
     putRaw<T extends object>(holon: string | null, lens: string, id: string, item: T, opts?: { origin?: RecordOrigin }): StoreRecord<T>;
     nextCreatedAt(holon: string | null, lens: string, id: string): number;
 
     get<T = any>(holon: string | null, lens: string, id: string): StoreRecord<T> | undefined;
-    list<T = any>(holon: string | null, lens: string, opts?: { includeDeleted?: boolean }): StoreRecord<T>[];
-    listKeys(holon: string | null, lens: string, opts?: { includeDeleted?: boolean }): string[];
+    list<T = any>(holon: string | null, lens: string, opts?: { includeDeleted?: boolean; includeLocked?: boolean }): StoreRecord<T>[];
+    listKeys(holon: string | null, lens: string, opts?: { includeDeleted?: boolean; includeLocked?: boolean }): string[];
     listLenses(holon: string | null): string[];
     listHolons(): string[];
     getEvents(holon: string | null, lens: string, id: string): NostrEvent[];
@@ -120,6 +149,15 @@ export class Store {
     privateList(scope: string, lens: string): { key: string; cipher: string }[];
     privateDelete(scope: string, lens: string, key: string): boolean;
     privateClear(scope: string, lens: string): number;
+
+    /** Install the function that opens sealed envelopes. */
+    setUnseal(fn: Unsealer | null): void;
+    keysPut(k: string, cipher: string): void;
+    keysGet(k: string): string | undefined;
+    keysList(prefix?: string): { key: string; cipher: string }[];
+    keysDelete(k: string): boolean;
+    /** Re-decode the sealed records of a lens (or all) against the current keys; returns how many changed. */
+    rescan(opts?: { holon?: string | null; lens?: string }): number;
 
     exportEvents(opts?: { holon?: string | null; lens?: string; authors?: string[] }): NostrEvent[];
     importEvents(events: NostrEvent[], opts?: { origin?: RecordOrigin }): { received: number; applied: number; rejected: number };

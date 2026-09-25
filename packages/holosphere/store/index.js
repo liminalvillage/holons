@@ -6,13 +6,14 @@ import { Store } from './store.js';
 import { createMemoryAdapter } from './adapters/memory.js';
 import { createIndexedDbAdapter } from './adapters/indexeddb.js';
 
-export { Store, isTombstone, decodeEvent } from './store.js';
+export { Store, isTombstone, isLocked, decodeEvent } from './store.js';
 export { createWireRegistry, createAppendWire } from './wire.js';
 export { createMemoryAdapter } from './adapters/memory.js';
 export { createIndexedDbAdapter } from './adapters/indexeddb.js';
 export { wins, newestFirst } from './lww.js';
 export * from './address.js';
 export * as privateLens from './private.js';
+export * as sealed from './sealed.js';
 
 /**
  * Resolve an adapter spec into an adapter (or a thunk producing one).
@@ -55,12 +56,13 @@ export function resolveAdapter(spec, { appName, dir } = {}) {
  * @param {number} [opts.compactAfter]
  * @param {number} [opts.kind]
  */
-export function createStore({ appName, adapter = 'auto', dir, compactAfter, kind, wire } = {}) {
+export function createStore({ appName, adapter = 'auto', dir, compactAfter, kind, wire, unseal } = {}) {
     return new Store({
         appName,
         adapter: resolveAdapter(adapter, { appName, dir }),
         ...(compactAfter !== undefined ? { compactAfter } : {}),
         ...(kind !== undefined ? { kind } : {}),
         ...(wire !== undefined ? { wire } : {}),
+        ...(unseal !== undefined ? { unseal } : {}),
     });
 }

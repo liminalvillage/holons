@@ -19,6 +19,7 @@
 
 import { buildEvent, eventToItem, getPublicKey, HOLOSPHERE_KIND } from './nostr-events.js';
 import { isHologram } from './hologram.js';
+import { isLocked } from './store/sealed.js';
 import { GLOBAL_HOLON } from './store/address.js';
 
 const MEMBERSHIP_LENS = '_members'; // signed membership log lens
@@ -82,7 +83,7 @@ const newestFirst = (a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 
 
 export function createSigner({
   privateKey, kind = HOLOSPHERE_KIND, verbose = false,
-  shadow = false, enforce = false, perActorLenses = [],
+  shadow = false, enforce = false, perActorLenses = [], authority = null,
 } = {}) {
   if (!privateKey) throw new Error('createSigner: a privateKey is required');
   const pubkey = getPublicKey(privateKey);
@@ -92,7 +93,18 @@ export function createSigner({
   //      current-list (Nostr follow model).
   //   'membership' — holon-scoped authority via the signed `_members` log
   //      (genesis + admin add/remove, as-of-time). Opt-in.
-  const enforceMode = enforce === 'membership' ? 'membership' : (enforce ? 'federation' : false);
+  //   'authority' — holon-scoped authority decided by the `authority(holo,
+  //      holon)` hook: it returns an `(pubkey, created_at) => boolean`
+  //      predicate, or null when nothing signed says who speaks for the
+  //      holon — such a holon reads unenforced (every claim, as before).
+  //      This is how an app plugs its own rule (a founded log, else a
+  //      bootstrap from the holon's own signed records) into every read.
+  const enforceMode = enforce === 'membership' ? 'membership'
+    : enforce === 'authority' ? 'authority'
+    : (enforce ? 'federation' : false);
+  if (enforceMode === 'authority' && typeof authority !== 'function') {
+    throw new Error("createSigner: enforce 'authority' needs an authority(holo, holon) hook");
+  }
   const report = freshReport();
   const pinnedGenesis = new Map();
   const perActor = new Set(perActorLenses); // lenses read as per-author aggregates
@@ -128,6 +140,11 @@ export function createSigner({
   // Authorization predicate for the active mode: federation read-list (default)
   // or the holon membership log. `(pubkey, created_at) -> boolean`.
   async function authPredicate(holo, holon) {
+    if (enforceMode === 'authority') {
+      let p = null;
+      try { p = await authority(holo, holon); } catch (e) { vlog('authority hook failed:', e?.message); p = null; }
+      return typeof p === 'function' ? p : null;   // null = nobody defined: unenforced
+    }
     if (enforceMode === 'membership') {
       const tl = await resolveMembership(holo, holon);
       return (pub, at) => tl.isAuthorizedAt(pub, at);
@@ -143,13 +160,14 @@ export function createSigner({
   function materialize(item, { includeDeleted = false } = {}) {
     if (!item) return null;
     if (item._deleted && !includeDeleted) return null;
+    if (isLocked(item)) return null;   // sealed, no key: neither shown nor pending
     return item;
   }
 
-  function build(holo, holon, lens, item, at) {
+  function build(holo, holon, lens, item, at, content) {
     const h = normHolon(holon);
     return buildEvent({
-      holon: wireHolon(holon), lens, item, sk: privateKey, kind,
+      holon: wireHolon(holon), lens, item, sk: privateKey, kind, content,
       created_at: at ?? holo.store.nextCreatedAt(h, lens, String(item.id)),
       // `n` scopes events to one app namespace on a shared relay.
       extraTags: [['n', holo.appname]],
@@ -170,10 +188,14 @@ export function createSigner({
     pinGenesis(holon, pub) { pinnedGenesis.set(holon, pub); },
     resolveMembership,
 
-    /** Build the signed event for a write. The caller applies and publishes it. */
-    signEnvelope(holo, holon, lens, item) {
+    /**
+     * Build the signed event for a write. The caller applies and publishes
+     * it. `content` overrides the payload string (a sealed envelope carries
+     * ciphertext in place of the item JSON).
+     */
+    signEnvelope(holo, holon, lens, item, { content } = {}) {
       if (!item || item.id === undefined || item.id === null) return null;
-      return build(holo, holon, lens, item);
+      return build(holo, holon, lens, item, undefined, content);
     },
 
     /** Build, apply to the store and publish a signed event (membership ops). */
@@ -209,6 +231,7 @@ export function createSigner({
     async authorizedView(holo, holon, lens, rawItems, opts = {}) {
       if (lens === MEMBERSHIP_LENS) return { items: rawItems, pending: [] };
       const isAuth = await authPredicate(holo, holon);
+      if (!isAuth) return { items: rawItems || [], pending: [] };   // no authority defined for this holon
       report.reads++;
       const items = [], pending = [];
       // Enumerate from the SIGNED claims (so raw-store tampering can't change
@@ -227,6 +250,7 @@ export function createSigner({
             // authorized SIGNED delete — omit from the view (not pending)
             continue;
           }
+          if (isLocked(claim)) continue;   // sealed, no key: neither shown nor pending
           let item = claim;
           if (isHologram(claim) && !claim._deleted) {
             // A pointer claim: take the plain read's resolution of it when it
@@ -256,6 +280,7 @@ export function createSigner({
     /** Resolve a single item id to its authorized value (or null), honoring deletes. */
     async resolveItem(holo, holon, lens, key, opts = {}) {
       const isAuth = await authPredicate(holo, holon);
+      if (!isAuth) return undefined;   // no authority defined: the caller keeps its plain read
       const events = envelopes(holo, holon, lens, key)
         .filter((e) => isAuth(e.pubkey, e.created_at))
         .sort(newestFirst);
@@ -272,7 +297,7 @@ export function createSigner({
      * RSVPs — stays signed and filterable without a shared mutable list.
      */
     async aggregate(holo, holon, lens, subject = null) {
-      const isAuth = await authPredicate(holo, holon);
+      const isAuth = (await authPredicate(holo, holon)) || (() => true);
       const subjects = subject != null ? [String(subject)] : lensIds(holo, holon, lens);
       const out = [];
       for (const subj of subjects) {
@@ -280,7 +305,7 @@ export function createSigner({
         const events = envelopes(holo, holon, lens, subj).filter((e) => isAuth(e.pubkey, e.created_at));
         for (const e of events) {
           const item = claimAt(holo, e, lens, subj);
-          if (item && !item._deleted) out.push({ ...item, _owner: e.pubkey, _subject: subj }); // signed delete drops the actor
+          if (item && !item._deleted && !isLocked(item)) out.push({ ...item, _owner: e.pubkey, _subject: subj }); // signed delete drops the actor
         }
       }
       return out;

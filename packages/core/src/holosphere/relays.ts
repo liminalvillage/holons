@@ -29,3 +29,14 @@ export function resolveRelays(raw: string | undefined | null | string[]): string
   const list = Array.isArray(raw) ? raw.map((r) => String(r).trim()).filter(Boolean) : parseRelayList(raw);
   return list.length ? list : [...DEFAULT_RELAYS];
 }
+
+/**
+ * Whether reads are enforced (`HOLOSPHERE_ENFORCE` / `VITE_HOLOSPHERE_ENFORCE`):
+ * on unless the value says `off`, `false`, `0` or `no`. The kill switch for
+ * a deployment that must read the open graph while a holon's authority is
+ * still being founded.
+ */
+export function resolveEnforce(raw: string | boolean | undefined | null): boolean {
+  if (typeof raw === 'boolean') return raw;
+  return !['off', 'false', '0', 'no'].includes(String(raw ?? '').trim().toLowerCase());
+}

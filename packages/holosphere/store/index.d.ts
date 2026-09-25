@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Store, StoreAdapter } from './store.js';
+import type { Store, StoreAdapter, Unsealer, SealedContent } from './store.js';
 
 export * from './store.js';
 
@@ -16,6 +16,8 @@ export interface CreateStoreOptions {
     kind?: number;
     /** Which kinds this store consumes; defaults to the envelope alone. */
     wire?: WireRegistry;
+    /** Opens sealed envelopes (see sealed.js). */
+    unseal?: Unsealer;
 }
 
 /**
@@ -28,6 +30,8 @@ export interface WireClaim {
     lens: string;
     id: string;
     item: Record<string, unknown>;
+    /** Present when the envelope carried sealed content (opened or locked). */
+    sealed?: SealedContent;
 }
 
 /** A lens carried on its own standard Nostr kind(s). */
@@ -56,9 +60,11 @@ export interface WireRegistry {
     kinds(): number[];
     accepts(kind: number): boolean;
     decode(event: any): WireClaim[] | null;
+    /** Install (or clear) the function that opens sealed envelopes. */
+    setUnseal(fn: Unsealer | null): void;
 }
 
-export function createWireRegistry(opts?: { legacyKind?: number }): WireRegistry;
+export function createWireRegistry(opts?: { legacyKind?: number; unseal?: Unsealer | null }): WireRegistry;
 /** The wire of an append-only lens on the log kind (1808). */
 export function createAppendWire(opts: { lens: string; appName?: string; kind?: number }): LensWire;
 
@@ -94,4 +100,24 @@ export namespace privateLens {
     function open(payload: string, key: Uint8Array): any;
     function privateKeyOf(scope: string, lens: string, key: string): string;
     function privateLensPrefix(scope: string, lens: string): string;
+}
+
+export namespace sealed {
+    const SEALED_ENC: 'nip44';
+    const SEALED_V: 1;
+    const SELF_KID: 'self';
+    const MAX_CT_BYTES: number;
+    function isSealed(obj: unknown): obj is SealedContent;
+    function kidOf(lensKey: Uint8Array | string): string;
+    function generateKey(): Uint8Array;
+    function selfKey(sk: Uint8Array | string): Uint8Array;
+    function wrapCek(cek: Uint8Array | string, lensKey: Uint8Array | string): string;
+    function unwrapCek(k: string, lensKey: Uint8Array | string): Uint8Array;
+    function cekOf(sealed: SealedContent, lensKey: Uint8Array | string): Uint8Array;
+    function sealItem(item: object, opts: { cek: Uint8Array | string; lensKey?: Uint8Array | string; kid?: string; k?: string }): SealedContent;
+    function unsealItem(sealed: SealedContent, opts: { lensKey?: Uint8Array | string; cek?: Uint8Array | string }): Record<string, unknown>;
+    function sealSelf(obj: object, sk: Uint8Array | string): SealedContent;
+    function unsealSelf(sealed: SealedContent, sk: Uint8Array | string): Record<string, unknown>;
+    function lockedStub(id: string, sealed?: SealedContent | null): { id: string; _locked: true; _kid: string | null };
+    function isLocked(item: unknown): boolean;
 }

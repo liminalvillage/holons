@@ -63,6 +63,15 @@ export const holonName = writable<string>("");
 export const connected = writable<boolean>(false);
 /** The holon this kiosk displays — chosen on boot or from Settings. */
 export const holonId = writable<string | null>(null);
+/**
+ * Where this screen's signing key stands with the displayed holon (see
+ * `writeAcceptance` in @holons/core/holosphere): `accepted` counts, `held`
+ * means the hub has an authority and it is not this key — writes stay on
+ * this screen until it does — `open` means nobody is defined yet.
+ */
+export const writeStanding = writable<"accepted" | "held" | "open" | null>(
+  null,
+);
 
 /** Caretaker-set display name shown in the header; overrides the holon name. */
 export const brandName = writable<string>("");

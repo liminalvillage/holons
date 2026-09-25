@@ -44,6 +44,14 @@ const REOPEN_BACKOFF_MS = [3000, 10000, 30000, 60000];
 
 const MAX_BACKFILL_PAGES = 2000;
 
+// One import of the pool module per process. Two transports importing it at
+// the same moment (two instances in one test) can each see a half-linked
+// namespace under jest's ESM loader (`SimplePool is not a constructor`), and
+// nothing that instance publishes ever leaves. A shared promise makes the
+// second importer wait for the first.
+let poolModulePromise = null;
+const loadPoolModule = () => (poolModulePromise ??= import('nostr-tools/pool'));
+
 export function createRelayTransport(holo, {
   relays = [],
   privateKey,
@@ -73,7 +81,7 @@ export function createRelayTransport(holo, {
   let pool = null;
   let closed = false;
   const poolReady = (async () => {
-    const mod = await import('nostr-tools/pool');
+    const mod = await loadPoolModule();
     // Node < 22 has no global WebSocket, and nostr-tools then reports every
     // publish as a connection failure — hand it the `ws` implementation. In
     // the browser this branch is dead code.
@@ -110,13 +118,14 @@ export function createRelayTransport(holo, {
       .catch((e) => vlog('publish failed:', e?.message));
   }
 
-  function buildFor(holon, lens, item) {
+  function buildFor(holon, lens, item, content) {
     return buildEvent({
       holon: wireHolon(holon),
       lens,
       item,
       sk: privateKey,
       kind,
+      content,
       created_at: store.nextCreatedAt(normHolon(holon), lens, String(item.id)),
       extraTags: [['n', app]],
     });
@@ -135,14 +144,14 @@ export function createRelayTransport(holo, {
    * the wire carries exactly what the store holds; without one the transport
    * signs with its own key and applies that event locally.
    */
-  function publishWrite(holon, lens, item, { key, signedEvent, skipProjections = false } = {}) {
+  function publishWrite(holon, lens, item, { key, signedEvent, skipProjections = false, content } = {}) {
     if (closed) return;
     try {
       const addressed = withId(item, key);
       let event = signedEvent;
       if (!event) {
         if (!addressed) return;
-        event = buildFor(holon, lens, addressed);
+        event = buildFor(holon, lens, addressed, content);
         store.apply(event, { origin: 'local' });
       }
       publishEvent(event);

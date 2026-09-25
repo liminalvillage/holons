@@ -6,8 +6,9 @@
 // error degrades the adapter to a no-op with a single warning: the store keeps
 // running from memory rather than taking the app down.
 
-const DB_VERSION = 1;
-const STORES = ['records', 'events', 'private', 'cursors'];
+// v2 adds the `keys` object store (received sealed-content keys).
+const DB_VERSION = 2;
+const STORES = ['records', 'events', 'private', 'keys', 'cursors'];
 
 const req = (r) => new Promise((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
@@ -47,6 +48,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
             if (!d.objectStoreNames.contains('records')) d.createObjectStore('records', { keyPath: 'addr' });
             if (!d.objectStoreNames.contains('events')) d.createObjectStore('events', { keyPath: 'id' });
             if (!d.objectStoreNames.contains('private')) d.createObjectStore('private', { keyPath: 'k' });
+            if (!d.objectStoreNames.contains('keys')) d.createObjectStore('keys', { keyPath: 'k' });
             if (!d.objectStoreNames.contains('cursors')) d.createObjectStore('cursors', { keyPath: 'k' });
         };
         return req(r);
@@ -65,7 +67,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                 db = await openDb();
                 db.onversionchange = () => { try { db.close(); } catch { /* ignore */ } };
                 const tx = db.transaction(STORES, 'readonly');
-                const [records, events, priv, cursors] = await Promise.all(
+                const [records, events, priv, keys, cursors] = await Promise.all(
                     STORES.map((s) => req(tx.objectStore(s).getAll())),
                 );
                 await done(tx);
@@ -73,6 +75,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                     records,
                     events,
                     private: priv.map((row) => [row.k, row.v]),
+                    keys: keys.map((row) => [row.k, row.v]),
                     cursors: cursors.map((row) => [row.k, row.v]),
                 };
             } catch (e) {
@@ -93,6 +96,8 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                             case 'evt-del': tx.objectStore('events').delete(op.id); break;
                             case 'priv': tx.objectStore('private').put({ k: op.k, v: op.v }); break;
                             case 'priv-del': tx.objectStore('private').delete(op.k); break;
+                            case 'key': tx.objectStore('keys').put({ k: op.k, v: op.v }); break;
+                            case 'key-del': tx.objectStore('keys').delete(op.k); break;
                             case 'cur': tx.objectStore('cursors').put({ k: op.k, v: op.v }); break;
                             default: break;
                         }
@@ -113,6 +118,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                     for (const rec of full.records) tx.objectStore('records').put(rec);
                     for (const evt of full.events) tx.objectStore('events').put(evt);
                     for (const [k, v] of full.private) tx.objectStore('private').put({ k, v });
+                    for (const [k, v] of full.keys || []) tx.objectStore('keys').put({ k, v });
                     for (const [k, v] of full.cursors) tx.objectStore('cursors').put({ k, v });
                     await done(tx);
                 } catch (e) {

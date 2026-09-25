@@ -68,7 +68,17 @@
     setHolonColor,
   } from "$lib/palette";
   import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
+  import {
+    getPrivacySnapshot,
+    setLensPrivacy,
+    type PrivacyLensMode,
+  } from "@holons/core/privacy";
+  import { isLoggedIn } from "$lib/auth";
   import { getHolosphere } from "$lib/holosphere";
+  import {
+    resolveHolonAuthority,
+    type HolonAuthority,
+  } from "@holons/core/holosphere";
   import HexPicker from "./HexPicker.svelte";
   import ValueEquation from "./ValueEquation.svelte";
   import StatusConfirm from "./StatusConfirm.svelte";
@@ -98,6 +108,84 @@
       if (id === $holonId) homeHex = hex;
     } catch {
       if (id === $holonId) homeHex = null;
+    }
+  }
+
+  // ── Private lenses ────────────────────────────────────────────────────
+  // A private lens keeps its content sealed on the relays; the vault that
+  // holds its key is sealed to the signed-in key, so the toggle needs a
+  // person's key, not the device key. Core owns the rule of what may be
+  // private and keeps the public hint in step (see @holons/core/privacy).
+  const PRIVACY_LENSES = ["quests", "library", "roles", "checklists", "stock"];
+  let privacyLenses: Record<string, PrivacyLensMode> = {};
+  let privacyBusy = "";
+  // How many keys hold each lens (the owner's grant ledger), and who speaks
+  // for this hub — the key a partner's grants go to, and the authority the
+  // reads enforce. Nothing signed → said plainly: keys cannot be shared with
+  // this hub, and every write counts until its bot founds it.
+  let privacyShared: Record<string, number> = {};
+  let hubAuthority: HolonAuthority | null = null;
+  let hubKeySource: MessageKey;
+  $: hubKeySource =
+    hubAuthority?.anchor && hubAuthority.actors?.source === "log"
+      ? "settings.hubKeyLog"
+      : hubAuthority?.anchor &&
+          $holonId &&
+          hubAuthority.anchor === $holonId.toLowerCase()
+        ? "settings.hubKeyOwn"
+        : hubAuthority?.anchor
+          ? "settings.hubKeyBoot"
+          : "settings.hubKeyNone";
+  $: void loadPrivacy($holonId, $isLoggedIn);
+  $: privacyRows = [
+    ...PRIVACY_LENSES,
+    ...Object.keys(privacyLenses).filter((l) => !PRIVACY_LENSES.includes(l)),
+  ];
+
+  async function loadPrivacy(id: string | null, loggedIn: boolean) {
+    if (!id || !loggedIn) {
+      privacyLenses = {};
+      return;
+    }
+    try {
+      const hs = await getHolosphere();
+      const snap = await getPrivacySnapshot(hs, id);
+      if (id === $holonId) {
+        privacyLenses = snap.lenses;
+        const counts: Record<string, number> = {};
+        for (const g of Object.values(snap.grants)) {
+          for (const lens of g.lenses ?? [])
+            counts[lens] = (counts[lens] ?? 0) + 1;
+        }
+        privacyShared = counts;
+        try {
+          hubAuthority = resolveHolonAuthority(hs, id);
+        } catch {
+          hubAuthority = null;
+        }
+      }
+    } catch {
+      if (id === $holonId) {
+        privacyLenses = {};
+        privacyShared = {};
+      }
+    }
+  }
+
+  async function togglePrivacy(lens: string) {
+    if (!$holonId || privacyBusy) return;
+    const next: PrivacyLensMode =
+      privacyLenses[lens] === "private" ? "public" : "private";
+    privacyBusy = lens;
+    try {
+      const hs = await getHolosphere();
+      await setLensPrivacy(hs, $holonId, lens, next);
+      privacyLenses = { ...privacyLenses, [lens]: next };
+    } catch (err) {
+      console.error("[kiosk] lens privacy change failed", err);
+      showNotice(tr("settings.privacyFailed"));
+    } finally {
+      privacyBusy = "";
     }
   }
 
@@ -847,6 +935,55 @@
       {/if}
     </div>
 
+    <!-- Private lenses: sealed on the relays, readable by the keys handed out. -->
+    <div class="field">
+      {$t("settings.privacy")}
+      <span class="sub">{$t("settings.privacySub")}</span>
+      {#if !$isLoggedIn}
+        <p class="hex-note">{$t("settings.privacyLogin")}</p>
+      {:else}
+        {#each privacyRows as lens (lens)}
+          {@const on = privacyLenses[lens] === "private"}
+          <div class="map-row">
+            <span class="map-lens"
+              >{lens}{#if on && privacyShared[lens]}<span class="shared"
+                  >{$t("settings.privacyShared", {
+                    n: privacyShared[lens],
+                  })}</span
+                >{/if}</span
+            >
+            <div class="map-lanes">
+              <button
+                type="button"
+                class="lane lock"
+                class:on
+                aria-pressed={on}
+                aria-label={$t("settings.privacyAria", {
+                  lens,
+                  state: $t(
+                    on ? "settings.privacyPrivate" : "settings.privacyPublic",
+                  ),
+                })}
+                disabled={!!privacyBusy}
+                on:click={() => togglePrivacy(lens)}
+                ><Icon name={on ? "lock" : "unlock"} /></button
+              >
+            </div>
+          </div>
+        {/each}
+        <p class="hex-note">{$t("settings.privacyHint")}</p>
+        <p class="hex-note" class:warn={!hubAuthority?.anchor}>
+          {#if hubAuthority?.anchor}
+            {$t("settings.hubKey", {
+              key: `${hubAuthority.anchor.slice(0, 8)}…`,
+            })} — {$t(hubKeySource)}
+          {:else}
+            {$t("settings.hubKeyNone")}
+          {/if}
+        </p>
+      {/if}
+    </div>
+
     <!--
       The claimed cell, configured as a federation partner: which lenses reach
       the shared map, and how far up the scalespace they travel. Opening a lens
@@ -1153,6 +1290,14 @@
   }
   .hex-row .hex-pick {
     flex: 0 0 auto;
+  }
+  .map-lens .shared {
+    margin-left: 0.5rem;
+    font-size: 0.75em;
+    opacity: 0.7;
+  }
+  .hex-note.warn {
+    color: #b45309;
   }
   .hex-note {
     margin: 0.4rem 0 0;

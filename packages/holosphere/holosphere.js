@@ -24,6 +24,7 @@ import { createStore, createAppendWire, CAPABILITIES_HOLON } from './store/index
 import * as LogOps from './log.js';
 import { createSigner } from './signing.js';
 import { createRelayTransport } from './relay-transport.js';
+import { createPrivacy } from './privacy.js';
 import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
 
 // Named exports (v2-compatible)
@@ -105,6 +106,11 @@ class HoloSphere {
         // log kind, never replaced. Registered up front so the transport's
         // filters and the store's decode know them from the first sync.
         for (const lens of storeCfg.appendLenses || cfg.appendLenses || []) this.registerAppendLens(lens);
+        // Private lenses (see privacy.js / PRIVACY.md): the keyring that opens
+        // sealed content is the store's unseal hook, so every read path sees
+        // plaintext it has keys for and locked stubs for the rest.
+        this._privacy = createPrivacy(this);
+        this.store.setUnseal(this._privacy.unseal);
 
         this.openai = null;
         this.subscriptions = {};
@@ -126,6 +132,7 @@ class HoloSphere {
                 privateKey: this._privateKey,
                 shadow: signing.shadow,
                 enforce: signing.enforce,
+                authority: signing.authority,
                 perActorLenses: signing.perActorLenses,
                 verbose: signing.verbose,
             });
@@ -162,6 +169,15 @@ class HoloSphere {
         // Read-list hydration after init settles: goes through the normal read
         // path, so it can pull the saved federation list over the relay.
         Promise.resolve().then(() => this._hydrateReadKeys()).catch(() => { /* nothing saved yet */ });
+        // Key grants addressed to this identity arrive as NIP-17 DMs.
+        if (cfg.nostr?.grants !== false) this._privacy.startGrants();
+    }
+
+    /** Wait for the keys a private lens needs before reading it. */
+    _privacyKeys(holon, lens) {
+        const p = this._privacy;
+        if (!p || !p.wantsKeys(holon, lens)) return Promise.resolve();
+        return p.ensureKeys(holon, lens);
     }
 
     /** Await store + transport init before touching data. */
@@ -231,7 +247,10 @@ class HoloSphere {
         await this._awaitBackend();
         // Catch this lens up from the relay before reading, so a cold read
         // sees the wire's current state (bounded by the sync timeout).
-        if (!password) await this._relaySync(holon, lens, { await: true });
+        if (!password) {
+            await this._relaySync(holon, lens, { await: true });
+            await this._privacyKeys(holon, lens);
+        }
         if (key === null || key === undefined) {
             // v2-style 2-arg call: get entire lens (return first/only item).
             const items = await this.getAll(holon, lens, password, options);
@@ -246,6 +265,7 @@ class HoloSphere {
                 return signer.aggregate(this, holon, lens, key);
             }
             const claim = await signer.resolveItem(this, holon, lens, key, { includeDeleted: !!options.includeDeleted });
+            if (claim === undefined) return raw;   // nobody speaks for this holon: plain read
             if (claim && options.resolveHolograms !== false && this.isHologram(claim) && !claim._deleted) {
                 // The authorized claim is a pointer: resolve it like the plain
                 // read does, threading the cycle guard.
@@ -276,7 +296,10 @@ class HoloSphere {
      */
     async getAll(holon, lens, password = null, options = {}) {
         await this._awaitBackend();
-        if (!password) await this._relaySync(holon, lens, { await: true });
+        if (!password) {
+            await this._relaySync(holon, lens, { await: true });
+            await this._privacyKeys(holon, lens);
+        }
         const items = await ContentOps.getAll(this, holon, lens, password, options);
         const signer = this._signer;
         if (signer && !password && holon && lens && lens !== '_members' && !options._skipAuthorize) {
@@ -582,7 +605,10 @@ class HoloSphere {
      * gets the current snapshot replayed, then one callback per change.
      */
     subscribe(holon, lens, callback, options = {}) {
-        this._ready.then(() => this._relaySync(holon, lens)).catch(() => {});
+        this._ready
+            .then(() => this._relaySync(holon, lens, { await: true }))
+            .then(() => this._privacyKeys(holon, lens))
+            .catch(() => {});
         const signer = this._signer;
         const annotate = !!options.includeUnverified;
         // In enforce mode, resolve each update through the signing layer so
@@ -605,6 +631,11 @@ class HoloSphere {
                         return;
                     }
                     let verified = await signer.resolveItem(self, holon, lens, id);
+                    if (verified === undefined) {
+                        // Nobody speaks for this holon: the plain update stands.
+                        if (active) callback(raw && raw._deleted ? null : (annotate && raw ? { ...raw, _verified: true } : raw), id);
+                        return;
+                    }
                     if (verified && self.isHologram(verified) && !verified._deleted) {
                         // Utils.subscribe already resolved this pointer for us.
                         if (raw && raw._hologram?.soul === verified.soul) verified = raw;
@@ -833,12 +864,17 @@ class HoloSphere {
         await this._hydrateReadKeys();
         if (Array.isArray(opts.readKeys)) opts.readKeys.forEach((k) => this._addReadKeyLocal(k));
         const prev = this._signer;
+        // The configured read modes survive a re-login: a session key adopted
+        // on a kiosk must not silently drop the enforcement its instance was
+        // built with. Explicit options still win.
+        const base = (this.config && this.config.signing) || {};
         this._signer = createSigner({
             privateKey,
-            verbose: opts.verbose,
-            shadow: opts.shadow,
-            enforce: opts.enforce,
-            perActorLenses: opts.perActorLenses ?? prev?.getPerActorLenses?.() ?? [],
+            verbose: opts.verbose ?? base.verbose,
+            shadow: opts.shadow ?? base.shadow,
+            enforce: opts.enforce ?? base.enforce,
+            authority: opts.authority ?? base.authority,
+            perActorLenses: opts.perActorLenses ?? prev?.getPerActorLenses?.() ?? base.perActorLenses ?? [],
         });
         const relays = (opts.relays || []).map((r) => String(r).trim()).filter(Boolean);
         if (relays.length && !this._relayTransport) {
@@ -906,14 +942,32 @@ class HoloSphere {
         this._privateKey = privateKey;
         this.client = { publicKey: this._derivePubKey(privateKey) };
         const signer = await this.enableSigning({ ...opts, privateKey });
+        await this._privacy.reload();
         return { pubkey: this.client.publicKey, signer };
     }
 
-    /** Log out: stop signing and clear the active signing identity. */
+    /**
+     * Log out: stop signing and clear the active signing identity. Sealed
+     * records lock again; the returned promise resolves once the store has
+     * been compacted without their plaintext.
+     */
     logout() {
         this.disableSigning();
         this._privateKey = null;
         this.client = { publicKey: '' };
+        return this._privacy.clear();
+    }
+
+    // ================================ PRIVACY ================================
+
+    /** The privacy layer: vaults, keyring, grants (see PRIVACY.md). */
+    get privacy() {
+        return this._privacy;
+    }
+
+    /** Is this lens private, as far as this instance can tell right now? */
+    isPrivateLens(holon, lens) {
+        return this._privacy.isPrivateLens(holon, lens);
     }
 
     get currentPubkey() {
@@ -1088,6 +1142,7 @@ class HoloSphere {
 
     async close() {
         this._closed = true;
+        try { this._privacy?.stop(); } catch { /* ignore */ }
         try { this._relayTransport?.close(); } catch { /* ignore */ }
         this._relayTransport = null;
         return Utils.close(this);

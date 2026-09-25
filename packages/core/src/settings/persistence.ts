@@ -61,6 +61,9 @@ export function parseHolonSettings(data: any): HolonSettings {
     ...(Array.isArray(data.nostrTrustedPubkeys)
       ? { nostrTrustedPubkeys: data.nostrTrustedPubkeys.filter((k: unknown) => typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k)) }
       : {}),
+    ...(data.privacy && typeof data.privacy === 'object' && data.privacy.lenses && typeof data.privacy.lenses === 'object'
+      ? { privacy: { lenses: Object.fromEntries(Object.entries(data.privacy.lenses).filter(([, m]) => m === 'private' || m === 'public')) as Record<string, 'private' | 'public'> } }
+      : {}),
     // Legacy `federation[]` / `lensConfig` settings-lens fields are NOT parsed
     // — the native federation record is the single store (see
     // migrateLegacyFederationLinks in @holons/core/federation).

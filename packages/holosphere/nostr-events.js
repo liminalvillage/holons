@@ -76,9 +76,11 @@ export function getEventHash(event) {
  * @param {string} params.lens  - lens name
  * @param {object} params.item  - item payload (must carry an `id`)
  * @param {string|Uint8Array} params.sk - author secret key
+ * @param {string} [params.content] - override for the content string (sealed
+ *   payloads, see store/sealed.js); the d-tag still comes from `item.id`
  * @returns {object} signed NIP-01 event whose content is the item JSON
  */
-export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, created_at, extraTags = [] }) {
+export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, created_at, extraTags = [], content }) {
   if (!holon || !lens) throw new Error('buildEvent: holon and lens are required');
   if (!item || !item.id) throw new Error('buildEvent: item.id is required (becomes the d-tag)');
 
@@ -98,7 +100,7 @@ export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, crea
         ['d', `${holon}/${lens}/${item.id}`],
         ...extraTags,
       ],
-      content: JSON.stringify(item),
+      content: typeof content === 'string' ? content : JSON.stringify(item),
     },
     toBytes(sk),
   );

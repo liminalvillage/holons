@@ -13,6 +13,17 @@ export {
   type HoloSphereNostrOptions,
 } from './factory.js';
 export {
+  createReadAuthority,
+  resolveHolonAuthority,
+  writeAcceptance,
+  type WriteAcceptance,
+  type WriteStanding,
+  type AuthorityPredicate,
+  type HolonAuthority,
+  type ReadAuthority,
+  type ReadAuthorityOptions,
+} from './authority.js';
+export {
   writeWithIdentity,
   createHolonWriter,
   type WriteWithIdentityOptions,
@@ -23,6 +34,7 @@ export {
   DEFAULT_RELAYS,
   parseRelayList,
   resolveRelays,
+  resolveEnforce,
 } from './relays.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
 export {

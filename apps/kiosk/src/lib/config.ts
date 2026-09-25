@@ -22,7 +22,10 @@ import {
   isWindowPreset,
   type FlowsWindowChoice,
 } from "@holons/core/flows";
-import { resolveRelays as coreResolveRelays } from "@holons/core/holosphere";
+import {
+  resolveEnforce,
+  resolveRelays as coreResolveRelays,
+} from "@holons/core/holosphere";
 import type { TaskSort } from "./data";
 
 const HOLON_KEY = "kiosk_holon";
@@ -217,6 +220,13 @@ export function resolveAppName(): string {
  * the whole monorepo; `VITE_HOLOSPHERE_RELAYS` (the name the web app reads)
  * is honoured as the shared fallback; unset → the production relay set.
  */
+/** Authorized reads: on unless VITE_HOLOSPHERE_ENFORCE says `off`. */
+export function resolveEnforceReads(): boolean {
+  return resolveEnforce(
+    import.meta.env.VITE_HOLOSPHERE_ENFORCE as string | undefined,
+  );
+}
+
 export function resolveRelays(): string[] {
   const env =
     (import.meta.env.VITE_KIOSK_RELAYS as string | undefined) ||

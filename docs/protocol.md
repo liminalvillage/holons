@@ -121,8 +121,9 @@ adopted key; the web instance already holds the member's derived key.
 ## What this does not do
 
 No ordering or double-spend protection beyond the rules above — Nostr gives
-neither, and scarce assets settle elsewhere. No content encryption (NIP-44
-is a separate track), no relay write policy (NIP-42), no anchoring of
+neither, and scarce assets settle elsewhere. Content encryption is the
+private-lens track (`packages/holosphere/PRIVACY.md`) and never applies to
+the logs this reduce reads; no relay write policy (NIP-42), no anchoring of
 checkpoint roots to a chain (the root is there to be anchored). `enforce`
 mode in holosphere stays off: this reduce runs only over append-only lenses,
 and every replaceable lens keeps its last-writer-wins.

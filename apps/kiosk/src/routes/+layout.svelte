@@ -43,6 +43,8 @@
   } from "$lib/config";
   import { themeMode, startTheme } from "$lib/theme";
   import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
+  import { writeAcceptance } from "@holons/core/holosphere";
+  import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
   import {
@@ -55,6 +57,7 @@
     showNotice,
     holonName,
     holonId as holonIdStore,
+    writeStanding,
     partnerNames,
     brandName,
     brandLogo,
@@ -461,7 +464,41 @@
     }
     const id = boundHolon;
     if (id) getHolosphere().then((hs) => hydratePartnerNames(hs, id));
+    if (id) void refreshStanding(id);
   }
+
+  // ── Where this key stands ───────────────────────────────────────────────
+  //
+  // Reads are enforced: a hub with a defined authority shows only accepted
+  // keys' writes to everyone else. A person whose key is not accepted here
+  // still sees their own changes (their store holds them) and would never
+  // learn nobody else does — so the standing is computed on bind and on
+  // every session-key change, shown in the account menu, and said once per
+  // hub and key as a notice.
+  const standingSaid = new Set<string>();
+  async function refreshStanding(id: string) {
+    let hs: HoloSphere;
+    try {
+      hs = await getHolosphere();
+    } catch {
+      return;
+    }
+    const key = hs.currentPubkey;
+    try {
+      const { status } = await writeAcceptance(hs, id, key);
+      if (id !== boundHolon || key !== hs.currentPubkey) return;
+      writeStanding.set(status);
+      const mark = `${id}|${key}`;
+      if (status === "held" && get(currentUser) && !standingSaid.has(mark)) {
+        standingSaid.add(mark);
+        showNotice(tr("layout.heldWrites"), 6000);
+      }
+    } catch {
+      writeStanding.set(null);
+    }
+  }
+  $: if ($sessionKeyPub !== undefined && boundHolon)
+    void refreshStanding(boundHolon);
 
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //

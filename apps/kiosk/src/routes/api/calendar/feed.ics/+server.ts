@@ -17,7 +17,7 @@ import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { env } from "$env/dynamic/private";
 import type { HoloSphere } from "holosphere";
-import { createHoloSphere } from "@holons/core/holosphere";
+import { createHoloSphere, resolveEnforce } from "@holons/core/holosphere";
 import { resolveFeedAppName, resolveFeedRelays } from "$lib/server/feedEnv";
 import { loadSettings } from "@holons/core/settings";
 import { generateICalFeed, type HolonEvent } from "@holons/core/calendar";
@@ -37,6 +37,7 @@ function getHolosphere(): HoloSphere {
       appName: resolveFeedAppName(env),
       relays: resolveFeedRelays(env),
       store: { adapter: "memory" },
+      enforce: resolveEnforce(env.HOLOSPHERE_ENFORCE),
     });
   }
   return holosphere;

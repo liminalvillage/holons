@@ -27,6 +27,13 @@
   import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
+  import { getFederationSnapshot } from "@holons/core/federation";
+  import {
+    getPrivacySnapshot,
+    grantItem,
+    resolveGranteePubkey,
+    revokeItem,
+  } from "@holons/core/privacy";
   import {
     reflectMembership,
     toggleJoin,
@@ -636,6 +643,109 @@
       cadence: freqLabel(frequency),
       start: start.toLocaleDateString(loc, SPAN_DAY),
     });
+  }
+
+  // ── Share one card of a private lens ────────────────────────────────
+  // An own card on a private lens can be handed to a federated holon on its
+  // own: only this card's key travels, the rest of the lens stays sealed.
+  // Foreign cards (holograms, federated copies) are shared by their owner.
+  type SharePartner = {
+    id: string;
+    name: string;
+    pubkey: string | null;
+    shared: boolean;
+    lens: boolean;
+  };
+  let shareable = false;
+  let shareOpen = false;
+  let shareBusy = "";
+  let sharePartners: SharePartner[] = [];
+  $: shareLens = sel ? (sel.kind === "thing" ? "library" : "quests") : "";
+  $: shareId = sel
+    ? String(sel.kind === "thing" ? sel.item.id : (sel.quest.id ?? ""))
+    : "";
+  $: void checkShareable(sel, $holonId, $isLoggedIn);
+
+  async function checkShareable(
+    s: typeof sel,
+    holon: string | null,
+    loggedIn: boolean,
+  ) {
+    shareable = false;
+    shareOpen = false;
+    if (!s || !holon || !loggedIn) return;
+    const rec = s.kind === "thing" ? s.item : s.quest;
+    const id = String(rec.id ?? "");
+    if (!id || sourceRef(rec, id)) return;
+    const lens = s.kind === "thing" ? "library" : "quests";
+    try {
+      const hs = await getHolosphere();
+      if (!hs.isPrivateLens(holon, lens)) return;
+      const snap = await getPrivacySnapshot(hs, holon);
+      if (s === sel) shareable = snap.owned.includes(lens);
+    } catch {
+      shareable = false;
+    }
+  }
+
+  async function loadSharePartners() {
+    if (!$holonId) return;
+    const hs = await getHolosphere();
+    const [fed, priv] = await Promise.all([
+      getFederationSnapshot(hs, $holonId),
+      getPrivacySnapshot(hs, $holonId),
+    ]);
+    const out: SharePartner[] = [];
+    for (const id of fed.federated) {
+      let pubkey: string | null = null;
+      try {
+        pubkey = (await resolveGranteePubkey(hs, id)).pubkey;
+      } catch {
+        pubkey = null;
+      }
+      const g = pubkey ? priv.grants[pubkey] : undefined;
+      out.push({
+        id,
+        name: $partnerNames[id] ?? fed.partnerNames[id] ?? id,
+        pubkey,
+        lens: !!g?.lenses.includes(shareLens),
+        shared: !!g?.items[shareLens]?.includes(shareId),
+      });
+    }
+    sharePartners = out;
+  }
+
+  async function openShare() {
+    message = "";
+    shareOpen = !shareOpen;
+    if (!shareOpen) return;
+    try {
+      await loadSharePartners();
+    } catch (err) {
+      console.error("[kiosk] share partners failed", err);
+      sharePartners = [];
+    }
+  }
+
+  async function toggleShare(p: SharePartner) {
+    if (!$holonId || !p.pubkey || shareBusy) return;
+    shareBusy = p.id;
+    try {
+      const hs = await getHolosphere();
+      if (p.shared)
+        await revokeItem(hs, $holonId, shareLens, shareId, p.pubkey);
+      else await grantItem(hs, $holonId, shareLens, shareId, p.pubkey);
+      message = $t(p.shared ? "detail.unshareDone" : "detail.shareDone", {
+        name: p.name,
+      });
+      await loadSharePartners();
+    } catch (err) {
+      message = $t("detail.shareFailed", {
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      shareBusy = "";
+    }
   }
 
   function startEdit() {
@@ -1321,6 +1431,11 @@
               <button class="ghost" on:click={startEdit} disabled={saving}
                 >{$t("detail.edit")}</button
               >
+              {#if shareable}
+                <button class="ghost" on:click={openShare} disabled={saving}
+                  ><Icon name="key" /> {$t("detail.shareWith")}</button
+                >
+              {/if}
             </div>
           {/if}
         {:else}
@@ -1550,6 +1665,11 @@
                     name="sparkles"
                   />
                   {$t("detail.breakDown")}{/if}</button
+              >
+            {/if}
+            {#if shareable}
+              <button class="ghost" on:click={openShare} disabled={saving}
+                ><Icon name="key" /> {$t("detail.shareWith")}</button
               >
             {/if}
             <button
@@ -1870,6 +1990,37 @@
           >
         </div>
       {/if}
+    {/if}
+
+    {#if shareOpen && shareable}
+      <div class="share">
+        <p class="share-head">{$t("detail.shareTitle")}</p>
+        {#if sharePartners.length === 0}
+          <p class="note-line">{$t("detail.shareNoPartners")}</p>
+        {:else}
+          {#each sharePartners as p (p.id)}
+            <div class="share-row">
+              <span class="share-name">{p.name}</span>
+              {#if p.lens}
+                <span class="share-state">{$t("detail.sharedLens")}</span>
+              {:else if !p.pubkey}
+                <span class="share-state">{$t("detail.shareNoKey")}</span>
+              {:else}
+                <button
+                  type="button"
+                  class="share-key"
+                  class:on={p.shared}
+                  aria-pressed={p.shared}
+                  disabled={!!shareBusy}
+                  on:click={() => toggleShare(p)}
+                  ><Icon name="key" />
+                  {$t(p.shared ? "detail.shared" : "detail.notShared")}</button
+                >
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </div>
     {/if}
 
     {#if message}<p class="msg">{message}</p>{/if}
@@ -2345,6 +2496,59 @@
     flex-wrap: wrap;
     gap: 0.6rem;
     margin-top: 1.3rem;
+  }
+  /* Share one card: who holds this card's key. */
+  .share {
+    margin-top: 1rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .share-head {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .share-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    min-height: 44px;
+  }
+  .share-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .share-state {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .share-key {
+    min-height: 40px;
+    padding: 0 0.9rem;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1.5px solid var(--line);
+    color: var(--ink);
+  }
+  .share-key.on {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+  .share-key:disabled {
+    opacity: 0.55;
   }
   .primary,
   .ghost {

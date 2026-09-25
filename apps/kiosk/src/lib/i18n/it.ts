@@ -536,6 +536,11 @@ export const it: Record<MessageKey, Msg> = {
   "menu.homePage": "Mostra la pagina iniziale",
   "menu.logout": "Esci",
   "menu.signingAs": "Firmi come {key}",
+  "menu.accepted": "La tua chiave conta su questo hub",
+  "menu.held":
+    "In attesa — questo hub non ha ancora accettato la tua chiave, quindi solo questo schermo vede le tue modifiche",
+  "layout.heldWrites":
+    "Questo hub non ha ancora accettato la tua chiave — le tue modifiche restano su questo schermo finché non lo fa.",
   "menu.loginTelegram": "Accedi con Telegram",
   "menu.login": "Accedi",
   "menu.install": "Aggiungi alla schermata Home",
@@ -645,6 +650,24 @@ export const it: Record<MessageKey, Msg> = {
   "settings.checking": "Verifica…",
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",
+  "settings.privacy": "Lenti private",
+  "settings.privacySub":
+    "— sigillate sui relay; solo le chiavi che consegni possono leggerle",
+  "settings.privacyLogin":
+    "Accedi con la tua chiave per rendere privata una lente.",
+  "settings.privacyAria": "{lens}: {state}",
+  "settings.privacyPrivate": "privata",
+  "settings.privacyPublic": "pubblica",
+  "settings.privacyHint":
+    "Una lente privata tiene sigillato ciò che contiene. Condividi un'intera lente dal dock, o una singola scheda dal suo dettaglio.",
+  "settings.privacyFailed": "Impossibile cambiare quella lente — riprova.",
+  "settings.privacyShared": "condivisa con {n}",
+  "settings.hubKey": "Chiave dell'hub {key}",
+  "settings.hubKeyLog": "fondato, la lista dei membri è firmata",
+  "settings.hubKeyOwn": "questo hub è la sua stessa chiave",
+  "settings.hubKeyBoot": "dalle sue impostazioni firmate",
+  "settings.hubKeyNone":
+    "Nessuna chiave firmata: non si possono condividere chiavi con questo hub, e ogni scrittura conta finché il suo bot non lo fonda.",
   "settings.onMap": "Sulla mappa",
   "settings.onMapSub":
     "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
@@ -687,6 +710,17 @@ export const it: Record<MessageKey, Msg> = {
   "fed.unlink": "Scollega {name}",
   "fed.linkError": "Impossibile collegare quell'holon — riprova.",
   "fed.changeError": "La modifica non è stata salvata — riprova.",
+  "fed.keyShare": "Condividi la chiave di {lens} con {name}",
+  "fed.keyRevoke": "Ritira la chiave di {lens} da {name}",
+  "fed.keyNoPubkey": "{name} non ha una chiave con cui condividere.",
+  "fed.keyError": "La modifica della chiave non è stata salvata — riprova.",
+  "fed.privateHint":
+    "Una lente con il lucchetto è privata: la freccia apre il flusso, la chiave condivide il contenuto.",
+  "fed.keyToOwn": "Le chiavi per {name} vanno alla sua chiave {key}.",
+  "fed.keyToAnchor":
+    "Le chiavi per {name} vanno alla sua chiave firmata {key}.",
+  "fed.keyNoAnchor":
+    "{name} non ha ancora una chiave firmata — il suo bot deve fondarlo prima di poter condividere una chiave.",
   "fed.unlinkError": "Lo scollegamento non è stato salvato — riprova.",
 
   // Location (hex) picker
@@ -782,6 +816,16 @@ export const it: Record<MessageKey, Msg> = {
   "detail.newCategoryPlaceholder": "Nome della nuova categoria",
   "detail.pickFromList": "Scegli dall'elenco",
   "detail.newCategory": "Nuova categoria…",
+  "detail.shareWith": "Condividi con…",
+  "detail.shareTitle": "Condividi la chiave di questa scheda con",
+  "detail.shareNoPartners": "Nessun holon federato con cui condividere.",
+  "detail.shareNoKey": "nessuna chiave con cui condividere",
+  "detail.shared": "Condivisa",
+  "detail.notShared": "Non condivisa",
+  "detail.sharedLens": "Intera lente condivisa",
+  "detail.shareDone": "Chiave condivisa con {name}.",
+  "detail.unshareDone": "Chiave ritirata da {name}.",
+  "detail.shareFailed": "Impossibile cambiare la condivisione — {reason}",
   "detail.description": "Descrizione",
   "detail.participants": {
     one: "{n} partecipante",

@@ -11,16 +11,19 @@
 //   { t: 'evt-del',  id }               signed event dropped (superseded)
 //   { t: 'priv',     k, v }             private ciphertext stored
 //   { t: 'priv-del', k }                private ciphertext dropped
+//   { t: 'key',      k, v }             received sealed-content key row stored
+//   { t: 'key-del',  k }                received key row dropped
 //   { t: 'cur',      k, v }             sync cursor for a lens key
 //
 // Snapshot:
-//   { records: record[], events: event[], private: [k, v][], cursors: [k, v][] }
+//   { records: record[], events: event[], private: [k, v][], keys: [k, v][], cursors: [k, v][] }
 
 export function emptyState() {
     return {
         records: new Map(),
         events: new Map(),
         private: new Map(),
+        keys: new Map(),
         cursors: new Map(),
     };
 }
@@ -31,6 +34,7 @@ export function stateFromSnapshot(snapshot) {
     for (const rec of snapshot.records || []) state.records.set(rec.addr, rec);
     for (const evt of snapshot.events || []) state.events.set(evt.id, evt);
     for (const [k, v] of snapshot.private || []) state.private.set(k, v);
+    for (const [k, v] of snapshot.keys || []) state.keys.set(k, v);
     for (const [k, v] of snapshot.cursors || []) state.cursors.set(k, v);
     return state;
 }
@@ -40,6 +44,7 @@ export function toSnapshot(state) {
         records: Array.from(state.records.values()),
         events: Array.from(state.events.values()),
         private: Array.from(state.private.entries()),
+        keys: Array.from(state.keys.entries()),
         cursors: Array.from(state.cursors.entries()),
     };
 }
@@ -51,6 +56,8 @@ export function applyOp(state, op) {
         case 'evt-del': state.events.delete(op.id); break;
         case 'priv': state.private.set(op.k, op.v); break;
         case 'priv-del': state.private.delete(op.k); break;
+        case 'key': state.keys.set(op.k, op.v); break;
+        case 'key-del': state.keys.delete(op.k); break;
         case 'cur': state.cursors.set(op.k, op.v); break;
         default: break; // unknown ops are ignored so newer logs stay readable
     }

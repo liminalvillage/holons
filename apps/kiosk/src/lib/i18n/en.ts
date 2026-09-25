@@ -528,6 +528,11 @@ export const en = {
   "menu.homePage": "Show the home page",
   "menu.logout": "Log out",
   "menu.signingAs": "Signing as {key}",
+  "menu.accepted": "Your key counts on this hub",
+  "menu.held":
+    "Held — this hub hasn't accepted your key yet, so only this screen sees your changes",
+  "layout.heldWrites":
+    "This hub hasn't accepted your key yet — your changes stay on this screen until it does.",
   "menu.loginTelegram": "Log in with Telegram",
   "menu.login": "Sign in",
   "menu.install": "Add to Home Screen",
@@ -636,6 +641,23 @@ export const en = {
   "settings.setLocation": "Set location…",
   // The home hex as a federation partner: which lenses reach the map, and
   // how far up the scalespace they travel.
+  "settings.privacy": "Private lenses",
+  "settings.privacySub":
+    "— sealed on the relays; only the keys you hand out can read them",
+  "settings.privacyLogin": "Log in with your key to make a lens private.",
+  "settings.privacyAria": "{lens}: {state}",
+  "settings.privacyPrivate": "private",
+  "settings.privacyPublic": "public",
+  "settings.privacyHint":
+    "A private lens keeps what is inside sealed. Share a whole lens from the dock, or one card from its detail view.",
+  "settings.privacyFailed": "Could not change that lens — try again.",
+  "settings.privacyShared": "shared with {n}",
+  "settings.hubKey": "Hub key {key}",
+  "settings.hubKeyLog": "founded, its member list is signed",
+  "settings.hubKeyOwn": "this hub is its own key",
+  "settings.hubKeyBoot": "from its own signed settings",
+  "settings.hubKeyNone":
+    "No signed hub key yet: keys cannot be shared with this hub, and every write counts until its bot founds it.",
   "settings.onMap": "On the map",
   "settings.onMapSub":
     "— what this holon puts on the shared map, and how far out it can be seen",
@@ -672,6 +694,16 @@ export const en = {
   "fed.unlink": "Unlink {name}",
   "fed.linkError": "Could not link that holon — try again.",
   "fed.changeError": "Change didn't save — try again.",
+  "fed.keyShare": "Share the key for {lens} with {name}",
+  "fed.keyRevoke": "Take the key for {lens} back from {name}",
+  "fed.keyNoPubkey": "{name} has no key to share with.",
+  "fed.keyError": "The key change didn't save — try again.",
+  "fed.privateHint":
+    "A locked lens is private: the arrow opens the flow, the key shares what is inside.",
+  "fed.keyToOwn": "Keys for {name} go to its own key {key}.",
+  "fed.keyToAnchor": "Keys for {name} go to its signed hub key {key}.",
+  "fed.keyNoAnchor":
+    "{name} has no signed hub key yet — its bot has to found it before a key can be shared.",
   "fed.unlinkError": "Unlink didn't save — try again.",
 
   // Location (hex) picker
@@ -764,6 +796,16 @@ export const en = {
   "detail.newCategoryPlaceholder": "New category name",
   "detail.pickFromList": "Pick from list",
   "detail.newCategory": "New category…",
+  "detail.shareWith": "Share with…",
+  "detail.shareTitle": "Share this card's key with",
+  "detail.shareNoPartners": "No federated holons to share with.",
+  "detail.shareNoKey": "no key to share with",
+  "detail.shared": "Shared",
+  "detail.notShared": "Not shared",
+  "detail.sharedLens": "Whole lens shared",
+  "detail.shareDone": "Key shared with {name}.",
+  "detail.unshareDone": "Key taken back from {name}.",
+  "detail.shareFailed": "Could not change the sharing — {reason}",
   "detail.description": "Description",
   "detail.participants": { one: "{n} participant", other: "{n} participants" },
   "detail.hostedBy": "Hosted by",
