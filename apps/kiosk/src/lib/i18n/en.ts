@@ -556,6 +556,9 @@ export const en = {
 
   // Settings panel
   "settings.title": "Kiosk settings",
+  "settings.groupScreen": "This screen",
+  "settings.groupLook": "Look",
+  "settings.groupHub": "This hub",
   "settings.holon": "Holon",
   "settings.holonPlaceholder": "holon id",
   "settings.unpinHolon": "Clear — show the home page",
@@ -579,31 +582,6 @@ export const en = {
   "settings.dark": "Dark",
   "settings.language": "Language",
   "settings.languageSub": "— Auto follows the holon's language",
-  "settings.tasksTab": "Tasks tab",
-  "settings.tasksTabSub":
-    "— the task list; on unless you take it off. Hold a tab on the strip to remove it there, + to add one",
-  "settings.tasksTabAria": "Show the Tasks tab",
-  "settings.calendarTab": "Calendar tab",
-  "settings.calendarTabSub": "— on unless you take it off",
-  "settings.calendarTabAria": "Show the Calendar tab",
-  "settings.libraryTab": "Library tab",
-  "settings.libraryTabSub":
-    "— shows by itself when the library has items; flip to force",
-  "settings.libraryTabAria": "Show the Library tab",
-  "settings.rolesTab": "Roles tab",
-  "settings.rolesTabSub": "— shows by itself when roles exist; flip to force",
-  "settings.rolesTabAria": "Show the Roles tab",
-  "settings.listsTab": "Lists tab",
-  "settings.listsTabSub":
-    "— shows by itself when checklists exist; flip to force",
-  "settings.listsTabAria": "Show the Lists tab",
-  "settings.shiftsTab": "Shifts tab",
-  "settings.shiftsTabSub":
-    "— community shifts from the shared relay; shows by itself when shifts exist",
-  "settings.shiftsTabAria": "Show the Shifts tab",
-  "settings.statusTab": "Status tab",
-  "settings.statusTabSub": "— a ranked contribution leaderboard",
-  "settings.statusTabAria": "Show the Status tab",
   "settings.statusConfirmTitle": "Turn on the Status board?",
   "settings.statusConfirmAccept": "We understand — turn it on",
   "settings.valueEquation": "Value equation",
@@ -658,6 +636,26 @@ export const en = {
   "settings.hubKeyBoot": "from its own signed settings",
   "settings.hubKeyNone":
     "No signed hub key yet: keys cannot be shared with this hub, and every write counts until its bot founds it.",
+  "settings.hubKeyBot":
+    "No signed hub key yet: this hub was born in Telegram, so its bot founds it the first time it runs with signing on. Until then keys cannot be shared here.",
+  "settings.hubKeyOpen":
+    "Nobody speaks for this hub yet. Found it with your key: you become its first admin, and keys can be shared with it.",
+  "settings.hubKeyNeedsKey":
+    "Nobody speaks for this hub yet. Sign in with your own key (nsec, passkey or wallet) to found it.",
+  "settings.hubFound": "Found this hub with my key",
+  "settings.hubFoundLogin": "Sign in with a key",
+  "settings.hubFounded": "Founded: your key now speaks for this hub.",
+  "settings.hubFoundFailed": "Could not found this hub — {reason}",
+  "settings.hubKeys": "Keys of this hub",
+  "settings.hubKeysSub": "— who may write and share here, by public key",
+  "settings.hubKeyRoleAdmin": "admin",
+  "settings.hubKeyRoleMember": "member",
+  "settings.hubKeyYou": "you",
+  "settings.hubKeyAddPlaceholder": "npub or hex public key",
+  "settings.hubKeyAdd": "Add",
+  "settings.hubKeyAddAdmin": "Add as admin",
+  "settings.hubKeyRemove": "Remove {key}",
+  "settings.hubKeyFailed": "Could not change that key — {reason}",
   "settings.onMap": "On the map",
   "settings.onMapSub":
     "— what this holon puts on the shared map, and how far out it can be seen",
@@ -1009,6 +1007,17 @@ export const en = {
   "hub.open": "Add it",
   "hub.back": "Back",
 
+  "hub.hereTitle": "Start a hub here",
+  "hub.hereBody": "No Telegram: your key founds it, right now.",
+  "hub.hereLead":
+    "A hub of your own, founded by your key: you are its first admin, and you seat others by their public key.",
+  "hub.hereName": "Name",
+  "hub.hereNamePlaceholder": "What is this hub called?",
+  "hub.hereCreate": "Found it",
+  "hub.hereNeedsKey":
+    "Founding needs a key of your own. Sign in with an nsec, a passkey or a wallet first.",
+  "hub.hereSignIn": "Sign in with a key",
+  "hub.hereFailed": "Could not found the hub — {reason}",
   // Home / landing page — the front door. Short on purpose: what a hub is, the
   // two ways to start one, and how hubs connect. The long read lives at
   // docs.holons.io. The bot is never named here — a fork points
@@ -1107,9 +1116,6 @@ export const en = {
   "draft.unavailable":
     "Drafting needs an OpenAI key — set one on the deploy, or paste one in Settings.",
 
-  "settings.flowsTab": "Flows board",
-  "settings.flowsTabSub": "Where value comes from, goes, and is shared out.",
-  "settings.flowsTabAria": "Show the Flows board",
   "settings.collective": "OpenCollective",
   "settings.collectiveSub": "The collective whose balance this holon reports.",
   "settings.collectivePlaceholder": "collective slug or URL",
@@ -1427,10 +1433,6 @@ export const en = {
   "pills.reorder": "Reorder",
   "pills.moves": "Moves",
   "pills.stockLayout": "Stock layout",
-  "settings.stockTab": "Stock board",
-  "settings.stockTabSub":
-    "What the place keeps: the shelf, what to buy, and what the federation could move.",
-  "settings.stockTabAria": "Show the Stock board",
   "stock.reading": "Counting the shelves…",
   "stock.emptyShelf": "Nothing on the shelf yet.",
   "stock.emptyShelfLead":
@@ -1482,10 +1484,6 @@ export const en = {
   "pills.matches": "Matches",
   "pills.demand": "Needs",
   "pills.offersLayout": "Offers layout",
-  "settings.offersTab": "Needs & Offers board",
-  "settings.offersTabSub":
-    "The market: what is on the table, matched to what is needed — here, among partners, and across the map.",
-  "settings.offersTabAria": "Show the Offers board",
   "offers.reading": "Reading the market…",
   "offers.scale": "Scale",
   "offers.scale.holon": "This holon",

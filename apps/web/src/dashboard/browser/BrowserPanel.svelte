@@ -9,6 +9,7 @@
 	import { homeHolonId } from '$lib/stores/homeHolonId';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
 	import { handshake } from 'holosphere';
+	import { foundHub, newHubId } from '@holons/core/protocol';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 
@@ -540,6 +541,32 @@
 	}
 
 
+	// Start a hub that is not a Telegram chat: mint its id and found it with
+	// this member's own key (@holons/core/protocol) — the key signs the genesis
+	// of the hub's member log and becomes its first admin; the settings page
+	// then seats others by public key.
+	let isFoundingHub = false;
+	async function startNewHub() {
+		if (!holosphere || isFoundingHub) return;
+		if (!holosphere.currentPubkey) {
+			addError = 'Sign in with a key to start a hub';
+			return;
+		}
+		isFoundingHub = true;
+		addError = '';
+		try {
+			const id = newHubId();
+			const name = newHolonName.trim();
+			await foundHub(holosphere, id, { name: name || undefined });
+			closeAddModal();
+			goto(`/${id}/settings`);
+		} catch (err) {
+			addError = err instanceof Error ? err.message : String(err);
+		} finally {
+			isFoundingHub = false;
+		}
+	}
+
 	function closeAddModal() {
 		showAddModal = false;
 		showQRScanner = false;
@@ -999,6 +1026,18 @@
 						placeholder="Custom name for display"
 						onkeydown={(e) => e.key === 'Enter' && addNewHolon()}
 					/>
+				</div>
+
+				<div class="add-modal__found">
+					<span>No hub yet? Start one here, founded by your key — no Telegram needed.</span>
+					<button
+						type="button"
+						class="add-modal__found-btn"
+						disabled={isFoundingHub}
+						onclick={startNewHub}
+					>
+						{isFoundingHub ? 'Founding…' : 'Start a new hub'}
+					</button>
 				</div>
 
 				<!-- Lens Configuration: per-direction (mirrors Federation.svelte). -->
@@ -1502,4 +1541,31 @@
 		opacity: 1;
 	}
 
+
+	.add-modal__found {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin: 0.25rem 0 1rem;
+		padding: 0.6rem 0.75rem;
+		border: 1px dashed var(--border-color, #d1d5db);
+		border-radius: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #6b7280);
+	}
+	.add-modal__found-btn {
+		padding: 0.35rem 0.75rem;
+		border-radius: 999px;
+		background: var(--accent, #0f766e);
+		color: #fff;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.add-modal__found-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
 </style>

@@ -564,6 +564,9 @@ export const es: Record<MessageKey, Msg> = {
 
   // Settings panel
   "settings.title": "Ajustes del quiosco",
+  "settings.groupScreen": "Esta pantalla",
+  "settings.groupLook": "Aspecto",
+  "settings.groupHub": "Este hub",
   "settings.holon": "Holón",
   "settings.holonPlaceholder": "id del holón",
   "settings.unpinHolon": "Borrar — mostrar la página de inicio",
@@ -588,32 +591,6 @@ export const es: Record<MessageKey, Msg> = {
   "settings.dark": "Oscuro",
   "settings.language": "Idioma",
   "settings.languageSub": "— Auto sigue el idioma del holón",
-  "settings.tasksTab": "Pestaña Tareas",
-  "settings.tasksTabSub":
-    "— la lista de tareas; activa salvo que la quites. Mantén pulsada una pestaña en la barra para quitarla allí, + para añadir una",
-  "settings.tasksTabAria": "Mostrar la pestaña Tareas",
-  "settings.calendarTab": "Pestaña Calendario",
-  "settings.calendarTabSub": "— activa salvo que la quites",
-  "settings.calendarTabAria": "Mostrar la pestaña Calendario",
-  "settings.libraryTab": "Pestaña Biblioteca",
-  "settings.libraryTabSub":
-    "— aparece sola cuando la biblioteca tiene objetos; actívala para forzarla",
-  "settings.libraryTabAria": "Mostrar la pestaña Biblioteca",
-  "settings.rolesTab": "Pestaña Roles",
-  "settings.rolesTabSub":
-    "— aparece sola cuando existen roles; actívala para forzarla",
-  "settings.rolesTabAria": "Mostrar la pestaña Roles",
-  "settings.listsTab": "Pestaña Listas",
-  "settings.listsTabSub":
-    "— aparece sola cuando existen listas; actívala para forzarla",
-  "settings.listsTabAria": "Mostrar la pestaña Listas",
-  "settings.shiftsTab": "Pestaña Turnos",
-  "settings.shiftsTabSub":
-    "— turnos comunitarios del relay compartido; aparece sola cuando existen turnos",
-  "settings.shiftsTabAria": "Mostrar la pestaña Turnos",
-  "settings.statusTab": "Pestaña Estado",
-  "settings.statusTabSub": "— una clasificación de contribuciones",
-  "settings.statusTabAria": "Mostrar la pestaña Estado",
   "settings.statusConfirmTitle": "¿Activar el tablero de Estado?",
   "settings.statusConfirmAccept": "Entendido — actívalo",
   "settings.valueEquation": "Ecuación de valor",
@@ -669,6 +646,27 @@ export const es: Record<MessageKey, Msg> = {
   "settings.hubKeyBoot": "de su propia configuración firmada",
   "settings.hubKeyNone":
     "Aún sin clave firmada: no se pueden compartir llaves con este hub, y cada escritura cuenta hasta que su bot lo funde.",
+  "settings.hubKeyBot":
+    "Aún sin clave firmada: este hub nació en Telegram, así que lo funda su bot la primera vez que corre con la firma activa. Hasta entonces aquí no se pueden compartir llaves.",
+  "settings.hubKeyOpen":
+    "Nadie habla aún por este hub. Fúndalo con tu clave: te conviertes en su primer admin, y se pueden compartir llaves con él.",
+  "settings.hubKeyNeedsKey":
+    "Nadie habla aún por este hub. Inicia sesión con tu propia clave (nsec, passkey o wallet) para fundarlo.",
+  "settings.hubFound": "Fundar este hub con mi clave",
+  "settings.hubFoundLogin": "Iniciar sesión con una clave",
+  "settings.hubFounded": "Fundado: ahora tu clave habla por este hub.",
+  "settings.hubFoundFailed": "No se pudo fundar este hub — {reason}",
+  "settings.hubKeys": "Claves de este hub",
+  "settings.hubKeysSub":
+    "— quién puede escribir y compartir aquí, por clave pública",
+  "settings.hubKeyRoleAdmin": "admin",
+  "settings.hubKeyRoleMember": "miembro",
+  "settings.hubKeyYou": "tú",
+  "settings.hubKeyAddPlaceholder": "npub o clave pública hex",
+  "settings.hubKeyAdd": "Añadir",
+  "settings.hubKeyAddAdmin": "Añadir como admin",
+  "settings.hubKeyRemove": "Quitar {key}",
+  "settings.hubKeyFailed": "No se pudo cambiar esa clave — {reason}",
   "settings.onMap": "En el mapa",
   "settings.onMapSub":
     "— lo que este holón pone en el mapa compartido, y desde qué lejos se ve",
@@ -1027,6 +1025,17 @@ export const es: Record<MessageKey, Msg> = {
   "hub.open": "Añadirlo",
   "hub.back": "Atrás",
 
+  "hub.hereTitle": "Iniciar un hub aquí",
+  "hub.hereBody": "Sin Telegram: lo funda tu clave, ahora mismo.",
+  "hub.hereLead":
+    "Un hub propio, fundado por tu clave: eres su primer admin, y sientas a los demás por su clave pública.",
+  "hub.hereName": "Nombre",
+  "hub.hereNamePlaceholder": "¿Cómo se llama este hub?",
+  "hub.hereCreate": "Fundarlo",
+  "hub.hereNeedsKey":
+    "Fundar necesita una clave propia. Inicia sesión primero con un nsec, una passkey o un wallet.",
+  "hub.hereSignIn": "Iniciar sesión con una clave",
+  "hub.hereFailed": "No se pudo fundar el hub — {reason}",
   // Home / landing page
   "home.metaTitle": "Hubs Network — un hub para cada grupo",
   "home.metaDescription":
@@ -1123,10 +1132,6 @@ export const es: Record<MessageKey, Msg> = {
   "draft.unavailable":
     "Rellenar necesita una clave de OpenAI — ponla en el deploy o pégala en Ajustes.",
 
-  "settings.flowsTab": "Panel de Flujos",
-  "settings.flowsTabSub":
-    "De d\u00f3nde viene el valor, ad\u00f3nde va y c\u00f3mo se reparte.",
-  "settings.flowsTabAria": "Mostrar el panel de Flujos",
   "settings.collective": "OpenCollective",
   "settings.collectiveSub": "El colectivo cuyo saldo reporta este holon.",
   "settings.collectivePlaceholder": "slug o URL del colectivo",
@@ -1449,10 +1454,6 @@ export const es: Record<MessageKey, Msg> = {
   "pills.reorder": "Reponer",
   "pills.moves": "Movimientos",
   "pills.stockLayout": "Vista de existencias",
-  "settings.stockTab": "Tablero de existencias",
-  "settings.stockTabSub":
-    "Lo que guarda el lugar: el estante, qué comprar y qué podría mover la federación.",
-  "settings.stockTabAria": "Mostrar el tablero de existencias",
   "stock.reading": "Contando los estantes…",
   "stock.emptyShelf": "Todavía no hay nada en el estante.",
   "stock.emptyShelfLead":
@@ -1504,10 +1505,6 @@ export const es: Record<MessageKey, Msg> = {
   "pills.matches": "Cruces",
   "pills.demand": "Necesidades",
   "pills.offersLayout": "Vista de ofertas",
-  "settings.offersTab": "Tablero de necesidades y ofertas",
-  "settings.offersTabSub":
-    "El mercado: lo que está sobre la mesa, cruzado con lo que se necesita — aquí, entre socios y en el mapa.",
-  "settings.offersTabAria": "Mostrar el tablero de ofertas",
   "offers.reading": "Leyendo el mercado…",
   "offers.scale": "Escala",
   "offers.scale.holon": "Este holón",

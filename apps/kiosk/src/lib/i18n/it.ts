@@ -564,6 +564,9 @@ export const it: Record<MessageKey, Msg> = {
 
   // Settings panel
   "settings.title": "Impostazioni del kiosk",
+  "settings.groupScreen": "Questo schermo",
+  "settings.groupLook": "Aspetto",
+  "settings.groupHub": "Questo hub",
   "settings.holon": "Holon",
   "settings.holonPlaceholder": "id dell'holon",
   "settings.unpinHolon": "Cancella — mostra la pagina iniziale",
@@ -588,32 +591,6 @@ export const it: Record<MessageKey, Msg> = {
   "settings.dark": "Scuro",
   "settings.language": "Lingua",
   "settings.languageSub": "— Auto segue la lingua dell'holon",
-  "settings.tasksTab": "Scheda Attività",
-  "settings.tasksTabSub":
-    "— la lista delle attività; attiva finché non la togli. Tieni premuta una scheda sulla barra per toglierla lì, + per aggiungerne una",
-  "settings.tasksTabAria": "Mostra la scheda Attività",
-  "settings.calendarTab": "Scheda Calendario",
-  "settings.calendarTabSub": "— attiva finché non la togli",
-  "settings.calendarTabAria": "Mostra la scheda Calendario",
-  "settings.libraryTab": "Scheda Biblioteca",
-  "settings.libraryTabSub":
-    "— appare da sola quando la biblioteca ha oggetti; attivala per forzarla",
-  "settings.libraryTabAria": "Mostra la scheda Biblioteca",
-  "settings.rolesTab": "Scheda Ruoli",
-  "settings.rolesTabSub":
-    "— appare da sola quando esistono ruoli; attivala per forzarla",
-  "settings.rolesTabAria": "Mostra la scheda Ruoli",
-  "settings.listsTab": "Scheda Liste",
-  "settings.listsTabSub":
-    "— appare da sola quando esistono liste; attivala per forzarla",
-  "settings.listsTabAria": "Mostra la scheda Liste",
-  "settings.shiftsTab": "Scheda Turni",
-  "settings.shiftsTabSub":
-    "— turni comunitari dal relay condiviso; appare da sola quando esistono turni",
-  "settings.shiftsTabAria": "Mostra la scheda Turni",
-  "settings.statusTab": "Scheda Stato",
-  "settings.statusTabSub": "— una classifica dei contributi",
-  "settings.statusTabAria": "Mostra la scheda Stato",
   "settings.statusConfirmTitle": "Attivare la scheda Stato?",
   "settings.statusConfirmAccept": "Abbiamo capito — attivala",
   "settings.valueEquation": "Equazione del valore",
@@ -668,6 +645,27 @@ export const it: Record<MessageKey, Msg> = {
   "settings.hubKeyBoot": "dalle sue impostazioni firmate",
   "settings.hubKeyNone":
     "Nessuna chiave firmata: non si possono condividere chiavi con questo hub, e ogni scrittura conta finché il suo bot non lo fonda.",
+  "settings.hubKeyBot":
+    "Nessuna chiave firmata: questo hub è nato su Telegram, quindi lo fonda il suo bot la prima volta che gira con la firma attiva. Fino ad allora qui non si possono condividere chiavi.",
+  "settings.hubKeyOpen":
+    "Nessuno parla ancora per questo hub. Fondalo con la tua chiave: diventi il primo admin, e si possono condividere chiavi con esso.",
+  "settings.hubKeyNeedsKey":
+    "Nessuno parla ancora per questo hub. Accedi con una tua chiave (nsec, passkey o wallet) per fondarlo.",
+  "settings.hubFound": "Fonda questo hub con la mia chiave",
+  "settings.hubFoundLogin": "Accedi con una chiave",
+  "settings.hubFounded": "Fondato: ora la tua chiave parla per questo hub.",
+  "settings.hubFoundFailed": "Impossibile fondare questo hub — {reason}",
+  "settings.hubKeys": "Chiavi di questo hub",
+  "settings.hubKeysSub":
+    "— chi può scrivere e condividere qui, per chiave pubblica",
+  "settings.hubKeyRoleAdmin": "admin",
+  "settings.hubKeyRoleMember": "membro",
+  "settings.hubKeyYou": "tu",
+  "settings.hubKeyAddPlaceholder": "npub o chiave pubblica hex",
+  "settings.hubKeyAdd": "Aggiungi",
+  "settings.hubKeyAddAdmin": "Aggiungi come admin",
+  "settings.hubKeyRemove": "Rimuovi {key}",
+  "settings.hubKeyFailed": "Impossibile cambiare quella chiave — {reason}",
   "settings.onMap": "Sulla mappa",
   "settings.onMapSub":
     "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
@@ -1032,6 +1030,17 @@ export const it: Record<MessageKey, Msg> = {
   "hub.open": "Aggiungilo",
   "hub.back": "Indietro",
 
+  "hub.hereTitle": "Avvia un hub qui",
+  "hub.hereBody": "Senza Telegram: lo fonda la tua chiave, adesso.",
+  "hub.hereLead":
+    "Un hub tutto tuo, fondato dalla tua chiave: sei il primo admin, e fai entrare gli altri con la loro chiave pubblica.",
+  "hub.hereName": "Nome",
+  "hub.hereNamePlaceholder": "Come si chiama questo hub?",
+  "hub.hereCreate": "Fondalo",
+  "hub.hereNeedsKey":
+    "Per fondare serve una chiave tua. Accedi prima con un nsec, una passkey o un wallet.",
+  "hub.hereSignIn": "Accedi con una chiave",
+  "hub.hereFailed": "Impossibile fondare l'hub — {reason}",
   // Home / landing page
   "home.metaTitle": "Hubs Network — un hub per ogni gruppo",
   "home.metaDescription":
@@ -1129,10 +1138,6 @@ export const it: Record<MessageKey, Msg> = {
   "draft.unavailable":
     "Per compilare serve una chiave OpenAI — impostala sul deploy o incollala nelle Impostazioni.",
 
-  "settings.flowsTab": "Pannello Flussi",
-  "settings.flowsTabSub":
-    "Da dove arriva il valore, dove va e come si ripartisce.",
-  "settings.flowsTabAria": "Mostra il pannello Flussi",
   "settings.collective": "OpenCollective",
   "settings.collectiveSub":
     "Il collettivo di cui questo holon riporta il saldo.",
@@ -1458,10 +1463,6 @@ export const it: Record<MessageKey, Msg> = {
   "pills.reorder": "Riordino",
   "pills.moves": "Spostamenti",
   "pills.stockLayout": "Vista scorte",
-  "settings.stockTab": "Bacheca scorte",
-  "settings.stockTabSub":
-    "Ciò che il luogo tiene: lo scaffale, cosa comprare e cosa potrebbe spostare la federazione.",
-  "settings.stockTabAria": "Mostra la bacheca scorte",
   "stock.reading": "Conto gli scaffali…",
   "stock.emptyShelf": "Niente sullo scaffale, per ora.",
   "stock.emptyShelfLead":
@@ -1513,10 +1514,6 @@ export const it: Record<MessageKey, Msg> = {
   "pills.matches": "Incroci",
   "pills.demand": "Bisogni",
   "pills.offersLayout": "Vista offerte",
-  "settings.offersTab": "Bacheca bisogni e offerte",
-  "settings.offersTabSub":
-    "Il mercato: ciò che è sul tavolo, incrociato con ciò che serve — qui, tra i partner e sulla mappa.",
-  "settings.offersTabAria": "Mostra la bacheca offerte",
   "offers.reading": "Leggo il mercato…",
   "offers.scale": "Scala",
   "offers.scale.holon": "Questo holon",

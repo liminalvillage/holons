@@ -58,6 +58,23 @@ export {
   type MembershipEnvelope,
 } from './membership.js';
 
+export {
+  HUB_ID_PREFIX,
+  addHubMember,
+  foundHub,
+  foundingAuthority,
+  hubMembers,
+  isHubId,
+  isTelegramChatId,
+  myHubRole,
+  newHubId,
+  removeHubMember,
+  syncFoundingAuthority,
+  type FoundHubOptions,
+  type FoundHubResult,
+  type FoundingAuthority,
+} from './founding.js';
+
 export { createPartyResolver, partiesFromAttestations, type PartyResolver, type PartyResolverInput } from './identity.js';
 
 export { DEFAULT_POLICY, POLICY_ROLES, normalizePolicy, policyRecord, foldPolicies, policyFor, samePolicy } from './policy.js';

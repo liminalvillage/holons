@@ -9,6 +9,16 @@
   import { nameMap, resolvedName, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
+  import {
+    addHubMember,
+    foundHub,
+    hubMembers,
+    myHubRole,
+    removeHubMember,
+    syncFoundingAuthority,
+    type FoundingAuthority
+  } from '@holons/core/protocol';
+  import { nostrUtils } from 'holosphere';
   import TitleBar from './shared/TitleBar.svelte';
   import Modal from './shared/Modal.svelte';
   // HexPicker pulls in mapbox-gl (~1.9 MB); load it lazily (see {#await} below)
@@ -210,11 +220,100 @@
     }
   }
 
+  // ── Hub key ────────────────────────────────────────────────────────────────
+  // Who speaks for this hub (core's rule, @holons/core/protocol founding): a
+  // Telegram chat is founded by its bot; a hub started here, or one nobody has
+  // founded yet, can be founded by the signed-in member's own key — this
+  // instance signs with it — who then seats others by public key.
+  let founding: FoundingAuthority | null = null;
+  let foundBusy = false;
+  let hubKeys: Map<string, 'admin' | 'member'> = new Map();
+  let hubRole: 'admin' | 'member' | null = null;
+  let keyDraft = '';
+  let keyBusy = false;
+
+  function shortKey(pub: string): string {
+    try {
+      return nostrUtils.shortenNpub(nostrUtils.hexToNpub(pub));
+    } catch {
+      return `${pub.slice(0, 8)}…`;
+    }
+  }
+
+  async function loadFounding(id: string) {
+    if (!holosphere) return;
+    try {
+      const auth = await syncFoundingAuthority(holosphere, id);
+      if (id !== holonId) return;
+      founding = auth;
+      if (auth.kind === 'anchored') {
+        hubRole = await myHubRole(holosphere, id);
+        hubKeys = hubRole === 'admin' ? await hubMembers(holosphere, id) : new Map();
+      } else {
+        hubRole = null;
+        hubKeys = new Map();
+      }
+    } catch (err) {
+      console.warn('[settings] could not read who founds this hub:', err);
+      founding = null;
+    }
+  }
+
+  const reasonOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+  async function foundThisHub() {
+    if (!holosphere || !holonId || foundBusy) return;
+    foundBusy = true;
+    try {
+      await foundHub(holosphere, holonId, { name: settings.name || undefined });
+      showNotification('Founded: your key now speaks for this hub', 'success');
+      await loadFounding(holonId);
+    } catch (err) {
+      showNotification(`Could not found this hub — ${reasonOf(err)}`, 'error');
+    } finally {
+      foundBusy = false;
+    }
+  }
+
+  async function addKey(role: 'admin' | 'member') {
+    const key = keyDraft.trim();
+    if (!holosphere || !holonId || !key || keyBusy) return;
+    keyBusy = true;
+    try {
+      const pub = await addHubMember(holosphere, holonId, key, role);
+      hubKeys = new Map(hubKeys).set(pub, role);
+      keyDraft = '';
+    } catch (err) {
+      showNotification(`Could not add that key — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+
+  async function removeKey(pub: string) {
+    if (!holosphere || !holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      await removeHubMember(holosphere, holonId, pub);
+      const next = new Map(hubKeys);
+      next.delete(pub);
+      hubKeys = next;
+    } catch (err) {
+      showNotification(`Could not remove that key — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+
   // React to holonId changes
   $: if (holonId) {
     holosphere = getContext('holosphere');
     loadSettings();
     resolveName(holonId);
+    founding = null;
+    hubRole = null;
+    hubKeys = new Map();
+    void loadFounding(holonId);
   }
 
   // UI logic
@@ -611,6 +710,88 @@
               </ul>
             {:else}
               <p class="empty-state">No members yet.</p>
+            {/if}
+          </section>
+
+          <!-- Who speaks for this hub, and its signed roster of keys. -->
+          <section class="settings-section">
+            <h3 class="settings-section__title">Hub key</h3>
+            {#if founding?.kind === 'anchored'}
+              <p class="hub-key__note">
+                Founded — <code>{shortKey(founding.anchor)}</code>
+                {#if founding.own}(your key){/if} speaks for this hub.
+              </p>
+            {:else if founding?.kind === 'self'}
+              <p class="hub-key__note">This holon is its own key.</p>
+            {:else if founding?.kind === 'bot'}
+              <p class="hub-key__note hub-key__note--warn">
+                No signed hub key yet. This hub was born in Telegram, so its bot founds it
+                the first time it runs with signing on; until then keys cannot be shared with it.
+              </p>
+            {:else if founding?.kind === 'open'}
+              <p class="hub-key__note hub-key__note--warn">
+                Nobody speaks for this hub yet. Found it with your key to become its first
+                admin; keys can then be shared with it.
+              </p>
+              <button type="button" class="btn btn--primary btn--sm" disabled={foundBusy} on:click={foundThisHub}>
+                Found this hub with my key
+              </button>
+            {:else if founding?.kind === 'cell'}
+              <p class="hub-key__note">A cell aggregates many holons: nobody founds it.</p>
+            {:else}
+              <p class="hub-key__note">Reading the relays…</p>
+            {/if}
+
+            {#if hubRole === 'admin'}
+              <div class="settings-field">
+                <span class="settings-field__label">Keys of this hub</span>
+                <ul class="member-list">
+                  {#each [...hubKeys] as [pub, role] (pub)}
+                    <li class="member">
+                      <div class="member__main">
+                        <span class="member__avatar">🔑</span>
+                        <code class="member__name" title={pub}>{shortKey(pub)}</code>
+                        <span class="member__badge">{role}</span>
+                        {#if founding?.kind === 'anchored' && pub === founding.anchor}
+                          <span class="member__badge">founder</span>
+                        {/if}
+                      </div>
+                      {#if pub !== holosphere?.currentPubkey}
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm"
+                          disabled={keyBusy}
+                          on:click={() => removeKey(pub)}
+                          title="Remove this key"
+                        >
+                          Remove
+                        </button>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+              <div class="settings-field">
+                <label for="hub-key-add" class="settings-field__label">Add a key</label>
+                <input
+                  id="hub-key-add"
+                  type="text"
+                  class="input"
+                  bind:value={keyDraft}
+                  placeholder="npub or hex public key"
+                  autocomplete="off"
+                  spellcheck="false"
+                  on:keydown={(e) => e.key === 'Enter' && addKey('member')}
+                />
+                <div class="hub-key__actions">
+                  <button type="button" class="btn btn--primary btn--sm" disabled={keyBusy || !keyDraft} on:click={() => addKey('member')}>
+                    Add as member
+                  </button>
+                  <button type="button" class="btn btn--ghost btn--sm" disabled={keyBusy || !keyDraft} on:click={() => addKey('admin')}>
+                    Add as admin
+                  </button>
+                </div>
+              </div>
             {/if}
           </section>
         {/if}
@@ -1037,6 +1218,24 @@
     letter-spacing: 0.04em;
   }
 
+  .hub-key__note {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-secondary, #6b7280);
+  }
+  .hub-key__note code {
+    font-size: 0.85em;
+  }
+  .hub-key__note--warn {
+    color: var(--warning, #b45309);
+  }
+  .hub-key__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
   .empty-state {
     color: var(--color-text-muted, var(--color-text-muted));
     font-size: 0.875rem;

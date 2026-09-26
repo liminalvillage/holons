@@ -555,7 +555,7 @@
   // in hand it is a record written into that pair; otherwise it names a hub,
   // and a selected cell becomes that hub's home.
   /** The add-a-hub sheet, when open, and the step it is on. */
-  let addSheet: { step: "choose" | "existing" | "new" } | null = null;
+  let addSheet: { step: "choose" | "existing" | "here" | "new" } | null = null;
   $: adding = addSheet !== null;
   $: addLabel = addLens
     ? $t("dock.addTo", { lens: lensName(addLens) })

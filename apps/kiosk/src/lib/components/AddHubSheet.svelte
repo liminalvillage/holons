@@ -5,6 +5,11 @@
   // The sheet behind the dock's "+": which way in?
   //
   //   existing  paste a hub you already have — its id, its link, its name.
+  //   here      start one right here, no Telegram: the adopted session key
+  //             founds it (`@holons/core/protocol` foundHub) — it signs the
+  //             genesis of the hub's member log and becomes its first admin.
+  //             A Telegram login on this shared screen has no key of its own
+  //             here, so that step asks for a key sign-in first.
   //   new       start one through Telegram: a chat with the bot (a hub for
   //             you) or the bot in a group (a hub for the group). Telegram
   //             cannot hand the new chat's id back to this tab, so the deep
@@ -17,7 +22,10 @@
   // sheet only names the hub.
   import { createEventDispatcher, onDestroy, tick } from "svelte";
   import { newClaimToken } from "@holons/core/onboarding";
-  import { t } from "$lib/i18n";
+  import { foundHub, newHubId } from "@holons/core/protocol";
+  import { t, tr } from "$lib/i18n";
+  import { loginOpen } from "$lib/auth";
+  import { sessionKeyPub } from "$lib/sessionKey";
   import { parseHolonAdd } from "$lib/holons";
   import { getHolosphere } from "$lib/holosphere";
   import {
@@ -28,7 +36,7 @@
   } from "$lib/hubclaim";
 
   /** Where to open: the chooser, the paste line, or the Telegram step. */
-  export let step: "choose" | "existing" | "new" = "choose";
+  export let step: "choose" | "existing" | "here" | "new" = "choose";
   /** The map cell the hub would be homed on, when one is selected. */
   export let cell: string | null = null;
 
@@ -54,6 +62,37 @@
   async function focusInput() {
     await tick();
     input?.focus();
+  }
+
+  // ── Founding here ────────────────────────────────────────────────────────
+  let hereName = "";
+  let hereBusy = false;
+  let hereError = "";
+  let hereInput: HTMLInputElement | undefined;
+
+  async function foundHere() {
+    if (hereBusy || !$sessionKeyPub) return;
+    hereBusy = true;
+    hereError = "";
+    try {
+      const hs = await getHolosphere();
+      const id = newHubId();
+      const name = hereName.trim();
+      await foundHub(hs, id, { name: name || undefined });
+      dispatch("add", { id, name: name || undefined });
+    } catch (err) {
+      console.error("[kiosk] founding a hub here failed", err);
+      hereError = tr("hub.hereFailed", {
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      hereBusy = false;
+    }
+  }
+
+  async function focusHere() {
+    await tick();
+    hereInput?.focus();
   }
 
   // ── The claim ────────────────────────────────────────────────────────────
@@ -86,6 +125,7 @@
 
   $: if (step === "new") armClaim();
   $: if (step === "existing") void focusInput();
+  $: if (step === "here" && $sessionKeyPub) void focusHere();
 
   onDestroy(() => stopWatch?.());
 </script>
@@ -135,15 +175,63 @@
       <button
         type="button"
         class="opt opt--new"
-        on:click={() => (step = "new")}
+        on:click={() => (step = "here")}
       >
-        <span class="opt__icon" aria-hidden="true">+</span>
+        <span class="opt__icon" aria-hidden="true"><Icon name="key" /></span>
+        <span class="opt__text">
+          <b>{$t("hub.hereTitle")}</b>
+          <small>{$t("hub.hereBody")}</small>
+        </span>
+      </button>
+      <button type="button" class="opt" on:click={() => (step = "new")}>
+        <span class="opt__icon" aria-hidden="true">{@render tgIcon()}</span>
         <span class="opt__text">
           <b>{$t("hub.newTitle")}</b>
           <small>{$t("hub.newBody")}</small>
         </span>
       </button>
     </div>
+  {:else if step === "here"}
+    <h3>{$t("hub.hereTitle")}</h3>
+    <p class="lead">{$t("hub.hereLead")}</p>
+    {#if $sessionKeyPub}
+      <form class="here" on:submit|preventDefault={foundHere}>
+        <label class="here__label" for="hub-here-name"
+          >{$t("hub.hereName")}</label
+        >
+        <input
+          id="hub-here-name"
+          type="text"
+          bind:value={hereName}
+          bind:this={hereInput}
+          on:input={() => (hereError = "")}
+          placeholder={$t("hub.hereNamePlaceholder")}
+          autocomplete="off"
+          maxlength="80"
+        />
+        <button type="submit" class="go go--wide" disabled={hereBusy}>
+          <Icon name="key" />
+          {$t("hub.hereCreate")}
+        </button>
+        {#if hereError}
+          <span class="err err--static" role="alert">{hereError}</span>
+        {/if}
+      </form>
+    {:else}
+      <p class="hint">{$t("hub.hereNeedsKey")}</p>
+      <button
+        type="button"
+        class="go go--wide"
+        on:click={() => loginOpen.set(true)}
+      >
+        <Icon name="key" />
+        {$t("hub.hereSignIn")}
+      </button>
+    {/if}
+    <button type="button" class="back" on:click={() => (step = "choose")}>
+      <Icon name="arrow-left" />
+      {$t("hub.back")}
+    </button>
   {:else if step === "existing"}
     <h3>{$t("hub.haveTitle")}</h3>
     <p class="hint"><code>/id</code> <span>{$t("hub.pasteHint")}</span></p>
@@ -356,6 +444,56 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ── Founding here ─────────────────────────────────────────────────────── */
+  .here {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .here__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .here input {
+    height: 2.7rem;
+    padding: 0 0.9rem;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+  .here input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  .go--wide {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    width: 100%;
+    height: 2.7rem;
+    border-radius: 999px;
+    background: var(--teal);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .go--wide:disabled {
+    opacity: 0.55;
+  }
+  .err--static {
+    position: static;
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--note-coral);
   }
 
   /* ── The paste line ────────────────────────────────────────────────────── */

@@ -1,10 +1,13 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
-  // Caretaker settings for the kiosk: choose which holon the screen shows, set a
-  // display name, logo, and accent colour. Everything is persisted (see
-  // config.ts) and applied reactively — no reload needed. (The dashboard link
-  // lives in the user menu; federated visibility is each view's Show pill.)
+  // Caretaker settings for the kiosk, in three groups: which holon the screen
+  // shows; how it looks (name, logo, the two colours, theme, language); and
+  // what is true of the hub wherever it is shown (location, map, privacy,
+  // equation). Device settings persist here (see config.ts), hub settings on
+  // the holon's settings lens; all apply reactively — no reload needed. (The
+  // dashboard link lives in the user menu; federated visibility is each view's
+  // Show pill; tabs are added and removed on the tab strip itself.)
   //
   // Every control applies the moment you touch it — there is no Apply step to
   // forget on a wall-mounted screen. Switches and pickers write straight
@@ -18,17 +21,8 @@
     brandName,
     brandLogo,
     accent,
-    libraryEnabled,
-    rolesEnabled,
-    checklistsEnabled,
-    shiftsEnabled,
-    stockEnabled,
-    offersEnabled,
     statusEnabled,
     flowsEnabled,
-    tasksEnabled,
-    calendarEnabled,
-    setTabShown,
     settingsOpen,
     showNotice,
   } from "$lib/stores";
@@ -73,15 +67,25 @@
     setLensPrivacy,
     type PrivacyLensMode,
   } from "@holons/core/privacy";
-  import { isLoggedIn } from "$lib/auth";
+  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import { sessionKeyPub } from "$lib/sessionKey";
+  import { npubLabel } from "$lib/login/nostrKey";
   import { getHolosphere } from "$lib/holosphere";
   import {
     resolveHolonAuthority,
     type HolonAuthority,
   } from "@holons/core/holosphere";
+  import {
+    addHubMember,
+    foundHub,
+    foundingAuthority,
+    hubMembers,
+    myHubRole,
+    removeHubMember,
+    type FoundingAuthority,
+  } from "@holons/core/protocol";
   import HexPicker from "./HexPicker.svelte";
   import ValueEquation from "./ValueEquation.svelte";
-  import StatusConfirm from "./StatusConfirm.svelte";
 
   // Drafts for the free-text fields only — every other control writes through
   // on touch and renders its store.
@@ -125,6 +129,17 @@
   // this hub, and every write counts until its bot founds it.
   let privacyShared: Record<string, number> = {};
   let hubAuthority: HolonAuthority | null = null;
+  // Who may found this hub when nobody speaks for it yet (core's rule): a
+  // Telegram chat is its bot's; anything else a signed-in key may found from
+  // here — but only a person's adopted key, never this device's throwaway one.
+  let founding: FoundingAuthority | null = null;
+  let foundBusy = false;
+  // The hub's signed roster, when the adopted key is one of its admins: the
+  // Telegram-free way in is being seated here by public key.
+  let hubKeys: Map<string, "admin" | "member"> = new Map();
+  let hubRole: "admin" | "member" | null = null;
+  let keyDraft = "";
+  let keyBusy = false;
   let hubKeySource: MessageKey;
   $: hubKeySource =
     hubAuthority?.anchor && hubAuthority.actors?.source === "log"
@@ -136,15 +151,22 @@
         : hubAuthority?.anchor
           ? "settings.hubKeyBoot"
           : "settings.hubKeyNone";
-  $: void loadPrivacy($holonId, $isLoggedIn);
+  $: void loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
   $: privacyRows = [
     ...PRIVACY_LENSES,
     ...Object.keys(privacyLenses).filter((l) => !PRIVACY_LENSES.includes(l)),
   ];
 
-  async function loadPrivacy(id: string | null, loggedIn: boolean) {
+  async function loadPrivacy(
+    id: string | null,
+    loggedIn: boolean,
+    sessionKey: string | null,
+  ) {
     if (!id || !loggedIn) {
       privacyLenses = {};
+      founding = null;
+      hubKeys = new Map();
+      hubRole = null;
       return;
     }
     try {
@@ -160,15 +182,95 @@
         privacyShared = counts;
         try {
           hubAuthority = resolveHolonAuthority(hs, id);
+          founding = foundingAuthority(hs, id);
         } catch {
           hubAuthority = null;
+          founding = null;
         }
+        await loadHubKeys(hs, id, sessionKey);
       }
     } catch {
       if (id === $holonId) {
         privacyLenses = {};
         privacyShared = {};
       }
+    }
+  }
+
+  async function loadHubKeys(
+    hs: Awaited<ReturnType<typeof getHolosphere>>,
+    id: string,
+    sessionKey: string | null,
+  ) {
+    if (!sessionKey || founding?.kind !== "anchored") {
+      hubKeys = new Map();
+      hubRole = null;
+      return;
+    }
+    try {
+      const role = await myHubRole(hs, id);
+      const keys = role === "admin" ? await hubMembers(hs, id) : new Map();
+      if (id === $holonId) {
+        hubRole = role;
+        hubKeys = keys;
+      }
+    } catch {
+      if (id === $holonId) {
+        hubKeys = new Map();
+        hubRole = null;
+      }
+    }
+  }
+
+  function reasonOf(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  async function foundThisHub() {
+    if (!$holonId || foundBusy || !$sessionKeyPub) return;
+    foundBusy = true;
+    try {
+      const hs = await getHolosphere();
+      await foundHub(hs, $holonId, { name: $holonName || undefined });
+      showNotice(tr("settings.hubFounded"));
+      await loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
+    } catch (err) {
+      console.error("[kiosk] founding failed", err);
+      showNotice(tr("settings.hubFoundFailed", { reason: reasonOf(err) }));
+    } finally {
+      foundBusy = false;
+    }
+  }
+
+  async function addKey(role: "admin" | "member") {
+    const key = keyDraft.trim();
+    if (!$holonId || !key || keyBusy) return;
+    keyBusy = true;
+    try {
+      const hs = await getHolosphere();
+      const pub = await addHubMember(hs, $holonId, key, role);
+      hubKeys = new Map(hubKeys).set(pub, role);
+      keyDraft = "";
+    } catch (err) {
+      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+    } finally {
+      keyBusy = false;
+    }
+  }
+
+  async function removeKey(pub: string) {
+    if (!$holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      const hs = await getHolosphere();
+      await removeHubMember(hs, $holonId, pub);
+      const next = new Map(hubKeys);
+      next.delete(pub);
+      hubKeys = next;
+    } catch (err) {
+      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+    } finally {
+      keyBusy = false;
     }
   }
 
@@ -402,57 +504,12 @@
     langMode.set(mode);
   }
 
-  // Touching a tab switch records an explicit on/off. Until then the pref stays
-  // `auto` and the switch simply mirrors the tab's content-driven visibility —
-  // so a caretaker who never opens Settings keeps the automatic behaviour.
-  // The tab switches all write through `setTabShown` — the same path the
-  // tab strip's own "+" and ✕ use — so the two surfaces never disagree.
-  function commitLibrary(on: boolean) {
-    setTabShown("library", on);
-  }
-
-  function commitTasks(on: boolean) {
-    setTabShown("tasks", on);
-  }
-
-  function commitCalendar(on: boolean) {
-    setTabShown("calendar", on);
-  }
-
-  function commitRoles(on: boolean) {
-    setTabShown("roles", on);
-  }
-
-  function commitChecklists(on: boolean) {
-    setTabShown("checklists", on);
-  }
-
-  function commitShifts(on: boolean) {
-    setTabShown("shifts", on);
-  }
-
-  // Turning the board ON is gated behind the framing modal (StatusConfirm):
-  // a ranking changes how a group reads itself, so nobody switches one on
-  // without having read what it does and doesn't mean. Off needs no ceremony.
-  let statusConfirmOpen = false;
-
-  function commitStatus(on: boolean) {
-    if (on) {
-      statusConfirmOpen = true;
-      return;
-    }
-    setTabShown("status", false);
-  }
-
-  function confirmStatus() {
-    statusConfirmOpen = false;
-    setTabShown("status", true);
-  }
-
   // ---- Value equation ----------------------------------------------------
   // The weights the Status board scores with are settings too, so the group
-  // that reads the board can retune them here. The editor itself lives in
-  // ValueEquation.svelte (the board's own footer opens the same one).
+  // that reads the board can retune them here (offered while the board is
+  // on; switching it on happens on the tab strip, behind its framing modal).
+  // The editor itself lives in ValueEquation.svelte (the board's own footer
+  // opens the same one).
   //
   // It is a disclosure: settings stays scannable, and the equation is only
   // read from the graph once someone actually opens it.
@@ -533,17 +590,6 @@
     }
   }
 
-  function commitFlows(on: boolean) {
-    setTabShown("flows", on);
-  }
-
-  function commitStock(on: boolean) {
-    setTabShown("stock", on);
-  }
-  function commitOffers(on: boolean) {
-    setTabShown("offers", on);
-  }
-
   /** Enter on a text field commits and dismisses the on-screen keyboard. */
   function blurOnEnter(e: KeyboardEvent) {
     if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
@@ -554,6 +600,7 @@
   <div class="glyph" aria-hidden="true"><Icon name="gear" /></div>
   <h3>{$t("settings.title")}</h3>
 
+  <h4 class="group">{$t("settings.groupScreen")}</h4>
   <label class="field"
     >{$t("settings.holon")}
     <input
@@ -573,6 +620,7 @@
     </button>
   {/if}
 
+  <h4 class="group">{$t("settings.groupLook")}</h4>
   <label class="field"
     >{$t("settings.displayName")}
     <input
@@ -638,6 +686,44 @@
     </div>
   </div>
 
+  <!--
+    Per-holon, not per-device: the colour lives on the settings lens, so the
+    board, its orb, its hexagon and its mirrored cards agree on every screen.
+  -->
+  {#if $holonId}
+    <div class="field">
+      {$t("settings.holonColor")}
+      <span class="sub">{$t("settings.holonColorSub")}</span>
+      <div class="accent-row">
+        <label
+          class="swatch custom holon-swatch"
+          class:auto={!colorOverride}
+          style="background: {colorShown};"
+        >
+          <input
+            type="color"
+            value={colorDraft}
+            disabled={colorSaving}
+            on:change={(e) => commitHolonColor(e.currentTarget.value)}
+            aria-label={$t("settings.holonColorPick")}
+          />
+        </label>
+        {#if colorOverride}
+          <button
+            type="button"
+            class="hex-pick"
+            disabled={colorSaving}
+            on:click={() => commitHolonColor("")}
+          >
+            {$t("settings.holonColorAuto")}
+          </button>
+        {:else}
+          <span class="holon-auto">{$t("settings.holonColorIsAuto")}</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <div class="field">
     {$t("settings.appearance")}
     <span class="sub">{$t("settings.appearanceSub")}</span>
@@ -677,236 +763,11 @@
     </div>
   </div>
 
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.tasksTab")}
-      <span class="sub">{$t("settings.tasksTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$tasksEnabled}
-      role="switch"
-      aria-checked={$tasksEnabled}
-      aria-label={$t("settings.tasksTabAria")}
-      on:click={() => commitTasks(!$tasksEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.calendarTab")}
-      <span class="sub">{$t("settings.calendarTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$calendarEnabled}
-      role="switch"
-      aria-checked={$calendarEnabled}
-      aria-label={$t("settings.calendarTabAria")}
-      on:click={() => commitCalendar(!$calendarEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.libraryTab")}
-      <span class="sub">{$t("settings.libraryTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$libraryEnabled}
-      role="switch"
-      aria-checked={$libraryEnabled}
-      aria-label={$t("settings.libraryTabAria")}
-      on:click={() => commitLibrary(!$libraryEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.rolesTab")}
-      <span class="sub">{$t("settings.rolesTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$rolesEnabled}
-      role="switch"
-      aria-checked={$rolesEnabled}
-      aria-label={$t("settings.rolesTabAria")}
-      on:click={() => commitRoles(!$rolesEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.listsTab")}
-      <span class="sub">{$t("settings.listsTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$checklistsEnabled}
-      role="switch"
-      aria-checked={$checklistsEnabled}
-      aria-label={$t("settings.listsTabAria")}
-      on:click={() => commitChecklists(!$checklistsEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.shiftsTab")}
-      <span class="sub">{$t("settings.shiftsTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$shiftsEnabled}
-      role="switch"
-      aria-checked={$shiftsEnabled}
-      aria-label={$t("settings.shiftsTabAria")}
-      on:click={() => commitShifts(!$shiftsEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.statusTab")}
-      <span class="sub">{$t("settings.statusTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$statusEnabled}
-      role="switch"
-      aria-checked={$statusEnabled}
-      aria-label={$t("settings.statusTabAria")}
-      on:click={() => commitStatus(!$statusEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <!--
-    With the board on, the weights it scores with are settings too: the group
-    that reads the board retunes it here. (The framing lives on the board
-    itself and in the modal that gates switching it on.)
-  -->
-  {#if $statusEnabled && $holonId}
-    <div class="field">
-      <button
-        type="button"
-        class="eq-toggle"
-        aria-expanded={eqOpen}
-        on:click={() => (eqOpen = !eqOpen)}
-      >
-        <span class="eq-toggle-label"
-          >{$t("settings.valueEquation")}
-          <span class="sub">{$t("settings.valueEquationSub")}</span></span
-        >
-        <span class="chev" class:open={eqOpen} aria-hidden="true"
-          ><Icon name="chevron-down" /></span
-        >
-      </button>
-      {#if eqOpen}
-        <ValueEquation holon={$holonId} />
-      {/if}
-    </div>
-  {/if}
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.stockTab")}
-      <span class="sub">{$t("settings.stockTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$stockEnabled}
-      role="switch"
-      aria-checked={$stockEnabled}
-      aria-label={$t("settings.stockTabAria")}
-      on:click={() => commitStock(!$stockEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.offersTab")}
-      <span class="sub">{$t("settings.offersTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$offersEnabled}
-      role="switch"
-      aria-checked={$offersEnabled}
-      aria-label={$t("settings.offersTabAria")}
-      on:click={() => commitOffers(!$offersEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <div class="field toggle-field">
-    <span class="toggle-label"
-      >{$t("settings.flowsTab")}
-      <span class="sub">{$t("settings.flowsTabSub")}</span></span
-    >
-    <button
-      type="button"
-      class="switch"
-      class:on={$flowsEnabled}
-      role="switch"
-      aria-checked={$flowsEnabled}
-      aria-label={$t("settings.flowsTabAria")}
-      on:click={() => commitFlows(!$flowsEnabled)}
-    >
-      <span class="knob"></span>
-    </button>
-  </div>
-
-  <!--
-    Per-holon, not per-device: the slug lives on the settings lens so every
-    surface reading this holon finds the same collective.
-  -->
-  {#if $flowsEnabled && $holonId}
-    <div class="field">
-      {$t("settings.collective")}
-      <span class="sub">{$t("settings.collectiveSub")}</span>
-      <input
-        type="text"
-        inputmode="url"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder={$t("settings.collectivePlaceholder")}
-        bind:value={ocSlug}
-        disabled={ocSaving}
-        on:change={commitCollective}
-        on:keydown={blurOnEnter}
-      />
-    </div>
-  {/if}
-
+  <!-- Hub settings live on the holon's settings lens, so they only exist
+       once the screen shows a holon. -->
   {#if $holonId}
+    <h4 class="group">{$t("settings.groupHub")}</h4>
+
     <div class="field">
       {$t("settings.location")}
       <span class="sub">{$t("settings.locationSub")}</span>
@@ -977,12 +838,100 @@
             {$t("settings.hubKey", {
               key: `${hubAuthority.anchor.slice(0, 8)}…`,
             })} — {$t(hubKeySource)}
+          {:else if founding?.kind === "bot"}
+            {$t("settings.hubKeyBot")}
+          {:else if founding?.kind === "open" && $sessionKeyPub}
+            {$t("settings.hubKeyOpen")}
+          {:else if founding?.kind === "open"}
+            {$t("settings.hubKeyNeedsKey")}
           {:else}
             {$t("settings.hubKeyNone")}
           {/if}
         </p>
+        {#if !hubAuthority?.anchor && founding?.kind === "open"}
+          {#if $sessionKeyPub}
+            <button
+              type="button"
+              class="found"
+              disabled={foundBusy}
+              on:click={foundThisHub}
+            >
+              <Icon name="key" />
+              {$t("settings.hubFound")}
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="found"
+              on:click={() => loginOpen.set(true)}
+            >
+              <Icon name="key" />
+              {$t("settings.hubFoundLogin")}
+            </button>
+          {/if}
+        {/if}
       {/if}
     </div>
+
+    {#if hubRole === "admin"}
+      <!-- The hub's signed roster: seating people by public key, no Telegram. -->
+      <div class="field">
+        {$t("settings.hubKeys")}
+        <span class="sub">{$t("settings.hubKeysSub")}</span>
+        {#each [...hubKeys] as [pub, role] (pub)}
+          <div class="map-row">
+            <span class="map-lens key-label" title={pub}
+              >{npubLabel(pub)}<span class="shared"
+                >{$t(
+                  role === "admin"
+                    ? "settings.hubKeyRoleAdmin"
+                    : "settings.hubKeyRoleMember",
+                )}{#if pub === $sessionKeyPub}{" · "}{$t(
+                    "settings.hubKeyYou",
+                  )}{/if}</span
+              ></span
+            >
+            {#if pub !== $sessionKeyPub}
+              <div class="map-lanes">
+                <button
+                  type="button"
+                  class="lane"
+                  aria-label={$t("settings.hubKeyRemove", {
+                    key: npubLabel(pub),
+                  })}
+                  disabled={keyBusy}
+                  on:click={() => removeKey(pub)}><Icon name="trash" /></button
+                >
+              </div>
+            {/if}
+          </div>
+        {/each}
+        <form class="key-add" on:submit|preventDefault={() => addKey("member")}>
+          <input
+            type="text"
+            bind:value={keyDraft}
+            placeholder={$t("settings.hubKeyAddPlaceholder")}
+            aria-label={$t("settings.hubKeyAddPlaceholder")}
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <div class="key-actions">
+            <button type="submit" class="found" disabled={keyBusy || !keyDraft}
+              >{$t("settings.hubKeyAdd")}</button
+            >
+            <button
+              type="button"
+              class="found ghost"
+              disabled={keyBusy || !keyDraft}
+              on:click={() => addKey("admin")}
+              >{$t("settings.hubKeyAddAdmin")}</button
+            >
+          </div>
+        </form>
+      </div>
+    {/if}
 
     <!--
       The claimed cell, configured as a federation partner: which lenses reach
@@ -1080,40 +1029,51 @@
   {/if}
 
   <!--
-    Per-holon, not per-device: the colour lives on the settings lens, so the
-    board, its orb, its hexagon and its mirrored cards agree on every screen.
+    With the Status board on, the weights it scores with are settings too: the
+    group that reads the board retunes it here. (The framing lives on the board
+    itself and in the modal the tab strip shows before switching it on.)
   -->
-  {#if $holonId}
+  {#if $statusEnabled && $holonId}
     <div class="field">
-      {$t("settings.holonColor")}
-      <span class="sub">{$t("settings.holonColorSub")}</span>
-      <div class="accent-row">
-        <label
-          class="swatch custom holon-swatch"
-          class:auto={!colorOverride}
-          style="background: {colorShown};"
+      <button
+        type="button"
+        class="eq-toggle"
+        aria-expanded={eqOpen}
+        on:click={() => (eqOpen = !eqOpen)}
+      >
+        <span class="eq-toggle-label"
+          >{$t("settings.valueEquation")}
+          <span class="sub">{$t("settings.valueEquationSub")}</span></span
         >
-          <input
-            type="color"
-            value={colorDraft}
-            disabled={colorSaving}
-            on:change={(e) => commitHolonColor(e.currentTarget.value)}
-            aria-label={$t("settings.holonColorPick")}
-          />
-        </label>
-        {#if colorOverride}
-          <button
-            type="button"
-            class="hex-pick"
-            disabled={colorSaving}
-            on:click={() => commitHolonColor("")}
-          >
-            {$t("settings.holonColorAuto")}
-          </button>
-        {:else}
-          <span class="holon-auto">{$t("settings.holonColorIsAuto")}</span>
-        {/if}
-      </div>
+        <span class="chev" class:open={eqOpen} aria-hidden="true"
+          ><Icon name="chevron-down" /></span
+        >
+      </button>
+      {#if eqOpen}
+        <ValueEquation holon={$holonId} />
+      {/if}
+    </div>
+  {/if}
+
+  <!--
+    Per-holon, not per-device: the slug lives on the settings lens so every
+    surface reading this holon finds the same collective.
+  -->
+  {#if $flowsEnabled && $holonId}
+    <div class="field">
+      {$t("settings.collective")}
+      <span class="sub">{$t("settings.collectiveSub")}</span>
+      <input
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder={$t("settings.collectivePlaceholder")}
+        bind:value={ocSlug}
+        disabled={ocSaving}
+        on:change={commitCollective}
+        on:keydown={blurOnEnter}
+      />
     </div>
   {/if}
 
@@ -1126,13 +1086,6 @@
     >
   </div>
 </div>
-
-{#if statusConfirmOpen}
-  <StatusConfirm
-    on:close={() => (statusConfirmOpen = false)}
-    on:accept={confirmStatus}
-  />
-{/if}
 
 {#if hexPickerOpen && $holonId}
   <HexPicker
@@ -1168,6 +1121,21 @@
   }
   .unpin:active {
     opacity: 0.6;
+  }
+  /* Group headings: the sheet reads as three short lists, not one long one. */
+  .group {
+    margin: 1.6rem 0 -0.2rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1.5px solid var(--line);
+    text-align: left;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--teal-deep);
+  }
+  .group:first-of-type {
+    margin-top: 0.4rem;
   }
   .field {
     display: block;
@@ -1307,7 +1275,7 @@
     letter-spacing: 0;
   }
 
-  /* Value-equation editor under the Status toggle (see markup). */
+  /* Value-equation disclosure (offered while the Status board is on). */
   .eq-toggle {
     display: flex;
     align-items: center;
@@ -1522,47 +1490,6 @@
     line-height: 1;
   }
 
-  /* Roles-tab on/off switch */
-  .toggle-field {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    text-transform: none;
-    letter-spacing: 0;
-  }
-  .toggle-label {
-    color: var(--ink);
-    font-weight: 700;
-    font-size: 0.95rem;
-  }
-  .switch {
-    flex: 0 0 auto;
-    width: 3.1rem;
-    height: 1.8rem;
-    border-radius: 999px;
-    background: var(--line);
-    position: relative;
-    transition: background 0.18s ease;
-  }
-  .switch.on {
-    background: var(--teal);
-  }
-  .knob {
-    position: absolute;
-    top: 0.2rem;
-    left: 0.2rem;
-    width: 1.4rem;
-    height: 1.4rem;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: var(--shadow-soft);
-    transition: transform 0.18s ease;
-  }
-  .switch.on .knob {
-    transform: translateX(1.3rem);
-  }
-
   .actions {
     display: flex;
     flex-wrap: wrap;
@@ -1585,5 +1512,45 @@
     transform: scale(0.97);
   }
 
-  /* Framing modal shown before the Status board can be switched on. */
+  /* Founding and the hub's keys */
+  .found {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.6rem;
+    min-height: 44px;
+    padding: 0.6rem 1rem;
+    border-radius: 999px;
+    background: var(--teal);
+    color: var(--paper);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .found:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .found.ghost {
+    background: transparent;
+    color: var(--teal-deep);
+    border: 1.5px solid var(--teal);
+  }
+  .key-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .key-add {
+    margin-top: 0.6rem;
+  }
+  .key-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
 </style>

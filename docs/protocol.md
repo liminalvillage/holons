@@ -118,6 +118,19 @@ Telegram user's entries server-side under their derived key
 (`/api/flows/log`, a claim only for themselves); key logins sign with their
 adopted key; the web instance already holds the member's derived key.
 
+Founding needs no bot. `@holons/core/protocol` `foundHub` lets a signed-in
+key sign the genesis itself and declare itself in `settings.holonPubkey`,
+becoming the hub's first admin; `addHubMember` / `removeHubMember` then seat
+people by public key. `foundingAuthority` is the one rule for who may: a
+pubkey holon is its own key, an h3 cell has no founder, a Telegram chat id is
+its bot's (a person founding it from a screen would lock the bot out), an
+already-anchored hub is its anchor's, anything else is open — the first
+signed genesis wins, so a hub minted with `newHubId` (`hub_…`, never a
+Telegram id) is founded in the same breath it is created. The kiosk offers
+this in the dock's "+" sheet and in Settings (key logins only: the device
+key is never an anchor); the web in the add-holon modal and the Settings
+members tab.
+
 ## What this does not do
 
 No ordering or double-spend protection beyond the rules above — Nostr gives
