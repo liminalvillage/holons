@@ -554,8 +554,7 @@
 
   function onLocalWrite(e: Event) {
     const d = (e as CustomEvent).detail as
-      | { holon?: string; lens?: string; at?: number }
-      | undefined;
+      { holon?: string; lens?: string; at?: number } | undefined;
     if (!d?.holon || !d.at) return;
     // Writes routed to a partner holon (sourceRef) don't reliably echo when
     // federation is off — only the displayed holon's writes are probes.

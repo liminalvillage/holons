@@ -624,10 +624,7 @@
     const q = num(mQty);
     if (q == null) return;
     let eventKind:
-      | "stock:produced"
-      | "stock:consumed"
-      | "stock:raised"
-      | "stock:lowered";
+      "stock:produced" | "stock:consumed" | "stock:raised" | "stock:lowered";
     let quantity = q;
     if (kind === "add") eventKind = "stock:produced";
     else if (kind === "use") eventKind = "stock:consumed";

@@ -112,9 +112,7 @@
       try {
         const hs = await getHolosphere();
         const fresh = (await hs.get(hid, "quests", String(q.id))) as
-          | Quest
-          | null
-          | undefined;
+          Quest | null | undefined;
         if (fresh) return fresh;
       } catch {
         /* fall through to the local copy */

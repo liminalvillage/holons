@@ -38,12 +38,12 @@
   export let onSelect: ((node: SankeyLayoutNode) => void) | null = null;
   /** Extra tooltip rows for a bar. The parent owns what "more" means here. */
   export let nodeDetails:
-    | ((node: SankeyLayoutNode) => { label: string; value: string }[])
-    | null = null;
+    ((node: SankeyLayoutNode) => { label: string; value: string }[]) | null =
+    null;
   /** Extra tooltip rows for a ribbon. */
   export let linkDetails:
-    | ((link: SankeyLayoutLink) => { label: string; value: string }[])
-    | null = null;
+    ((link: SankeyLayoutLink) => { label: string; value: string }[]) | null =
+    null;
   /** "{pct}% of the flow shown" line, pre-translated by the parent. */
   export let shareLine: ((pct: number) => string) | null = null;
   /** Share line for a combined ribbon, which is a share of its own unit. */

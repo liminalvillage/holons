@@ -737,8 +737,7 @@
   const liveItems = new Map<string, Map<string, Record<string, unknown>>>();
   /** Open panel's intake, so the presence channel can feed it live. */
   let panelIngest:
-    | ((item: Record<string, unknown>, key: string) => void)
-    | null = null;
+    ((item: Record<string, unknown>, key: string) => void) | null = null;
 
   function selectCell(cell: string) {
     selectedCell = cell;

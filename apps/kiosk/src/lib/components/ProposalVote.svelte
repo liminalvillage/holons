@@ -80,8 +80,7 @@
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
   const name = (id: string) => {
     const u = roster?.users.find((x) => String(x?.id ?? "") === id) as
-      | { first_name?: string; username?: string }
-      | undefined;
+      { first_name?: string; username?: string } | undefined;
     return u?.first_name || u?.username || $partnerNames[id] || id;
   };
 

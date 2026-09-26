@@ -1,11 +1,5 @@
 export type CardType =
-  | "action"
-  | "task"
-  | "event"
-  | "role"
-  | "badge"
-  | "resource"
-  | "vibe";
+  "action" | "task" | "event" | "role" | "badge" | "resource" | "vibe";
 
 export interface Card {
   id: string;

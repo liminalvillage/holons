@@ -417,8 +417,7 @@ export function resolveShiftRelays(): string[] {
  */
 export function resolveShiftCoordinator(): string | null {
   const env = import.meta.env.VITE_KIOSK_SHIFT_COORDINATOR as
-    | string
-    | undefined;
+    string | undefined;
   const v = (env && String(env).trim().toLowerCase()) || "";
   return /^[0-9a-f]{64}$/.test(v) ? v : null;
 }
