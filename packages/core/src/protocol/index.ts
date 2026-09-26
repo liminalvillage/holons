@@ -54,6 +54,7 @@ export {
   readMembersLog,
   syncMembersLog,
   type BootstrapInput,
+  type MembersSyncOptions,
   type MembersSyncResult,
   type MembershipEnvelope,
 } from './membership.js';

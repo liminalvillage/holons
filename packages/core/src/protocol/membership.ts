@@ -98,6 +98,17 @@ export interface MembersSyncResult {
   changed: string[];
 }
 
+export interface MembersSyncOptions {
+  /**
+   * Unseat keys that are in the log but not in `desired` (default true).
+   * Pass false when `desired` may be incomplete — a roster read that came
+   * back empty on a cold start must never be taken as "nobody is a member":
+   * removal is as-of-time, so every write those keys make until they are
+   * re-added would be lost to every reader.
+   */
+  prune?: boolean;
+}
+
 /**
  * Bring a holon's signed `_members` log in line with `desired` (pubkey →
  * role), signing with the instance key. Founds the holon on first use (the
@@ -105,7 +116,7 @@ export interface MembersSyncResult {
  * difference. Idempotent: an unchanged roster issues nothing. The instance
  * must hold the holon key (or an admin key) for the ops to count.
  */
-export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map<string, Role>): Promise<MembersSyncResult> {
+export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map<string, Role>, opts: MembersSyncOptions = {}): Promise<MembersSyncResult> {
   const result: MembersSyncResult = { founded: false, added: [], removed: [], changed: [] };
   const h = String(holon);
   const want = new Map<string, Role>();
@@ -135,6 +146,7 @@ export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map
       result.added.push(pub);
     }
   }
+  if (opts.prune === false) return result;
   for (const pub of current.keys()) {
     if (pub === me || want.has(pub)) continue;
     await hs.removeMember(h, pub, { at: now });

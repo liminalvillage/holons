@@ -314,6 +314,10 @@ export function createTrustCache(
     const hs = projectionHost.instance;
     if (!hs || typeof hs.getAll !== 'function') return [...list];
     const memberIds = [];
+    // Whether the `users` lens was actually read. A cold start (or a relay
+    // that has not caught up yet) reads it as empty — that is "unknown", not
+    // "nobody": the signed log must never be pruned from such a read.
+    let rosterKnown = false;
     if (secret) {
       let users = [];
       try {
@@ -321,6 +325,7 @@ export function createTrustCache(
       } catch {
         users = [];
       }
+      rosterKnown = users.length > 0;
       const derived = new Set();
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
@@ -374,7 +379,7 @@ export function createTrustCache(
       /* no settings yet */
     }
     publishGroupState(holon, settings, memberIds);
-    syncMembership(holon, settings, list);
+    syncMembership(holon, settings, list, rosterKnown);
     return [...list];
   }
 
@@ -386,8 +391,12 @@ export function createTrustCache(
    * @holons/core/protocol membership). Readers without the derivation
    * secret pin the trust anchor from `settings.holonPubkey`, written once.
    * Fire-and-forget; a failed sync is retried on the next refresh.
+   *
+   * `rosterKnown` is false when the `users` lens read as empty: then keys
+   * are only ever ADDED, never unseated — removal is as-of-time, and a cold
+   * read once emptied 57 hubs' logs in one restart (2026-09-26).
    */
-  function syncMembership(holon, settings, keys) {
+  function syncMembership(holon, settings, keys, rosterKnown = true) {
     const hs = projectionHost.instance;
     if (!secret || !hs || !hs.signingEnabled) return;
     const desired = new Map();
@@ -401,7 +410,7 @@ export function createTrustCache(
         /* no admin key */
       }
     }
-    syncMembersLog(hs, String(holon), desired)
+    syncMembersLog(hs, String(holon), desired, { prune: rosterKnown })
       .then(r => {
         if (r.founded)
           console.log(

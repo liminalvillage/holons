@@ -87,4 +87,21 @@ describe('syncMembersLog', () => {
     expect(actors.roleAt(alice.pk, Math.floor(Date.now() / 1000) + 5)).toBe('admin');
     await hs.close();
   });
+
+  it('never unseats anyone when pruning is off — an empty roster is not "nobody"', async () => {
+    const hs = createHoloSphere({ appName: 'members-noprune-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
+    const H = 'h-noprune';
+    await syncMembersLog(hs, H, new Map([[alice.pk, 'member'], [bob.pk, 'admin']]));
+
+    const cold = await syncMembersLog(hs, H, new Map(), { prune: false });
+    expect(cold).toEqual({ founded: false, added: [], removed: [], changed: [] });
+    expect((await hs.getMembers(H)).size).toBe(3);
+
+    // Additions still land without pruning; only removals are held back.
+    const carol = testKey();
+    const partial = await syncMembersLog(hs, H, new Map([[carol.pk, 'member']]), { prune: false });
+    expect(partial).toEqual({ founded: false, added: [carol.pk], removed: [], changed: [] });
+    expect((await hs.getMembers(H)).size).toBe(4);
+    await hs.close();
+  });
 });
