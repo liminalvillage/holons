@@ -70,10 +70,28 @@ export function createRecurringTask(input: {
   };
 }
 
+/** A Date, ms epoch or date string as ISO — null when it can't be read as one. */
+function isoOrNull(value: unknown): string | null {
+  if (value instanceof Date)
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? new Date(value).toISOString() : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
 /**
- * Coerce a stored record into the canonical shape: holonId → string, and
- * legacy `createdAt` (ISO or ms) promoted to `created`. Read-normalize only —
- * no rewrite. Returns null for non-objects.
+ * Coerce a stored record into the canonical shape: holonId → string, legacy
+ * `createdAt` (ISO or ms) promoted to `created`, and `when` forced to a
+ * parseable ISO string. Read-normalize only — no rewrite. Returns null for
+ * non-objects.
+ *
+ * `when` is the cadence anchor: every runner feeds it to `cronExpression`
+ * (telegram) or `nextOccurrence` (discord/web), and both return null on an
+ * unparseable date — which drops the task silently. Older bot writes stored a
+ * Date that round-tripped through JSON as `{}`, so anchor those on `created`
+ * rather than letting the record schedule nothing at all.
  */
 export function normalizeRecurringTask(raw: unknown): RecurringTask | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -89,6 +107,7 @@ export function normalizeRecurringTask(raw: unknown): RecurringTask | null {
     ...(r as RecurringTask),
     holonId: String(r.holonId ?? ''),
     created,
+    when: isoOrNull(r.when) ?? created,
   };
 }
 
