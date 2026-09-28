@@ -70,7 +70,11 @@ Each domain lives at `packages/core/src/<domain>/index.ts`. Current domains:
 `scoring`, `tasks`, `federation`, `holosphere`, `users`, `expenses`,
 `calendar`, `shopping`, `settings`, `dna`, `library`, `checklists`,
 `categories`, `commands`, `rea`, `protocol` (the reduce over append-only
-logs — see [`protocol.md`](./protocol.md)). The `package.json` wildcard
+logs — see [`protocol.md`](./protocol.md)), `holons` (founding a holon from
+a screen, members by key — NIP-29 shaped), `linking` (tying a holon to a
+Telegram chat by challenge–response) and `onboarding` (claim tokens and
+Telegram deep links); the three are described in
+[`identity-linking.md`](./identity-linking.md). The `package.json` wildcard
 export (`"./*"`) makes a new domain folder importable immediately — no edit
 to the barrel needed.
 
@@ -144,6 +148,11 @@ cache (`packages/holosphere/STORE.md`).
 - A user's private key (Nostr-style hex) derives their public key, which is
   their personal holon id. Telegram sessions are namespaced by Telegram user
   id instead (they sign with a per-user key derived server-side).
+- A holon founded from a screen is `holon_…` (the first ones `hub_…`): its
+  founder's key signs the genesis of its `_members` log and admins seat keys;
+  a Telegram chat's holon is its chat id, founded by the bot key. The kiosk
+  and web accept a holon id, a pubkey hex or an `npub` (normalised to hex) in
+  the URL. See [`identity-linking.md`](./identity-linking.md).
 - Sign-in (web, `@holons/core/auth`): every provider ends in a Nostr keypair
   the HoloSphere signing layer can use — Telegram (suggested; OIDC + a
   server-derived key), a **passkey** (WebAuthn PRF output → key, no server
@@ -176,6 +185,12 @@ legacy `federation[]`/`lensConfig` settings fields were removed):
 - `migrateLegacyFederationLinks()` — one-shot, merge-only fold of
   pre-unification settings-lens links into the native record; federation UIs
   call it best-effort before reading the snapshot.
+
+Federation needs no Telegram: two holons founded from screens link the same
+way, and a Telegram chat linked to a holon (`@holons/core/linking`) is
+federated on every board lens as part of the link. The federation record is a
+global, unauthenticated table (last writer wins); a partner's items still
+show only when its own authority signed them.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
 stay in the UI: callers pass `federationSourceId` and an optional

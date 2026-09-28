@@ -198,7 +198,11 @@ Consequences worth knowing: a write signed by a key the holon does not accept
 (a kiosk's device key, an MCP key that is not a member, a member whose derived
 key the bot has not yet attested or synced into `_members`) is visible to its
 author and waits in `getPending` for everyone else until the bot founds the
-holon and syncs the roster.
+holon and syncs the roster. Membership is as-of-time, so a record signed
+BEFORE its author was seated never counts — a person's profile in a
+key-founded holon is written after the admin's approval, and a link offer is
+judged by the author's role at the envelope's time (`@holons/core/holons`,
+`@holons/core/linking`, `docs/identity-linking.md`).
 
 ### Optional: holon-owned authority (`enforce: 'membership'`)
 
