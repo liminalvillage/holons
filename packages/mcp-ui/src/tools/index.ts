@@ -4,6 +4,8 @@ import type { Actor } from '../identity.js';
 export interface ToolDeps {
   getHoloSphere: () => Promise<any>;
   resolveActor: (override?: Partial<Actor>) => Actor;
+  /** The instance's signing secret (64-hex), for events core signs outside holosphere (NIP-29 state, join requests). */
+  getSignerSecret?: () => string | null;
 }
 
 const DOMAINS = [
@@ -31,6 +33,7 @@ const DOMAINS = [
   'governance',
   'protocol',
   'privacy',
+  'holons',
 ];
 
 export async function registerAllTools(server: McpServer, deps: ToolDeps): Promise<void> {

@@ -30,6 +30,13 @@ let resolvedApp: string | undefined;
  * then only catches up from its cursor. Every write is signed and published;
  * there is no signing mode.
  */
+let signerSecret: string | null = null;
+
+/** The instance's signing secret (64-hex), once `getHoloSphere` has run. */
+export function getSignerSecret(): string | null {
+  return signerSecret;
+}
+
 export async function getHoloSphere(): Promise<any> {
   if (hs) return hs;
   resolvedApp = resolveApp();
@@ -38,6 +45,7 @@ export async function getHoloSphere(): Promise<any> {
   // key is generated here (rather than inside holosphere) so the standard-kind
   // projections are addressed to the same pubkey.
   const privateKey = nsecToHex((process.env.HOLOSPHERE_NSEC || '').trim() || generateNsec());
+  signerSecret = privateKey;
   hs = await createHoloSphere({
     appName: resolvedApp,
     privateKey,

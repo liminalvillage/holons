@@ -541,7 +541,7 @@
                                     <div class="fed-card__key" class:fed-card__key--none={!pub} title={pub ?? undefined}>
                                         {pub
                                             ? `🔑 keys go to ${pub.slice(0, 8)}…`
-                                            : 'No signed hub key yet — its bot has to found it before a key can be shared'}
+                                            : 'No signed key yet — this holon must be founded (by its bot, or by a member\'s key) before a key can be shared'}
                                     </div>
                                 {/if}
                             </div>

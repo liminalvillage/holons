@@ -9,7 +9,10 @@
 	import { homeHolonId } from '$lib/stores/homeHolonId';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
 	import { handshake } from 'holosphere';
-	import { foundHub, newHubId } from '@holons/core/protocol';
+	import { foundHolon, isHolonId, newHolonId as mintHolonId } from '@holons/core/protocol';
+	import { createHolon, myHolons, rememberHolon } from '@holons/core/holons';
+	import { signerFromSecretKey } from '@holons/core/holosphere';
+	import { get } from 'svelte/store';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 
@@ -288,6 +291,20 @@
 				}
 			}
 
+			// The holons this member keeps in their own holon (founded from a
+			// screen, or docked elsewhere) — the same list on every device.
+			const me = get(nostrPublicKey);
+			if (holosphere && me) {
+				try {
+					for (const h of await myHolons(holosphere, me)) {
+						if (h.id === federationSourceId || holonList.some((x) => x.id === h.id)) continue;
+						holonList.push({ id: h.id, name: h.name || `Holon ${h.id.slice(0, 8)}...`, federationStatus: 'accepted' });
+					}
+				} catch (err) {
+					console.warn('[BrowserPanel] could not read your holons:', err);
+				}
+			}
+
 			// Also load pending outgoing requests from localStorage store
 			// (these are requests we initiated that may not be in holosphere yet)
 			const pendingOutgoing = pendingFederationRequests.getOutgoingPending();
@@ -555,9 +572,22 @@
 		isFoundingHub = true;
 		addError = '';
 		try {
-			const id = newHubId();
 			const name = newHolonName.trim();
-			await foundHub(holosphere, id, { name: name || undefined });
+			// With the member's key in hand, found it the full way (NIP-29 state,
+			// founder profile); otherwise the bare founding.
+			const sk = get(nostrPrivateKey);
+			const signer = sk ? signerFromSecretKey(sk) : null;
+			let id: string;
+			if (signer) {
+				({ holon: id } = await createHolon(holosphere, signer, { appName: holosphere.appname, name: name || undefined }));
+			} else {
+				id = mintHolonId();
+				await foundHolon(holosphere, id, { name: name || undefined });
+			}
+			// Remembered in the member's own holon, so it follows them to every device.
+			const me = get(nostrPublicKey);
+			if (me) await rememberHolon(holosphere, me, { id, name }).catch(() => {});
+			window.dispatchEvent(new CustomEvent('holonCreated'));
 			closeAddModal();
 			goto(`/${id}/settings`);
 		} catch (err) {
@@ -697,7 +727,7 @@
 	// Recognize the holon-ID shapes this app uses, in order of confidence:
 	// 64-char Nostr pubkey hex, npub bech32, or a numeric Telegram chat id.
 	function looksLikeHolonId(s: string): boolean {
-		return /^[0-9a-f]{64}$/i.test(s) || /^npub1[a-z0-9]+$/i.test(s) || /^-?\d+$/.test(s);
+		return /^[0-9a-f]{64}$/i.test(s) || /^npub1[a-z0-9]+$/i.test(s) || /^-?\d+$/.test(s) || isHolonId(s);
 	}
 
 	function extractHolonId(input: string): string {

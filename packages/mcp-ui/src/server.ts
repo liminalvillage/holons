@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { getHoloSphere } from './holosphere.js';
+import { getHoloSphere, getSignerSecret } from './holosphere.js';
 import { resolveActor } from './identity.js';
 import { registerAllTools, type ToolDeps } from './tools/index.js';
 
@@ -10,7 +10,7 @@ export async function createServer(): Promise<McpServer> {
     description:
       'MCP server exposing every @holons/core function as an independently-callable tool.',
   });
-  const deps: ToolDeps = { getHoloSphere, resolveActor };
+  const deps: ToolDeps = { getHoloSphere, resolveActor, getSignerSecret };
   await registerAllTools(server, deps);
   return server;
 }
