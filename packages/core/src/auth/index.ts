@@ -54,3 +54,5 @@ export {
   type AuthEventTarget,
   type AuthEventVerdict,
 } from './nip98.js';
+
+export { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isPin, openSecretKey, sealSecretKey } from './pin.js';

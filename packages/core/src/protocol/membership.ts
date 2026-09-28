@@ -90,6 +90,17 @@ export async function readMembersLog(hs: HoloSphere, holon: string): Promise<Mem
   return out;
 }
 
+/**
+ * The `at` for a new `_members` op: now, but strictly after the log's latest
+ * entry. Ops fold by (time, id), so an op in the same second as the seat
+ * that authorizes it could sort first and count for nothing.
+ */
+export async function nextMembersAt(hs: HoloSphere, holon: string): Promise<number> {
+  let now = Math.floor(Date.now() / 1000);
+  for (const e of await readMembersLog(hs, String(holon))) if (e.created_at >= now) now = e.created_at + 1;
+  return now;
+}
+
 export interface MembersSyncResult {
   founded: boolean;
   added: string[];
@@ -107,6 +118,13 @@ export interface MembersSyncOptions {
    * re-added would be lost to every reader.
    */
   prune?: boolean;
+  /**
+   * Found the holon when its log is empty (default true). Pass false when
+   * this key must only ever ADD to a log someone else started — a bridge
+   * from another holon's roster, say — so a relay hiccup that reads the log
+   * as empty never plants a competing genesis.
+   */
+  founding?: boolean;
 }
 
 /**
@@ -125,14 +143,18 @@ export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map
 
   let current = await hs.getMembers(h);
   if (!current.size) {
+    if (opts.founding === false) return result;
     await hs.foundHolon(h);
     result.founded = true;
     current = await hs.getMembers(h);
   }
   // Ops are folded by (time, id): a remove and a re-add of one key in the
   // same second would sort `add` before `remove` and drop the key, so the
-  // re-add is stamped one second later.
-  const now = Math.floor(Date.now() / 1000);
+  // re-add is stamped one second later. For the same reason every op here is
+  // stamped AFTER the log's latest entry — a key seated as admin this very
+  // second could otherwise see its own adds sort before its seat and count
+  // for nothing.
+  const now = await nextMembersAt(hs, h);
   for (const [pub, role] of want) {
     if (pub === me) continue; // genesis is an admin by construction
     const have = current.get(pub);

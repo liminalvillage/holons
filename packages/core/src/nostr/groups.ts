@@ -51,12 +51,25 @@ export function groupMetadataTemplate(ctx: ProjectionCtx, holon: string, setting
   return { kind: GROUP_METADATA_KIND, created_at: nowOf(ctx), tags, content: '' };
 }
 
-/** 39001 — the holon key plus the settings admin (when their key resolves). */
-export function groupAdminsTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike): EventTemplate {
+/**
+ * 39001 — the holon key, the settings admin (when their key resolves), and
+ * `admins`: keys seated as admins in the holon's signed `_members` log (a
+ * key-founded holon has no settings admin — its admins ARE the log).
+ */
+export function groupAdminsTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, admins: Iterable<string> = []): EventTemplate {
   const tags: string[][] = [['d', holon], ...base(ctx, holon), ['p', ctx.holonPubkey, 'admin']];
+  const seen = new Set<string>([ctx.holonPubkey]);
   const admin = typeof settings.admin === 'string' ? settings.admin.replace(/^@/, '') : '';
   const pk = admin ? ctx.pubkeyFor?.(admin) : undefined;
-  if (pk && pk !== ctx.holonPubkey) tags.push(['p', pk, 'admin']);
+  if (pk && !seen.has(pk)) {
+    seen.add(pk);
+    tags.push(['p', pk, 'admin']);
+  }
+  for (const a of [...new Set([...admins].map((k) => String(k).toLowerCase()))].sort()) {
+    if (!/^[0-9a-f]{64}$/.test(a) || seen.has(a)) continue;
+    seen.add(a);
+    tags.push(['p', a, 'admin']);
+  }
   return { kind: GROUP_ADMINS_KIND, created_at: nowOf(ctx), tags, content: '' };
 }
 
@@ -95,13 +108,15 @@ export function groupLeaveRequestTemplate(ctx: ProjectionCtx, holon: string): Ev
 
 /**
  * The full holon-authored group state for one holon. `members` = ids from the
- * `users` lens. Hosts publish these (signed with the holon key) whenever the
- * hash changes — see the bot's group publisher.
+ * `users` lens (or member pubkeys, with an identity `pubkeyFor`); `admins` =
+ * extra admin keys from the signed `_members` log. Hosts publish these
+ * (signed with the holon key) whenever the hash changes — see the bot's group
+ * publisher and `@holons/core/holons` `publishGroupState`.
  */
-export function buildGroupState(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, memberIds: Array<string | number>): EventTemplate[] {
+export function buildGroupState(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, memberIds: Array<string | number>, admins: Iterable<string> = []): EventTemplate[] {
   return [
     groupMetadataTemplate(ctx, holon, settings),
-    groupAdminsTemplate(ctx, holon, settings),
+    groupAdminsTemplate(ctx, holon, settings, admins),
     groupMembersTemplate(ctx, holon, memberIds),
   ];
 }

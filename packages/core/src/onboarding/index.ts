@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Starting a hub from a screen: the claim round trip.
+// Starting a Telegram-born holon from a screen: the claim round trip.
 //
-// A hub is a Telegram chat — a group, or a person's private chat with the
-// bot — so "create a hub" always leaves the screen for Telegram, and Telegram
-// has no way to hand anything back. What it CAN do is carry a payload out:
+// A holon the bot serves is a Telegram chat — a group, or a person's private
+// chat with the bot — so "create one" leaves the screen for Telegram, and
+// Telegram has no way to hand anything back. What it CAN do is carry a payload out:
 // `t.me/<bot>?startgroup=<payload>` (add the bot to a group) and
 // `t.me/<bot>?start=<payload>` (chat with it) both deliver the payload to the
 // bot as the chat's first `/start <payload>`.
@@ -13,13 +13,13 @@
 // So the screen mints a one-time CLAIM TOKEN, sends it out in the payload,
 // and the bot, on receiving it, records "<token> → this chat" on the relay
 // under a well-known namespace. The screen, watching that key, learns the
-// hub's id without anyone copying anything. The token is the only secret in
+// holon's id without anyone copying anything. The token is the only secret in
 // the loop: random enough that no one guesses it, useless once redeemed.
 //
 // Pure, store-agnostic: the bot and the kiosk both call in with their own
 // holosphere handle.
 
-/** The namespace (holon) the claim records live under. */
+/** The namespace (holon) the claim records live under — a live relay namespace; the value never changes. */
 export const CLAIM_NAMESPACE = 'hubclaims';
 /** The lens inside it. One record per token, keyed by the token. */
 export const CLAIM_LENS = 'claims';
@@ -37,15 +37,15 @@ const TOKEN_LENGTH = 22;
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,48}$/;
 
 /** What kind of chat a claim resolved to. */
-export type HubKind = 'group' | 'personal';
+export type HolonKind = 'group' | 'personal';
 
 /** The record the bot writes: `<token> → this chat`. */
-export interface HubClaim {
+export interface HolonClaim {
   /** The token, which is also the record key. */
   id: string;
   /** The holon id — the chat id, as the board keys on it. */
   holon: string;
-  kind: HubKind;
+  kind: HolonKind;
   /** The chat's title (a group) or the person's name, when known. */
   name?: string;
   /** When the bot redeemed the token (ms epoch). */
@@ -113,9 +113,9 @@ export interface ChatLike {
 }
 
 /** What a chat claims: its id as the holon, and a name to dock it under. */
-export function hubClaimFromChat(chat: ChatLike): Pick<HubClaim, 'holon' | 'kind' | 'name'> {
+export function holonClaimFromChat(chat: ChatLike): Pick<HolonClaim, 'holon' | 'kind' | 'name'> {
   const holon = String(chat.id ?? '').trim();
-  const kind: HubKind = chat.type === 'private' ? 'personal' : 'group';
+  const kind: HolonKind = chat.type === 'private' ? 'personal' : 'group';
   const name =
     kind === 'group'
       ? String(chat.title ?? '').trim()
@@ -127,8 +127,8 @@ export function hubClaimFromChat(chat: ChatLike): Pick<HubClaim, 'holon' | 'kind
 }
 
 /** Is `value` a claim record, shape-wise? */
-export function isHubClaim(value: unknown): value is HubClaim {
-  const c = value as HubClaim;
+export function isHolonClaim(value: unknown): value is HolonClaim {
+  const c = value as HolonClaim;
   return (
     !!c &&
     typeof c === 'object' &&
@@ -144,7 +144,7 @@ export function isHubClaim(value: unknown): value is HubClaim {
 }
 
 /** A claim the screen should still honour: recent, and not from the future. */
-export function isFreshClaim(claim: HubClaim, now = Date.now(), maxAgeMs = CLAIM_MAX_AGE_MS): boolean {
+export function isFreshClaim(claim: HolonClaim, now = Date.now(), maxAgeMs = CLAIM_MAX_AGE_MS): boolean {
   return claim.at <= now + 60_000 && now - claim.at <= maxAgeMs;
 }
 
@@ -153,15 +153,15 @@ export function isFreshClaim(claim: HubClaim, now = Date.now(), maxAgeMs = CLAIM
  * screen that minted the token is watching for it. A malformed token or a
  * chat without a usable id is refused (returns null) rather than written.
  */
-export async function recordHubClaim(
+export async function recordHolonClaim(
   store: ClaimStore,
   token: string,
   chat: ChatLike,
   now = Date.now(),
-): Promise<HubClaim | null> {
+): Promise<HolonClaim | null> {
   if (!isClaimToken(token)) return null;
-  const claim: HubClaim = { id: token, ...hubClaimFromChat(chat), at: now };
-  if (!isHubClaim(claim)) return null;
+  const claim: HolonClaim = { id: token, ...holonClaimFromChat(chat), at: now };
+  if (!isHolonClaim(claim)) return null;
   await store.put(CLAIM_NAMESPACE, CLAIM_LENS, claim);
   return claim;
 }
@@ -170,11 +170,11 @@ export async function recordHubClaim(
  * The screen's half: the claim for `token`, or null when the bot has not
  * redeemed it yet (or redeemed it too long ago to trust).
  */
-export async function readHubClaim(
+export async function readHolonClaim(
   store: ClaimStore,
   token: string,
   opts: { now?: number; maxAgeMs?: number } = {},
-): Promise<HubClaim | null> {
+): Promise<HolonClaim | null> {
   if (!isClaimToken(token)) return null;
   const raw = await store.get(CLAIM_NAMESPACE, CLAIM_LENS, token);
   return claimFor(raw, token, opts);
@@ -182,13 +182,96 @@ export async function readHubClaim(
 
 /**
  * Filter one record (a read, or a subscription emission) down to the claim
- * for `token`, or null. Shared by `readHubClaim` and live watchers.
+ * for `token`, or null. Shared by `readHolonClaim` and live watchers.
  */
 export function claimFor(
   raw: unknown,
   token: string,
   opts: { now?: number; maxAgeMs?: number } = {},
-): HubClaim | null {
-  if (!isHubClaim(raw) || raw.id !== token) return null;
+): HolonClaim | null {
+  if (!isHolonClaim(raw) || raw.id !== token) return null;
   return isFreshClaim(raw, opts.now, opts.maxAgeMs) ? raw : null;
+}
+
+// ── Deep links and the watch ───────────────────────────────────────────────
+
+/** The two Telegram deep links that carry a `/start` payload out: a chat with the bot, or a group. */
+export function telegramDeepLinks(botUsername: string, payload: string): { personal: string; group: string } {
+  const bot = String(botUsername ?? '').trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9_]{3,64}$/.test(bot)) throw new Error('telegramDeepLinks: not a bot username');
+  const p = encodeURIComponent(payload);
+  return { personal: `https://t.me/${bot}?start=${p}`, group: `https://t.me/${bot}?startgroup=${p}` };
+}
+
+/** What a live watch needs beyond `ClaimStore`: holosphere's `subscribe`. */
+export interface ClaimWatchStore extends ClaimStore {
+  subscribe(holon: string, lens: string, callback: (data: unknown, key?: string) => void): unknown;
+}
+
+function stopper(raw: unknown): () => void {
+  return () => {
+    const r = raw as { unsubscribe?: () => void } | (() => void) | null;
+    if (r && typeof (r as { unsubscribe?: unknown }).unsubscribe === 'function') (r as { unsubscribe: () => void }).unsubscribe();
+    else if (typeof r === 'function') r();
+  };
+}
+
+/**
+ * Watch for the bot to redeem `token`; `onClaim` fires at most once. A live
+ * subscription carries the record the moment it lands, and a slow poll
+ * backs it up (a cold read can race the relay's catch-up). Returns a stop
+ * function; stopping after the claim arrived is a no-op.
+ */
+export function watchHolonClaim(
+  store: ClaimWatchStore | Promise<ClaimWatchStore>,
+  token: string,
+  onClaim: (claim: HolonClaim) => void,
+  opts: { pollMs?: number; now?: () => number; maxAgeMs?: number } = {},
+): () => void {
+  let active = true;
+  let unsub: (() => void) | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const stop = () => {
+    active = false;
+    unsub?.();
+    unsub = null;
+    if (timer) clearInterval(timer);
+    timer = null;
+  };
+  const found = (claim: HolonClaim) => {
+    if (!active) return;
+    stop();
+    onClaim(claim);
+  };
+  const filterOpts = () => ({ now: opts.now?.(), maxAgeMs: opts.maxAgeMs });
+  void (async () => {
+    let db: ClaimWatchStore;
+    try {
+      db = await store;
+    } catch {
+      return;
+    }
+    if (!active) return;
+    const raw = db.subscribe(CLAIM_NAMESPACE, CLAIM_LENS, (data: unknown) => {
+      const claim = claimFor(data, token, filterOpts());
+      if (claim) found(claim);
+    });
+    if (!active) {
+      stopper(raw)();
+      return;
+    }
+    unsub = stopper(raw);
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const claim = await readHolonClaim(db, token, filterOpts());
+        if (claim) found(claim);
+      } catch {
+        /* relay hiccup — the next tick retries */
+      }
+    };
+    void poll();
+    timer = setInterval(poll, opts.pollMs ?? 5000);
+  })();
+  return stop;
 }

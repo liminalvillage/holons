@@ -105,3 +105,13 @@ describe('syncMembersLog', () => {
     await hs.close();
   });
 });
+
+describe('syncMembersLog founding guard', () => {
+  it('with founding:false an empty log is left alone — no genesis, no ops', async () => {
+    const hs = createHoloSphere({ appName: 'members-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
+    const r = await syncMembersLog(hs, 'h-unfounded', new Map([[alice.pk, 'member']]), { founding: false });
+    expect(r).toEqual({ founded: false, added: [], removed: [], changed: [] });
+    expect(await readMembersLog(hs, 'h-unfounded')).toEqual([]);
+    await hs.close();
+  });
+});

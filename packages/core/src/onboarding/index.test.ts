@@ -8,16 +8,16 @@ import {
   CLAIM_NAMESPACE,
   claimFor,
   claimPayload,
-  hubClaimFromChat,
+  holonClaimFromChat,
   isClaimToken,
   isFreshClaim,
-  isHubClaim,
+  isHolonClaim,
   newClaimToken,
   parseClaimPayload,
-  readHubClaim,
-  recordHubClaim,
+  readHolonClaim,
+  recordHolonClaim,
   type ClaimStore,
-  type HubClaim,
+  type HolonClaim,
 } from './index.js';
 
 function fakeStore(): ClaimStore & { rows: Map<string, unknown> } {
@@ -68,7 +68,7 @@ describe('claim tokens', () => {
   });
 
   it('ignores every other payload', () => {
-    expect(parseClaimPayload('hub')).toBeNull();
+    expect(parseClaimPayload('holon')).toBeNull();
     expect(parseClaimPayload('join_-1002282981272_quests_1')).toBeNull();
     expect(parseClaimPayload('/start')).toBeNull();
     expect(parseClaimPayload('claim_')).toBeNull();
@@ -77,9 +77,9 @@ describe('claim tokens', () => {
   });
 });
 
-describe('hubClaimFromChat', () => {
+describe('holonClaimFromChat', () => {
   it('reads a group as its title', () => {
-    expect(hubClaimFromChat({ id: -1001234567890, type: 'supergroup', title: 'Liminal' })).toEqual({
+    expect(holonClaimFromChat({ id: -1001234567890, type: 'supergroup', title: 'Liminal' })).toEqual({
       holon: '-1001234567890',
       kind: 'group',
       name: 'Liminal',
@@ -87,12 +87,12 @@ describe('hubClaimFromChat', () => {
   });
 
   it("reads a private chat as the person's name", () => {
-    expect(hubClaimFromChat({ id: 235114395, type: 'private', first_name: 'Roberto', last_name: 'V' })).toEqual({
+    expect(holonClaimFromChat({ id: 235114395, type: 'private', first_name: 'Roberto', last_name: 'V' })).toEqual({
       holon: '235114395',
       kind: 'personal',
       name: 'Roberto V',
     });
-    expect(hubClaimFromChat({ id: 1, type: 'private', username: 'rob' })).toEqual({
+    expect(holonClaimFromChat({ id: 1, type: 'private', username: 'rob' })).toEqual({
       holon: '1',
       kind: 'personal',
       name: 'rob',
@@ -100,16 +100,16 @@ describe('hubClaimFromChat', () => {
   });
 
   it('leaves the name out when there is none', () => {
-    expect(hubClaimFromChat({ id: -100, type: 'group' })).toEqual({ holon: '-100', kind: 'group' });
+    expect(holonClaimFromChat({ id: -100, type: 'group' })).toEqual({ holon: '-100', kind: 'group' });
   });
 });
 
-describe('recordHubClaim / readHubClaim', () => {
+describe('recordHolonClaim / readHolonClaim', () => {
   const token = 'ABCDEFGHIJKLMNOPQRSTUV';
 
   it('writes the claim under the well-known namespace and reads it back', async () => {
     const store = fakeStore();
-    const written = await recordHubClaim(
+    const written = await recordHolonClaim(
       store,
       token,
       { id: -1001234567890, type: 'supergroup', title: 'Liminal' },
@@ -123,33 +123,33 @@ describe('recordHubClaim / readHubClaim', () => {
       at: T0,
     });
     expect(store.rows.get(`${CLAIM_NAMESPACE}/${CLAIM_LENS}/${token}`)).toEqual(written);
-    expect(await readHubClaim(store, token, { now: T0 + 1000 })).toEqual(written);
+    expect(await readHolonClaim(store, token, { now: T0 + 1000 })).toEqual(written);
   });
 
   it('refuses a bad token or a chat without an id', async () => {
     const store = fakeStore();
-    expect(await recordHubClaim(store, 'nope', { id: -100 }, T0)).toBeNull();
-    expect(await recordHubClaim(store, token, { id: '' }, T0)).toBeNull();
+    expect(await recordHolonClaim(store, 'nope', { id: -100 }, T0)).toBeNull();
+    expect(await recordHolonClaim(store, token, { id: '' }, T0)).toBeNull();
     // `getholonId` falls back to "0" when it cannot read the chat.
-    expect(await recordHubClaim(store, token, { id: '0' }, T0)).toBeNull();
+    expect(await recordHolonClaim(store, token, { id: '0' }, T0)).toBeNull();
     expect(store.rows.size).toBe(0);
   });
 
   it('is null until the bot has redeemed the token', async () => {
-    expect(await readHubClaim(fakeStore(), token)).toBeNull();
-    expect(await readHubClaim(fakeStore(), 'nope')).toBeNull();
+    expect(await readHolonClaim(fakeStore(), token)).toBeNull();
+    expect(await readHolonClaim(fakeStore(), 'nope')).toBeNull();
   });
 
   it('does not honour a stale claim', async () => {
     const store = fakeStore();
-    await recordHubClaim(store, token, { id: -100, type: 'group' }, T0);
-    expect(await readHubClaim(store, token, { now: T0 + CLAIM_MAX_AGE_MS + 1 })).toBeNull();
-    expect(await readHubClaim(store, token, { now: T0 + CLAIM_MAX_AGE_MS })).not.toBeNull();
+    await recordHolonClaim(store, token, { id: -100, type: 'group' }, T0);
+    expect(await readHolonClaim(store, token, { now: T0 + CLAIM_MAX_AGE_MS + 1 })).toBeNull();
+    expect(await readHolonClaim(store, token, { now: T0 + CLAIM_MAX_AGE_MS })).not.toBeNull();
   });
 });
 
 describe('claimFor', () => {
-  const claim: HubClaim = { id: 'ABCDEFGHIJKLMNOPQRSTUV', holon: '-100', kind: 'group', at: T0 };
+  const claim: HolonClaim = { id: 'ABCDEFGHIJKLMNOPQRSTUV', holon: '-100', kind: 'group', at: T0 };
 
   it('passes the claim for this token and nothing else', () => {
     expect(claimFor(claim, claim.id, { now: T0 })).toEqual(claim);
@@ -160,9 +160,9 @@ describe('claimFor', () => {
   });
 
   it('checks the record shape', () => {
-    expect(isHubClaim(claim)).toBe(true);
-    expect(isHubClaim({ ...claim, kind: 'other' })).toBe(false);
-    expect(isHubClaim({ ...claim, at: 'yesterday' })).toBe(false);
+    expect(isHolonClaim(claim)).toBe(true);
+    expect(isHolonClaim({ ...claim, kind: 'other' })).toBe(false);
+    expect(isHolonClaim({ ...claim, at: 'yesterday' })).toBe(false);
   });
 
   it('tolerates a little clock skew but not a claim from the future', () => {
