@@ -27,7 +27,8 @@ import {
 } from '@holons/core/scoring';
 import { REAEventStore } from '@holons/core/rea';
 import { registerHolon } from '@holons/core/holosphere';
-import { parseClaimPayload, recordHubClaim } from '@holons/core/onboarding';
+import { parseClaimPayload, recordHolonClaim } from '@holons/core/onboarding';
+import { acceptTelegramLink, linkedHolons, parseLinkPayload, unlinkChat } from '@holons/core/linking';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -69,6 +70,17 @@ function welcomeText(holonId: string | number, language: string): string {
  * Telegram has no way to hand them back. So the welcome the bot posts on
  * arrival carries the link home — straight to this holon's own board.
  */
+/**
+ * A translated line with an inline default: `i18next.t` with `defaultValue`
+ * — and the default interpolated by hand when i18next is not initialised
+ * (unit tests, a bare module import), so a reply is never empty.
+ */
+function translated(language: string, key: string, defaultValue: string, vars: Record<string, unknown> = {}): string {
+    const text = i18next.t(key, { lng: language, defaultValue, ...vars });
+    if (typeof text === 'string' && text.trim()) return text;
+    return defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? ''));
+}
+
 function boardButtons(holonId: string | number, language: string) {
     const raw = String(holonId ?? '').trim();
     // `getholonId` falls back to "0" when it can't read the chat — a link built
@@ -205,6 +217,25 @@ export default class Settings {
 
         // ================= WELCOME MESSAGES ===========================
 
+        // /unlink — drop this chat's link to a dashboard hub (see @holons/core/linking).
+        this.bot.command('unlink', async (ctx) => {
+            try {
+                const holonId = utils.getholonId(ctx);
+                await this._unlinkHolons(ctx, holonId, await this.getLanguage(holonId));
+            } catch (error) {
+                console.error('Error unlinking:', error);
+            }
+        });
+        this.bot.action(/^unlinkholon:([0-9a-f]{32})$/, async (ctx) => {
+            try {
+                const holonId = utils.getholonId(ctx);
+                await ctx.answerCbQuery().catch(() => {});
+                await this._unlinkHolons(ctx, holonId, await this.getLanguage(holonId), ctx.match[1]);
+            } catch (error) {
+                console.error('Error unlinking:', error);
+            }
+        });
+
         // Handle /start command with localized messages based on chat type
         this.bot.command('start', async (ctx) => {
             try {
@@ -216,6 +247,15 @@ export default class Settings {
                 const payload = ctx.message.text.split(' ')[1];
                 if (payload && payload.startsWith('join_') && chatType === 'private') {
                     await this._handleJoinDeeplink(ctx, payload, language);
+                    return;
+                }
+
+                // A dashboard hub offered to link this chat (`link_<holon>_<token>`,
+                // see @holons/core/linking): honour it — the chat's admin tapped —
+                // and the screen that offered learns this chat answered.
+                const link = parseLinkPayload(payload);
+                if (link) {
+                    await this._acceptHolonLink(ctx, link, language, holonId);
                     return;
                 }
 
@@ -4195,12 +4235,97 @@ export default class Settings {
         const token = parseClaimPayload(payload);
         if (!token) return false;
         try {
-            const claim = await recordHubClaim(this.db, token, ctx.chat ?? { id: utils.getholonId(ctx) });
+            const claim = await recordHolonClaim(this.db, token, ctx.chat ?? { id: utils.getholonId(ctx) });
             return !!claim;
         } catch (error) {
             console.error('Error redeeming hub claim:', error);
             return false;
         }
+    }
+
+    /** Is `userId` allowed to (un)link this chat: its creator or an admin, or the chat is their own private one. */
+    async _isChatAdmin(ctx, holonId, userId) {
+        if (ctx.chat?.type === 'private') return true;
+        try {
+            const m = await ctx.telegram.getChatMember(holonId, userId);
+            return m?.status === 'creator' || m?.status === 'administrator';
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Honour a link offer from a dashboard hub (`/start link_<holon>_<token>`):
+     * found this chat's holon if it is new, seat the offering admin's key in it,
+     * and record the acceptance the screen is waiting for. Only a chat admin's
+     * tap counts. Never throws — the welcome must post regardless.
+     */
+    async _acceptHolonLink(ctx, link, language, holonId) {
+        const t = (key, defaultValue, vars = {}) => translated(language, key, defaultValue, vars);
+        try {
+            if (!(await this._isChatAdmin(ctx, holonId, ctx.from?.id))) {
+                await ctx.reply(t('holonLinkNotAdmin', 'Only an admin of this chat can link it to a dashboard hub.'));
+                return;
+            }
+            const result = await acceptTelegramLink(this.db, {
+                holon: link.holon,
+                token: link.token,
+                chat: ctx.chat ?? { id: holonId },
+                byUserId: ctx.from?.id ?? '',
+            });
+            if (!result.ok) {
+                const message =
+                    result.refused === 'stale'
+                        ? t('holonLinkStale', 'That link has expired. Start the link again from the dashboard.')
+                        : result.refused === 'wrong-state'
+                          ? t('holonLinkUsed', 'That link was already used. Start a new one from the dashboard.')
+                          : t('holonLinkNoOffer', 'No open link offer was found for that hub. Start the link from the dashboard, signed in as one of its admins.');
+                await ctx.reply(message);
+                return;
+            }
+            let name = link.holon;
+            try {
+                const settings = await this.db.get(link.holon, 'settings', link.holon);
+                if (settings && typeof settings.name === 'string' && settings.name.trim()) name = settings.name.trim();
+            } catch {
+                /* the id will do */
+            }
+            await ctx.reply(t('holonLinked', 'Linked to "{{name}}" on the dashboard. Its admins can now edit this hub from there, and the members of this chat count there too. Use /unlink to undo.', { name }));
+            await ctx.reply(welcomeText(holonId, language), {
+                parse_mode: 'Markdown',
+                reply_markup: boardButtons(holonId, language),
+            });
+        } catch (error) {
+            console.error('Error accepting a holon link:', error);
+            await ctx.reply(t('holonLinkFailed', 'Could not link this chat right now. Please try again.'));
+        }
+    }
+
+    /** `/unlink`: drop this chat's link(s) to dashboard hubs and unseat their admins here. */
+    async _unlinkHolons(ctx, holonId, language, onlyId = null) {
+        const t = (key, defaultValue, vars = {}) => translated(language, key, defaultValue, vars);
+        if (!(await this._isChatAdmin(ctx, holonId, ctx.from?.id))) {
+            await ctx.reply(t('holonLinkNotAdmin', 'Only an admin of this chat can link it to a dashboard hub.'));
+            return;
+        }
+        const links = (await linkedHolons(this.db, holonId)).filter((l) => !onlyId || l.id === onlyId);
+        if (!links.length) {
+            await ctx.reply(t('holonUnlinkNone', 'This chat is not linked to any dashboard hub.'));
+            return;
+        }
+        if (links.length > 1 && !onlyId) {
+            await ctx.reply(
+                t('holonUnlinkWhich', 'Which hub should this chat unlink from?'),
+                Markup.inlineKeyboard(links.map((l) => [Markup.button.callback(String(l.peer), `unlinkholon:${l.id}`)])),
+            );
+            return;
+        }
+        const done = [];
+        for (const l of links) {
+            const r = await unlinkChat(this.db, holonId, l.id);
+            if (r) done.push(String(l.peer));
+        }
+        await ctx.reply(done.length ? t('holonUnlinked', 'Unlinked from {{hubs}}.', { hubs: done.join(', ') }) : t('holonUnlinkNone', 'This chat is not linked to any dashboard hub.'));
     }
 
     async _handleJoinDeeplink(ctx, payload, language) {

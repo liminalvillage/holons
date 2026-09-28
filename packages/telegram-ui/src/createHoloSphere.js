@@ -29,6 +29,7 @@ import {
 } from '@holons/core/auth';
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
+import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
 import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
 import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import { getPrivacySnapshot, grantLens } from '@holons/core/privacy';
@@ -379,7 +380,19 @@ export function createTrustCache(
       /* no settings yet */
     }
     publishGroupState(holon, settings, memberIds);
-    syncMembership(holon, settings, list, rosterKnown);
+    // A dashboard hub linked to this chat (@holons/core/linking) seats its
+    // admin here; the signed log must keep that seat through every sync.
+    let linked = new Map();
+    try {
+      linked = await linkedAdmins(hs, String(holon));
+    } catch {
+      /* no links readable */
+    }
+    for (const k of linked.keys()) list.add(k);
+    const memberKeys = [...list].filter(
+      k => k !== holonPubkey && !linked.has(k)
+    );
+    syncMembership(holon, settings, list, rosterKnown, linked, memberKeys);
     return [...list];
   }
 
@@ -396,7 +409,14 @@ export function createTrustCache(
    * are only ever ADDED, never unseated — removal is as-of-time, and a cold
    * read once emptied 57 hubs' logs in one restart (2026-09-26).
    */
-  function syncMembership(holon, settings, keys, rosterKnown = true) {
+  function syncMembership(
+    holon,
+    settings,
+    keys,
+    rosterKnown = true,
+    linked = new Map(),
+    memberKeys = []
+  ) {
     const hs = projectionHost.instance;
     if (!secret || !hs || !hs.signingEnabled) return;
     const desired = new Map();
@@ -410,12 +430,25 @@ export function createTrustCache(
         /* no admin key */
       }
     }
+    // Admins of linked dashboard hubs keep their seat (a prune would
+    // otherwise unseat them: they are not in the `users` lens).
+    for (const [k, role] of linked) desired.set(k, role);
     syncMembersLog(hs, String(holon), desired, { prune: rosterKnown })
       .then(r => {
         if (r.founded)
           console.log(
             `[holosphere] founded ${holon}: membership log signed by the holon key`
           );
+        // The roster bridge: this chat's members count in the hubs it is
+        // linked to — only where the bot key is already seated as admin
+        // there, adding only, never founding or pruning.
+        if (linked.size && memberKeys.length)
+          return bridgeTelegramRoster(hs, String(holon), memberKeys).then(b => {
+            if (b.length)
+              console.log(
+                `[holosphere] ${holon}: members bridged into ${b.join(', ')}`
+              );
+          });
       })
       .catch(e =>
         console.warn('[holosphere] membership sync failed:', e?.message)
