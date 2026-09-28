@@ -32,7 +32,8 @@ import { REAEventStore } from "@holons/core/rea";
 import { getReaStore } from "./holosphere";
 
 export type CompletePrecheck =
-  { ok: true } | { ok: false; reason: "already-completed" | "stopped" };
+  | { ok: true }
+  | { ok: false; reason: "already-completed" | "stopped" };
 
 /**
  * Status pre-check (pure, no writes). Gate the UI on this before opening the

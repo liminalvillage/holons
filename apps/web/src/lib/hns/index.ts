@@ -241,7 +241,8 @@ export async function lookupNames(
       }
 
       const entry = entries.find((e: any) => e?.holonId === holonId) as
-        HNSEntry | undefined;
+        | HNSEntry
+        | undefined;
 
       if (entry && verifyEntry(entry)) {
         hnsCache.set(holonId, entry);

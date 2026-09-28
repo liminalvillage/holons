@@ -12,7 +12,11 @@ import { BUNDLE_BYTECODE } from "../contracts/bundleBytecode.js";
 
 // Holon Types based on the original system
 export type HolonType =
-  "Managed" | "Zoned" | "Splitter" | "Appreciative" | "Bundle";
+  | "Managed"
+  | "Zoned"
+  | "Splitter"
+  | "Appreciative"
+  | "Bundle";
 
 // Single Bundle contract interface (unified holon)
 export interface HolonBundle {
