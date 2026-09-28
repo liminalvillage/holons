@@ -118,6 +118,12 @@
   } from "$lib/dock";
   import { dockPartnersOf } from "$lib/dockfed";
   import { initAuth, loginOpen, currentUser } from "$lib/auth";
+  import { readRememberedKey } from "$lib/rememberKey";
+  import { loadMyHubs, recordMyHub } from "$lib/myhubs";
+  import { pendingLink, telegramLinkOpen } from "$lib/tglink";
+  import { returningFromBot } from "$lib/config";
+  import { ensureProfile } from "@holons/core/holons";
+  import { isHolonId } from "@holons/core/protocol";
   import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
   import { startInstallWatcher } from "$lib/install";
@@ -476,6 +482,7 @@
   // every session-key change, shown in the account menu, and said once per
   // hub and key as a notice.
   const standingSaid = new Set<string>();
+  const profileSaid = new Set<string>();
   async function refreshStanding(id: string) {
     let hs: HoloSphere;
     try {
@@ -492,6 +499,24 @@
       if (status === "held" && get(currentUser) && !standingSaid.has(mark)) {
         standingSaid.add(mark);
         showNotice(tr("layout.heldWrites"), 6000);
+      }
+      // Seated by key in a key-founded hub: make sure the hub has an
+      // accepted profile for this person (one signed before the seat never
+      // counts — see @holons/core/holons). Once per hub and key.
+      const u = get(currentUser);
+      if (
+        status === "accepted" &&
+        u &&
+        get(sessionKeyPub) &&
+        isHolonId(id) &&
+        !profileSaid.has(mark)
+      ) {
+        profileSaid.add(mark);
+        void ensureProfile(hs, id, {
+          first_name: u.first_name,
+          last_name: u.last_name,
+          username: u.username,
+        }).catch(() => {});
       }
     } catch {
       writeStanding.set(null);
@@ -554,7 +579,8 @@
 
   function onLocalWrite(e: Event) {
     const d = (e as CustomEvent).detail as
-      { holon?: string; lens?: string; at?: number } | undefined;
+      | { holon?: string; lens?: string; at?: number }
+      | undefined;
     if (!d?.holon || !d.at) return;
     // Writes routed to a partner holon (sourceRef) don't reliably echo when
     // federation is off — only the displayed holon's writes are probes.
@@ -639,9 +665,21 @@
     // an ask, not a gate — closing it leaves the card readable — and it is made
     // once per boot, so a login that came back around (Telegram returns to the
     // same URL) or a dismissed ask isn't repeated.
+    // A key remembered on this device (behind a PIN) is offered the same way:
+    // the login sheet opens on its PIN step when no live session key is up.
     void initAuth().then(() => {
-      if (card && !get(currentUser)) loginOpen.set(true);
+      if (
+        (card && !get(currentUser)) ||
+        (readRememberedKey() && !get(sessionKeyPub))
+      )
+        loginOpen.set(true);
     });
+    // Back from Telegram with a hub link out: reopen the settings sheet on
+    // the Telegram step so the wait (and the confirmation) is picked up.
+    if (returningFromBot() && pendingLink()) {
+      telegramLinkOpen.set(true);
+      settingsOpen.set(true);
+    }
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
     window.addEventListener("kiosk:federation-changed", onFederationChanged);
@@ -932,7 +970,13 @@
   // stamp the previous holon's name on the new board — the id changes a tick
   // before the async bind clears the name, and a holon that resolves no name
   // of its own would then keep that borrowed one forever.
-  $: if (mounted && $holonIdStore) rememberBoard($holonIdStore, "");
+  $: if (mounted && $holonIdStore) {
+    rememberBoard($holonIdStore, "");
+    // …and in the signed-in person's own holon, so it follows them.
+    void recordMyHub($holonIdStore, get(holonName));
+  }
+  // A key login brings the person's hubs onto this device's dock.
+  $: if (mounted && $sessionKeyPub) void loadMyHubs();
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).

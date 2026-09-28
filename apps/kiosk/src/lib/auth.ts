@@ -25,7 +25,8 @@ import { writable, derived, get } from "svelte/store";
 import { personName } from "./data";
 import { signAuthEvent } from "@holons/core/auth";
 import type { ProviderLogin } from "./login/types";
-import { npubLabel } from "./login/nostrKey";
+import { importNostrKey, npubLabel } from "./login/nostrKey";
+import { forgetRememberedKey } from "./rememberKey";
 
 /** The signed-in editor: a Telegram profile, or a bare key identity whose
  *  id (= personal holon id) is the Nostr pubkey hex. */
@@ -146,12 +147,33 @@ export async function loginWithKey(
   loginOpen.set(false);
 }
 
+/**
+ * Sign back in with a key this device remembered (lib/rememberKey.ts), once
+ * its PIN opened it: the same path as a fresh key login, so the session
+ * cookie is re-minted and the key adopted in memory.
+ */
+export async function resumeKeyLogin(
+  secretHex: string,
+  provider: "nostr" | "ethereum" | "passkey",
+  label?: string,
+): Promise<void> {
+  const providerLogin = importNostrKey(secretHex);
+  providerLogin.identity = {
+    ...providerLogin.identity,
+    provider,
+    ...(label ? { label } : {}),
+  };
+  await loginWithKey(providerLogin);
+}
+
 export async function logout(): Promise<void> {
   try {
     await fetch("/api/auth/session", { method: "DELETE" });
   } catch {
     /* best effort */
   }
+  // Leaving means leaving: a key remembered on this device goes too.
+  forgetRememberedKey();
   currentUser.set(null);
   // A shared kiosk must not keep signing as the departed user: drop the
   // paired/adopted session key (in-memory only) along with the identity.

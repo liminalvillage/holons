@@ -527,6 +527,64 @@ export const it: Record<MessageKey, Msg> = {
     "Copia non riuscita — seleziona la chiave e copiala a mano.",
   "login.savedCheck": "Ho salvato la mia chiave in un posto sicuro",
   "login.continue": "Continua",
+  "settings.telegram": "Telegram",
+  "settings.telegramSub":
+    "— una chat collegata a questo hub: i suoi membri contano qui, le sue bacheche si vedono qui",
+  "settings.telegramLink": "Collega una chat Telegram",
+  "settings.telegramUnlink": "Scollega questa chat",
+  "settings.telegramUnlinked":
+    "Scollegata. La chiave del bot non conta più qui.",
+  "tglink.title": "Collega una chat Telegram",
+  "tglink.lead":
+    "Apri Telegram con uno di questi link come admin della chat. Il bot risponde qui; niente da copiare.",
+  "tglink.group": "Una chat di gruppo",
+  "tglink.groupHint":
+    "Aggiungi il bot al gruppo, o scegli un gruppo in cui è già",
+  "tglink.personal": "La mia chat con il bot",
+  "tglink.personalHint": "Il tuo hub personale",
+  "tglink.waiting": "In attesa del bot…",
+  "tglink.waitingBody": "Tocca il link in Telegram come admin della chat.",
+  "tglink.confirmTitle": "Collegare “{title}”?",
+  "tglink.confirmBody":
+    "La chiave del bot diventa admin di questo hub, i membri della chat contano qui, e le due bacheche mostrano gli elementi l’una dell’altra.",
+  "tglink.confirm": "Collega",
+  "tglink.cancel": "Annulla",
+  "tglink.done":
+    "Collegata. I membri della chat compariranno man mano che il bot li sincronizza.",
+  "tglink.failed": "Non riesco a collegare — {reason}",
+  "hub.hereTitleKey": "Nuovo hub",
+  "hub.hereBodyKey": "Fondato dalla tua chiave, adesso â senza Telegram.",
+  "settings.hubJoinPending": "{n} chiedono di entrare",
+  "settings.hubApprove": "Approva",
+  "settings.hubDecline": "Rifiuta",
+  "settings.hubInvite": "Invita con il link di questo hub:",
+  "settings.hubInviteCopy": "Copia link",
+  "menu.joinHub": "Chiedi di entrare in questo hub",
+  "menu.joinRequested": "Richiesta inviata. Un admin dell’hub ti accoglie.",
+  "menu.leaveHub": "Lascia questo hub",
+  "menu.leftHub":
+    "Hai avvisato l’hub che te ne vai. Un admin toglie il tuo posto.",
+  "login.nostrLead": "Accedi con la tua chiave",
+  "login.orOther": "oppure accedi in un altro modo",
+  "login.telegramTile": "Telegram",
+  "login.telegramHint": "Tramite il bot",
+  "login.stay": "Resta connesso su questo dispositivo",
+  "login.stayHint":
+    "La chiave resta su questo dispositivo, sigillata con un PIN. Non per uno schermo condiviso.",
+  "login.pinSetTitle": "Scegli un PIN",
+  "login.pinSetBody":
+    "Da 4 a 12 caratteri. Sblocca la tua chiave su questo dispositivo dopo un ricaricamento.",
+  "login.pinEnterTitle": "Bentornato",
+  "login.pinEnterBody": "Inserisci il PIN per accedere come {label}.",
+  "login.pinField": "PIN",
+  "login.pinConfirmField": "Ripeti il PIN",
+  "login.pinMismatch": "I due PIN non coincidono.",
+  "login.pinShort": "Usa da 4 a 12 caratteri, senza spazi.",
+  "login.pinWrong": "PIN errato.",
+  "login.pinForget": "Dimentica questa chiave",
+  "login.pinUnlock": "Sblocca",
+  "login.pinSave": "Salva",
+  "login.otherWay": "Accedi in un altro modo",
 
   // User menu
   "menu.notSignedIn": "Accesso non effettuato",
@@ -655,7 +713,7 @@ export const it: Record<MessageKey, Msg> = {
   "settings.hubFoundLogin": "Accedi con una chiave",
   "settings.hubFounded": "Fondato: ora la tua chiave parla per questo hub.",
   "settings.hubFoundFailed": "Impossibile fondare questo hub — {reason}",
-  "settings.hubKeys": "Chiavi di questo hub",
+  "settings.hubKeys": "Membri di questo hub",
   "settings.hubKeysSub":
     "— chi può scrivere e condividere qui, per chiave pubblica",
   "settings.hubKeyRoleAdmin": "admin",

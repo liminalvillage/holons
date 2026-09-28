@@ -7,6 +7,7 @@
   // pill — see ScopePill.)
   import { currentUser, displayName, loginOpen, logout } from "$lib/auth";
   import {
+    showNotice,
     holonId,
     holonName,
     brandName,
@@ -19,8 +20,11 @@
   import { showHomePage } from "$lib/home";
   import { goto } from "$app/navigation";
   import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
+  import { forgetRememberedKey } from "$lib/rememberKey";
   import { installMode, promptInstall } from "$lib/install";
-  import { t } from "$lib/i18n";
+  import { askToJoin, leave } from "$lib/hubmembers";
+  import { isHolonId } from "@holons/core/protocol";
+  import { t, tr } from "$lib/i18n";
 
   $: who = $brandName || $holonName;
 
@@ -57,7 +61,32 @@
     close();
     loginOpen.set(true);
   }
+  // Key-founded hubs take members by key: ask to be seated, or say goodbye.
+  let joinBusy = false;
+  $: keyHub = !!$holonId && isHolonId($holonId) && !!$sessionKeyPub;
+  async function joinHub() {
+    if (!$holonId || !$currentUser || joinBusy) return;
+    joinBusy = true;
+    try {
+      if (await askToJoin($holonId, displayName($currentUser)))
+        showNotice(tr("menu.joinRequested"));
+    } finally {
+      joinBusy = false;
+    }
+  }
+  async function leaveHub() {
+    if (!$holonId || joinBusy) return;
+    joinBusy = true;
+    try {
+      if (await leave($holonId)) showNotice(tr("menu.leftHub"));
+    } finally {
+      joinBusy = false;
+    }
+  }
   function unlinkKey() {
+    // Unlinking the key also forgets it on this device, or it would be back
+    // at the next reload.
+    forgetRememberedKey();
     void dropSessionKey();
   }
 
@@ -189,11 +218,23 @@
         <span class="ico"><Icon name="lock" /></span>
         <span class="label">{$t("menu.held")}</span>
       </div>
+      {#if keyHub}
+        <button class="row" disabled={joinBusy} on:click={joinHub}>
+          <span class="ico"><Icon name="key" /></span>
+          <span class="label">{$t("menu.joinHub")}</span>
+        </button>
+      {/if}
     {:else if $writeStanding === "accepted"}
       <div class="row standing" role="status">
         <span class="ico"><Icon name="check" /></span>
         <span class="label">{$t("menu.accepted")}</span>
       </div>
+      {#if keyHub}
+        <button class="row" disabled={joinBusy} on:click={leaveHub}>
+          <span class="ico"><Icon name="close" /></span>
+          <span class="label">{$t("menu.leaveHub")}</span>
+        </button>
+      {/if}
     {/if}
     <button class="row danger" on:click={logout}>
       <span class="ico"><Icon name="power" /></span>

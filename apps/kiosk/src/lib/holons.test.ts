@@ -15,10 +15,14 @@ import {
   SUBDOMAIN_HOLONS,
 } from "./holons";
 import hubs from "./hubs.json";
+import { nostrUtils } from "holosphere";
 
 // A holon can be keyed by any of a person's identities, not only a chat id.
 const ETH = "0x52908400098527886E0F7030069857D2E4169EE7";
 const NPUB = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6";
+// …which is this key. A person's holon is keyed by the hex, whatever they pasted.
+const NPUB_HEX = nostrUtils.npubToHex(NPUB);
+const HOLON = "holon_k7m3p9q2r5t8v1w4";
 
 describe("subdomainOf", () => {
   spec("takes the label attached to the base domain", () => {
@@ -89,13 +93,28 @@ describe("parseHolonRef", () => {
     // address land in the same holon namespace.
     expect(parseHolonRef(ETH)).toBe(ETH.toLowerCase());
     expect(parseHolonRef(ETH.toLowerCase())).toBe(ETH.toLowerCase());
-    expect(parseHolonRef(NPUB)).toBe(NPUB);
+    expect(parseHolonRef(NPUB)).toBe(NPUB_HEX);
+    expect(parseHolonRef(NPUB.toUpperCase())).toBe(NPUB_HEX);
+    expect(parseHolonRef(NPUB_HEX)).toBe(NPUB_HEX);
+    expect(parseHolonRef(NPUB_HEX.toUpperCase())).toBe(NPUB_HEX);
+  });
+
+  spec("takes a key-founded holon id, new or first-generation", () => {
+    expect(parseHolonRef(HOLON)).toBe(HOLON);
+    expect(parseHolonRef("hub_k7m3p9q2r5t8v1w4")).toBe("hub_k7m3p9q2r5t8v1w4");
+    expect(parseHolonRef(`https://hubs.network/${HOLON}/tasks`)).toBe(HOLON);
+    expect(holonForPath(`/${HOLON}/tasks`)).toBe(HOLON);
+    expect(holonForPath(`/${NPUB}`)).toBe(NPUB_HEX);
+    expect(holonForPath(`/${NPUB_HEX}`)).toBe(NPUB_HEX);
   });
 
   spec("refuses identity look-alikes", () => {
     expect(parseHolonRef("0x1234")).toBeNull(); // too short for an address
     expect(parseHolonRef(ETH + "ff")).toBeNull(); // too long
     expect(parseHolonRef("npub1tooshort")).toBeNull();
+    expect(parseHolonRef(NPUB_HEX.slice(1))).toBeNull(); // 63 hex is no key
+    expect(parseHolonRef("holon_short")).toBeNull();
+    expect(parseHolonRef("holon_" + "A".repeat(16))).toBeNull(); // ids are lowercase
   });
 
   spec("is null on anything that names no holon", () => {
@@ -200,7 +219,7 @@ describe("parseHolonPaste", () => {
     expect(parseHolonPaste(`my address is ${ETH}, add me`)).toBe(
       ETH.toLowerCase(),
     );
-    expect(parseHolonPaste(`on nostr I'm ${NPUB}.`)).toBe(NPUB);
+    expect(parseHolonPaste(`on nostr I'm ${NPUB}.`)).toBe(NPUB_HEX);
   });
 });
 
@@ -211,7 +230,8 @@ describe("parseHolonAdd", () => {
       "-1001234567890",
     );
     expect(parseHolonAdd(ETH)).toBe(ETH.toLowerCase());
-    expect(parseHolonAdd(NPUB)).toBe(NPUB);
+    expect(parseHolonAdd(NPUB)).toBe(NPUB_HEX);
+    expect(parseHolonAdd(HOLON)).toBe(HOLON);
   });
 
   spec("a registered name resolves to its holon id, not itself", () => {

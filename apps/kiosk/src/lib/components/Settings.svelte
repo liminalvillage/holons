@@ -70,18 +70,31 @@
   import { isLoggedIn, loginOpen } from "$lib/auth";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { npubLabel } from "$lib/login/nostrKey";
+  import {
+    dismissJoin,
+    seat,
+    unseat,
+    watchRequests,
+    type JoinRequest,
+  } from "$lib/hubmembers";
+  import { segmentFor } from "$lib/dock";
+  import { isHolonId } from "@holons/core/protocol";
+  import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
+  import { telegramLinkOpen, unlinkTelegramChat } from "$lib/tglink";
+  import LinkTelegramSheet from "./LinkTelegramSheet.svelte";
+  import { onDestroy } from "svelte";
   import { getHolosphere } from "$lib/holosphere";
   import {
     resolveHolonAuthority,
     type HolonAuthority,
   } from "@holons/core/holosphere";
   import {
-    addHubMember,
-    foundHub,
+    addHolonMember,
+    foundHolon,
     foundingAuthority,
-    hubMembers,
-    myHubRole,
-    removeHubMember,
+    holonMembers,
+    myHolonRole,
+    removeHolonMember,
     type FoundingAuthority,
   } from "@holons/core/protocol";
   import HexPicker from "./HexPicker.svelte";
@@ -140,6 +153,48 @@
   let hubRole: "admin" | "member" | null = null;
   let keyDraft = "";
   let keyBusy = false;
+  // Keys asking to be seated (NIP-29 join requests), watched while this
+  // panel is open and the adopted key admins a key-founded hub.
+  let joinRequests: JoinRequest[] = [];
+  let stopRequests: (() => void) | null = null;
+  let inviteCopied = false;
+  // Telegram chats linked to this hub (@holons/core/linking), and the sheet
+  // that links a new one; `telegramLinkOpen` is raised by the layout when a
+  // pending link is found on return from Telegram.
+  let telegramLinks: LinkRecord[] = [];
+  let linkOpen = false;
+  $: linkOpen = linkOpen || $telegramLinkOpen;
+  $: if (linkOpen) telegramLinkOpen.set(false);
+  async function loadTelegramLinks(id: string) {
+    try {
+      const hs = await getHolosphere();
+      const links = await linkedTelegramChats(hs, id);
+      if (id === $holonId) telegramLinks = links;
+    } catch {
+      if (id === $holonId) telegramLinks = [];
+    }
+  }
+  async function unlinkChat(link: LinkRecord) {
+    if (!$holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      const hs = await getHolosphere();
+      if (await unlinkTelegramChat(hs, $holonId, link)) {
+        telegramLinks = telegramLinks.filter((l) => l.id !== link.id);
+        showNotice(tr("settings.telegramUnlinked"));
+        await loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
+      }
+    } catch (err) {
+      showNotice(tr("tglink.failed", { reason: reasonOf(err) }));
+    } finally {
+      keyBusy = false;
+    }
+  }
+  $: inviteUrl =
+    $holonId && typeof location !== "undefined"
+      ? `${location.origin}/${encodeURIComponent(segmentFor($holonId))}`
+      : "";
+  onDestroy(() => stopRequests?.());
   let hubKeySource: MessageKey;
   $: hubKeySource =
     hubAuthority?.anchor && hubAuthority.actors?.source === "log"
@@ -208,17 +263,60 @@
       return;
     }
     try {
-      const role = await myHubRole(hs, id);
-      const keys = role === "admin" ? await hubMembers(hs, id) : new Map();
+      const role = await myHolonRole(hs, id);
+      const keys = role === "admin" ? await holonMembers(hs, id) : new Map();
       if (id === $holonId) {
         hubRole = role;
         hubKeys = keys;
+        watchJoins(id, role);
+        if (isHolonId(id)) void loadTelegramLinks(id);
       }
     } catch {
       if (id === $holonId) {
         hubKeys = new Map();
         hubRole = null;
+        watchJoins(id, null);
       }
+    }
+  }
+
+  function watchJoins(id: string, role: "admin" | "member" | null) {
+    stopRequests?.();
+    stopRequests = null;
+    joinRequests = [];
+    if (role !== "admin" || !isHolonId(id)) return;
+    stopRequests = watchRequests(id, (r) => {
+      if (id === $holonId) joinRequests = r;
+    });
+  }
+
+  async function approve(req: JoinRequest) {
+    if (!$holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      const pub = await seat($holonId, req.pubkey, "member");
+      hubKeys = new Map(hubKeys).set(pub, "member");
+      joinRequests = joinRequests.filter((r) => r.pubkey !== pub);
+    } catch (err) {
+      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+    } finally {
+      keyBusy = false;
+    }
+  }
+
+  function decline(req: JoinRequest) {
+    if (!$holonId) return;
+    dismissJoin($holonId, req.pubkey);
+    joinRequests = joinRequests.filter((r) => r.pubkey !== req.pubkey);
+  }
+
+  async function copyInvite() {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      inviteCopied = true;
+      setTimeout(() => (inviteCopied = false), 1800);
+    } catch {
+      showNotice(tr("login.copyFailed"));
     }
   }
 
@@ -231,7 +329,7 @@
     foundBusy = true;
     try {
       const hs = await getHolosphere();
-      await foundHub(hs, $holonId, { name: $holonName || undefined });
+      await foundHolon(hs, $holonId, { name: $holonName || undefined });
       showNotice(tr("settings.hubFounded"));
       await loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
     } catch (err) {
@@ -247,8 +345,7 @@
     if (!$holonId || !key || keyBusy) return;
     keyBusy = true;
     try {
-      const hs = await getHolosphere();
-      const pub = await addHubMember(hs, $holonId, key, role);
+      const pub = await seat($holonId, key, role);
       hubKeys = new Map(hubKeys).set(pub, role);
       keyDraft = "";
     } catch (err) {
@@ -262,8 +359,7 @@
     if (!$holonId || keyBusy) return;
     keyBusy = true;
     try {
-      const hs = await getHolosphere();
-      await removeHubMember(hs, $holonId, pub);
+      await unseat($holonId, pub);
       const next = new Map(hubKeys);
       next.delete(pub);
       hubKeys = next;
@@ -878,6 +974,38 @@
       <div class="field">
         {$t("settings.hubKeys")}
         <span class="sub">{$t("settings.hubKeysSub")}</span>
+        {#if joinRequests.length}
+          <p class="hex-note">
+            {$t("settings.hubJoinPending", { n: joinRequests.length })}
+          </p>
+          {#each joinRequests as req (req.pubkey)}
+            <div class="map-row">
+              <span class="map-lens key-label" title={req.pubkey}
+                >{req.reason.trim() || npubLabel(req.pubkey)}<span
+                  class="shared">{npubLabel(req.pubkey)}</span
+                ></span
+              >
+              <div class="map-lanes">
+                <button
+                  type="button"
+                  class="lane on"
+                  aria-label={$t("settings.hubApprove")}
+                  title={$t("settings.hubApprove")}
+                  disabled={keyBusy}
+                  on:click={() => approve(req)}><Icon name="check" /></button
+                >
+                <button
+                  type="button"
+                  class="lane"
+                  aria-label={$t("settings.hubDecline")}
+                  title={$t("settings.hubDecline")}
+                  disabled={keyBusy}
+                  on:click={() => decline(req)}><Icon name="close" /></button
+                >
+              </div>
+            </div>
+          {/each}
+        {/if}
         {#each [...hubKeys] as [pub, role] (pub)}
           <div class="map-row">
             <span class="map-lens key-label" title={pub}
@@ -930,7 +1058,61 @@
             >
           </div>
         </form>
+        {#if isHolonId($holonId ?? "")}
+          <p class="hex-note">
+            {$t("settings.hubInvite")}
+            <button type="button" class="hex-pick" on:click={copyInvite}>
+              {inviteCopied ? $t("login.copied") : $t("settings.hubInviteCopy")}
+            </button>
+          </p>
+        {/if}
       </div>
+
+      {#if isHolonId($holonId ?? "")}
+        <!-- Telegram: a chat linked to this hub shares members and boards. -->
+        <div class="field">
+          {$t("settings.telegram")}
+          <span class="sub">{$t("settings.telegramSub")}</span>
+          {#each telegramLinks as link (link.id)}
+            <div class="map-row">
+              <span class="map-lens key-label" title={link.peer}
+                >{link.name || link.peer}<span class="shared">{link.peer}</span
+                ></span
+              >
+              <div class="map-lanes">
+                <button
+                  type="button"
+                  class="lane"
+                  aria-label={$t("settings.telegramUnlink")}
+                  title={$t("settings.telegramUnlink")}
+                  disabled={keyBusy}
+                  on:click={() => unlinkChat(link)}
+                  ><Icon name="close" /></button
+                >
+              </div>
+            </div>
+          {/each}
+          {#if linkOpen && $holonId}
+            <LinkTelegramSheet
+              hub={$holonId}
+              on:linked={() => {
+                linkOpen = false;
+                showNotice(tr("tglink.done"));
+                if ($holonId) void loadTelegramLinks($holonId);
+              }}
+              on:close={() => (linkOpen = false)}
+            />
+          {:else}
+            <button
+              type="button"
+              class="found"
+              on:click={() => (linkOpen = true)}
+            >
+              {$t("settings.telegramLink")}
+            </button>
+          {/if}
+        </div>
+      {/if}
     {/if}
 
     <!--

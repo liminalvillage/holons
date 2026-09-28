@@ -21,6 +21,7 @@
 //
 // The names themselves are data: edit `hubs.json` next to this file.
 
+import { nostrUtils } from "holosphere";
 import hubs from "./hubs.json";
 
 /** Base domain the kiosk is served under; subdomains of it select a holon. */
@@ -120,26 +121,40 @@ export function holonForPath(pathname: string): string | null {
 }
 
 /**
- * A token that IS an identity — an Ethereum address or a Nostr npub. A holon
- * can be keyed by any of a person's identities, not only a Telegram id, and
- * these shapes are unambiguous (no tab id, registered label, or ordinary word
- * looks like them), so they are honoured anywhere a holon id is. Normalised
- * to lowercase so the same identity always names the same holon namespace
- * (Ethereum addresses circulate in mixed checksum case).
+ * A token that IS an identity — an Ethereum address, a Nostr pubkey (hex or
+ * npub). A holon can be keyed by any of a person's identities, not only a
+ * Telegram id, and these shapes are unambiguous (no tab id, registered label,
+ * or ordinary word looks like them), so they are honoured anywhere a holon id
+ * is. Normalised so the same identity always names the same holon namespace:
+ * addresses lowercased (they circulate in mixed checksum case), and an npub
+ * decoded to its HEX pubkey — the form a person's holon is keyed by and the
+ * one the authority rule reads as "this key speaks for itself".
  */
 function identityToken(token: string): string | null {
   const tok = token.trim();
   if (/^0x[0-9a-f]{40}$/i.test(tok)) return tok.toLowerCase();
-  if (/^npub1[02-9ac-hj-np-z]{58}$/i.test(tok)) return tok.toLowerCase();
+  if (/^[0-9a-f]{64}$/i.test(tok)) return tok.toLowerCase();
+  if (/^npub1[02-9ac-hj-np-z]{58}$/i.test(tok)) {
+    try {
+      const hex = nostrUtils.npubToHex(tok.toLowerCase());
+      return /^[0-9a-f]{64}$/i.test(hex) ? hex.toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 
+/** A key-founded holon id (`holon_…`, or the first ones' `hub_…`), as core mints them. */
+const FOUNDED_ID_RE = /^(holon|hub)_[a-z0-9]{12,32}$/;
+
 /**
  * The holon a token names, or null. A token is either a registered label
- * ("liminal"), an identity (an Ethereum address or an npub), or a raw holon
- * id — a group chat id ("-100…") or a personal numeric id. Same rules
- * `holonForPath` applies to a URL segment. A registered label wins over
- * everything, so a name always resolves to its holon id.
+ * ("liminal"), an identity (an Ethereum address, a pubkey, an npub), a
+ * key-founded holon id (`holon_…`), or a raw Telegram holon id — a group
+ * chat id ("-100…") or a personal numeric id. Same rules `holonForPath`
+ * applies to a URL segment. A registered label wins over everything, so a
+ * name always resolves to its holon id.
  */
 function holonForToken(token: string): string | null {
   const tok = token.trim();
@@ -148,6 +163,7 @@ function holonForToken(token: string): string | null {
   if (byLabel && byLabel.trim()) return byLabel;
   const identity = identityToken(tok);
   if (identity) return identity;
+  if (FOUNDED_ID_RE.test(tok)) return tok;
   return /^-?\d+$/.test(tok) ? tok : null;
 }
 

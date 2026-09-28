@@ -16,15 +16,13 @@
 
 import type { HoloSphere } from "holosphere";
 import {
-  CLAIM_LENS,
   CLAIM_MAX_AGE_MS,
-  CLAIM_NAMESPACE,
-  claimFor,
   claimPayload,
   isClaimToken,
   newClaimToken,
-  readHubClaim,
-  type HubClaim,
+  watchHolonClaim,
+  type ClaimWatchStore,
+  type HolonClaim,
 } from "@holons/core/onboarding";
 import { addToGroupUrl, botChatUrl, markBotHandoff } from "./config";
 
@@ -99,73 +97,19 @@ export function hubClaimUrls(token: string): {
 }
 
 /**
- * Watch the relay for the bot to redeem `token`; `onClaim` fires at most
- * once. A live subscription carries the record the moment it lands, and a
- * slow poll backs it up (a cold read can race the relay's catch-up). Returns
- * a stop function; stopping after the claim arrived is a no-op.
+ * Watch the relay for the bot to redeem `token` (core's `watchHolonClaim`);
+ * `onClaim` fires at most once. Returns a stop function.
  */
 export function watchHubClaim(
   holosphere: Promise<HoloSphere> | HoloSphere,
   token: string,
-  onClaim: (claim: HubClaim) => void,
+  onClaim: (claim: HolonClaim) => void,
   opts: { pollMs?: number } = {},
 ): () => void {
-  let active = true;
-  let unsub: (() => void) | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
-
-  const stop = () => {
-    active = false;
-    unsub?.();
-    unsub = null;
-    if (timer) clearInterval(timer);
-    timer = null;
-  };
-  const found = (claim: HubClaim) => {
-    if (!active) return;
-    stop();
-    onClaim(claim);
-  };
-
-  void (async () => {
-    let hs: HoloSphere;
-    try {
-      hs = await holosphere;
-    } catch {
-      return;
-    }
-    if (!active) return;
-
-    const raw: any = hs.subscribe(
-      CLAIM_NAMESPACE,
-      CLAIM_LENS,
-      (data: unknown) => {
-        const claim = claimFor(data, token);
-        if (claim) found(claim);
-      },
-    );
-    if (!active) {
-      if (typeof raw?.unsubscribe === "function") raw.unsubscribe();
-      else if (typeof raw === "function") raw();
-      return;
-    }
-    unsub = () => {
-      if (typeof raw?.unsubscribe === "function") raw.unsubscribe();
-      else if (typeof raw === "function") raw();
-    };
-
-    const poll = async () => {
-      if (!active) return;
-      try {
-        const claim = await readHubClaim(hs, token);
-        if (claim) found(claim);
-      } catch {
-        /* relay hiccup — the next tick retries */
-      }
-    };
-    void poll();
-    timer = setInterval(poll, opts.pollMs ?? 5000);
-  })();
-
-  return stop;
+  return watchHolonClaim(
+    holosphere as Promise<ClaimWatchStore>,
+    token,
+    onClaim,
+    opts,
+  );
 }

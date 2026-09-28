@@ -6,7 +6,7 @@
   //
   //   existing  paste a hub you already have — its id, its link, its name.
   //   here      start one right here, no Telegram: the adopted session key
-  //             founds it (`@holons/core/protocol` foundHub) — it signs the
+  //             founds it (`@holons/core/protocol` foundHolon) — it signs the
   //             genesis of the hub's member log and becomes its first admin.
   //             A Telegram login on this shared screen has no key of its own
   //             here, so that step asks for a key sign-in first.
@@ -22,9 +22,12 @@
   // sheet only names the hub.
   import { createEventDispatcher, onDestroy, tick } from "svelte";
   import { newClaimToken } from "@holons/core/onboarding";
-  import { foundHub, newHubId } from "@holons/core/protocol";
+  import { createHolon } from "@holons/core/holons";
+  import { foundHolon, newHolonId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
-  import { loginOpen } from "$lib/auth";
+  import { currentUser, loginOpen } from "$lib/auth";
+  import { resolveAppName } from "$lib/config";
+  import { sessionSigner } from "$lib/hubmembers";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { parseHolonAdd } from "$lib/holons";
   import { getHolosphere } from "$lib/holosphere";
@@ -76,9 +79,28 @@
     hereError = "";
     try {
       const hs = await getHolosphere();
-      const id = newHubId();
       const name = hereName.trim();
-      await foundHub(hs, id, { name: name || undefined });
+      const signer = sessionSigner();
+      let id: string;
+      if (signer) {
+        // Found it, publish its NIP-29 state, and write the founder's profile.
+        const u = $currentUser;
+        const profile = u
+          ? {
+              first_name: u.first_name,
+              last_name: u.last_name,
+              username: u.username,
+            }
+          : undefined;
+        ({ holon: id } = await createHolon(hs, signer, {
+          appName: resolveAppName(),
+          name: name || undefined,
+          profile,
+        }));
+      } else {
+        id = newHolonId();
+        await foundHolon(hs, id, { name: name || undefined });
+      }
       dispatch("add", { id, name: name || undefined });
     } catch (err) {
       console.error("[kiosk] founding a hub here failed", err);
@@ -164,6 +186,20 @@
   {#if step === "choose"}
     <h3>{cell ? $t("hub.addHereTitle") : $t("hub.addTitle")}</h3>
     <div class="opts">
+      {#if $sessionKeyPub}
+        <!-- Signed in with a key: founding here is the first thing offered. -->
+        <button
+          type="button"
+          class="opt opt--new"
+          on:click={() => (step = "here")}
+        >
+          <span class="opt__icon" aria-hidden="true"><Icon name="key" /></span>
+          <span class="opt__text">
+            <b>{$t("hub.hereTitleKey")}</b>
+            <small>{$t("hub.hereBodyKey")}</small>
+          </span>
+        </button>
+      {/if}
       <button type="button" class="opt" on:click={() => (step = "existing")}>
         <span class="opt__icon" aria-hidden="true"><Icon name="hexagon" /></span
         >
@@ -172,17 +208,19 @@
           <small>{$t("hub.haveBody")}</small>
         </span>
       </button>
-      <button
-        type="button"
-        class="opt opt--new"
-        on:click={() => (step = "here")}
-      >
-        <span class="opt__icon" aria-hidden="true"><Icon name="key" /></span>
-        <span class="opt__text">
-          <b>{$t("hub.hereTitle")}</b>
-          <small>{$t("hub.hereBody")}</small>
-        </span>
-      </button>
+      {#if !$sessionKeyPub}
+        <button
+          type="button"
+          class="opt opt--new"
+          on:click={() => (step = "here")}
+        >
+          <span class="opt__icon" aria-hidden="true"><Icon name="key" /></span>
+          <span class="opt__text">
+            <b>{$t("hub.hereTitle")}</b>
+            <small>{$t("hub.hereBody")}</small>
+          </span>
+        </button>
+      {/if}
       <button type="button" class="opt" on:click={() => (step = "new")}>
         <span class="opt__icon" aria-hidden="true">{@render tgIcon()}</span>
         <span class="opt__text">
