@@ -100,3 +100,50 @@ describe('allocation tools', () => {
     expect(chain.bundles).toEqual({});
   });
 });
+
+describe('mint tools', () => {
+  /** A fake with the log surface the mints fold reads: append + getLog, unverified. */
+  function logDeps(seed: Record<string, Record<string, Record<string, unknown>>> = {}) {
+    const { deps, db } = fakeDeps(seed);
+    const logs: Record<string, any[]> = {};
+    const hs: any = {
+      currentPubkey: 'a'.repeat(64),
+      get: async (holon: string, lens: string, key?: string) => (key ? (db[`${holon}/${lens}`]?.[key] ?? null) : null),
+      getAll: async (holon: string, lens: string) => Object.values(db[`${holon}/${lens}`] ?? {}),
+      getAllGlobal: async () => [],
+      getFederation: async () => ({ federated: [] }),
+      append: async (holon: string, lens: string, item: unknown, opts: { refs?: unknown } = {}) => {
+        const id = `${holon}/${lens}/${(logs[`${holon}/${lens}`] ??= []).length + 1}`.padEnd(64, '0');
+        const e = { id, pubkey: hs.currentPubkey, created_at: 1_760_000_000 + logs[`${holon}/${lens}`].length, refs: { prev: [], basis: [], attests: [], disputes: [], ...(opts.refs as object) }, item };
+        logs[`${holon}/${lens}`].push(e);
+        return e;
+      },
+      getLog: async (holon: string, lens: string) => logs[`${holon}/${lens}`] ?? [],
+    };
+    return { deps: { ...deps, getHoloSphere: async () => hs } as ToolDeps, db, hs };
+  }
+
+  it('records a mint and reads the fund back, with the MCP key as the bootstrap admin', async () => {
+    const { server, tools } = capture();
+    const { deps, hs } = logDeps({ 'olive/settings': { olive: { id: 'olive', holonPubkey: 'a'.repeat(64) } } });
+    registerFlowsTools(server, deps);
+    const rec = payload(await tools.get('flow_mint_record')!({ holon: 'olive', amount: 120, unit: 'l', memo: 'first pressing' }));
+    expect(rec.success).toBe(true);
+    expect(rec.item).toMatchObject({ kind: 'mint', amount: 120, unit: 'L', memo: 'first pressing' });
+    const state = payload(await tools.get('flow_mints_state')!({ holon: 'olive' }));
+    expect(state.success).toBe(true);
+    expect(state.byUnit).toEqual({ L: 120 });
+    expect(state.mints[0]).toMatchObject({ status: 'issued', pubkey: hs.currentPubkey });
+    expect(state.units).toEqual(['l']);
+  });
+
+  it('a mint by a key the holon does not accept is recorded but not counted', async () => {
+    const { server, tools } = capture();
+    const { deps } = logDeps({ 'olive/settings': { olive: { id: 'olive', holonPubkey: 'b'.repeat(64) } } });
+    registerFlowsTools(server, deps);
+    await tools.get('flow_mint_record')!({ holon: 'olive', amount: 5, unit: 'L' });
+    const state = payload(await tools.get('flow_mints_state')!({ holon: 'olive' }));
+    expect(state.byUnit).toEqual({});
+    expect(state.mints[0].status).toBe('rejected');
+  });
+});

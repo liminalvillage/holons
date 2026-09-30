@@ -12,6 +12,10 @@
 //                                       pending, disputed, over, settled …
 //   /fundattest <id> · /funddispute <id> [reason]   an attester's word
 //   /fundpaid <id> [amount]             an attester records the payout
+//   /fundmint <amount> [UNIT] [memo]    an attester brings value into the fund
+//                                       (a harvest in L, a grant in EUR …) —
+//                                       the pot the rights are cut from
+//   /fundmints                          what the fund holds, judged
 //   /fundpolicy                         the rules in force for the claims log
 //   /fundpolicy quorum N | conflict earliest|quorum | pin <holon> | unpin <holon>
 //                                       an admin sets one rule (a signed _policy entry)
@@ -26,10 +30,13 @@ import { getholonId, getUserId } from './utilities.js';
 import { createIdentityContext } from '@holons/core/holosphere';
 import {
   FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
   buildClaim,
   buildClaimVerdict,
+  buildMint,
   buildPayout,
   foldClaimsFromLenses,
+  foldMintsFromLenses,
 } from '@holons/core/flows';
 import {
   GOVERNANCE_VOTES_LENS,
@@ -53,7 +60,8 @@ import {
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 
-const UNIT_RE = /^[A-Za-z]{3}$/;
+// A unit is a currency code or a measure: EUR, L, KG, KWH — one to five letters.
+const UNIT_RE = /^[A-Za-z]{1,5}$/;
 const STATUS_MARK = {
   approved: '✅',
   settled: '💸',
@@ -94,6 +102,8 @@ export default class FundClaims {
       bot.command('fundattest', ctx => this.verdict(ctx, 'attest'));
       bot.command('funddispute', ctx => this.verdict(ctx, 'dispute'));
       bot.command('fundpaid', ctx => this.payout(ctx));
+      bot.command('fundmint', ctx => this.mint(ctx));
+      bot.command('fundmints', ctx => this.mints(ctx));
       bot.command('fundpolicy', ctx => this.policy(ctx));
     }
     if (options.checkpoints !== false)
@@ -106,6 +116,15 @@ export default class FundClaims {
   async context(holon) {
     return foldClaimsFromLenses(
       await readLogContext(this.db, holon, FLOW_CLAIMS_LENS, {
+        secret: this.secret,
+      })
+    );
+  }
+
+  /** The mints log folded: what the fund holds to divide, per unit. */
+  async mintsContext(holon) {
+    return foldMintsFromLenses(
+      await readLogContext(this.db, holon, FLOW_MINTS_LENS, {
         secret: this.secret,
       })
     );
@@ -166,6 +185,85 @@ export default class FundClaims {
       );
     } catch (err) {
       return ctx.reply(`Could not record the claim: ${err?.message || err}`);
+    }
+  }
+
+  /**
+   * /fundmint <amount> [UNIT] [memo] — bring value into the fund. Signed as
+   * the member; it counts only if they are an attester of the mints log
+   * (admins by default), and the reply says so.
+   */
+  async mint(ctx) {
+    const holon = getholonId(ctx);
+    const userId = String(getUserId(ctx));
+    const args = (ctx.message?.text || '').split(/\s+/).slice(1);
+    const amount = Number(String(args[0] || '').replace(',', '.'));
+    if (!(amount > 0)) {
+      return ctx.reply('Usage: /fundmint <amount> [L|EUR|…] [what it is]');
+    }
+    let unit = 'EUR';
+    let rest = args.slice(1);
+    if (rest[0] && UNIT_RE.test(rest[0])) {
+      unit = rest[0].toUpperCase();
+      rest = rest.slice(1);
+    }
+    const memo = rest.join(' ').trim();
+    try {
+      const event = await this.appendAs(
+        userId,
+        holon,
+        buildMint({ amount, unit, memo: memo || undefined, at: this.now() }),
+        FLOW_MINTS_LENS
+      );
+      const { folded, actors } = await this.mintsContext(holon);
+      const mine = folded.mints.find(m => m.id === event.id);
+      const total = folded.byUnit[unit] ?? 0;
+      return ctx.reply(
+        `Added to the fund: ${amount} ${unit}${memo ? ` — ${memo}` : ''}\n` +
+          `#${event.id.slice(0, 8)} · ${mine ? this.describeMint(mine) : 'recorded'}` +
+          (mine?.status === 'issued' ? `\nThe fund now holds ${total} ${unit}.` : '') +
+          (actors.source === 'bootstrap'
+            ? '\nThis holon is not founded yet: the signer set is provisional.'
+            : '')
+      );
+    } catch (err) {
+      return ctx.reply(`Could not add to the fund: ${err?.message || err}`);
+    }
+  }
+
+  describeMint(m) {
+    const mark =
+      m.status === 'issued' ? '✅' : STATUS_MARK[m.status] || '';
+    const why =
+      m.status === 'issued' ? '' : m.reason ? ` (${m.reason})` : '';
+    return `${mark} ${m.status}${why}`;
+  }
+
+  /** /fundmints — what the fund holds, per unit, and every mint judged. */
+  async mints(ctx) {
+    const holon = getholonId(ctx);
+    try {
+      const { folded, actors } = await this.mintsContext(holon);
+      if (!folded.mints.length)
+        return ctx.reply(
+          'Nothing has been brought into this fund yet. An attester adds to it with /fundmint <amount> [UNIT] [what it is].'
+        );
+      const names = await this.names(holon);
+      const held = Object.entries(folded.byUnit)
+        .map(([u, v]) => `${v} ${u}`)
+        .join(' · ');
+      const lines = folded.mints.slice(-25).map(m => {
+        const who = names.get(m.pubkey) || '';
+        return `#${m.id.slice(0, 8)} ${m.amount} ${m.unit}${m.memo ? ` — ${escapeHtml(m.memo)}` : ''}${who ? ` <i>(${escapeHtml(who)})</i>` : ''}\n   ${this.describeMint(m)}`;
+      });
+      const head =
+        `<b>The fund holds</b> ${held || 'nothing yet'}` +
+        (actors.source === 'bootstrap'
+          ? ' · <i>provisional signer set</i>'
+          : '');
+      return ctx.replyWithHTML([head, ...lines].join('\n'));
+    } catch (err) {
+      return ctx.reply(`Could not read the fund: ${err?.message || err}`);
     }
   }
 
@@ -396,6 +494,10 @@ export default class FundClaims {
       {
         lens: FLOW_CLAIMS_LENS,
         fold: async h => this.context(h),
+      },
+      {
+        lens: FLOW_MINTS_LENS,
+        fold: async h => this.mintsContext(h),
       },
       {
         lens: GOVERNANCE_VOTES_LENS,

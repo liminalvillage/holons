@@ -6,7 +6,7 @@
 // truth (HOLONS_APP / HOLOSPHERE_RELAYS, with the legacy APPNAME as a
 // fallback), matching how the bot and web read it.
 import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/holosphere';
-import { FLOW_CLAIMS_LENS } from '@holons/core/flows';
+import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from '@holons/core/flows';
 import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import { generateNsec, nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
 
@@ -62,7 +62,7 @@ export async function getHoloSphere(): Promise<any> {
     },
     // Fund claims are an append-only log (kind 1808): `flow_*` tools append
     // to it and fold it; `lens_put` to it is refused.
-    appendLenses: [FLOW_CLAIMS_LENS, GOVERNANCE_VOTES_LENS],
+    appendLenses: [FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, GOVERNANCE_VOTES_LENS],
     // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
     nostr: projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
     // Authorized reads (HOLOSPHERE_ENFORCE=off reads the open graph).

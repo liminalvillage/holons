@@ -74,10 +74,19 @@
     usageTotals,
     usageUnits,
     FLOW_CLAIMS_LENS,
+    FLOW_MINTS_LENS,
     buildClaim,
     buildClaimVerdict,
+    buildMint,
     buildPayout,
     foldClaimsFromLenses,
+    foldMintsFromLenses,
+    loadInboundRights,
+    mintedIn,
+    potTotal,
+    potUnits,
+    scoreAllocationMembers,
+    type InboundRight,
     type Claim,
     type AllocationSlice,
     type BreakdownRow,
@@ -173,6 +182,8 @@
   // membership log, settings, users and the identity directory — the same
   // fold the kiosk and the bot run.
   let claimEntries = new Map<string, LogEvent<unknown>>();
+  // The mints log — what the fund holds to divide — read the same way.
+  let mintEntries = new Map<string, LogEvent<unknown>>();
   let policyEntries = new Map<string, LogEvent<unknown>>();
   let membersLog: MembershipEnvelope[] = [];
   let attestations: IdentityAttestation[] = [];
@@ -188,6 +199,7 @@
     unbindClaims();
     claimsBoundTo = id;
     claimEntries = new Map();
+    mintEntries = new Map();
     policyEntries = new Map();
     membersLog = [];
     claimsOffs.push(
@@ -195,6 +207,13 @@
         if (claimsBoundTo !== id) return;
         claimEntries.set(e.id, e as LogEvent<unknown>);
         claimEntries = claimEntries;
+      }),
+    );
+    claimsOffs.push(
+      holosphere.subscribeLog(id, FLOW_MINTS_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        mintEntries.set(e.id, e as LogEvent<unknown>);
+        mintEntries = mintEntries;
       }),
     );
     claimsOffs.push(
@@ -256,12 +275,94 @@
         imports: claimImports,
       })
     : null;
+  $: mintsCtx = holonID
+    ? foldMintsFromLenses({
+        holonId: holonID,
+        entries: [...mintEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+      })
+    : null;
   $: myLogRole = claimsCtx
     ? claimsCtx.actors.roleAt(holosphere.currentPubkey, Math.floor(Date.now() / 1000))
     : null;
+  $: canMint = !!(mintsCtx && myLogRole && mintsCtx.policy.attesters.includes(myLogRole));
+  let mintAmount = "";
+  let mintUnit = "";
+  let mintMemo = "";
+  let mintSource = "";
+  let mintBusy = false;
+  let mintError = "";
+  $: if (!mintUnit && potUnitList.length) mintUnit = potUnitList[0].toUpperCase();
+  async function submitMint() {
+    if (!holonID || mintBusy) return;
+    const amount = Number(String(mintAmount).replace(",", "."));
+    const unit = mintUnit.trim().toUpperCase();
+    if (!(amount > 0) || !unit) return;
+    mintBusy = true;
+    mintError = "";
+    try {
+      const a = buildMint({ amount, unit, memo: mintMemo.trim() || undefined, source: mintSource || undefined });
+      await holosphere.append(holonID, FLOW_MINTS_LENS, a.item, { refs: a.refs });
+      mintAmount = "";
+      mintMemo = "";
+    } catch (err) {
+      mintError = err instanceof Error ? err.message : String(err);
+    } finally {
+      mintBusy = false;
+    }
+  }
+  const mintStatusLabel: Record<string, string> = {
+    issued: "Issued",
+    pending: "Awaiting attestation",
+    disputed: "Disputed",
+    conflict: "Conflict",
+    rejected: "Not counted",
+  };
+
+  // ---- What reaches this fund from upstream -------------------------------------
+  // A partner whose split seats this holon passes part of ITS pot here (core
+  // climbs the federation record a bounded number of hops).
+  let inbound: InboundRight[] = [];
+  async function loadInbound(id: string) {
+    try {
+      const got = await loadInboundRights(holosphere, id, {
+        scoreOf: (hid) => scoreAllocationMembers(holosphere, hid),
+      });
+      if (holonID === id) inbound = got.inbound;
+    } catch {
+      if (holonID === id) inbound = [];
+    }
+  }
+
+  // ---- The pot -------------------------------------------------------------------
+  // What there is to divide, per unit: the collective's money, what was minted
+  // here, what reaches here. One unit is drawn at a time.
+  let potUnitPick = "";
+  $: potSources = {
+    collective: collective ? { currency: collective.currency, balance: collective.balance } : null,
+    mints: mintsCtx?.folded ?? null,
+    inbound,
+  };
+  $: potUnitList = potUnits(potSources);
+  $: potUnit = potUnitPick && potUnitList.includes(potUnitPick) ? potUnitPick : (potUnitList[0] ?? "");
+  $: potCollective =
+    collective && potUnit && normalizeCurrency(collective.currency) === potUnit ? collective : null;
+  $: potMinted = potUnit ? mintedIn(potUnit, potSources) : 0;
+  $: potInboundRows = inbound.filter((r) => normalizeCurrency(r.unit) === potUnit);
+  $: potLabel = potCollective
+    ? potCollective.name
+    : potMinted > 0
+      ? "Issued"
+      : potInboundRows.length
+        ? "From upstream"
+        : "Total";
   $: canAttest = !!(claimsCtx && myLogRole && claimsCtx.policy.attesters.includes(myLogRole));
   $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
-  $: claimUnit = collective?.currency ?? usage?.unit ?? "";
+  $: claimUnit = potUnit;
 
   // ── The claims policy ───────────────────────────────────────────────────
   // A draft of the rule in force; "Set the rules" appends it to the policy
@@ -619,6 +720,7 @@
       const loaded = await loadCascadeChildren(holosphere, ids.split("|"), {
         rootId: holon,
         nameOf: (id) => nameMap.get(id),
+        scoreOf: (id) => scoreAllocationMembers(holosphere, id),
       });
       if (cascadeKey === want) cascadeChildren = loaded.children;
     } catch (err) {
@@ -666,10 +768,10 @@
       .filter(([id]) => id !== holonID)
       .map(([id, leaf]) => ({ id, name: leaf.label, aliases: aliasesFor(usersById, id) })),
   ].filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i) as FundUsageParty[];
-  $: usage = collective
+  $: usage = potUnit
     ? buildFundUsage({
         holonId: holonID,
-        unit: collective.currency,
+        unit: potUnit,
         parties: usageParties,
         members: memberIds,
         expenses,
@@ -685,8 +787,10 @@
     // rights-holders already drew, since a right that was spent still was one.
     // Without a collective, show the shape of the split as percentages rather
     // than inventing an amount.
-    total: collective ? rightsTotal(collective.balance, usage) : null,
-    unit: collective?.currency ?? "",
+    // The pot is what is held here (the bank, the mints) plus what reaches
+    // here, plus what was already drawn (`potTotal`, core).
+    total: potUnit ? potTotal(potUnit, potSources, usage) || null : null,
+    unit: potUnit,
     config: allocationConfig,
     members: interiorMembers,
     zoned: zonedPartners,
@@ -701,7 +805,7 @@
       })
     : null;
   $: allocationLabels = {
-    pot: collective ? collective.name : "Total",
+    pot: potLabel,
     interior: "Contributors share",
     exterior: "Reciprocity zones",
     spent: "Spent",
@@ -724,8 +828,8 @@
   // (its owner is not a member of themselves) and may have no partners yet.
   $: hasAllocation =
     interiorMembers.length > 0 || partners.length > 0 || hasAllocationConfig(settings);
-  $: formatAllocation = collective
-    ? formatter({ id: "money", unit: collective.currency })
+  $: formatAllocation = potUnit
+    ? formatter({ id: "money", unit: potUnit })
     : (v: number) => `${Math.round(v)}%`;
 
   // ---- Tap detail ---------------------------------------------------------------
@@ -889,12 +993,18 @@
     const interiorPct = allocationResult.interior.reduce((s, m) => s + m.percentage, 0);
 
     if (node.kind === "pot") {
-      const rows = collective
+      const rows = potCollective
         ? [
-            { label: "Collective", value: collective.name },
-            { label: "Balance", value: formatAllocation(collective.balance) },
+            { label: "Collective", value: potCollective.name },
+            { label: "Balance", value: formatAllocation(potCollective.balance) },
           ]
-        : [{ label: "Pot", value: "No collective configured yet" }];
+        : potUnit
+          ? []
+          : [{ label: "Pot", value: "Nothing in the fund yet" }];
+      if (potMinted > 0) rows.push({ label: "Issued here", value: formatAllocation(potMinted) });
+      for (const r of potInboundRows) {
+        rows.push({ label: `From ${partyName(r.from)}`, value: formatAllocation(r.right) });
+      }
       rows.push(
         { label: "Contributors share", value: `${allocationConfig.interiorPercent}%` },
         {
@@ -1068,6 +1178,7 @@
     collectiveError = "";
     memberShares = [];
     partners = [];
+    inbound = [];
     cascadeChildren = {};
     cascadeKey = "";
     loading = true;
@@ -1286,6 +1397,7 @@
     } catch {
       // A holon with no federation record simply has no exterior.
     }
+    void loadInbound(id);
   }
 
   /** A failure here is never fatal — the movement half stands on its own. */
@@ -1510,10 +1622,26 @@
         <div class="titles">
           <h2>Fund allocation rights</h2>
           <p class="sub">
-            {collective
-              ? `Who may direct ${collective.name}, by how much — and how much of that is already spent or claimed.`
-              : "Who may direct the fund, and by how much."}
+            {potCollective
+              ? `Who may direct ${potCollective.name}, by how much — and how much of that is already spent or claimed.`
+              : potUnit
+                ? `Who may direct the fund, in ${potUnit.toUpperCase()} — and how much of that is already spent or claimed.`
+                : "Who may direct the fund, and by how much."}
           </p>
+          {#if potUnitList.length > 1}
+            <div class="pot-units" role="radiogroup" aria-label="Unit">
+              {#each potUnitList as u (u)}
+                <button
+                  type="button"
+                  role="radio"
+                  class="btn ghost pick"
+                  class:on={u === potUnit}
+                  aria-checked={u === potUnit}
+                  on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+                >
+              {/each}
+            </div>
+          {/if}
         </div>
       </header>
 
@@ -1595,6 +1723,49 @@
               };
             }}
           />
+        </div>
+        <!-- What the fund holds: a harvest, a stock, a grant — brought in by an
+             attester's signed mint, divided by the split, drawn in its unit. -->
+        <div class="claims-panel">
+          <h3>What the fund holds</h3>
+          {#if potInboundRows.length || (mintsCtx && mintsCtx.folded.mints.length)}
+            <table class="claims">
+              <thead><tr><th>What</th><th>Amount</th><th>Status</th></tr></thead>
+              <tbody>
+                {#each inbound as r (r.from + r.unit)}
+                  <tr><th scope="row">Reaching here from {partyName(r.from)}</th><td>{r.right} {r.unit.toUpperCase()}</td><td><span class="badge">Upstream right</span></td></tr>
+                {/each}
+                {#each (mintsCtx?.folded.mints ?? []).filter((m) => m.status !== "rejected").slice(-12).reverse() as m (m.id)}
+                  <tr class={m.status === "issued" ? "approved" : m.status}>
+                    <th scope="row">{m.memo ?? "Issued"}{m.source ? ` · ${partyName(m.source)}` : ""}</th>
+                    <td>{m.amount} {m.unit}</td>
+                    <td><span class="badge">{mintStatusLabel[m.status]}</span></td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="empty">Nothing has been brought into the fund yet{collective ? " besides the collective's money" : ""}.</p>
+          {/if}
+          {#if canMint}
+            <form class="claim-form" on:submit|preventDefault={submitMint}>
+              <label>Amount <input type="number" min="0.01" step="0.01" bind:value={mintAmount} required /></label>
+              <label>Unit <input type="text" maxlength="5" placeholder="L" bind:value={mintUnit} required /></label>
+              <label class="grow">What it is <input type="text" maxlength="140" bind:value={mintMemo} /></label>
+              {#if partners.length}
+                <label>From
+                  <select bind:value={mintSource}>
+                    <option value="">—</option>
+                    {#each partners as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                  </select>
+                </label>
+              {/if}
+              <button type="submit" disabled={mintBusy}>Add to the fund</button>
+            </form>
+          {:else}
+            <p class="note">Only an attester of this fund can add to it.</p>
+          {/if}
+          {#if mintError}<p class="note warn">{mintError}</p>{/if}
         </div>
         <!-- Claims on the fund: signed entries in the holon's own log, judged
              by its attesters, folded the same way on every surface. -->
@@ -2037,6 +2208,17 @@
     .panel {
       animation: none;
     }
+  }
+
+  .pot-units {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .pot-units .pick.on {
+    background: var(--ink, #111);
+    color: var(--paper, #fff);
   }
 
   .claims-panel {

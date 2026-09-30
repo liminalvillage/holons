@@ -17,12 +17,20 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
   allocate,
   buildClaim,
   buildClaimVerdict,
+  buildMint,
   buildPayout,
   childResolver,
   foldClaimsFromLenses,
+  inboundTotal,
+  loadInboundRights,
+  loadMints,
+  potTotal,
+  potUnits,
+  scoreAllocationMembers,
   hasAllocationConfig,
   loadCascadeChildren,
   readAllocationConfig,
@@ -112,6 +120,26 @@ function slim(node: CascadeNode): Record<string, unknown> {
   };
 }
 
+/**
+ * The pot a holon holds in `unit` (or its first unit): what attesters minted
+ * plus what reaches it from upstream. Null when nothing feeds it. Rights
+ * already drawn are not read here (no expenses/claims fold), so this is the
+ * pot BEFORE usage — the number to divide when nothing was taken yet.
+ */
+async function potOf(hs: any, holon: string, unit?: string): Promise<{ unit: string; total: number; minted: number; inbound: number } | null> {
+  const [mints, inbound] = await Promise.all([
+    loadMints(hs, holon).then((c) => c.folded).catch(() => null),
+    loadInboundRights(hs, holon, { scoreOf: (id) => scoreAllocationMembers(hs, id) }).then((r) => r.inbound).catch(() => []),
+  ]);
+  const sources = { mints, inbound };
+  const units = potUnits(sources);
+  const want = unit ? units.find((u) => u === unit.toLowerCase()) ?? unit.toLowerCase() : units[0];
+  if (!want) return null;
+  const total = potTotal(want, sources, null);
+  if (!(total > 0)) return null;
+  return { unit: want, total, minted: mints?.byUnit[want.toUpperCase()] ?? 0, inbound: inboundTotal(inbound, want) };
+}
+
 /** Everything the fold reads, straight from the instance. */
 async function claimsContext(hs: any, holon: string) {
   const [entries, policy, settings, users, dir] = await Promise.all([
@@ -146,8 +174,13 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
       try {
         const hs = await deps.getHoloSphere();
         const { configured, config, shares, zones, people, members, zoned } = await allocationInputs(hs, args.holon);
-        const result = allocate({ total: args.total ?? null, unit: args.unit, config, members, zoned });
-        return ok({ success: true, holon: args.holon, configured, config, shares, zones, people, allocation: result });
+        // With no total given, the pot the holon holds (mints + inbound) is
+        // the honest one — the same rule the boards draw by (`potTotal`).
+        const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
+        const total = args.total ?? pot?.total ?? null;
+        const unit = args.unit ?? pot?.unit;
+        const result = allocate({ total, unit, config, members, zoned });
+        return ok({ success: true, holon: args.holon, configured, config, shares, zones, people, ...(pot ? { pot } : {}), allocation: result });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -207,11 +240,13 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           rootId: args.holon,
           maxDepth: args.maxDepth,
           rail: args.rail,
+          scoreOf: (id) => scoreAllocationMembers(hs, id),
         });
+        const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
         const cascade = resolveCascade({
           holonId: args.holon,
-          total: args.total ?? null,
-          unit: args.unit,
+          total: args.total ?? pot?.total ?? null,
+          unit: args.unit ?? pot?.unit,
           root: { config, members, zoned },
           resolveChild: childResolver(loaded.children),
           maxDepth: args.maxDepth,
@@ -226,6 +261,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           summary: summarizeCascade(cascade),
           truncated: cascade.truncated || loaded.truncated,
           holonsRead: loaded.visited,
+          ...(pot ? { pot } : {}),
           ...(args.rail === 'chain' ? { bundles: loaded.bundles } : {}),
         });
       } catch (err) {
@@ -330,6 +366,65 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           claims: ctx.folded.claims,
           payouts: ctx.folded.payouts,
           byParty: ctx.folded.byParty,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'flow_mint_record',
+    {
+      description:
+        'Bring value into the fund: append a MINT to the holon\'s signed mints log (lens "flow_mints", kind 1808) — a harvest in L, a grant in EUR, anything the allocation should divide. Attesters only (the lens policy; admins by default): signed with this MCP instance key, it counts only if the holon accepts that key as an attester. Wraps @holons/core/flows buildMint.',
+      inputSchema: {
+        holon: z.string(),
+        amount: z.number().positive(),
+        unit: z.string().describe('The unit: L, KG, EUR …'),
+        memo: z.string().optional().describe('What it is (e.g. "first pressing 2026").'),
+        source: z.string().optional().describe('Where it came from, when it matters: a partner holon id (the trees), a lot name.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const a = buildMint({ amount: args.amount, unit: args.unit, memo: args.memo, source: args.source });
+        const event = await hs.append(args.holon, FLOW_MINTS_LENS, a.item, { refs: a.refs });
+        return ok({ success: true, id: event.id, pubkey: event.pubkey, created_at: event.created_at, item: a.item });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'flow_mints_state',
+    {
+      description:
+        'What the fund holds: the holon\'s mints log folded (each mint judged: issued | pending | disputed | conflict | rejected), totals per unit, and what reaches the holon from upstream funds (partners whose split seats it). Wraps @holons/core/flows loadMints + loadInboundRights.',
+      inputSchema: { holon: z.string() },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const [ctx, inbound] = await Promise.all([
+          loadMints(hs, args.holon),
+          loadInboundRights(hs, args.holon, { scoreOf: (id) => scoreAllocationMembers(hs, id) }),
+        ]);
+        return ok({
+          success: true,
+          holon: args.holon,
+          source: ctx.actors.source,
+          policy: ctx.policy,
+          myPubkey: hs.currentPubkey,
+          myRole: ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000)),
+          byUnit: ctx.folded.byUnit,
+          pendingByUnit: ctx.folded.pendingByUnit,
+          mints: ctx.folded.mints,
+          inbound: inbound.inbound,
+          upstreams: inbound.upstreams,
+          units: potUnits({ mints: ctx.folded, inbound: inbound.inbound }),
         });
       } catch (err) {
         return fail((err as Error).message);

@@ -141,7 +141,11 @@
   // scored share beside each so the caretaker can see what the equation
   // would have given. Someone in the map the roster no longer knows keeps
   // their id, so they can still be removed.
-  $: nameOf = new Map<string, string>(people.map((p) => [p.id, p.name]));
+  // A partner holon can hold a contributor seat too: a collective whose
+  // contributors are other holons weights them here, and the cascade follows
+  // each seat into that holon's own split.
+  $: partnerRows = partners.map((p) => ({ id: p.id, name: `${p.name} (holon)` }));
+  $: nameOf = new Map<string, string>([...people, ...partnerRows].map((p) => [p.id, p.name]));
   $: scoredOf = new Map<string, number>(
     members.map((m) => [String(m.userId), m.percentage]),
   );
@@ -163,7 +167,7 @@
     (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
     0,
   );
-  $: addable = people
+  $: addable = [...people, ...partnerRows.filter((h) => !people.some((p) => p.id === h.id))]
     .filter((p) => !(p.id in shares))
     .sort((a, b) => a.name.localeCompare(b.name));
   let pick = "";
