@@ -19,7 +19,8 @@ derive the same state. Checkpoints let them check that they did.
 | meaning | the five record types, the reduce, the shared lens context, the partner import | `@holons/core/protocol` |
 | first log | fund claims (`flow_claims`) | `@holons/core/flows` `claims.ts` |
 | second log | governance votes (`governance_votes`) | `@holons/core/governance` `votes.ts`, counted by `tally.ts` `tallyBallots` |
-| surfaces | kiosk Flows card + `/api/flows/log` (claims, votes, policy), kiosk Rules tab in the allocation panel, kiosk/web `ProposalVote` in the quest modals, web Fund allocation panel + Rules, MCP `flow_*` / `governance_*` / `protocol_*` tools, bot `/fundclaim` family + `/fundpolicy` + `/vote` `/votes` + new-moon checkpoints per lens | `apps/kiosk/src/lib/flowsClaims.ts`, `governanceVotes.ts`, `components/AllocationSettings.svelte`, `components/ProposalVote.svelte`; `apps/web/src/components/flows/Flows.svelte`, `governance/ProposalVote.svelte`; `packages/mcp-ui/src/tools/{flows,governance,protocol}.ts`; `packages/telegram-ui/src/{FundClaims,GovernanceVotes,protocolContext}.js` |
+| third log | fund mints (`flow_mints`) — what the fund holds to divide | `@holons/core/flows` `mints.ts`, read by `mints-load.ts`, sized into the pot by `pot.ts` |
+| surfaces | kiosk Flows card + `/api/flows/log` (claims, votes, mints, policy), kiosk Fund tab (mints), kiosk Rules tab in the allocation panel, kiosk/web `ProposalVote` in the quest modals, web Fund allocation panel + Rules, MCP `flow_*` / `governance_*` / `protocol_*` tools, bot `/fundclaim` family + `/fundmint` `/fundmints` + `/fundpolicy` + `/vote` `/votes` + new-moon checkpoints per lens | `apps/kiosk/src/lib/flowsClaims.ts`, `governanceVotes.ts`, `components/AllocationSettings.svelte`, `components/ProposalVote.svelte`; `apps/web/src/components/flows/Flows.svelte`, `governance/ProposalVote.svelte`; `packages/mcp-ui/src/tools/{flows,governance,protocol}.ts`; `packages/telegram-ui/src/{FundClaims,GovernanceVotes,protocolContext}.js` |
 
 ## The five record types
 
@@ -76,6 +77,22 @@ proposal, the newest. `tallyBallots` counts the ballots the way
 followed to the voter's choice, a strict majority of every member's weight.
 A change of mind is a newer entry; two votes stamped in the same second are
 ordered by id, like everything else.
+
+## Mints
+
+A fund used to be OpenCollective money and nothing else. A `mint` on the
+`flow_mints` log — `mint { amount, unit, epoch, memo?, source? }` — is the
+record that the fund holds something to divide: a harvest in litres, a grant
+in euros, a stack of firewood. Bringing value in is the same trust as paying
+it out, so only an attester's mint counts (`not-attester` otherwise); quorum
+and disputes apply as everywhere, so a wrong lot is voided by a dispute and
+never rewritten. Totals are kept per unit and never summed across units.
+`pot.ts` then sizes the pot every board divides: what was minted here, the
+collective's balance when it is in the same currency, and what reaches the
+holon from upstream (`inbound.ts` — a partner whose split seats this holon,
+times that partner's pot, climbing a bounded number of hops). A right cut
+from that pot is claimed in the same unit. The worked example is
+[`flows-harvest-collective.md`](./flows-harvest-collective.md).
 
 ## Federation: a partner's accepted entries
 
@@ -142,7 +159,8 @@ mode in holosphere stays off: this reduce runs only over append-only lenses,
 and every replaceable lens keeps its last-writer-wins.
 
 Open after Phase 4: policy for lenses other than `flow_claims` is set through
-MCP/bot only (the kiosk Rules tab edits the claims rule); proposals have no
+MCP/bot only (the kiosk Rules tab edits the claims rule; `flow_mints` takes
+the default policy until an admin sets one); proposals have no
 close time yet, so `late` is only a fold option; a partner's genesis is
 pinned by hand (its `settings.holonPubkey`), not discovered.
 

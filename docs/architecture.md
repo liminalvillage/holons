@@ -131,7 +131,8 @@ cache (`packages/holosphere/STORE.md`).
   with a pubkey by a NIP-17 grant. Revocation rotates and rewrites
   (forward-only). Never private: settings, membership, users, logs,
   standard-kind lenses.
-- An **append-only lens** (`appendLenses`, e.g. `flow_claims`) rides the
+- An **append-only lens** (`appendLenses`: `flow_claims`, `flow_mints`,
+  `governance_votes`, `_policy`, `_checkpoints`) rides the
   regular kind 1808 instead: every signed entry is its own record, never
   replaced; readers fold the log themselves (`@holons/core/protocol`,
   [`protocol.md`](./protocol.md)).
