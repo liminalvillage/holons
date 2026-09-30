@@ -261,6 +261,10 @@ export interface InboundRight {
    * the very thing `rightsTotal` exists to prevent.
    */
   right: number;
+  /** The share of the upstream pot the right is, 0..100, when known. */
+  percentage?: number;
+  /** The upstream pot the right was cut from, when known. */
+  pot?: number;
   /** The upstream fund's usage, for accounts and bars — see `mergeInboundUsage`. */
   usage?: FundUsage | null;
 }
