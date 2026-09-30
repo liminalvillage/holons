@@ -70,7 +70,7 @@ automatically (the link is mirrored).
 
 ### 3. The mother's split
 
-Kiosk: Flows → gear → **Contributors** → *Custom split* → add each partner
+Kiosk: Flows → gear → **Contributors** → _Custom split_ → add each partner
 holon from the picker (they appear as "Liminal (holon)" etc.) and type the
 weights. **Split**: Contributors share 100 % (the zones are unused here).
 Web: the Fund allocation panel's editor does the same. MCP:
@@ -78,6 +78,15 @@ Web: the Fund allocation panel's editor does the same. MCP:
 ```
 allocation_save { holon: <mother>, interiorPercent: 100, interiorMode: "custom",
                   shares: { "-1003864542239": 25, "-1002964866719": 25, "<collectors>": 50 } }
+```
+
+Or run the seed script once the two groups exist — it links the partners,
+saves the mother's split and the Collectors' equation and split in one go:
+
+```
+node --env-file=.env scripts/seed-harvest-collective.mjs \
+  --mother <mother chat id> --collectors <collectors chat id> \
+  --location -1003864542239=25 --location -1002964866719=25 --collectors-weight 50
 ```
 
 Weights are read against their own sum: 25/25/50, 1/1/2 or 30/20/50 are all
@@ -130,14 +139,14 @@ The cascade stops three hops below the root and never goes round a loop.
 3. **The press.** The bill goes in as an expense, in EUR, paid by whoever paid.
 4. **The cook, the tools.** Rings or appreciations, as decided above.
 5. **Mint.** When the oil is back, an attester of the mother records the
-   lot: kiosk Flows gear → **Fund** → *What the fund holds* → amount `200`,
+   lot: kiosk Flows gear → **Fund** → _What the fund holds_ → amount `200`,
    unit `L`, memo "first pressing 2026", source the location if it matters;
    or `/fundmint 200 L first pressing` in the mother group; or MCP
    `flow_mint_record`. One mint per lot is fine; they add up per unit.
    A wrong lot is voided by a dispute (`/funddispute`, kiosk, web), never
    by editing.
 6. **Everyone sees their litres.** The mother's Flows board draws the pot in
-   L and every leaf of the cascade; each person's *Your balance* card shows
+   L and every leaf of the cascade; each person's _Your balance_ card shows
    their right in L. The Collectors' own board shows the litres reaching it
    as its pot and divides them by its equation.
 7. **Redeem.** A picker claims in the Collectors group (`/fundclaim 12 L`,
@@ -150,16 +159,16 @@ The cascade stops three hops below the root and never goes round a loop.
 
 ## Where each rule lives
 
-| rule | where |
-|---|---|
-| the split, custom shares, holons as seats | `@holons/core/flows` `allocation.ts`, `settings.ts` (`settings.allocation`) |
-| a share divided again | `cascade.ts`, `cascade-load.ts` (children scored via `score-load.ts`) |
-| what the fund holds | `mints.ts` (log `flow_mints`, kind 1808), `mints-load.ts` |
-| what reaches a holon from upstream | `inbound.ts` (`inboundRightFrom`, `loadInboundRights`) |
-| the pot to divide, per unit | `pot.ts` (`potUnits`, `potTotal`) |
-| claims, attestations, payouts | `claims.ts` (log `flow_claims`) — see [`protocol.md`](./protocol.md) |
-| the value equation | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`) |
-| surfaces | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*`, bot `/fundmint` `/fundmints` `/fundclaim` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
+| rule                                      | where                                                                                                                                                                                                                                                                            |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the split, custom shares, holons as seats | `@holons/core/flows` `allocation.ts`, `settings.ts` (`settings.allocation`)                                                                                                                                                                                                      |
+| a share divided again                     | `cascade.ts`, `cascade-load.ts` (children scored via `score-load.ts`)                                                                                                                                                                                                            |
+| what the fund holds                       | `mints.ts` (log `flow_mints`, kind 1808), `mints-load.ts`                                                                                                                                                                                                                        |
+| what reaches a holon from upstream        | `inbound.ts` (`inboundRightFrom`, `loadInboundRights`)                                                                                                                                                                                                                           |
+| the pot to divide, per unit               | `pot.ts` (`potUnits`, `potTotal`)                                                                                                                                                                                                                                                |
+| claims, attestations, payouts             | `claims.ts` (log `flow_claims`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                                                             |
+| the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
+| surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*`, bot `/fundmint` `/fundmints` `/fundclaim` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 
 ## Limits, plainly
 

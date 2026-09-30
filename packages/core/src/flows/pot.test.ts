@@ -37,7 +37,7 @@ describe('potBalance / potTotal', () => {
     expect(potTotal('usd', sources, null)).toBe(0);
   });
 
-  it('what was already drawn is still part of the pot, as rightsTotal has always read it', () => {
+  it('a bank balance gets the lifetime spend added back; a mint or an inbound right is gross and does not', () => {
     const usage: FundUsage = {
       unit: 'l',
       parties: {},
@@ -47,6 +47,13 @@ describe('potBalance / potTotal', () => {
       claimsSource: 'log',
       legacyClaimed: {},
     };
-    expect(potTotal('L', { inbound: [{ from: 'm', unit: 'L', right: 70 }] }, usage)).toBe(100);
+    // The bank shows 70 after paying 30: the pot was 100.
+    expect(potTotal('L', { collective: { currency: 'L', balance: 70 } }, usage)).toBe(100);
+    // A 70 L right from upstream is 70 L whatever was handed over from it.
+    expect(potTotal('L', { inbound: [{ from: 'm', unit: 'L', right: 70 }] }, usage)).toBe(70);
+    // 100 L minted stay 100 L minted after 30 L of payouts.
+    expect(potTotal('L', { mints: mints({ L: 100 }) }, usage)).toBe(100);
+    // Mixed: the bank's 70 (+30 spent) plus 50 minted in the same unit.
+    expect(potTotal('L', { collective: { currency: 'L', balance: 70 }, mints: mints({ L: 50 }) }, usage)).toBe(150);
   });
 });

@@ -85,12 +85,27 @@ export function hasPot(unit: string, sources: PotSources): boolean {
 }
 
 /**
- * The pot to divide in `unit` — `rightsTotal` over what is held here plus
- * what reaches here. Zero when nothing feeds it.
+ * The pot to divide in `unit`. Zero when nothing feeds it.
+ *
+ * Two kinds of source, two readings. A BANK BALANCE is net of what was paid
+ * out: a payout made it smaller, so `rightsTotal` adds the lifetime spend
+ * back (a right that was spent still was one) and subtracts outsiders'
+ * claims. A MINT or an INBOUND right is GROSS: 200 L minted stay 200 L
+ * minted however many jugs were handed over, and a right cut upstream never
+ * shrinks with a payout here — adding the spend back on top of those would
+ * count every payout twice (the fund read 112 L after 12 L of a 100 L right
+ * were paid; it holds 100).
  */
 export function potTotal(unit: string, sources: PotSources, usage: FundUsage | null | undefined): number {
   if (!hasPot(unit, sources)) return 0;
-  return rightsTotal(potBalance(unit, sources), usage, inboundTotal(sources.inbound, unit));
+  const want = normalizeCurrency(unit);
+  const c = sources.collective;
+  const bank =
+    c && normalizeCurrency(c.currency) === want && Number.isFinite(c.balance)
+      ? rightsTotal(c.balance, usage)
+      : 0;
+  const gross = mintedTotal(sources.mints, unit) + inboundTotal(sources.inbound, unit);
+  return round(bank + gross);
 }
 
 /** What was minted in `unit`, for a bar's own label. */
