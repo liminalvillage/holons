@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFundUsage,
   fundAccount,
+  inboundTotal,
+  mergeInboundUsage,
   rightsTotal,
   usageOf,
   usageTotals,
@@ -373,6 +375,90 @@ describe('rights are accounted cumulatively, not per window', () => {
     const ada = accountOf(claimed, 'ada');
     expect(ada.claimed).toBe(400);
     expect(ada.available).toBe(100);
+  });
+});
+
+describe('a pot fed from upstream', () => {
+  const members = [
+    { id: 'ada', name: 'Ada', percentage: 60 },
+    { id: 'bob', name: 'Bob', percentage: 40 },
+  ];
+  const config = { interiorPercent: 100, steepness: 50, nzones: 2 };
+
+  /** The fund upstream, where Ada already drew 100 of what she was granted. */
+  const upstream = (windowDays: number | null = null) =>
+    buildFundUsage({
+      holonId: '-900',
+      unit: 'EUR',
+      parties,
+      expenses: [],
+      collective: collective([
+        { id: 'u', status: 'paid', rawStatus: 'PAID', amount: 100, currency: 'EUR', createdAt: NOW - 500 * DAY, description: '', payee: 'Ada' },
+      ]),
+      windowDays,
+      now: NOW,
+    });
+
+  it('adds same-unit inbound rights to the pot, beside the balance', () => {
+    const inbound = [
+      { from: '-900', unit: 'EUR', right: 500 },
+      { from: '-901', unit: 'eur', right: 250 },
+    ];
+    expect(inboundTotal(inbound, 'EUR')).toBe(750);
+    expect(rightsTotal(200, null, inboundTotal(inbound, 'EUR'))).toBe(950);
+    expect(inboundTotal(null, 'EUR')).toBe(0);
+  });
+
+  it('never mixes units: an inbound right in another currency is left out', () => {
+    const inbound = [
+      { from: '-900', unit: 'EUR', right: 500 },
+      { from: '-902', unit: 'USD', right: 9000 },
+      { from: '-903', unit: 'EUR', right: Number.NaN },
+      { from: '-904', unit: 'EUR', right: -40 },
+    ];
+    expect(inboundTotal(inbound, 'eur')).toBe(500);
+  });
+
+  it('does not add a draw on the upstream fund back a second time', () => {
+    // The inbound right is gross: upstream already added Ada's 100 back when
+    // it sized ITS pot. Here the pot reads this holon's own ledger only.
+    const own = buildFundUsage({ holonId: HOLON, unit: 'EUR', parties, expenses: [], now: NOW });
+    const inbound = [{ from: '-900', unit: 'EUR', right: 500, usage: upstream() }];
+    expect(rightsTotal(0, own, inboundTotal(inbound, 'EUR'))).toBe(500);
+  });
+
+  it('measures what is left against the merged ledger, whatever the window', () => {
+    for (const days of [null, 7]) {
+      const own = buildFundUsage({ holonId: HOLON, unit: 'EUR', parties, expenses: [], windowDays: days, now: NOW });
+      const inbound = [{ from: '-900', unit: 'EUR', right: 500, usage: upstream(days) }];
+      const total = rightsTotal(0, own, inboundTotal(inbound, 'EUR'));
+      const merged = mergeInboundUsage(own, inbound);
+      const ada = fundAccount(allocate({ total, unit: 'eur', config, members, zoned: [] }), merged, 'ada')!;
+      expect(ada.right).toBe(300);
+      expect(ada.lifetimeSpent).toBe(100);
+      expect(ada.available).toBe(200);
+    }
+  });
+
+  it('merges only the named parties, and never the upstream outsiders', () => {
+    const withOutsider = buildFundUsage({
+      holonId: '-900',
+      unit: 'EUR',
+      parties,
+      expenses: [],
+      collective: collective([
+        { id: 'a', status: 'paid', rawStatus: 'PAID', amount: 100, currency: 'EUR', createdAt: NOW - DAY, description: '', payee: 'Ada' },
+        { id: 'b', status: 'paid', rawStatus: 'PAID', amount: 70, currency: 'EUR', createdAt: NOW - DAY, description: '', payee: 'Bob' },
+        { id: 'v', status: 'paid', rawStatus: 'PAID', amount: 500, currency: 'EUR', createdAt: NOW - DAY, description: '', payee: 'Vendor' },
+      ]),
+      now: NOW,
+    });
+    const merged = mergeInboundUsage(null, [{ from: '-900', unit: 'EUR', right: 500, usage: withOutsider }], ['ada']);
+    expect(merged.lifetime.ada.eur.spent).toBe(100);
+    expect(merged.parties.ada.eur.spent).toBe(100);
+    expect(merged.lifetime.bob).toBeUndefined();
+    expect(merged.unattributed).toEqual({});
+    expect(merged.unattributedPayees).toEqual([]);
   });
 });
 

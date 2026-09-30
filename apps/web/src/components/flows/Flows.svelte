@@ -42,6 +42,12 @@
     UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    cascadeToGraph,
+    childResolver,
+    hasAllocationConfig,
+    loadCascadeChildren,
+    resolveCascade,
+    type CascadeInputs,
     partyIdOf,
     segmentTotal,
     buildFundUsage,
@@ -409,6 +415,7 @@
   // The federation record is a global, not a lens, so there is nothing to
   // listen to — a slow poll keeps a newly linked partner from needing a reload.
   let federationTimer: ReturnType<typeof setInterval> | null = null;
+  let loadingFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   const FEDERATION_POLL_MS = 60_000;
 
   $: panel = (PANELS.some((p) => p.id === prefs.panel) ? prefs.panel : "movement") as Panel;
@@ -583,6 +590,55 @@
     nameOf: (id) => nameMap.get(id) ?? usersById[id]?.first_name,
   });
 
+  // ---- Cascade -----------------------------------------------------------------
+  //
+  // A recipient can be a holon with a split of its own — a member's id is
+  // their personal holon's id. Core follows each share down through those
+  // splits; this board reads them once per saved roster and draws what core
+  // resolves. Not re-read while the draft is dirty: every edit changes the
+  // roster, and what is downstream of it does not.
+  let cascadeChildren: Record<string, CascadeInputs> = {};
+  let cascadeKey = "";
+  $: rootPartyIds = [
+    ...new Set([
+      ...interiorMembers.map((m) => m.id),
+      ...zonedPartners.filter((p) => p.zone >= 1).map((p) => p.id),
+    ]),
+  ].sort();
+  $: if (!allocationDirty) void loadCascade(holonID, rootPartyIds.join("|"));
+
+  async function loadCascade(holon: string, ids: string) {
+    const want = holosphere && holon ? `${holon}#${ids}` : "";
+    if (want === cascadeKey) return;
+    cascadeKey = want;
+    if (!want || !ids) {
+      cascadeChildren = {};
+      return;
+    }
+    try {
+      const loaded = await loadCascadeChildren(holosphere, ids.split("|"), {
+        rootId: holon,
+        nameOf: (id) => nameMap.get(id),
+      });
+      if (cascadeKey === want) cascadeChildren = loaded.children;
+    } catch (err) {
+      console.warn("[flows] cascade load failed", err);
+      if (cascadeKey === want) cascadeChildren = {};
+    }
+  }
+
+  $: cascadeRoot = { config: allocationConfig, members: interiorMembers, zoned: zonedPartners };
+  // The shape first, without a pot: who ends up holding part of the fund
+  // decides who usage is attributed to, and usage sizes the pot.
+  $: cascadeShape = Object.keys(cascadeChildren).length
+    ? resolveCascade({
+        holonId: holonID,
+        total: null,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+
   // ---- Fund usage --------------------------------------------------------------
   //
   // Every rights-holder, with the names a collective payee might carry so
@@ -605,7 +661,11 @@
     ...zonedPartners
       .filter((p) => p.zone >= 1)
       .map((p) => ({ id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) })),
-  ] as FundUsageParty[];
+    // Whoever holds part of the fund through someone else's giving.
+    ...Object.entries(cascadeShape?.leaves ?? {})
+      .filter(([id]) => id !== holonID)
+      .map(([id, leaf]) => ({ id, name: leaf.label, aliases: aliasesFor(usersById, id) })),
+  ].filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i) as FundUsageParty[];
   $: usage = collective
     ? buildFundUsage({
         holonId: holonID,
@@ -631,26 +691,39 @@
     members: interiorMembers,
     zoned: zonedPartners,
   });
-  $: allocationTrack = allocationToGraph(
-    allocationResult,
-    {
-      pot: collective ? collective.name : "Total",
-      interior: "Contributors share",
-      exterior: "Reciprocity zones",
-      spent: "Spent",
-      claimed: "Claimed",
-      available: "Available",
-      over: "Over",
-      unattributed: "Outside rights",
-    },
-    usage,
-  );
+  $: cascade = cascadeShape
+    ? resolveCascade({
+        holonId: holonID,
+        total: allocationResult.total,
+        unit: allocationResult.unit,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+  $: allocationLabels = {
+    pot: collective ? collective.name : "Total",
+    interior: "Contributors share",
+    exterior: "Reciprocity zones",
+    spent: "Spent",
+    claimed: "Claimed",
+    available: "Available",
+    over: "Over",
+    unattributed: "Outside rights",
+    passed: "Passed on",
+    retained: "Kept",
+  };
+  $: allocationTrack = cascade
+    ? cascadeToGraph(cascade, allocationLabels, usage)
+    : allocationToGraph(allocationResult, allocationLabels, usage);
   $: allocationLayout = layoutSankey(allocationTrack);
   // What is left to the rights-holders, as the diagram draws it, and what was
   // taken beyond any right — both read off the same stacked bars.
   $: availableTotal = segmentTotal(allocationTrack, "available");
   $: overTotal = segmentTotal(allocationTrack, "over");
-  $: hasAllocation = interiorMembers.length > 0 || partners.length > 0;
+  // A stored split counts on its own: a personal holon has no scored member
+  // (its owner is not a member of themselves) and may have no partners yet.
+  $: hasAllocation =
+    interiorMembers.length > 0 || partners.length > 0 || hasAllocationConfig(settings);
   $: formatAllocation = collective
     ? formatter({ id: "money", unit: collective.currency })
     : (v: number) => `${Math.round(v)}%`;
@@ -973,6 +1046,8 @@
     rescoreTimer = null;
     if (federationTimer) clearInterval(federationTimer);
     federationTimer = null;
+    if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+    loadingFallbackTimer = null;
     eventsById.clear();
     eventSigs.clear();
     userSigs.clear();
@@ -993,12 +1068,22 @@
     collectiveError = "";
     memberShares = [];
     partners = [];
+    cascadeChildren = {};
+    cascadeKey = "";
     loading = true;
 
     if (!holosphere || !id) {
       loading = false;
       return;
     }
+
+    // Armed BEFORE the first await, as the kiosk does: the first read below
+    // waits on the relays, and a socket that dropped mid-session answers
+    // nothing — the board must settle to what the subscriptions bring in
+    // rather than stay on "reading" for good.
+    loadingFallbackTimer = setTimeout(() => {
+      if (holonID === id) loading = false;
+    }, 9000);
 
     try {
       // subscribeFederated hands back a whole deduped snapshot per change, and
@@ -1076,14 +1161,14 @@
           scheduleSettle(id);
         },
       );
-      await refreshEvents(id);
-
+      // The federation and the equation do not depend on the ledger read, and
+      // must not wait on it: with the read hung on a dead socket the board
+      // would clear (see the fallback above) to a split with nobody in it.
       void loadFederation(id);
       federationTimer = setInterval(
         () => void loadFederation(id),
         FEDERATION_POLL_MS,
       );
-
       void loadEquation(holosphere, id)
         .then((eq) => {
           if (holonID !== id) return;
@@ -1091,10 +1176,14 @@
           void rescoreMembers();
         })
         .catch(() => {});
+
+      await refreshEvents(id);
     } catch (err) {
       console.error("[flows] bind failed", err);
     } finally {
-      loading = false;
+      if (holonID === id) loading = false;
+      if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+      loadingFallbackTimer = null;
     }
   }
 
@@ -1496,6 +1585,7 @@
             partners={partners.map((p) => ({ id: p.id, name: p.name }))}
             members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
             {people}
+            {cascade}
             saved={savedAllocation}
             on:saved={() => {
               savedAllocation = {

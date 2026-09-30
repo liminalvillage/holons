@@ -39,6 +39,24 @@ describe("encodeChainSync", () => {
     ]);
   });
 
+  it("seats the holon itself when an interior share has nobody in it", () => {
+    const args = encodeChainSync({
+      bundleAddress: "0x0000000000000000000000000000000000000001",
+      holonId: "235114395",
+      config: {
+        interiorPercent: 60,
+        steepness: 50,
+        nzones: 2,
+        interiorMode: "equation",
+      },
+      scored: [],
+      shares: {},
+      placed: [{ id: "u3", zone: 1 }],
+    });
+    expect(args[4]).toEqual(["235114395"]);
+    expect(args[5]).toEqual([10000n]);
+  });
+
   it("sends the custom shares under a custom split", () => {
     const args = encodeChainSync({
       bundleAddress: "0x0000000000000000000000000000000000000001",

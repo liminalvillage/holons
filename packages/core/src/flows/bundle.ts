@@ -46,6 +46,11 @@ export const LEGACY_ZONES_KEY = 'federationZones';
 /** The deployed Holons contract bundle for a holon. */
 export interface HolonBundleRecord {
   address: string;
+  /**
+   * The EVM chain the contract lives on. Absent on records written before
+   * 2026-09-18, which never said — `describeChain` in chain.ts names it.
+   */
+  chainId?: number;
   creatorUserId?: string;
   /** Contract steepness, WAD-scaled, kept as a string (it exceeds Number). */
   steepness?: string;
@@ -65,8 +70,10 @@ function toBundle(raw: unknown): HolonBundleRecord | null {
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
   };
+  const chainId = num(doc.chainId);
   return {
     address: doc.address,
+    ...(chainId != null && chainId > 0 ? { chainId: Math.floor(chainId) } : {}),
     creatorUserId: doc.creatorUserId != null ? String(doc.creatorUserId) : undefined,
     steepness: doc.steepness != null ? String(doc.steepness) : undefined,
     nzones: num(doc.nzones),
@@ -79,6 +86,26 @@ function toBundle(raw: unknown): HolonBundleRecord | null {
 export function readBundleRecord(settings: unknown): HolonBundleRecord | null {
   const doc = (settings ?? {}) as Record<string, unknown>;
   return toBundle(doc[BUNDLE_KEY]);
+}
+
+/**
+ * The deployed bundle for a holon, read from the canonical settings document.
+ *
+ * A single keyed lookup — the record lives at `settings/<holonId>`, not under a
+ * random key — so this needs no wallet and no contract call.
+ */
+export async function loadBundleRecord(
+  holosphere: any,
+  holonId: string,
+): Promise<HolonBundleRecord | null> {
+  if (!holosphere || !holonId) return null;
+  try {
+    const settings = await holosphere.get(String(holonId), 'settings', String(holonId));
+    return readBundleRecord(settings);
+  } catch {
+    // No settings document yet, or the relay is quiet: no bundle to report.
+    return null;
+  }
 }
 
 /**

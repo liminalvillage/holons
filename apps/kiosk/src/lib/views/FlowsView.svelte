@@ -71,9 +71,17 @@
     extractReaUsers,
   } from "@holons/core/scoring";
   import {
+    PASSED_SEGMENT,
+    RETAINED_ID,
     UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    cascadeRights,
+    cascadeToGraph,
+    childResolver,
+    hasAllocationConfig,
+    loadCascadeChildren,
+    resolveCascade,
     partyIdOf,
     segmentTotal,
     buildFundUsage,
@@ -94,6 +102,7 @@
     combinePeopleTracks,
     combineTracks,
     readAllocationConfig,
+    describeChain,
     readBundleRecord,
     readInteriorShares,
     resolveInteriorMembers,
@@ -106,6 +115,8 @@
     usageTotals,
     usageUnits,
     type AllocationSlice,
+    type CascadeInputs,
+    type CascadeNode,
     type FundUsage,
     type FundUsageParty,
     type BreakdownRow,
@@ -483,14 +494,92 @@
   // equation, the custom shares under a custom split — the same resolver the
   // dashboard reads with and the contract is synced by.
   $: interiorShares = allocationDraft?.shares ?? savedShares;
-  /** The deployed Bundle contract, if this holon has one. */
+  /** The deployed Bundle contract, if this holon has one — and its chain. */
   $: bundle = readBundleRecord(settings);
+  $: bundleChain = describeChain(bundle?.chainId);
   $: interiorMembers = resolveInteriorMembers({
     config: allocationConfig,
     scored: memberShares,
     shares: interiorShares,
     nameOf: (id) => nameFor(id) ?? undefined,
   });
+
+  // ── Derived: the cascade ────────────────────────────────────────────────
+  // A recipient can be a holon with a split of its own — a member's id is
+  // their personal holon's id. Core follows each share down through those
+  // splits; this board only reads the splits once per roster and draws what
+  // core resolves. Not re-read while the sheet is open: the draft changes the
+  // roster on every tap, and what is downstream of it does not.
+  let cascadeChildren: Record<string, CascadeInputs> = {};
+  let cascadeKey = "";
+  let cascadeNonce = 0;
+  $: rootPartyIds = [
+    ...new Set([
+      ...interiorMembers.map((m) => m.id),
+      ...partners.filter((p) => p.zone >= 1).map((p) => p.id),
+    ]),
+  ].sort();
+  $: if (!allocationDraft)
+    void loadCascade(hsRef, hid, rootPartyIds.join("|"), cascadeNonce);
+
+  async function loadCascade(
+    hs: HoloSphere | null,
+    holon: string | null,
+    ids: string,
+    nonce: number,
+  ) {
+    const want = hs && holon ? `${holon}#${nonce}#${ids}` : "";
+    if (want === cascadeKey) return;
+    cascadeKey = want;
+    if (!hs || !holon || !ids) {
+      cascadeChildren = {};
+      return;
+    }
+    try {
+      const loaded = await loadCascadeChildren(hs, ids.split("|"), {
+        rootId: holon,
+      });
+      if (cascadeKey === want) cascadeChildren = loaded.children;
+    } catch (err) {
+      console.warn("[kiosk] flows: cascade load failed", err);
+      if (cascadeKey === want) cascadeChildren = {};
+    }
+  }
+
+  // Names arrive after the splits do, so they are laid over the snapshot
+  // here rather than frozen into it at load time.
+  $: namedChildren = Object.fromEntries(
+    Object.entries(cascadeChildren).map(([id, child]) => [
+      id,
+      {
+        ...child,
+        name: nameFor(id) ?? child.name,
+        members: child.members.map((m) => ({
+          ...m,
+          name: nameFor(m.id) ?? m.name,
+        })),
+        zoned: child.zoned.map((z) => ({
+          ...z,
+          name: nameFor(z.id) ?? z.name,
+        })),
+      },
+    ]),
+  ) as Record<string, CascadeInputs>;
+  $: cascadeRoot = {
+    config: allocationConfig,
+    members: interiorMembers,
+    zoned: partners,
+  };
+  // The shape first, without a pot: who ends up holding part of the fund
+  // decides who usage is attributed to, and usage sizes the pot.
+  $: cascadeShape = Object.keys(namedChildren).length
+    ? resolveCascade({
+        holonId: hid ?? "",
+        total: null,
+        root: cascadeRoot,
+        resolveChild: childResolver(namedChildren),
+      })
+    : null;
 
   // ── Derived: fund usage ─────────────────────────────────────────────────
   // Every rights-holder, with the names a collective payee might carry so
@@ -515,6 +604,10 @@
         ...partners
           .filter((p) => p.zone >= 1)
           .map((p) => ({ id: p.id, name: p.name })),
+        // Whoever holds part of the fund through someone else's giving.
+        ...Object.entries(cascadeShape?.leaves ?? {})
+          .filter(([id]) => id !== hid)
+          .map(([id, leaf]) => ({ id, name: leaf.label })),
       ].map((p) => [
         p.id,
         { id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) },
@@ -546,20 +639,51 @@
     members: interiorMembers,
     zoned: partners,
   });
-  $: allocationTrack = allocationToGraph(
-    allocationResult,
-    {
-      pot: collective ? collective.name : $t("flows.allocationPot"),
-      interior: $t("flows.interior"),
-      exterior: $t("flows.exterior"),
-      spent: $t("flows.spent"),
-      claimed: $t("flows.claimed"),
-      available: $t("flows.available"),
-      over: $t("flows.over"),
-      unattributed: $t("flows.unattributed"),
-    },
-    usage,
-  );
+  $: cascade = cascadeShape
+    ? resolveCascade({
+        holonId: hid ?? "",
+        total: allocationResult.total,
+        unit: allocationResult.unit,
+        root: cascadeRoot,
+        resolveChild: childResolver(namedChildren),
+      })
+    : null;
+  // Who passes on to whom, for the tooltips and the account card.
+  $: cascadeFlows = (() => {
+    const to = new Map<string, Set<string>>();
+    const from = new Map<string, Set<string>>();
+    const walk = (parent: CascadeNode) => {
+      for (const child of parent.children) {
+        if (parent.depth >= 1 && child.id !== parent.id) {
+          if (!to.has(parent.id)) to.set(parent.id, new Set());
+          to.get(parent.id)!.add(child.id);
+          if (!from.has(child.id)) from.set(child.id, new Set());
+          from.get(child.id)!.add(parent.id);
+        }
+        walk(child);
+      }
+    };
+    if (cascade) walk(cascade.root);
+    return { to, from };
+  })();
+  $: namesOf = (ids: Iterable<string> | undefined): string =>
+    [...(ids ?? [])].map((id) => nameFor(id) ?? id).join(", ");
+
+  $: allocationLabels = {
+    pot: collective ? collective.name : $t("flows.allocationPot"),
+    interior: $t("flows.interior"),
+    exterior: $t("flows.exterior"),
+    spent: $t("flows.spent"),
+    claimed: $t("flows.claimed"),
+    available: $t("flows.available"),
+    over: $t("flows.over"),
+    unattributed: $t("flows.unattributed"),
+    passed: $t("flows.passed"),
+    retained: $t("flows.retained"),
+  };
+  $: allocationTrack = cascade
+    ? cascadeToGraph(cascade, allocationLabels, usage)
+    : allocationToGraph(allocationResult, allocationLabels, usage);
   $: allocationLayout = layoutSankey(allocationTrack);
 
   // ── Derived: the viewer's account ───────────────────────────────────────
@@ -567,7 +691,11 @@
   // person. Null means "no right here", which the card says in words rather
   // than printing zeros that look like an empty account.
   $: selfId = $currentUser ? String($currentUser.id) : null;
-  $: myAccount = selfId ? fundAccount(allocationResult, usage, selfId) : null;
+  // With a cascade a right is what the holder KEEPS: what their own split
+  // sends further is someone else's right, and core nets it out.
+  $: rights = cascade ? cascadeRights(cascade) : allocationResult;
+  $: myAccount = selfId ? fundAccount(rights, usage, selfId) : null;
+  $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
   $: formatAccount = collective
     ? moneyFormatter(collective.currency, 2)
@@ -579,9 +707,22 @@
   // and what was taken beyond any right, read off the same stacked bars.
   $: availableTotal = segmentTotal(allocationTrack, "available");
   $: overTotal = segmentTotal(allocationTrack, "over");
+  $: passedTotal = segmentTotal(allocationTrack, PASSED_SEGMENT);
+  // One loop is enough to say so; the root is where every path starts, so it
+  // is left off the front unless the loop closes on it.
+  $: cascadeLoop = cascade?.cycles.length
+    ? cascade.cycles[0]
+        .slice(1)
+        .map((id) => nameFor(id) ?? id)
+        .join(" → ")
+    : "";
 
+  // A stored split counts on its own: a personal holon has no scored member
+  // (its owner is not a member of themselves) and may have placed nobody yet.
   $: hasAllocation =
-    interiorMembers.length > 0 || partners.some((p) => p.zone >= 1);
+    interiorMembers.length > 0 ||
+    partners.some((p) => p.zone >= 1) ||
+    hasAllocationConfig(settings);
 
   // The ⚙ on the Allocation section: edit the split, the rings and the
   // collective in place. Login-gated like every kiosk write; after a save the
@@ -655,6 +796,8 @@
       if (!hsRef || !hid) return;
       await loadHolonSettings(hsRef, hid);
       await loadFederation(hsRef, hid);
+      // The roster may be the same; what is downstream of it may not be.
+      cascadeNonce += 1;
     } finally {
       allocationReloading = false;
       allocationDraft = null;
@@ -1053,6 +1196,16 @@
       return rows;
     }
 
+    if (node.id === RETAINED_ID) {
+      return [
+        {
+          label: $t("flows.tipShareOfPot"),
+          value: pctOf(100 - interiorPct - exteriorPct),
+        },
+        { label: $t("flows.tipWhat"), value: $t("flows.tipRetainedAbout") },
+      ];
+    }
+
     if (node.kind === "interior") {
       return [
         { label: $t("flows.tipShareOfPot"), value: pctOf(interiorPct) },
@@ -1091,7 +1244,40 @@
     }
 
     const seats = findSeats(node.id);
-    if (!seats) return [];
+    const partyId = partyIdOf(node.id);
+    const cascadeRows: { label: string; value: string }[] = [];
+    const kept = partyId ? (cascade?.leaves[partyId] ?? null) : null;
+    if (partyId && cascade) {
+      const from = cascadeFlows.from.get(partyId);
+      if (from?.size)
+        cascadeRows.push({
+          label: $t("flows.cascadeFrom"),
+          value: namesOf(from),
+        });
+      const to = cascadeFlows.to.get(partyId);
+      if (to?.size) {
+        cascadeRows.push(
+          {
+            label: $t("flows.cascadeKeeps"),
+            value: kept
+              ? kept.amount != null
+                ? formatAllocation(kept.amount)
+                : pctOf(kept.percentage)
+              : pctOf(0),
+          },
+          { label: $t("flows.cascadePassesTo"), value: namesOf(to) },
+        );
+      }
+    }
+    if (!seats) {
+      // Reached only through someone else's giving: no seat of the root's.
+      if (!kept) return cascadeRows;
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(kept.percentage) },
+        ...cascadeRows,
+        ...(usage ? usageRows(partyId!, kept.amount) : []),
+      ];
+    }
 
     // One bar, one total; then each seat that feeds it, when there is more
     // than one to tell apart.
@@ -1117,7 +1303,12 @@
           : $t("flows.tipByZone"),
       });
     }
-    if (usage) rows.push(...usageRows(seats.id, seats.amount));
+    rows.push(...cascadeRows);
+    // A right is what the party keeps, once their own split has passed on.
+    if (usage)
+      rows.push(
+        ...usageRows(seats.id, cascade ? (kept?.amount ?? 0) : seats.amount),
+      );
     return rows;
   }
 
@@ -1273,6 +1464,8 @@
     partnerNameMap = {};
     askedNames.clear();
     hsRef = null;
+    cascadeChildren = {};
+    cascadeKey = "";
     memberShares = [];
     federated = [];
     loading = true;
@@ -1328,6 +1521,11 @@
       const doc = await loadSettings(hs, holon);
       if (hid !== holon) return;
       settings = doc;
+      // A stored split is a board on its own: draw it now rather than sit on
+      // "reading the ledger" through the events read's retries — a holon
+      // with a split and no events yet would otherwise wait the whole
+      // ladder out. The movement half joins in when the events land.
+      if (hasAllocationConfig(doc)) loading = false;
       const slug = readCollectiveSlug(doc);
       if (slug) void loadCollective(slug, holon);
       else {
@@ -1618,7 +1816,9 @@
                         ? myAccount.zone != null
                           ? `${$t("flows.interior")} · ${$t("flows.tipZoneN", { n: String(myAccount.zone) })}`
                           : $t("flows.interior")
-                        : $t("flows.tipZoneN", { n: String(myAccount.zone) })}
+                        : myAccount.zone != null
+                          ? $t("flows.tipZoneN", { n: String(myAccount.zone) })
+                          : $t("flows.accountViaPassed")}
                     </dd>
                   </div>
                 </dl>
@@ -1628,6 +1828,11 @@
                   <span class="v">{sharePct(myAccount.percentage)}%</span>
                 </div>
                 <p class="account-sub">{$t("flows.accountNoPot")}</p>
+              {/if}
+              {#if myPassesTo}
+                <p class="account-sub">
+                  {$t("flows.cascadeMine", { names: myPassesTo })}
+                </p>
               {/if}
             </div>
           {:else}
@@ -1807,6 +2012,20 @@
                 ? $t("flows.allocationAboutFunds", { name: collective.name })
                 : $t("flows.allocationAboutShares")}
             </p>
+            {#if bundle}
+              <!-- Where the contract is: the network first, because the
+                   address alone says nothing about which chain to look on. -->
+              <p class="chainline">
+                <span class="chain-net" class:unknown={!bundleChain}
+                  >{bundleChain
+                    ? bundleChain.name
+                    : $t("flows.onChainUnknownNetwork")}</span
+                >
+                <code class="chain-addr" title={bundle.address}
+                  >{bundle.address}</code
+                >
+              </p>
+            {/if}
           </div>
         </header>
         {#if hasAllocation}
@@ -1856,8 +2075,21 @@
                   <span class="v">{formatAllocation(overTotal)}</span>
                 </div>
               {/if}
+              {#if passedTotal > 0}
+                <div class="stat">
+                  <span class="k"
+                    ><i class="swatch passed"></i>{$t("flows.passed")}</span
+                  >
+                  <span class="v">{formatAllocation(passedTotal)}</span>
+                </div>
+              {/if}
             {/if}
           </div>
+          {#if cascadeLoop}
+            <p class="section-note">
+              {$t("flows.cascadeCycle", { names: cascadeLoop })}
+            </p>
+          {/if}
 
           <SankeyChart
             layout={allocationLayout}
@@ -1898,6 +2130,7 @@
     scored={memberShares}
     shares={savedShares}
     {bundle}
+    {cascade}
     collectiveSlug={readCollectiveSlug(settings)}
     units={unitOptions}
     unit={trackId}
@@ -2142,6 +2375,9 @@
   .swatch.available {
     background: #10b981;
   }
+  .swatch.passed {
+    background: #94a3b8;
+  }
   .swatch.over {
     background: #dc2626;
   }
@@ -2324,6 +2560,43 @@
     margin: 0.1rem 0 0;
     font-size: 0.82rem;
     color: var(--muted);
+  }
+
+  /* Where the Bundle is: network as a chip, address in full. */
+  .chainline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    margin: 0.4rem 0 0;
+    font-size: 0.82rem;
+  }
+  .chain-net {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    background: var(--teal);
+    color: #fff;
+  }
+  .chain-net.unknown {
+    background: #a3540d;
+  }
+  .chain-addr {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+    word-break: break-all;
+    user-select: all;
+    -webkit-user-select: all;
+  }
+
+  /* A loop in the cascade: said in words, above the diagram that cuts it. */
+  .section-note {
+    margin: 0.4rem 0 0.2rem;
+    font-size: 0.82rem;
+    color: #b45309;
   }
 
   .chip {

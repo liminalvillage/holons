@@ -1176,6 +1176,7 @@ export const en = {
   "settings.collectivePlaceholder": "collective slug or URL",
   "settings.collectiveFailed": "Could not save the collective.",
   // Flows board
+  "flows.onChainUnknownNetwork": "Network not recorded",
   "flows.loading": "Reading the ledger\u2026",
   "flows.empty": "Nothing has moved here yet.",
   "flows.emptyTrack": "Nothing moved in this window.",
@@ -1242,6 +1243,18 @@ export const en = {
   "flows.available": "Available",
   "flows.over": "Over",
   "flows.unattributed": "Outside rights",
+  "flows.passed": "Passed on",
+  "flows.retained": "Kept",
+  "flows.tipRetainedAbout":
+    "Nobody is named for this part, so it stays with the holon.",
+  "flows.cascadeKeeps": "Keeps",
+  "flows.cascadePassesTo": "Passes on to",
+  "flows.cascadeFrom": "Received through",
+  "flows.cascadeMine":
+    "Your own flow settings pass part of what reaches you on to {names}. This is what you keep.",
+  "flows.cascadeCycle":
+    "These flows run in a loop: {names}. The value stops where the loop closes.",
+  "flows.accountViaPassed": "Passed on to you",
   "flows.tipRight": "Right",
   "flows.tipPayees": "Paid to",
   "flows.tipUnattributedAbout":
@@ -1420,9 +1433,30 @@ export const en = {
   "alloc.splitEmpty":
     "Nobody in the split yet — the equation split stands until someone is entered.",
   "alloc.splitCopy": "Copy from value equation",
-  "alloc.chainAbout":
-    "This holon has a Bundle contract at {address}. Saving writes here; updating on chain sends the same split to the contract.",
-  "alloc.chainUpdate": "Update on chain",
+  "alloc.chainNetwork": "Network",
+  "alloc.chainAddress": "Contract address",
+  "alloc.chainTestnet": "test network",
+  "alloc.chainNetworkUnknown":
+    "Not recorded — this Bundle was deployed before the network was saved with it",
+  "alloc.chainCopy": "Copy address",
+  "alloc.chainCopied": "Copied",
+  "alloc.chainExplorer": "View on explorer",
+  "alloc.chainElsewhere":
+    "Your wallet is on {wallet}; this Bundle is on {bundle}. Switch the wallet to {bundle} to read or change it.",
+  "alloc.chainFoundOn": "Found on {network}, the network your wallet is on.",
+  "alloc.chainNotFoundOn":
+    "Nothing at this address on {network}, the network your wallet is on — try another network.",
+  "alloc.chainSaveHint":
+    "Save sends the split to this contract and mirrors it here.",
+  "alloc.chainWillDeployTo":
+    "Your wallet is on {network}: that is where it will be deployed.",
+  "alloc.chainTitle": "On chain",
+  "alloc.chainNone":
+    "No contract yet — Save with a wallet deploys this holon's Bundle and sends the split to it.",
+  "alloc.deployConfirm": "Deploying the Bundle — confirm in your wallet…",
+  "alloc.deployDone": "Bundle deployed at {address} — now sending the split…",
+  "alloc.saveOnChain": "Save on chain",
+  "alloc.saveOffChain": "Save off-chain only",
   "alloc.chainSyncing": "Confirm in your wallet…",
   "alloc.chainConfirm": "Confirm the transaction in your wallet…",
   "alloc.chainDone": "Updated on chain — {hash}…",
@@ -1431,6 +1465,33 @@ export const en = {
   "alloc.chainNoContract":
     "No contract at that address on your wallet's network — switch networks and try again.",
   "alloc.chainFailed": "Couldn't update on chain: {reason}",
+  "alloc.bindTitle": "Paid on chain to",
+  "alloc.bindAbout":
+    "The contract pushes each share to the address bound to that member. Bound to their own Bundle, the share is divided again there — the cascade on chain. Only the holon's owner wallet, or the wallet already bound, can bind.",
+  "alloc.bindReading": "Reading the contract…",
+  "alloc.bindNobody": "Nobody in the split yet.",
+  "alloc.bindNotOnChain": "Not on the contract yet — update on chain first",
+  "alloc.bindNone": "Not bound — held in the contract until claimed",
+  "alloc.bindWallet": "Wallet {address}",
+  "alloc.bindBundle": "Their Bundle {address}",
+  "alloc.bind": "Bind",
+  "alloc.rebind": "Rebind",
+  "alloc.bindTo": "Pay to",
+  "alloc.bindOwnElsewhere":
+    "{name}'s own Bundle is on {theirs}; this one is on {ours}. Value never crosses chains, so it cannot receive this share — bind a wallet, or a Bundle on {ours}.",
+  "alloc.bindOwnUnknownChain":
+    "{name}'s own Bundle did not record its network, so it is not offered here: value never crosses chains. Bind a wallet, or redeploy their Bundle from a kiosk that records it.",
+  "alloc.bindOwn": "{name}'s own Bundle — {address}",
+  "alloc.bindCascade": "Divided again on chain across {n} holons.",
+  "alloc.bindWarnLoop":
+    "Part of it loops back: {names}. That part rests where the loop closes.",
+  "alloc.bindWarnLarge": "{n} holons in one push — a large transaction.",
+  "alloc.bindWarnDeep": "{n} hops deep — a large transaction.",
+  "alloc.bindNotAllowed": "This wallet can't bind that share.",
+  "alloc.bindOwnerIs": "The owner wallet is {address}.",
+  "alloc.bindSend": "Bind on chain",
+  "alloc.bindDone": "Bound on chain — {hash}…",
+  "alloc.bindFailed": "Couldn't bind: {reason}",
   "alloc.tabSplit": "Split",
   "alloc.tabContributors": "Contributors",
   "alloc.tabZones": "Zones",

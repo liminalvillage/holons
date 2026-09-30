@@ -104,6 +104,19 @@ export function readAllocationConfig(settings: unknown): AllocationConfig {
 }
 
 /**
+ * Whether the holon ever stored a split of its own.
+ *
+ * `readAllocationConfig` answers with the 50/50 defaults when nothing is
+ * stored, which is right for an editor and wrong for a cascade: a holon that
+ * never configured anything must not start re-dividing what it receives.
+ */
+export function hasAllocationConfig(settings: unknown): boolean {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const stored = doc[ALLOCATION_KEY];
+  return stored != null && typeof stored === 'object';
+}
+
+/**
  * Zone assignments for federated partners.
  *
  * Reads the canonical `allocation.zones` map, falling back to the legacy

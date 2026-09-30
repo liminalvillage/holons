@@ -1193,6 +1193,7 @@ export const es: Record<MessageKey, Msg> = {
   "settings.collectivePlaceholder": "slug o URL del colectivo",
   "settings.collectiveFailed": "No se pudo guardar el colectivo.",
   // Flows board
+  "flows.onChainUnknownNetwork": "Red no registrada",
   "flows.loading": "Leyendo el registro\u2026",
   "flows.empty": "Aqu\u00ed todav\u00eda no se ha movido nada.",
   "flows.emptyTrack": "No se movi\u00f3 nada en este periodo.",
@@ -1261,6 +1262,18 @@ export const es: Record<MessageKey, Msg> = {
   "flows.available": "Disponible",
   "flows.over": "Excedido",
   "flows.unattributed": "Fuera de los derechos",
+  "flows.passed": "Transmitido",
+  "flows.retained": "Conservado",
+  "flows.tipRetainedAbout":
+    "Nadie está nombrado para esta parte, así que se queda en el holón.",
+  "flows.cascadeKeeps": "Conserva",
+  "flows.cascadePassesTo": "Transmite a",
+  "flows.cascadeFrom": "Recibido a través de",
+  "flows.cascadeMine":
+    "Tu propia configuración de flujos transmite parte de lo que te llega a {names}. Esto es lo que conservas.",
+  "flows.cascadeCycle":
+    "Estos flujos forman un bucle: {names}. El valor se detiene donde el bucle se cierra.",
+  "flows.accountViaPassed": "Transmitido a ti",
   "flows.tipRight": "Derecho",
   "flows.tipPayees": "Pagado a",
   "flows.tipUnattributedAbout":
@@ -1442,9 +1455,29 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.splitEmpty":
     "Nadie en el reparto todavía — la ecuación sigue vigente hasta que añadas a alguien.",
   "alloc.splitCopy": "Copiar de la ecuación de valor",
-  "alloc.chainAbout":
-    "Este holon tiene un contrato Bundle en {address}. Guardar escribe aquí; actualizar en cadena envía el mismo reparto al contrato.",
-  "alloc.chainUpdate": "Actualizar en cadena",
+  "alloc.chainNetwork": "Red",
+  "alloc.chainAddress": "Dirección del contrato",
+  "alloc.chainTestnet": "red de prueba",
+  "alloc.chainNetworkUnknown":
+    "No registrada — este Bundle se desplegó antes de que se guardara la red con él",
+  "alloc.chainCopy": "Copiar dirección",
+  "alloc.chainCopied": "Copiado",
+  "alloc.chainExplorer": "Ver en el explorador",
+  "alloc.chainElsewhere":
+    "Tu wallet está en {wallet}; este Bundle está en {bundle}. Cambia la wallet a {bundle} para leerlo o modificarlo.",
+  "alloc.chainFoundOn": "Encontrado en {network}, la red de tu wallet.",
+  "alloc.chainNotFoundOn":
+    "Nada en esta dirección en {network}, la red de tu wallet — prueba otra red.",
+  "alloc.chainSaveHint":
+    "Guardar envía el reparto a este contrato y lo refleja aquí.",
+  "alloc.chainWillDeployTo": "Tu wallet está en {network}: ahí se desplegará.",
+  "alloc.chainTitle": "En cadena",
+  "alloc.chainNone":
+    "Aún no hay contrato — Guardar con una wallet despliega el Bundle de este holón y le envía el reparto.",
+  "alloc.deployConfirm": "Desplegando el Bundle — confirma en tu wallet…",
+  "alloc.deployDone": "Bundle desplegado en {address} — enviando el reparto…",
+  "alloc.saveOnChain": "Guardar en cadena",
+  "alloc.saveOffChain": "Guardar solo fuera de cadena",
   "alloc.chainSyncing": "Confirma en tu monedero…",
   "alloc.chainConfirm": "Confirma la transacción en tu monedero…",
   "alloc.chainDone": "Actualizado en cadena — {hash}…",
@@ -1453,6 +1486,35 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.chainNoContract":
     "No hay contrato en esa dirección en la red de tu monedero — cambia de red e inténtalo de nuevo.",
   "alloc.chainFailed": "No se pudo actualizar en cadena: {reason}",
+  "alloc.bindTitle": "Pagado en cadena a",
+  "alloc.bindAbout":
+    "El contrato envía cada parte a la dirección vinculada a ese miembro. Vinculada a su propio Bundle, la parte se divide de nuevo allí — la cascada en cadena. Solo la wallet propietaria del holón, o la ya vinculada, puede vincular.",
+  "alloc.bindReading": "Leyendo el contrato…",
+  "alloc.bindNobody": "Nadie en el reparto todavía.",
+  "alloc.bindNotOnChain":
+    "Aún no está en el contrato — actualiza en cadena primero",
+  "alloc.bindNone": "Sin vincular — se guarda en el contrato hasta reclamarla",
+  "alloc.bindWallet": "Wallet {address}",
+  "alloc.bindBundle": "Su Bundle {address}",
+  "alloc.bind": "Vincular",
+  "alloc.rebind": "Revincular",
+  "alloc.bindTo": "Pagar a",
+  "alloc.bindOwnElsewhere":
+    "El Bundle de {name} está en {theirs}; este está en {ours}. El valor nunca cruza redes, así que no puede recibir esta parte — vincula una wallet, o un Bundle en {ours}.",
+  "alloc.bindOwnUnknownChain":
+    "El Bundle de {name} no registró su red, así que no se ofrece aquí: el valor nunca cruza redes. Vincula una wallet, o vuelve a desplegar su Bundle desde un quiosco que la registre.",
+  "alloc.bindOwn": "El Bundle de {name} — {address}",
+  "alloc.bindCascade": "Dividida de nuevo en cadena entre {n} holones.",
+  "alloc.bindWarnLoop":
+    "Una parte vuelve atrás: {names}. Esa parte se queda donde se cierra el bucle.",
+  "alloc.bindWarnLarge":
+    "{n} holones en un solo envío — una transacción grande.",
+  "alloc.bindWarnDeep": "{n} saltos de profundidad — una transacción grande.",
+  "alloc.bindNotAllowed": "Esta wallet no puede vincular esa parte.",
+  "alloc.bindOwnerIs": "La wallet propietaria es {address}.",
+  "alloc.bindSend": "Vincular en cadena",
+  "alloc.bindDone": "Vinculada en cadena — {hash}…",
+  "alloc.bindFailed": "No se pudo vincular: {reason}",
   "alloc.tabSplit": "Reparto",
   "alloc.tabContributors": "Contribuidores",
   "alloc.tabZones": "Zonas",

@@ -47,6 +47,7 @@
   let isConnected = false;
   let existingBundle: HolonBundle | null = null;
   let networkName = 'Unknown';
+  let chainId: number | null = null;
   let notifications: Array<{id: number, message: string, type: string}> = [];
   let notificationId = 0;
 
@@ -154,6 +155,7 @@
 
         // Get network name
         const network = await provider.getNetwork();
+        chainId = Number(network.chainId);
         networkName = network.name === 'unknown' ? `Chain ${network.chainId}` : network.name;
 
         // Initialize manager
@@ -515,6 +517,9 @@
         if (holosphere) {
           await saveBundleRecord(holosphere, holonId, {
             address: finalAddress,
+            // The chain it went to: an address alone says nothing about
+            // which network to look on.
+            ...(chainId ? { chainId } : {}),
             creatorUserId: holonId,
             steepness: contractSteepness.toString(),
             nzones,

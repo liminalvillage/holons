@@ -136,3 +136,61 @@ export function bundleSyncArgList(args: BundleSyncArgs): unknown[] {
     args.exteriorZones,
   ];
 }
+
+/**
+ * The interior roster to send on-chain.
+ *
+ * The Bundle has no withdraw. An interior pot with no member is not paid to
+ * anyone's balance — it simply stays in the contract, unaccounted. That is
+ * exactly the roster a personal holon has (its owner is not scored as a member
+ * of themselves), so a holon with an interior share and nobody in it seats
+ * ITSELF: the pot then accrues under the holon's own id, where it can be
+ * claimed. With no interior pot there is nothing to strand and an empty
+ * roster is left alone.
+ */
+export function chainInteriorRoster(
+  holonId: string,
+  members: BundleMember[],
+  interiorPercent: number,
+): BundleMember[] {
+  const roster = members ?? [];
+  const anyone = roster.some((m) => Number.isFinite(m.percentage) && m.percentage > 0 && String(m.userId ?? ''));
+  const id = String(holonId ?? '');
+  if (anyone || !id || !(Number(interiorPercent) > 0)) return roster;
+  return [{ userId: id, percentage: 100 }];
+}
+
+/**
+ * `claim` binds a member's id to an address: from then on the Bundle pushes
+ * their share there, and when the address is another Bundle that one divides
+ * it again — the on-chain cascade (`cascade.ts` is its mirror).
+ *
+ * Since the guarded-claim Bundle (contracts branch `bundle-guarded-claim`,
+ * 2026-09-18) `claim` may only be sent by the holon's owner wallet or by the
+ * wallet already bound to that member, and sending it again re-binds. Bundles
+ * deployed before that (the 2025-12 and 2026-08-30 ones) accept `claim` from
+ * ANY caller, once, for good — never offer binding against those addresses.
+ */
+export const BUNDLE_CLAIM_ABI = 'function claim(string _userId, address _beneficiary)';
+
+/** Read-only views of a member's binding, and who may change it. */
+export const BUNDLE_BINDING_ABI = [
+  'function userIdToAddress(string) view returns (address)',
+  'function hasClaimed(string) view returns (bool)',
+  'function isBundleMember(string) view returns (bool)',
+  'function owner() view returns (address)',
+] as const;
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const ZERO_ADDRESS = /^0x0{40}$/;
+
+/** The positional arguments of `claim`, validated before any wallet sees them. */
+export function bundleClaimArgs(input: { userId: string; beneficiary: string }): [string, string] {
+  const userId = String(input.userId ?? '').trim();
+  if (!userId) throw new Error('A member id is required to claim');
+  const beneficiary = String(input.beneficiary ?? '').trim();
+  if (!ADDRESS.test(beneficiary) || ZERO_ADDRESS.test(beneficiary)) {
+    throw new Error('The beneficiary must be a non-zero 0x address');
+  }
+  return [userId, beneficiary];
+}
