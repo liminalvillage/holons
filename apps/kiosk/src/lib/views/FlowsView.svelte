@@ -109,7 +109,11 @@
     readCollectiveSlug,
     readZoneAssignments,
     readZonePeople,
-    rightsTotal,
+    loadInboundRights,
+    mintedIn,
+    potTotal,
+    potUnits,
+    scoreAllocationMembers,
     toAllocationPartners,
     usageOf,
     usageTotals,
@@ -119,6 +123,7 @@
     type CascadeNode,
     type FundUsage,
     type FundUsageParty,
+    type InboundRight,
     type BreakdownRow,
     type ChordGroup,
     type LedgerEntry,
@@ -154,11 +159,14 @@
     recordClaim,
     recordVerdict,
     recordPayout,
+    recordMint,
+    watchMintsLogs,
     type ClaimsLogs,
   } from "$lib/flowsClaims";
   import {
     FLOW_CLAIMS_LENS,
     foldClaimsFromLenses,
+    foldMintsFromLenses,
     type Claim,
   } from "@holons/core/flows";
   import type { Policy } from "@holons/core/protocol";
@@ -211,6 +219,9 @@
   // re-folds on every entry; `usage` then takes `claimed` from the fold.
   let claimsLogs: ClaimsLogs | null = null;
   let claimsOff: (() => void) | null = null;
+  // The mints log — what the fund holds to divide — watched the same way.
+  let mintsLogs: ClaimsLogs | null = null;
+  let mintsOff: (() => void) | null = null;
   let claimsBoundTo: string | null = null;
   let logSigner: Awaited<ReturnType<typeof claimSigner>> = null;
   let claimAmount = "";
@@ -225,12 +236,18 @@
     claimsOff = watchClaimsLogs(hs, holon, (logs) => {
       if (claimsBoundTo === holon) claimsLogs = logs;
     });
+    mintsOff = watchMintsLogs(hs, holon, (logs) => {
+      if (claimsBoundTo === holon) mintsLogs = logs;
+    });
   }
   function unbindClaims() {
     claimsOff?.();
     claimsOff = null;
+    mintsOff?.();
+    mintsOff = null;
     claimsBoundTo = null;
     claimsLogs = null;
+    mintsLogs = null;
   }
   onDestroy(unbindClaims);
   // Who this session signs as (server-side derived key for Telegram logins,
@@ -252,6 +269,82 @@
           imports: claimsLogs.imports,
         })
       : null;
+  $: mintsCtx =
+    hid && mintsLogs
+      ? foldMintsFromLenses({
+          holonId: hid,
+          entries: mintsLogs.entries,
+          policyEntries: mintsLogs.policy,
+          membersLog: mintsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: mintsLogs.attestations,
+        })
+      : null;
+  $: canMint = !!(
+    mintsCtx &&
+    myLogRole &&
+    mintsCtx.policy.attesters.includes(myLogRole)
+  );
+  async function submitMint(input: {
+    amount: number;
+    unit: string;
+    memo?: string;
+    source?: string;
+  }) {
+    if (!hsRef || !hid) throw new Error("No holon");
+    await recordMint(hsRef, hid, input);
+  }
+
+  // ── What reaches this fund from upstream ────────────────────────────────
+  // A partner whose split seats this holon passes part of ITS pot here; the
+  // walk climbs the federation record a bounded number of hops (core).
+  let inbound: InboundRight[] = [];
+  async function loadInbound(hs: HoloSphere, holon: string) {
+    try {
+      const got = await loadInboundRights(hs, holon, {
+        scoreOf: (id) => scoreAllocationMembers(hs, id),
+      });
+      if (hid === holon) inbound = got.inbound;
+    } catch (err) {
+      console.warn("[kiosk] flows: inbound load failed", err);
+      if (hid === holon) inbound = [];
+    }
+  }
+
+  // ── The pot ─────────────────────────────────────────────────────────────
+  // What there is to divide, per unit: the collective's money, what was
+  // minted here, what reaches here. One unit is drawn at a time; a pill row
+  // offers the others when a holon holds more than one.
+  let potUnitPick = "";
+  $: potSources = {
+    collective: collective
+      ? { currency: collective.currency, balance: collective.balance }
+      : null,
+    mints: mintsCtx?.folded ?? null,
+    inbound,
+  };
+  $: potUnitList = potUnits(potSources);
+  $: potUnit =
+    potUnitPick && potUnitList.includes(potUnitPick)
+      ? potUnitPick
+      : (potUnitList[0] ?? "");
+  // The collective, when the unit drawn is its currency.
+  $: potCollective =
+    collective && potUnit && normalizeCurrency(collective.currency) === potUnit
+      ? collective
+      : null;
+  $: potMinted = potUnit ? mintedIn(potUnit, potSources) : 0;
+  $: potInbound = inbound
+    .filter((r) => normalizeCurrency(r.unit) === potUnit)
+    .reduce((sum, r) => sum + r.right, 0);
+  $: potLabel = potCollective
+    ? potCollective.name
+    : potMinted > 0
+      ? $t("flows.potMinted")
+      : potInbound > 0
+        ? $t("flows.potInbound")
+        : $t("flows.allocationPot");
   $: myClaims =
     claimsCtx && selfId
       ? claimsCtx.folded.claims.filter((c) => c.party === selfId)
@@ -278,7 +371,7 @@
         )
       : [];
   $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
-  $: claimUnit = collective?.currency ?? usage?.unit ?? "";
+  $: claimUnit = potUnit;
   const partyName = (id: string) =>
     usersById[id]?.first_name ||
     usersById[id]?.username ||
@@ -538,6 +631,7 @@
     try {
       const loaded = await loadCascadeChildren(hs, ids.split("|"), {
         rootId: holon,
+        scoreOf: (id) => scoreAllocationMembers(hs, id),
       });
       if (cascadeKey === want) cascadeChildren = loaded.children;
     } catch (err) {
@@ -614,10 +708,10 @@
       ]),
     ).values(),
   ] as FundUsageParty[];
-  $: usage = collective
+  $: usage = potUnit
     ? buildFundUsage({
         holonId: hid ?? "",
-        unit: collective.currency,
+        unit: potUnit,
         parties: usageParties,
         members: memberIds,
         expenses,
@@ -629,12 +723,13 @@
   $: usageTotal = usageTotals(usage);
 
   $: allocationResult = allocate({
-    // The collective's money is the honest pot — what is in the bank plus what
-    // rights-holders already drew, since a right that was spent still was one.
-    // Without a collective, show the shape of the split as percentages rather
-    // than pretending to an amount.
-    total: collective ? rightsTotal(collective.balance, usage) : null,
-    unit: collective?.currency ?? "",
+    // The pot is the honest total — what is held here (the bank, the mints)
+    // plus what reaches here, plus what rights-holders already drew, since a
+    // right that was spent still was one (`potTotal`, core). Without a pot
+    // in any unit, show the shape of the split as percentages rather than
+    // pretending to an amount.
+    total: potUnit ? potTotal(potUnit, potSources, usage) || null : null,
+    unit: potUnit,
     config: allocationConfig,
     members: interiorMembers,
     zoned: partners,
@@ -670,7 +765,7 @@
     [...(ids ?? [])].map((id) => nameFor(id) ?? id).join(", ");
 
   $: allocationLabels = {
-    pot: collective ? collective.name : $t("flows.allocationPot"),
+    pot: potLabel,
     interior: $t("flows.interior"),
     exterior: $t("flows.exterior"),
     spent: $t("flows.spent"),
@@ -697,8 +792,8 @@
   $: myAccount = selfId ? fundAccount(rights, usage, selfId) : null;
   $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
-  $: formatAccount = collective
-    ? moneyFormatter(collective.currency, 2)
+  $: formatAccount = potUnit
+    ? moneyFormatter(potUnit, 2)
     : (v: number) => `${Math.round(v * 10) / 10}%`;
   $: sharePct = (pct: number) => String(Math.round(pct * 10) / 10);
 
@@ -1079,8 +1174,8 @@
           selectedParty.id,
         )
       : null;
-  $: formatAllocation = collective
-    ? formatter({ id: "money", unit: collective.currency } as ValueFlowTrack)
+  $: formatAllocation = potUnit
+    ? formatter({ id: "money", unit: potUnit } as ValueFlowTrack)
     : (v: number) => `${Math.round(v)}%`;
 
   // ── Hover details ────────────────────────────────────────────────────────
@@ -1137,15 +1232,27 @@
     );
 
     if (node.kind === "pot") {
-      const rows = collective
+      const rows = potCollective
         ? [
-            { label: $t("flows.tipCollective"), value: collective.name },
+            { label: $t("flows.tipCollective"), value: potCollective.name },
             {
               label: $t("flows.balance"),
-              value: formatAllocation(collective.balance),
+              value: formatAllocation(potCollective.balance),
             },
           ]
         : [];
+      if (potMinted > 0)
+        rows.push({
+          label: $t("flows.tipMinted"),
+          value: formatAllocation(potMinted),
+        });
+      for (const r of inbound) {
+        if (normalizeCurrency(r.unit) !== potUnit) continue;
+        rows.push({
+          label: $t("flows.tipInboundFrom", { name: nameFor(r.from) ?? r.from }),
+          value: formatAllocation(r.right),
+        });
+      }
       rows.push(
         { label: $t("flows.interior"), value: pctOf(interiorPct) },
         {
@@ -1468,6 +1575,7 @@
     cascadeKey = "";
     memberShares = [];
     federated = [];
+    inbound = [];
     loading = true;
 
     if (!holon) {
@@ -1509,9 +1617,13 @@
 
     void loadHolonSettings(hs, holon);
     void loadFederation(hs, holon);
+    void loadInbound(hs, holon);
 
     // Registered before the first load awaits so teardown always clears it.
-    refreshTimer = setInterval(() => void refreshEvents(hs, holon), 30_000);
+    refreshTimer = setInterval(() => {
+      void refreshEvents(hs, holon);
+      void loadInbound(hs, holon);
+    }, 30_000);
     await refreshEvents(hs, holon);
   }
 
@@ -1666,6 +1778,20 @@
         </button>
       {:else}
         <!-- The fund: what you may still direct, as a balance. -->
+        {#if potUnitList.length > 1}
+          <div class="pot-units" role="radiogroup" aria-label={$t("flows.potUnit")}>
+            {#each potUnitList as u (u)}
+              <button
+                type="button"
+                role="radio"
+                class="chip pick"
+                class:on={u === potUnit}
+                aria-checked={u === potUnit}
+                on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+              >
+            {/each}
+          </div>
+        {/if}
         <section class="hero">
           {#if myAccount}
             <div class="account" class:over={myAccount.over > 0}>
@@ -1673,9 +1799,13 @@
                 <div>
                   <div class="k">{$t("flows.accountTitle")}</div>
                   <div class="account-sub">
-                    {collective
-                      ? $t("flows.accountAbout", { name: collective.name })
-                      : $t("flows.accountAboutShares")}
+                    {potCollective
+                      ? $t("flows.accountAbout", { name: potCollective.name })
+                      : potUnit
+                        ? $t("flows.accountAboutUnit", {
+                            unit: potUnit.toUpperCase(),
+                          })
+                        : $t("flows.accountAboutShares")}
                   </div>
                 </div>
                 <span class="chip"
@@ -1703,10 +1833,10 @@
                      yours to take: a collective to claim from, and something
                      left after everything already spent or claimed. Someone
                      who has overrun their right sees no button at all. -->
-                {#if collective && (myAccount.available ?? 0) > 0}
+                {#if potCollective && (myAccount.available ?? 0) > 0}
                   <a
                     class="claim"
-                    href={`https://opencollective.com/${collective.slug}/expenses/new`}
+                    href={`https://opencollective.com/${potCollective.slug}/expenses/new`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -2008,10 +2138,28 @@
           <div class="titles">
             <h2>{$t("flows.allocationTitle")}</h2>
             <p class="sub">
-              {collective
-                ? $t("flows.allocationAboutFunds", { name: collective.name })
-                : $t("flows.allocationAboutShares")}
+              {potCollective
+                ? $t("flows.allocationAboutFunds", { name: potCollective.name })
+                : potUnit
+                  ? $t("flows.allocationAboutUnit", {
+                      unit: potUnit.toUpperCase(),
+                    })
+                  : $t("flows.allocationAboutShares")}
             </p>
+            {#if potUnitList.length > 1}
+              <div class="pot-units" role="radiogroup" aria-label={$t("flows.potUnit")}>
+                {#each potUnitList as u (u)}
+                  <button
+                    type="button"
+                    role="radio"
+                    class="chip pick"
+                    class:on={u === potUnit}
+                    aria-checked={u === potUnit}
+                    on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+                  >
+                {/each}
+              </div>
+            {/if}
             {#if bundle}
               <!-- Where the contract is: the network first, because the
                    address alone says nothing about which chain to look on. -->
@@ -2139,6 +2287,12 @@
     policyRole={myLogRole}
     policySignable={!!logSigner}
     {partnerKeys}
+    mints={mintsCtx?.folded.mints ?? []}
+    mintUnits={potUnitList}
+    {canMint}
+    {inbound}
+    nameOf={(id) => nameFor(id)}
+    onMint={submitMint}
     on:policy={(e) => void savePolicy(e.detail)}
     on:unit={(e) => pickUnit(e.detail)}
     on:period={(e) => pickWindow(e.detail)}
@@ -2597,6 +2751,28 @@
     margin: 0.4rem 0 0.2rem;
     font-size: 0.82rem;
     color: #b45309;
+  }
+
+  .pot-units {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+  }
+  .chip.pick {
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    background: transparent;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .chip.pick.on {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
   }
 
   .chip {

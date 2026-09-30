@@ -15,6 +15,9 @@ import { FLOW_MINTS_LENS, foldMintsFromLenses, type MintsContext } from './mints
 /** Fold a holon's `flow_mints` log with everything the fold needs, read from the store. */
 export async function loadMints(holosphere: any, holonId: string): Promise<MintsContext> {
   const quiet = <T>(p: Promise<T>, fallback: T): Promise<T> => p.then((v) => v ?? fallback).catch(() => fallback);
+  // A partner's log may never have been read on this device: `getAll` pulls
+  // the lens from the relays, `getLog` then reads the verified entries.
+  await quiet(holosphere.getAll(holonId, FLOW_MINTS_LENS), []);
   const [entries, policyEntries, settings, users, dir] = await Promise.all([
     quiet<any[]>(holosphere.getLog(holonId, FLOW_MINTS_LENS), []),
     quiet<any[]>(holosphere.getLog(holonId, POLICY_LENS), []),

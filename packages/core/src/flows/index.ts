@@ -329,3 +329,4 @@ export {
 } from './inbound.js';
 
 export { defaultPotUnit, hasPot, mintedIn, potBalance, potTotal, potUnits, type PotSources } from './pot.js';
+export { scoreAllocationMembers } from './score-load.js';

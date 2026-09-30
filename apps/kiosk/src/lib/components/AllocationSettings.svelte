@@ -53,6 +53,8 @@
     interiorSharePercentages,
     type AllocationConfig,
     type AllocationMember,
+    type InboundRight,
+    type Mint,
     type CascadeResult,
     type HolonBundleRecord,
     type InteriorMode,
@@ -110,6 +112,62 @@
   export let policySignable = false;
   /** Each partner's published holon key (settings.holonPubkey), when known. */
   export let partnerKeys: Record<string, string | null> = {};
+  /** What was brought into the fund (core's fold of `flow_mints`), judged. */
+  export let mints: Mint[] = [];
+  /** The units the fund holds anything in, the drawn one first. */
+  export let mintUnits: string[] = [];
+  /** Whether the logged-in person may mint (an attester of the mints log). */
+  export let canMint = false;
+  /** What reaches this fund from upstream holons. */
+  export let inbound: InboundRight[] = [];
+  /** A display name for a holon or person id, when the board knows one. */
+  export let nameOf: (id: string) => string | undefined = () => undefined;
+  /** Records a mint, signed as the logged-in person; throws on failure. */
+  export let onMint:
+    | ((input: {
+        amount: number;
+        unit: string;
+        memo?: string;
+        source?: string;
+      }) => Promise<void>)
+    | null = null;
+
+  let mintAmount = "";
+  let mintUnit = "";
+  let mintMemo = "";
+  let mintSource = "";
+  let mintBusy = false;
+  let mintError = "";
+  let mintNotice = "";
+  $: if (!mintUnit && mintUnits.length) mintUnit = mintUnits[0].toUpperCase();
+  async function submitMint() {
+    if (!onMint || mintBusy) return;
+    const amount = Number(String(mintAmount).replace(",", "."));
+    const unit = mintUnit.trim().toUpperCase();
+    if (!(amount > 0) || !unit) return;
+    mintBusy = true;
+    mintError = "";
+    mintNotice = "";
+    try {
+      await onMint({
+        amount,
+        unit,
+        memo: mintMemo.trim() || undefined,
+        source: mintSource || undefined,
+      });
+      mintNotice = $t("alloc.mintRecorded", { amount: String(amount), unit });
+      mintAmount = "";
+      mintMemo = "";
+    } catch (err: any) {
+      mintError = err?.message ? String(err.message) : String(err);
+    } finally {
+      mintBusy = false;
+    }
+  }
+  $: issuedMints = mints
+    .filter((m) => m.status !== "rejected")
+    .slice(-12)
+    .reverse();
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -246,7 +304,9 @@
     {
       id: "fund" as const,
       label: $t("alloc.tabFund"),
-      summary: slug.trim() || $t("alloc.tabFundEmpty"),
+      summary: mintUnits.length
+        ? mintUnits.map((u) => u.toUpperCase()).join(" · ")
+        : slug.trim() || $t("alloc.tabFundEmpty"),
     },
     {
       id: "rules" as const,
@@ -362,7 +422,11 @@
   $: shareOfTotal = interiorSharePercentages(shareOf);
   $: shareRows = Object.keys(shareOf).map((id) => ({
     id,
-    name: nameOfPerson.get(id) ?? scoredOf.get(id)?.name ?? id,
+    name:
+      nameOfPerson.get(id) ??
+      scoredOf.get(id)?.name ??
+      nameOfPartner.get(id) ??
+      id,
     scored: scoredOf.get(id)?.percentage,
     text: shareText[id] ?? pct(shareOf[id]),
     ofTotal: shareOfTotal[id] ?? 0,
@@ -371,11 +435,20 @@
     (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
     0,
   );
+  // A partner holon can hold a contributor seat too: a collective whose
+  // contributors are other holons (the trees, the pickers) weights them here,
+  // and the cascade follows each seat into that holon's own split.
+  $: nameOfPartner = new Map(partners.map((p) => [p.id, p.name]));
   $: shareable = [
     ...new Map(
-      [...candidates, ...scored.map((m) => ({ id: m.id, name: m.name }))].map(
-        (p) => [p.id, p],
-      ),
+      [
+        ...candidates,
+        ...scored.map((m) => ({ id: m.id, name: m.name })),
+        ...partners.map((p) => ({
+          id: p.id,
+          name: $t("alloc.partnerHolonName", { name: p.name }),
+        })),
+      ].map((p) => [p.id, p]),
     ).values(),
   ]
     .filter((p) => !(p.id in shareOf))
@@ -1310,6 +1383,102 @@
         {/if}
       </div>
     {:else}
+      <!-- ── What the fund holds ────────────────────────────────────────── -->
+      <div class="control">
+        <div class="k">{$t("alloc.mintTitle")}</div>
+        <p class="sub">{$t("alloc.mintAbout")}</p>
+        {#if inbound.length}
+          <ul class="parties mints">
+            {#each inbound as r (r.from + r.unit)}
+              <li>
+                <div class="pline">
+                  <span class="pname"
+                    >{$t("alloc.inboundFrom", {
+                      name: nameOf(r.from) ?? r.from,
+                    })}</span
+                  >
+                  <span class="pshare">{r.right} {r.unit.toUpperCase()}</span>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if issuedMints.length}
+          <ul class="parties mints">
+            {#each issuedMints as m (m.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname"
+                    >{m.amount}
+                    {m.unit}{m.memo ? ` — ${m.memo}` : ""}{m.source
+                      ? ` · ${nameOf(m.source) ?? m.source}`
+                      : ""}</span
+                  >
+                  <span class="pshare" class:warn={m.status !== "issued"}
+                    >{$t(`alloc.mintStatus.${m.status}`)}</span
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else if !inbound.length}
+          <p class="sub">{$t("alloc.mintNone")}</p>
+        {/if}
+        {#if !policySignable}
+          <p class="sub warn">{$t("alloc.mintNoSigner")}</p>
+        {:else if !canMint}
+          <p class="sub warn">{$t("alloc.mintNotAttester")}</p>
+        {:else}
+          <form class="mint-form" on:submit|preventDefault={submitMint}>
+            <label class="field">
+              <span class="k">{$t("alloc.mintAmount")}</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputmode="decimal"
+                bind:value={mintAmount}
+                required
+              />
+            </label>
+            <label class="field">
+              <span class="k">{$t("alloc.mintUnit")}</span>
+              <input
+                type="text"
+                autocapitalize="characters"
+                maxlength="5"
+                placeholder="L"
+                bind:value={mintUnit}
+                required
+              />
+            </label>
+            <label class="field">
+              <span class="k">{$t("alloc.mintMemo")}</span>
+              <input type="text" maxlength="140" bind:value={mintMemo} />
+            </label>
+            {#if partners.length}
+              <label class="field">
+                <span class="k">{$t("alloc.mintSource")}</span>
+                <select bind:value={mintSource}>
+                  <option value="">{$t("alloc.mintSourceNone")}</option>
+                  {#each partners as p (p.id)}
+                    <option value={p.id}>{p.name}</option>
+                  {/each}
+                </select>
+              </label>
+            {/if}
+            <button class="primary" type="submit" disabled={mintBusy}
+              >{$t("alloc.mintRecord")}</button
+            >
+          </form>
+          {#if mintError}
+            <p class="sub warn">{mintError}</p>
+          {:else if mintNotice}
+            <p class="sub">{mintNotice}</p>
+          {/if}
+        {/if}
+      </div>
+
       <!-- ── Where the money is ─────────────────────────────────────────── -->
       <label class="field">
         <span class="k">{$t("alloc.collective")}</span>
@@ -1906,6 +2075,19 @@
   }
 
   /* ── Pickers, disclosure, zone bars ─────────────────────────────────── */
+  .mint-form {
+    display: grid;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+  .mint-form .primary {
+    justify-self: start;
+    min-height: 44px;
+  }
+  .pshare.warn {
+    color: #b45309;
+  }
+
   .picker {
     display: flex;
     gap: 0.5rem;

@@ -33,8 +33,10 @@ import {
 } from "@holons/core/protocol";
 import {
   FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
   buildClaim,
   buildClaimVerdict,
+  buildMint,
   buildPayout,
 } from "@holons/core/flows";
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from "@holons/core/shifts";
@@ -189,6 +191,15 @@ export function watchClaimsLogs(
   return watchLogLens(hs, holon, FLOW_CLAIMS_LENS, onChange);
 }
 
+/** The mints log — what the fund holds to divide — and everything its fold reads. */
+export function watchMintsLogs(
+  hs: HoloSphere,
+  holon: string,
+  onChange: (logs: ClaimsLogs) => void,
+): () => void {
+  return watchLogLens(hs, holon, FLOW_MINTS_LENS, onChange);
+}
+
 /** Who this session signs log entries as, or null when it cannot. */
 export async function claimSigner(): Promise<{
   pubkey: string;
@@ -317,4 +328,15 @@ export function recordPayout(
     FLOW_CLAIMS_LENS,
     buildPayout(input) as never,
   );
+}
+/**
+ * Bring value into the fund: an attester's signed `mint` on the mints log.
+ * Whether it counts is the fold's call — a member's mint records as rejected.
+ */
+export function recordMint(
+  hs: HoloSphere,
+  holon: string,
+  input: { amount: number; unit: string; memo?: string; source?: string },
+) {
+  return recordLogEntry(hs, holon, FLOW_MINTS_LENS, buildMint(input) as never);
 }
