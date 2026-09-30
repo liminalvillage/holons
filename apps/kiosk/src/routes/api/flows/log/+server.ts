@@ -31,7 +31,13 @@ import {
   isPolicy,
   logTemplate,
 } from "@holons/core/protocol";
-import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, isClaim, isMint, isPayout } from "@holons/core/flows";
+import {
+  FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
+  isClaim,
+  isMint,
+  isPayout,
+} from "@holons/core/flows";
 import { GOVERNANCE_VOTES_LENS, isVote } from "@holons/core/governance";
 import { resolveAppName } from "$lib/config";
 import {
@@ -115,7 +121,10 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     );
   }
   if (lens === FLOW_MINTS_LENS && !isMint(item) && !isAttestation(item)) {
-    return json({ error: "Only a mint or a verdict goes on flow_mints" }, { status: 400 });
+    return json(
+      { error: "Only a mint or a verdict goes on flow_mints" },
+      { status: 400 },
+    );
   }
   if (lens === POLICY_LENS && !isPolicy(item)) {
     return json(

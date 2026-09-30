@@ -1529,7 +1529,8 @@ export const es: Record<MessageKey, Msg> = {
   "flows.accountAboutUnit": "Tu parte del fondo, en {unit}.",
   "flows.allocationAboutUnit": "A dónde va el fondo, en {unit}.",
   "alloc.mintTitle": "Qué contiene el fondo",
-  "alloc.mintAbout": "Una cosecha, un stock, una subvención: lo que hay para repartir, en su propia unidad. Un atestador lo registra; el reparto lo divide y cada derecho se cobra en esa unidad.",
+  "alloc.mintAbout":
+    "Una cosecha, un stock, una subvención: lo que hay para repartir, en su propia unidad. Un atestador lo registra; el reparto lo divide y cada derecho se cobra en esa unidad.",
   "alloc.mintAmount": "Cantidad",
   "alloc.mintUnit": "Unidad",
   "alloc.mintMemo": "Qué es",

@@ -1541,7 +1541,8 @@ export const it: Record<MessageKey, Msg> = {
   "flows.accountAboutUnit": "La tua quota del fondo, in {unit}.",
   "flows.allocationAboutUnit": "Dove va il fondo, in {unit}.",
   "alloc.mintTitle": "Cosa contiene il fondo",
-  "alloc.mintAbout": "Un raccolto, una scorta, un contributo: ciò che c’è da dividere, nella sua unità. Un attestatore lo registra; la ripartizione lo divide e ogni diritto si riscuote in quella unità.",
+  "alloc.mintAbout":
+    "Un raccolto, una scorta, un contributo: ciò che c’è da dividere, nella sua unità. Un attestatore lo registra; la ripartizione lo divide e ogni diritto si riscuote in quella unità.",
   "alloc.mintAmount": "Quantità",
   "alloc.mintUnit": "Unità",
   "alloc.mintMemo": "Che cos’è",
@@ -1549,7 +1550,8 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.mintSourceNone": "—",
   "alloc.mintRecord": "Aggiungi al fondo",
   "alloc.mintRecorded": "Aggiunti {amount} {unit} al fondo.",
-  "alloc.mintNotAttester": "Solo un attestatore di questo fondo può aggiungervi.",
+  "alloc.mintNotAttester":
+    "Solo un attestatore di questo fondo può aggiungervi.",
   "alloc.mintNoSigner": "Accedi per aggiungere al fondo.",
   "alloc.mintNone": "Nulla è ancora entrato nel fondo.",
   "alloc.mintStatus.issued": "Emesso",

@@ -1506,7 +1506,8 @@ export const en = {
   "flows.accountAboutUnit": "Your share of the fund, in {unit}.",
   "flows.allocationAboutUnit": "Where the fund goes, in {unit}.",
   "alloc.mintTitle": "What the fund holds",
-  "alloc.mintAbout": "A harvest, a stock, a grant: what is here to divide, in its own unit. An attester records it; the split divides it and every right is drawn in that unit.",
+  "alloc.mintAbout":
+    "A harvest, a stock, a grant: what is here to divide, in its own unit. An attester records it; the split divides it and every right is drawn in that unit.",
   "alloc.mintAmount": "Amount",
   "alloc.mintUnit": "Unit",
   "alloc.mintMemo": "What it is",

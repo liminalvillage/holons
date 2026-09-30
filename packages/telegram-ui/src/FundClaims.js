@@ -221,7 +221,9 @@ export default class FundClaims {
       return ctx.reply(
         `Added to the fund: ${amount} ${unit}${memo ? ` — ${memo}` : ''}\n` +
           `#${event.id.slice(0, 8)} · ${mine ? this.describeMint(mine) : 'recorded'}` +
-          (mine?.status === 'issued' ? `\nThe fund now holds ${total} ${unit}.` : '') +
+          (mine?.status === 'issued'
+            ? `\nThe fund now holds ${total} ${unit}.`
+            : '') +
           (actors.source === 'bootstrap'
             ? '\nThis holon is not founded yet: the signer set is provisional.'
             : '')
@@ -232,10 +234,8 @@ export default class FundClaims {
   }
 
   describeMint(m) {
-    const mark =
-      m.status === 'issued' ? '✅' : STATUS_MARK[m.status] || '';
-    const why =
-      m.status === 'issued' ? '' : m.reason ? ` (${m.reason})` : '';
+    const mark = m.status === 'issued' ? '✅' : STATUS_MARK[m.status] || '';
+    const why = m.status === 'issued' ? '' : m.reason ? ` (${m.reason})` : '';
     return `${mark} ${m.status}${why}`;
   }
 

@@ -1249,7 +1249,9 @@
       for (const r of inbound) {
         if (normalizeCurrency(r.unit) !== potUnit) continue;
         rows.push({
-          label: $t("flows.tipInboundFrom", { name: nameFor(r.from) ?? r.from }),
+          label: $t("flows.tipInboundFrom", {
+            name: nameFor(r.from) ?? r.from,
+          }),
           value: formatAllocation(r.right),
         });
       }
@@ -1779,7 +1781,11 @@
       {:else}
         <!-- The fund: what you may still direct, as a balance. -->
         {#if potUnitList.length > 1}
-          <div class="pot-units" role="radiogroup" aria-label={$t("flows.potUnit")}>
+          <div
+            class="pot-units"
+            role="radiogroup"
+            aria-label={$t("flows.potUnit")}
+          >
             {#each potUnitList as u (u)}
               <button
                 type="button"
@@ -2147,7 +2153,11 @@
                   : $t("flows.allocationAboutShares")}
             </p>
             {#if potUnitList.length > 1}
-              <div class="pot-units" role="radiogroup" aria-label={$t("flows.potUnit")}>
+              <div
+                class="pot-units"
+                role="radiogroup"
+                aria-label={$t("flows.potUnit")}
+              >
                 {#each potUnitList as u (u)}
                   <button
                     type="button"
