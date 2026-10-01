@@ -50,10 +50,12 @@ Three ideas carry the whole thing:
 
 ### 1. The holons
 
-Two new Telegram groups with @HolonsBot in them: the **Olive Collective**
-(mother) and the **Collectors**. Every chat the bot is in is a holon (id =
-chat id). Liminal (`-1003864542239`) and Casa Selva (`-1002964866719`) already
-exist.
+Two Telegram groups with @HolonsBot in them: **Oilonics** (`-5560750486`,
+the mother) and the **Collector's guild** (`-5468909450`). Every chat the
+bot is in is a holon (id = chat id). Liminal (`-1003864542239`) and Casa
+Selva (`-1002964866719`) already exist. Seeded on 2026-10-01 with the
+script below (locations 25 each, collectors 50; hour 10, euro 1,
+contributors 80 %).
 
 Admins of the mother group are its attesters by default — they mint, attest
 and mark payouts. Admins of the Collectors group are the attesters there.
@@ -85,7 +87,7 @@ saves the mother's split and the Collectors' equation and split in one go:
 
 ```
 node --env-file=.env scripts/seed-harvest-collective.mjs \
-  --mother <mother chat id> --collectors <collectors chat id> \
+  --mother -5560750486 --collectors -5468909450 \
   --location -1003864542239=25 --location -1002964866719=25 --collectors-weight 50
 ```
 
