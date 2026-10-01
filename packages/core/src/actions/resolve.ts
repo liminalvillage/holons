@@ -50,6 +50,8 @@ export interface ResolveContext {
   quests: Quest[];
   /** The holon's member roster (`users` lens rows). */
   users: PersonLike[];
+  /** Holons a task may be shared with (partners, registry hits): id + name. */
+  holons?: HolonLike[];
   /** The speaker, as a participant record. */
   actor: QuestParticipant;
   /** What "it" may refer to. */
@@ -58,8 +60,15 @@ export interface ResolveContext {
   now?: Date;
 }
 
+export interface HolonLike {
+  id: string;
+  name?: string;
+}
+
 export type ResolvedAction =
   | { name: 'task_create'; holon: string; task: Quest }
+  | { name: 'task_lock' | 'task_unlock'; holon: string; quest: Quest }
+  | { name: 'task_share' | 'task_unshare'; holon: string; quest: Quest; withHolon: HolonLike }
   | { name: 'task_update'; holon: string; quest: Quest; patch: Partial<Quest> }
   | {
       name:
@@ -78,11 +87,11 @@ export type ResolveOutcome =
   | { kind: 'ok'; resolved: ResolvedAction; warnings: string[] }
   | {
       kind: 'ambiguous';
-      field: 'task' | 'user';
+      field: 'task' | 'user' | 'holon';
       candidates: Array<{ id: string; title: string }>;
       message: string;
     }
-  | { kind: 'not_found'; field: 'task' | 'user'; message: string }
+  | { kind: 'not_found'; field: 'task' | 'user' | 'holon'; message: string }
   | { kind: 'invalid'; message: string };
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v));
@@ -295,6 +304,38 @@ function tempId(now: Date): string {
   return now.getTime().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// ── Holon ───────────────────────────────────────────────────────────────────
+
+const HOLON_ID = /^(-?\d+|[0-9a-f]{64}|(holon|hub)_[a-z0-9]{12,32})$/i;
+
+/**
+ * The holon a share names: an exact id as given, else one candidate whose
+ * name contains the words spoken (several → ambiguous, none → not found).
+ */
+export function resolveHolon(ref: string, holons: readonly HolonLike[]): { holon: HolonLike } | ResolveOutcome {
+  const needle = ref.trim();
+  if (!needle) return { kind: 'invalid', message: 'Name the holon to share with.' };
+  const exact = holons.find((h) => String(h.id) === needle);
+  if (exact) return { holon: exact };
+  if (HOLON_ID.test(needle)) return { holon: { id: /^[0-9a-f]{64}$/i.test(needle) ? needle.toLowerCase() : needle } };
+  const lower = needle.toLowerCase();
+  const hits = holons.filter((h) => (h.name ?? '').toLowerCase().includes(lower));
+  if (hits.length === 1) return { holon: hits[0] };
+  if (hits.length > 1) {
+    return {
+      kind: 'ambiguous',
+      field: 'holon',
+      candidates: hits.map((h) => ({ id: String(h.id), title: h.name ?? String(h.id) })),
+      message: 'Several holons match: ' + hits.map((h) => `"${h.name ?? h.id}"`).join(', ') + '. Which one?',
+    };
+  }
+  return {
+    kind: 'not_found',
+    field: 'holon',
+    message: `No holon called "${needle}"` + (holons.length ? ' among ' + holons.map((h) => `"${h.name ?? h.id}"`).join(', ') : '') + '.',
+  };
+}
+
 export function resolveAction(call: ActionCall, ctx: ResolveContext): ResolveOutcome {
   const input = call.input ?? {};
   const now = ctx.now ?? new Date();
@@ -355,6 +396,15 @@ export function resolveAction(call: ActionCall, ctx: ResolveContext): ResolveOut
         resolved: { name: call.name, holon, quest, user: person.user },
         warnings,
       };
+    }
+    case 'task_lock':
+    case 'task_unlock':
+      return { kind: 'ok', resolved: { name: call.name, holon, quest }, warnings };
+    case 'task_share':
+    case 'task_unshare': {
+      const target = resolveHolon(str(input.withHolon), ctx.holons ?? []);
+      if (!('holon' in target)) return target;
+      return { kind: 'ok', resolved: { name: call.name, holon, quest, withHolon: target.holon }, warnings };
     }
     case 'task_complete': {
       const completerId = str(input.completerId);

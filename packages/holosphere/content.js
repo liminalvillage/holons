@@ -355,14 +355,15 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         if (String(dataToStore.id) !== String(targetKey)) dataToStore.id = targetKey;
 
         const wireHolon = normHolon(targetHolon);
-        // Private lens: the envelope carries ciphertext (see privacy.js). A
-        // tombstone stays plain — it says nothing but "gone". Projections are
-        // off for a sealed write: a standard-kind twin would be the plaintext.
+        // Private scope (a lens or this one item, see privacy.js): the envelope
+        // carries ciphertext. A tombstone stays plain — it says nothing but
+        // "gone". Projections are off for a sealed write: a standard-kind twin
+        // would be the plaintext.
         let commitOptions = options;
         let sealedContent = typeof options._sealedContent === 'string' ? options._sealedContent : null;
         if (!sealedContent && holoInstance._privacy && !isGlobal && dataToStore._deleted !== true
-            && await holoInstance._privacy.shouldSeal(wireHolon, targetLens, options)) {
-            sealedContent = JSON.stringify(await holoInstance._privacy.seal(wireHolon, targetLens, dataToStore, options));
+            && await holoInstance._privacy.shouldSeal(wireHolon, targetLens, String(targetKey))) {
+            sealedContent = JSON.stringify(await holoInstance._privacy.seal(wireHolon, targetLens, dataToStore));
         }
         if (sealedContent) commitOptions = { ...options, _content: sealedContent, _skipProjections: true };
         commit(holoInstance, wireHolon, targetLens, targetKey, dataToStore, commitOptions);

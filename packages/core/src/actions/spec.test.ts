@@ -56,6 +56,10 @@ describe('task catalogue', () => {
       'task_add_host',
       'task_remove_host',
       'task_complete',
+      'task_lock',
+      'task_unlock',
+      'task_share',
+      'task_unshare',
     ]);
     for (const a of TASK_ACTIONS) {
       expect(a.kind).toBe('write');

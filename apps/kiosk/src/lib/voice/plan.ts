@@ -27,7 +27,15 @@ import {
   type StagedChange,
 } from "@holons/core/actions";
 import type { Quest, QuestParticipant } from "@holons/core/tasks";
-import { holonId, rawQuests, rotationHold, selection } from "$lib/stores";
+import { lock, share, unlock, unshare } from "@holons/core/privacy";
+import { getFederationSnapshot } from "@holons/core/federation";
+import {
+  holonId,
+  partnerNames,
+  rawQuests,
+  rotationHold,
+  selection,
+} from "$lib/stores";
 import { currentUser } from "$lib/auth";
 import { getHolosphere, getWriter } from "$lib/holosphere";
 import { loadMembers } from "$lib/members";
@@ -99,6 +107,7 @@ export async function stageCall(
       utterance,
       quests: projectedQuests(),
       users,
+      holons: await shareableHolons(hid),
       actor: person(user as TgUser),
       focus: {
         lastStagedTaskId: get(lastStagedTaskId),
@@ -122,7 +131,12 @@ export async function stageCall(
           ? "complete"
           : call.name === "task_add_host" || call.name === "task_remove_host"
             ? "hosts"
-            : "participants";
+            : call.name === "task_lock" ||
+                call.name === "task_unlock" ||
+                call.name === "task_share" ||
+                call.name === "task_unshare"
+              ? "privacy"
+              : "participants";
     const pending = get(pendingPlan)?.changeset.changes.find(
       (c) => c.localId === target && (c.kind === kind || c.kind === "create"),
     );
@@ -236,8 +250,49 @@ export function toggleSelected(id: string): void {
   });
 }
 
+/** The holons a card may be shared with by name: this hub's federated partners. */
+async function shareableHolons(
+  hid: string,
+): Promise<Array<{ id: string; name?: string }>> {
+  try {
+    const hs = await getHolosphere();
+    const fed = await getFederationSnapshot(hs, hid);
+    const names = get(partnerNames);
+    return fed.federated.map((id) => ({
+      id,
+      name: names[id] ?? fed.partnerNames[id] ?? id,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function kioskPorts(actor: TgUser): ApplyPorts {
   return {
+    // Lock / share a card: core resolves the holon to its readers and hands
+    // the keys out; nothing here touches one.
+    privacy: async (holon, lens, key, op) => {
+      const hs = await getHolosphere();
+      const scope = { holon, lens, item: key };
+      switch (op.verb) {
+        case "lock":
+          await lock(hs, scope);
+          break;
+        case "unlock":
+          await unlock(hs, scope);
+          break;
+        case "share":
+          if (!op.withHolon) return false;
+          await share(hs, scope, op.withHolon.id);
+          break;
+        case "unshare":
+          if (!op.withHolon) return false;
+          await unshare(hs, scope, op.withHolon.id);
+          break;
+      }
+      window.dispatchEvent(new CustomEvent("kiosk:privacy-changed"));
+      return true;
+    },
     get: async (holon, lens, key) => {
       const hs = await getHolosphere();
       return ((await hs.get(holon, lens, key)) as Quest | null) ?? null;

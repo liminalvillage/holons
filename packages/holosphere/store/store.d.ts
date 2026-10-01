@@ -35,16 +35,12 @@ export type StoreOp =
     | { t: 'evt-del'; id: string }
     | { t: 'priv'; k: string; v: string }
     | { t: 'priv-del'; k: string }
-    | { t: 'key'; k: string; v: string }
-    | { t: 'key-del'; k: string }
     | { t: 'cur'; k: string; v: Cursor };
 
 export interface StoreSnapshot {
     records: StoreRecord[];
     events: NostrEvent[];
     private: [string, string][];
-    /** Received sealed-content keys (rows sealed to the instance's own key). */
-    keys?: [string, string][];
     cursors: [string, Cursor][];
 }
 
@@ -123,7 +119,7 @@ export class Store {
     clear(): Promise<void>;
     close(): Promise<void>;
     snapshot(): StoreSnapshot;
-    stats(): { records: number; events: number; private: number; keys: number; cursors: number; lenses: number; holons: number; watchers: number; adapter: string | null };
+    stats(): { records: number; events: number; private: number; cursors: number; lenses: number; holons: number; watchers: number; adapter: string | null };
 
     apply(event: NostrEvent, opts?: { origin?: RecordOrigin; verify?: boolean }): ApplyResult;
     putRaw<T extends object>(holon: string | null, lens: string, id: string, item: T, opts?: { origin?: RecordOrigin }): StoreRecord<T>;
@@ -152,10 +148,6 @@ export class Store {
 
     /** Install the function that opens sealed envelopes. */
     setUnseal(fn: Unsealer | null): void;
-    keysPut(k: string, cipher: string): void;
-    keysGet(k: string): string | undefined;
-    keysList(prefix?: string): { key: string; cipher: string }[];
-    keysDelete(k: string): boolean;
     /** Re-decode the sealed records of a lens (or all) against the current keys; returns how many changed. */
     rescan(opts?: { holon?: string | null; lens?: string }): number;
 

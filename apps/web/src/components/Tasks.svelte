@@ -34,6 +34,7 @@
 	} from "@holons/core/tasks";
 	import { getEventStore } from "../lib/rea/eventStore";
 	import { getColorFromCategory } from "@holons/core/categories";
+	import { privacyOfHolon } from "@holons/core/privacy";
 	import {
 		getCachedEquation,
 		preloadHolon,
@@ -112,6 +113,16 @@
 	let holonName = $derived(resolvedName(holonID, $nameMap, null, 'Tasks'));
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
+	// Cards sealed on the relays (the lock glyph): the whole lens, or single
+	// cards locked from their own view. Read from vault records, no key needed.
+	let lockedIds = $state(new Set<string>());
+	async function refreshLocks() {
+		if (!holosphere || !holonID) { lockedIds = new Set(); return; }
+		try {
+			const flags = (await privacyOfHolon(holosphere, holonID)).quests;
+			lockedIds = flags?.locked ? new Set(Object.keys(store)) : new Set(flags?.items ?? []);
+		} catch { lockedIds = new Set(); }
+	}
 
 	// Helper function to check if a quest matches the current filterType
 	function matchesFilterType(quest: Quest, currentFilterType: string): boolean {
@@ -1093,6 +1104,7 @@
 			(items: any[]) => {
 				if (questsLoadKey !== loadKey) return; // stale (user switched holon)
 				store = buildStoreFromItems(items);
+				void refreshLocks();
 				isLoading = false;
 				loadingFederated = false;
 				preResolveHologramNames(Object.entries(store));
@@ -1456,6 +1468,7 @@
 									role="button"
 									tabindex={0}
 									ariaLabel={`Open task: ${quest.title}`}
+									locked={lockedIds.has(String(quest.id ?? key))}
 								/>
 								<div class="flex flex-shrink-0 items-center">
 									<PublishToFederationButton

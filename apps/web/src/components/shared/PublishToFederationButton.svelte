@@ -11,7 +11,7 @@
 		type PublishOutcome
 	} from '$lib/holosphere/publish';
 	import { awaitName } from '$lib/stores/nameResolver';
-	import { grantItem } from '@holons/core/privacy';
+	import { share, isLocked } from '@holons/core/privacy';
 	import Modal from './Modal.svelte';
 	// HexPicker pulls in mapbox-gl (~1.9 MB). It's only shown when the user
 	// opens the picker, so load it lazily (see the {#await} in the markup) to
@@ -49,8 +49,8 @@
 	let federationLoaded = false;
 	let partners: Array<{ id: string; name: string }> = [];
 	let settingsHex: string | null = null;
-	// A private lens: a partner receives a pointer it cannot open unless the
-	// item's key travels too. On by default — publishing means "let them see".
+	// A private item: a partner receives a pointer it cannot open unless it is
+	// in the item's audience. On by default — publishing means "let them see".
 	let lensPrivate = false;
 	let shareKey = true;
 
@@ -69,7 +69,9 @@
 				readSettingsHex(holosphere, holonId)
 			]);
 			settingsHex = hex;
-			try { lensPrivate = !!holosphere.isPrivateLens?.(holonId, lens); } catch { lensPrivate = false; }
+			try {
+				lensPrivate = item?.id != null && await isLocked(holosphere, { holon: holonId, lens, item: String(item.id) });
+			} catch { lensPrivate = false; }
 			const list: Array<{ id: string; name: string }> = [];
 			for (const id of snap.federated) {
 				let name = await awaitName(id);
@@ -221,13 +223,15 @@
 				{ ...extraOpts, useHolograms: true }
 			);
 			outcome = result;
-			// A partner publish of a private item also hands over the item's key,
-			// or the partner only gets a pointer it cannot open.
+			// A partner publish of a private item also lets the partner read it,
+			// or the partner only gets a pointer it cannot open. The scope is the
+			// item when it is locked on its own, the lens when the lens is.
 			if (result.publishedTo > 0 && lensPrivate && shareKey && target.kind === 'partner' && !isHologramItem) {
 				try {
-					await grantItem(holosphere, holonId, lens, String(item.id), target.holonId);
+					const lensLocked = await isLocked(holosphere, { holon: holonId, lens });
+					await share(holosphere, lensLocked ? { holon: holonId, lens } : { holon: holonId, lens, item: String(item.id) }, target.holonId);
 				} catch (err: any) {
-					result.errors.push(`key not shared: ${err?.message ?? err}`);
+					result.errors.push(`not shared: ${err?.message ?? err}`);
 				}
 			}
 			if (result.publishedTo > 0) {
@@ -418,7 +422,7 @@
 			{#if lensPrivate}
 				<label class="ptf-toggle-row">
 					<input type="checkbox" bind:checked={shareKey} />
-					<span class="ptf-toggle-row__label">🔑 Also share this item's key (private lens)</span>
+					<span class="ptf-toggle-row__label">🔑 Also let them read this locked item</span>
 				</label>
 			{/if}
 		</div>

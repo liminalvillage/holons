@@ -32,7 +32,7 @@ import { syncMembersLog } from '@holons/core/protocol';
 import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
 import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from '@holons/core/flows';
 import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
-import { getPrivacySnapshot, grantLens } from '@holons/core/privacy';
+import { sync as syncPrivacy } from '@holons/core/privacy';
 import KeyManager from './KeyManager.js';
 
 /**
@@ -453,8 +453,11 @@ export function createTrustCache(
       .catch(e =>
         console.warn('[holosphere] membership sync failed:', e?.message)
       );
-    grantPrivateLenses(hs, String(holon), [...desired.keys()]).catch(e =>
-      console.warn('[holosphere] private lens grants failed:', e?.message)
+    // Members read the holon's private scopes through their own keys: the
+    // audience of every scope the holon key owns is re-synced against the
+    // roster just published (see @holons/core/privacy).
+    syncPrivacy(hs, String(holon)).catch(e =>
+      console.warn('[holosphere] privacy sync failed:', e?.message)
     );
     if (settings && typeof settings === 'object' && !settings.holonPubkey) {
       hs.put(String(holon), 'settings', {
@@ -467,43 +470,6 @@ export function createTrustCache(
           e?.message
         )
       );
-    }
-  }
-
-  /**
-   * Members read a private lens of a group holon through their own keys:
-   * the holon key owns the vault, so every private lens it holds is shared
-   * with each member key that does not have it yet (see
-   * @holons/core/privacy). Idempotent per process; a revoked member is
-   * not re-granted here — revocation is the caretaker's call.
-   */
-  const grantedOnce = new Map(); // holon → Set<`${lens}|${pubkey}`>
-  async function grantPrivateLenses(hs, holon, pubkeys) {
-    if (!hs?.privacy) return;
-    let snap;
-    try {
-      snap = await getPrivacySnapshot(hs, holon);
-    } catch {
-      return;
-    }
-    if (!snap.owned.length) return;
-    let done = grantedOnce.get(holon);
-    if (!done) grantedOnce.set(holon, (done = new Set()));
-    for (const lens of snap.owned) {
-      for (const pub of pubkeys) {
-        const key = `${lens}|${pub}`;
-        if (done.has(key) || snap.grants[pub]?.lenses?.includes(lens)) continue;
-        done.add(key);
-        try {
-          await grantLens(hs, holon, lens, pub);
-        } catch (e) {
-          done.delete(key);
-          console.warn(
-            `[holosphere] could not share ${holon}/${lens} with ${pub.slice(0, 8)}:`,
-            e?.message
-          );
-        }
-      }
     }
   }
 

@@ -19,6 +19,8 @@ import {
   type StagedChange,
 } from '@holons/core/actions';
 import { saveTaskToHolon, type Quest, type QuestParticipant } from '@holons/core/tasks';
+import { getFederationSnapshot } from '@holons/core/federation';
+import { lock, share, unlock, unshare } from '@holons/core/privacy';
 import { toLocalDateField, toLocalTimeField } from '@holons/core/datetime';
 import type { ToolDeps } from './index.js';
 
@@ -97,7 +99,15 @@ export async function resolveContext(
     (q) => q && !(q as Quest)._deleted,
   ) as Quest[];
   const users = asList(await hs.getAll(holon, 'users')) as ResolveContext['users'];
-  return { holonId: holon, utterance, quests, users, actor: actorAsParticipant(deps.resolveActor()) };
+  // The holons a card may be shared with by name: the holon's federated partners.
+  let holons: ResolveContext['holons'] = [];
+  try {
+    const fed = await getFederationSnapshot(hs, holon);
+    holons = fed.federated.map((id) => ({ id, name: fed.partnerNames[id] ?? id }));
+  } catch {
+    holons = [];
+  }
+  return { holonId: holon, utterance, quests, users, holons, actor: actorAsParticipant(deps.resolveActor()) };
 }
 
 export function ports(deps: ToolDeps): ApplyPorts {
@@ -109,6 +119,16 @@ export function ports(deps: ToolDeps): ApplyPorts {
     put: async (holon, _lens, record) => {
       const hs = await deps.getHoloSphere();
       return saveTaskToHolon(hs, holon, record);
+    },
+    privacy: async (holon, lens, key, op) => {
+      const hs = await deps.getHoloSphere();
+      const scope = { holon, lens, item: key };
+      if (op.verb === 'lock') await lock(hs, scope);
+      else if (op.verb === 'unlock') await unlock(hs, scope);
+      else if (!op.withHolon) return false;
+      else if (op.verb === 'share') await share(hs, scope, op.withHolon.id);
+      else await unshare(hs, scope, op.withHolon.id);
+      return true;
     },
   };
 }

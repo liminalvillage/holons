@@ -203,16 +203,16 @@ does nothing.
 Generic host API: `holosphere.publishNostrEvents(events)`,
 `holosphere.subscribeNostr(filter, onevent)`, `holosphere.nostrRelays()`.
 
-## Sealed content (private lenses)
+## Sealed content (private scopes)
 
-A private lens keeps the envelope above and seals only `content`:
-`{ enc: 'nip44', v: 1, kid, ct, k }` — the item under its own content key,
-that key under the lens key. The owner's keys live in a self-sealed
-`_vault` record of the holon; a lens key or one item's content key reaches
-a pubkey as a NIP-17 DM (subject `holons/grant`), which the recipient's
-instance accepts on its own. Readers without a key hold locked stubs and see
+A private scope (a lens, or one item of it) keeps the envelope above and
+seals only `content`: `{ enc: 'nip44', v: 2, kid, ct }` under the scope's
+key. The scope is private exactly when its self-sealed `_vault` record
+exists in the holon; the key reaches a reader pubkey as a NIP-17 DM (subject
+`holons/grant`), which the recipient's instance accepts on its own and keeps
+in its own `_vault`. Readers without a key hold locked stubs and see
 nothing. No standard-kind projection is emitted for a sealed write, and the
-reverse sync ignores private lenses. See `PRIVACY.md`.
+reverse sync ignores private scopes. See `PRIVACY.md`.
 
 ## Semantics & limits
 
@@ -224,7 +224,7 @@ reverse sync ignores private lenses. See `PRIVACY.md`.
 - **Private (password) lenses never touch the relay.** They are NIP-44
   encrypted with a scrypt-derived key (`store/private.js`, parameters frozen
   in `STORE.md`), access-controlled by the password, and remain local to the
-  device. **Private lenses** (`PRIVACY.md`) DO travel — sealed — and are
+  device. **Private scopes** (`PRIVACY.md`) DO travel — sealed — and are
   readable by whoever holds a key.
 - **Read-key hydration at init is local-only** (the transport isn't up yet
   when the signer is built). If your federation read-list lives remotely,

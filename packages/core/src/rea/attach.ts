@@ -36,8 +36,8 @@ export interface LedgerHost {
   delete(holon: string | null, lens: string, key: string, password?: any, options?: any): Promise<any>;
   isHologram?(data: unknown): boolean;
   parseSoulPath?(soul: string): { holon: string; lens: string; key: string } | null;
-  /** A private lens gets no plaintext ledger (see `@holons/core/privacy`). */
-  isPrivateLens?(holon: string | null, lens: string): boolean;
+  /** A private scope gets no plaintext ledger (see `@holons/core/privacy`). */
+  isPrivate?(holon: string | null, lens: string, item?: string | null): boolean;
   store?: {
     get(holon: string, lens: string, id: string): { item?: unknown } | undefined;
     list(holon: string, lens: string, opts?: { includeDeleted?: boolean }): Array<{ item?: unknown }>;
@@ -230,8 +230,7 @@ export function attachLedger<T extends LedgerHost>(host: T, opts: AttachLedgerOp
       LEDGER_LENSES.includes(lens) &&
       !password &&
       !opts2.preserveFederationMeta &&
-      opts2.privacy !== 'private' &&
-      !(host.isPrivateLens?.(String(holon), lens) ?? false) &&
+      !(host.isPrivate?.(String(holon), lens, data?.id != null ? String(data.id) : null) ?? false) &&
       data &&
       typeof data === 'object' &&
       !(host.isHologram?.(data) ?? false);

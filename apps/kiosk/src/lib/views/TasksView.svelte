@@ -3,7 +3,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
@@ -15,7 +15,10 @@
     showNotice,
     taskViewMode,
     taskSort,
+    offerSettings,
   } from "$lib/stores";
+  import { privacyOfHolon } from "@holons/core/privacy";
+  import TaskSettings from "$lib/components/TaskSettings.svelte";
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import type { TaskSort } from "$lib/data";
@@ -52,6 +55,49 @@
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import TaskListView from "./TaskListView.svelte";
+
+  // ── Privacy ──────────────────────────────────────────────────────────
+  // Which cards are sealed on the relays: the whole board (every card), or
+  // single cards locked from their own view. Read from the vault records
+  // anyone can see — no key needed to show the lock. The board's own
+  // settings (the gear in the pills band) lock it and say who may read.
+  let lockedIds = new Set<string>();
+  let boardLocked = false;
+  let settingsOpen = false;
+  async function refreshLocks(hid: string | null, _n: number) {
+    if (!hid) {
+      lockedIds = new Set();
+      boardLocked = false;
+      return;
+    }
+    try {
+      const hs = await getHolosphere();
+      const flags = (await privacyOfHolon(hs, hid)).quests;
+      if (hid !== get(holonId)) return;
+      boardLocked = !!flags?.locked;
+      lockedIds = boardLocked
+        ? new Set(get(rawQuests).map((q) => String(q.id ?? "")))
+        : new Set(flags?.items ?? []);
+    } catch {
+      lockedIds = new Set();
+      boardLocked = false;
+    }
+  }
+  $: void refreshLocks($holonId, $rawQuests.length);
+  const onPrivacyChanged = () => void refreshLocks(get(holonId), -1);
+  function openSettings() {
+    if (!get(currentUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    settingsOpen = true;
+  }
+  onDestroy(offerSettings({ labelKey: "tasks.configure", open: openSettings }));
+  onMount(() => {
+    window.addEventListener("kiosk:privacy-changed", onPrivacyChanged);
+    return () =>
+      window.removeEventListener("kiosk:privacy-changed", onPrivacyChanged);
+  });
   import TaskSwipeView from "./TaskSwipeView.svelte";
   import TaskGraphView from "./TaskGraphView.svelte";
 
@@ -778,6 +824,7 @@
       <TaskSwipeView
         tasks={shownTasks}
         colorFor={noteColorFor}
+        {lockedIds}
         {dueLabel}
         onOpen={openTask}
         onJoin={onSwipeJoin}
@@ -805,6 +852,7 @@
       {#if $taskViewMode === "list"}
         <TaskListView
           tasks={shownTasks}
+          {lockedIds}
           colorFor={noteColorFor}
           {dueLabel}
           {completing}
@@ -896,6 +944,10 @@
                     />
                   {/if}
                   <div class="meta">
+                    {#if lockedIds.has(String(task.id))}<span
+                        class="locked"
+                        title={$t("tasks.locked")}><Icon name="lock" /></span
+                      >{/if}
                     {#if task.category}<span class="tag">{task.category}</span
                       >{/if}
                     {#if task.source}<span class="src"
@@ -1105,7 +1157,20 @@
   </div>
 {/if}
 
+{#if settingsOpen && $holonId}
+  <TaskSettings holonId={$holonId} on:close={() => (settingsOpen = false)} />
+{/if}
+
 <style>
+  .meta .locked {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink-soft);
+  }
+  .meta .locked :global(svg) {
+    width: 0.85em;
+    height: 0.85em;
+  }
   .board {
     position: relative;
     flex: 1;

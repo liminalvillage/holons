@@ -149,6 +149,48 @@ export const TASK_COMPLETE: ActionSpec = {
   ],
 };
 
+const WITH_HOLON: FieldSpec = {
+  name: 'withHolon',
+  type: 'string',
+  description:
+    'The holon that may read it, as the user named it (a partner hub by name, or an exact holon id). Never a key.',
+  required: true,
+};
+
+export const TASK_LOCK: ActionSpec = {
+  name: 'task_lock',
+  kind: 'write',
+  lens: 'quests',
+  description:
+    'Make a task private: only members of this holon, and the holons it is shared with, can read it. ' +
+    'Share it afterwards with task_share.',
+  fields: [HOLON, TASK_ID, TASK_REF],
+};
+
+export const TASK_UNLOCK: ActionSpec = {
+  name: 'task_unlock',
+  kind: 'write',
+  lens: 'quests',
+  description: 'Make a private task public again: anyone on the relay can read it.',
+  fields: [HOLON, TASK_ID, TASK_REF],
+};
+
+export const TASK_SHARE: ActionSpec = {
+  name: 'task_share',
+  kind: 'write',
+  lens: 'quests',
+  description: 'Let another holon read a private task ("share the kitchen task with Forno"). The task must be locked.',
+  fields: [HOLON, TASK_ID, TASK_REF, WITH_HOLON],
+};
+
+export const TASK_UNSHARE: ActionSpec = {
+  name: 'task_unshare',
+  kind: 'write',
+  lens: 'quests',
+  description: 'Stop a holon from reading a private task. What it already read stays read.',
+  fields: [HOLON, TASK_ID, TASK_REF, WITH_HOLON],
+};
+
 /** Every task action, in the order consumers register them. */
 export const TASK_ACTIONS: readonly ActionSpec[] = [
   TASK_CREATE,
@@ -159,6 +201,10 @@ export const TASK_ACTIONS: readonly ActionSpec[] = [
   TASK_ADD_HOST,
   TASK_REMOVE_HOST,
   TASK_COMPLETE,
+  TASK_LOCK,
+  TASK_UNLOCK,
+  TASK_SHARE,
+  TASK_UNSHARE,
 ];
 
 export const TASK_ACTION_NAMES: readonly string[] = TASK_ACTIONS.map((a) => a.name);

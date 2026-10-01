@@ -47,6 +47,7 @@
     participants: "users",
     hosts: "crown",
     complete: "check",
+    privacy: "lock",
   };
 
   /** The live record moved, where this change touches it, since previewed. */

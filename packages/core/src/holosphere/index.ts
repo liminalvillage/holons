@@ -49,6 +49,9 @@ export {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,
   registerHolon,
+  searchHolons,
+  searchRegistry,
   type HolonRegistryEntry,
+  type HolonSearchHit,
   type RegisterHolonInput,
 } from './registry.js';

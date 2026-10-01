@@ -30,6 +30,10 @@ import {
   TASK_TOGGLE_PARTICIPANT,
   TASK_ADD_HOST,
   TASK_REMOVE_HOST,
+  TASK_LOCK,
+  TASK_UNLOCK,
+  TASK_SHARE,
+  TASK_UNSHARE,
   TASK_UPDATE,
   describeChange,
   fuzzyFindByTitle,
@@ -567,6 +571,29 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     false,
   );
   participantTool(TASK_REMOVE_HOST, "Remove a user from a calendar event's hosts.", false);
+
+  // Privacy — through the shared catalogue: a card is locked (sealed on the
+  // relays, read by the holon's members and the holons it is shared with) or
+  // unlocked, and shared with a holon named as the user said it (a partner by
+  // name, or an exact holon id). No key crosses this API.
+  const privacyTool = (spec: typeof TASK_LOCK, description: string) =>
+    server.registerTool(
+      spec.name,
+      { description, inputSchema: toZod(spec) },
+      async (args) => {
+        try {
+          const run = await runAction(deps, spec.name, args as Record<string, unknown>);
+          if (!run.ok) return fail(run.error, run.extra);
+          return ok({ success: true, change: describeChange(run.change), task: run.task });
+        } catch (err) {
+          return fail((err as Error).message);
+        }
+      },
+    );
+  privacyTool(TASK_LOCK, TASK_LOCK.description);
+  privacyTool(TASK_UNLOCK, TASK_UNLOCK.description);
+  privacyTool(TASK_SHARE, TASK_SHARE.description);
+  privacyTool(TASK_UNSHARE, TASK_UNSHARE.description);
 
   // task_add_appreciation — add a user to the appreciation array.
   server.registerTool(

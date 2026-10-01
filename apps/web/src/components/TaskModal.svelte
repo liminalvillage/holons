@@ -63,6 +63,20 @@
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
     import { reflectMembership } from "../utils/reflectMembership";
+    import { Lock, Unlock } from "svelte-feathers";
+    import { isLocked } from "@holons/core/privacy";
+    import AudienceEditor from "./shared/AudienceEditor.svelte";
+
+    // Privacy: the card is locked (sealed on the relays, read by this holon's
+    // members and the holons it is shared with) from here; a whole lens is
+    // locked from the federation page. No key is shown or typed.
+    let lockOpen = false;
+    let cardLocked = false;
+    async function checkLocked(hs: HoloSphere | undefined, holon: string, l: string, id: string) {
+        if (!hs || !holon || !id) { cardLocked = false; return; }
+        try { cardLocked = await isLocked(hs, { holon, lens: l, item: id }); } catch { cardLocked = false; }
+    }
+    $: void checkLocked(holosphere, holonId, lens, questId);
 
     export let quest: any;
     export let questId: string;
@@ -1367,6 +1381,25 @@
                         </button>
                     {/if}
                 
+                {#if holosphere && holonId && questId}
+                    <div class="mt-2">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                            aria-expanded={lockOpen}
+                            title={cardLocked ? "Private — only this holon and the holons it is shared with can read it" : "Public — anyone can read it"}
+                            on:click={() => (lockOpen = !lockOpen)}
+                        >
+                            {#if cardLocked}<Lock size="12" /> Private{:else}<Unlock size="12" /> Public{/if}
+                        </button>
+                        {#if lockOpen}
+                            <div class="mt-2">
+                                <AudienceEditor {holosphere} scope={{ holon: holonId, lens, item: questId }} on:change={(e) => (cardLocked = e.detail.locked)} />
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <!-- Compact metadata -->
                 <div class="flex items-center gap-2 mt-1 text-xs text-gray-400">
                     {#if quest.created}

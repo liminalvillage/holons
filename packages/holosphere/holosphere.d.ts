@@ -65,11 +65,6 @@ interface PutOptions {
   awaitPropagation?: boolean;
   /** Store only — never sign or publish (reserved namespaces). */
   local?: boolean;
-  /**
-   * Seal this one write ('private') or send it in the clear ('public')
-   * regardless of the lens's mode. See PRIVACY.md.
-   */
-  privacy?: 'private' | 'public';
 }
 
 interface PutGlobalOptions {
@@ -107,45 +102,60 @@ interface SubscribeOptions {
   includeUnverified?: boolean;
 }
 
-/** A grant as it travels (NIP-17 DM, subject `holons/grant`). */
-interface GrantPayload {
-  t: 'holons/grant';
-  v: 1;
-  id: string;
+/** A private scope: a lens, or one item of it. See PRIVACY.md. */
+export interface Scope {
   holon: string;
   lens: string;
-  kid: string;
-  /** Lens key (hex) — a lens grant. */
-  key?: string;
-  /** Item id + its content key (hex) — an item grant. */
   item?: string;
-  cek?: string;
+}
+
+/** A grant as it travels (NIP-17 DM, subject `holons/grant`): the scope and its current key. */
+interface GrantPayload {
+  t: 'holons/grant';
+  v: 2;
+  holon: string;
+  lens: string;
+  item?: string;
+  /** Key id: 16 hex chars of sha256(key). */
+  kid: string;
+  /** The scope key (hex). */
+  key: string;
   at: string;
 }
 
-/** What a pubkey has been granted, per lens. */
-interface GrantLedger {
-  [pubkey: string]: { lenses: string[]; items: Record<string, string[]> };
+/** The private scopes of a holon, by lens: the lens as a whole, or single items. */
+interface LockedScopes {
+  [lens: string]: { locked: boolean; items: string[] };
 }
 
 interface Privacy {
-  isPrivateLens(holon: string | null, lens: string): boolean;
+  /** The private scope governing an address (the item's own vault first, then the lens's), or null. Synchronous. */
+  scopeOf(holon: string | null, lens: string, item?: string | null): Scope | null;
+  isPrivate(holon: string | null, lens: string, item?: string | null): boolean;
+  /** Every private scope of a holon this instance has seen vault records for (own and others'). Synchronous. */
+  lockedScopes(holon: string | null): LockedScopes;
   privatizable(holon: string | null, lens: string): boolean;
   assertPrivatizable(holon: string | null, lens: string): void;
-  /** Load every key the active identity can have for a lens, then re-decode it. */
+  /** Load every key the active identity can have for a lens (and its items), then re-decode it. */
   ensureKeys(holon: string | null, lens: string): Promise<void>;
-  /** 'private' creates the lens key on first use; 'public' stops sealing new writes. */
-  setLensMode(holon: string, lens: string, mode: 'private' | 'public'): Promise<{ lens: string; mode: string; kid: string } | null>;
-  /** The private lenses this identity owns in a holon, with their mode. */
-  ownedLenses(holon: string): Record<string, string>;
-  grantLens(holon: string, lens: string, pubkey: string): Promise<{ sent: boolean; kid: string; grantee: string }>;
-  grantItem(holon: string, lens: string, id: string, pubkey: string): Promise<{ sent: boolean; grantee: string; item: string }>;
-  /** Rotates the lens key and every item's content key, rewrites the lens, re-grants the rest. */
-  revokeLens(holon: string, lens: string, pubkey: string): Promise<{ kid: string; rewritten: number; regranted: string[] }>;
-  revokeItem(holon: string, lens: string, id: string, pubkey: string): Promise<{ rewritten: number; regranted: string[] }>;
-  listGrants(holon: string, lens?: string): Promise<GrantLedger>;
-  /** Accept a grant addressed to this identity (validated, kept, re-decoded). */
-  /** `trusted` skips the sender policy (an out-of-band grant the user chose to accept). */
+  /** Does this identity own the scope's vault (it can lock/unlock, share, revoke)? Synchronous after `ensureKeys`. */
+  owned(scope: Scope): boolean;
+  ownedScopes(holon: string): Scope[];
+  /** Make a scope private: a fresh key, the vault record, the scope's items rewritten sealed. Idempotent. */
+  lock(scope: Scope, opts?: { audience?: unknown[]; sent?: Record<string, string> }): Promise<{ kid: string | null; rewritten: number }>;
+  /** Make a scope public again: items rewritten in the clear, the vault tombstoned. */
+  unlock(scope: Scope): Promise<{ rewritten: number }>;
+  /** The opaque audience the domain layer stored on an owned scope (null when not owned). */
+  audienceGet(scope: Scope): Promise<unknown[] | null>;
+  audienceSet(scope: Scope, audience: unknown[]): Promise<unknown[]>;
+  /** Which key id each reader pubkey holds, as last recorded (null when not owned). */
+  sentGet(scope: Scope): Promise<Record<string, string> | null>;
+  sentSet(scope: Scope, sent: Record<string, string>): Promise<Record<string, string>>;
+  /** Hand the scope's current key to reader pubkeys over NIP-17. */
+  grant(scope: Scope, readers: string | string[]): Promise<{ kid: string; sent: string[]; failed: string[] }>;
+  /** Rotate the scope key, rewrite the scope, forget the revoked readers. The caller re-grants the rest. */
+  revoke(scope: Scope, readers: string | string[]): Promise<{ kid: string; rewritten: number; revoked: string[] }>;
+  /** Accept a grant addressed to this identity (validated, copied into its own vault, re-decoded). `trusted` skips the sender policy. */
   acceptGrant(payload: GrantPayload | string, sender?: string | null, opts?: { trusted?: boolean }): Promise<{ accepted: boolean; reason?: string; holon?: string; lens?: string; item?: string | null; kid?: string }>;
   parseGrant(raw: unknown): GrantPayload | null;
   startGrants(): void;
@@ -580,8 +590,8 @@ declare class HoloSphere {
     // Privacy (see PRIVACY.md)
     /** Vaults, keyring and grants of the active identity. */
     readonly privacy: Privacy;
-    /** Is this lens private, as far as this instance can tell right now? */
-    isPrivateLens(holon: string | null, lens: string): boolean;
+    /** Is this address private — the lens as a whole, or this one item? Synchronous. */
+    isPrivate(holon: string | null, lens: string, item?: string | null): boolean;
     readonly currentPubkey: string;
     readonly loggedIn: boolean;
     readonly signingEnabled: boolean;

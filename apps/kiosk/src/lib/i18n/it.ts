@@ -29,6 +29,11 @@ export const it: Record<MessageKey, Msg> = {
   "tasks.deleteFailed": "Impossibile eliminare questa attività.",
   "tasks.addFailed": "Impossibile aggiungere — {reason}",
   "tasks.deleteTask": "Elimina l'attività",
+  "tasks.configure": "Privacy della bacheca",
+  "tasks.privacyTitle": "Chi può leggere questa bacheca",
+  "tasks.privacySub":
+    "Blocca la bacheca per sigillare ogni scheda sui relay, poi condividila con gli holon che possono leggerla. Una singola scheda si blocca dalla sua vista.",
+  "tasks.locked": "Privata",
   "tasks.markComplete": "Segna come completata",
   "tasks.proposedBy": "Proposta da {name}",
   "tasks.waitsTitle": {
@@ -693,14 +698,30 @@ export const it: Record<MessageKey, Msg> = {
   "settings.privacyAria": "{lens}: {state}",
   "settings.privacyPrivate": "privata",
   "settings.privacyPublic": "pubblica",
-  "settings.privacyHint":
-    "Una lente privata tiene sigillato ciò che contiene. Condividi un'intera lente dal dock, o una singola scheda dal suo dettaglio.",
   "settings.privacyFailed": "Impossibile cambiare quella lente — riprova.",
-  "settings.privacyShared": "condivisa con {n}",
-  "settings.hubKey": "Chiave dell'hub {key}",
-  "settings.hubKeyLog": "fondato, la lista dei membri è firmata",
-  "settings.hubKeyOwn": "questo hub è la sua stessa chiave",
-  "settings.hubKeyBoot": "dalle sue impostazioni firmate",
+  "settings.privacyHint":
+    "Una lente bloccata tiene sigillato il contenuto; i membri di questo hub la leggono sempre. Condividi una lente intera qui o dal dock, una scheda dalla sua vista.",
+  "audience.lock": "Blocca",
+  "audience.unlock": "Sblocca",
+  "audience.locked": "Privata",
+  "audience.open": "Pubblica",
+  "audience.sharedWith": "condivisa con {n}",
+  "audience.members": "Membri di {name}",
+  "audience.synced": "{n} lettori, tutti la hanno",
+  "audience.pending": "{n} lettori, in arrivo",
+  "audience.noReaders":
+    "ancora nessun lettore — nulla di firmato dice chi ne fa parte",
+  "audience.add": "Condividi con…",
+  "audience.federated": "Holon federati",
+  "audience.search": "Qualsiasi holon",
+  "audience.searchPlaceholder": "Nome o id dell'holon",
+  "audience.noHits": "Nessun holon con quel nome.",
+  "audience.remove": "Smetti di condividere con {name}",
+  "audience.notOwner":
+    "Bloccata da un'altra chiave — solo chi la possiede cambia chi legge.",
+  "audience.lensLocked":
+    "L'intera bacheca è bloccata; le schede la seguono. Cambialo dalle impostazioni della bacheca.",
+  "audience.failed": "Impossibile cambiarlo — riprova.",
   "settings.hubKeyNone":
     "Nessuna chiave firmata: non si possono condividere chiavi con questo hub, e ogni scrittura conta finché il suo bot non lo fonda.",
   "settings.hubKeyBot":
@@ -768,15 +789,13 @@ export const it: Record<MessageKey, Msg> = {
   "fed.changeError": "La modifica non è stata salvata — riprova.",
   "fed.keyShare": "Condividi la chiave di {lens} con {name}",
   "fed.keyRevoke": "Ritira la chiave di {lens} da {name}",
-  "fed.keyNoPubkey": "{name} non ha una chiave con cui condividere.",
   "fed.keyError": "La modifica della chiave non è stata salvata — riprova.",
+  "fed.sharedWith":
+    "{name} può leggere le lenti bloccate segnate con una chiave.",
+  "fed.noReaders":
+    "{name} non ha ancora lettori — leggerà quando il suo bot o un membro lo fonderà.",
   "fed.privateHint":
     "Una lente con il lucchetto è privata: la freccia apre il flusso, la chiave condivide il contenuto.",
-  "fed.keyToOwn": "Le chiavi per {name} vanno alla sua chiave {key}.",
-  "fed.keyToAnchor":
-    "Le chiavi per {name} vanno alla sua chiave firmata {key}.",
-  "fed.keyNoAnchor":
-    "{name} non ha ancora una chiave firmata — il suo bot deve fondarlo prima di poter condividere una chiave.",
   "fed.unlinkError": "Lo scollegamento non è stato salvato — riprova.",
 
   // Location (hex) picker
@@ -862,6 +881,8 @@ export const it: Record<MessageKey, Msg> = {
   "detail.onLoanTo": "In prestito a {who}",
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",
+  "detail.lock": "Blocca",
+  "detail.locked": "Privata",
   "detail.copyLink": "Copia il link a questa scheda",
   "detail.linkCopied": "Link copiato",
   "detail.enlargePicture": "Tocca per vedere l'immagine intera",
@@ -872,16 +893,6 @@ export const it: Record<MessageKey, Msg> = {
   "detail.newCategoryPlaceholder": "Nome della nuova categoria",
   "detail.pickFromList": "Scegli dall'elenco",
   "detail.newCategory": "Nuova categoria…",
-  "detail.shareWith": "Condividi con…",
-  "detail.shareTitle": "Condividi la chiave di questa scheda con",
-  "detail.shareNoPartners": "Nessun holon federato con cui condividere.",
-  "detail.shareNoKey": "nessuna chiave con cui condividere",
-  "detail.shared": "Condivisa",
-  "detail.notShared": "Non condivisa",
-  "detail.sharedLens": "Intera lente condivisa",
-  "detail.shareDone": "Chiave condivisa con {name}.",
-  "detail.unshareDone": "Chiave ritirata da {name}.",
-  "detail.shareFailed": "Impossibile cambiare la condivisione — {reason}",
   "detail.description": "Descrizione",
   "detail.participants": {
     one: "{n} partecipante",
@@ -1052,6 +1063,7 @@ export const it: Record<MessageKey, Msg> = {
   "voice.plan.kind.participants": "Partecipanti",
   "voice.plan.kind.complete": "Completa",
   "voice.plan.kind.hosts": "Host",
+  "voice.plan.kind.privacy": "Privacy",
   "voice.plan.field.hosts": "Host",
   "voice.plan.field.title": "Titolo",
   "voice.plan.field.description": "Descrizione",

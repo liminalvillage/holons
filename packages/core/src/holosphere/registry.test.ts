@@ -6,6 +6,8 @@ import {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,
   registerHolon,
+  searchHolons,
+  searchRegistry,
 } from './registry.js';
 
 describe('buildRegistryEntry', () => {
@@ -73,5 +75,38 @@ describe('registerHolon', () => {
 
     await expect(registerHolon({ writeGlobal }, { id: '7' })).resolves.toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe('searchRegistry', () => {
+  const rows = [
+    { id: '-1001', name: 'Orto Collettivo', type: 'community' },
+    { id: '-1002', name: 'Forno', type: 'community' },
+    { id: 'ab'.repeat(32), name: 'Ada', type: 'personal' },
+  ];
+
+  it('matches names case-insensitively and ids by substring, exact id first', () => {
+    expect(searchRegistry(rows, 'orto').map((h) => h.id)).toEqual(['-1001']);
+    expect(searchRegistry(rows, 'o').map((h) => h.id)).toEqual(['-1002', '-1001']);
+    expect(searchRegistry(rows, '-1002').map((h) => h.id)).toEqual(['-1002']);
+    expect(searchRegistry(rows, '100').map((h) => h.id)).toEqual(['-1001', '-1002']);
+    expect(searchRegistry(rows, '')).toEqual([]);
+  });
+
+  it('an id typed in full that the registry does not know is still offered', () => {
+    const hex = 'cd'.repeat(32);
+    expect(searchRegistry(rows, hex)).toEqual([{ id: hex, name: hex, type: 'personal' }]);
+    expect(searchRegistry(rows, '-100977000999')).toEqual([{ id: '-100977000999', name: '-100977000999', type: 'community' }]);
+    expect(searchRegistry(rows, 'holon_abcdefghijkl')).toEqual([{ id: 'holon_abcdefghijkl', name: 'holon_abcdefghijkl', type: 'community' }]);
+    expect(searchRegistry(rows, 'ab'.repeat(32))).toEqual([{ id: 'ab'.repeat(32), name: 'Ada', type: 'personal' }]);
+    expect(searchRegistry(rows, 'nope')).toEqual([]);
+  });
+
+  it('searchHolons reads the global table and never throws', async () => {
+    const hs = { getAllGlobal: vi.fn(async () => rows) };
+    expect((await searchHolons(hs, 'forno')).map((h) => h.name)).toEqual(['Forno']);
+    expect(hs.getAllGlobal).toHaveBeenCalledWith(HOLONS_REGISTRY_TABLE);
+    const broken = { getAllGlobal: vi.fn(async () => { throw new Error('offline'); }) };
+    expect(await searchHolons(broken, 'forno')).toEqual([]);
   });
 });

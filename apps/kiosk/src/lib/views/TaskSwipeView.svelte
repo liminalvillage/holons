@@ -39,6 +39,8 @@
   import { t } from "$lib/i18n";
 
   export let tasks: BacklogTask[];
+  /** Cards sealed on the relays (the lock glyph). */
+  export let lockedIds: Set<string> = new Set();
   export let colorFor: (category: string | undefined) => string;
   export let dueLabel: (t: BacklogTask) => string | null;
   export let onOpen: (id: string) => void;
@@ -451,6 +453,10 @@
               <p class="desc">{task.description}</p>
             {/if}
             <div class="meta">
+              {#if lockedIds.has(String(task.id))}<span
+                  class="locked"
+                  title={$t("tasks.locked")}><Icon name="lock" /></span
+                >{/if}
               {#if task.category}<span class="tag">{task.category}</span>{/if}
               {#if task.source}<span class="src"
                   ><Icon name="swap" /> {task.source}</span
@@ -523,6 +529,15 @@
 {/if}
 
 <style>
+  .meta .locked {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink-soft);
+  }
+  .meta .locked :global(svg) {
+    width: 0.85em;
+    height: 0.85em;
+  }
   .stage {
     flex: 1;
     min-height: 0;

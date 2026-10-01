@@ -300,9 +300,10 @@ no-op against a holosphere build without signing.
 - **Shadow measurement** of the forgery surface (`shadow: true`). ✅
 - **Authorized read** with a signed membership log + revocation-as-of-time
   (`enforce: true`). ✅
-- **Content encryption** (NIP-44) lives beside signing: a private lens seals
-  `content` and hands keys out per lens or per item (`PRIVACY.md`). A sealed
-  claim nobody here can open is neither shown nor pending under enforce.
+- **Content encryption** (NIP-44) lives beside signing: a private scope (a
+  lens or one item) seals `content` and hands its key to the readers of its
+  audience (`PRIVACY.md`). A sealed claim nobody here can open is neither
+  shown nor pending under enforce.
 - **Not yet** (see the plan): relay write-policy/NIP-42; lens-scoped roles;
   hard (retroactive) revocation tombstones; cross-holon/federated
   authorization import.

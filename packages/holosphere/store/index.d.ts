@@ -104,18 +104,15 @@ export namespace privateLens {
 
 export namespace sealed {
     const SEALED_ENC: 'nip44';
-    const SEALED_V: 1;
+    const SEALED_V: 2;
     const SELF_KID: 'self';
     const MAX_CT_BYTES: number;
     function isSealed(obj: unknown): obj is SealedContent;
-    function kidOf(lensKey: Uint8Array | string): string;
+    function kidOf(key: Uint8Array | string): string;
     function generateKey(): Uint8Array;
     function selfKey(sk: Uint8Array | string): Uint8Array;
-    function wrapCek(cek: Uint8Array | string, lensKey: Uint8Array | string): string;
-    function unwrapCek(k: string, lensKey: Uint8Array | string): Uint8Array;
-    function cekOf(sealed: SealedContent, lensKey: Uint8Array | string): Uint8Array;
-    function sealItem(item: object, opts: { cek: Uint8Array | string; lensKey?: Uint8Array | string; kid?: string; k?: string }): SealedContent;
-    function unsealItem(sealed: SealedContent, opts: { lensKey?: Uint8Array | string; cek?: Uint8Array | string }): Record<string, unknown>;
+    function sealItem(item: object, key: Uint8Array | string): SealedContent;
+    function unsealItem(sealed: SealedContent, key: Uint8Array | string): Record<string, unknown>;
     function sealSelf(obj: object, sk: Uint8Array | string): SealedContent;
     function unsealSelf(sealed: SealedContent, sk: Uint8Array | string): Record<string, unknown>;
     function lockedStub(id: string, sealed?: SealedContent | null): { id: string; _locked: true; _kid: string | null };

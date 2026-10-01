@@ -58,10 +58,13 @@
 		role?: string;
 		tabindex?: number;
 		ariaLabel?: string;
+		/** Sealed on the relays (private scope): a lock before the badges. */
+		locked?: boolean;
 	}
 
 	let {
 		quest,
+		locked = false,
 		variant = 'list',
 		holonID = '',
 		showCreated = false,
@@ -129,8 +132,9 @@
 				/>
 			{/if}
 
-			{#if quest.category || quest.when}
+			{#if quest.category || quest.when || locked}
 				<div class="note-meta">
+					{#if locked}<span class="note-tag" title="Private">🔒</span>{/if}
 					{#if quest.category}<span class="note-tag">{quest.category}</span>{/if}
 					{#if quest.when}<span class="note-when">{formatDate(quest.when)}</span>{/if}
 				</div>
@@ -197,6 +201,7 @@
 				</div>
 
 				<div class="row-meta">
+					{#if locked}<span class="row-tag" title="Private">🔒</span>{/if}
 					{#if quest.category}<span class="row-tag">{quest.category}</span>{/if}
 					{#if quest.when}
 						<span class="row-due" class:is-overdue={isOverdue}>

@@ -18,13 +18,14 @@
     import HomeHexCard from "./federation/HomeHexCard.svelte";
     import { readSettingsHex } from "@holons/core/federation";
     import {
-        getPrivacySnapshot,
-        grantLens,
-        resolveGranteePubkey,
-        revokeLens,
-        setLensPrivacy,
-        type PrivacyLensMode,
-        type PrivacySnapshot
+        audience as readAudience,
+        lock,
+        privacyOfHolon,
+        share,
+        unlock,
+        unshare,
+        type Audience,
+        type LockedScopes,
     } from "@holons/core/privacy";
 
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -103,16 +104,20 @@
     let viewMode: 'list' | 'network' = 'list';
 
     let toast: { kind: 'success' | 'error'; message: string } | null = null;
-    // Private lenses this identity owns, and each partner's key (a personal
-    // holon IS its key; a group holon pins the key that runs it). A sealed lens
-    // sent outbound stays unreadable until the partner holds the key.
-    let privacy: PrivacySnapshot | null = null;
-    let partnerPubkeys: Record<string, string | null> = {};
+    // Locked lenses of this holon and, for the ones this identity owns, who
+    // may read them: an audience of HOLONS. A sealed lens sent outbound stays
+    // unreadable until the partner is in that audience — core hands its
+    // readers the key; nothing here handles one.
+    let locks: LockedScopes = {};
+    let audiences: Record<string, Audience> = {};
     let keyBusy = '';
     let privacyBusy = '';
     $: canOwn = !!holosphere?.loggedIn;
-    const keyShared = (p: PrivacySnapshot | null, pub: string | null, lens: string) =>
-        !!p && !!pub && (p.grants[pub]?.lenses ?? []).includes(normalizeLens(lens));
+    $: ownedLenses = Object.keys(audiences).filter((l) => audiences[l]?.owned);
+    const keyShared = (a: Record<string, Audience>, holonId: string, lens: string) =>
+        !!a[normalizeLens(lens)]?.holons.some((h) => h.holon === holonId);
+    const readerState = (a: Record<string, Audience>, holonId: string): 'synced' | 'pending' | 'no-readers' | null =>
+        ownedLenses.map((l) => a[l]?.holons.find((h) => h.holon === holonId)?.status ?? null).find((s) => !!s) ?? null;
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
     let idStoreUnsubscribe: (() => void) | undefined;
@@ -211,33 +216,36 @@
         }
     }
 
-    async function loadPrivacy(holons: FederatedHolon[]) {
+    async function loadPrivacy(_holons: FederatedHolon[]) {
         if (!holosphere || !currentHolonId) return;
         try {
-            privacy = await getPrivacySnapshot(holosphere, currentHolonId);
+            locks = await privacyOfHolon(holosphere, currentHolonId);
         } catch {
-            privacy = null;
+            locks = {};
         }
-        const keys: Record<string, string | null> = {};
-        for (const h of holons) {
-            try {
-                keys[h.id] = (await resolveGranteePubkey(holosphere, h.id)).pubkey;
-            } catch {
-                keys[h.id] = null;
+        const next: Record<string, Audience> = {};
+        if (holosphere.loggedIn) {
+            for (const lens of Object.keys(locks)) {
+                if (!locks[lens].locked) continue;
+                try {
+                    next[lens] = await readAudience(holosphere, { holon: currentHolonId, lens });
+                } catch {
+                    /* not ours to read */
+                }
             }
         }
-        partnerPubkeys = keys;
-        partnerKeysLoaded = true;
+        audiences = next;
     }
 
     async function togglePrivacy(lens: string) {
         if (!holosphere || !currentHolonId || privacyBusy) return;
-        const next: PrivacyLensMode = privacy?.lenses[lens] === 'private' ? 'public' : 'private';
+        const locking = !locks[lens]?.locked;
         privacyBusy = lens;
         try {
-            await setLensPrivacy(holosphere, currentHolonId, lens, next);
+            if (locking) await lock(holosphere, { holon: currentHolonId, lens });
+            else await unlock(holosphere, { holon: currentHolonId, lens });
             await loadPrivacy(federatedHolons);
-            showToast('success', next === 'private' ? `${lens} is now private` : `${lens} is public again`);
+            showToast('success', locking ? `${lens} is now private` : `${lens} is public again`);
         } catch (err) {
             showToast('error', err instanceof Error ? err.message : 'Failed to change the lens');
         } finally {
@@ -245,19 +253,17 @@
         }
     }
 
-    let partnerKeysLoaded = false;
-
-    /** Hand a partner the lens key, or take it back (forward-only). */
+    /** Let a partner read the lens, or stop it (forward-only). */
     async function toggleKey(holon: FederatedHolon, lens: string) {
-        const pub = partnerPubkeys[holon.id];
-        if (!holosphere || !currentHolonId || keyBusy || !pub) return;
+        if (!holosphere || !currentHolonId || keyBusy) return;
         keyBusy = `${holon.id}|${lens}`;
         try {
-            if (keyShared(privacy, pub, lens)) await revokeLens(holosphere, currentHolonId, lens, pub);
-            else await grantLens(holosphere, currentHolonId, lens, pub);
+            const scope = { holon: currentHolonId, lens: normalizeLens(lens) };
+            if (keyShared(audiences, holon.id, lens)) await unshare(holosphere, scope, holon.id);
+            else await share(holosphere, scope, holon.id);
             await loadPrivacy(federatedHolons);
         } catch (err) {
-            showToast('error', err instanceof Error ? err.message : 'Failed to change the key');
+            showToast('error', err instanceof Error ? err.message : 'Failed to change the sharing');
         } finally {
             keyBusy = '';
         }
@@ -439,7 +445,7 @@
                 <span class="privacy-card__title">🔒 Private lenses</span>
                 <span class="privacy-card__hint">
                     {#if canOwn}
-                        A private lens keeps its content sealed. Send it to a partner with the arrow, then hand over the key.
+                        A private lens keeps its content sealed; this holon's members always read it. Send it to a partner with the arrow, then share it with the key button.
                     {:else}
                         Log in with your key to make a lens private.
                     {/if}
@@ -448,7 +454,7 @@
             {#if canOwn}
                 <div class="privacy-card__lenses">
                     {#each ALL_LENSES as lens}
-                        {@const on = privacy?.lenses[lens] === 'private'}
+                        {@const on = !!locks[lens]?.locked}
                         <button
                             type="button"
                             class="privacy-pill"
@@ -536,12 +542,16 @@
                                     {name}
                                 </button>
                                 <div class="fed-card__id" title={holon.id}>{holon.id}</div>
-                                {#if privacy?.owned.length && partnerKeysLoaded}
-                                    {@const pub = partnerPubkeys[holon.id] ?? null}
-                                    <div class="fed-card__key" class:fed-card__key--none={!pub} title={pub ?? undefined}>
-                                        {pub
-                                            ? `🔑 keys go to ${pub.slice(0, 8)}…`
-                                            : 'No signed key yet — this holon must be founded (by its bot, or by a member\'s key) before a key can be shared'}
+                                {#if ownedLenses.length}
+                                    {@const state = readerState(audiences, holon.id)}
+                                    <div class="fed-card__key" class:fed-card__key--none={state === 'no-readers'}>
+                                        {state === 'no-readers'
+                                            ? 'No readers yet — this holon must be founded (by its bot, or by a member\'s key) before it can read a private lens'
+                                            : state === 'pending'
+                                              ? '🔑 reads the shared lenses once the keys reach it'
+                                              : state === 'synced'
+                                                ? '🔑 reads the shared lenses'
+                                                : ''}
                                     </div>
                                 {/if}
                             </div>
@@ -566,8 +576,8 @@
                                 <span class="lens-list__col" title="Outbound — send to this holon">
                                     <ArrowUp size="12" /> Out
                                 </span>
-                                {#if privacy?.owned.length}
-                                    <span class="lens-list__col" title="Key — the partner can read this private lens">🔑</span>
+                                {#if ownedLenses.length}
+                                    <span class="lens-list__col" title="Shared — the partner can read this private lens">🔑</span>
                                 {/if}
                             </div>
                             {#each ALL_LENSES as lens}
@@ -604,22 +614,19 @@
                                     >
                                         <span class="toggle__dot"></span>
                                     </button>
-                                    {#if privacy?.owned.length}
-                                        {@const owned = privacy.owned.includes(lens)}
-                                        {@const pub = partnerPubkeys[holon.id] ?? null}
-                                        {@const shared = keyShared(privacy, pub, lens)}
+                                    {#if ownedLenses.length}
+                                        {@const owned = ownedLenses.includes(normalizeLens(lens))}
+                                        {@const shared = keyShared(audiences, holon.id, lens)}
                                         {#if owned}
                                             <button
                                                 type="button"
                                                 class="keybtn"
                                                 class:keybtn--on={shared}
                                                 on:click={() => toggleKey(holon, lens)}
-                                                disabled={saving || !!keyBusy || !pub}
+                                                disabled={saving || !!keyBusy}
                                                 aria-pressed={shared}
-                                                aria-label="{shared ? 'Take back' : 'Share'} the key for {lens}"
-                                                title={pub
-                                                    ? (shared ? `Take the ${lens} key back from ${holon.name}` : `Share the ${lens} key with ${holon.name} (${pub.slice(0, 8)}…)`)
-                                                    : `${holon.name} has no signed hub key yet — its bot has to found it first`}
+                                                aria-label="{shared ? 'Stop sharing' : 'Share'} {lens} with {holon.name}"
+                                                title={shared ? `Stop sharing ${lens} with ${holon.name}` : `Share ${lens} with ${holon.name}`}
                                             >🔑</button>
                                         {:else}
                                             <span></span>
@@ -726,7 +733,7 @@
                     <input
                         type="text"
                         bind:value={newHolonId}
-                        placeholder="e.g. -1002352632800 or npub1…"
+                        placeholder="e.g. -1002352632800"
                         class="field__input"
                         required
                     />

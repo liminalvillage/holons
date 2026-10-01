@@ -48,14 +48,23 @@ type AuthorityHost = HoloSphere & {
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 
+/**
+ * The keys that read on behalf of a personal holon: the key itself and
+ * what it linked in its own signed `users` record. Sorted, lowercase.
+ */
+export function personalReaderKeys(hs: HoloSphere, pubkey: string): string[] {
+  const key = String(pubkey).toLowerCase();
+  const members = new Set<string>([key]);
+  for (const u of itemsByAuthor((hs as AuthorityHost).store, key, 'users', key)) {
+    for (const k of linkedKeysOf(u as never)) if (HEX64.test(k)) members.add(k.toLowerCase());
+  }
+  return [...members].sort();
+}
+
 /** Personal holon: the key itself and what it linked, signed by itself. */
 function personalActors(hs: AuthorityHost, holon: string): AcceptedActors {
   const key = holon.toLowerCase();
-  const members = new Set<string>([key]);
-  for (const u of itemsByAuthor(hs.store, key, 'users', key)) {
-    for (const k of linkedKeysOf(u as never)) if (HEX64.test(k)) members.add(k.toLowerCase());
-  }
-  return bootstrapActors({ members, admins: [key], genesis: key });
+  return bootstrapActors({ members: new Set(personalReaderKeys(hs, key)), admins: [key], genesis: key });
 }
 
 /**

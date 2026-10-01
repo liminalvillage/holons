@@ -26,7 +26,6 @@ Nothing else holds data any more — there is no graph database underneath.
 | `records` | `holon\|lens\|id` (`_g` for globals) | `{ item, created_at, pubkey, eventId, origin }` — the CURRENT value at every address; tombstones (`item._deleted === true`) are kept | yes |
 | `events` | event id | the signed envelope; only each author's latest claim per address (NIP-33) — except on an append-only lens, where every entry is its own address and all are kept. This is what signing/enforce and `getLog` read — the old `_events` sidecar is gone | yes |
 | `private` | `scope\|lens\|key` | NIP-44 ciphertext of password lenses | yes |
-| `keys` | `app\|recipient\|holon\|lens\|kid` (or `item:<id>`) | a received lens/item key for sealed content, sealed to the recipient's own key (see PRIVACY.md) | yes |
 | `cursors` | `holon\|lens` | `{ since, syncedAt }` — how far the lens is synced | yes |
 | `backlinks` | source soul | set of hologram-pointer souls | derived (rebuilt on open) |
 
@@ -75,8 +74,8 @@ frozen**: changing them orphans every existing private record.
 
 ## Sealed content
 
-A private lens (PRIVACY.md) keeps the envelope's tags and seals only
-`content`: `{ enc: 'nip44', v: 1, kid, ct, k }`. The wire's `decodeEvent`
+A private scope (PRIVACY.md) keeps the envelope's tags and seals only
+`content`: `{ enc: 'nip44', v: 2, kid, ct }`. The wire's `decodeEvent`
 recognises that shape BEFORE the plain path (a sealed payload has no `id`, so
 the plain path would otherwise keep the ciphertext as an item) and hands it
 to the store's `unseal` hook — the privacy layer's keyring. What opens
@@ -112,7 +111,7 @@ the store on its own, so a crash mid-backfill cannot skip history.
 
 ```ts
 interface StoreAdapter {
-  open(): Promise<Snapshot | null>;   // { records[], events[], private[], keys[], cursors[] }
+  open(): Promise<Snapshot | null>;   // { records[], events[], private[], cursors[] }
   append(ops: Op[]): Promise<void>;   // rec | evt | evt-del | priv | priv-del | key | key-del | cur
   snapshot(full: Snapshot): Promise<void>;
   clear(): Promise<void>;

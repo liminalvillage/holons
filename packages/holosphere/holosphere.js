@@ -106,7 +106,7 @@ class HoloSphere {
         // log kind, never replaced. Registered up front so the transport's
         // filters and the store's decode know them from the first sync.
         for (const lens of storeCfg.appendLenses || cfg.appendLenses || []) this.registerAppendLens(lens);
-        // Private lenses (see privacy.js / PRIVACY.md): the keyring that opens
+        // Private scopes (see privacy.js / PRIVACY.md): the keyring that opens
         // sealed content is the store's unseal hook, so every read path sees
         // plaintext it has keys for and locked stubs for the rest.
         this._privacy = createPrivacy(this);
@@ -965,9 +965,9 @@ class HoloSphere {
         return this._privacy;
     }
 
-    /** Is this lens private, as far as this instance can tell right now? */
-    isPrivateLens(holon, lens) {
-        return this._privacy.isPrivateLens(holon, lens);
+    /** Is this address private — the lens as a whole, or this one item? */
+    isPrivate(holon, lens, item) {
+        return this._privacy.isPrivate(holon, lens, item);
     }
 
     get currentPubkey() {

@@ -4,48 +4,42 @@
 /**
  * @holons/core/privacy
  *
- * Private lenses and key grants. A private lens keeps its content sealed
- * (NIP-44) on the relays; the owner reads on every device holding their key
- * and hands a whole lens or a single item to a pubkey — a personal holon's
- * id, or the key that runs a group holon. Revocation is forward-only.
+ * A private scope — a lens, or one card of it — is sealed on the relays
+ * (NIP-44) and read by an audience of HOLONS: the owner holon always, and
+ * whichever holons it is shared with. Core resolves each holon to the keys
+ * that read on its behalf (a personal holon's key and its linked keys; a
+ * group holon's NIP-29 state) and the holosphere hands those keys out as
+ * NIP-17 grants. No surface ever sees or types a key.
  *
- * The holosphere instance holds the vaults and keys (`hs.privacy`, see
- * packages/holosphere/PRIVACY.md); this domain owns the rules: which lenses
- * may be private, who a "holon" resolves to, and the public hint.
+ * Verbs: `lock`, `unlock`, `share`, `unshare`; `audience` to read; `sync`
+ * when membership changed; `privacyOfHolon` for the flags alone.
+ * See packages/holosphere/PRIVACY.md.
  */
 
-export {
-  acceptGrant,
-  getPrivacySnapshot,
-  grantItem,
-  grantLens,
-  listGrants,
-  revokeItem,
-  revokeLens,
-  setLensPrivacy,
-} from './api.js';
-
-export { resolveGranteePubkey, type ResolvedGrantee } from './resolve.js';
-
+export { audience, isLocked, lock, privacyOfHolon, share, sync, syncScope, unlock, unshare } from './audience.js';
+export { holonReaders, type HolonReadersOptions } from './readers.js';
 export {
   assertPrivatizable,
+  audienceTag,
+  holonOfTag,
+  holonsOf,
   isPubkeyHolonId,
-  lensPrivacy,
-  readPrivacy,
-  withLensPrivacy,
+  normScope,
   type PrivatizableContext,
-} from './settings.js';
-
-export { encodeGrant, isLensGrant, parseGrant } from './grants.js';
-
+} from './scope.js';
 export {
   GRANT_SUBJECT,
   GRANT_TYPE,
   GRANT_VERSION,
   NEVER_PRIVATE_LENSES,
+  type Audience,
+  type AudienceEntry,
+  type AudienceStatus,
+  type AudienceTag,
   type GrantPayload,
-  type GranteeView,
-  type PrivacyLensMode,
-  type PrivacySettings,
-  type PrivacySnapshot,
+  type HolonReaders,
+  type LockedScopes,
+  type ReaderKind,
+  type Scope,
+  type SyncReport,
 } from './types.js';

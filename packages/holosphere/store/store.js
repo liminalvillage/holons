@@ -13,8 +13,6 @@
 //             per address is kept (NIP-33 semantics). This replaces the old
 //             `_events` sidecar: signing reads its envelopes from here.
 //   private   NIP-44 ciphertext of password lenses (see private.js).
-//   keys      received lens/item keys for sealed content (see sealed.js and
-//             privacy.js), each row sealed to this instance's own key.
 //   cursors   lens key → { since, syncedAt }: how far a lens has been synced.
 //   backlinks source soul → Set<pointer soul>: derived from the records that
 //             are hologram pointers; rebuilt on open, maintained on write.
@@ -92,7 +90,6 @@ export class Store {
         this.eventsByAddr = new Map();   // addr → Map<`pubkey|kind`, eventId>
         this.eventIdsByLens = new Map(); // lens key → Set<id>
         this.private = new Map();
-        this.keys = new Map();           // received keys for sealed content (sealed rows)
         this.cursors = new Map();
         this.backlinks = new Map();      // soul → Set<soul>
         this.lensIndex = new Map();      // lens key → Map<id, record>
@@ -122,7 +119,6 @@ export class Store {
             }
             for (const evt of snapshot.events || []) this._indexEvent(evt);
             for (const [k, v] of snapshot.private || []) this.private.set(k, v);
-            for (const [k, v] of snapshot.keys || []) this.keys.set(k, v);
             for (const [k, v] of snapshot.cursors || []) this.cursors.set(k, v);
         }
         this._opened = true;
@@ -145,7 +141,7 @@ export class Store {
     /** Drop everything, in memory and in the adapter. */
     async clear() {
         this.records.clear(); this.events.clear(); this.eventsByAddr.clear(); this.eventIdsByLens.clear();
-        this.private.clear(); this.keys.clear(); this.cursors.clear(); this.backlinks.clear();
+        this.private.clear(); this.cursors.clear(); this.backlinks.clear();
         this.lensIndex.clear(); this.holonIndex.clear();
         this._ops = [];
         if (this.adapter) await this.adapter.clear();
@@ -165,7 +161,6 @@ export class Store {
             records: Array.from(this.records.values()),
             events: Array.from(this.events.values()),
             private: Array.from(this.private.entries()),
-            keys: Array.from(this.keys.entries()),
             cursors: Array.from(this.cursors.entries()),
         };
     }
@@ -175,7 +170,6 @@ export class Store {
             records: this.records.size,
             events: this.events.size,
             private: this.private.size,
-            keys: this.keys.size,
             cursors: this.cursors.size,
             lenses: this.lensIndex.size,
             holons: this.listHolons().length,
@@ -446,31 +440,6 @@ export class Store {
     /** Install the function that opens sealed envelopes (see wire.js). */
     setUnseal(fn) {
         this.wire.setUnseal?.(fn);
-    }
-
-    /** Keep a received key row (already sealed by the caller). */
-    keysPut(k, cipher) {
-        this.keys.set(k, cipher);
-        this._enqueue({ t: 'key', k, v: cipher });
-    }
-
-    keysGet(k) {
-        return this.keys.get(k);
-    }
-
-    /** Every key row whose id starts with `prefix`. */
-    keysList(prefix = '') {
-        const out = [];
-        for (const [k, cipher] of this.keys) {
-            if (k.startsWith(prefix)) out.push({ key: k, cipher });
-        }
-        return out;
-    }
-
-    keysDelete(k) {
-        const had = this.keys.delete(k);
-        if (had) this._enqueue({ t: 'key-del', k });
-        return had;
     }
 
     /**

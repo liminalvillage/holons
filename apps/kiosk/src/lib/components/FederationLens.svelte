@@ -27,11 +27,12 @@
     type FederationLensMode,
   } from "@holons/core/federation";
   import {
-    getPrivacySnapshot,
-    grantLens,
-    resolveGranteePubkey,
-    revokeLens,
-    type PrivacySnapshot,
+    audience as readAudience,
+    privacyOfHolon,
+    share,
+    unshare,
+    type Audience,
+    type LockedScopes,
   } from "@holons/core/privacy";
   import type { HoloSphere } from "holosphere";
   import { getHolosphere } from "$lib/holosphere";
@@ -80,21 +81,21 @@
   let confirmUnlink = false;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   let alive = true;
-  // Private lenses of `holon` this identity owns, and the partner's key. An
-  // outbound flow on a private lens carries sealed items; the key button next
-  // to it is what lets the partner read them (see @holons/core/privacy).
-  let privacy: PrivacySnapshot | null = null;
-  let partnerPub: string | null = null;
-  // How the partner's key was found: its id is a key, or its signed records
-  // name one. Nothing signed → nobody to hand a key to, and the row says so.
-  let partnerVia: "pubkey" | "anchor" | null = null;
+  // Locked lenses of `holon` and, for the ones this identity owns, who may
+  // read them. An outbound flow on a locked lens carries sealed items; the
+  // key button next to it adds the partner to that lens's audience — core
+  // hands the partner's readers the key (see @holons/core/privacy).
+  let locks: LockedScopes = {};
+  let auds: Record<string, Audience> = {};
   let keyBusy = "";
-  $: hasPrivate = !!privacy && privacy.owned.length > 0;
-  const keyShared = (
-    p: PrivacySnapshot | null,
-    pub: string | null,
-    lens: string,
-  ) => !!p && !!pub && (p.grants[pub]?.lenses ?? []).includes(lens);
+  $: ownedLenses = Object.keys(auds).filter((l) => auds[l]?.owned);
+  $: hasPrivate = ownedLenses.length > 0;
+  const keyShared = (a: Record<string, Audience>, lens: string) =>
+    !!a[lens]?.holons.some((h) => h.holon === partner);
+  const partnerEntry = (a: Record<string, Audience>) =>
+    ownedLenses
+      .map((l) => a[l]?.holons.find((h) => h.holon === partner))
+      .find((h) => !!h) ?? null;
 
   $: lenses = [
     ...KIOSK_LENSES,
@@ -221,32 +222,37 @@
   async function loadPrivacy() {
     if (!hs) return;
     try {
-      privacy = await getPrivacySnapshot(hs, holon);
+      locks = await privacyOfHolon(hs, holon);
     } catch {
-      privacy = null;
+      locks = {};
     }
-    try {
-      const g = await resolveGranteePubkey(hs, partner);
-      partnerPub = g.pubkey;
-      partnerVia = g.via;
-    } catch {
-      partnerPub = null;
-      partnerVia = null;
+    const next: Record<string, Audience> = {};
+    for (const lens of Object.keys(locks)) {
+      if (!locks[lens].locked) continue;
+      try {
+        next[lens] = await readAudience(hs, { holon, lens });
+      } catch {
+        /* not ours to read */
+      }
     }
+    auds = next;
   }
 
-  /** Hand the partner the lens key, or take it back (forward-only). */
+  /** Let the partner read the lens, or stop it (forward-only). */
   async function toggleKey(lens: string) {
-    if (!hs || keyBusy || !partnerPub) return;
+    if (!hs || keyBusy) return;
     keyBusy = lens;
     error = "";
     try {
-      if (keyShared(privacy, partnerPub, lens))
-        await revokeLens(hs, holon, lens, partnerPub);
-      else await grantLens(hs, holon, lens, partnerPub);
-      await loadPrivacy();
+      auds = {
+        ...auds,
+        [lens]: keyShared(auds, lens)
+          ? await unshare(hs, { holon, lens }, partner)
+          : await share(hs, { holon, lens }, partner),
+      };
+      window.dispatchEvent(new CustomEvent("kiosk:privacy-changed"));
     } catch (err) {
-      console.error("[kiosk] lens key change failed", err);
+      console.error("[kiosk] lens sharing change failed", err);
       error = $t("fed.keyError");
     } finally {
       keyBusy = "";
@@ -343,9 +349,7 @@
         >
         <div class="mid">
           <span class="lens-name"
-            >{#if !r.master && privacy?.lenses[r.key] === "private"}<Icon
-                name="lock"
-              />{/if}
+            >{#if !r.master && locks[r.key]?.locked}<Icon name="lock" />{/if}
             {r.label}</span
           >
           <div class="flow">
@@ -367,8 +371,8 @@
                 <span class="head-r"></span>
               </button>
             {/each}
-            {#if !r.master && privacy?.owned.includes(r.key)}
-              {@const shared = keyShared(privacy, partnerPub, r.key)}
+            {#if !r.master && auds[r.key]?.owned}
+              {@const shared = keyShared(auds, r.key)}
               <button
                 type="button"
                 class="key"
@@ -378,10 +382,7 @@
                   lens: r.label,
                   name: nameB(),
                 })}
-                title={partnerPub
-                  ? undefined
-                  : $t("fed.keyNoPubkey", { name: nameB() })}
-                disabled={busy || !!keyBusy || !partnerPub}
+                disabled={busy || !!keyBusy}
                 on:click={() => toggleKey(r.key)}
               >
                 <Icon name="key" />
@@ -398,18 +399,14 @@
     <p class="hint">{$t("fed.arrowHint")}</p>
     {#if hasPrivate}
       <p class="hint">{$t("fed.privateHint")}</p>
-      {#if partnerPub}
-        <p class="hint keyto">
-          <Icon name="key" />
-          {$t(partnerVia === "pubkey" ? "fed.keyToOwn" : "fed.keyToAnchor", {
-            name: nameB(),
-            key: `${partnerPub.slice(0, 8)}…`,
-          })}
-        </p>
-      {:else}
-        <p class="hint keyto warn">
-          <Icon name="lock" />
-          {$t("fed.keyNoAnchor", { name: nameB() })}
+      {#if partnerEntry(auds)}
+        {@const entry = partnerEntry(auds)}
+        <p class="hint keyto" class:warn={entry?.status === "no-readers"}>
+          <Icon name={entry?.status === "no-readers" ? "lock" : "key"} />
+          {$t(
+            entry?.status === "no-readers" ? "fed.noReaders" : "fed.sharedWith",
+            { name: nameB() },
+          )}
         </p>
       {/if}
     {/if}

@@ -10,7 +10,7 @@
 // for the current user on the kiosk).
 
 import type { Quest, QuestParticipant } from '../tasks/types.js';
-import { applyOp, creditedForCompletion, type Changeset, type StagedChange } from './stage.js';
+import { applyOp, creditedForCompletion, type Changeset, type PrivacyOp, type StagedChange } from './stage.js';
 
 export interface ApplyPorts {
   get(holon: string, lens: string, key: string): Promise<Quest | null | undefined>;
@@ -20,6 +20,11 @@ export interface ApplyPorts {
    * When absent the completion is a plain status write.
    */
   complete?(holon: string, task: Quest, completer: QuestParticipant): Promise<boolean>;
+  /**
+   * Lock, unlock, share or unshare a card (see `@holons/core/privacy`).
+   * Absent → privacy changes fail with a clear message.
+   */
+  privacy?(holon: string, lens: string, key: string, op: PrivacyOp): Promise<boolean>;
   /** After a participant write landed — e.g. mirror the join into a hologram. */
   afterParticipants?(
     holon: string,
@@ -55,6 +60,12 @@ export async function applyChange(change: StagedChange, ports: ApplyPorts): Prom
     const base = fresh ?? change.before;
     if (!base) return fail(id, 'The task no longer exists.');
     if (base._deleted) return fail(id, 'The task was deleted in the meantime.');
+
+    if (op.type === 'privacy') {
+      if (!ports.privacy) return fail(id, 'This surface cannot change privacy.');
+      const ok = await ports.privacy(holon, lens, key, op);
+      return ok ? { id, ok, record: base } : fail(id, 'The privacy change was refused.');
+    }
 
     if (op.type === 'complete') {
       if (base.status === 'completed') return fail(id, 'Already completed.');

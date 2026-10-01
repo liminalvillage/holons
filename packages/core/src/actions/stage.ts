@@ -24,13 +24,22 @@ import { isEventQuest } from '../tasks/kind.js';
 import { sourceRef } from '../holosphere/provenance.js';
 import { toLocalDateField, toLocalTimeField } from '../datetime/index.js';
 import { personLabel } from './match.js';
-import type { ResolvedAction } from './resolve.js';
+import type { HolonLike, ResolvedAction } from './resolve.js';
 
-export type ChangeKind = 'create' | 'update' | 'participants' | 'hosts' | 'complete';
+export type ChangeKind = 'create' | 'update' | 'participants' | 'hosts' | 'complete' | 'privacy';
 
 export interface ParticipantOp {
   mode: 'add' | 'remove';
   user: QuestParticipant;
+}
+
+export type PrivacyVerb = 'lock' | 'unlock' | 'share' | 'unshare';
+
+export interface PrivacyOp {
+  type: 'privacy';
+  verb: PrivacyVerb;
+  /** The holon shared with / unshared (share, unshare). */
+  withHolon?: HolonLike;
 }
 
 export type ChangeOp =
@@ -38,7 +47,8 @@ export type ChangeOp =
   | { type: 'patch'; fields: Partial<Quest> }
   | { type: 'participants'; ops: ParticipantOp[] }
   | { type: 'hosts'; ops: ParticipantOp[] }
-  | { type: 'complete'; completer: QuestParticipant };
+  | { type: 'complete'; completer: QuestParticipant }
+  | PrivacyOp;
 
 export interface FieldDiff {
   field: string;
@@ -104,6 +114,8 @@ export function applyOp(base: Quest | null, op: ChangeOp): Quest {
       }
       return q;
     }
+    case 'privacy':
+      return { ...(base ?? { id: '' }) } as Quest;
     case 'complete': {
       const q = creditedForCompletion(base as Quest, op.completer);
       const r = applyTaskCompletion(q, String(op.completer.id ?? ''), { isAdmin: true });
@@ -179,6 +191,8 @@ export function touchedFields(op: ChangeOp): string[] {
       return ['hosts'];
     case 'complete':
       return ['status', 'participants'];
+    case 'privacy':
+      return [];
   }
 }
 
@@ -296,6 +310,15 @@ export function stageAction(resolved: ResolvedAction, warnings: string[] = []): 
         }),
       };
     }
+    case 'task_lock':
+    case 'task_unlock':
+    case 'task_share':
+    case 'task_unshare': {
+      const verb: PrivacyVerb =
+        resolved.name === 'task_lock' ? 'lock' : resolved.name === 'task_unlock' ? 'unlock' : resolved.name === 'task_share' ? 'share' : 'unshare';
+      const op: PrivacyOp = { type: 'privacy', verb, ...('withHolon' in resolved ? { withHolon: resolved.withHolon } : {}) };
+      return { change: withPreview({ ...common, action: resolved.name, kind: 'privacy', op }) };
+    }
     case 'task_complete': {
       if (quest.status === 'completed') return { error: `"${quest.title}" is already completed.` };
       if (quest.status === 'stopped') return { error: `"${quest.title}" was stopped and cannot be completed.` };
@@ -348,6 +371,26 @@ export function mergeChange(set: Changeset, change: StagedChange): Changeset {
       op: { type: 'create', task },
       warnings: [...c.warnings, ...change.warnings],
     });
+    return { changes };
+  }
+
+  if (change.kind === 'privacy') {
+    // "Share with Forno" twice is one change; lock then unlock cancel out.
+    const op = change.op as PrivacyOp;
+    const same = (c: StagedChange) => c.kind === 'privacy' && sameTarget(c, change);
+    const opposite: Record<PrivacyVerb, PrivacyVerb> = { lock: 'unlock', unlock: 'lock', share: 'unshare', unshare: 'share' };
+    const twin = changes.findIndex((c) => {
+      if (!same(c)) return false;
+      const o = c.op as PrivacyOp;
+      return (o.verb === op.verb || o.verb === opposite[op.verb]) && (o.withHolon?.id ?? '') === (op.withHolon?.id ?? '');
+    });
+    if (twin < 0) return { changes: [...changes, change] };
+    const prev = changes[twin];
+    if ((prev.op as PrivacyOp).verb === op.verb) {
+      changes[twin] = { ...change, before: prev.before, warnings: [...prev.warnings, ...change.warnings] };
+    } else {
+      changes.splice(twin, 1);
+    }
     return { changes };
   }
 
@@ -454,6 +497,20 @@ export function describeChange(c: StagedChange): string {
     }
     case 'complete':
       return `Complete ${t} (credits ${(c.after ? creditedMembers(c.after) : []).map((p) => personLabel(p)).join(', ') || 'nobody'})`;
+    case 'privacy': {
+      const op = c.op as PrivacyOp;
+      const who = op.withHolon ? op.withHolon.name ?? op.withHolon.id : '';
+      switch (op.verb) {
+        case 'lock':
+          return `Lock ${t} (only this holon and the holons it is shared with can read it)`;
+        case 'unlock':
+          return `Unlock ${t} (anyone can read it)`;
+        case 'share':
+          return `Share ${t} with ${who}`;
+        case 'unshare':
+          return `Stop sharing ${t} with ${who}`;
+      }
+    }
   }
 }
 

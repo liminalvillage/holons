@@ -2,21 +2,20 @@
 //
 // Sealed content: NIP-44 ciphertext inside an ordinary kind-30078 envelope.
 //
-// A private lens keeps the envelope's tags (holon, lens, item id, namespace,
-// time) in the clear so NIP-33 replacement, last-writer-wins and the relay
-// filters work unchanged — only `content` differs. Envelope encryption:
+// A private scope (a lens, or one item) keeps the envelope's tags (holon,
+// lens, item id, namespace, time) in the clear so NIP-33 replacement,
+// last-writer-wins and the relay filters work unchanged — only `content`
+// differs:
 //
-//   { enc: 'nip44', v: 1, kid, ct: nip44(JSON(item), CEK), k: nip44(hex(CEK), K_lens) }
+//   { enc: 'nip44', v: 2, kid, ct: nip44(JSON(item), K_scope) }
 //
-// Every item has its own content key (CEK), wrapped under the lens key
-// (K_lens). Sharing a lens = sharing K_lens; sharing one item = sharing that
-// item's CEK. `kid` is a prefix of sha256(K_lens): a key someone hands us is
-// accepted only if it hashes to the kid it claims (self-certifying), so a
-// bogus key can never evict a good one from the keyring.
+// One key per scope. `kid` is a prefix of sha256(K_scope): a key someone
+// hands us is accepted only if it hashes to the kid it claims
+// (self-certifying), so a bogus key can never evict a good one.
 //
-// The owner's own vault records use `kid: 'self'` and no `k`: their `ct` is
-// sealed under the NIP-44 conversation key of the owner's key with itself,
-// which any device holding that key can recompute.
+// The owner's own vault records use `kid: 'self'`: their `ct` is sealed
+// under the NIP-44 conversation key of the owner's key with itself, which
+// any device holding that key can recompute.
 //
 // What the store keeps when it cannot open a sealed record is a LOCKED STUB
 // `{ id, _locked: true, _kid }` — a record, so it supersedes an older
@@ -29,7 +28,7 @@ import { v2 as nip44 } from 'nostr-tools/nip44';
 import { getPublicKey } from '../nostr-events.js';
 
 export const SEALED_ENC = 'nip44';
-export const SEALED_V = 1;
+export const SEALED_V = 2;
 /** The kid of a record sealed to its author alone (vault records). */
 export const SELF_KID = 'self';
 /** Refuse ciphertext past this: NIP-44 caps plaintext at 65 535 B and relays
@@ -46,12 +45,12 @@ export function isSealed(obj) {
         && !('id' in obj);
 }
 
-/** The key id of a lens key: 16 hex chars of sha256(key). */
-export function kidOf(lensKey) {
-    return bytesToHex(sha256(toBytes(lensKey))).slice(0, 16);
+/** The key id of a scope key: 16 hex chars of sha256(key). */
+export function kidOf(key) {
+    return bytesToHex(sha256(toBytes(key))).slice(0, 16);
 }
 
-/** A fresh 32-byte symmetric key (lens key or content key). */
+/** A fresh 32-byte symmetric scope key. */
 export function generateKey() {
     return randomBytes(32);
 }
@@ -62,59 +61,28 @@ export function selfKey(sk) {
     return nip44.utils.getConversationKey(bytes, getPublicKey(bytes));
 }
 
-/** Wrap a content key under a lens key. */
-export function wrapCek(cek, lensKey) {
-    return nip44.encrypt(bytesToHex(toBytes(cek)), toBytes(lensKey));
-}
-
-/** Unwrap a content key; throws on a wrong lens key. */
-export function unwrapCek(k, lensKey) {
-    return hexToBytes(nip44.decrypt(k, toBytes(lensKey)));
-}
-
 function assertSize(ct) {
     if (ct.length > MAX_CT_BYTES) {
         throw new Error(`sealed content is ${ct.length} bytes; the limit is ${MAX_CT_BYTES} (relays reject larger events)`);
     }
 }
 
-/**
- * Seal an item. `k` may be passed verbatim to keep an existing wrap (an
- * editor that holds only the CEK, not the lens key, re-uses it unchanged).
- */
-export function sealItem(item, { cek, lensKey, kid, k } = {}) {
+/** Seal an item under a scope key. */
+export function sealItem(item, key) {
     if (!item || typeof item !== 'object') throw new Error('sealItem: item must be an object');
-    if (!cek) throw new Error('sealItem: a content key is required');
-    const wrap = k ?? (lensKey ? wrapCek(cek, lensKey) : null);
-    if (!wrap) throw new Error('sealItem: a lens key (or an existing wrap) is required');
-    const keyId = kid ?? (lensKey ? kidOf(lensKey) : null);
-    if (!keyId) throw new Error('sealItem: a kid is required when no lens key is given');
-    const ct = nip44.encrypt(JSON.stringify(item), toBytes(cek));
+    if (!key) throw new Error('sealItem: a scope key is required');
+    const ct = nip44.encrypt(JSON.stringify(item), toBytes(key));
     assertSize(ct);
-    return { enc: SEALED_ENC, v: SEALED_V, kid: keyId, ct, k: wrap };
+    return { enc: SEALED_ENC, v: SEALED_V, kid: kidOf(key), ct };
 }
 
-/**
- * Open a sealed item with either the lens key (unwraps `k`) or the item's own
- * content key. Throws on a wrong key (NIP-44 MAC failure).
- */
-export function unsealItem(sealed, { lensKey, cek } = {}) {
+/** Open a sealed item with its scope key. Throws on a wrong key (NIP-44 MAC failure). */
+export function unsealItem(sealed, key) {
     if (!isSealed(sealed)) throw new Error('unsealItem: not a sealed payload');
-    let contentKey = cek ? toBytes(cek) : null;
-    if (!contentKey) {
-        if (!lensKey) throw new Error('unsealItem: a lens key or content key is required');
-        if (typeof sealed.k !== 'string') throw new Error('unsealItem: payload carries no wrapped content key');
-        contentKey = unwrapCek(sealed.k, lensKey);
-    }
-    const item = JSON.parse(nip44.decrypt(sealed.ct, contentKey));
+    if (!key) throw new Error('unsealItem: a scope key is required');
+    const item = JSON.parse(nip44.decrypt(sealed.ct, toBytes(key)));
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('unsealItem: payload is not an item');
     return item;
-}
-
-/** The content key of a sealed record, via the lens key. */
-export function cekOf(sealed, lensKey) {
-    if (!isSealed(sealed) || typeof sealed.k !== 'string') throw new Error('cekOf: not a wrapped sealed payload');
-    return unwrapCek(sealed.k, lensKey);
 }
 
 /** Seal an object to the author alone (vault records). */
@@ -144,6 +112,6 @@ export function isLocked(item) {
 
 export default {
     SEALED_ENC, SEALED_V, SELF_KID, MAX_CT_BYTES,
-    isSealed, kidOf, generateKey, selfKey, wrapCek, unwrapCek, cekOf,
+    isSealed, kidOf, generateKey, selfKey,
     sealItem, unsealItem, sealSelf, unsealSelf, lockedStub, isLocked,
 };

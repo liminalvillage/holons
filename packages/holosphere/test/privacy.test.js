@@ -1,63 +1,106 @@
-// Private lenses on one instance: sealed on the wire, plaintext for the
-// owner, locked after logout, open again after login.
+// Private scopes on one instance: a locked lens or a locked card is sealed on
+// the wire, plaintext for the owner, locked after logout, open after login.
 import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
-import { generateSecretKey } from '../nostr-events.js';
-import { isSealed, unsealSelf, cekOf } from '../store/sealed.js';
-import { hexToBytes } from '@noble/hashes/utils';
+import { generateSecretKey, getPublicKey } from '../nostr-events.js';
+import { isSealed, unsealSelf, kidOf } from '../store/sealed.js';
 import { isLocked } from '../store/index.js';
 
 afterAll(cleanupTestEnv);
 
 const H = '-100777';
+const content = (holo, lens, id) => JSON.parse(holo.store.getEvents(H, lens, id)[0].content);
 
-describe('privacy: private lenses', () => {
-    test('a private lens seals its content; the owner reads plaintext; the envelope shows nothing', async () => {
+describe('privacy: private scopes', () => {
+    test('locking a lens seals its content; the owner reads plaintext; the envelope shows nothing', async () => {
         const holo = await testSphere('priv-1');
         await holo.ready();
-        await holo.privacy.setLensMode(H, 'quests', 'private');
-        expect(holo.isPrivateLens(H, 'quests')).toBe(true);
-        expect(holo.isPrivateLens(H, 'roles')).toBe(false);
+        await holo.put(H, 'quests', { id: 'q0', title: 'written before the lock' });
+        const r = await holo.privacy.lock({ holon: H, lens: 'quests' });
+        expect(r.rewritten).toBe(1);
+        expect(holo.isPrivate(H, 'quests')).toBe(true);
+        expect(holo.isPrivate(H, 'quests', 'q0')).toBe(true);
+        expect(holo.isPrivate(H, 'roles')).toBe(false);
+        expect(holo.privacy.lockedScopes(H)).toEqual({ quests: { locked: true, items: [] } });
+        expect(holo.privacy.owned({ holon: H, lens: 'quests' })).toBe(true);
 
         await holo.put(H, 'quests', { id: 'q1', title: 'secret plan' });
-        const item = await holo.get(H, 'quests', 'q1');
-        expect(item).toEqual({ id: 'q1', title: 'secret plan' });
+        expect(await holo.get(H, 'quests', 'q1')).toEqual({ id: 'q1', title: 'secret plan' });
+        for (const id of ['q0', 'q1']) {
+            const [evt] = holo.store.getEvents(H, 'quests', id);
+            expect(isSealed(JSON.parse(evt.content))).toBe(true);
+            expect(evt.content).not.toMatch(/secret|before/);
+        }
+        expect(holo.store.getEvents(H, 'quests', 'q1')[0].tags).toEqual(expect.arrayContaining([['h', H], ['l', 'quests'], ['d', `${H}/quests/q1`]]));
 
-        const [evt] = holo.store.getEvents(H, 'quests', 'q1');
-        const payload = JSON.parse(evt.content);
-        expect(isSealed(payload)).toBe(true);
-        expect(evt.content).not.toContain('secret');
-        expect(evt.tags).toEqual(expect.arrayContaining([['h', H], ['l', 'quests'], ['d', `${H}/quests/q1`]]));
-
-        // The vault is sealed to the owner too.
-        const [vault] = holo.store.getEvents(H, '_vault', 'lens:quests');
+        // The vault is sealed to the owner too, under the lens's own id.
+        const [vault] = holo.store.getEvents(H, '_vault', 'quests');
         expect(JSON.parse(vault.content).kid).toBe('self');
-        expect(vault.content).not.toContain(payload.kid);
+        expect(vault.content).not.toContain(content(holo, 'quests', 'q1').kid);
+
+        // Locking twice is a no-op.
+        expect(await holo.privacy.lock({ holon: H, lens: 'quests' })).toEqual({ kid: content(holo, 'quests', 'q1').kid, rewritten: 0 });
     });
 
-    test('an edit keeps the item content key; a public lens stays plain', async () => {
+    test('locking one card seals only that card; the rest of the lens stays plain', async () => {
         const sk = generateSecretKey();
         const holo = await testSphere('priv-2', { privateKey: sk });
         await holo.ready();
-        await holo.privacy.setLensMode(H, 'quests', 'private');
-        await holo.put(H, 'quests', { id: 'q1', title: 'v1' });
-        const first = JSON.parse(holo.store.getEvents(H, 'quests', 'q1')[0].content);
-        await holo.put(H, 'quests', { id: 'q1', title: 'v2' });
-        const second = JSON.parse(holo.store.getEvents(H, 'quests', 'q1')[0].content);
-        const vault = unsealSelf(JSON.parse(holo.store.getEvents(H, '_vault', 'lens:quests')[0].content), sk);
-        const lensKey = hexToBytes(vault.keys.find((k) => k.kid === vault.current).key);
-        expect(cekOf(second, lensKey)).toEqual(cekOf(first, lensKey));
-        expect(second.ct).not.toBe(first.ct);
-        expect((await holo.getAll(H, 'quests')).map((q) => q.title)).toEqual(['v2']);
+        await holo.put(H, 'quests', { id: 'q1', title: 'public one' });
+        await holo.put(H, 'quests', { id: 'q2', title: 'hush' });
+        await holo.privacy.lock({ holon: H, lens: 'quests', item: 'q2' });
+        expect(holo.isPrivate(H, 'quests')).toBe(false);
+        expect(holo.isPrivate(H, 'quests', 'q1')).toBe(false);
+        expect(holo.isPrivate(H, 'quests', 'q2')).toBe(true);
+        expect(holo.privacy.lockedScopes(H)).toEqual({ quests: { locked: false, items: ['q2'] } });
+        expect(isSealed(content(holo, 'quests', 'q2'))).toBe(true);
+        expect(holo.store.getEvents(H, 'quests', 'q1')[0].content).toContain('public one');
 
-        await holo.put(H, 'roles', { id: 'r1', name: 'gardener' });
-        expect(holo.store.getEvents(H, 'roles', 'r1')[0].content).toContain('gardener');
+        // New writes follow the same rule: q2 stays sealed, q3 goes out plain.
+        await holo.put(H, 'quests', { id: 'q2', title: 'hush v2' });
+        await holo.put(H, 'quests', { id: 'q3', title: 'also public' });
+        expect(isSealed(content(holo, 'quests', 'q2'))).toBe(true);
+        expect(holo.store.getEvents(H, 'quests', 'q3')[0].content).toContain('also public');
+        expect((await holo.getAll(H, 'quests')).map((q) => q.title).sort()).toEqual(['also public', 'hush v2', 'public one']);
+
+        // The card's vault record is at `quests/q2`, sealed to the owner, and the key hashes to the envelope's kid.
+        const vault = unsealSelf(JSON.parse(holo.store.getEvents(H, '_vault', 'quests/q2')[0].content), sk);
+        expect(vault.scope).toEqual({ holon: H, lens: 'quests', item: 'q2' });
+        expect(kidOf(vault.keys[0].key)).toBe(content(holo, 'quests', 'q2').kid);
+
+        // Locking the whole lens folds the card's vault: one scope governs.
+        await holo.privacy.lock({ holon: H, lens: 'quests' });
+        expect(holo.privacy.lockedScopes(H)).toEqual({ quests: { locked: true, items: [] } });
+        expect(holo.privacy.scopeOf(H, 'quests', 'q2')).toEqual({ holon: H, lens: 'quests' });
+        expect(isSealed(content(holo, 'quests', 'q1'))).toBe(true);
+    });
+
+    test('unlocking rewrites the scope in the clear and tombstones the vault', async () => {
+        const holo = await testSphere('priv-3');
+        await holo.ready();
+        await holo.privacy.lock({ holon: H, lens: 'quests' });
+        await holo.put(H, 'quests', { id: 'q1', title: 'was sealed' });
+        const r = await holo.privacy.unlock({ holon: H, lens: 'quests' });
+        expect(r.rewritten).toBe(1);
+        expect(holo.isPrivate(H, 'quests')).toBe(false);
+        expect(holo.privacy.lockedScopes(H)).toEqual({});
+        expect(holo.store.getEvents(H, 'quests', 'q1')[0].content).toContain('was sealed');
+        expect(holo.store.get(H, '_vault', 'quests').item._deleted).toBe(true);
+        await holo.put(H, 'quests', { id: 'q2', title: 'plain again' });
+        expect(holo.store.getEvents(H, 'quests', 'q2')[0].content).toContain('plain again');
+
+        // A card: same rule.
+        await holo.privacy.lock({ holon: H, lens: 'quests', item: 'q2' });
+        expect(isSealed(content(holo, 'quests', 'q2'))).toBe(true);
+        await holo.privacy.unlock({ holon: H, lens: 'quests', item: 'q2' });
+        expect(holo.store.getEvents(H, 'quests', 'q2')[0].content).toContain('plain again');
+        expect(holo.privacy.lockedScopes(H)).toEqual({});
     });
 
     test('logout locks every sealed record; login with the same key opens them again', async () => {
         const sk = generateSecretKey();
-        const holo = await testSphere('priv-3', { privateKey: sk });
+        const holo = await testSphere('priv-4', { privateKey: sk });
         await holo.ready();
-        await holo.privacy.setLensMode(H, 'quests', 'private');
+        await holo.privacy.lock({ holon: H, lens: 'quests' });
         await holo.put(H, 'quests', { id: 'q1', title: 'mine' });
 
         await holo.logout();
@@ -65,16 +108,18 @@ describe('privacy: private lenses', () => {
         expect(await holo.getAll(H, 'quests')).toEqual([]);
         expect(await holo.get(H, 'quests', 'q1')).toBeNull();
         expect(await holo.get(H, 'quests', 'q1', null, { includeLocked: true })).toEqual({ id: 'q1', _locked: true, _kid: expect.any(String) });
+        // The flag survives the logout: the vault record is still there (as a stub).
+        expect(holo.isPrivate(H, 'quests')).toBe(true);
 
         await holo.login(sk);
         expect((await holo.getAll(H, 'quests')).map((q) => q.title)).toEqual(['mine']);
     });
 
-    test('a subscriber hides locked records and hears them once keys arrive', async () => {
+    test('a subscription hears a sealed record once the keys load', async () => {
         const sk = generateSecretKey();
-        const holo = await testSphere('priv-4', { privateKey: sk });
+        const holo = await testSphere('priv-5', { privateKey: sk });
         await holo.ready();
-        await holo.privacy.setLensMode(H, 'quests', 'private');
+        await holo.privacy.lock({ holon: H, lens: 'quests' });
         await holo.put(H, 'quests', { id: 'q1', title: 'live' });
         await holo.logout();
 
@@ -89,39 +134,27 @@ describe('privacy: private lenses', () => {
         sub.unsubscribe();
     });
 
-    test('lenses that cannot be private are refused; a global put is never sealed', async () => {
-        const holo = await testSphere('priv-5');
-        await holo.ready();
-        await expect(holo.privacy.setLensMode(H, 'settings', 'private')).rejects.toThrow(/cannot be private/);
-        await expect(holo.privacy.setLensMode(H, '_members', 'private')).rejects.toThrow(/cannot be private/);
-        await expect(holo.privacy.setLensMode(null, 'quests', 'private')).rejects.toThrow(/global/);
-        holo.registerAppendLens('claims');
-        await expect(holo.privacy.setLensMode(H, 'claims', 'private')).rejects.toThrow(/append-only/);
-        await expect(holo.put(H, 'settings', { id: H, name: 'x' }, { privacy: 'private' })).rejects.toThrow(/cannot be private/);
-    });
-
-    test('a per-put override seals one write, and public mode stops sealing new writes', async () => {
+    test('lenses that cannot be private are refused', async () => {
         const holo = await testSphere('priv-6');
         await holo.ready();
-        await holo.put(H, 'notes', { id: 'n1', body: 'hush' }, { privacy: 'private' });
-        expect(holo.store.getEvents(H, 'notes', 'n1')[0].content).not.toContain('hush');
-        expect(await holo.get(H, 'notes', 'n1')).toEqual({ id: 'n1', body: 'hush' });
-        expect(holo.isPrivateLens(H, 'notes')).toBe(true);   // the vault now exists
-
-        await holo.privacy.setLensMode(H, 'notes', 'public');
-        expect(holo.isPrivateLens(H, 'notes')).toBe(false);
-        await holo.put(H, 'notes', { id: 'n2', body: 'loud' });
-        expect(holo.store.getEvents(H, 'notes', 'n2')[0].content).toContain('loud');
-        expect((await holo.getAll(H, 'notes')).map((n) => n.id).sort()).toEqual(['n1', 'n2']);
+        await expect(holo.privacy.lock({ holon: H, lens: 'settings' })).rejects.toThrow(/cannot be private/);
+        await expect(holo.privacy.lock({ holon: H, lens: '_members' })).rejects.toThrow(/cannot be private/);
+        await expect(holo.privacy.lock({ holon: null, lens: 'quests' })).rejects.toThrow(/holon and a lens/);
+        holo.registerAppendLens('claims');
+        await expect(holo.privacy.lock({ holon: H, lens: 'claims' })).rejects.toThrow(/append-only/);
+        await expect(holo.privacy.unlock({ holon: H, lens: 'quests' })).rejects.toThrow(/not a private scope you own/);
     });
 
-    test('a hologram from a private lens is fine, a detached copy is refused', async () => {
+    test('a hologram from a private scope is fine, a detached copy is refused', async () => {
         const holo = await testSphere('priv-7');
         await holo.ready();
-        await holo.privacy.setLensMode(H, 'quests', 'private');
         await holo.put(H, 'quests', { id: 'q1', title: 'x' });
+        await holo.put(H, 'quests', { id: 'q2', title: 'y' });
+        await holo.privacy.lock({ holon: H, lens: 'quests', item: 'q1' });
         await holo.federate(H, '-100888', null, null, true, { inbound: [], outbound: ['quests'] });
         await expect(holo.propagate(H, 'quests', { id: 'q1', title: 'x' }, { useHolograms: false })).rejects.toThrow(/private/);
+        const plain = await holo.propagate(H, 'quests', { id: 'q2', title: 'y' }, { useHolograms: false, propagateToParents: false });
+        expect(plain.errors).toBe(0);
         const r = await holo.propagate(H, 'quests', { id: 'q1', title: 'x' }, { useHolograms: true, propagateToParents: false });
         expect(r.errors).toBe(0);
     });
@@ -130,11 +163,23 @@ describe('privacy: private lenses', () => {
         const holo = await testSphere('priv-8');
         const { parseGrant } = holo.privacy;
         const key = 'ab'.repeat(32);
-        const { kidOf } = await import('../store/sealed.js');
-        expect(parseGrant({ t: 'holons/grant', v: 1, holon: H, lens: 'quests', kid: kidOf(key), key })).toMatchObject({ holon: H, key });
-        expect(parseGrant({ t: 'holons/grant', v: 1, holon: H, lens: 'quests', kid: '0'.repeat(16), key })).toBeNull();
-        expect(parseGrant({ t: 'holons/grant', v: 1, holon: H, lens: 'quests', kid: kidOf(key), item: 'q1', cek: 'zz' })).toBeNull();
+        expect(parseGrant({ t: 'holons/grant', v: 2, holon: H, lens: 'quests', kid: kidOf(key), key })).toEqual({ t: 'holons/grant', v: 2, holon: H, lens: 'quests', kid: kidOf(key), key, at: expect.any(String) });
+        expect(parseGrant({ t: 'holons/grant', v: 2, holon: H, lens: 'quests', item: 'q1', kid: kidOf(key), key })).toMatchObject({ item: 'q1' });
+        expect(parseGrant({ t: 'holons/grant', v: 2, holon: H, lens: 'quests', kid: '0'.repeat(16), key })).toBeNull();
+        expect(parseGrant({ t: 'holons/grant', v: 1, holon: H, lens: 'quests', kid: kidOf(key), key })).toBeNull();
         expect(parseGrant('not json')).toBeNull();
         expect(await holo.privacy.acceptGrant({ t: 'nope' })).toEqual({ accepted: false, reason: 'malformed' });
+    });
+
+    test('a personal holon locks its own lens; the id is the key', async () => {
+        const sk = generateSecretKey();
+        const me = getPublicKey(sk);
+        const holo = await testSphere('priv-9', { privateKey: sk });
+        await holo.ready();
+        await holo.privacy.lock({ holon: me, lens: 'notes' });
+        await holo.put(me, 'notes', { id: 'n1', body: 'diary' });
+        expect(JSON.parse(holo.store.getEvents(me, 'notes', 'n1')[0].content).ct).toBeDefined();
+        expect(await holo.get(me, 'notes', 'n1')).toEqual({ id: 'n1', body: 'diary' });
+        expect(holo.privacy.ownedScopes(me)).toEqual([{ holon: me, lens: 'notes' }]);
     });
 });

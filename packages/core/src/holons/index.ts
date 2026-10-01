@@ -37,6 +37,7 @@ import {
   groupStateHash,
 } from '../nostr/groups.js';
 import type { EventTemplate, NostrEventLike, ProjectionCtx } from '../nostr/types.js';
+import { sync as syncPrivacy } from '../privacy/audience.js';
 import { addHolonMember, foundHolon, holonMembers, myHolonRole, newHolonId, removeHolonMember } from '../protocol/founding.js';
 import { readMembersLog } from '../protocol/membership.js';
 import type { Role } from '../protocol/types.js';
@@ -231,6 +232,7 @@ export async function approveJoin(hs: HoloSphere, holon: string, pubkey: string,
   const ctx = holonProjectionCtx(hs, holon, opts);
   hs.publishNostrEvents(signer.sign(groupPutUserTemplate(ctx, holon, pub, role)));
   await publishGroupState(hs, holon, signer, opts);
+  afterRoster(hs, holon);
   return pub;
 }
 
@@ -240,7 +242,17 @@ export async function removeSeat(hs: HoloSphere, holon: string, pubkey: string, 
   const ctx = holonProjectionCtx(hs, holon, opts);
   hs.publishNostrEvents(signer.sign(groupRemoveUserTemplate(ctx, holon, pub)));
   await publishGroupState(hs, holon, signer, opts);
+  afterRoster(hs, holon);
   return pub;
+}
+
+/**
+ * A roster change moves the holon's private scopes with it: the new member
+ * gets every key, the removed one loses them. Fire-and-forget — the seat is
+ * done; the keys follow as the relay allows.
+ */
+function afterRoster(hs: HoloSphere, holon: string): void {
+  syncPrivacy(hs, holon).catch((e) => console.warn('[holons] privacy sync after roster change failed:', (e as Error)?.message));
 }
 
 // ── Group state ────────────────────────────────────────────────────────────

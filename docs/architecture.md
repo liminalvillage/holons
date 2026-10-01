@@ -124,13 +124,14 @@ cache (`packages/holosphere/STORE.md`).
   — and external edits of those kinds fold back into the record.
 - Private (password) lenses are NIP-44 encrypted with a scrypt-derived key
   and never leave the device.
-- A **private lens** (`packages/holosphere/PRIVACY.md`, `@holons/core/privacy`)
-  travels sealed: the envelope's tags stay public, `content` is NIP-44
-  ciphertext under a per-item key wrapped by the lens key. The owner's keys
-  sit in a self-sealed `_vault` record; a lens or a single item is shared
-  with a pubkey by a NIP-17 grant. Revocation rotates and rewrites
-  (forward-only). Never private: settings, membership, users, logs,
-  standard-kind lenses.
+- A **private scope** (`packages/holosphere/PRIVACY.md`, `@holons/core/privacy`)
+  is a lens or one item of it that travels sealed: the envelope's tags stay
+  public, `content` is NIP-44 ciphertext under the scope's key. The scope is
+  private exactly when its self-sealed `_vault` record exists. Who may read
+  is an audience of *holons* (the owner holon always included) that core
+  resolves to reader keys through NIP-29 state; keys reach readers as NIP-17
+  grants. Revocation rotates and rewrites (forward-only). Never private:
+  settings, membership, users, logs, standard-kind lenses.
 - An **append-only lens** (`appendLenses`: `flow_claims`, `flow_mints`,
   `governance_votes`, `_policy`, `_checkpoints`) rides the
   regular kind 1808 instead: every signed entry is its own record, never
