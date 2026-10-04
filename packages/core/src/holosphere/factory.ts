@@ -23,7 +23,7 @@ import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import { PROTOCOL_LENSES } from '../protocol/events.js';
 import type { ProjectionHook } from '../nostr/types.js';
-import { createReadAuthority } from './authority.js';
+import { createReadAuthority, type VouchContext } from './authority.js';
 
 /** Where the local store persists (see holosphere/STORE.md). */
 export interface HoloSphereStoreOptions {
@@ -165,7 +165,11 @@ export function createHoloSphere(
   const authority = enforce === false ? null : createReadAuthority();
   const enforced = authority
     ? {
-        signing: { enforce: 'authority', authority: (holo: HoloSphere, holon: string) => authority.authorityFor(holo, holon) },
+        signing: {
+          enforce: 'authority',
+          authority: (holo: HoloSphere, holon: string) => authority.authorityFor(holo, holon),
+          vouch: (holo: HoloSphere, ctx: VouchContext) => authority.vouchFor(holo, ctx),
+        },
         privacy: { acceptGrantFrom: (holo: HoloSphere, holon: string, lens: string, sender: string) => authority.acceptGrantFrom(holo, holon, lens, sender) },
       }
     : {};

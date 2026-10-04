@@ -319,6 +319,21 @@ export interface PrivacyOptions {
   acceptGrantFrom?: (holo: HoloSphere, holon: string, lens: string, sender: string) => boolean | Promise<boolean>;
 }
 
+/** What the `vouch` hook is asked about: one claim at one address. */
+export interface VouchContext {
+  /** The holon the claim was written into. */
+  holon: string;
+  lens: string;
+  id: string;
+  /** The claim as signed: a `{ id, soul }` pointer or a `_federation`-stamped copy. */
+  claim: Record<string, any>;
+  /** Who signed it and when (seconds). */
+  author: string;
+  createdAt: number;
+  /** What a pointer resolves to (through the source holon's own enforcement); the claim itself for a copy. */
+  resolved: Record<string, any>;
+}
+
 export interface SigningOptions {
   /** Measure what enforce would drop, without changing output. */
   shadow?: boolean;
@@ -330,6 +345,12 @@ export interface SigningOptions {
   enforce?: boolean | 'membership' | 'authority';
   /** For `enforce: 'authority'`: who counts for a holon, as `(pubkey, created_at) => boolean`, or null. */
   authority?: (holo: HoloSphere, holon: string) => Promise<((pubkey: string, createdAt: number) => boolean) | null> | ((pubkey: string, createdAt: number) => boolean) | null;
+  /**
+   * For enforced reads: may a POINTER (hologram) or federated copy signed by
+   * an unseated key count anyway? Asked with the claim, its author and the
+   * value the pointer resolves to; tombstones are never put to it.
+   */
+  vouch?: (holo: HoloSphere, ctx: VouchContext) => Promise<boolean> | boolean;
   /** Lenses read as per-author aggregates (participation, reactions, …). */
   perActorLenses?: string[];
   verbose?: boolean;

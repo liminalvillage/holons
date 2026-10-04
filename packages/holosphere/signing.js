@@ -41,6 +41,12 @@ function freshReport() {
  * `genesis` event). An add/remove op only takes effect if its author was an
  * admin at that point in the fold. Revocation is as-of-time: a data event signed
  * before a key was removed stays authorized.
+ *
+ * The anchor itself is not as-of-time: the genesis key speaks for the holon
+ * at EVERY instant, including before it wrote the genesis. A log founded
+ * late (a bot that minted its key long before it founded a personal holon's
+ * log) would otherwise disown the founder's own history on every enforcing
+ * read. Ops stay time-gated: nobody else counts before genesis.
  */
 export function buildTimeline(events, pinnedGenesis) {
   // `eventToItem` on purpose: this only ever folds `_members` envelopes, an
@@ -70,10 +76,12 @@ export function buildTimeline(events, pinnedGenesis) {
     return roles;
   }
 
+  const isAnchor = (pub) => !!genesis && pub === genesis.author;
+
   return {
     genesisPub: genesis ? genesis.author : null,
-    isAuthorizedAt: (pub, t) => { const r = stateAt(t).get(pub); return r === 'admin' || r === 'member'; },
-    roleAt: (pub, t) => stateAt(t).get(pub) || null,
+    isAuthorizedAt: (pub, t) => { if (isAnchor(pub)) return true; const r = stateAt(t).get(pub); return r === 'admin' || r === 'member'; },
+    roleAt: (pub, t) => (isAnchor(pub) ? 'admin' : stateAt(t).get(pub) || null),
     currentMembers: () => stateAt(Number.MAX_SAFE_INTEGER),
   };
 }
@@ -83,7 +91,7 @@ const newestFirst = (a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 
 
 export function createSigner({
   privateKey, kind = HOLOSPHERE_KIND, verbose = false,
-  shadow = false, enforce = false, perActorLenses = [], authority = null,
+  shadow = false, enforce = false, perActorLenses = [], authority = null, vouch = null,
 } = {}) {
   if (!privateKey) throw new Error('createSigner: a privateKey is required');
   const pubkey = getPublicKey(privateKey);
@@ -99,6 +107,14 @@ export function createSigner({
   //      holon — such a holon reads unenforced (every claim, as before).
   //      This is how an app plugs its own rule (a founded log, else a
   //      bootstrap from the holon's own signed records) into every read.
+  //   vouch — `vouch(holo, ctx)` may accept a claim whose author is NOT
+  //      seated when something else speaks for it. Only POINTERS (holograms)
+  //      and federated copies are ever put to it: a pointer carries no
+  //      content of its own, so the question is not "who wrote it" but "does
+  //      its target name this holon" / "does its source stand behind it".
+  //      Tombstones from unseated keys are never vouched: an unseated author
+  //      can retract their own pointer (the store keeps one claim per author
+  //      per address) but never remove another author's.
   const enforceMode = enforce === 'membership' ? 'membership'
     : enforce === 'authority' ? 'authority'
     : (enforce ? 'federation' : false);
@@ -152,6 +168,53 @@ export function createSigner({
     const readKeys = new Set(holo._allowedAuthors || []);
     readKeys.add(pubkey);
     return (pub) => readKeys.has(pub);
+  }
+
+  /**
+   * The resolved value a vouched claim stands for, or null when nothing
+   * vouches. `rawItem` is the plain read's resolution of this id when it has
+   * one (saves resolving the same pointer twice).
+   */
+  async function vouchedValue(holo, holon, lens, id, event, rawItem) {
+    if (typeof vouch !== 'function') return null;
+    const claim = claimAt(holo, event, lens, id);
+    if (!claim || claim._deleted || isLocked(claim)) return null;
+    const pointer = isHologram(claim);
+    if (!pointer && !claim._federation) return null;
+    let resolved = claim;
+    if (pointer) {
+      if (rawItem && rawItem._hologram?.soul === claim.soul) resolved = rawItem;
+      else {
+        try {
+          const res = await holo.resolveHologramDetailed(claim, { followHolograms: true });
+          resolved = res.status === 'resolved' ? res.data : null;
+        } catch { resolved = null; }
+      }
+      if (!resolved) return null;   // an unresolved pointer vouches for nothing
+    }
+    let ok = false;
+    try {
+      ok = !!(await vouch(holo, {
+        holon: wireHolon(holon), lens, id: String(id), claim,
+        author: event.pubkey, createdAt: event.created_at, resolved,
+      }));
+    } catch (e) { vlog('vouch hook failed:', e?.message); }
+    return ok ? resolved : null;
+  }
+
+  /**
+   * The claims that count at one address, newest first: seated authors'
+   * envelopes plus vouched pointers/copies. `resolved` maps a vouched
+   * event's id to the value it stands for.
+   */
+  async function countedEvents(holo, holon, lens, id, isAuth, rawItem) {
+    const events = [], resolved = new Map();
+    for (const e of envelopes(holo, holon, lens, id)) {
+      if (isAuth(e.pubkey, e.created_at)) { events.push(e); continue; }
+      const value = await vouchedValue(holo, holon, lens, id, e, rawItem);
+      if (value) { events.push(e); resolved.set(e.id, value); }
+    }
+    return { events: events.sort(newestFirst), resolved };
   }
 
   /** Tombstone handling for an authorized claim. Pointer claims are returned
@@ -243,7 +306,7 @@ export function createSigner({
       for (const id of ids) {
         const events = envelopes(holo, holon, lens, id);
         report.items++;
-        const authorized = events.filter((e) => isAuth(e.pubkey, e.created_at)).sort(newestFirst);
+        const { events: authorized, resolved } = await countedEvents(holo, holon, lens, id, isAuth, rawById.get(id));
         if (authorized.length) {
           const claim = claimAt(holo, authorized[0], lens, id);
           if (claim && claim._deleted && !opts.includeDeleted) {
@@ -252,7 +315,10 @@ export function createSigner({
           }
           if (isLocked(claim)) continue;   // sealed, no key: neither shown nor pending
           let item = claim;
-          if (isHologram(claim) && !claim._deleted) {
+          if (resolved.has(authorized[0].id)) {
+            // A vouched pointer: the value it was vouched for.
+            item = resolved.get(authorized[0].id);
+          } else if (isHologram(claim) && !claim._deleted) {
             // A pointer claim: take the plain read's resolution of it when it
             // has one, otherwise resolve it now.
             item = rawById.get(id);
@@ -281,9 +347,7 @@ export function createSigner({
     async resolveItem(holo, holon, lens, key, opts = {}) {
       const isAuth = await authPredicate(holo, holon);
       if (!isAuth) return undefined;   // no authority defined: the caller keeps its plain read
-      const events = envelopes(holo, holon, lens, key)
-        .filter((e) => isAuth(e.pubkey, e.created_at))
-        .sort(newestFirst);
+      const { events } = await countedEvents(holo, holon, lens, key, isAuth);
       if (!events.length) return null;
       return materialize(claimAt(holo, events[0], lens, key), opts);
     },

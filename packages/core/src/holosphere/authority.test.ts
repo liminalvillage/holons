@@ -125,3 +125,94 @@ describe('createReadAuthority through the factory', () => {
     expect((await hs.getAll('-700', 'tasks')).map((t: { id: string }) => t.id)).toEqual(['b']);
   });
 });
+
+describe('vouchFor: pointers and copies an unseated key wrote', () => {
+  const P = '235'; // a Telegram-id personal holon
+  const S = '-100950'; // the quest's home, nobody founded it: reads plain
+  const R = '-100951'; // a founded holon that receives from a partner
+  const pointer = (id: string, source = S) => ({ id, soul: `${APP}/${source}/quests/${id}` });
+
+  it('the target vouches: the quest it points at names this holon', async () => {
+    const bot = testKey(), stranger = testKey();
+    const hs = sphere(bot.sk);
+    await hs.ready();
+    await hs.foundHolon(P);
+    hs.store.apply(signed(stranger.sk, S, 'quests', { id: 'q1', title: 'joined', participants: [{ id: 235 }] }, T0), { origin: 'remote' });
+    hs.store.apply(signed(stranger.sk, S, 'quests', { id: 'q2', title: 'hosted', hosts: [{ id: '235' }] }, T0), { origin: 'remote' });
+    hs.store.apply(signed(stranger.sk, S, 'quests', { id: 'q3', title: 'not mine', participants: [{ id: 42 }], initiator: { id: 235 } }, T0), { origin: 'remote' });
+    for (const id of ['q1', 'q2', 'q3']) hs.store.apply(signed(stranger.sk, P, 'quests', pointer(id), T0 + 1), { origin: 'remote' });
+
+    const authority = createReadAuthority();
+    const ctx = (id: string, resolved: Record<string, unknown>) => ({ holon: P, lens: 'quests', id, claim: pointer(id), author: stranger.pk, createdAt: T0 + 1, resolved });
+    expect(await authority.vouchFor(hs, ctx('q1', { id: 'q1', participants: [{ id: 235 }] }))).toBe(true);
+    expect(await authority.vouchFor(hs, ctx('q2', { id: 'q2', hosts: [{ id: '235' }] }))).toBe(true);
+    expect(await authority.vouchFor(hs, ctx('q3', { id: 'q3', participants: [{ id: 42 }], initiator: { id: 235 } }))).toBe(false);
+    // A pointer at the holon's own quest vouches for nothing.
+    expect(await authority.vouchFor(hs, { ...ctx('q1', { id: 'q1', participants: [{ id: 235 }] }), claim: pointer('q1', P) })).toBe(false);
+
+    // End to end through the factory's own wiring: the enforced read shows q1 and q2, q3 waits.
+    expect((await hs.getAll(P, 'quests')).map((q: { id: string }) => q.id).sort()).toEqual(['q1', 'q2']);
+    expect((await hs.getPending(P, 'quests')).map((q: { id: string }) => q.id)).toEqual(['q3']);
+    expect((await hs.get(P, 'quests', 'q1'))?.title).toBe('joined');
+    await hs.close();
+  });
+
+  it('a pubkey holon is named by its key or any key it linked', async () => {
+    const me = testKey(), linked = testKey(), other = testKey();
+    const hs = sphere(me.sk);
+    await hs.ready();
+    hs.store.apply(signed(me.sk, me.pk, 'users', { id: 'me', linkedKeys: [linked.pk] }, T0), { origin: 'remote' });
+    const authority = createReadAuthority();
+    const ctx = (resolved: Record<string, unknown>) => ({ holon: me.pk, lens: 'quests', id: 'q', claim: pointer('q'), author: other.pk, createdAt: T0, resolved });
+    expect(await authority.vouchFor(hs, ctx({ participants: [{ pubkey: linked.pk }] }))).toBe(true);
+    expect(await authority.vouchFor(hs, ctx({ participants: [me.pk] }))).toBe(true);
+    expect(await authority.vouchFor(hs, ctx({ participants: [{ pubkey: other.pk }] }))).toBe(false);
+    await hs.close();
+  });
+
+  it('the source speaks for its copy: an accepted author of the source, and this holon lets the source in', async () => {
+    const me = testKey(), partner = testKey(), stranger = testKey();
+    const hs = sphere(me.sk);
+    await hs.ready();
+    await hs.foundHolon(R);
+    hs.store.apply(signed(partner.sk, S, '_members', { id: 'genesis', op: 'genesis', role: 'admin' }, T0), { origin: 'remote' });
+    const copy = { id: 'c1', title: 'from the partner', _federation: { origin: S, sourceLens: 'quests' } };
+    const authority = createReadAuthority();
+    const ctx = (author: string, claim: Record<string, unknown> = copy) => ({ holon: R, lens: 'quests', id: 'c1', claim, author, createdAt: T0 + 5, resolved: claim });
+
+    // No federation record yet: nothing lets the source in.
+    expect(await authority.vouchFor(hs, ctx(partner.pk))).toBe(false);
+    await hs.putGlobal('federation', { id: R, name: R, federated: [S], inbound: [S], outbound: [] });
+    authority.invalidate();
+    expect(await authority.vouchFor(hs, ctx(partner.pk))).toBe(true);
+    expect(await authority.vouchFor(hs, ctx(stranger.pk))).toBe(false); // not accepted in the source
+    expect(await authority.vouchFor(hs, ctx(partner.pk, { ...copy, _federation: { origin: '-100999' } }))).toBe(false); // another source
+
+    // A per-lens config narrows it.
+    await hs.putGlobal('federation', { id: R, name: R, federated: [S], inbound: [S], outbound: [], lensConfig: { [S]: { inbound: ['library'], outbound: [] } } });
+    authority.invalidate();
+    expect(await authority.vouchFor(hs, ctx(partner.pk))).toBe(false);
+    await hs.putGlobal('federation', { id: R, name: R, federated: [S], inbound: [S], outbound: [], lensConfig: { [S]: { inbound: ['quests'], outbound: [] } } });
+    authority.invalidate();
+    expect(await authority.vouchFor(hs, ctx(partner.pk))).toBe(true);
+
+    // End to end: the partner's copy shows in the enforced read, the stranger's does not.
+    hs.store.apply(signed(partner.sk, R, 'quests', copy, T0 + 5), { origin: 'remote' });
+    hs.store.apply(signed(stranger.sk, R, 'quests', { ...copy, id: 'c2' }, T0 + 5), { origin: 'remote' });
+    expect((await hs.getAll(R, 'quests')).map((q: { id: string }) => q.id)).toEqual(['c1']);
+    await hs.close();
+  });
+
+  it('a record the receiver did not sign lets nothing in', async () => {
+    const me = testKey(), partner = testKey(), squatter = testKey();
+    const hs = sphere(me.sk);
+    await hs.ready();
+    await hs.foundHolon(R);
+    hs.store.apply(signed(partner.sk, S, '_members', { id: 'genesis', op: 'genesis', role: 'admin' }, T0), { origin: 'remote' });
+    hs.store.apply(signed(squatter.sk, '_g', 'federation', { id: R, federated: [S], inbound: [S], outbound: [] }, T0 + 1), { origin: 'remote' });
+    const copy = { id: 'c1', title: 'copy', _federation: { origin: S } };
+    const authority = createReadAuthority();
+    expect(await authority.vouchFor(hs, { holon: R, lens: 'quests', id: 'c1', claim: copy, author: partner.pk, createdAt: T0 + 5, resolved: copy })).toBe(false);
+    await hs.close();
+  });
+});

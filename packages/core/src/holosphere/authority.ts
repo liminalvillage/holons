@@ -24,6 +24,7 @@
 
 import type { HoloSphere } from 'holosphere';
 import { holonAnchor, isPubkeyHolon, itemsByAuthor, membersEvents } from 'holosphere/authority.js';
+import { eventToItem } from 'holosphere/nostr-events.js';
 import { isValidCell } from 'h3-js';
 import { bootstrapFromLenses } from '../protocol/bootstrap.js';
 import { actorsFromMembersLog, bootstrapActors } from '../protocol/membership.js';
@@ -98,9 +99,28 @@ export interface ReadAuthorityOptions {
   ttlMs?: number;
 }
 
+/** What the signer asks about a pointer or federated copy an unseated key wrote (holosphere `VouchContext`). */
+export interface VouchContext {
+  holon: string;
+  lens: string;
+  id: string;
+  claim: Record<string, any>;
+  author: string;
+  createdAt: number;
+  resolved: Record<string, any>;
+}
+
 export interface ReadAuthority {
   /** The signer hook: `(pubkey, created_at) => boolean`, or null when nobody is defined. */
   authorityFor(hs: HoloSphere, holon: string): Promise<AuthorityPredicate | null>;
+  /**
+   * The signer's vouch hook: may a pointer or federated copy count although
+   * its author is not seated in the holon it was written into? Yes when
+   * the TARGET vouches (the quest it points at names this holon among its
+   * participants or hosts), or when the SOURCE speaks for it (its author is
+   * accepted in the source holon and this holon receives from that source).
+   */
+  vouchFor(hs: HoloSphere, ctx: VouchContext): Promise<boolean>;
   /** The privacy hook: may `sender` hand out keys of `holon`? */
   acceptGrantFrom(hs: HoloSphere, holon: string, lens: string, sender: string): Promise<boolean>;
   /** Forget cached answers (all, or one holon's). */
@@ -142,6 +162,62 @@ export async function writeAcceptance(hs: HoloSphere, holon: string, pubkey?: st
   return { status: accepted ? 'accepted' : 'held', anchor: summary.anchor, source };
 }
 
+/** `app/holon/lens/key` → its holon, or null. */
+function soulHolon(soul: unknown): string | null {
+  if (typeof soul !== 'string') return null;
+  const parts = soul.split('/');
+  return parts.length >= 4 && parts[1] ? parts[1] : null;
+}
+
+/** Where a pointer or federated copy comes from: the soul's holon, else the `_federation.origin` stamp. */
+export function sourceHolonOf(claim: Record<string, any> | null | undefined): string | null {
+  if (!claim || typeof claim !== 'object') return null;
+  return soulHolon(claim.soul) ?? (typeof claim._federation?.origin === 'string' && claim._federation.origin ? String(claim._federation.origin) : null);
+}
+
+/**
+ * Does an item name this holon as one of its people? Participants and hosts
+ * are matched by id (a Telegram id IS the personal holon id) and by pubkey
+ * (a pubkey holon and the keys it linked). The initiator does not count:
+ * creating a quest elsewhere is not taking part in it here.
+ */
+export function namesHolon(item: Record<string, any> | null | undefined, holon: string, keys: Iterable<string> = []): boolean {
+  if (!item || typeof item !== 'object') return false;
+  const h = String(holon).trim().toLowerCase();
+  const accepted = new Set<string>([h]);
+  for (const k of keys) accepted.add(String(k).toLowerCase());
+  const matches = (p: unknown): boolean => {
+    if (p == null) return false;
+    if (typeof p !== 'object') return accepted.has(String(p).toLowerCase());
+    const o = p as Record<string, unknown>;
+    for (const f of ['id', 'pubkey', 'userId', 'holon']) if (o[f] != null && accepted.has(String(o[f]).toLowerCase())) return true;
+    return false;
+  };
+  for (const field of ['participants', 'hosts']) {
+    const list = item[field];
+    if (Array.isArray(list) && list.some(matches)) return true;
+  }
+  return false;
+}
+
+/**
+ * Does `holon` receive `lens` from `source`? Read from the holon's own
+ * federation record as signed by one of its accepted keys — a partner that
+ * only linked from its side has not been let in.
+ */
+function receivesFrom(hs: AuthorityHost, holon: string, source: string, lens: string, accepted: AuthorityPredicate): boolean {
+  const events = hs.store.getEvents(null, 'federation', holon)
+    .filter((e) => accepted(String(e.pubkey).toLowerCase(), e.created_at))
+    .sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
+  if (!events.length) return false;
+  const record = eventToItem(events[0]) as Record<string, any> | null;
+  if (!record) return false;
+  const partners: unknown[] = Array.isArray(record.inbound) ? record.inbound : Array.isArray(record.federated) ? record.federated : [];
+  if (!partners.some((p) => String(p) === source)) return false;
+  const cfg = record.lensConfig?.[source];
+  return !cfg || !Array.isArray(cfg.inbound) || cfg.inbound.includes(lens);
+}
+
 /** One cached rule for an instance: what the factory wires into the signer and the privacy layer. */
 export function createReadAuthority({ ttlMs = 10_000 }: ReadAuthorityOptions = {}): ReadAuthority {
   const cache = new Map<string, { at: number; value: Promise<HolonAuthority> }>();
@@ -178,6 +254,19 @@ export function createReadAuthority({ ttlMs = 10_000 }: ReadAuthorityOptions = {
       const { actors } = await resolve(hs, holon);
       if (!actors) return null;
       return (pubkey, createdAt) => actors.isAcceptedAt(String(pubkey).toLowerCase(), createdAt);
+    },
+    async vouchFor(hs, ctx) {
+      const host = hs as AuthorityHost;
+      const h = String(ctx.holon ?? '').trim();
+      const source = sourceHolonOf(ctx.claim);
+      if (!h || !source || source === h) return false;
+      // The target vouches: the quest it points at names this holon.
+      if (soulHolon(ctx.claim?.soul) && namesHolon(ctx.resolved, h, isPubkeyHolon(h) ? personalReaderKeys(hs, h) : [])) return true;
+      // The source speaks for it: its accepted author, and this holon lets that source in.
+      const srcAccepted = await this.authorityFor(hs, source);
+      if (!srcAccepted || !srcAccepted(String(ctx.author).toLowerCase(), ctx.createdAt)) return false;
+      const mine = await this.authorityFor(hs, h);
+      return !!mine && receivesFrom(host, h, source, ctx.lens, mine);
     },
     async acceptGrantFrom(hs, holon, _lens, sender) {
       const s = String(sender ?? '').toLowerCase();

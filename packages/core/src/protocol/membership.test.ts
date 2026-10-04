@@ -28,6 +28,11 @@ describe('actorsFromMembersLog', () => {
     expect(actors.isAcceptedAt(alice.pk, T0 + 5)).toBe(false);
     expect(actors.isAcceptedAt(alice.pk, T0 + 15)).toBe(true);
     expect(actors.roleAt(alice.pk, T0 + 15)).toBe('member');
+    // The anchor is not as-of-time: the genesis key speaks for the holon
+    // before it founded the log too (a late-founded log keeps its history).
+    expect(actors.isAcceptedAt(holon.pk, T0 - 100)).toBe(true);
+    expect(actors.roleAt(holon.pk, T0 - 100)).toBe('admin');
+    expect(actors.isAcceptedAt(bob.pk, T0 + 15)).toBe(false); // everyone else waits for their add
     expect(actors.isAcceptedAt(alice.pk, T0 + 35)).toBe(false); // removed by bob, an admin
     expect(actors.isAcceptedAt(alice.pk, T0 + 45)).toBe(false); // her own re-add does not count
     expect(actors.roleAt(bob.pk, T0 + 25)).toBe('admin');

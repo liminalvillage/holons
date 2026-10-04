@@ -22,6 +22,9 @@ export {
   type HolonAuthority,
   type ReadAuthority,
   type ReadAuthorityOptions,
+  namesHolon,
+  sourceHolonOf,
+  type VouchContext,
 } from './authority.js';
 export {
   writeWithIdentity,

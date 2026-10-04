@@ -22,7 +22,7 @@ import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 import { createStore, createAppendWire, CAPABILITIES_HOLON } from './store/index.js';
 import * as LogOps from './log.js';
-import { createSigner } from './signing.js';
+import { createSigner, MEMBERSHIP_LENS as MEMBERS_LENS } from './signing.js';
 import { createRelayTransport } from './relay-transport.js';
 import { createPrivacy } from './privacy.js';
 import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
@@ -133,6 +133,7 @@ class HoloSphere {
                 shadow: signing.shadow,
                 enforce: signing.enforce,
                 authority: signing.authority,
+                vouch: signing.vouch,
                 perActorLenses: signing.perActorLenses,
                 verbose: signing.verbose,
             });
@@ -189,7 +190,15 @@ class HoloSphere {
     _relaySync(holon, lens, { await: awaited = false } = {}) {
         const t = this._relayTransport;
         if (!t || !lens || holon === CAPABILITIES_HOLON) return awaited ? Promise.resolve() : undefined;
-        const p = t.ensureSync(holon, lens);
+        let p = t.ensureSync(holon, lens);
+        // The holon's `_members` log decides who counts on an enforced read.
+        // A cold store that has not seen it yet would otherwise answer
+        // "nobody speaks for this holon" and show every claim, where a warm
+        // one shows only the accepted ones. One pull per holon per freshness
+        // window.
+        if (this._signer?.enforce && holon !== null && holon !== undefined && String(lens) !== MEMBERS_LENS) {
+            p = Promise.all([p, t.ensureSync(holon, MEMBERS_LENS)]);
+        }
         if (awaited) return p.catch(() => { /* relay unreachable — read local */ });
         p.catch(() => { /* fire-and-forget */ });
     }
@@ -874,6 +883,7 @@ class HoloSphere {
             shadow: opts.shadow ?? base.shadow,
             enforce: opts.enforce ?? base.enforce,
             authority: opts.authority ?? base.authority,
+            vouch: opts.vouch ?? base.vouch,
             perActorLenses: opts.perActorLenses ?? prev?.getPerActorLenses?.() ?? base.perActorLenses ?? [],
         });
         const relays = (opts.relays || []).map((r) => String(r).trim()).filter(Boolean);
