@@ -27,7 +27,7 @@
  */
 
 import { getFederationSnapshot } from '../federation/snapshot.js';
-import { allocate, resolveInteriorMembers, type AllocationMember } from './allocation.js';
+import { allocate, resolveInteriorMembers, type AllocationMember, type InteriorShares } from './allocation.js';
 import { readBundleRecord } from './bundle.js';
 import { DEFAULT_CASCADE_DEPTH, type CascadeInputs, type ResolveChild } from './cascade.js';
 import {
@@ -88,23 +88,41 @@ async function mapBounded<T, R>(items: T[], limit: number, task: (item: T) => Pr
   return results;
 }
 
-/** One holon's split, or null when it has none or sends nothing onward. */
-async function readChild(
+/** Everything `allocate` needs for one holon, read off its settings — plus what it was read from. */
+export interface AllocationInputs extends CascadeInputs {
+  /** Whether an allocation was ever stored; false means `config` is the default shape. */
+  configured: boolean;
+  /** The settings document the split was read from (null when unreadable). */
+  settings: unknown;
+  /** The stored custom contributors split, by id. */
+  shares: InteriorShares;
+  /** Federation partner id → ring. */
+  zones: Record<string, number>;
+  /** Person id → ring. */
+  people: Record<string, number>;
+  /** The deployed Bundle's address, when the holon has one. */
+  bundle: string | null;
+}
+
+/**
+ * One holon's split, read the way every surface reads it: its settings
+ * document, its federation record when partners are placed, and — for an
+ * equation-mode split — the scored roster `scoreOf` gives. Quiet: a holon
+ * whose settings cannot be read is unconfigured, never an error.
+ */
+export async function loadAllocationInputs(
   holosphere: any,
   holonId: string,
-  opts: LoadCascadeOptions,
-): Promise<{ inputs: CascadeInputs; onward: string[]; bundle: string | null } | null> {
+  opts: Pick<LoadCascadeOptions, 'nameOf' | 'scoreOf'> = {},
+): Promise<AllocationInputs> {
   let settings: any = null;
   try {
-    settings = await holosphere.get(holonId, 'settings', holonId);
+    settings = holosphere ? await holosphere.get(holonId, 'settings', holonId) : null;
   } catch {
-    return null;
+    settings = null;
   }
-  if (!hasAllocationConfig(settings)) return null;
-
+  const configured = hasAllocationConfig(settings);
   const bundle = readBundleRecord(settings)?.address ?? null;
-  if (opts.rail === 'chain' && !bundle) return null;
-
   const config = readAllocationConfig(settings);
   const shares = readInteriorShares(settings);
   const zones = readZoneAssignments(settings);
@@ -132,7 +150,7 @@ async function readChild(
 
   let scored: AllocationMember[] = [];
   const custom = config.interiorMode === 'custom' && Object.keys(shares).length > 0;
-  if (!custom && opts.scoreOf) {
+  if (configured && !custom && opts.scoreOf) {
     try {
       scored = (await opts.scoreOf(holonId)) ?? [];
     } catch {
@@ -140,23 +158,46 @@ async function readChild(
     }
   }
 
-  const inputs: CascadeInputs = {
+  return {
+    configured,
+    settings,
+    shares,
+    zones,
+    people,
+    bundle,
     config,
     members: resolveInteriorMembers({ config, scored, shares, nameOf: opts.nameOf }),
     zoned: toAllocationPartners(federated, partnerNames, zones, people, peopleNames),
     ...(typeof settings?.name === 'string' && settings.name ? { name: settings.name } : {}),
   };
+}
 
-  const split = allocate({ total: null, ...inputs });
+/** The parties a split pays something to, the holon itself excepted. */
+export function onwardParties(inputs: CascadeInputs, holonId: string): string[] {
+  const split = allocate({ total: null, config: inputs.config, members: inputs.members, zoned: inputs.zoned });
   const onward = new Set<string>();
   for (const member of split.interior) if (member.percentage > 0) onward.add(member.id);
   for (const zone of split.exterior) {
     for (const partner of zone.members ?? []) if (partner.percentage > 0) onward.add(partner.id);
   }
   onward.delete(holonId);
-  if (onward.size === 0) return null;
+  return [...onward];
+}
 
-  return { inputs, onward: [...onward], bundle };
+/** One holon's split, or null when it has none or sends nothing onward. */
+async function readChild(
+  holosphere: any,
+  holonId: string,
+  opts: LoadCascadeOptions,
+): Promise<{ inputs: CascadeInputs; onward: string[]; bundle: string | null } | null> {
+  const read = await loadAllocationInputs(holosphere, holonId, opts);
+  if (!read.configured) return null;
+  const { configured: _c, settings: _s, shares: _sh, zones: _z, people: _p, bundle, ...inputs } = read;
+  if (opts.rail === 'chain' && !bundle) return null;
+
+  const onward = onwardParties(inputs, holonId);
+  if (onward.length === 0) return null;
+  return { inputs, onward, bundle };
 }
 
 /**

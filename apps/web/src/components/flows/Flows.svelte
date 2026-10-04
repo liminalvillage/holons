@@ -79,6 +79,10 @@
     buildClaimVerdict,
     buildMint,
     buildPayout,
+    cascadeRights,
+    claimCeilings,
+    claimHeadroom,
+    fitsHeadroom,
     foldClaimsFromLenses,
     foldMintsFromLenses,
     loadInboundRights,
@@ -263,7 +267,12 @@
     importsFor = "";
   }
   onDestroy(unbindClaims);
-  $: claimsCtx = holonID
+  // Folded twice, both by core: once for the SHAPE (who claimed what sizes
+  // usage and the pot), then JUDGED under the ceilings that shape, the pot
+  // and the usage give — a claim past a right is held as `over`. The
+  // ceilings do not depend on which fold the usage came from (core
+  // `ceiling.ts`), so there is no cycle.
+  $: claimsShape = holonID
     ? foldClaimsFromLenses({
         holonId: holonID,
         entries: [...claimEntries.values()],
@@ -273,6 +282,19 @@
         users: Object.values(usersById),
         attestations,
         imports: claimImports,
+      })
+    : null;
+  $: claimsCtx = holonID && claimsShape
+    ? foldClaimsFromLenses({
+        holonId: holonID,
+        entries: [...claimEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+        imports: claimImports,
+        rights: ceilings,
       })
     : null;
   $: mintsCtx = holonID
@@ -451,6 +473,10 @@
     if (!holonID || !selfId || claimBusy) return;
     const amount = Number(String(claimAmount).replace(",", "."));
     if (!(amount > 0) || !claimUnit) return;
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = `That is more than what is left of your right (${claimMax} ${claimUnit.toUpperCase()}).`;
+      return;
+    }
     claimBusy = true;
     claimError = "";
     try {
@@ -777,10 +803,25 @@
         expenses,
         collective,
         windowDays,
-        claims: claimsCtx?.folded ?? null,
+        claims: claimsShape?.folded ?? null,
       })
     : null;
-  $: usageTotal = usageTotals(usage);
+  // The same usage off the JUDGED fold: a claim held as `over` is not drawn
+  // as claimed. The pot stays on the shape — a verdict moves no pot.
+  $: usageJudged =
+    potUnit && claimsCtx
+      ? buildFundUsage({
+          holonId: holonID,
+          unit: potUnit,
+          parties: usageParties,
+          members: memberIds,
+          expenses,
+          collective,
+          windowDays,
+          claims: claimsCtx.folded,
+        })
+      : usage;
+  $: usageTotal = usageTotals(usageJudged);
 
   $: allocationResult = allocate({
     // The collective's money is the honest pot — what is in the bank plus what
@@ -817,8 +858,16 @@
     retained: "Kept",
   };
   $: allocationTrack = cascade
-    ? cascadeToGraph(cascade, allocationLabels, usage)
-    : allocationToGraph(allocationResult, allocationLabels, usage);
+    ? cascadeToGraph(cascade, allocationLabels, usageJudged)
+    : allocationToGraph(allocationResult, allocationLabels, usageJudged);
+  // The ceiling every claim is judged against, per party and unit: what each
+  // party KEEPS of the pot (net of what their own split passes on) less the
+  // draws outside the log (core `claimCeilings`).
+  $: rights = cascade ? cascadeRights(cascade) : allocationResult;
+  $: potByUnit = Object.fromEntries(potUnitList.map((u) => [u, potTotal(u, potSources, usage)])) as Record<string, number>;
+  $: ceilings = claimCeilings({ shares: rights, pots: potByUnit, usage, claims: claimsShape?.folded ?? null });
+  $: claimMax = selfId && claimUnit ? claimHeadroom(ceilings, claimsCtx?.folded, selfId, claimUnit) : null;
+  $: claimTooBig = !fitsHeadroom(claimMax, Number(String(claimAmount).replace(",", ".")));
   $: allocationLayout = layoutSankey(allocationTrack);
   // What is left to the rights-holders, as the diagram draws it, and what was
   // taken beyond any right — both read off the same stacked bars.
@@ -1728,6 +1777,10 @@
              attester's signed mint, divided by the split, drawn in its unit. -->
         <div class="claims-panel">
           <h3>What the fund holds</h3>
+          {#if inbound.length && selfId && selfId === holonID}
+            <!-- A person's own board: the rights reaching them from every hub they keep. -->
+            <p class="note">Reaching you: {#each inbound as r, i (r.from + r.unit)}{i ? ", " : ""}{r.right} {r.unit.toUpperCase()} from {partyName(r.from)}{/each}.</p>
+          {/if}
           {#if potInboundRows.length || (mintsCtx && mintsCtx.folded.mints.length)}
             <table class="claims">
               <thead><tr><th>What</th><th>Amount</th><th>Status</th></tr></thead>
@@ -1776,10 +1829,13 @@
           {/if}
           {#if selfId}
             <form class="claim-form" on:submit|preventDefault={submitClaim}>
-              <label>Amount <input type="number" min="0.01" step="0.01" bind:value={claimAmount} required /></label>
+              <label>Amount <input type="number" min="0.01" step="0.01" max={claimMax ?? undefined} bind:value={claimAmount} required /></label>
               <label class="grow">What for <input type="text" maxlength="140" bind:value={claimMemo} /></label>
-              <button type="submit" disabled={claimBusy || !claimUnit}>Record a claim{claimUnit ? ` (${claimUnit})` : ""}</button>
+              <button type="submit" disabled={claimBusy || !claimUnit || claimTooBig}>Record a claim{claimUnit ? ` (${claimUnit})` : ""}</button>
             </form>
+            {#if claimMax != null}
+              <p class="note" class:warn={claimTooBig}>Up to {claimMax} {claimUnit.toUpperCase()} — what is left of your right after what was claimed, paid or is awaiting attestation.</p>
+            {/if}
           {/if}
           {#if claimError}<p class="note warn">{claimError}</p>{/if}
           {#if claimsCtx && claimsCtx.folded.claims.length}

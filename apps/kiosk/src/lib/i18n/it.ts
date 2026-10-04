@@ -532,13 +532,6 @@ export const it: Record<MessageKey, Msg> = {
     "Copia non riuscita — seleziona la chiave e copiala a mano.",
   "login.savedCheck": "Ho salvato la mia chiave in un posto sicuro",
   "login.continue": "Continua",
-  "settings.telegram": "Telegram",
-  "settings.telegramSub":
-    "— una chat collegata a questo hub: i suoi membri contano qui, le sue bacheche si vedono qui",
-  "settings.telegramLink": "Collega una chat Telegram",
-  "settings.telegramUnlink": "Scollega questa chat",
-  "settings.telegramUnlinked":
-    "Scollegata. La chiave del bot non conta più qui.",
   "tglink.title": "Collega una chat Telegram",
   "tglink.lead":
     "Apri Telegram con uno di questi link come admin della chat. Il bot risponde qui; niente da copiare.",
@@ -550,25 +543,11 @@ export const it: Record<MessageKey, Msg> = {
   "tglink.waiting": "In attesa del bot…",
   "tglink.waitingBody": "Tocca il link in Telegram come admin della chat.",
   "tglink.confirmTitle": "Collegare “{title}”?",
-  "tglink.confirmBody":
-    "La chiave del bot diventa admin di questo hub, i membri della chat contano qui, e le due bacheche mostrano gli elementi l’una dell’altra.",
   "tglink.confirm": "Collega",
   "tglink.cancel": "Annulla",
-  "tglink.done":
-    "Collegata. I membri della chat compariranno man mano che il bot li sincronizza.",
   "tglink.failed": "Non riesco a collegare — {reason}",
   "hub.hereTitleKey": "Nuovo hub",
   "hub.hereBodyKey": "Fondato dalla tua chiave, adesso â senza Telegram.",
-  "settings.hubJoinPending": "{n} chiedono di entrare",
-  "settings.hubApprove": "Approva",
-  "settings.hubDecline": "Rifiuta",
-  "settings.hubInvite": "Invita con il link di questo hub:",
-  "settings.hubInviteCopy": "Copia link",
-  "menu.joinHub": "Chiedi di entrare in questo hub",
-  "menu.joinRequested": "Richiesta inviata. Un admin dell’hub ti accoglie.",
-  "menu.leaveHub": "Lascia questo hub",
-  "menu.leftHub":
-    "Hai avvisato l’hub che te ne vai. Un admin toglie il tuo posto.",
   "login.nostrLead": "Accedi con la tua chiave",
   "login.orOther": "oppure accedi in un altro modo",
   "login.telegramTile": "Telegram",
@@ -599,11 +578,6 @@ export const it: Record<MessageKey, Msg> = {
   "menu.homePage": "Mostra la pagina iniziale",
   "menu.logout": "Esci",
   "menu.signingAs": "Firmi come {key}",
-  "menu.accepted": "La tua chiave conta su questo hub",
-  "menu.held":
-    "In attesa — questo hub non ha ancora accettato la tua chiave, quindi solo questo schermo vede le tue modifiche",
-  "layout.heldWrites":
-    "Questo hub non ha ancora accettato la tua chiave — le tue modifiche restano su questo schermo finché non lo fa.",
   "menu.loginTelegram": "Accedi con Telegram",
   "menu.login": "Accedi",
   "menu.install": "Aggiungi alla schermata Home",
@@ -699,6 +673,72 @@ export const it: Record<MessageKey, Msg> = {
   "settings.privacyPrivate": "privata",
   "settings.privacyPublic": "pubblica",
   "settings.privacyFailed": "Impossibile cambiare quella lente — riprova.",
+  "settings.privacyNeedsKey":
+    "Per condividere, questo hub deve avere una chiave propria — vedi Membri qui sotto.",
+  "members.title": "Membri",
+  "members.sub": "— chi è collegato a questo hub",
+  "members.youLinked":
+    "La tua chiave {key} è collegata a questo hub: le tue modifiche contano per tutti.",
+  "members.youNotLinked":
+    "La tua chiave {key} non è ancora collegata a questo hub, quindi solo questo schermo vede le tue modifiche. Chiedilo qui sotto — la richiesta è firmata dalla tua chiave, non serve altro.",
+  "members.youNotLinkedTelegram":
+    "Oppure collega questa chiave al tuo account Telegram: manda /key al bot in chat privata.",
+  "members.youNoKey":
+    "Sei entrato senza chiave, quindi nulla ti collega a questo hub. Entra con la tua chiave (nsec, passkey o wallet).",
+  "members.youNoKeyTelegram":
+    "Il tuo accesso Telegram non ha portato una chiave, quindi nulla ti collega a questo hub. Chi gestisce questo schermo deve configurare la derivazione delle chiavi (NOSTR_DERIVATION_SECRET).",
+  "members.linkMe": "Collega la mia chiave",
+  "members.asked":
+    "Richiesta inviata — un admin collega la tua chiave; questa pagina si aggiorna quando lo fa.",
+  "members.signIn": "Entra con una chiave",
+  "members.chat": "Chat Telegram",
+  "members.chatBorn":
+    "Questo hub è nato in una chat Telegram e resta collegato ad essa: i membri della chat sono collegati qui.",
+  "members.chatLinkedHint":
+    "I membri di una chat collegata sono collegati qui, e le sue bacheche compaiono qui.",
+  "members.chatLink": "Collega una chat Telegram",
+  "members.chatUnlink": "Scollega questa chat",
+  "members.chatUnlinked":
+    "Scollegata. I membri della chat non sono più collegati qui.",
+  "members.pending": "{n} chiedono di essere collegati",
+  "members.approve": "Collega",
+  "members.decline": "Ignora",
+  "members.roleAdmin": "admin",
+  "members.roleMember": "membro",
+  "members.you": "tu",
+  "members.addPlaceholder": "npub o chiave pubblica hex",
+  "members.add": "Collega una chiave",
+  "members.addAdmin": "Collega come admin",
+  "members.remove": "Scollega {key}",
+  "members.failed": "Impossibile cambiare quel collegamento — {reason}",
+  "members.invite": "Invita persone con il link di questo hub:",
+  "members.inviteCopy": "Copia link",
+  "members.noKey":
+    "Questo hub non ha ancora una chiave propria, quindi nulla può esservi collegato e ogni scrittura conta.",
+  "members.noKeyBot":
+    "Questo hub è nato in Telegram; il suo bot gli dà una chiave la prima volta che gira con la firma attiva. Fino ad allora nulla può esservi collegato.",
+  "members.noKeyOpen":
+    "Questo hub non ha ancora una chiave propria. Avvialo con la tua: diventi il primo admin.",
+  "members.noKeyNeedsKey":
+    "Questo hub non ha ancora una chiave propria. Entra con la tua chiave (nsec, passkey o wallet) per avviarlo.",
+  "members.start": "Avvia questo hub con la mia chiave",
+  "members.started": "Avviato: la tua chiave ora firma per questo hub.",
+  "members.startFailed": "Impossibile avviare questo hub — {reason}",
+  "menu.linked": "La tua chiave è collegata a questo hub",
+  "menu.notLinked":
+    "Non collegata — la tua chiave non è ancora collegata a questo hub, quindi solo questo schermo vede le tue modifiche",
+  "menu.linkMe": "Collega la mia chiave a questo hub",
+  "menu.linkAsked":
+    "Richiesta inviata. Un admin dell’hub collega la tua chiave.",
+  "menu.unlinkMe": "Scollega la mia chiave da questo hub",
+  "menu.unlinked":
+    "Hai detto all’hub che te ne vai. Un admin scollega la tua chiave.",
+  "layout.notLinked":
+    "La tua chiave non è ancora collegata a questo hub — le tue modifiche restano su questo schermo finché un admin non la collega (Impostazioni → Membri).",
+  "tglink.confirmBody":
+    "I membri della chat vengono collegati qui, la chiave del bot diventa admin di questo hub, ed entrambe le bacheche mostrano gli elementi dell’altra.",
+  "tglink.done":
+    "Collegata. I membri della chat compaiono man mano che il bot li sincronizza.",
   "settings.privacyHint":
     "Una lente bloccata tiene sigillato il contenuto; i membri di questo hub la leggono sempre. Condividi una lente intera qui o dal dock, una scheda dalla sua vista.",
   "audience.lock": "Blocca",
@@ -722,29 +762,6 @@ export const it: Record<MessageKey, Msg> = {
   "audience.lensLocked":
     "L'intera bacheca è bloccata; le schede la seguono. Cambialo dalle impostazioni della bacheca.",
   "audience.failed": "Impossibile cambiarlo — riprova.",
-  "settings.hubKeyNone":
-    "Nessuna chiave firmata: non si possono condividere chiavi con questo hub, e ogni scrittura conta finché il suo bot non lo fonda.",
-  "settings.hubKeyBot":
-    "Nessuna chiave firmata: questo hub è nato su Telegram, quindi lo fonda il suo bot la prima volta che gira con la firma attiva. Fino ad allora qui non si possono condividere chiavi.",
-  "settings.hubKeyOpen":
-    "Nessuno parla ancora per questo hub. Fondalo con la tua chiave: diventi il primo admin, e si possono condividere chiavi con esso.",
-  "settings.hubKeyNeedsKey":
-    "Nessuno parla ancora per questo hub. Accedi con una tua chiave (nsec, passkey o wallet) per fondarlo.",
-  "settings.hubFound": "Fonda questo hub con la mia chiave",
-  "settings.hubFoundLogin": "Accedi con una chiave",
-  "settings.hubFounded": "Fondato: ora la tua chiave parla per questo hub.",
-  "settings.hubFoundFailed": "Impossibile fondare questo hub — {reason}",
-  "settings.hubKeys": "Membri di questo hub",
-  "settings.hubKeysSub":
-    "— chi può scrivere e condividere qui, per chiave pubblica",
-  "settings.hubKeyRoleAdmin": "admin",
-  "settings.hubKeyRoleMember": "membro",
-  "settings.hubKeyYou": "tu",
-  "settings.hubKeyAddPlaceholder": "npub o chiave pubblica hex",
-  "settings.hubKeyAdd": "Aggiungi",
-  "settings.hubKeyAddAdmin": "Aggiungi come admin",
-  "settings.hubKeyRemove": "Rimuovi {key}",
-  "settings.hubKeyFailed": "Impossibile cambiare quella chiave — {reason}",
   "settings.onMap": "Sulla mappa",
   "settings.onMapSub":
     "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
@@ -1320,6 +1337,9 @@ export const it: Record<MessageKey, Msg> = {
   "flows.claimRecord": "Registra una richiesta",
   "flows.claimAmount": "Importo",
   "flows.claimMemo": "Per cosa",
+  "flows.claimMax": "Fino a {amount}",
+  "flows.claimOverMax": "È più di quanto resta del tuo diritto ({max}).",
+  "flows.inboundTitle": "Ciò che ti arriva",
   "flows.claimNoSigner":
     "La firma non è configurata per questo accesso: qui non si può registrare una richiesta.",
   "flows.claimsProvisional":

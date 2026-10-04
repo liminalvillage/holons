@@ -150,12 +150,19 @@ The cascade stops three hops below the root and never goes round a loop.
 6. **Everyone sees their litres.** The mother's Flows board draws the pot in
    L and every leaf of the cascade; each person's _Your balance_ card shows
    their right in L. The Collectors' own board shows the litres reaching it
-   as its pot and divides them by its equation.
+   as its pot and divides them by its equation. A picker's OWN board (their
+   personal holon) lists the litres reaching them from every hub they keep,
+   under _Reaching you_ — the hubs the kiosk and the web remember for them,
+   and the ones the bot remembers when it first records them there.
 7. **Redeem.** A picker claims in the Collectors group (`/fundclaim 12 L`,
-   or the kiosk/web claim form); an attester attests if the rules ask for
-   it and records `/fundpaid <id>` when the oil is handed over. The
-   Collectors as a whole claim their 50 % from the mother in the same way,
-   in their own log; the mother's admins mark it paid when the oil moves.
+   or the kiosk/web claim form). The form shows their maximum — their share
+   of the pot less what they already claimed, were paid, or still have
+   awaiting attestation — and refuses more; a claim that slips past it (an
+   older client, a stale pot) folds as _over_: kept and shown, never counted.
+   An attester attests if the rules ask for it and records `/fundpaid <id>`
+   when the oil is handed over. The Collectors as a whole claim their 50 %
+   from the mother in the same way, in their own log; the mother's admins
+   mark it paid when the oil moves.
 8. **New moon.** The bot checkpoints each log per lunar cycle; readers can
    compare their fold against the holon's root.
 
@@ -169,6 +176,7 @@ The cascade stops three hops below the root and never goes round a loop.
 | what reaches a holon from upstream        | `inbound.ts` (`inboundRightFrom`, `loadInboundRights`)                                                                                                                                                                                                                           |
 | the pot to divide, per unit               | `pot.ts` (`potUnits`, `potTotal`)                                                                                                                                                                                                                                                |
 | claims, attestations, payouts             | `claims.ts` (log `flow_claims`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                                                             |
+| the ceiling a claim is judged against     | `ceiling.ts` (`claimCeilings`, `claimHeadroom`), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot)                                                                                                                                                                 |
 | the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
 | surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*`, bot `/fundmint` `/fundmints` `/fundclaim` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 
@@ -180,6 +188,13 @@ The cascade stops three hops below the root and never goes round a loop.
   two rights, and a claim names its unit.
 - No double-spend protection beyond the log's rules: a payout consumes one
   claim once; scarce goods settle in the world, the log records that they did.
+- A right reached only through ANOTHER member's split (the picker seated by
+  the Collectors, not by the mother) shows on the upstream boards, not under
+  _Reaching you_ on the picker's own board: the climb reads the hubs a person
+  keeps and the splits that name them, not every cascade they appear in.
+- The MCP and the bot judge claims without the collective's expense queue
+  (apps fetch OpenCollective themselves), so for an OC-funded fund their
+  ceilings can be a little more permissive than the kiosk's.
 - The kiosk cannot log hours yet; use the bot buttons or the web task modal.
 - The bot's `/fundmint` and `/fundmints` reach production only when the
   production bot is redeployed from this branch.

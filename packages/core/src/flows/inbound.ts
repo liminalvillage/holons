@@ -22,6 +22,7 @@
  */
 
 import { getFederationSnapshot } from '../federation/snapshot.js';
+import { myHolons } from '../holons/list.js';
 import { allocate, resolveInteriorMembers, type AllocationMember } from './allocation.js';
 import { loadMints } from './mints-load.js';
 import {
@@ -113,6 +114,13 @@ export interface LoadInboundOptions {
   potsOf?: (upstreamId: string) => Promise<UpstreamPot[]>;
   /** The scored roster of an equation-mode upstream; absent: no contributor seats resolve there. */
   scoreOf?: (holonId: string) => Promise<AllocationMember[]>;
+  /**
+   * Who might seat `id`. Default: its federation partners and the holons it
+   * keeps in its own `holons` lens (`myHolons`) — a person's hubs as much as
+   * a group's partners. Whether a candidate really is upstream is decided by
+   * its split, not by the list.
+   */
+  upstreamsOf?: (id: string) => Promise<string[]>;
 }
 
 export interface LoadedInbound {
@@ -123,6 +131,36 @@ export interface LoadedInbound {
   /** Settings reads made. */
   visited: number;
   truncated: boolean;
+}
+
+/**
+ * Who might seat `id`: its federation partners and the holons it keeps.
+ *
+ * Neither list is read as truth — a kept hub may seat nobody, a partner may
+ * have no split — and both are read quietly, each on its own, so a person
+ * with no federation record still finds their hubs. Deduplicated, in order:
+ * partners first, then the kept holons newest first.
+ */
+export async function defaultUpstreams(holosphere: any, id: string): Promise<string[]> {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: unknown) => {
+    const v = String(raw ?? '');
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+  try {
+    for (const p of (await getFederationSnapshot(holosphere, id)).federated) add(p);
+  } catch {
+    // No federation record: nothing to add from it.
+  }
+  try {
+    for (const h of await myHolons(holosphere, id)) add(h.id);
+  } catch {
+    // No list kept: nothing to add from it.
+  }
+  return out;
 }
 
 /** The mints an upstream issued, as pots, one per unit. */
@@ -176,16 +214,18 @@ export async function loadInboundRights(
     return p;
   };
 
-  /** Rights reaching `target` from its partners, `hop` levels above the root. */
+  const upstreamsOf = opts.upstreamsOf ?? ((id: string) => defaultUpstreams(holosphere, id));
+
+  /** Rights reaching `target` from whoever might seat it, `hop` levels above the root. */
   const rightsInto = async (target: string, hop: number, path: readonly string[]): Promise<InboundRight[]> => {
-    let federated: string[] = [];
+    let candidates: string[] = [];
     try {
-      federated = (await getFederationSnapshot(holosphere, target)).federated.map(String);
+      candidates = (await upstreamsOf(target)).map(String);
     } catch {
       return [];
     }
     const rights: InboundRight[] = [];
-    for (const upstreamId of federated) {
+    for (const upstreamId of candidates) {
       if (!upstreamId || path.includes(upstreamId) || upstreamId === target) continue;
       if (out.visited >= maxHolons) {
         out.truncated = true;

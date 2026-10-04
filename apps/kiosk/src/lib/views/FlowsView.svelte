@@ -79,6 +79,9 @@
     cascadeRights,
     cascadeToGraph,
     childResolver,
+    claimCeilings,
+    claimHeadroom,
+    fitsHeadroom,
     hasAllocationConfig,
     loadCascadeChildren,
     resolveCascade,
@@ -256,7 +259,13 @@
   async function refreshLogSigner(_user: unknown) {
     logSigner = await claimSigner();
   }
-  $: claimsCtx =
+  // The log folded twice, both by core. First for the SHAPE, with no ceiling:
+  // who claimed what decides who usage is attributed to, and usage sizes the
+  // pot. Then JUDGED, under the ceilings that shape, the pot and the usage
+  // give (`claimCeilings`): a claim past a right is held as `over`. The
+  // ceilings are the same whichever fold the usage came from, so there is
+  // no cycle — see core `ceiling.ts`.
+  $: claimsShape =
     hid && claimsLogs
       ? foldClaimsFromLenses({
           holonId: hid,
@@ -267,6 +276,20 @@
           users: Object.values(usersById),
           attestations: claimsLogs.attestations,
           imports: claimsLogs.imports,
+        })
+      : null;
+  $: claimsCtx =
+    hid && claimsLogs && claimsShape
+      ? foldClaimsFromLenses({
+          holonId: hid,
+          entries: claimsLogs.entries,
+          policyEntries: claimsLogs.policy,
+          membersLog: claimsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: claimsLogs.attestations,
+          imports: claimsLogs.imports,
+          rights: ceilings,
         })
       : null;
   $: mintsCtx =
@@ -372,6 +395,17 @@
       : [];
   $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
   $: claimUnit = potUnit;
+  // What is left to claim in this unit: the ceiling less what is approved,
+  // paid or awaiting attestation (core `claimHeadroom`). Null = no ceiling
+  // known (no pot in this unit), and the form takes any amount.
+  $: claimMax =
+    selfId && claimUnit
+      ? claimHeadroom(ceilings, claimsCtx?.folded, selfId, claimUnit)
+      : null;
+  $: claimTooBig = !fitsHeadroom(
+    claimMax,
+    Number(String(claimAmount).replace(",", ".")),
+  );
   const partyName = (id: string) =>
     usersById[id]?.first_name ||
     usersById[id]?.username ||
@@ -381,6 +415,12 @@
     if (!hsRef || !hid || !selfId || claimBusy) return;
     const amount = Number(String(claimAmount).replace(",", "."));
     if (!(amount > 0) || !claimUnit) return;
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = $t("flows.claimOverMax", {
+        max: formatAccount(claimMax ?? 0),
+      });
+      return;
+    }
     claimBusy = true;
     claimError = "";
     try {
@@ -717,10 +757,25 @@
         expenses,
         collective,
         window: flowsWindow,
-        claims: claimsCtx?.folded ?? null,
+        claims: claimsShape?.folded ?? null,
       })
     : null;
-  $: usageTotal = usageTotals(usage);
+  // The same usage read off the JUDGED fold: a claim held as `over` is not
+  // drawn as claimed. The pot stays on the shape (a verdict moves no pot).
+  $: usageJudged =
+    potUnit && claimsCtx
+      ? buildFundUsage({
+          holonId: hid ?? "",
+          unit: potUnit,
+          parties: usageParties,
+          members: memberIds,
+          expenses,
+          collective,
+          window: flowsWindow,
+          claims: claimsCtx.folded,
+        })
+      : usage;
+  $: usageTotal = usageTotals(usageJudged);
 
   $: allocationResult = allocate({
     // The pot is the honest total — what is held here (the bank, the mints)
@@ -777,8 +832,8 @@
     retained: $t("flows.retained"),
   };
   $: allocationTrack = cascade
-    ? cascadeToGraph(cascade, allocationLabels, usage)
-    : allocationToGraph(allocationResult, allocationLabels, usage);
+    ? cascadeToGraph(cascade, allocationLabels, usageJudged)
+    : allocationToGraph(allocationResult, allocationLabels, usageJudged);
   $: allocationLayout = layoutSankey(allocationTrack);
 
   // ── Derived: the viewer's account ───────────────────────────────────────
@@ -789,7 +844,18 @@
   // With a cascade a right is what the holder KEEPS: what their own split
   // sends further is someone else's right, and core nets it out.
   $: rights = cascade ? cascadeRights(cascade) : allocationResult;
-  $: myAccount = selfId ? fundAccount(rights, usage, selfId) : null;
+  // The ceiling every claim is judged against, per party and unit: a share
+  // of each unit's pot less the draws outside the log (core).
+  $: potByUnit = Object.fromEntries(
+    potUnitList.map((u) => [u, potTotal(u, potSources, usage)]),
+  ) as Record<string, number>;
+  $: ceilings = claimCeilings({
+    shares: rights,
+    pots: potByUnit,
+    usage,
+    claims: claimsShape?.folded ?? null,
+  });
+  $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
   $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
   $: formatAccount = potUnit
@@ -1799,6 +1865,27 @@
           </div>
         {/if}
         <section class="hero">
+          {#if inbound.length && selfId && hid === selfId}
+            <!-- A person's own board: what reaches them from every hub they
+                 keep — the same rights those hubs' boards show on their
+                 "Your balance" card, gathered here (core loadInboundRights). -->
+            <div class="account inbound">
+              <div class="k">{$t("flows.inboundTitle")}</div>
+              <ul class="claims">
+                {#each inbound as r (r.from + r.unit)}
+                  <li class="claim-row approved">
+                    <span class="amt">{moneyFormatter(r.unit, 2)(r.right)}</span
+                    >
+                    <span class="memo"
+                      >{$t("flows.tipInboundFrom", {
+                        name: nameFor(r.from) ?? r.from,
+                      })}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
           {#if myAccount}
             <div class="account" class:over={myAccount.over > 0}>
               <div class="account-head">
@@ -1865,6 +1952,7 @@
                         type="number"
                         min="0.01"
                         step="0.01"
+                        max={claimMax ?? undefined}
                         inputmode="decimal"
                         bind:value={claimAmount}
                         required
@@ -1881,11 +1969,21 @@
                     <button
                       class="claim"
                       type="submit"
-                      disabled={claimBusy || !logSigner || !claimUnit}
+                      disabled={claimBusy ||
+                        !logSigner ||
+                        !claimUnit ||
+                        claimTooBig}
                     >
                       {$t("flows.claimRecord")}
                     </button>
                   </form>
+                  {#if claimMax != null}
+                    <p class="claim-hint" class:error={claimTooBig}>
+                      {$t("flows.claimMax", {
+                        amount: formatAccount(claimMax),
+                      })}
+                    </p>
+                  {/if}
                   {#if !logSigner}
                     <p class="claim-hint">{$t("flows.claimNoSigner")}</p>
                   {/if}

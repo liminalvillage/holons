@@ -90,8 +90,22 @@ never rewritten. Totals are kept per unit and never summed across units.
 `pot.ts` then sizes the pot every board divides: what was minted here, the
 collective's balance when it is in the same currency, and what reaches the
 holon from upstream (`inbound.ts` — a partner whose split seats this holon,
-times that partner's pot, climbing a bounded number of hops). A right cut
-from that pot is claimed in the same unit. The worked example is
+times that partner's pot, climbing a bounded number of hops — and, for a
+person, the hubs they keep in their own `holons` lens, since nobody is
+federated with their collective). A right cut from that pot is claimed in the
+same unit.
+
+A claim is judged against a CEILING: the party's share of the pot less the
+draws the log does not record (fund payments on the expenses lens, the
+collective's paid or open expenses). The fold subtracts its own accepted
+claims — approved and settled, in log order — so a claim that would push the
+party past the ceiling is held as `over`: kept and shown, never counted,
+and counted the day a new mint grows the pot. Every reader passes the same
+ceiling (`ceiling.ts`: `claimCeilings` from the allocation, the pot and the
+usage; `loadClaimCeilings` reads it off the store for the MCP and the bot),
+and the headroom a form shows — the ceiling less what is approved, paid or
+awaiting attestation — is the same arithmetic, so the number on screen and
+the verdict in the log cannot disagree. The worked example is
 [`flows-harvest-collective.md`](./flows-harvest-collective.md).
 
 ## Federation: a partner's accepted entries

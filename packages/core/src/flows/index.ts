@@ -330,3 +330,21 @@ export {
 
 export { defaultPotUnit, hasPot, mintedIn, potBalance, potTotal, potUnits, type PotSources } from './pot.js';
 export { scoreAllocationMembers } from './score-load.js';
+
+export {
+  ceilingOf,
+  claimCeilings,
+  claimHeadroom,
+  fitsHeadroom,
+  partyShares,
+  type ClaimCeilingInput,
+  type ClaimCeilings,
+} from './ceiling.js';
+export {
+  DEFAULT_CEILING_HOLONS,
+  loadClaimCeilings,
+  type LoadClaimCeilingsOptions,
+  type LoadedClaimCeilings,
+} from './ceiling-load.js';
+export { loadAllocationInputs, onwardParties, type AllocationInputs } from './cascade-load.js';
+export { defaultUpstreams } from './inbound.js';

@@ -524,12 +524,6 @@ export const en = {
   "login.copyFailed": "Copy failed — select the key and copy it manually.",
   "login.savedCheck": "I've saved my key somewhere safe",
   "login.continue": "Continue",
-  "settings.telegram": "Telegram",
-  "settings.telegramSub":
-    "— a chat linked to this hub: its members count here, its boards show here",
-  "settings.telegramLink": "Link a Telegram chat",
-  "settings.telegramUnlink": "Unlink this chat",
-  "settings.telegramUnlinked": "Unlinked. The bot key no longer counts here.",
   "tglink.title": "Link a Telegram chat",
   "tglink.lead":
     "Open Telegram with one of these links as an admin of the chat. The bot answers here; nothing to copy.",
@@ -540,24 +534,11 @@ export const en = {
   "tglink.waiting": "Waiting for the bot…",
   "tglink.waitingBody": "Tap the link in Telegram as an admin of the chat.",
   "tglink.confirmTitle": "Link “{title}”?",
-  "tglink.confirmBody":
-    "The bot’s key becomes an admin of this hub, the chat’s members count here, and both boards show each other’s items.",
   "tglink.confirm": "Link it",
   "tglink.cancel": "Cancel",
-  "tglink.done":
-    "Linked. The chat’s members will appear as the bot syncs them.",
   "tglink.failed": "Could not link — {reason}",
   "hub.hereTitleKey": "New hub",
   "hub.hereBodyKey": "Founded by your key, right now â no Telegram needed.",
-  "settings.hubJoinPending": "{n} asking to join",
-  "settings.hubApprove": "Approve",
-  "settings.hubDecline": "Decline",
-  "settings.hubInvite": "Invite people with this hub’s link:",
-  "settings.hubInviteCopy": "Copy link",
-  "menu.joinHub": "Ask to join this hub",
-  "menu.joinRequested": "Asked. An admin of the hub seats you.",
-  "menu.leaveHub": "Leave this hub",
-  "menu.leftHub": "Told the hub you are leaving. An admin removes your seat.",
   "login.nostrLead": "Sign in with your key",
   "login.orOther": "or sign in another way",
   "login.telegramTile": "Telegram",
@@ -588,11 +569,6 @@ export const en = {
   "menu.homePage": "Show the home page",
   "menu.logout": "Log out",
   "menu.signingAs": "Signing as {key}",
-  "menu.accepted": "Your key counts on this hub",
-  "menu.held":
-    "Held — this hub hasn't accepted your key yet, so only this screen sees your changes",
-  "layout.heldWrites":
-    "This hub hasn't accepted your key yet — your changes stay on this screen until it does.",
   "menu.loginTelegram": "Log in with Telegram",
   "menu.login": "Sign in",
   "menu.install": "Add to Home Screen",
@@ -687,14 +663,69 @@ export const en = {
   "settings.privacyPrivate": "private",
   "settings.privacyPublic": "public",
   "settings.privacyFailed": "Could not change that lens — try again.",
-  "settings.hubKeyNone":
-    "Nobody speaks for this hub yet: it cannot be shared with, and every write counts, until its bot founds it.",
-  "settings.hubKeyBot":
-    "Nobody speaks for this hub yet: it was born in Telegram, so its bot founds it the first time it runs with signing on. Until then it cannot be shared with.",
-  "settings.hubKeyOpen":
-    "Nobody speaks for this hub yet. Found it with your key: you become its first admin, and it can be shared with.",
-  "settings.hubKeyNeedsKey":
-    "Nobody speaks for this hub yet. Sign in with your own key (nsec, passkey or wallet) to found it.",
+  "settings.privacyNeedsKey":
+    "Sharing needs this hub to have a key of its own — see Members below.",
+  "members.title": "Members",
+  "members.sub": "— who is linked to this hub",
+  "members.youLinked":
+    "Your key {key} is linked to this hub: your changes count for everyone.",
+  "members.youNotLinked":
+    "Your key {key} isn’t linked to this hub yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
+  "members.youNotLinkedTelegram":
+    "Or link this key to your Telegram account: send /key to the bot in a private chat.",
+  "members.youNoKey":
+    "You are signed in without a key, so nothing links you to this hub. Sign in with your key (nsec, passkey or wallet).",
+  "members.youNoKeyTelegram":
+    "Your Telegram login did not bring a key, so nothing links you to this hub. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
+  "members.linkMe": "Link my key",
+  "members.asked":
+    "Asked — an admin links your key; this page updates when they do.",
+  "members.signIn": "Sign in with a key",
+  "members.chat": "Telegram chat",
+  "members.chatBorn":
+    "This hub started in a Telegram chat and stays linked to it: the chat’s members are linked here.",
+  "members.chatLinkedHint":
+    "A linked chat’s members are linked here, and its boards show here.",
+  "members.chatLink": "Link a Telegram chat",
+  "members.chatUnlink": "Unlink this chat",
+  "members.chatUnlinked":
+    "Unlinked. The chat’s members are no longer linked here.",
+  "members.pending": "{n} asking to be linked",
+  "members.approve": "Link",
+  "members.decline": "Dismiss",
+  "members.roleAdmin": "admin",
+  "members.roleMember": "member",
+  "members.you": "you",
+  "members.addPlaceholder": "npub or hex public key",
+  "members.add": "Link a key",
+  "members.addAdmin": "Link as admin",
+  "members.remove": "Unlink {key}",
+  "members.failed": "Could not change that link — {reason}",
+  "members.invite": "Invite people with this hub’s link:",
+  "members.inviteCopy": "Copy link",
+  "members.noKey":
+    "This hub has no key of its own yet, so nothing can be linked to it and every write counts.",
+  "members.noKeyBot":
+    "This hub started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
+  "members.noKeyOpen":
+    "This hub has no key of its own yet. Start it with yours: you become its first admin.",
+  "members.noKeyNeedsKey":
+    "This hub has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
+  "members.start": "Start this hub with my key",
+  "members.started": "Started: your key now signs for this hub.",
+  "members.startFailed": "Could not start this hub — {reason}",
+  "menu.linked": "Your key is linked to this hub",
+  "menu.notLinked":
+    "Not linked — your key isn’t linked to this hub yet, so only this screen sees your changes",
+  "menu.linkMe": "Link my key to this hub",
+  "menu.linkAsked": "Asked. An admin of the hub links your key.",
+  "menu.unlinkMe": "Unlink my key from this hub",
+  "menu.unlinked": "Told the hub you are leaving. An admin unlinks your key.",
+  "layout.notLinked":
+    "Your key isn’t linked to this hub yet — your changes stay on this screen until an admin links it (Settings → Members).",
+  "tglink.confirmBody":
+    "The chat’s members are linked here, the bot’s key becomes an admin of this hub, and both boards show each other’s items.",
+  "tglink.done": "Linked. The chat’s members appear as the bot syncs them.",
   "settings.privacyHint":
     "A locked lens keeps what is inside sealed; this hub's members always read it. Share a whole lens here or from the dock, one card from its own view.",
   "audience.lock": "Lock",
@@ -717,20 +748,6 @@ export const en = {
   "audience.lensLocked":
     "The whole board is locked; its cards follow it. Change that from the board settings.",
   "audience.failed": "Could not change that — try again.",
-  "settings.hubFound": "Found this hub with my key",
-  "settings.hubFoundLogin": "Sign in with a key",
-  "settings.hubFounded": "Founded: your key now speaks for this hub.",
-  "settings.hubFoundFailed": "Could not found this hub — {reason}",
-  "settings.hubKeys": "Members of this hub",
-  "settings.hubKeysSub": "— who may write and share here, by public key",
-  "settings.hubKeyRoleAdmin": "admin",
-  "settings.hubKeyRoleMember": "member",
-  "settings.hubKeyYou": "you",
-  "settings.hubKeyAddPlaceholder": "npub or hex public key",
-  "settings.hubKeyAdd": "Add",
-  "settings.hubKeyAddAdmin": "Add as admin",
-  "settings.hubKeyRemove": "Remove {key}",
-  "settings.hubKeyFailed": "Could not change that key — {reason}",
   "settings.onMap": "On the map",
   "settings.onMapSub":
     "— what this holon puts on the shared map, and how far out it can be seen",
@@ -1076,7 +1093,7 @@ export const en = {
   "hub.hereTitle": "Start a hub here",
   "hub.hereBody": "No Telegram: your key founds it, right now.",
   "hub.hereLead":
-    "A hub of your own, founded by your key: you are its first admin, and you seat others by their public key.",
+    "A hub of your own, founded by your key: you are its first admin, and you link others by their public key.",
   "hub.hereName": "Name",
   "hub.hereNamePlaceholder": "What is this hub called?",
   "hub.hereCreate": "Found it",
@@ -1289,6 +1306,9 @@ export const en = {
   "flows.claimRecord": "Record a claim",
   "flows.claimAmount": "Amount",
   "flows.claimMemo": "What for",
+  "flows.claimMax": "Up to {amount}",
+  "flows.claimOverMax": "That is more than what is left of your right ({max}).",
+  "flows.inboundTitle": "Reaching you",
   "flows.claimNoSigner":
     "Signing is not set up for this login, so a claim cannot be recorded here.",
   "flows.claimsProvisional":

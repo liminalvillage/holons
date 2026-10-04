@@ -24,32 +24,27 @@ import {
   buildMint,
   buildPayout,
   childResolver,
+  claimHeadroom,
+  fitsHeadroom,
   foldClaimsFromLenses,
   inboundTotal,
+  loadAllocationInputs,
+  loadClaimCeilings,
   loadInboundRights,
   loadMints,
   potTotal,
   potUnits,
   scoreAllocationMembers,
-  hasAllocationConfig,
   loadCascadeChildren,
-  readAllocationConfig,
-  readInteriorShares,
-  readZoneAssignments,
-  readZonePeople,
   resolveCascade,
-  resolveInteriorMembers,
   saveAllocationConfig,
   summarizeCascade,
-  toAllocationPartners,
-  type AllocationMember,
   type CascadeNode,
+  type ClaimCeilings,
+  type RightsLookup,
 } from '@holons/core/flows';
-import { getFederationSnapshot } from '@holons/core/federation';
 import { MEMBERS_LENS, POLICY_LENS, importPartnerLogs, lensContext, readMembersLog } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
-import { REAEventStore } from '@holons/core/rea';
-import { REAAggregator, computeHolonUserScores, extractReaUsers, loadEquation } from '@holons/core/scoring';
 import type { ToolDeps } from './index.js';
 
 function ok(payload: unknown) {
@@ -65,46 +60,8 @@ function fail(message: string, extra?: Record<string, unknown>) {
 
 const zoneMap = z.record(z.string(), z.number());
 
-/** The equation's roster, scored the way the Flows boards score it. */
-async function scoredMembers(hs: any, holon: string): Promise<AllocationMember[]> {
-  const events: any[] = (await hs.getAll(holon, 'rea_events')) ?? [];
-  const users: any[] = (await hs.getAll(holon, 'users')) ?? [];
-  const roster = new Map<string, { id: string; name?: string }>();
-  for (const u of extractReaUsers(events)) roster.set(String(u.id), u as { id: string; name?: string });
-  for (const u of users) {
-    const id = String(u?.id ?? '');
-    if (id) roster.set(id, { id, name: u?.first_name ?? u?.username ?? id });
-  }
-  if (roster.size === 0) return [];
-  const aggregator = new REAAggregator(new REAEventStore({ getAll: async () => events } as any));
-  const equation = await loadEquation(hs, holon);
-  const scored = await computeHolonUserScores(aggregator, holon, [...roster.values()] as never, equation);
-  return scored
-    .filter((s) => s.percentage > 0)
-    .map((s) => ({
-      id: String(s.userId),
-      name: roster.get(String(s.userId))?.name ?? String(s.userId),
-      percentage: s.percentage,
-    }));
-}
-
-/** Everything `allocate` needs for one holon, read off its settings. */
-async function allocationInputs(hs: any, holon: string) {
-  const settings = await hs.get(holon, 'settings', holon);
-  const config = readAllocationConfig(settings);
-  const shares = readInteriorShares(settings);
-  const zones = readZoneAssignments(settings);
-  const people = readZonePeople(settings);
-  const federation = await getFederationSnapshot(hs, holon).catch(() => null);
-  const custom = config.interiorMode === 'custom' && Object.keys(shares).length > 0;
-  const members = resolveInteriorMembers({
-    config,
-    scored: custom ? [] : await scoredMembers(hs, holon),
-    shares,
-  });
-  const zoned = toAllocationPartners(federation?.federated ?? [], federation?.partnerNames ?? {}, zones, people);
-  return { configured: hasAllocationConfig(settings), config, shares, zones, people, members, zoned };
-}
+/** The equation's roster, the way every Flows board scores it (core). */
+const scoreOf = (hs: any) => (id: string) => scoreAllocationMembers(hs, id);
 
 /** A cascade node without the fields that only repeat its parent. */
 function slim(node: CascadeNode): Record<string, unknown> {
@@ -129,7 +86,7 @@ function slim(node: CascadeNode): Record<string, unknown> {
 async function potOf(hs: any, holon: string, unit?: string): Promise<{ unit: string; total: number; minted: number; inbound: number } | null> {
   const [mints, inbound] = await Promise.all([
     loadMints(hs, holon).then((c) => c.folded).catch(() => null),
-    loadInboundRights(hs, holon, { scoreOf: (id) => scoreAllocationMembers(hs, id) }).then((r) => r.inbound).catch(() => []),
+    loadInboundRights(hs, holon, { scoreOf: scoreOf(hs) }).then((r) => r.inbound).catch(() => []),
   ]);
   const sources = { mints, inbound };
   const units = potUnits(sources);
@@ -141,7 +98,7 @@ async function potOf(hs: any, holon: string, unit?: string): Promise<{ unit: str
 }
 
 /** Everything the fold reads, straight from the instance. */
-async function claimsContext(hs: any, holon: string) {
+async function claimsBase(hs: any, holon: string) {
   const [entries, policy, settings, users, dir] = await Promise.all([
     hs.getLog(holon, FLOW_CLAIMS_LENS),
     hs.getLog(holon, POLICY_LENS).catch(() => []),
@@ -155,7 +112,32 @@ async function claimsContext(hs: any, holon: string) {
   // The partners the policy pins claim in their own logs; read them by
   // their own rules, then fold them in under this holon's.
   const imports = await importPartnerLogs(hs, FLOW_CLAIMS_LENS, lensContext(base).policyFor(FLOW_CLAIMS_LENS));
-  return foldClaimsFromLenses({ ...base, entries, imports });
+  return { ...base, entries, imports };
+}
+
+/**
+ * The claims log judged the way every board judges it: folded once for the
+ * shape, then again under the ceilings that shape, the pot and the usage
+ * give (core `loadClaimCeilings`), so a claim past a right is held as `over`.
+ */
+async function judgedClaims(hs: any, holon: string) {
+  const base = await claimsBase(hs, holon);
+  const shape = foldClaimsFromLenses(base);
+  const loaded = await loadClaimCeilings(hs, holon, { claims: shape.folded, scoreOf: scoreOf(hs) });
+  const ctx = foldClaimsFromLenses({ ...base, rights: loaded.ceilings as RightsLookup });
+  return { ctx, ceilings: loaded.ceilings, pots: loaded.pots, truncated: loaded.truncated };
+}
+
+/** What every party may still claim, per unit, under `ceilings`. */
+function headroomOf(ceilings: ClaimCeilings, folded: Parameters<typeof claimHeadroom>[1]): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [party, perUnit] of Object.entries(ceilings)) {
+    for (const unit of Object.keys(perUnit)) {
+      const h = claimHeadroom(ceilings, folded, party, unit);
+      if (h != null) (out[party] ??= {})[unit] = h;
+    }
+  }
+  return out;
 }
 
 export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
@@ -173,7 +155,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const { configured, config, shares, zones, people, members, zoned } = await allocationInputs(hs, args.holon);
+        const { configured, config, shares, zones, people, members, zoned } = await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs) });
         // With no total given, the pot the holon holds (mints + inbound) is
         // the honest one — the same rule the boards draw by (`potTotal`).
         const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
@@ -231,7 +213,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const { config, members, zoned } = await allocationInputs(hs, args.holon);
+        const { config, members, zoned } = await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs) });
         const rootPartyIds = [
           ...members.map((m) => m.id),
           ...zoned.filter((p) => p.zone >= 1).map((p) => p.id),
@@ -240,7 +222,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           rootId: args.holon,
           maxDepth: args.maxDepth,
           rail: args.rail,
-          scoreOf: (id) => scoreAllocationMembers(hs, id),
+          scoreOf: scoreOf(hs),
         });
         const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
         const cascade = resolveCascade({
@@ -274,7 +256,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'flow_claim_record',
     {
       description:
-        'Append a fund CLAIM to the holon\'s signed claims log (lens "flow_claims", kind 1808). Signed with this MCP instance key; counts only if the holon accepts that key for the party. Wraps @holons/core/flows buildClaim.',
+        'Append a fund CLAIM to the holon\'s signed claims log (lens "flow_claims", kind 1808). Refused with `over-right` (and the party\'s `headroom`) when the amount is more than what is left of the party\'s right in that unit — their share of the pot less what was already claimed, paid or awaiting attestation; `force` records it anyway, and the fold holds it as `over`. Signed with this MCP instance key; counts only if the holon accepts that key for the party. Wraps @holons/core/flows buildClaim + claimHeadroom.',
       inputSchema: {
         holon: z.string().describe('Holon id.'),
         party: z.string().describe('The rights-holder claiming (member id or partner holon id).'),
@@ -282,14 +264,29 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         unit: z.string().describe('Currency code, e.g. EUR.'),
         memo: z.string().optional(),
         onBehalfOf: z.string().optional().describe('Only the holon key may claim for a party; sets the delegated flag.'),
+        force: z.boolean().optional().describe('Record the claim even past the headroom; it folds as `over`.'),
       },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const a = buildClaim({ party: args.party, amount: args.amount, unit: args.unit, memo: args.memo, onBehalfOf: args.onBehalfOf });
+        const unit = String(args.unit).trim().toUpperCase();
+        const { ctx, ceilings } = await judgedClaims(hs, args.holon);
+        const headroom = claimHeadroom(ceilings, ctx.folded, args.party, unit);
+        if (!args.force && !fitsHeadroom(headroom, args.amount)) {
+          return fail('over-right', { party: args.party, unit, headroom, amount: args.amount });
+        }
+        const a = buildClaim({ party: args.party, amount: args.amount, unit, memo: args.memo, onBehalfOf: args.onBehalfOf });
         const event = await hs.append(args.holon, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
-        return ok({ success: true, id: event.id, pubkey: event.pubkey, created_at: event.created_at, item: a.item });
+        return ok({
+          success: true,
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          item: a.item,
+          headroom,
+          headroomAfter: headroom == null ? null : Math.max(0, Math.round((headroom - args.amount) * 100) / 100),
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -348,13 +345,13 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'flow_claims_state',
     {
       description:
-        'Fold the holon\'s claims log: every claim judged (approved | pending | disputed | over | conflict | settled | rejected), payouts, totals per party and unit, the policy in force and whether the signer set is founded (log) or provisional (bootstrap). Wraps foldClaimsFromLenses.',
+        'Fold the holon\'s claims log under its ceilings: every claim judged (approved | pending | disputed | over | conflict | settled | rejected), payouts, totals per party and unit, the `ceilings` each party holds per unit (their share of the pot less draws outside the log) and the `headroom` left to each, the policy in force and whether the signer set is founded (log) or provisional (bootstrap). Wraps foldClaimsFromLenses + loadClaimCeilings.',
       inputSchema: { holon: z.string() },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const ctx = await claimsContext(hs, args.holon);
+        const { ctx, ceilings, pots, truncated } = await judgedClaims(hs, args.holon);
         return ok({
           success: true,
           source: ctx.actors.source,
@@ -366,6 +363,10 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           claims: ctx.folded.claims,
           payouts: ctx.folded.payouts,
           byParty: ctx.folded.byParty,
+          pots,
+          ceilings,
+          headroom: headroomOf(ceilings, ctx.folded),
+          ...(truncated ? { truncated } : {}),
         });
       } catch (err) {
         return fail((err as Error).message);
@@ -402,7 +403,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'flow_mints_state',
     {
       description:
-        'What the fund holds: the holon\'s mints log folded (each mint judged: issued | pending | disputed | conflict | rejected), totals per unit, and what reaches the holon from upstream funds (partners whose split seats it). Wraps @holons/core/flows loadMints + loadInboundRights.',
+        'What the fund holds: the holon\'s mints log folded (each mint judged: issued | pending | disputed | conflict | rejected), totals per unit, and what reaches the holon from upstream funds — its federation partners and the holons it keeps (`holons` lens) whose split seats it. Works for a personal holon (id = user id or pubkey): the rights reaching that person from every hub they are in. Wraps @holons/core/flows loadMints + loadInboundRights.',
       inputSchema: { holon: z.string() },
     },
     async (args) => {
@@ -410,7 +411,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const [ctx, inbound] = await Promise.all([
           loadMints(hs, args.holon),
-          loadInboundRights(hs, args.holon, { scoreOf: (id) => scoreAllocationMembers(hs, id) }),
+          loadInboundRights(hs, args.holon, { scoreOf: scoreOf(hs) }),
         ]);
         return ok({
           success: true,

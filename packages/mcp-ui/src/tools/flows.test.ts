@@ -147,3 +147,63 @@ describe('mint tools', () => {
     expect(state.mints[0].status).toBe('rejected');
   });
 });
+
+describe('claim tools under the ceiling', () => {
+  function logDeps(seed: Record<string, Record<string, Record<string, unknown>>> = {}) {
+    const { deps, db } = fakeDeps(seed);
+    const logs: Record<string, any[]> = {};
+    const hs: any = {
+      currentPubkey: 'a'.repeat(64),
+      ready: async () => {},
+      store: { listEventIds: () => [], getEvents: () => [] },
+      get: async (holon: string, lens: string, key?: string) => (key ? (db[`${holon}/${lens}`]?.[key] ?? null) : null),
+      getAll: async (holon: string, lens: string) => Object.values(db[`${holon}/${lens}`] ?? {}),
+      getAllGlobal: async () => [],
+      getFederation: async () => ({ federated: [] }),
+      append: async (holon: string, lens: string, item: unknown, opts: { refs?: unknown } = {}) => {
+        const id = `${holon}/${lens}/${(logs[`${holon}/${lens}`] ??= []).length + 1}`.padEnd(64, '0');
+        const e = { id, pubkey: hs.currentPubkey, created_at: 1_760_000_000 + logs[`${holon}/${lens}`].length, refs: { prev: [], basis: [], attests: [], disputes: [], ...(opts.refs as object) }, item };
+        logs[`${holon}/${lens}`].push(e);
+        return e;
+      },
+      getLog: async (holon: string, lens: string) => logs[`${holon}/${lens}`] ?? [],
+    };
+    return { deps: { ...deps, getHoloSphere: async () => hs } as ToolDeps, db, hs };
+  }
+
+  it('refuses a claim past the headroom, records one within it, and reports ceilings and headroom', async () => {
+    const { server, tools } = capture();
+    // The MCP key is the holon's own key here: admin, attester, and the one
+    // that claims `onBehalfOf` a member.
+    const { deps } = logDeps({
+      'olive/settings': {
+        olive: { id: 'olive', holonPubkey: 'a'.repeat(64), allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { u1: 1, u2: 1 } } },
+      },
+    });
+    registerFlowsTools(server, deps);
+    await tools.get('flow_mint_record')!({ holon: 'olive', amount: 200, unit: 'L' });
+
+    const before = payload(await tools.get('flow_claims_state')!({ holon: 'olive' }));
+    expect(before.pots).toEqual({ l: 200 });
+    expect(before.ceilings).toEqual({ u1: { L: 100 }, u2: { L: 100 } });
+    expect(before.headroom).toEqual({ u1: { L: 100 }, u2: { L: 100 } });
+
+    const over = await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u1', amount: 150, unit: 'L', onBehalfOf: 'u1' });
+    expect(over.isError).toBe(true);
+    expect(payload(over)).toMatchObject({ error: 'over-right', headroom: 100, unit: 'L' });
+
+    const fine = payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u1', amount: 60, unit: 'L', onBehalfOf: 'u1' }));
+    expect(fine.success).toBe(true);
+    expect(fine.headroomAfter).toBe(40);
+
+    const forced = payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u1', amount: 60, unit: 'L', onBehalfOf: 'u1', force: true }));
+    expect(forced.success).toBe(true);
+
+    const after = payload(await tools.get('flow_claims_state')!({ holon: 'olive' }));
+    expect(after.claims.map((c: any) => c.status)).toEqual(['approved', 'over']);
+    expect(after.headroom.u1.L).toBe(40);
+    // No pot in EUR: no ceiling, any amount goes through.
+    expect(payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u2', amount: 999, unit: 'EUR', onBehalfOf: 'u2' })).success).toBe(true);
+  });
+});
+

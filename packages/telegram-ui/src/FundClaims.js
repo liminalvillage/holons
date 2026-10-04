@@ -35,8 +35,12 @@ import {
   buildClaimVerdict,
   buildMint,
   buildPayout,
+  claimHeadroom,
+  fitsHeadroom,
   foldClaimsFromLenses,
   foldMintsFromLenses,
+  loadClaimCeilings,
+  scoreAllocationMembers,
 } from '@holons/core/flows';
 import {
   GOVERNANCE_VOTES_LENS,
@@ -112,13 +116,23 @@ export default class FundClaims {
 
   // ---------------------------------------------------------------- fold
 
-  /** Everything the fold reads, plus the derived keys only the bot knows. */
+  /**
+   * Everything the fold reads, plus the derived keys only the bot knows —
+   * folded the way every board folds it: once for the shape, then under the
+   * ceilings that shape, the pot and the usage give (core), so a claim past
+   * a right is held as `over`. The ceilings ride along for the pre-check.
+   */
   async context(holon) {
-    return foldClaimsFromLenses(
-      await readLogContext(this.db, holon, FLOW_CLAIMS_LENS, {
-        secret: this.secret,
-      })
-    );
+    const base = await readLogContext(this.db, holon, FLOW_CLAIMS_LENS, {
+      secret: this.secret,
+    });
+    const shape = foldClaimsFromLenses(base);
+    const { ceilings } = await loadClaimCeilings(this.db, holon, {
+      claims: shape.folded,
+      scoreOf: id => scoreAllocationMembers(this.db, id),
+      now: this.now(),
+    });
+    return { ...foldClaimsFromLenses({ ...base, rights: ceilings }), ceilings };
   }
 
   /** The mints log folded: what the fund holds to divide, per unit. */
@@ -162,6 +176,20 @@ export default class FundClaims {
       rest = rest.slice(1);
     }
     const memo = rest.join(' ').trim();
+    // What is left of the member's right here: their share of the pot less
+    // what was already claimed, paid or is awaiting attestation. A claim past
+    // it is not recorded — the fold would only hold it as `over`.
+    try {
+      const { folded, ceilings } = await this.context(holon);
+      const headroom = claimHeadroom(ceilings, folded, userId, unit);
+      if (!fitsHeadroom(headroom, amount)) {
+        return ctx.reply(
+          `You can claim up to ${headroom} ${unit} here — what is left of your right after what was already claimed or paid.`
+        );
+      }
+    } catch (err) {
+      return ctx.reply(`Could not read the fund: ${err?.message || err}`);
+    }
     const delegated = !this.identity.memberSigner(userId);
     const appendable = buildClaim({
       party: userId,

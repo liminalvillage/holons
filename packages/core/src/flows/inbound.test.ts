@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { inboundRightFrom, loadInboundRights } from './inbound.js';
+import { defaultUpstreams, inboundRightFrom, loadInboundRights } from './inbound.js';
 import { inboundTotal, rightsTotal } from './usage.js';
 
 // The olive collective: two locations and the collectors seated on the
@@ -61,8 +61,13 @@ describe('inboundRightFrom', () => {
   });
 });
 
-/** Settings and federation records by holon id; mints as pots per holon. */
-function fakeHolosphere(settings: Record<string, any>, federation: Record<string, string[]>, failing: string[] = []) {
+/** Settings and federation records by holon id; mints as pots per holon; the holons each id keeps. */
+function fakeHolosphere(
+  settings: Record<string, any>,
+  federation: Record<string, string[]>,
+  failing: string[] = [],
+  kept: Record<string, Array<{ id: string; name?: string }>> = {},
+) {
   const reads: string[] = [];
   return {
     reads,
@@ -70,6 +75,11 @@ function fakeHolosphere(settings: Record<string, any>, federation: Record<string
       reads.push(`${lens}/${holon}/${key}`);
       if (failing.includes(holon)) throw new Error('quiet relay');
       return settings[holon] ?? null;
+    },
+    async getAll(holon: string, lens: string) {
+      reads.push(`${lens}/${holon}`);
+      if (lens !== 'holons') return [];
+      return (kept[holon] ?? []).map((h, i) => ({ ...h, at: 1_000 + i }));
     },
     async getFederation(holon: string) {
       return { federated: federation[holon] ?? [], partnerNames: {} };
@@ -137,6 +147,44 @@ describe('loadInboundRights', () => {
     expect((await loadInboundRights(null, COLLECTORS)).inbound).toEqual([]);
     const hs = fakeHolosphere({ [MOTHER]: motherSettings }, federation);
     const got = await loadInboundRights(hs, COLLECTORS, { potsOf, maxHolons: 0 });
+    expect(got.inbound).toEqual([]);
+    expect(got.truncated).toBe(true);
+  });
+
+  // ── A person's own board ──────────────────────────────────────────────────
+  // People are not federated with the hubs that seat them; what they keep in
+  // their own `holons` lens is the other half of who might be upstream.
+  const ADA = 'ada';
+  const hubSettings = {
+    allocation: { interiorPercent: 80, steepness: 50, nzones: 2, interiorMode: 'custom', shares: { [ADA]: 3, bob: 1 }, people: { cy: 1 } },
+  };
+
+  it('a person sees what reaches them from a hub they keep, with no federation record at all', async () => {
+    const hs = fakeHolosphere({ [MOTHER]: hubSettings }, {}, [], { [ADA]: [{ id: MOTHER, name: 'Olive' }] });
+    const got = await loadInboundRights(hs, ADA, { potsOf });
+    expect(got.inbound).toEqual([{ from: MOTHER, unit: 'L', right: 120, percentage: 60, pot: 200 }]);
+    expect(got.upstreams).toEqual([MOTHER]);
+    // Someone on a ring is seated too; someone the hub never names is not.
+    expect((await loadInboundRights(hs, 'cy', { potsOf, upstreamsOf: async () => [MOTHER] })).inbound[0]?.right).toBe(40);
+    expect((await loadInboundRights(hs, 'dee', { potsOf, upstreamsOf: async () => [MOTHER] })).inbound).toEqual([]);
+  });
+
+  it('a kept hub that seats nobody, or has no split, adds nothing; partners and kept hubs are one list', async () => {
+    const hs = fakeHolosphere(
+      { [MOTHER]: hubSettings, [CASA]: { allocation: { interiorPercent: 86, steepness: 35, nzones: 3, zones: {} } }, [LIMINAL]: { name: 'no split' } },
+      { [ADA]: [CASA] },
+      [],
+      { [ADA]: [{ id: LIMINAL }, { id: MOTHER }, { id: CASA }] },
+    );
+    expect(await defaultUpstreams(hs, ADA)).toEqual([CASA, MOTHER, LIMINAL]);
+    const got = await loadInboundRights(hs, ADA, { potsOf });
+    expect(got.inbound.map((r) => r.from)).toEqual([MOTHER]);
+    expect(got.visited).toBe(3);
+  });
+
+  it('the read budget still holds across both lists', async () => {
+    const hs = fakeHolosphere({ [MOTHER]: hubSettings }, { [ADA]: [CASA] }, [], { [ADA]: [{ id: MOTHER }] });
+    const got = await loadInboundRights(hs, ADA, { potsOf, maxHolons: 1 });
     expect(got.inbound).toEqual([]);
     expect(got.truncated).toBe(true);
   });
