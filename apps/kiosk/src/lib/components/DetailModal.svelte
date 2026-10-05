@@ -23,7 +23,7 @@
   } from "$lib/stores";
   import { holonColors } from "$lib/palette";
   import { selectionCardUrl } from "$lib/cardlink";
-  import { segmentFor } from "$lib/dock";
+  import { requestSwitch, segmentFor } from "$lib/dock";
   import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
@@ -49,6 +49,7 @@
     deleteRef,
     isHologram,
     sourceGlow,
+    sourceHolonId,
     sourceLabel,
     holoSeed,
   } from "$lib/data";
@@ -168,6 +169,16 @@
   $: holo = isHologram(rec);
   $: srcGlow = sourceGlow(rec, $holonColors);
   $: srcName = sourceLabel(rec, $partnerNames);
+
+  /**
+   * The source chip travels to the holon this card came from — after the
+   * person confirms (SwitchConfirm closes this card, then the board closes
+   * into its circle and the source's opens).
+   */
+  function jumpToSource(): void {
+    const id = sourceHolonId(rec);
+    if (id) requestSwitch(id, { name: srcName, from: $holonId });
+  }
   $: seed = holo ? holoSeed(String(rec?.id ?? rec?.title ?? "")) : undefined;
 
   // Existing categories across all quests, for the edit-form dropdown. Sorted
@@ -1249,8 +1260,12 @@
       <div class="chips">
         <span class="kind">{getTypeDisplayName(item.type)}</span>
         {#if srcName}
-          <span class="srcchip" style="--src: {srcGlow}"
-            ><Icon name="swap" /> {srcName}</span
+          <button
+            type="button"
+            class="srcchip"
+            style="--src: {srcGlow}"
+            title={$t("source.open", { name: srcName })}
+            on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
           >
         {/if}
       </div>
@@ -1458,8 +1473,12 @@
           <div class="chips">
             {#if quest.category}<span class="kind">{quest.category}</span>{/if}
             {#if srcName}
-              <span class="srcchip" style="--src: {srcGlow}"
-                ><Icon name="swap" /> {srcName}</span
+              <button
+                type="button"
+                class="srcchip"
+                style="--src: {srcGlow}"
+                title={$t("source.open", { name: srcName })}
+                on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
               >
             {/if}
           </div>

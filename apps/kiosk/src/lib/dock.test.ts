@@ -23,8 +23,17 @@ import {
   syncOrbs,
   renameEntry,
   upsertEntry,
+  dockEntries,
+  dockOpenTarget,
+  dockState,
+  dockSwitchTarget,
+  requestSwitch,
+  confirmSwitch,
+  cancelSwitch,
+  switchRequest,
   type DockEntry,
 } from "./dock";
+import { get } from "svelte/store";
 
 const entry = (id: string, name = "", at = 1): DockEntry => ({ id, name, at });
 
@@ -57,6 +66,86 @@ describe("parseDock", () => {
     expect(parseDock(raw)).toEqual([
       { id: "-1", name: "One", at: 5, via: "-2" },
     ]);
+  });
+});
+
+describe("requestSwitch → confirmSwitch", () => {
+  const reset = () => {
+    dockEntries.set([]);
+    dockState.set("window");
+    dockOpenTarget.set(null);
+    dockSwitchTarget.set(null);
+    switchRequest.set(null);
+  };
+
+  it("only parks the request until it is confirmed", () => {
+    reset();
+    requestSwitch("src", { name: "Source", from: "home" });
+    expect(get(switchRequest)).toEqual({
+      id: "src",
+      name: "Source",
+      from: "home",
+    });
+    expect(get(dockState)).toBe("window");
+    expect(get(dockEntries)).toEqual([]);
+  });
+
+  it("cancelling drops it without moving", () => {
+    reset();
+    requestSwitch("src", { from: "home" });
+    cancelSwitch();
+    expect(get(switchRequest)).toBeNull();
+    confirmSwitch();
+    expect(get(dockState)).toBe("window");
+  });
+
+  it("confirming docks the target as brought in by the board being left, then closes towards it", () => {
+    reset();
+    requestSwitch("src", { name: "Source", from: "home" });
+    confirmSwitch();
+    expect(get(switchRequest)).toBeNull();
+    expect(get(dockEntries)).toMatchObject([
+      { id: "src", name: "Source", via: "home" },
+    ]);
+    expect(get(dockState)).toBe("closing");
+    expect(get(dockSwitchTarget)).toBe("src");
+  });
+
+  it("never demotes a board the person already made their own", () => {
+    reset();
+    dockEntries.set([entry("src", "Mine")]);
+    requestSwitch("src", { name: "", from: "home" });
+    confirmSwitch();
+    expect(get(dockEntries)[0]).toMatchObject({ id: "src", name: "Mine" });
+    expect(get(dockEntries)[0].via).toBeUndefined();
+  });
+
+  it("opens straight from the dock when no window is up", () => {
+    reset();
+    dockState.set("dock");
+    requestSwitch("src", { from: null });
+    confirmSwitch();
+    expect(get(dockState)).toBe("opening");
+    expect(get(dockOpenTarget)).toBe("src");
+    expect(get(dockSwitchTarget)).toBeNull();
+  });
+
+  it("is a no-op for the shown board, an empty id, and mid-morph", () => {
+    reset();
+    requestSwitch("home", { from: "home" });
+    requestSwitch("", { from: "home" });
+    expect(get(switchRequest)).toBeNull();
+    dockState.set("opening");
+    requestSwitch("src", { from: "home" });
+    expect(get(switchRequest)).toBeNull();
+    // A request parked while the window was up, confirmed after a morph
+    // started elsewhere, stays put rather than fighting it.
+    dockState.set("window");
+    requestSwitch("src", { from: "home" });
+    dockState.set("closing");
+    confirmSwitch();
+    expect(get(dockSwitchTarget)).toBeNull();
+    expect(get(switchRequest)).toBeNull();
   });
 });
 

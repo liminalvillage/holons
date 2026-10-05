@@ -18,6 +18,12 @@
     calendarMode,
     offerSettings,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { setCalendarView, type CalendarMode } from "$lib/config";
   import { getWriter } from "$lib/holosphere";
@@ -1762,8 +1768,14 @@
                     <span class="ttl">{ev.title}</span>
                     {#if ev.location}<span class="where">{ev.location}</span
                       >{/if}
-                    {#if ev.source}<span class="src"
-                        ><Icon name="swap" /> {ev.source}</span
+                    {#if ev.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: ev.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(ev.sourceId, ev.source)}
+                        ><Icon name="swap" /> {ev.source}</button
                       >{/if}
                     {#if ev.external}<span class="src"
                         ><Icon name="external" />
@@ -2760,6 +2772,7 @@
   }
   .day-event .src {
     margin-top: 0.15rem;
+    padding: 0;
     font-size: 0.7rem;
     font-weight: 700;
     /* Tinted with the source holon's own colour (same hue as its glow edge). */

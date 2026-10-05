@@ -474,6 +474,14 @@ export const en = {
   "map.field.tags": "Tags",
   "map.field.link": "Link",
   "map.field.origin": "From holon",
+  "source.open": "Open {name}",
+  // Confirmation before a provenance badge leaves the shown board.
+  "switch.title": "Go to another hub?",
+  "switch.lead": "This came from {to}.",
+  "switch.body":
+    "{from} closes back into the map, then {to} opens in its place. Nothing here changes.",
+  "switch.bodyNoFrom": "{to} opens from the map. Nothing here changes.",
+  "switch.open": "Open {to}",
   "map.field.created": "Created",
   "lens.quests": "Tasks",
   "lens.needs": "Local Needs",

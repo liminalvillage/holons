@@ -481,6 +481,13 @@ export const it: Record<MessageKey, Msg> = {
   "map.field.tags": "Tag",
   "map.field.link": "Link",
   "map.field.origin": "Dall'holon",
+  "source.open": "Apri {name}",
+  "switch.title": "Andare a un altro hub?",
+  "switch.lead": "Questo arriva da {to}.",
+  "switch.body":
+    "{from} si chiude nella mappa, poi al suo posto si apre {to}. Qui non cambia nulla.",
+  "switch.bodyNoFrom": "{to} si apre dalla mappa. Qui non cambia nulla.",
+  "switch.open": "Apri {to}",
   "map.field.created": "Creato",
   "lens.quests": "Attività",
   "lens.needs": "Bisogni locali",

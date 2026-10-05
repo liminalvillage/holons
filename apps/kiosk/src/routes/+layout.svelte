@@ -111,8 +111,10 @@
   import {
     dockState,
     dockOpenTarget,
+    dockSwitchTarget,
     nameBoard,
     rememberBoard,
+    requestOpen,
     touchBoard,
     segmentFor,
   } from "$lib/dock";
@@ -140,6 +142,7 @@
   import UserMenu from "$lib/components/UserMenu.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
+  import SwitchConfirm from "$lib/components/SwitchConfirm.svelte";
   import VoiceWidget from "$lib/components/VoiceWidget.svelte";
   import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
 
@@ -827,6 +830,7 @@
   let morphBusy = false;
   const MORPH_MS = 1000; // unhurried — the iris should read as a breath, not a snap
   const MORPH_FADE = 0.22; // the crossfade's share of the morph
+  const SWITCH_REST_MS = 350; // a board switch rests on the dock before opening the next
   const morphEase = (x: number) =>
     x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
@@ -919,6 +923,14 @@
     }
     dockState.set("dock");
     morphBusy = false;
+    // A switch (a provenance badge tap) closed this board on its way to
+    // another: rest on the dock long enough to read it, then open the target.
+    const next = get(dockSwitchTarget);
+    if (next) {
+      dockSwitchTarget.set(null);
+      await new Promise((r) => setTimeout(r, SWITCH_REST_MS));
+      requestOpen(next);
+    }
   }
 
   async function morphToWindow() {
@@ -1115,6 +1127,8 @@
 {#if !isHome && !isAbout}
   <!-- Participant confirmation before a completion records REA. -->
   <CompleteConfirm />
+  <!-- "Leave this hub for that one?" before a provenance badge travels. -->
+  <SwitchConfirm />
 
   <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
      Sends the displayed holon + active view + open record as turn context. -->

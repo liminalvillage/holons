@@ -16,6 +16,7 @@
     taskSort,
     taskViewMode,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
   import { get } from "svelte/store";
   import { tick } from "svelte";
   import { setTaskView } from "$lib/config";
@@ -66,6 +67,11 @@
   // $lib/deck). Whoever is at the screen now keeps only their own decks, so
   // the next visitor never inherits what the last one swiped away.
   $: key = deckKey($holonId, uid);
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
   $: swipeDecks.update((all) => decksFor(all, uid));
   $: mine = $swipeDecks.get(key) ?? EMPTY_DECK;
   // Freeze the dealing order as cards are first seen: someone else's like
@@ -458,8 +464,14 @@
                   title={$t("tasks.locked")}><Icon name="lock" /></span
                 >{/if}
               {#if task.category}<span class="tag">{task.category}</span>{/if}
-              {#if task.source}<span class="src"
-                  ><Icon name="swap" /> {task.source}</span
+              {#if task.source}<button
+                  type="button"
+                  class="src"
+                  title={$t("source.open", { name: task.source })}
+                  on:pointerdown|stopPropagation
+                  on:click|stopPropagation={() =>
+                    jumpToSource(task.sourceId, task.source)}
+                  ><Icon name="swap" /> {task.source}</button
                 >{/if}
               {#if dueLabel(task)}<span class="due"
                   >{#if task.frequency}<Icon name="repeat" />

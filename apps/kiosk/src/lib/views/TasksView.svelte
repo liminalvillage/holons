@@ -17,6 +17,7 @@
     taskSort,
     offerSettings,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
   import { privacyOfHolon } from "@holons/core/privacy";
   import TaskSettings from "$lib/components/TaskSettings.svelte";
   import { setTaskSort } from "$lib/config";
@@ -84,6 +85,11 @@
     }
   }
   $: void refreshLocks($holonId, $rawQuests.length);
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
   const onPrivacyChanged = () => void refreshLocks(get(holonId), -1);
   function openSettings() {
     if (!get(currentUser)) {
@@ -950,8 +956,14 @@
                       >{/if}
                     {#if task.category}<span class="tag">{task.category}</span
                       >{/if}
-                    {#if task.source}<span class="src"
-                        ><Icon name="swap" /> {task.source}</span
+                    {#if task.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: task.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(task.sourceId, task.source)}
+                        ><Icon name="swap" /> {task.source}</button
                       >{/if}
                     {#if dueLabel(task)}<span class="due"
                         >{#if task.frequency}<Icon name="repeat" />

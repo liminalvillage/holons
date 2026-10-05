@@ -16,6 +16,12 @@
     showNotice,
     rotationHold,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
   import { currentUser, loginOpen } from "$lib/auth";
   import { getChecklistStore, getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
@@ -403,8 +409,14 @@
           >
             <div class="icon"><Icon name={list.icon} /></div>
             <h3>{list.title}</h3>
-            {#if list.source}<span class="src"
-                ><Icon name="swap" /> {list.source}</span
+            {#if list.source}<button
+                type="button"
+                class="src"
+                title={$t("source.open", { name: list.source })}
+                on:pointerdown|stopPropagation
+                on:click|stopPropagation={() =>
+                  jumpToSource(list.sourceId, list.source)}
+                ><Icon name="swap" /> {list.source}</button
               >{/if}
             <span
               class="status"
@@ -523,6 +535,7 @@
     word-break: break-word;
   }
   .src {
+    padding: 0;
     font-size: 0.68rem;
     font-weight: 700;
     color: var(--glow, var(--teal-deep));

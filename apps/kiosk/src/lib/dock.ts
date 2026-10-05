@@ -842,3 +842,77 @@ export function requestOpen(id: string): void {
   dockOpenTarget.set(id);
   dockState.set("opening");
 }
+
+/**
+ * The board a switch is heading for: set by {@link requestSwitch}, consumed
+ * by the layout once the close morph has landed on the dock, which then opens
+ * this circle. `null` when no switch is pending.
+ */
+export const dockSwitchTarget = writable<string | null>(null);
+
+export type SwitchRequest = {
+  /** The holon to open. */
+  id: string;
+  /** Its name as the badge showed it, when known. */
+  name?: string;
+  /** The board being left, when one is up. */
+  from?: string | null;
+};
+
+/**
+ * A switch waiting for the person's yes — leaving a board is a change of
+ * place, so a badge tap asks first (SwitchConfirm). `null` when nothing is
+ * pending. {@link confirmSwitch} performs it, {@link cancelSwitch} drops it.
+ */
+export const switchRequest = writable<SwitchRequest | null>(null);
+
+/** Would a switch to `id` do anything right now? (Shared no-op rules.) */
+function switchable(id: string, from?: string | null): boolean {
+  if (!id) return false;
+  const state = get(dockState);
+  if (state === "window" && from === id) return false;
+  return state === "window" || state === "dock";
+}
+
+/**
+ * Ask to jump from the shown board to another holon's — the way a tap on a
+ * card's provenance badge travels to the holon the card came from. Nothing
+ * moves yet: the request is parked for the confirmation sheet, and
+ * {@link confirmSwitch} does the travelling.
+ *
+ * A no-op for an empty id, for the board already shown, and mid-morph.
+ */
+export function requestSwitch(
+  id: string,
+  opts: { name?: string; from?: string | null } = {},
+): void {
+  if (!switchable(id, opts.from)) return;
+  switchRequest.set({ id, name: opts.name, from: opts.from });
+}
+
+/** Drop the pending switch, if any. */
+export function cancelSwitch(): void {
+  switchRequest.set(null);
+}
+
+/**
+ * Perform the pending switch. The window first closes into its circle (the
+ * map and holosphere show through), then the target's circle opens. The
+ * target is docked first so there is a circle to land on: tagged as brought
+ * in by `from` (the board being left), so the dock never promotes a partner
+ * the person didn't add themselves — opening it is what makes it theirs
+ * (see {@link touchBoard}). From the dock it opens straight away.
+ */
+export function confirmSwitch(): void {
+  const req = get(switchRequest);
+  switchRequest.set(null);
+  if (!req || !switchable(req.id, req.from)) return;
+  const { id, name, from } = req;
+  rememberBoard(id, name ?? "", from ? { via: from } : {});
+  if (get(dockState) === "dock") {
+    requestOpen(id);
+    return;
+  }
+  dockSwitchTarget.set(id);
+  dockState.set("closing");
+}

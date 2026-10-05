@@ -206,6 +206,8 @@ export interface CalendarEvent {
   appreciation: number;
   /** Federation partner this came from, when aggregating; own items omit it. */
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -270,6 +272,8 @@ export interface BacklogTask {
   /** Ids of the appreciators, so a card can show whether *you* appreciate it. */
   appreciatedBy: (string | number)[];
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -422,6 +426,7 @@ export function toEvents(
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       source: sourceLabel(q, names),
+      sourceId: sourceHolonId(q),
       sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
     };
@@ -545,6 +550,7 @@ export function toBacklog(
       appreciation: countOf(q.appreciation),
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
+      sourceId: sourceHolonId(q),
       sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
       initiator: toInitiator(q),
@@ -609,6 +615,8 @@ export interface LibraryThing {
   /** When the current borrow is due back, when known. */
   returnBy?: Date | null;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -624,6 +632,8 @@ export interface RoleCard {
   /** Number of members. */
   count: number;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -646,6 +656,7 @@ export function toRoles(
       people: toPeople(r.participants),
       count: countOf(r.participants),
       source: sourceLabel(r, names),
+      sourceId: sourceHolonId(r),
       sourceColor: sourceGlow(r, colors),
       hologram: isHologram(r),
     }))
@@ -683,6 +694,8 @@ export interface ChecklistCard {
   /** Who created the list (raw id). */
   creator?: string | number | null;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -727,6 +740,7 @@ export function toChecklists(
         special: isSpecialChecklist(typed),
         creator: typed.creator ?? null,
         source: sourceLabel(c, names),
+        sourceId: sourceHolonId(c),
         sourceColor: sourceGlow(c, colors),
         hologram: isHologram(c),
       };
@@ -769,6 +783,7 @@ export function toThings(
       borrowerId: it.borrowerId ?? null,
       returnBy: parseWhen(it.returnBy),
       source: sourceLabel(it, names),
+      sourceId: sourceHolonId(it),
       sourceColor: sourceGlow(it, colors),
       hologram: isHologram(it),
     }))
@@ -865,6 +880,7 @@ export function toBookingEvents(
     if (!itemId || item._deleted || seen.has(itemId)) continue;
     seen.add(itemId);
     const source = sourceLabel(item, names);
+    const sourceId = sourceHolonId(item);
     const sourceColor = sourceGlow(item, colors);
     const hologram = isHologram(item);
     for (const b of getDisplayBookings(item)) {
@@ -891,6 +907,7 @@ export function toBookingEvents(
         people: who ? [{ id: b.borrowerId || who, name: who }] : [],
         appreciation: 0,
         source,
+        sourceId,
         sourceColor,
         hologram,
       });

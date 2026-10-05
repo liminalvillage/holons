@@ -11,6 +11,12 @@
     showNotice,
     libraryViewMode,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
   import { currentUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
   import { setLibraryCalendarView, type CalendarMode } from "$lib/config";
@@ -192,8 +198,14 @@
               {/if}
               <h3>{thing.title}</h3>
               <span class="type">{typeName($t, thing.type)}</span>
-              {#if thing.source}<span class="src"
-                  ><Icon name="swap" /> {thing.source}</span
+              {#if thing.source}<button
+                  type="button"
+                  class="src"
+                  title={$t("source.open", { name: thing.source })}
+                  on:pointerdown|stopPropagation
+                  on:click|stopPropagation={() =>
+                    jumpToSource(thing.sourceId, thing.source)}
+                  ><Icon name="swap" /> {thing.source}</button
                 >{/if}
               <span class="status" class:available={thing.available}>
                 {statusLabel(thing, $t)}
@@ -251,8 +263,14 @@
                 {/if}
                 <h3>{thing.title}</h3>
                 <span class="type">{typeName($t, thing.type)}</span>
-                {#if thing.source}<span class="src"
-                    ><Icon name="swap" /> {thing.source}</span
+                {#if thing.source}<button
+                    type="button"
+                    class="src"
+                    title={$t("source.open", { name: thing.source })}
+                    on:pointerdown|stopPropagation
+                    on:click|stopPropagation={() =>
+                      jumpToSource(thing.sourceId, thing.source)}
+                    ><Icon name="swap" /> {thing.source}</button
                   >{/if}
                 <span class="status" class:available={thing.available}>
                   {thing.available
@@ -301,8 +319,14 @@
                   <h3>{thing.title}</h3>
                   <div class="meta">
                     <span class="rtype">{typeName($t, thing.type)}</span>
-                    {#if thing.source}<span class="src"
-                        ><Icon name="swap" /> {thing.source}</span
+                    {#if thing.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: thing.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(thing.sourceId, thing.source)}
+                        ><Icon name="swap" /> {thing.source}</button
                       >{/if}
                   </div>
                 </div>
@@ -535,6 +559,7 @@
     font-weight: 700;
   }
   .src {
+    padding: 0;
     font-size: 0.68rem;
     font-weight: 700;
     /* Tinted with the source holon's own colour (same hue as its glow edge). */

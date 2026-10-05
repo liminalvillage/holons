@@ -167,6 +167,21 @@ describe("toBacklog — recurring tasks", () => {
   });
 });
 
+describe("toBacklog — provenance", () => {
+  it("carries the source holon's id beside its label so a badge can travel there", () => {
+    const [task] = toBacklog([
+      {
+        ...quest("fence"),
+        _federation: { origin: "-100777" },
+      } as unknown as Quest,
+    ]);
+    expect(task.sourceId).toBe("-100777");
+    expect(task.source).toBeTruthy();
+    const [own] = toBacklog([quest("own")]);
+    expect(own.sourceId).toBeUndefined();
+  });
+});
+
 describe("toBacklog — dependency-aware ordering", () => {
   it("marks self-standing tasks and current leaves as unblocked", () => {
     const out = toBacklog([
