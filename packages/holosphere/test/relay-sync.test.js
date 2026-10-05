@@ -84,12 +84,15 @@ describe('relay sync: cursors, pagination, reconnect', () => {
     expect(items.map((i) => i.id).sort()).toEqual(['w1', 'w2']);
     expect(await waitFor(() => second.store.getCursor(HOLON, 'warm').since > c1)).toBe(true);
 
-    // A live event moves the cursor again.
+    // A subscriber holds the pair live: a live event moves the cursor again.
+    const sub = second.subscribe(HOLON, 'warm', () => {});
+    expect(await waitFor(() => second._relayTransport.liveCount() === 1)).toBe(true);
     await wait(1100);
     await writer.put(HOLON, 'warm', { id: 'w3' });
     expect(await waitFor(() => second.store.listKeys(HOLON, 'warm').length === 3)).toBe(true);
     const cursorAfterLive = second.store.getCursor(HOLON, 'warm').since;
     expect(cursorAfterLive).toBeGreaterThan(c1);
+    sub.unsubscribe();
     await second.close();
   }, 40000);
 
@@ -123,13 +126,15 @@ describe('relay sync: cursors, pagination, reconnect', () => {
     expect(await waitFor(async () => (await b.getAll(HOLON, 'restart')).length === 2, 30000)).toBe(true);
   }, 60000);
 
-  test('resync() re-fetches every synced lens from its cursor', async () => {
+  test('resync() re-pulls a watched lens from its cursor', async () => {
     const a = make();
-    const b = make();
-    await b.getAll(HOLON, 'resync'); // open the sync
+    const b = make({ nostr: { syncTimeoutMs: 3000, freshnessMs: 60000 } });
+    const sub = b.subscribe(HOLON, 'resync', () => {});
+    await b.getAll(HOLON, 'resync');
     await a.put(HOLON, 'resync', { id: 'z1' });
     expect(await waitFor(async () => (await b.getAll(HOLON, 'resync')).length === 1)).toBe(true);
     await b.resyncSubscriptions();
     expect((await b.getAll(HOLON, 'resync')).map((i) => i.id)).toEqual(['z1']);
+    sub.unsubscribe();
   }, 30000);
 });

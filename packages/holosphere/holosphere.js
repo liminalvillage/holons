@@ -24,7 +24,7 @@ import { createStore, createAppendWire, CAPABILITIES_HOLON } from './store/index
 import * as LogOps from './log.js';
 import { createSigner, MEMBERSHIP_LENS as MEMBERS_LENS } from './signing.js';
 import { createRelayTransport } from './relay-transport.js';
-import { createPrivacy } from './privacy.js';
+import { createPrivacy, VAULT_LENS } from './privacy.js';
 import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
 
 // Named exports (v2-compatible)
@@ -120,6 +120,8 @@ class HoloSphere {
         this._holonNameCache = new Map();
         // Allowed authors (canWrite + the default enforce read-list)
         this._allowedAuthors = new Set();
+        // Live watches held by subscribers: "holon|lens" -> { holon, lens, n, release }
+        this._relayWatches = new Map();
         this._closed = false;
 
         // Signing: every write is a signed event when a key is present.
@@ -159,6 +161,9 @@ class HoloSphere {
             privateKey: this._privateKey,
             syncTimeoutMs: cfg.nostr?.syncTimeoutMs,
             pageSize: cfg.nostr?.pageSize,
+            freshnessMs: cfg.nostr?.freshnessMs,
+            maxConcurrentQueries: cfg.nostr?.maxConcurrentQueries,
+            maxFiltersPerReq: cfg.nostr?.maxFiltersPerReq,
             verbose: signing.verbose || cfg.nostr?.verbose,
             projections: cfg.nostr?.projections,
             signerFor: cfg.nostr?.signerFor,
@@ -167,6 +172,10 @@ class HoloSphere {
             trustedAuthors: cfg.nostr?.trustedAuthors,
             reverseLookbackSec: cfg.nostr?.reverseLookbackSec,
         });
+        // Subscriptions taken before the wire was up hold their watch now.
+        for (const w of this._relayWatches.values()) {
+            if (!w.release) w.release = this._relayTransport.watch(w.holon, w.lens);
+        }
         // Read-list hydration after init settles: goes through the normal read
         // path, so it can pull the saved federation list over the relay.
         Promise.resolve().then(() => this._hydrateReadKeys()).catch(() => { /* nothing saved yet */ });
@@ -186,17 +195,54 @@ class HoloSphere {
         await this._ready;
     }
 
-    /** Catch a (holon, lens) up from the relays; live afterwards. */
+    /**
+     * Hold (holon, lens) live on the wire until the returned release is
+     * called. Subscribers own the live REQ: a read never opens one. Counted
+     * per pair, so the transport sees one watch however many subscribers a
+     * pair has, and a watch taken before the transport is up is honoured
+     * when it starts.
+     */
+    _relayWatch(holon, lens) {
+        if (!lens || holon === CAPABILITIES_HOLON) return () => {};
+        const key = `${holon ?? ''}|${lens}`;
+        let w = this._relayWatches.get(key);
+        if (!w) {
+            w = { holon, lens, n: 0, release: null };
+            this._relayWatches.set(key, w);
+        }
+        w.n++;
+        if (w.n === 1 && this._relayTransport) w.release = this._relayTransport.watch(holon, lens);
+        let done = false;
+        return () => {
+            if (done) return;
+            done = true;
+            w.n--;
+            if (w.n > 0) return;
+            this._relayWatches.delete(key);
+            try { w.release?.(); } catch { /* transport gone */ }
+            w.release = null;
+        };
+    }
+
+    /** Catch a (holon, lens) up from the relays (a pull; nothing stays open). */
     _relaySync(holon, lens, { await: awaited = false } = {}) {
         const t = this._relayTransport;
         if (!t || !lens || holon === CAPABILITIES_HOLON) return awaited ? Promise.resolve() : undefined;
         let p = t.ensureSync(holon, lens);
+        // The holon's vault is the privacy flag of every lens in it: a read
+        // must see the current flag before it shows a thing (a lens locked
+        // since the last look hides its plain records). One pull per holon
+        // per freshness window, whatever the lens.
+        const scoped = holon !== null && holon !== undefined;
+        if (this._privacy && scoped && String(lens) !== VAULT_LENS) {
+            p = Promise.all([p, t.ensureSync(holon, VAULT_LENS)]);
+        }
         // The holon's `_members` log decides who counts on an enforced read.
         // A cold store that has not seen it yet would otherwise answer
         // "nobody speaks for this holon" and show every claim, where a warm
         // one shows only the accepted ones. One pull per holon per freshness
-        // window.
-        if (this._signer?.enforce && holon !== null && holon !== undefined && String(lens) !== MEMBERS_LENS) {
+        // window, like the vault.
+        if (this._signer?.enforce && scoped && String(lens) !== MEMBERS_LENS && String(lens) !== VAULT_LENS) {
             p = Promise.all([p, t.ensureSync(holon, MEMBERS_LENS)]);
         }
         if (awaited) return p.catch(() => { /* relay unreachable — read local */ });
@@ -444,7 +490,9 @@ class HoloSphere {
     /** Watch a log lens: ordered replay, then each new entry. Returns the unsubscribe function. */
     subscribeLog(holon, lens, callback, options = {}) {
         this._ready.then(() => this._relaySync(holon, lens)).catch(() => {});
-        return LogOps.subscribeLog(this, holon, lens, callback, options);
+        const release = this._relayWatch(holon, lens);
+        const off = LogOps.subscribeLog(this, holon, lens, callback, options);
+        return () => { release(); off(); };
     }
 
     // ================================ NODE FUNCTIONS ================================
@@ -512,7 +560,10 @@ class HoloSphere {
             callback = callbackOrOptions;
         }
         this._ready.then(() => this._relaySync(null, lens)).catch(() => {});
-        return GlobalOps.subscribeGlobal(this, lens, key, callback, options);
+        const release = this._relayWatch(null, lens);
+        const sub = GlobalOps.subscribeGlobal(this, lens, key, callback, options);
+        const unsubscribe = () => { release(); sub.unsubscribe(); };
+        return { unsubscribe, stop: unsubscribe };
     }
 
     // ================================ REFERENCE FUNCTIONS ================================
@@ -618,6 +669,13 @@ class HoloSphere {
             .then(() => this._relaySync(holon, lens, { await: true }))
             .then(() => this._privacyKeys(holon, lens))
             .catch(() => {});
+        const release = this._relayWatch(holon, lens);
+        const sub = this._subscribeStore(holon, lens, callback, options);
+        return { unsubscribe: () => { release(); sub.unsubscribe(); } };
+    }
+
+    /** The store-fed subscription behind `subscribe` (no wire concerns). */
+    _subscribeStore(holon, lens, callback, options = {}) {
         const signer = this._signer;
         const annotate = !!options.includeUnverified;
         // In enforce mode, resolve each update through the signing layer so
@@ -674,7 +732,7 @@ class HoloSphere {
         return Utils.notifySubscribers(this, data);
     }
 
-    /** Re-fetch every synced lens from the relays (e.g. from an `online` handler). */
+    /** Re-pull every watched lens and mark the rest stale (e.g. from an `online` handler). */
     async resyncSubscriptions() {
         await this._awaitBackend();
         if (this._relayTransport) await this._relayTransport.resync();
@@ -915,6 +973,18 @@ class HoloSphere {
         this._awaitBackend().then(() => {
             if (this._relayTransport) return this._relayTransport.publishEvents(events);
         }).catch(() => {});
+    }
+
+    /**
+     * One bounded relay query (any kinds) on the relay set, closed on EOSE and
+     * run through the transport's REQ budget. `[]` when local-only or closed.
+     * For reads of standard kinds that are not carried on a lens — a person's
+     * kind-0 profile, say — where a live REQ would be wasted.
+     */
+    async queryNostr(filter) {
+        await this._awaitBackend();
+        if (this._closed || !this._relayTransport || !filter) return [];
+        try { return (await this._relayTransport.query(filter)) || []; } catch { return []; }
     }
 
     /** Raw live REQ on the relay set; returns a close function. */

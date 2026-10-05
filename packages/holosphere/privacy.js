@@ -391,13 +391,35 @@ export function createPrivacy(holo) {
     }
 
     /** Every plaintext item of a scope this owner holds (what a rewrite re-puts). */
-    function ownItems(scope) {
+    // What the owner SEES is what a rewrite seals. The raw store also holds
+    // what enforced reads reject — an unsigned record, one by a key the holon
+    // never seated, a stray revival over a signed delete — and rewriting
+    // those would publish them under the owner's key, surfacing them on
+    // every board. So each record goes through the signing layer first, the
+    // same resolution `get`/`getAll` apply (a pointer stays a pointer).
+    async function ownItems(scope) {
+        const signer = holo._signer;
+        const enforced = !!(signer && signer.enforce && !signer.isPerActor?.(scope.lens));
+        const authorized = async (id, raw) => {
+            if (!enforced) return raw;
+            const claim = await signer.resolveItem(holo, scope.holon, scope.lens, id);
+            if (claim === undefined) return raw;          // nobody speaks for this holon
+            return claim && !isLocked(claim) && claim._deleted !== true ? claim : null;
+        };
         if (scope.item) {
             const rec = store().get(scope.holon, scope.lens, scope.item);
             const it = rec?.item;
-            return it && !isLocked(it) && it._deleted !== true ? [it] : [];
+            if (!it || isLocked(it) || it._deleted === true) return [];
+            const ok = await authorized(String(scope.item), it);
+            return ok ? [ok] : [];
         }
-        return store().list(scope.holon, scope.lens).map((r) => r.item).filter((it) => it && !isLocked(it));
+        const out = [];
+        for (const r of store().list(scope.holon, scope.lens)) {
+            if (!r.item || isLocked(r.item)) continue;
+            const ok = await authorized(String(r.id), r.item);
+            if (ok) out.push(ok);
+        }
+        return out;
     }
 
     async function rewriteItem(scope, item) {
@@ -407,7 +429,7 @@ export function createPrivacy(holo) {
     }
 
     async function rewriteScope(scope) {
-        const items = ownItems(scope);
+        const items = await ownItems(scope);
         for (const item of items) await rewriteItem(scope, item);
         return items.length;
     }
@@ -430,6 +452,9 @@ export function createPrivacy(holo) {
                 if (s.lens === scope.lens && s.item) await tombstoneVault(s);
             }
         }
+        // The rewrite seals what the scope holds NOW, other members' records
+        // included: catch the lens up before deciding what that is.
+        try { await holo._relaySync?.(scope.holon, scope.lens, { await: true }); } catch { /* local view */ }
         const key = generateKey();
         const kid = kidOf(key);
         await saveVault(scope, {

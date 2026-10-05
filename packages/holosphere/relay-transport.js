@@ -5,12 +5,26 @@
 //   write  →  every non-private put/delete is a signed kind-30078 event
 //             (NIP-33 replaceable per location) published to the relay set —
 //             holograms and globals included.
-//   read   →  `ensureSync(holon, lens)` catches the lens up from the relays
-//             (paginated backfill on a cold store, a `since` query from the
-//             persisted cursor on a warm one), then keeps ONE live REQ per
-//             (holon, lens) open. Every event lands in the store through
-//             `store.apply`, which verifies it, decides last-writer-wins and
-//             fires the local subscribers.
+//   read   →  a PULL. `ensureSync(holon, lens)` catches the pair up from the
+//             relays (paginated backfill on a cold store, a `since` query from
+//             the persisted cursor on a warm one) and resolves; reads then
+//             answer from the store. A pair pulled a moment ago is fresh
+//             (`freshnessMs`) and costs nothing; pulls run through a small
+//             query budget so a cold start never floods the relay. A read
+//             leaves NO subscription behind.
+//   watch  →  a PUSH, owned by the subscriber. `watch(holon, lens)` keeps the
+//             pair live for as long as someone holds the release function.
+//             Every watched pair, every reverse-sync filter and every raw
+//             listener share ONE multiplexed REQ per relay (a handful when the
+//             filter list is long), re-issued when the set changes. Nothing
+//             watched → nothing open.
+//
+// Relays cap concurrent REQs per connection (strfry: 20 by default). A
+// process that touches hundreds of (holon, lens) pairs — the bot serves
+// every hub it is in — must therefore never hold a subscription per pair,
+// and must not fire hundreds of catch-up queries at once either. Every event
+// lands in the store through `store.apply`, which verifies it, decides
+// last-writer-wins and fires the local subscribers.
 //
 // Event scheme (nostr-events.js / signing.js):
 //   tags [["h", holon], ["l", lens], ["d", "holon/lens/id"], ["n", appname]]
@@ -18,6 +32,7 @@
 // `HolonsDebug` can share a relay; globals (holon == null) use the `_g`
 // sentinel in `h`.
 
+import { matchFilter } from 'nostr-tools/filter';
 import { buildEvent, getPublicKey, HOLOSPHERE_KIND } from './nostr-events.js';
 import { createProjector } from './projections.js';
 import { createReverseSync } from './reverse-sync.js';
@@ -35,12 +50,30 @@ const DEFAULT_SYNC_TIMEOUT_MS = 5000;
 /** Page size for the cold backfill — strfry's default `maxFilterLimit`. */
 const DEFAULT_PAGE_SIZE = 500;
 
+/** A pair pulled this recently is answered from the store without a query:
+ *  a command handler reads the same lens several times in a row. */
+const DEFAULT_FRESHNESS_MS = 3000;
+
+/** Catch-up queries in flight at once. Each is a REQ the relay counts
+ *  against its per-connection cap; a few at a time saturate the link. */
+const DEFAULT_MAX_CONCURRENT_QUERIES = 6;
+
+/** Filters per live REQ. Relays bound this (strfry `maxReqFilterSize`, and an
+ *  optional strict validation at 3); one REQ is the norm, this is the cap. */
+const DEFAULT_MAX_FILTERS_PER_REQ = 10;
+
+/** Values per filter list (`#h`, `authors`, …) before a second filter is cut. */
+const DEFAULT_MAX_FILTER_LIST = 100;
+
 /** Overlap re-fetched before a cursor so clock skew between writers cannot
  *  hide an event (re-applying a seen event is a no-op). */
 const CATCHUP_OVERLAP_SEC = 900;
 
-/** Backoff for reopening a subscription the relay hard-closed. */
+/** Backoff for reopening the live REQ the relay hard-closed. */
 const REOPEN_BACKOFF_MS = [3000, 10000, 30000, 60000];
+
+/** Watch/release bursts (a view mounting ten components) coalesce into one REQ. */
+const FIRE_DEBOUNCE_MS = 50;
 
 const MAX_BACKFILL_PAGES = 2000;
 
@@ -52,12 +85,63 @@ const MAX_BACKFILL_PAGES = 2000;
 let poolModulePromise = null;
 const loadPoolModule = () => (poolModulePromise ??= import('nostr-tools/pool'));
 
+const chunks = (list, size) => {
+  const out = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
+
+const isListKey = (k) => k === 'authors' || k === 'ids' || k[0] === '#';
+const sameList = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+
+/**
+ * Fold filters that differ in exactly one list (`#t`, `authors`, …) into one
+ * filter with the union, so N holons' identical filter shapes become one.
+ * `since` takes the minimum (over-fetching is deduped by the store). A list
+ * never grows past `maxList`.
+ */
+export function mergeFilters(filters, maxList = DEFAULT_MAX_FILTER_LIST) {
+  const out = [];
+  for (const f of filters) {
+    if (!f || typeof f !== 'object') continue;
+    const listKeys = Object.keys(f).filter(isListKey).sort();
+    const base = {};
+    for (const k of Object.keys(f)) if (!isListKey(k) && k !== 'since') base[k] = f[k];
+    if (Array.isArray(base.kinds)) base.kinds = [...base.kinds].sort((a, b) => a - b);
+    const sig = JSON.stringify([base, listKeys]);
+    let merged = false;
+    for (const o of out) {
+      if (o.sig !== sig) continue;
+      const diff = listKeys.filter((k) => !sameList(o.filter[k], f[k]));
+      if (diff.length > 1) continue;
+      if (diff.length === 1) {
+        const union = [...new Set([...o.filter[diff[0]], ...f[diff[0]]])];
+        if (union.length > maxList) continue;
+        o.filter[diff[0]] = union;
+      }
+      if (f.since !== undefined) o.filter.since = o.filter.since === undefined ? f.since : Math.min(o.filter.since, f.since);
+      merged = true;
+      break;
+    }
+    if (!merged) {
+      const copy = { ...f };
+      for (const k of listKeys) copy[k] = [...new Set(f[k])];
+      out.push({ sig, filter: copy });
+    }
+  }
+  return out.map((o) => o.filter);
+}
+
 export function createRelayTransport(holo, {
   relays = [],
   privateKey,
   kind = HOLOSPHERE_KIND,
   syncTimeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
   pageSize = DEFAULT_PAGE_SIZE,
+  freshnessMs = DEFAULT_FRESHNESS_MS,
+  maxConcurrentQueries = DEFAULT_MAX_CONCURRENT_QUERIES,
+  maxFiltersPerReq = DEFAULT_MAX_FILTERS_PER_REQ,
+  maxFilterList = DEFAULT_MAX_FILTER_LIST,
   verbose = false,
   // Standard-kind projections (see projections.js / @holons/core/nostr).
   projections = [],
@@ -93,18 +177,49 @@ export function createRelayTransport(holo, {
         console.warn('[nostr-transport] no WebSocket implementation available:', e?.message);
       }
     }
-    // Reconnect keeps the live subscriptions alive across relay drops:
-    // nostr-tools reopens the socket and re-fires open subscriptions with
-    // `since` set past what they last emitted.
+    // Reconnect keeps the live REQ alive across relay drops: nostr-tools
+    // reopens the socket and re-fires open subscriptions with `since` set
+    // past what they last emitted.
     pool = new mod.SimplePool({ enableReconnect: true });
     return pool;
   })();
-  const reverse = reverseSync && projector.enabled
-    ? createReverseSync(holo, { poolReady, relays, projector, pubkey, trustedAuthors, lookbackSec: reverseLookbackSec, verbose })
-    : null;
 
   const normHolon = (h) => (h === null || h === undefined || h === '' ? null : h);
   const wireHolon = (h) => (normHolon(h) === null ? GLOBAL_HOLON_TAG : String(h));
+  const pairKey = (h, lens) => `${wireHolon(h)}|${lens}`;
+
+  // ---- query budget ----------------------------------------------------------
+
+  let slots = 0;
+  const waiting = [];
+  function withSlot(fn) {
+    return new Promise((resolve, reject) => {
+      const run = async () => {
+        slots++;
+        try { resolve(await fn()); } catch (e) { reject(e); } finally {
+          slots--;
+          const next = waiting.shift();
+          if (next) next();
+        }
+      };
+      if (slots < maxConcurrentQueries) run();
+      else waiting.push(run);
+    });
+  }
+
+  /** One bounded relay query (a REQ closed on EOSE) through the budget. */
+  function query(filter) {
+    return withSlot(async () => {
+      if (closed) return [];
+      const p = await poolReady;
+      if (closed) return [];
+      return p.querySync(relays, filter, { maxWait: syncTimeoutMs });
+    });
+  }
+
+  const reverse = reverseSync && projector.enabled
+    ? createReverseSync(holo, { query, relays, projector, pubkey, trustedAuthors, lookbackSec: reverseLookbackSec, freshnessMs, verbose })
+    : null;
 
   // ---- publishing ------------------------------------------------------------
 
@@ -183,9 +298,9 @@ export function createRelayTransport(holo, {
     return r;
   }
 
-  // ---- sync per (holon, lens) ------------------------------------------------
+  // ---- pairs: one state per (holon, lens) ever touched --------------------------
 
-  const syncs = new Map(); // "holon|lens" -> state
+  const pairs = new Map(); // key -> state
 
   /**
    * Every wire a lens is carried on, as `{ wire, filter }`.
@@ -215,44 +330,65 @@ export function createRelayTransport(holo, {
     return out;
   }
 
-  /** Paginated backfill of a lens the store has never synced. Returns the newest created_at seen. */
-  async function backfill(p, filter) {
+  function pairState(holon, lens) {
+    const h = normHolon(holon);
+    const key = pairKey(h, lens);
+    let st = pairs.get(key);
+    if (!st) {
+      st = {
+        key, holon: h, lens: String(lens),
+        wires: filtersFor(h, lens).map(({ wire, filter }) => ({ wire, filter, synced: false })),
+        watchers: 0, freshAt: 0, inflight: null, bounded: null,
+      };
+      pairs.set(key, st);
+    }
+    return st;
+  }
+
+  // ---- pull ------------------------------------------------------------------
+
+  /**
+   * Paginated backfill of a wire the store has never synced. Returns the
+   * newest created_at seen.
+   *
+   * NIP-01 pages by `until` alone, at one-second resolution. A burst of
+   * writes in the same second can fill a whole page, and `until = oldest`
+   * would then return that same page forever. So every full page is followed
+   * by a drain of its boundary second (`since = until = oldest`) and the walk
+   * moves to `oldest - 1`: strictly older, every time. A second holding more
+   * events than the relay's page cap is the one thing this cannot see.
+   */
+  async function backfill(filter) {
     let until;
     let newest = 0;
-    // Pagination progress is "ids this run has not walked yet", NOT "events the
-    // store accepted". Counting acceptance conflated two different things: an
-    // event the store rejects (a kind it does not consume) and an author's
-    // superseded claim (`_storeEvent` returns false, so it never lands in the
-    // events table) are both never 'seen', so they read as progress on every
-    // page and the walk could only end at MAX_BACKFILL_PAGES or the end of
-    // history. With a per-run id set, `fresh === 0` means what the loop
-    // actually needs to know: this page was entirely a re-fetch.
-    const runSeen = new Set();
-    for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
-      const q = { ...filter, limit: pageSize };
-      if (until !== undefined) q.until = until;
-      const events = await p.querySync(relays, q, { maxWait: syncTimeoutMs });
-      if (!events.length) break;
-      let fresh = 0;
+    const take = (events) => {
       let oldest = Infinity;
       for (const e of events) {
         if (e.created_at < oldest) oldest = e.created_at;
         if (e.created_at > newest) newest = e.created_at;
-        if (!runSeen.has(e.id)) {
-          runSeen.add(e.id);
-          fresh++;
-        }
         ingest(e);
       }
-      if (events.length < pageSize || fresh === 0) break;
-      until = oldest; // events at `oldest` are re-fetched and deduped as seen
+      return oldest;
+    };
+    for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
+      const q = { ...filter, limit: pageSize };
+      if (until !== undefined) q.until = until;
+      const events = await query(q);
+      if (!events.length) break;
+      const oldest = take(events);
+      if (events.length < pageSize) break; // the end of history
+      // No `limit`: the relay answers with as much of that second as it will
+      // give (strfry: its `maxFilterLimit`), which `limit` would only cut.
+      take(await query({ ...filter, since: oldest, until: oldest }));
+      if (oldest <= 0) break;
+      until = oldest - 1;
     }
     return newest;
   }
 
   /** Fetch what was published since a cursor. Returns the newest created_at seen. */
-  async function catchUp(p, filter, since) {
-    const events = await p.querySync(relays, { ...filter, since }, { maxWait: syncTimeoutMs });
+  async function catchUp(filter, since) {
+    const events = await query({ ...filter, since });
     let newest = 0;
     for (const e of events) {
       if (e.created_at > newest) newest = e.created_at;
@@ -261,118 +397,71 @@ export function createRelayTransport(holo, {
     return newest;
   }
 
-  function openLive(p, state, w, since) {
-    if (closed || !syncs.has(state.key)) return;
-    const filter = { ...w.filter, since: Math.max(0, since - CATCHUP_OVERLAP_SEC) };
-    // nostr-tools 2.x subscribeMany takes ONE filter (not an array).
-    w.sub = p.subscribeMany(relays, filter, {
-      onevent: (evt) => {
-        const r = ingest(evt);
-        // Allow-list, not a deny-list: the cursor may only follow an event this
-        // store actually accounted for. A deny-list let every reason nobody had
-        // thought of yet ('kind', 'untrusted', 'closed') advance the cursor,
-        // which silently skips that history on the next catch-up.
-        if (w.synced && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
-          // Live events arrive after the catch-up, so the cursor may follow them.
-          store.setCursor(state.holon, state.lens, evt.created_at, w.wire);
-        }
-      },
-      oneose: () => { w.reopenAttempts = 0; },
-      onclose: (reasons) => {
-        // With reconnect enabled nostr-tools handles transient drops itself;
-        // this fires when a relay hard-fails (connection refused / timed out)
-        // or the caller closed the sub. Reopen with backoff, catching up from
-        // the cursor first.
-        if (closed || !syncs.has(state.key)) return;
-        const callerClosed = (reasons || []).every((r) => /closed by caller/i.test(String(r)));
-        if (callerClosed) return;
-        const delay = REOPEN_BACKOFF_MS[Math.min(w.reopenAttempts++, REOPEN_BACKOFF_MS.length - 1)];
-        w.reopenTimer = setTimeout(async () => {
-          w.reopenTimer = null;
-          if (closed || !syncs.has(state.key)) return;
-          const cursor = store.getCursor(state.holon, state.lens, w.wire);
-          let newest = cursor?.since || 0;
-          try {
-            newest = Math.max(newest, await catchUp(p, w.filter, Math.max(0, newest - CATCHUP_OVERLAP_SEC)));
-            if (w.synced) store.setCursor(state.holon, state.lens, newest, w.wire);
-          } catch (e) { vlog('reopen catch-up failed:', e?.message); }
-          openLive(p, state, w, newest);
-        }, delay);
-        if (typeof w.reopenTimer.unref === 'function') w.reopenTimer.unref();
-      },
-    });
-  }
+  /** Is this pair carried by the live REQ right now (so a pull is redundant)? */
+  const liveCovers = (st) => st.watchers > 0 && live.covers.has(st.key) && st.wires.every((w) => w.synced);
 
   /**
-   * Catch a (holon, lens) up from the relays (once) and keep it live. The
-   * returned promise resolves after the catch-up, bounded by `syncTimeoutMs`
-   * so an unreachable relay never blocks reads; the catch-up itself continues
-   * in the background and the cursor is only advanced once it completes.
+   * Catch a (holon, lens) up from the relays. The returned promise resolves
+   * after the catch-up, bounded by `syncTimeoutMs` so an unreachable relay
+   * never blocks reads; the catch-up itself continues in the background and
+   * the cursor is only advanced once it completes. A pair pulled within
+   * `freshnessMs`, or carried live, resolves at once.
    */
   function ensureSync(holon, lens) {
     if (closed || !lens || String(lens) === EVENTS_NS) return Promise.resolve();
-    const h = normHolon(holon);
-    const key = `${wireHolon(h)}|${lens}`;
-    const existing = syncs.get(key);
-    if (existing) return existing.promise;
+    const st = pairState(holon, lens);
+    if (liveCovers(st)) return Promise.resolve();
+    if (st.inflight) return st.bounded;
+    if (Date.now() - st.freshAt < freshnessMs) return Promise.resolve();
 
-    reverse?.ensure(h);
-    const state = {
-      key, holon: h, lens: String(lens), promise: null,
-      wires: filtersFor(h, lens).map(({ wire, filter }) => ({
-        wire, filter, sub: null, synced: false, reopenAttempts: 0, reopenTimer: null,
-      })),
-    };
-    syncs.set(key, state);
-    state.promise = (async () => {
-      const p = await poolReady;
-      if (closed) return;
+    st.inflight = (async () => {
       // Each wire catches up on its own cursor. A lens long warm on the
       // envelope still BACKFILLS a wire it has never carried, instead of
       // catching up from a `since` that belongs to a different stream.
-      const work = Promise.all(state.wires.map(async (w) => {
-        const cursor = store.getCursor(h, lens, w.wire);
+      await Promise.all(st.wires.map(async (w) => {
+        const cursor = store.getCursor(st.holon, st.lens, w.wire);
         let newest = cursor?.since || 0;
         try {
-          if (!cursor) newest = Math.max(newest, await backfill(p, w.filter));
-          else newest = Math.max(newest, await catchUp(p, w.filter, Math.max(0, cursor.since - CATCHUP_OVERLAP_SEC)));
+          if (!cursor) newest = Math.max(newest, await backfill(w.filter));
+          else newest = Math.max(newest, await catchUp(w.filter, Math.max(0, cursor.since - CATCHUP_OVERLAP_SEC)));
           if (!closed) {
             w.synced = true;
-            store.setCursor(h, lens, newest, w.wire);
+            store.setCursor(st.holon, st.lens, newest, w.wire);
           }
         } catch (e) {
           vlog('catch-up failed:', e?.message);
         }
-        openLive(p, state, w, newest);
       }));
-      await Promise.race([
-        work,
-        new Promise((resolve) => {
-          const t = setTimeout(resolve, syncTimeoutMs);
-          if (typeof t.unref === 'function') t.unref();
-        }),
-      ]);
-    })();
-    return state.promise;
+      if (!closed) st.freshAt = Date.now();
+      // External edits of this holon's projections ride the same pull, in
+      // the background: the read does not wait for a fold.
+      reverse?.pull(st.holon)?.catch(() => {});
+    })().finally(() => { st.inflight = null; st.bounded = null; });
+    st.bounded = Promise.race([
+      st.inflight,
+      new Promise((resolve) => {
+        const t = setTimeout(resolve, syncTimeoutMs);
+        if (typeof t.unref === 'function') t.unref();
+      }),
+    ]);
+    return st.bounded;
   }
 
-  /** Re-fetch every synced lens from its cursor (after a reconnect / on wake). */
+  /** Mark every pair stale and re-pull the watched ones now (reconnect / wake). */
   let resyncing = null;
   function resync() {
     if (closed || resyncing) return resyncing || Promise.resolve();
     resyncing = (async () => {
-      const p = await poolReady;
-      for (const state of Array.from(syncs.values())) {
-        if (closed) break;
-        for (const w of state.wires) {
-          const cursor = store.getCursor(state.holon, state.lens, w.wire);
-          const since = Math.max(0, (cursor?.since || 0) - CATCHUP_OVERLAP_SEC);
-          try {
-            const newest = await catchUp(p, w.filter, since);
-            if (w.synced && newest) store.setCursor(state.holon, state.lens, newest, w.wire);
-          } catch (e) { vlog('resync failed:', e?.message); }
+      const work = [];
+      for (const st of pairs.values()) {
+        st.freshAt = 0;
+        if (st.watchers > 0) {
+          live.covers.delete(st.key);
+          work.push(ensureSync(st.holon, st.lens).catch(() => {}));
         }
       }
+      await Promise.all(work);
+      scheduleFire();
     })().finally(() => { resyncing = null; });
     return resyncing;
   }
@@ -385,22 +474,156 @@ export function createRelayTransport(holo, {
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
   }
 
+  // ---- push: ONE multiplexed live REQ per relay ---------------------------------
+
+  const raws = new Set(); // { filter, onevent }
+  const live = { subs: [], gen: 0, covers: new Set(), sig: '', timer: null, reopenAttempts: 0 };
+
+  /** Keep (holon, lens) live until the returned release is called. */
+  function watch(holon, lens) {
+    if (closed || !lens || String(lens) === EVENTS_NS) return () => {};
+    const st = pairState(holon, lens);
+    st.watchers++;
+    if (st.watchers === 1) {
+      reverse?.ensure(st.holon);
+      scheduleFire();
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      st.watchers--;
+      if (st.watchers === 0) scheduleFire();
+    };
+  }
+
+  /** A raw live listener on the relay set (any filter). Returns a close function. */
+  function subscribeRaw(filter, onevent) {
+    if (closed || !filter) return () => {};
+    const entry = { filter: { ...filter }, onevent };
+    raws.add(entry);
+    scheduleFire();
+    return () => { if (raws.delete(entry)) scheduleFire(); };
+  }
+
+  function scheduleFire(delay = FIRE_DEBOUNCE_MS) {
+    if (closed) return;
+    if (live.timer) clearTimeout(live.timer);
+    live.timer = setTimeout(() => {
+      live.timer = null;
+      fire().catch((e) => vlog('live REQ failed:', e?.message));
+    }, delay);
+    if (typeof live.timer.unref === 'function') live.timer.unref();
+  }
+
+  /** The filter set the live REQ carries right now, and the pairs it covers. */
+  async function liveFilters() {
+    const since = Math.max(0, Math.floor(Date.now() / 1000) - CATCHUP_OVERLAP_SEC);
+    const watched = [...pairs.values()].filter((s) => s.watchers > 0);
+    const keys = new Set(watched.map((s) => s.key));
+    const filters = [];
+    // The envelope: one filter for every watched holon, all its lenses. Live
+    // traffic is small, and a lens the view did not ask for simply lands in
+    // the cache — far cheaper than a filter per pair.
+    const holons = [...new Set(watched.map((s) => wireHolon(s.holon)))];
+    for (const chunk of chunks(holons, maxFilterList)) filters.push({ kinds: [kind], '#h': chunk, '#n': [app], since });
+    // Standard-kind wires and reverse-sync shapes, folded across holons.
+    const std = [];
+    for (const s of watched) for (const w of s.wires) if (w.wire !== '30078') std.push({ ...w.filter, since });
+    if (reverse) {
+      for (const h of new Set(watched.map((s) => s.holon))) {
+        try { std.push(...await reverse.liveFilters(h)); } catch (e) { vlog('reverse filters failed:', e?.message); }
+      }
+    }
+    filters.push(...mergeFilters(std, maxFilterList));
+    // Raw listeners keep their own shape, `since` included, on every fire: a
+    // gift wrap (NIP-59) carries a created_at randomised days into the past,
+    // so "resume past what was last seen" would lose the next one. Replays
+    // are the listener's to dedupe (they already are).
+    for (const r of raws) filters.push({ ...r.filter });
+    return { filters, keys };
+  }
+
+  function closeLive() {
+    live.gen++;
+    for (const s of live.subs.splice(0)) { try { s.close('closed by caller'); } catch { /* ignore */ } }
+    live.covers = new Set();
+    live.sig = '';
+  }
+
+  function dispatch(evt) {
+    if (closed || !evt) return;
+    for (const r of raws) {
+      let hit = false;
+      try { hit = matchFilter(r.filter, evt); } catch { hit = false; }
+      if (!hit) continue;
+      try { r.onevent(evt); } catch { /* listener */ }
+    }
+    if (store.wire?.accepts?.(evt.kind)) {
+      const r = ingest(evt);
+      // Allow-list, not a deny-list: the cursor may only follow an event this
+      // store actually accounted for. A deny-list let every reason nobody had
+      // thought of yet ('kind', 'untrusted', 'closed') advance the cursor,
+      // which silently skips that history on the next catch-up.
+      if (r.record && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
+        const st = pairs.get(pairKey(r.record.holon, r.record.lens));
+        const w = st?.wires.find((x) => (x.filter.kinds || []).includes(evt.kind));
+        if (w?.synced) store.setCursor(st.holon, st.lens, evt.created_at, w.wire);
+      }
+    }
+    reverse?.ingest(evt)?.catch?.(() => {});
+  }
+
+  /** (Re)issue the live REQ for the current set. Same set → no-op. */
+  async function fire() {
+    if (closed) return;
+    const p = await poolReady;
+    if (closed) return;
+    const { filters, keys } = await liveFilters();
+    if (closed) return;
+    const sig = JSON.stringify(filters.map((f) => ({ ...f, since: 0 })));
+    if (sig === live.sig && live.subs.length) return;
+    // Replace: the old REQ is closed before the new one opens, so the relay
+    // never counts both. The overlap `since` covers the gap.
+    closeLive();
+    live.sig = sig;
+    live.covers = keys;
+    if (!filters.length) return;
+    const gen = live.gen;
+    for (const group of chunks(filters, maxFiltersPerReq)) {
+      const requests = relays.flatMap((url) => group.map((filter) => ({ url, filter })));
+      const sub = p.subscribeMap(requests, {
+        onevent: dispatch,
+        oneose: () => { live.reopenAttempts = 0; },
+        onclose: (reasons) => {
+          // With reconnect enabled nostr-tools handles transient drops itself;
+          // this fires when a relay hard-fails (connection refused / timed
+          // out) or we replaced the REQ. Reopen with backoff, pulling the
+          // watched pairs from their cursors first.
+          if (closed || gen !== live.gen) return;
+          if ((reasons || []).every((r) => /closed by caller/i.test(String(r)))) return;
+          const delay = REOPEN_BACKOFF_MS[Math.min(live.reopenAttempts++, REOPEN_BACKOFF_MS.length - 1)];
+          live.covers = new Set();
+          live.sig = '';
+          for (const st of pairs.values()) if (st.watchers > 0) st.freshAt = 0;
+          scheduleFire(delay);
+        },
+      });
+      live.subs.push(sub);
+    }
+    // A pair that joined the live set never caught up, or went stale while
+    // the REQ was down: pull it now so the store is current under the REQ.
+    for (const key of keys) {
+      const st = pairs.get(key);
+      if (st && (!st.wires.every((w) => w.synced) || st.freshAt === 0)) ensureSync(st.holon, st.lens).catch(() => {});
+    }
+  }
+
   /** Publish already-signed events (any kind) to the relay set. */
   function publishEvents(events) {
     for (const e of Array.isArray(events) ? events : [events]) {
       if (e && e.id) publishEvent(e);
     }
-  }
-
-  /** Open a raw live REQ on the relay set. Returns a close function. */
-  function subscribeRaw(filter, onevent) {
-    let sub = null;
-    let stopped = false;
-    poolReady.then((p) => {
-      if (closed || stopped) return;
-      sub = p.subscribeMany(relays, filter, { onevent: (e) => { try { onevent(e); } catch { /* handler */ } } });
-    }).catch(() => {});
-    return () => { stopped = true; try { sub?.close(); } catch { /* ignore */ } };
   }
 
   return {
@@ -409,32 +632,38 @@ export function createRelayTransport(holo, {
     publishWrite,
     publishEvents,
     subscribeRaw,
+    /** One bounded relay query (REQ closed on EOSE) through the budget; [] once closed. */
+    query,
+    watch,
     projector,
     reverse,
     publishDelete,
     ensureSync,
     resync,
-    /** Test/diagnostic hook: number of live (holon, lens) subscriptions. */
-    syncCount: () => syncs.size,
+    /** Test/diagnostic hook: number of (holon, lens) pairs ever pulled. */
+    syncCount: () => pairs.size,
+    /** Pairs currently held live by a watcher. */
+    watchCount: () => [...pairs.values()].filter((s) => s.watchers > 0).length,
+    /** Live REQs open per relay right now (0 when nothing is watched). */
+    liveCount: () => live.subs.length,
     /** Whether a lens finished its catch-up. */
-    isSynced: (holon, lens) => !!syncs.get(`${wireHolon(holon)}|${lens}`)?.wires.every((w) => w.synced),
+    isSynced: (holon, lens) => !!pairs.get(pairKey(normHolon(holon), lens))?.wires.every((w) => w.synced),
     close() {
       closed = true;
+      if (live.timer) clearTimeout(live.timer);
+      live.timer = null;
+      closeLive();
+      raws.clear();
       reverse?.close();
       if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
         window.removeEventListener('online', onOnline);
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
       }
-      for (const state of syncs.values()) {
-        for (const w of state.wires) {
-          if (w.reopenTimer) clearTimeout(w.reopenTimer);
-          try { w.sub?.close(); } catch { /* ignore */ }
-        }
-      }
-      syncs.clear();
+      pairs.clear();
+      for (const run of waiting.splice(0)) run(); // drain: each sees `closed` and returns []
       poolReady.then((p) => { try { p.close(relays); } catch { /* ignore */ } }).catch(() => {});
     },
   };
 }
 
-export default { createRelayTransport, GLOBAL_HOLON_TAG };
+export default { createRelayTransport, mergeFilters, GLOBAL_HOLON_TAG };

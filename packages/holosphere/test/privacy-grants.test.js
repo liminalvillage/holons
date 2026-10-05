@@ -86,7 +86,7 @@ describe('privacy: grants over a relay', () => {
     // 5. The owner locks the whole lens (folding the card) and grants it; a live subscription hears it.
     // (A second apart from the partner's writes: a same-second rewrite would tie on last-writer-wins.)
     await wait(1100);
-    await eventually(() => ownerA.store.get(H, 'quests', 'q3'));
+    expect(await eventually(async () => (await ownerA.get(H, 'quests', 'q3'))?.title === 'gamma')).toBe(true);
     await ownerA.privacy.lock(LENS);
     expect(await eventually(async () => (await titles(partner)).length === 0)).toBe(true);
     const heard = [];

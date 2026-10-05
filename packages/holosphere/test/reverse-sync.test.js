@@ -176,6 +176,15 @@ describe('reverse sync on the wire', () => {
     await foreign({ kind: 0, content: JSON.stringify({ name: 'Hijacked' }), tags: [] }, bobSk); // resolves to user 7 — no such record here
     await wait(400);
     expect((await sphere.get(HOLON, 'users', 42)).first_name).toBe('Alicia');
+
+    // 5. In a key-founded holon Alice's record is keyed by her PUBKEY, while
+    //    userIdFor still answers with her Telegram id: the kind 0 reaches it.
+    const hub = `${name}-hub`;
+    await sphere.put(hub, 'users', { id: getPublicKey(aliceSk), first_name: 'A.' });
+    await foreign({ kind: 0, content: JSON.stringify({ name: 'Alice K' }), tags: [], created_at: Math.floor(Date.now() / 1000) + 20 }, aliceSk);
+    await eventually(async () => (await sphere.get(hub, 'users', getPublicKey(aliceSk)))?.first_name === 'Alice K');
+    expect((await sphere.get(hub, 'users', getPublicKey(aliceSk))).first_name).toBe('Alice K');
+    expect((await sphere.get(HOLON, 'users', 42)).first_name).toBe('Alice K');
   }
 
   test('nostr backend folds external edits back into records', async () => {

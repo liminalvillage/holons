@@ -110,10 +110,12 @@ cache (`packages/holosphere/STORE.md`).
 - Every non-private `put`/`delete` is a signed kind-30078 event (NIP-33
   replaceable per `holon/lens/id`, tagged with the app namespace) published
   to the configured relays. Deletes are signed tombstones.
-- Every `get`/`getAll`/`subscribe` syncs its `(holon, lens)` from the relays
-  once (paginated backfill, then a cursor) and serves reads from the store;
-  a live REQ keeps the store current. One last-writer-wins rule: newer
-  `created_at` wins, ties go to the larger event id.
+- Every `get`/`getAll` pulls its `(holon, lens)` from the relays (paginated
+  backfill the first time, then from a cursor; a pair pulled seconds ago is
+  served from the store) and leaves nothing open. A `subscribe` holds its pair
+  live until `unsubscribe`, on one multiplexed REQ per relay shared by all the
+  instance watches — relays cap concurrent REQs per connection. One
+  last-writer-wins rule: newer `created_at` wins, ties go to the larger event id.
 - The store persists in IndexedDB in browsers, a JSONL log + snapshot on
   long-lived Node hosts (`store: { adapter: 'file', dir }`), and memory in
   serverless functions and scripts. Reloads paint from the store and catch

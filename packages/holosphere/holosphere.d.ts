@@ -418,6 +418,12 @@ interface HoloSphereConfig {
     syncTimeoutMs?: number;
     /** Backfill page size (default 500 — strfry's `maxFilterLimit`). */
     pageSize?: number;
+    /** A (holon, lens) pulled this recently is read from the store without a query (ms, default 3000). */
+    freshnessMs?: number;
+    /** Catch-up queries in flight at once (default 6 — well under a relay's per-connection REQ cap). */
+    maxConcurrentQueries?: number;
+    /** Filters per live REQ before a second REQ is opened (default 10). */
+    maxFiltersPerReq?: number;
     verbose?: boolean;
     /** Standard-kind projection hooks (build with `buildProjections` from `@holons/core/nostr`). */
     projections?: ProjectionHook[];
@@ -621,6 +627,8 @@ declare class HoloSphere {
     publishNostrEvents(events: any | any[]): void;
     /** Raw live REQ on the relay set; returns a close function. */
     subscribeNostr(filter: Record<string, unknown>, onevent: (event: any) => void): () => void;
+    /** One bounded relay query (REQ closed on EOSE) through the REQ budget; [] when local-only or closed. */
+    queryNostr(filter: Record<string, unknown>): Promise<any[]>;
     /** Relay URLs of the wire ([] when local-only). */
     nostrRelays(): string[];
     auditLens(holon: string, lens: string): Promise<{ items: number; accounted: number; wouldDrop: number; unsigned: number; invalidSig: number; mismatch: number }>;

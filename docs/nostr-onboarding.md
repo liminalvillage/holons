@@ -139,8 +139,9 @@ tags    = [["h", holon | "_g"], ["l", lens], ["d", "holon/lens/id"], ["n", appNa
 
 **The relays are the wire.** A HoloSphere instance has no other network:
 writes publish to the relay set, reads catch a `(holon, lens)` up from the
-relays and answer from the local store, and one live REQ per `(holon, lens)`
-keeps the store current. Every ingested event is signature-verified. Relay
+relays (a pull, nothing left open) and answer from the local store, and a
+subscription holds its pair live on ONE multiplexed REQ per relay shared by
+everything the instance watches. Every ingested event is signature-verified. Relay
 loss ≠ data loss: any client can republish its own events; moving relays is a
 verbatim copy. Without `relays` an instance is local-only (tests, offline
 tooling). Every write is signed; there is no signing mode to choose.
@@ -264,8 +265,9 @@ not projected.
 **Reverse sync** (`reverse-sync.js`, on whenever projections are) folds
 external edits of those kinds back: a calendar app moving a 31923, an Elinor
 RSVP, a market client closing a 30402, a member editing kind 0. Per holon two
-live REQs (`#t = group-<holon>`, and `authors = trusted`), opened by the first
-read of the holon with a 7-day lookback. Only *trusted* pubkeys (holon key,
+REQ shapes (`#t = group-<holon>`, and `authors = trusted`): pulled by every
+read of the holon (7-day lookback on first contact), and carried on the one
+live REQ while the holon is watched. Only *trusted* pubkeys (holon key,
 members' derived keys, extras from settings; default own key ∪ read-list) may
 claim anything; the claim is merged by the lens codec and re-written as our
 own 30078 without re-projecting it. Foreign records are never imported; 30078
@@ -431,7 +433,7 @@ packages/core/src/holosphere/   the ONE factory (createHoloSphere), relays.ts (D
 packages/holosphere/            the data library (plain JS):
    holosphere.js                the class: put/get/getAll/delete/subscribe, globals, holograms, federation, listHolons, export/importEvents
    nostr-events.js              build / sign / verify 30078, normalizeSecretKey (nostr-tools)
-   relay-transport.js           the wire: publish, paginated backfill, cursor catch-up, live REQs, reopen backoff
+   relay-transport.js           the wire: publish, budgeted pulls (paginated backfill, cursor catch-up), ONE multiplexed live REQ for what is watched
    store/                       the local store (2.3): index.js, store.js, lww.js, private.js, address.js, adapters/{memory,indexeddb,file}.js
    projections.js, reverse-sync.js, nostr-dm.js (NIP-17), signing.js
    spike/                       mini-relay.js (in-process NIP-01 relay for tests), strfry.conf, run-strfry.sh
@@ -475,7 +477,8 @@ consumes them as framework-free hooks via `buildProjections`. Tag helpers
 ### 4.2 Factory, signing and writing helpers (`packages/core/src/holosphere/`)
 ```ts
 createHoloSphere({ appName, privateKey?, relays?, store?: { adapter, dir, compactAfter },
-                   nostr?: { syncTimeoutMs, pageSize, projections, signerFor, providerKey,
+                   nostr?: { syncTimeoutMs, pageSize, freshnessMs, maxConcurrentQueries, maxFiltersPerReq,
+                             projections, signerFor, providerKey,
                              reverseSync, trustedAuthors, reverseLookbackSec }, awaitReady? })
 resolveRelays(env: string | string[] | undefined): string[]   // configured list or DEFAULT_RELAYS
 createHolonWriter(hs, holonId, { actingAs, onDenied }): HolonWriter

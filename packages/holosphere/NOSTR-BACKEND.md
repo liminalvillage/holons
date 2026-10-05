@@ -6,13 +6,23 @@ network, and a local event-sourced store (`STORE.md`) is the cache.
 - **write** — every non-private `put`/`delete` is signed and applied to the
   local store, then published as a NIP-01 event (kind 30078, NIP-33
   replaceable per location). This includes **holograms** and **globals**.
-- **read** — `get`/`getAll` first sync the `(holon, lens)` from the relay
-  (paginated backfill the first time, cursor catch-up afterwards, bounded by
-  `nostr.syncTimeoutMs` so an unreachable relay degrades to a local read
-  instead of blocking), then answer from the store.
-- **subscribe** — one live REQ per `(holon, lens)` stays open; remote events
-  are signature-verified, applied through the one LWW rule and fed to
-  `store.watch`, which drives every subscription.
+- **read** — a pull. `get`/`getAll` catch the `(holon, lens)` up from the
+  relay (paginated backfill the first time, cursor catch-up afterwards,
+  bounded by `nostr.syncTimeoutMs` so an unreachable relay degrades to a
+  local read instead of blocking), then answer from the store. A pair pulled
+  within `nostr.freshnessMs` (3 s) is answered from the store outright, and
+  pulls run through a budget of `nostr.maxConcurrentQueries` (6) at a time.
+  A read leaves **no** subscription behind; the holon's `_vault` rides every
+  pull so a lens locked since the last look hides at once.
+- **subscribe** — a push, owned by the subscriber. A `subscribe` holds its
+  `(holon, lens)` live until `unsubscribe`; every watched pair, every
+  reverse-sync shape and every raw listener (grant DMs, join requests) share
+  **one** multiplexed REQ per relay, re-issued when the set changes. Remote
+  events are signature-verified, applied through the one LWW rule and fed to
+  `store.watch`, which drives every subscription. Nothing watched → nothing
+  open: a bot that only reads holds one standing REQ (its grants listener)
+  however many holons it serves. Relays cap concurrent REQs per connection
+  (strfry: 20), and a REQ over the cap is silently dropped — this is why.
 
 Because every record on the wire is a signed, content-addressed event, the
 durability/portability properties from [`SIGNING.md`](./SIGNING.md) hold for
@@ -136,10 +146,13 @@ When another Nostr client republishes one of those events — a calendar app
 moving a 31923, Elinor-style RSVPs (31925), a market client closing a 30402,
 a member editing their kind 0 — the edit is folded back into the record:
 
-1. Per holon, two live REQs: `{kinds, '#t': ['group-<holon>']}` (clients that
-   keep our tags) and `{kinds, authors: trusted}` (clients that rebuild tags;
-   kind 0 only arrives here). Opened lazily by the first read/subscribe of a
-   holon, `since = now − lookback` (7 days default).
+1. Per holon, two REQ shapes: `{kinds, '#t': ['group-<holon>']}` (clients
+   that keep our tags) and `{kinds, authors: trusted}` (clients that rebuild
+   tags; kind 0 only arrives here), `since = now − lookback` (7 days default)
+   on first contact, just past what was seen afterwards. A read of the holon
+   pulls them once per freshness window; a watched holon's shapes are folded
+   into the transport's one live REQ (shapes of many holons merge into one
+   filter).
 2. **Trust**: `event.pubkey ∈ trustedAuthors(holon)` — host-supplied (the
    monorepo bot: holon key ∪ members' derived keys ∪
    `settings.nostrTrustedPubkeys`); default own key ∪ read-list. Anything
@@ -201,7 +214,7 @@ federation handshake (`handshake-shim.js`) rides on it (messages carry an
 `id`, so a redelivered copy is handled once); without relays it warns and
 does nothing.
 Generic host API: `holosphere.publishNostrEvents(events)`,
-`holosphere.subscribeNostr(filter, onevent)`, `holosphere.nostrRelays()`.
+`holosphere.subscribeNostr(filter, onevent)`, `holosphere.queryNostr(filter)` (one bounded REQ closed on EOSE, through the query budget — how a person's kind 0 is read), `holosphere.nostrRelays()`.
 
 ## Sealed content (private scopes)
 
